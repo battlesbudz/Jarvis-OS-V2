@@ -45,11 +45,11 @@ class LiteRtLmEngine(
         val output = StringBuilder()
 
         activeConversation.sendMessageAsync(prompt).collect { message ->
-            val text = message.text
+            val text = message.toString()
             if (text.isNotEmpty()) {
                 firstTokenAt = firstTokenAt ?: System.nanoTime()
-                output.append(text)
-                onToken(text)
+        output.append(text)
+            onToken(text)
             }
         }
 
