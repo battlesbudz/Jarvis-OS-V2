@@ -112,6 +112,8 @@ class MainActivity : ComponentActivity() {
                 check(modelStore.verifyIntegrity(ModelCatalog.mobileActions270m)) {
                     "The MobileActions model file changed or failed integrity verification. Re-import it."
                 }
+                conversationEngine?.close()
+                conversationEngine = null
                 primary = LiteRtLmEngine(
                     ModelCatalog.gemma4E2b.id,
                     modelStore.fileFor(ModelCatalog.gemma4E2b).path,
@@ -130,14 +132,14 @@ class MainActivity : ComponentActivity() {
                     "Reply with exactly GEMMA_PR1_OK and nothing else.",
                     onToken = {}
                 )
-                check(primaryProbe.text.contains("GEMMA_PR1_OK", ignoreCase = true)) {
+                check(primaryProbe.text.trim() == "GEMMA_PR1_OK") {
                     "The selected Gemma file did not pass its capability probe."
                 }
                 val actionProbe = actions.generate(
                     "Return exactly the read_battery action name and nothing else.",
                     onToken = {}
                 )
-                check(actionProbe.text.contains("read_battery", ignoreCase = true)) {
+                check(actionProbe.text.trim() == "read_battery") {
                     "The selected MobileActions file did not pass its capability probe."
                 }
                 smokeTestSucceeded = true
