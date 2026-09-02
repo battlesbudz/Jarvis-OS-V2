@@ -197,10 +197,11 @@ private fun JarvisApp(
     // rotation/fold changes. Keep the replacement screen synchronized with
     // the durable files even when the old callback was cancelled.
     LaunchedEffect(Unit) {
-        while (!modelsReady || modelImportRunning) {
+        while (!modelsReady || modelImportRunning || !smokeTestPassed) {
             delay(500)
             modelsReady = store.isReady()
             modelImportRunning = store.importInProgress()
+            smokeTestPassed = modelsReady && store.smokeTestPassed()
         }
     }
 
