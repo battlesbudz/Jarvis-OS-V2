@@ -5,10 +5,24 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicInteger
 
 class ModelStore(context: Context) {
+    private companion object {
+        val activeImports = AtomicInteger(0)
+    }
+
     private val preferences = context.getSharedPreferences("model_setup", Context.MODE_PRIVATE)
     private val modelDirectory = File(context.filesDir, "models").apply { mkdirs() }
+
+    init {
+        if (activeImports.get() == 0 && preferences.getBoolean("import_in_progress", false)) {
+            preferences.edit().putBoolean("import_in_progress", false).apply()
+            modelDirectory.listFiles()
+                ?.filter { it.name.endsWith(".part") }
+                ?.forEach { it.delete() }
+        }
+    }
 
     fun fileFor(spec: LocalModelSpec): File = File(modelDirectory, spec.fileName)
 
@@ -67,6 +81,7 @@ class ModelStore(context: Context) {
             // Create the temporary file inside runCatching so storage errors
             // are returned through the UI callback instead of escaping launch.
             val temporary = File.createTempFile("${spec.fileName}.", ".part", modelDirectory)
+            activeImports.incrementAndGet()
             preferences.edit().putBoolean("import_in_progress", true).apply()
             try {
                 val selectedName = context.contentResolver.query(
@@ -102,8 +117,10 @@ class ModelStore(context: Context) {
                 clearSmokeTest()
                 destination
             } finally {
-                preferences.edit().putBoolean("import_in_progress", false).apply()
                 temporary.delete()
+                if (activeImports.decrementAndGet() == 0) {
+                    preferences.edit().putBoolean("import_in_progress", false).apply()
+                }
             }
         }
     }
