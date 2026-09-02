@@ -247,4 +247,72 @@ private fun ModelSetup(
         Text("Jarvis setup", style = MaterialTheme.typography.headlineMedium)
         Text(
             "Choose the two local model files. They are stored privately on this phone.",
-            Modifier.padding(top = 12.dp, bottom = 20.dp)
+            modifier = Modifier.padding(top = 12.dp, bottom = 20.dp)
+        )
+        Button(onClick = onPickGemma, modifier = Modifier.fillMaxWidth(), enabled = !testing && !importing) {
+            Text("Choose Gemma 4 E2B")
+        }
+        Button(
+            onClick = onPickActions,
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            enabled = !testing && !importing
+        ) {
+            Text("Choose MobileActions")
+        }
+        if (status.isNotBlank()) Text(status, modifier = Modifier.padding(top = 20.dp))
+        Button(
+            onClick = onTest,
+            enabled = ready && !testing && !importing,
+            modifier = Modifier.fillMaxWidth().padding(top = 20.dp)
+        ) {
+            Text(if (testing) "Testing local models…" else "Test local models")
+        }
+    }
+}
+
+@Composable
+private fun JarvisChat(
+    onSend: (String, (String) -> Unit, (String) -> Unit) -> Unit
+) {
+    var prompt by rememberSaveable { mutableStateOf("") }
+    var response by rememberSaveable { mutableStateOf("") }
+    // Sending is tied to the current Activity's lifecycle job. Do not restore
+    // it across recreation after that job has been cancelled.
+    var isSending by remember { mutableStateOf(false) }
+
+    Column(
+        Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
+        verticalArrangement = Arrangement.Bottom
+    ) {
+        if (response.isNotBlank()) {
+            Text(
+                response,
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = 20.dp)
+            )
+        }
+        OutlinedTextField(
+            value = prompt,
+            onValueChange = { prompt = it },
+            label = { Text("Message Jarvis") },
+            maxLines = 4,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Button(
+            onClick = {
+                val submitted = prompt
+                prompt = ""
+                response = ""
+                isSending = true
+                onSend(submitted, { token -> response = response + token }, { result -> response = result; isSending = false })
+            },
+            enabled = prompt.isNotBlank() && !isSending,
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+        ) {
+            Text(if (isSending) "Thinking…" else "Send")
+        }
+    }
+}
