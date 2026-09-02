@@ -96,6 +96,7 @@ class MainActivity : ComponentActivity() {
             mainHandler.post { report("Loading local models…") }
             var primary: LiteRtLmEngine? = null
             var actions: LiteRtLmEngine? = null
+            var smokeTestSucceeded = false
             try {
                 check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
                     "The Gemma model file changed or failed integrity verification. Re-import it."
@@ -132,12 +133,15 @@ class MainActivity : ComponentActivity() {
                     "The selected MobileActions file did not pass its capability probe."
                 }
                 modelStore.markSmokeTestPassed()
-                mainHandler.post { report("Both local models initialized successfully.") }
+                smokeTestSucceeded = true
             } catch (error: Throwable) {
                 mainHandler.post { report("Local model test failed: ${error.message ?: "unknown error"}") }
             } finally {
                 actions?.close()
                 primary?.close()
+                if (smokeTestSucceeded) {
+                    mainHandler.post { report("Both local models initialized successfully.") }
+                }
             }
         }
         smokeTestJob.invokeOnCompletion { activeSmokeTests.decrementAndGet() }
