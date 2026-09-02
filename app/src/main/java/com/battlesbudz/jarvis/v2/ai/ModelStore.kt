@@ -33,9 +33,14 @@ class ModelStore(context: Context) {
         hasModel(ModelCatalog.gemma4E2b) && hasModel(ModelCatalog.mobileActions270m)
 
     fun isUsable(): Boolean =
-        isReady() &&
-            verifyIntegrity(ModelCatalog.gemma4E2b) &&
-            verifyIntegrity(ModelCatalog.mobileActions270m)
+        isReady() && listOf(ModelCatalog.gemma4E2b, ModelCatalog.mobileActions270m).all { spec ->
+            val file = fileFor(spec)
+            val key = fingerprintKey(spec)
+            !preferences.getBoolean("${key}_invalid", false) &&
+                preferences.contains(key) &&
+                preferences.getLong("${key}_length", -1L) == file.length() &&
+                preferences.getLong("${key}_modified", -1L) == file.lastModified()
+        }
 
     /**
      * Verifies that the file is unchanged since it was accepted by setup.
@@ -49,6 +54,7 @@ class ModelStore(context: Context) {
         val modified = file.lastModified()
         val key = fingerprintKey(spec)
         val pinned = preferences.getString(key, null)
+        if (pinned != null && preferences.getBoolean("${key}_invalid", false)) return false
         if (pinned != null &&
             preferences.getLong("${key}_length", -1L) == length &&
             preferences.getLong("${key}_modified", -1L) == modified
@@ -57,13 +63,20 @@ class ModelStore(context: Context) {
         }
         val actual = file.sha256()
         spec.expectedSha256?.let { expected ->
-            if (!actual.equals(expected, ignoreCase = true)) return false
+            if (!actual.equals(expected, ignoreCase = true)) {
+                markIntegrityInvalid(key, length, modified)
+                return false
+            }
         }
-        if (pinned != null && !actual.equals(pinned, ignoreCase = true)) return false
+        if (pinned != null && !actual.equals(pinned, ignoreCase = true)) {
+            markIntegrityInvalid(key, length, modified)
+            return false
+        }
         preferences.edit()
             .putString(key, actual)
             .putLong("${key}_length", length)
             .putLong("${key}_modified", modified)
+            .putBoolean("${key}_invalid", false)
             .apply()
         return true
     }
@@ -118,6 +131,7 @@ class ModelStore(context: Context) {
                     .putString(fingerprint, actualSha256)
                     .putLong("${fingerprint}_length", destination.length())
                     .putLong("${fingerprint}_modified", destination.lastModified())
+                    .putBoolean("${fingerprint}_invalid", false)
                     .apply()
                 clearSmokeTest()
                 destination
@@ -134,6 +148,14 @@ class ModelStore(context: Context) {
 
     private fun fingerprintKey(spec: LocalModelSpec): String =
         "sha256_${spec.id}"
+
+    private fun markIntegrityInvalid(key: String, length: Long, modified: Long) {
+        preferences.edit()
+            .putLong("${key}_length", length)
+            .putLong("${key}_modified", modified)
+            .putBoolean("${key}_invalid", true)
+            .apply()
+    }
 
     private fun File.sha256(): String {
         val digest = MessageDigest.getInstance("SHA-256")
