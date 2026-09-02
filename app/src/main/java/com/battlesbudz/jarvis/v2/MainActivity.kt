@@ -1,137 +1,3 @@
-package com.battlesbudz.jarvis.v2
-
-import android.net.Uri
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.lifecycle.lifecycleScope
-import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
-import com.battlesbudz.jarvis.v2.ai.ModelCatalog
-import com.battlesbudz.jarvis.v2.ai.ModelStore
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-
-class MainActivity : ComponentActivity() {
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private lateinit var modelStore: ModelStore
-    private var conversationEngine: LiteRtLmEngine? = null
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        modelStore = ModelStore(applicationContext)
-        setContent {
-            JarvisApp(
-                store = modelStore,
-                onRunModelSmokeTest = { runModelSmokeTest(it) },
-                onImportModel = { uri, spec, report -> importModel(uri, spec, report) },
-                onSend = { prompt, onToken, onComplete ->
-                    runConversation(prompt, onToken, onComplete)
-                }
-            )
-        }
-    }
-
-    override fun onDestroy() {
-        conversationEngine?.close()
-        conversationEngine = null
-        super.onDestroy()
-    }
-
-    private fun runModelSmokeTest(report: (String) -> Unit) {
-        lifecycleScope.launch(Dispatchers.Default) {
-            mainHandler.post { report("Loading local models…") }
-            var primary: LiteRtLmEngine? = null
-            var actions: LiteRtLmEngine? = null
-            try {
-                check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
-                    "The Gemma model file changed or failed integrity verification. Re-import it."
-                }
-                check(modelStore.verifyIntegrity(ModelCatalog.mobileActions270m)) {
-                    "The MobileActions model file changed or failed integrity verification. Re-import it."
-                }
-                primary = LiteRtLmEngine(
-                    ModelCatalog.gemma4E2b.id,
-                    modelStore.fileFor(ModelCatalog.gemma4E2b).path,
-                    cacheDir.path,
-                    useGpu = true
-                )
-                actions = LiteRtLmEngine(
-                    ModelCatalog.mobileActions270m.id,
-                    modelStore.fileFor(ModelCatalog.mobileActions270m).path,
-                    cacheDir.path,
-                    useGpu = false
-                )
-                primary.initialize()
-                actions.initialize()
-                val primaryProbe = primary.generate(
-                    "Reply with exactly GEMMA_PR1_OK and nothing else.",
-                    onToken = {}
-                )
-                check(primaryProbe.text.contains("GEMMA_PR1_OK", ignoreCase = true)) {
-                    "The selected Gemma file did not pass its capability probe."
-                }
-                val actionProbe = actions.generate(
-                    "Return exactly the read_battery action name and nothing else.",
-                    onToken = {}
-                )
-                check(actionProbe.text.contains("read_battery", ignoreCase = true)) {
-                    "The selected MobileActions file did not pass its capability probe."
-                }
-                modelStore.markSmokeTestPassed()
-                mainHandler.post { report("Both local models initialized successfully.") }
-            } catch (error: Throwable) {
-                mainHandler.post { report("Local model test failed: ${error.message ?: "unknown error"}") }
-            } finally {
-                actions?.close()
-                primary?.close()
-            }
-        }
-    }
-
-    private fun importModel(
-        uri: Uri,
-        spec: com.battlesbudz.jarvis.v2.ai.LocalModelSpec,
-        report: (String) -> Unit
-    ) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            val result = modelStore.importModel(uri, spec)
-            withContext(Dispatchers.Main) {
-                report(result.fold(
-                    { "Model imported successfully." },
-                    { error ->
-                        val message = error.message ?: "unknown error"
-                        "Import failed: $message"
-                    }
-                ))
-            }
         }
     }
 
@@ -146,7 +12,8 @@ class MainActivity : ComponentActivity() {
                 check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
                     "The Gemma model file changed or failed integrity verification. Re-import it."
                 }
-                val engine = conversationEngine ?: run {
+                val engine: LiteRtLmEngine
+                if (conversationEngine == null) {
                     val created = LiteRtLmEngine(
                         ModelCatalog.gemma4E2b.id,
                         modelStore.fileFor(ModelCatalog.gemma4E2b).path,
@@ -156,7 +23,9 @@ class MainActivity : ComponentActivity() {
                     newlyCreatedEngine = created
                     created.initialize()
                     conversationEngine = created
-                    created
+                    engine = created
+                } else {
+                    engine = conversationEngine!!
                 }
                 val generated = engine.generate(prompt) { token ->
                     mainHandler.post { onToken(token) }
@@ -229,7 +98,7 @@ private fun JarvisApp(
                     onPickActions = { actionsPicker.launch(arrayOf("*/*")) },
                     onTest = {
                         smokeTestRunning = true
-                        onRunModelSmokeTest { result ->
+                        onRunModelSmokeTest.invoke { result ->
                             smokeTestRunning = false
                             setupStatus = result
                             if (result == "Both local models initialized successfully.") {
@@ -238,3 +107,10 @@ private fun JarvisApp(
                         }
                     }
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelSetup(
