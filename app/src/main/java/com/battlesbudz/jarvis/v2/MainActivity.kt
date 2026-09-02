@@ -53,7 +53,7 @@ class MainActivity : ComponentActivity() {
     private var engineWasRetained = false
 
     override fun onRetainCustomNonConfigurationInstance(): Any? {
-        engineWasRetained = conversationJob?.isActive != true
+        engineWasRetained = conversationJob?.isActive != true && !modelStore.isModelOperationActive()
         return if (engineWasRetained) conversationEngine else null
     }
 
