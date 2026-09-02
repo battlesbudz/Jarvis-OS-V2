@@ -32,6 +32,11 @@ class ModelStore(context: Context) {
     fun isReady(): Boolean =
         hasModel(ModelCatalog.gemma4E2b) && hasModel(ModelCatalog.mobileActions270m)
 
+    fun isUsable(): Boolean =
+        isReady() &&
+            verifyIntegrity(ModelCatalog.gemma4E2b) &&
+            verifyIntegrity(ModelCatalog.mobileActions270m)
+
     /**
      * Verifies that the file is unchanged since it was accepted by setup.
      * A first verification pins an imported file's SHA-256 so a later file
