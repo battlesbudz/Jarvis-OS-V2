@@ -98,8 +98,10 @@ class MainActivity : ComponentActivity() {
             var actions: LiteRtLmEngine? = null
             var smokeTestSucceeded = false
             try {
-                check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
-                    "The Gemma model file changed or failed integrity verification. Re-import it."
+                if (!modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
+                    conversationEngine?.close()
+                    conversationEngine = null
+                    error("The Gemma model file changed or failed integrity verification. Re-import it.")
                 }
                 check(modelStore.verifyIntegrity(ModelCatalog.mobileActions270m)) {
                     "The MobileActions model file changed or failed integrity verification. Re-import it."
@@ -155,6 +157,10 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val result = modelStore.importModel(uri, spec)
             withContext(Dispatchers.Main) {
+                if (result.isSuccess && spec.id == ModelCatalog.gemma4E2b.id) {
+                    conversationEngine?.close()
+                    conversationEngine = null
+                }
                 report(result.fold(
                     { "Model imported successfully." },
                     { error ->
@@ -178,8 +184,10 @@ class MainActivity : ComponentActivity() {
         conversationJob = lifecycleScope.launch(Dispatchers.Default) {
             var newlyCreatedEngine: LiteRtLmEngine? = null
             try {
-                check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
-                    "The Gemma model file changed or failed integrity verification. Re-import it."
+                if (!modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
+                    conversationEngine?.close()
+                    conversationEngine = null
+                    error("The Gemma model file changed or failed integrity verification. Re-import it.")
                 }
                 val engine: LiteRtLmEngine
                 if (conversationEngine == null) {
