@@ -5,6 +5,7 @@ import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import kotlinx.coroutines.flow.collect
 import java.io.Closeable
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Real Android adapter for a .litertlm model.
@@ -27,6 +28,7 @@ class LiteRtLmEngine(
         )
     )
     private var conversation: com.google.ai.edge.litertlm.Conversation? = null
+    private val closed = AtomicBoolean(false)
 
     suspend fun initialize() {
         engine.initialize()
@@ -62,7 +64,9 @@ class LiteRtLmEngine(
     }
 
     override fun close() {
-        conversation?.close()
-        engine.close()
+        if (closed.compareAndSet(false, true)) {
+            conversation?.close()
+            engine.close()
+        }
     }
 }
