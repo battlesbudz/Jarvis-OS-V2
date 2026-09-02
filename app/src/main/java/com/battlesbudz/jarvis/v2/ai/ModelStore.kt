@@ -51,39 +51,41 @@ class ModelStore(context: Context) {
 
     suspend fun importModel(uri: Uri, spec: LocalModelSpec): Result<File> {
         val destination = fileFor(spec)
-        // A unique temporary file prevents a second picker result from truncating
-        // or renaming the first import while it is still copying.
-        val temporary = File.createTempFile("${spec.fileName}.", ".part", modelDirectory)
         return runCatching {
-            val selectedName = context.contentResolver.query(
-                uri,
-                arrayOf(OpenableColumns.DISPLAY_NAME),
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getString(0) else null
-            }
-            require(selectedName == null || selectedName == spec.fileName) {
-                "Select the ${spec.fileName} model file."
-            }
-            val resolver = context.contentResolver
-            resolver.openInputStream(uri)?.use { input ->
-                temporary.outputStream().use { output -> input.copyTo(output) }
-            } ?: error("Unable to open selected model file.")
-            require(temporary.length() > 0L) { "The selected model file is empty." }
-            val actualSha256 = temporary.sha256()
-            spec.expectedSha256?.let { expected ->
-                require(actualSha256.equals(expected, ignoreCase = true)) {
-                    "The selected model failed integrity verification."
+            // Create the temporary file inside runCatching so storage errors
+            // are returned through the UI callback instead of escaping launch.
+            val temporary = File.createTempFile("${spec.fileName}.", ".part", modelDirectory)
+            try {
+                val selectedName = context.contentResolver.query(
+                    uri,
+                    arrayOf(OpenableColumns.DISPLAY_NAME),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
                 }
+                require(selectedName == null || selectedName == spec.fileName) {
+                    "Select the ${spec.fileName} model file."
+                }
+                val resolver = context.contentResolver
+                resolver.openInputStream(uri)?.use { input ->
+                    temporary.outputStream().use { output -> input.copyTo(output) }
+                } ?: error("Unable to open selected model file.")
+                require(temporary.length() > 0L) { "The selected model file is empty." }
+                val actualSha256 = temporary.sha256()
+                spec.expectedSha256?.let { expected ->
+                    require(actualSha256.equals(expected, ignoreCase = true)) {
+                        "The selected model failed integrity verification."
+                    }
+                }
+                check(temporary.renameTo(destination)) { "Unable to finalize model file." }
+                preferences.edit().putString(fingerprintKey(spec), actualSha256).apply()
+                clearSmokeTest()
+                destination
+            } finally {
+                temporary.delete()
             }
-            check(temporary.renameTo(destination)) { "Unable to finalize model file." }
-            preferences.edit().putString(fingerprintKey(spec), actualSha256).apply()
-            clearSmokeTest()
-            destination
-        }.onFailure {
-            temporary.delete()
         }
     }
 
