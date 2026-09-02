@@ -92,6 +92,8 @@ class ModelStore(context: Context) {
         activeModelOperation.set(0)
     }
 
+    fun isModelOperationActive(): Boolean = activeModelOperation.get() > 0
+
     fun markSmokeTestPassed() {
         preferences.edit().putBoolean("smoke_test_passed", true).apply()
     }
