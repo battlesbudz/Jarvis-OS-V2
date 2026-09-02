@@ -48,8 +48,8 @@ class LiteRtLmEngine(
             val text = message.toString()
             if (text.isNotEmpty()) {
                 firstTokenAt = firstTokenAt ?: System.nanoTime()
-        output.append(text)
-            onToken(text)
+                output.append(text)
+                onToken(text)
             }
         }
 
