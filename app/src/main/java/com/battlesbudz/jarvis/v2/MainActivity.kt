@@ -188,15 +188,16 @@ private fun JarvisApp(
     var smokeTestPassed by rememberSaveable { mutableStateOf(store.isReady() && store.smokeTestPassed()) }
     var setupStatus by rememberSaveable { mutableStateOf("") }
     var smokeTestRunning by remember { mutableStateOf(false) }
-    var modelImportRunning by remember { mutableStateOf(false) }
+    var modelImportRunning by remember { mutableStateOf(store.importInProgress()) }
 
     // An import can finish after the previous Activity is destroyed during
     // rotation/fold changes. Keep the replacement screen synchronized with
     // the durable files even when the old callback was cancelled.
     LaunchedEffect(Unit) {
-        while (!modelsReady) {
+        while (!modelsReady || modelImportRunning) {
             delay(500)
             modelsReady = store.isReady()
+            modelImportRunning = store.importInProgress()
         }
     }
 
