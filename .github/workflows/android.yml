@@ -109,6 +109,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v0.1.0-build.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
           name: Jarvis OS V2 test build ${{ github.run_number }}
           generate_release_notes: true
           files: dist/app-release.apk
