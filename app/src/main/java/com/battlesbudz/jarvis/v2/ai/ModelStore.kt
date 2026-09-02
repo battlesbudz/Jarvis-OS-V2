@@ -26,17 +26,27 @@ class ModelStore(context: Context) {
     fun verifyIntegrity(spec: LocalModelSpec): Boolean {
         val file = fileFor(spec)
         if (!file.isFile || file.length() == 0L) return false
+        val length = file.length()
+        val modified = file.lastModified()
+        val key = fingerprintKey(spec)
+        val pinned = preferences.getString(key, null)
+        if (pinned != null &&
+            preferences.getLong("${key}_length", -1L) == length &&
+            preferences.getLong("${key}_modified", -1L) == modified
+        ) {
+            return true
+        }
         val actual = file.sha256()
         spec.expectedSha256?.let { expected ->
             if (!actual.equals(expected, ignoreCase = true)) return false
         }
-        val key = fingerprintKey(spec)
-        val pinned = preferences.getString(key, null)
-        if (pinned == null) {
-            preferences.edit().putString(key, actual).apply()
-            return true
-        }
-        return actual.equals(pinned, ignoreCase = true)
+        if (pinned != null && !actual.equals(pinned, ignoreCase = true)) return false
+        preferences.edit()
+            .putString(key, actual)
+            .putLong("${key}_length", length)
+            .putLong("${key}_modified", modified)
+            .apply()
+        return true
     }
 
     fun smokeTestPassed(): Boolean = preferences.getBoolean("smoke_test_passed", false)
@@ -83,7 +93,12 @@ class ModelStore(context: Context) {
                     }
                 }
                 check(temporary.renameTo(destination)) { "Unable to finalize model file." }
-                preferences.edit().putString(fingerprintKey(spec), actualSha256).apply()
+                val fingerprint = fingerprintKey(spec)
+                preferences.edit()
+                    .putString(fingerprint, actualSha256)
+                    .putLong("${fingerprint}_length", destination.length())
+                    .putLong("${fingerprint}_modified", destination.lastModified())
+                    .apply()
                 clearSmokeTest()
                 destination
             } finally {
