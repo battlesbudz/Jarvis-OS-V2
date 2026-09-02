@@ -41,6 +41,8 @@ class ModelStore(context: Context) {
 
     fun smokeTestPassed(): Boolean = preferences.getBoolean("smoke_test_passed", false)
 
+    fun importInProgress(): Boolean = preferences.getBoolean("import_in_progress", false)
+
     fun markSmokeTestPassed() {
         preferences.edit().putBoolean("smoke_test_passed", true).apply()
     }
@@ -55,6 +57,7 @@ class ModelStore(context: Context) {
             // Create the temporary file inside runCatching so storage errors
             // are returned through the UI callback instead of escaping launch.
             val temporary = File.createTempFile("${spec.fileName}.", ".part", modelDirectory)
+            preferences.edit().putBoolean("import_in_progress", true).apply()
             try {
                 val selectedName = context.contentResolver.query(
                     uri,
@@ -84,6 +87,7 @@ class ModelStore(context: Context) {
                 clearSmokeTest()
                 destination
             } finally {
+                preferences.edit().putBoolean("import_in_progress", false).apply()
                 temporary.delete()
             }
         }
