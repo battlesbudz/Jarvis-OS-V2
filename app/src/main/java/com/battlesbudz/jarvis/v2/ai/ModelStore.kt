@@ -145,8 +145,8 @@ class ModelStore(context: Context) {
                     .putLong("${fingerprint}_length", destination.length())
                     .putLong("${fingerprint}_modified", destination.lastModified())
                     .putBoolean("${fingerprint}_invalid", false)
+                    .putBoolean("smoke_test_passed", false)
                     .apply()
-                clearSmokeTest()
                 destination
             } finally {
                 temporary.delete()
