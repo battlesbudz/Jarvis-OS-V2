@@ -18,6 +18,27 @@ class ModelStore(context: Context) {
     fun isReady(): Boolean =
         hasModel(ModelCatalog.gemma4E2b) && hasModel(ModelCatalog.mobileActions270m)
 
+    /**
+     * Verifies that the file is unchanged since it was accepted by setup.
+     * A first verification pins an imported file's SHA-256 so a later file
+     * replacement cannot silently pass the smoke test.
+     */
+    fun verifyIntegrity(spec: LocalModelSpec): Boolean {
+        val file = fileFor(spec)
+        if (!file.isFile || file.length() == 0L) return false
+        val actual = file.sha256()
+        spec.expectedSha256?.let { expected ->
+            if (!actual.equals(expected, ignoreCase = true)) return false
+        }
+        val key = fingerprintKey(spec)
+        val pinned = preferences.getString(key, null)
+        if (pinned == null) {
+            preferences.edit().putString(key, actual).apply()
+            return true
+        }
+        return actual.equals(pinned, ignoreCase = true)
+    }
+
     fun smokeTestPassed(): Boolean = preferences.getBoolean("smoke_test_passed", false)
 
     fun markSmokeTestPassed() {
@@ -51,12 +72,14 @@ class ModelStore(context: Context) {
                 temporary.outputStream().use { output -> input.copyTo(output) }
             } ?: error("Unable to open selected model file.")
             require(temporary.length() > 0L) { "The selected model file is empty." }
+            val actualSha256 = temporary.sha256()
             spec.expectedSha256?.let { expected ->
-                require(temporary.sha256().equals(expected, ignoreCase = true)) {
+                require(actualSha256.equals(expected, ignoreCase = true)) {
                     "The selected model failed integrity verification."
                 }
             }
             check(temporary.renameTo(destination)) { "Unable to finalize model file." }
+            preferences.edit().putString(fingerprintKey(spec), actualSha256).apply()
             clearSmokeTest()
             destination
         }.onFailure {
@@ -65,6 +88,9 @@ class ModelStore(context: Context) {
     }
 
     private val context: Context = context.applicationContext
+
+    private fun fingerprintKey(spec: LocalModelSpec): String =
+        "sha256_${spec.id}"
 
     private fun File.sha256(): String {
         val digest = MessageDigest.getInstance("SHA-256")
