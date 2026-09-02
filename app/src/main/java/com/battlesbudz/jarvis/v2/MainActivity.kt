@@ -39,6 +39,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : ComponentActivity() {
@@ -47,6 +49,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var modelStore: ModelStore
     private var conversationEngine: LiteRtLmEngine? = null
     private var conversationJob: Job? = null
@@ -79,15 +82,16 @@ class MainActivity : ComponentActivity() {
             val engine = conversationEngine
             conversationEngine = null
             if (engine != null) {
-                conversationJob?.invokeOnCompletion { engine.close() } ?: engine.close()
+                conversationJob?.invokeOnCompletion { cleanupScope.launch { engine.close() } }
+                    ?: cleanupScope.launch { engine.close() }
             }
         } else if (!engineWasRetained) {
             val engine = conversationEngine
             conversationEngine = null
             if (conversationJob?.isActive == true) {
-                conversationJob?.invokeOnCompletion { engine?.close() }
+                conversationJob?.invokeOnCompletion { cleanupScope.launch { engine?.close() } }
             } else {
-                engine?.close()
+                cleanupScope.launch { engine?.close() }
             }
         }
         super.onDestroy()
