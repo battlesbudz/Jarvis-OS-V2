@@ -44,9 +44,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var modelStore: ModelStore
     private var conversationEngine: LiteRtLmEngine? = null
 
+    override fun onRetainCustomNonConfigurationInstance(): Any? = conversationEngine
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         modelStore = ModelStore(applicationContext)
+        conversationEngine = lastCustomNonConfigurationInstance as? LiteRtLmEngine
         setContent {
             JarvisApp(
                 store = modelStore,
@@ -60,7 +63,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        conversationEngine?.close()
+        if (!isChangingConfigurations) conversationEngine?.close()
         conversationEngine = null
         super.onDestroy()
     }
