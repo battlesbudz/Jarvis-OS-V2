@@ -50,9 +50,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var modelStore: ModelStore
     private var conversationEngine: LiteRtLmEngine? = null
     private var conversationJob: Job? = null
+    private var engineWasRetained = false
 
-    override fun onRetainCustomNonConfigurationInstance(): Any? =
-        if (conversationJob?.isActive == true) null else conversationEngine
+    override fun onRetainCustomNonConfigurationInstance(): Any? {
+        engineWasRetained = conversationJob?.isActive != true
+        return if (engineWasRetained) conversationEngine else null
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,10 +81,14 @@ class MainActivity : ComponentActivity() {
             if (engine != null) {
                 conversationJob?.invokeOnCompletion { engine.close() } ?: engine.close()
             }
-        } else if (conversationJob?.isActive == true) {
+        } else if (!engineWasRetained) {
             val engine = conversationEngine
             conversationEngine = null
-            conversationJob?.invokeOnCompletion { engine?.close() }
+            if (conversationJob?.isActive == true) {
+                conversationJob?.invokeOnCompletion { engine?.close() }
+            } else {
+                engine?.close()
+            }
         }
         super.onDestroy()
     }
@@ -153,7 +160,7 @@ class MainActivity : ComponentActivity() {
         spec: com.battlesbudz.jarvis.v2.ai.LocalModelSpec,
         report: (String) -> Unit
     ) {
-        lifecycleScope.launch(Dispatchers.IO) {
+        val importJob = lifecycleScope.launch(Dispatchers.IO) {
             val result = modelStore.importModel(uri, spec)
             withContext(Dispatchers.Main) {
                 if (result.isSuccess && spec.id == ModelCatalog.gemma4E2b.id) {
@@ -167,6 +174,12 @@ class MainActivity : ComponentActivity() {
                         "Import failed: $message"
                     }
                 ))
+            }
+        }
+        if (spec.id == ModelCatalog.gemma4E2b.id) {
+            importJob.invokeOnCompletion {
+                conversationEngine?.close()
+                conversationEngine = null
             }
         }
     }
