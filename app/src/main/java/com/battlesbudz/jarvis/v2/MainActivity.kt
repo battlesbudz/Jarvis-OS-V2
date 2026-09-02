@@ -38,11 +38,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Job
 
 class MainActivity : ComponentActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var modelStore: ModelStore
     private var conversationEngine: LiteRtLmEngine? = null
+    private var conversationJob: Job? = null
 
     override fun onRetainCustomNonConfigurationInstance(): Any? = conversationEngine
 
@@ -63,8 +65,14 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        if (!isChangingConfigurations) conversationEngine?.close()
-        conversationEngine = null
+        if (!isChangingConfigurations) {
+            conversationJob?.cancel()
+            val engine = conversationEngine
+            conversationEngine = null
+            if (engine != null) {
+                conversationJob?.invokeOnCompletion { engine.close() } ?: engine.close()
+            }
+        }
         super.onDestroy()
     }
 
@@ -143,7 +151,7 @@ class MainActivity : ComponentActivity() {
         onToken: (String) -> Unit,
         onComplete: (String) -> Unit
     ) {
-        lifecycleScope.launch(Dispatchers.Default) {
+        conversationJob = lifecycleScope.launch(Dispatchers.Default) {
             var newlyCreatedEngine: LiteRtLmEngine? = null
             try {
                 check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
