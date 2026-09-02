@@ -134,7 +134,6 @@ class MainActivity : ComponentActivity() {
                 check(actionProbe.text.contains("read_battery", ignoreCase = true)) {
                     "The selected MobileActions file did not pass its capability probe."
                 }
-                modelStore.markSmokeTestPassed()
                 smokeTestSucceeded = true
             } catch (error: Throwable) {
                 mainHandler.post { report("Local model test failed: ${error.message ?: "unknown error"}") }
@@ -142,6 +141,7 @@ class MainActivity : ComponentActivity() {
                 actions?.close()
                 primary?.close()
                 if (smokeTestSucceeded) {
+                    modelStore.markSmokeTestPassed()
                     mainHandler.post { report("Both local models initialized successfully.") }
                 }
             }
@@ -154,6 +154,10 @@ class MainActivity : ComponentActivity() {
         spec: com.battlesbudz.jarvis.v2.ai.LocalModelSpec,
         report: (String) -> Unit
     ) {
+        if (activeSmokeTests.get() > 0) {
+            report("A model test is still finishing. Please wait before importing a model.")
+            return
+        }
         lifecycleScope.launch(Dispatchers.IO) {
             val result = modelStore.importModel(uri, spec)
             withContext(Dispatchers.Main) {
