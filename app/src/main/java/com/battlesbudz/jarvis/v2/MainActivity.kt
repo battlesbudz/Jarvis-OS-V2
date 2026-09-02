@@ -112,7 +112,7 @@ class MainActivity : ComponentActivity() {
             withContext(Dispatchers.Main) {
                 report(result.fold(
                     { "Model imported successfully." },
-                    { "Import failed: \${it.message ?: "unknown error"}" }
+                    { "Import failed: ${it.message ?: "unknown error"}" }
                 ))
             }
         }
@@ -229,12 +229,12 @@ private fun ModelSetup(
             "Choose the two local model files. They are stored privately on this phone.",
             Modifier.padding(top = 12.dp, bottom = 20.dp)
         )
-        Button(onClick = onPickGemma, Modifier.fillMaxWidth(), enabled = !testing && !importing) {
+        Button(onClick = onPickGemma, modifier = Modifier.fillMaxWidth(), enabled = !testing && !importing) {
             Text("Choose Gemma 4 E2B")
         }
         Button(
             onClick = onPickActions,
-            Modifier.fillMaxWidth().padding(top = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
             enabled = !testing && !importing
         ) {
             Text("Choose MobileActions")
@@ -243,7 +243,7 @@ private fun ModelSetup(
         Button(
             onClick = onTest,
             enabled = ready && !testing && !importing,
-            Modifier.fillMaxWidth().padding(top = 20.dp)
+            modifier = Modifier.fillMaxWidth().padding(top = 20.dp)
         ) {
             Text(if (testing) "Testing local models…" else "Test local models")
         }
@@ -287,10 +287,10 @@ private fun JarvisChat(
                 prompt = ""
                 response = ""
                 isSending = true
-                onSend(submitted, { response += it }, { response = it; isSending = false })
+                onSend(submitted, { token -> response = response + token }, { result -> response = result; isSending = false })
             },
             enabled = prompt.isNotBlank() && !isSending,
-            Modifier.fillMaxWidth().padding(top = 12.dp)
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
         ) {
             Text(if (isSending) "Thinking…" else "Send")
         }
