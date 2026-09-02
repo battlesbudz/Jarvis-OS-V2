@@ -15,9 +15,12 @@ accepts model paths from the future setup/model-delivery flow.
 
 ## User-visible acceptance test
 
-After merge, build and install the APK. It should open directly to a simple
+After merge, build and install the APK. On a clean install it opens a guided
+model setup screen so the two user-supplied `.litertlm` files can be imported
+privately. After both files pass the local smoke test, the app opens a simple
 black-box Jarvis chat screen with no model names, implementation details, or
-settings exposed in the main experience.
+settings exposed in the main experience. Returning users go directly to that
+chat screen while their verified local models remain available.
 
 ## Automated acceptance tests
 
@@ -43,7 +46,7 @@ settings exposed in the main experience.
 
 ## Deliberately deferred
 
-Model download/setup UI, model-specific MobileActions tool-schema decoding,
+Model download delivery, model-specific MobileActions tool-schema decoding,
 full assistant-session wiring, speech and Kokoro, wake-word detection, EYE VUE,
 Bluetooth, memory persistence, and broader real Android action coverage will be
 separate focused PRs. The battery and volume executor is present as a safe
