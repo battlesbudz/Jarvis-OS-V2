@@ -44,7 +44,6 @@ import java.util.concurrent.atomic.AtomicInteger
 class MainActivity : ComponentActivity() {
     private companion object {
         val activeConversationJobs = AtomicInteger(0)
-        val activeSmokeTests = AtomicInteger(0)
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -88,7 +87,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun runModelSmokeTest(report: (String) -> Unit) {
-        if (!activeSmokeTests.compareAndSet(0, 1)) {
+        if (!modelStore.tryBeginModelOperation()) {
             report("A model test is still finishing. Please try again in a moment.")
             return
         }
@@ -146,7 +145,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        smokeTestJob.invokeOnCompletion { activeSmokeTests.decrementAndGet() }
+        smokeTestJob.invokeOnCompletion { modelStore.endModelOperation() }
     }
 
     private fun importModel(
@@ -154,10 +153,6 @@ class MainActivity : ComponentActivity() {
         spec: com.battlesbudz.jarvis.v2.ai.LocalModelSpec,
         report: (String) -> Unit
     ) {
-        if (activeSmokeTests.get() > 0) {
-            report("A model test is still finishing. Please wait before importing a model.")
-            return
-        }
         lifecycleScope.launch(Dispatchers.IO) {
             val result = modelStore.importModel(uri, spec)
             withContext(Dispatchers.Main) {
@@ -242,7 +237,7 @@ private fun JarvisApp(
     // rotation/fold changes. Keep the replacement screen synchronized with
     // the durable files even when the old callback was cancelled.
     LaunchedEffect(Unit) {
-        while (!modelsReady || modelImportRunning || !smokeTestPassed) {
+        while (true) {
             delay(500)
             modelsReady = store.isUsable()
             modelImportRunning = store.importInProgress()
