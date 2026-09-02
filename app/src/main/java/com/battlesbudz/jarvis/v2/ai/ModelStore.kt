@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger
 class ModelStore(context: Context) {
     private companion object {
         val activeImports = AtomicInteger(0)
+        val activeModelOperation = AtomicInteger(0)
     }
 
     private val preferences = context.getSharedPreferences("model_setup", Context.MODE_PRIVATE)
@@ -85,6 +86,12 @@ class ModelStore(context: Context) {
 
     fun importInProgress(): Boolean = preferences.getBoolean("import_in_progress", false)
 
+    fun tryBeginModelOperation(): Boolean = activeModelOperation.compareAndSet(0, 1)
+
+    fun endModelOperation() {
+        activeModelOperation.set(0)
+    }
+
     fun markSmokeTestPassed() {
         preferences.edit().putBoolean("smoke_test_passed", true).apply()
     }
@@ -98,7 +105,13 @@ class ModelStore(context: Context) {
         return runCatching {
             // Create the temporary file inside runCatching so storage errors
             // are returned through the UI callback instead of escaping launch.
-            val temporary = File.createTempFile("${spec.fileName}.", ".part", modelDirectory)
+            check(tryBeginModelOperation()) { "Another model operation is still running." }
+            val temporary = try {
+                File.createTempFile("${spec.fileName}.", ".part", modelDirectory)
+            } catch (error: Throwable) {
+                endModelOperation()
+                throw error
+            }
             activeImports.incrementAndGet()
             preferences.edit().putBoolean("import_in_progress", true).apply()
             try {
@@ -140,6 +153,7 @@ class ModelStore(context: Context) {
                 if (activeImports.decrementAndGet() == 0) {
                     preferences.edit().putBoolean("import_in_progress", false).apply()
                 }
+                endModelOperation()
             }
         }
     }
