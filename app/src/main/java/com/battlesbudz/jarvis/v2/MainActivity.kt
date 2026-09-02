@@ -196,9 +196,9 @@ class MainActivity : ComponentActivity() {
                 if (newlyCreatedEngine != null && conversationEngine !== newlyCreatedEngine) {
                     newlyCreatedEngine?.close()
                 }
-                activeConversationJobs.decrementAndGet()
             }
         }
+        conversationJob?.invokeOnCompletion { activeConversationJobs.decrementAndGet() }
     }
 
 }
@@ -210,8 +210,8 @@ private fun JarvisApp(
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
     onSend: (String, (String) -> Unit, (String) -> Unit) -> Unit
 ) {
-    var modelsReady by remember { mutableStateOf(store.isReady()) }
-    var smokeTestPassed by rememberSaveable { mutableStateOf(store.isReady() && store.smokeTestPassed()) }
+    var modelsReady by remember { mutableStateOf(store.isUsable()) }
+    var smokeTestPassed by rememberSaveable { mutableStateOf(store.isUsable() && store.smokeTestPassed()) }
     var setupStatus by rememberSaveable { mutableStateOf("") }
     var smokeTestRunning by remember { mutableStateOf(false) }
     var modelImportRunning by remember { mutableStateOf(store.importInProgress()) }
@@ -222,7 +222,7 @@ private fun JarvisApp(
     LaunchedEffect(Unit) {
         while (!modelsReady || modelImportRunning || !smokeTestPassed) {
             delay(500)
-            modelsReady = store.isReady()
+            modelsReady = store.isUsable()
             modelImportRunning = store.importInProgress()
             smokeTestPassed = modelsReady && store.smokeTestPassed()
         }
@@ -235,7 +235,7 @@ private fun JarvisApp(
             onImportModel(uri, spec) { result ->
                 modelImportRunning = false
                 setupStatus = result
-                if (result == "Model imported successfully.") modelsReady = store.isReady()
+                if (result == "Model imported successfully.") modelsReady = store.isUsable()
             }
         }
     }
