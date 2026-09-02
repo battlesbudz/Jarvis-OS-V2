@@ -39,14 +39,20 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
+import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : ComponentActivity() {
+    private companion object {
+        val activeConversationJobs = AtomicInteger(0)
+    }
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var modelStore: ModelStore
     private var conversationEngine: LiteRtLmEngine? = null
     private var conversationJob: Job? = null
 
-    override fun onRetainCustomNonConfigurationInstance(): Any? = conversationEngine
+    override fun onRetainCustomNonConfigurationInstance(): Any? =
+        if (conversationJob?.isActive == true) null else conversationEngine
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,6 +78,10 @@ class MainActivity : ComponentActivity() {
             if (engine != null) {
                 conversationJob?.invokeOnCompletion { engine.close() } ?: engine.close()
             }
+        } else if (conversationJob?.isActive == true) {
+            val engine = conversationEngine
+            conversationEngine = null
+            conversationJob?.invokeOnCompletion { engine?.close() }
         }
         super.onDestroy()
     }
@@ -151,6 +161,10 @@ class MainActivity : ComponentActivity() {
         onToken: (String) -> Unit,
         onComplete: (String) -> Unit
     ) {
+        if (!activeConversationJobs.compareAndSet(0, 1)) {
+            onComplete("The previous response is still finishing. Please try again in a moment.")
+            return
+        }
         conversationJob = lifecycleScope.launch(Dispatchers.Default) {
             var newlyCreatedEngine: LiteRtLmEngine? = null
             try {
@@ -182,6 +196,7 @@ class MainActivity : ComponentActivity() {
                 if (newlyCreatedEngine != null && conversationEngine !== newlyCreatedEngine) {
                     newlyCreatedEngine?.close()
                 }
+                activeConversationJobs.decrementAndGet()
             }
         }
     }
