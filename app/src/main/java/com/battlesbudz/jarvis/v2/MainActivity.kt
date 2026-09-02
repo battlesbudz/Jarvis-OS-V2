@@ -22,6 +22,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -233,3 +234,17 @@ private fun ModelSetup(
     status: String,
     onPickGemma: () -> Unit,
     onPickActions: () -> Unit,
+    onTest: () -> Unit
+) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("Jarvis setup", style = MaterialTheme.typography.headlineMedium)
+        Text(
+            "Choose the two local model files. They are stored privately on this phone.",
+            Modifier.padding(top = 12.dp, bottom = 20.dp)
