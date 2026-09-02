@@ -44,6 +44,7 @@ import java.util.concurrent.atomic.AtomicInteger
 class MainActivity : ComponentActivity() {
     private companion object {
         val activeConversationJobs = AtomicInteger(0)
+        val activeSmokeTests = AtomicInteger(0)
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -87,7 +88,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun runModelSmokeTest(report: (String) -> Unit) {
-        lifecycleScope.launch(Dispatchers.Default) {
+        if (!activeSmokeTests.compareAndSet(0, 1)) {
+            report("A model test is still finishing. Please try again in a moment.")
+            return
+        }
+        val smokeTestJob = lifecycleScope.launch(Dispatchers.Default) {
             mainHandler.post { report("Loading local models…") }
             var primary: LiteRtLmEngine? = null
             var actions: LiteRtLmEngine? = null
@@ -135,6 +140,7 @@ class MainActivity : ComponentActivity() {
                 primary?.close()
             }
         }
+        smokeTestJob.invokeOnCompletion { activeSmokeTests.decrementAndGet() }
     }
 
     private fun importModel(
