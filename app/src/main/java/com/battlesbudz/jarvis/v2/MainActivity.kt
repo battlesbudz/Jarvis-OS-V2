@@ -59,44 +59,14 @@ class MainActivity : ComponentActivity() {
     private var conversationJob: Job? = null
     private var engineWasRetained = false
 
-    override fun onRetainCustomNonConfigurationInstance(): Any? {
-        engineWasRetained = conversationJob?.isActive != true && !modelStore.isModelOperationActive()
-        return if (engineWasRetained) conversationEngine else null
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        modelStore = ModelStore(applicationContext)
-        conversationEngine = lastCustomNonConfigurationInstance as? LiteRtLmEngine
-        setContent {
-            JarvisApp(
-                store = modelStore,
-                onRunModelSmokeTest = { runModelSmokeTest(it) },
-                onImportModel = { uri, spec, report -> importModel(uri, spec, report) },
-                onSend = { prompt, onToken, onComplete ->
-                    runConversation(prompt, onToken, onComplete)
-                }
-            )
-        }
-    }
-
     override fun onDestroy() {
-        if (!isChangingConfigurations) {
-            conversationJob?.cancel()
-            val engine = conversationEngine
-            conversationEngine = null
-            if (engine != null) {
-                conversationJob?.invokeOnCompletion { cleanupScope.launch { engine.close() } }
-                    ?: cleanupScope.launch { engine.close() }
-            }
-        } else if (!engineWasRetained) {
-            val engine = conversationEngine
-            conversationEngine = null
-            if (conversationJob?.isActive == true) {
-                conversationJob?.invokeOnCompletion { cleanupScope.launch { engine?.close() } }
-            } else {
-                cleanupScope.launch { engine?.close() }
-            }
+        conversationJob?.cancel()
+        val engine = conversationEngine
+        conversationEngine = null
+        if (engine != null) {
+            conversationJob?.invokeOnCompletion {
+                cleanupScope.launch { engine.close() }
+            } ?: cleanupScope.launch { engine.close() }
         }
         super.onDestroy()
     }
@@ -141,7 +111,7 @@ class MainActivity : ComponentActivity() {
                     "Reply with exactly GEMMA_PR1_OK and nothing else.",
                     onToken = {}
                 )
-                check(primaryProbe.text.contains("GEMMA_PR1_OK", ignoreCase = true)) {
+                check(primaryProbe.text.trim() == "GEMMA_PR1_OK") {
                     "The selected Gemma file did not pass its identity probe."
                 }
                 val actionCalls = actions.generateToolCalls(
