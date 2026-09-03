@@ -51,7 +51,11 @@ class MobileActionValidator {
     private fun parseVolumeLevel(raw: String): Int? {
         val value = raw.trim().removeSuffix("%").trim().toDoubleOrNull() ?: return null
         // Some FunctionGemma outputs scale a percentage by 100 (50% -> 5000).
-        val percent = if (value > 100.0 && value <= 10000.0) value / 100.0 else value
+        val percent = if (
+            value >= 1000.0 &&
+            value <= 10000.0 &&
+            value % 100.0 == 0.0
+        ) value / 100.0 else value
         return percent.takeIf { it in 0.0..100.0 }?.let { round(it).toInt() }
     }
 }
