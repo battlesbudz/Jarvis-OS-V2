@@ -196,7 +196,7 @@ class MainActivity : ComponentActivity() {
                 ""
             )
             .trim()
-        return cleaned.ifBlank { "I couldn't complete that phone action." }
+        return cleaned
     }
 
     private fun fallbackToolCall(prompt: String): com.battlesbudz.jarvis.v2.ai.ToolCall? {
@@ -309,6 +309,8 @@ class MainActivity : ComponentActivity() {
                 // into the ongoing Gemma conversation so Gemma can explain
                 // what happened and preserve conversational context.
                 var actionResultForGemma: String? = null
+                var actionResultMessage: String? = null
+                var actionSucceeded = false
                 var actionEngine: LiteRtLmEngine? = null
                 try {
                     actionEngine = LiteRtLmEngine(
@@ -327,6 +329,8 @@ class MainActivity : ComponentActivity() {
                             val result = MobileActionPipeline(
                                 executor = AndroidMobileActionExecutor(applicationContext)
                             ).execute(request)
+                            actionResultMessage = result.message
+                            actionSucceeded = result.succeeded
                             actionResultForGemma = buildToolResultContext(
                                 userPrompt = prompt,
                                 toolName = selectedCall.name,
@@ -364,7 +368,18 @@ class MainActivity : ComponentActivity() {
                     prompt = buildGemmaPrompt(prompt, actionResultForGemma, history),
                     onToken = streamFilter::accept
                 )
-                mainHandler.post { onComplete(cleanAssistantText(generated.text)) }
+                val rawControlOutput = generated.text.contains("tool_call>") ||
+                    generated.text.contains("start_function_call") ||
+                    generated.text.contains("call:MobileActions:")
+                if (rawControlOutput) {
+                    // Do not carry protocol text into the next turn.
+                    engine.resetConversation()
+                }
+                val cleanedResponse = cleanAssistantText(generated.text)
+                val finalResponse = cleanedResponse.ifBlank {
+                    actionResultMessage ?: "I couldn't complete that phone action."
+                }
+                mainHandler.post { onComplete(finalResponse) }
             } catch (error: Throwable) {
                 mainHandler.post { onComplete("I could not load the local model: ${error.message ?: "unknown error"}") }
             } finally {
