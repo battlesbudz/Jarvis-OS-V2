@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
+import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
 import com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor
 import com.battlesbudz.jarvis.v2.actions.FunctionGemmaActionDecoder
 import com.battlesbudz.jarvis.v2.actions.MobileActionPipeline
@@ -333,12 +334,12 @@ class MainActivity : ComponentActivity() {
                 } else {
                     engine = conversationEngine!!
                 }
-                // Hold the assistant output until generation completes. This keeps
-                // partially emitted model control tokens from ever becoming visible
-                // chat text; the transcript is still updated as one complete message.
+                val streamFilter = AssistantStreamFilter { safeText ->
+                    mainHandler.post { onToken(safeText) }
+                }
                 val generated = engine.generate(
                     prompt = buildGemmaPrompt(prompt, actionResultForGemma),
-                    onToken = {}
+                    onToken = streamFilter::accept
                 )
                 mainHandler.post { onComplete(cleanAssistantText(generated.text)) }
             } catch (error: Throwable) {
