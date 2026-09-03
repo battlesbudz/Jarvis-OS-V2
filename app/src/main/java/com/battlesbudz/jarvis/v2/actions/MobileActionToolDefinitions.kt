@@ -17,7 +17,7 @@ object MobileActionToolDefinitions {
         override fun getToolDescriptionJsonString(): String = """
             {
               "name": "read_battery",
-              "description": "Read the phone battery percentage.",
+              "description": "Read the phone battery percentage, charge level, and current battery status. Use this when the user asks how much battery the phone has or what the battery percentage is.",
               "parameters": {
                 "type": "object",
                 "properties": {},
