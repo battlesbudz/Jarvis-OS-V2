@@ -30,9 +30,8 @@ class LiteRtLmEngine(
     private var conversation: com.google.ai.edge.litertlm.Conversation? = null
     private val closed = AtomicBoolean(false)
 
-    suspend fun initialize() {
-        engine.initialize()
-        conversation = if (tools.isEmpty()) {
+    private fun createConversation() =
+        if (tools.isEmpty()) {
             engine.createConversation()
         } else {
             engine.createConversation(
@@ -42,6 +41,15 @@ class LiteRtLmEngine(
                 )
             )
         }
+
+    suspend fun initialize() {
+        engine.initialize()
+        conversation = createConversation()
+    }
+
+    suspend fun resetConversation() {
+        conversation?.close()
+        conversation = createConversation()
     }
 
     /**
