@@ -129,7 +129,8 @@ class MainActivity : ComponentActivity() {
                     "The selected Gemma file did not pass its identity probe."
                 }
                 val actionCalls = actions.generateToolCalls(
-                    "What is my battery level?"
+                    "Use the read_battery function now. Do not answer in natural language. " +
+                        "The user asks: What is my battery level?"
                 )
                 check(actionCalls.any { it.name == "read_battery" }) {
                     "The MobileActions model did not return a read_battery tool call."
