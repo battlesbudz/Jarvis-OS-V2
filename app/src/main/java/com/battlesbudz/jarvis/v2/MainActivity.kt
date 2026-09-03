@@ -57,6 +57,7 @@ import java.util.Collections
 class MainActivity : ComponentActivity() {
     private companion object {
         val activeConversationJobs = AtomicInteger(0)
+        const val SHORT_TERM_SUMMARY_KEY = "short_term_summary"
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -70,6 +71,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         modelStore = ModelStore(applicationContext)
+        shortTermContext.restoreSummary(savedInstanceState?.getString(SHORT_TERM_SUMMARY_KEY))
         setContent {
             JarvisApp(
                 store = modelStore,
@@ -81,6 +83,11 @@ class MainActivity : ComponentActivity() {
                 }
             )
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
+        super.onSaveInstanceState(outState)
     }
 
     private val diagnosticTurns = Collections.synchronizedList(mutableListOf<String>())
@@ -235,8 +242,7 @@ class MainActivity : ComponentActivity() {
                 Regex("""(?s)<start_function_call>.*?(?:<end_function_call>|$)"""),
                 ""
             )
-            .replace("<|tool_call|>", "")
-            .replace("<end_function_call>", "")
+            .replace(Regex("""(?i)<\|tool_call\|>|<end_function_call>|<\|end_function_call\|>"""), "")
             .trim()
         return cleaned
     }
@@ -281,12 +287,14 @@ class MainActivity : ComponentActivity() {
     private fun buildGemmaPrompt(
         userPrompt: String,
         actionResultContext: String?,
-        history: List<ChatEntry>
+        history: List<ChatEntry>,
+        seedContext: Boolean
     ): String {
         val actionContext = actionResultContext?.let { "\n\n$it" }.orEmpty()
-        val sessionContext = shortTermContext.promptContext(
-            history.map { it.role to it.text }
-        ).takeIf { it.isNotBlank() }?.let { "\n\n$it" }.orEmpty()
+        val sessionContext = if (seedContext) {
+            shortTermContext.promptContext(history.map { it.role to it.text })
+                .takeIf { it.isNotBlank() }?.let { "\n\n$it" }.orEmpty()
+        } else ""
         return """
             You are Jarvis, a private local assistant. You have a separate
             MobileActions tool layer that can perform these validated phone
@@ -360,10 +368,9 @@ class MainActivity : ComponentActivity() {
                     actionEngine.initialize()
             val deterministicCall = fallbackToolCall(prompt)
             val calls = if (deterministicCall == null) {
-                val routingHistory = history.takeLast(12)
-                    .joinToString("\n") { "${it.role}: ${it.text}" }
                 actionEngine.generateToolCalls(
-                    "Prior visible conversation:\n$routingHistory\n\nCurrent user request:\n$prompt"
+                    "${shortTermContext.promptContext(history.map { it.role to it.text })}\n\n" +
+                        "Current user request:\n$prompt"
                 )
             } else emptyList()
                     val selectedCall = deterministicCall ?: calls.singleOrNull()
@@ -430,8 +437,9 @@ class MainActivity : ComponentActivity() {
                 val streamFilter = AssistantStreamFilter { safeText ->
                     mainHandler.post { onToken(safeText) }
                 }
+                val seedContext = conversationCharacters == 0
                 val generated = engine.generate(
-                    prompt = buildGemmaPrompt(prompt, actionResultForGemma, history),
+                    prompt = buildGemmaPrompt(prompt, actionResultForGemma, history, seedContext),
                     onToken = streamFilter::accept
                 )
                 val rawControlOutput = generated.text.contains("tool_call>") ||

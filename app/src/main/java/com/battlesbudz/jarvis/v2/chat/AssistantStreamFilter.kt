@@ -24,9 +24,8 @@ class AssistantStreamFilter(
         pending.append(chunk)
         val candidate = pending.toString()
         val trimmed = candidate.trimStart()
-        val isControl = trimmed.contains("tool_call>") ||
-            trimmed.contains("start_function_call") ||
-            trimmed.contains("call:MobileActions:")
+        val isControl = Regex("""(?i)(tool_call|function_call|call:MobileActions:)""")
+            .containsMatchIn(trimmed)
         if (isControl) {
             suppressControl = true
             pending.clear()
@@ -37,7 +36,7 @@ class AssistantStreamFilter(
 
         // Normal prose is emitted as soon as its first token is available.
         // A leading '<' is held briefly because it may begin model markup.
-        if (!trimmed.startsWith("<") || pending.length >= 48) {
+        if (!trimmed.startsWith("<") || pending.length >= 256) {
             decided = true
             emit(pending.toString())
             pending.clear()
