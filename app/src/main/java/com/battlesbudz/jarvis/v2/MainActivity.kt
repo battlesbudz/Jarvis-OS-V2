@@ -310,7 +310,6 @@ class MainActivity : ComponentActivity() {
                 // what happened and preserve conversational context.
                 var actionResultForGemma: String? = null
                 var actionResultMessage: String? = null
-                var actionSucceeded = false
                 var actionEngine: LiteRtLmEngine? = null
                 try {
                     actionEngine = LiteRtLmEngine(
@@ -330,7 +329,6 @@ class MainActivity : ComponentActivity() {
                                 executor = AndroidMobileActionExecutor(applicationContext)
                             ).execute(request)
                             actionResultMessage = result.message
-                            actionSucceeded = result.succeeded
                             actionResultForGemma = buildToolResultContext(
                                 userPrompt = prompt,
                                 toolName = selectedCall.name,
@@ -376,8 +374,11 @@ class MainActivity : ComponentActivity() {
                     engine.resetConversation()
                 }
                 val cleanedResponse = cleanAssistantText(generated.text)
-                val finalResponse = cleanedResponse.ifBlank {
-                    actionResultMessage ?: "I couldn't complete that phone action."
+                // Android's typed result is authoritative. Gemma is used to
+                // explain it, but must never replace a verified success (or
+                // failure) with a stale apology or hallucinated outcome.
+                val finalResponse = actionResultMessage ?: cleanedResponse.ifBlank {
+                    "I couldn't complete that phone action."
                 }
                 mainHandler.post { onComplete(finalResponse) }
             } catch (error: Throwable) {
