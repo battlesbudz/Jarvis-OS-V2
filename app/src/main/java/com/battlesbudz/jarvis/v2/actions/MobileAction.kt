@@ -40,10 +40,16 @@ class MobileActionValidator {
                 )
             }
         }
-        "set_volume" -> request.arguments["level"]?.toIntOrNull()
-            ?.takeIf { it in 0..100 }
+        "set_volume" -> parseVolumeLevel(request.arguments["level"].orEmpty())
             ?.let { ActionValidation.Valid(MobileAction.SetVolume(it)) }
-            ?: ActionValidation.Rejected("Volume must be an integer from 0 to 100.")
+            ?: ActionValidation.Rejected("Volume must be a percentage from 0 to 100.")
         else -> ActionValidation.Rejected("Unsupported action: ${request.name}")
+    }
+
+    private fun parseVolumeLevel(raw: String): Int? {
+        val value = raw.trim().removeSuffix("%").trim().toDoubleOrNull() ?: return null
+        // Some FunctionGemma outputs scale a percentage by 100 (50% -> 5000).
+        val percent = if (value > 100.0 && value <= 10000.0) value / 100.0 else value
+        return percent.takeIf { it in 0.0..100.0 }?.let { round(it).toInt() }
     }
 }
