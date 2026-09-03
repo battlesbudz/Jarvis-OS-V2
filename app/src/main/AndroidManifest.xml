@@ -10,7 +10,7 @@
     <application
         android:theme="@style/Theme.JarvisOSV2"
         android:label="Jarvis OS V2"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:fullBackupContent="@xml/backup_rules_legacy"
         android:dataExtractionRules="@xml/backup_rules"
         android:supportsRtl="true">

@@ -29,7 +29,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -79,6 +78,12 @@ class MainActivity : ComponentActivity() {
             savedInstanceState?.getString(SHORT_TERM_SUMMARY_KEY)
                 ?: sessionPreferences.getString(SHORT_TERM_SUMMARY_KEY, null)
         )
+        synchronized(diagnosticTurns) {
+            sessionPreferences.getString("diagnostics", "")
+                ?.split("\n\n")
+                ?.filter { it.isNotBlank() }
+                ?.let { diagnosticTurns.addAll(it.takeLast(20)) }
+        }
         setContent {
             JarvisApp(
                 store = modelStore,
@@ -124,8 +129,8 @@ class MainActivity : ComponentActivity() {
 
     private fun persistTranscript(messages: List<ChatEntry>) {
         val array = JSONArray()
-        messages.takeLast(80).forEach { message ->
-            array.put(JSONObject().put("role", message.role).put("text", message.text))
+        messages.takeLast(40).forEach { message ->
+            array.put(JSONObject().put("role", message.role).put("text", message.text.take(4_000)))
         }
         sessionPreferences.edit().putString("transcript", array.toString()).apply()
     }
@@ -668,14 +673,6 @@ private data class ChatEntry(
     val text: String
 )
 
-private fun boundTranscript(messages: List<ChatEntry>): List<ChatEntry> =
-    messages.takeLast(40).map { it.copy(text = it.text.take(4_000)) }
-
-private val chatEntriesSaver = listSaver<List<ChatEntry>, String>(
-    save = { entries -> entries.takeLast(12).flatMap { listOf(it.role, it.text.take(2_000)) } },
-    restore = { values -> values.chunked(2).map { ChatEntry(it[0], it[1]) } }
-)
-
 @Composable
 private fun JarvisChat(
     onSend: (String, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit,
@@ -685,7 +682,7 @@ private fun JarvisChat(
     initialMessages: List<ChatEntry>
 ) {
     var prompt by rememberSaveable { mutableStateOf("") }
-    var messages by rememberSaveable(stateSaver = chatEntriesSaver) {
+    var messages by remember {
         mutableStateOf(initialMessages)
     }
     var isSending by remember { mutableStateOf(false) }
@@ -736,9 +733,7 @@ private fun JarvisChat(
                 val submitted = prompt.trim()
                 prompt = ""
                 isSending = true
-                val updatedMessages = boundTranscript(
-                    messages + ChatEntry("You", submitted) + ChatEntry("Jarvis", "")
-                )
+                val updatedMessages = messages + ChatEntry("You", submitted) + ChatEntry("Jarvis", "")
                 messages = updatedMessages
                 onMessagesChanged(updatedMessages)
                 onSendingChanged(true)
@@ -746,13 +741,11 @@ private fun JarvisChat(
                     submitted,
                     messages.dropLast(2),
                     { token ->
-                        messages = boundTranscript(
-                            messages.dropLast(1) +
-                                ChatEntry("Jarvis", messages.lastOrNull()?.text.orEmpty() + token)
-                        )
+                        messages = messages.dropLast(1) +
+                            ChatEntry("Jarvis", messages.lastOrNull()?.text.orEmpty() + token)
                     },
                     { result ->
-                        messages = boundTranscript(messages.dropLast(1) + ChatEntry("Jarvis", result))
+                        messages = messages.dropLast(1) + ChatEntry("Jarvis", result)
                         onMessagesChanged(messages)
                         onSendingChanged(false)
                         isSending = false
