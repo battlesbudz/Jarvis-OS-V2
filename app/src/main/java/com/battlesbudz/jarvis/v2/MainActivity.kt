@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
     private companion object {
         val activeConversationJobs = AtomicInteger(0)
         const val SHORT_TERM_SUMMARY_KEY = "short_term_summary"
+        const val INTERRUPTED_RESPONSE = "The previous response was interrupted. Please send that again."
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -110,6 +111,11 @@ class MainActivity : ComponentActivity() {
             val item = array.getJSONObject(index)
             ChatEntry(item.getString("role"), item.getString("text"))
         }
+            .mapIndexed { index, entry ->
+                if (index == array.length() - 1 && entry.role == "Jarvis" && entry.text.isBlank()) {
+                    entry.copy(text = INTERRUPTED_RESPONSE)
+                } else entry
+            }
     }.getOrDefault(emptyList())
 
     private fun persistTranscript(messages: List<ChatEntry>) {
@@ -487,7 +493,9 @@ class MainActivity : ComponentActivity() {
                     conversationCharacters = 0
                 }
                 val cleanedResponse = cleanAssistantText(generated.text)
-                conversationCharacters += prompt.length + generated.text.length
+                if (!rawControlOutput) {
+                    conversationCharacters += prompt.length + generated.text.length
+                }
                 val previousAssistant = history.asReversed()
                     .firstOrNull { it.role == "Jarvis" }
                     ?.text?.trim()
@@ -655,6 +663,9 @@ private data class ChatEntry(
     val text: String
 )
 
+private fun boundTranscript(messages: List<ChatEntry>): List<ChatEntry> =
+    messages.takeLast(40).map { it.copy(text = it.text.take(4_000)) }
+
 private val chatEntriesSaver = listSaver<List<ChatEntry>, String>(
     save = { entries -> entries.flatMap { listOf(it.role, it.text) } },
     restore = { values -> values.chunked(2).map { ChatEntry(it[0], it[1]) } }
@@ -719,18 +730,22 @@ private fun JarvisChat(
                 val submitted = prompt.trim()
                 prompt = ""
                 isSending = true
-                val updatedMessages = messages + ChatEntry("You", submitted) + ChatEntry("Jarvis", "")
+                val updatedMessages = boundTranscript(
+                    messages + ChatEntry("You", submitted) + ChatEntry("Jarvis", "")
+                )
                 messages = updatedMessages
                 onMessagesChanged(updatedMessages)
                 onSend(
                     submitted,
                     messages.dropLast(2),
                     { token ->
-                        messages = messages.dropLast(1) +
-                            ChatEntry("Jarvis", messages.lastOrNull()?.text.orEmpty() + token)
+                        messages = boundTranscript(
+                            messages.dropLast(1) +
+                                ChatEntry("Jarvis", messages.lastOrNull()?.text.orEmpty() + token)
+                        )
                     },
                     { result ->
-                        messages = messages.dropLast(1) + ChatEntry("Jarvis", result)
+                        messages = boundTranscript(messages.dropLast(1) + ChatEntry("Jarvis", result))
                         onMessagesChanged(messages)
                         isSending = false
                     }
