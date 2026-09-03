@@ -8,7 +8,7 @@ boundary for the two confirmed models:
 - Gemma 4 E2B is the primary conversational model.
 - FunctionGemma MobileActions-270M is the fast local action router.
 - LiteRT-LM is the Android inference runtime.
-- Kotlin owns typed action validation and eventual Android execution.
+- Kotlin owns typed action validation and Android execution.
 
 Model binaries are intentionally not committed to the repository. The app
 accepts model paths from the future setup/model-delivery flow.
