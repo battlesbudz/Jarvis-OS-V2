@@ -424,29 +424,45 @@ private fun ModelSetup(
     }
 }
 
+private data class ChatEntry(
+    val role: String,
+    val text: String
+)
+
 @Composable
 private fun JarvisChat(
     onSend: (String, (String) -> Unit, (String) -> Unit) -> Unit
 ) {
     var prompt by rememberSaveable { mutableStateOf("") }
-    var response by rememberSaveable { mutableStateOf("") }
-    // Sending is tied to the current Activity's lifecycle job. Do not restore
-    // it across recreation after that job has been cancelled.
+    var messages by remember { mutableStateOf(emptyList<ChatEntry>()) }
     var isSending by remember { mutableStateOf(false) }
 
     Column(
         Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
         verticalArrangement = Arrangement.Bottom
     ) {
-        if (response.isNotBlank()) {
-            Text(
-                response,
+        if (messages.isNotEmpty()) {
+            Column(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(bottom = 20.dp)
-            )
+                    .padding(bottom = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                messages.forEach { message ->
+                    Column(Modifier.fillMaxWidth()) {
+                        Text(
+                            message.role,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        Text(
+                            message.text.ifBlank { "…" },
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+            }
         }
         OutlinedTextField(
             value = prompt,
@@ -457,11 +473,21 @@ private fun JarvisChat(
         )
         Button(
             onClick = {
-                val submitted = prompt
+                val submitted = prompt.trim()
                 prompt = ""
-                response = ""
                 isSending = true
-                onSend(submitted, { token -> response = response + token }, { result -> response = result; isSending = false })
+                messages = messages + ChatEntry("You", submitted) + ChatEntry("Jarvis", "")
+                onSend(
+                    submitted,
+                    { token ->
+                        messages = messages.dropLast(1) +
+                            ChatEntry("Jarvis", messages.lastOrNull()?.text.orEmpty() + token)
+                    },
+                    { result ->
+                        messages = messages.dropLast(1) + ChatEntry("Jarvis", result)
+                        isSending = false
+                    }
+                )
             },
             enabled = prompt.isNotBlank() && !isSending,
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
