@@ -21,7 +21,10 @@ object FunctionGemmaActionDecoder {
             "read_battery" -> ActionRequest(call.name)
             "open_app" -> ActionRequest(
                 name = call.name,
-                arguments = mapOf("package" to args.optString("package"))
+                arguments = buildMap {
+                    args.optString("app").takeIf { it.isNotBlank() }?.let { put("app", it) }
+                    args.optString("package").takeIf { it.isNotBlank() }?.let { put("package", it) }
+                }
             )
             "set_volume" -> ActionRequest(
                 name = call.name,
