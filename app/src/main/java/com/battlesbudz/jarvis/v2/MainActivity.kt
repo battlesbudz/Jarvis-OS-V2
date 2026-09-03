@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var modelStore: ModelStore
     private var conversationEngine: LiteRtLmEngine? = null
     private var conversationJob: Job? = null
+    private var conversationCharacters = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -102,6 +103,7 @@ class MainActivity : ComponentActivity() {
                 if (!modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
                     conversationEngine?.close()
                     conversationEngine = null
+                    conversationCharacters = 0
                     error("The Gemma model file changed or failed integrity verification. Re-import it.")
                 }
                 check(modelStore.verifyIntegrity(ModelCatalog.mobileActions270m)) {
@@ -359,6 +361,14 @@ class MainActivity : ComponentActivity() {
                 } else {
                     engine = conversationEngine!!
                 }
+                // Keep the retained conversation below the model's practical
+                // context budget. The visible transcript remains available in
+                // the UI, while the runtime starts a clean model session
+                // before stale fragments can contaminate later turns.
+                if (conversationCharacters > 18_000) {
+                    engine.resetConversation()
+                    conversationCharacters = 0
+                }
                 val streamFilter = AssistantStreamFilter { safeText ->
                     mainHandler.post { onToken(safeText) }
                 }
@@ -372,12 +382,25 @@ class MainActivity : ComponentActivity() {
                 if (rawControlOutput) {
                     // Do not carry protocol text into the next turn.
                     engine.resetConversation()
+                    conversationCharacters = 0
                 }
                 val cleanedResponse = cleanAssistantText(generated.text)
+                conversationCharacters += prompt.length + generated.text.length
+                val previousAssistant = history.asReversed()
+                    .firstOrNull { it.role == "Jarvis" }
+                    ?.text?.trim()
+                val repeatedFragment = cleanedResponse.length in 1..32 &&
+                    cleanedResponse == previousAssistant
+                if (repeatedFragment) {
+                    engine.resetConversation()
+                    conversationCharacters = 0
+                }
                 // Android's typed result is authoritative. Gemma is used to
                 // explain it, but must never replace a verified success (or
                 // failure) with a stale apology or hallucinated outcome.
-                val finalResponse = actionResultMessage ?: cleanedResponse.ifBlank {
+                val finalResponse = actionResultMessage ?: if (repeatedFragment) {
+                    "I lost the thread of the conversation. Please ask that again."
+                } else cleanedResponse.ifBlank {
                     "I couldn't complete that phone action."
                 }
                 mainHandler.post { onComplete(finalResponse) }
