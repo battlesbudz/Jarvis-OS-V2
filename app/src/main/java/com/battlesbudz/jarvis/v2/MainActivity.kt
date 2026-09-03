@@ -57,7 +57,21 @@ class MainActivity : ComponentActivity() {
     private lateinit var modelStore: ModelStore
     private var conversationEngine: LiteRtLmEngine? = null
     private var conversationJob: Job? = null
-    private var engineWasRetained = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        modelStore = ModelStore(applicationContext)
+        setContent {
+            JarvisApp(
+                store = modelStore,
+                onRunModelSmokeTest = { runModelSmokeTest(it) },
+                onImportModel = { uri, spec, report -> importModel(uri, spec, report) },
+                onSend = { prompt, onToken, onComplete ->
+                    runConversation(prompt, onToken, onComplete)
+                }
+            )
+        }
+    }
 
     override fun onDestroy() {
         conversationJob?.cancel()
