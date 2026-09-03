@@ -22,8 +22,12 @@ object FunctionGemmaActionDecoder {
             "open_app" -> ActionRequest(
                 name = call.name,
                 arguments = buildMap {
-                    args.optString("app").takeIf { it.isNotBlank() }?.let { put("app", it) }
-                    args.optString("package").takeIf { it.isNotBlank() }?.let { put("package", it) }
+                    listOf("app", "app_name").firstNotNullOfOrNull { key ->
+                        args.optString(key).takeIf { it.isNotBlank() }
+                    }?.let { put("app", it) }
+                    listOf("package", "package_name").firstNotNullOfOrNull { key ->
+                        args.optString(key).takeIf { it.isNotBlank() }
+                    }?.let { put("package", it) }
                 }
             )
             "set_volume" -> ActionRequest(
