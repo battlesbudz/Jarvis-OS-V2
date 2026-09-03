@@ -51,7 +51,15 @@ class LiteRtLmEngine(
         val activeConversation = requireNotNull(conversation) {
             "LiteRT-LM engine must be initialized before generation."
         }
-        return activeConversation.sendMessage(prompt).toolCalls.map {
+        val routingPrompt = """
+            You are a model that can do function calling with the following functions.
+            Select a function when the user's request requires a phone action.
+            Return a structured function call instead of a natural-language answer.
+            
+            User request:
+            $prompt
+        """.trimIndent()
+        return activeConversation.sendMessage(routingPrompt).toolCalls.map {
             ToolCall(name = it.name, arguments = it.arguments.toString())
         }
     }
