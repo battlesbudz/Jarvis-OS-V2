@@ -31,7 +31,12 @@ class AndroidMobileActionExecutor(
             } else {
                 val target = round(max * action.level / 100.0).toInt()
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
-                ExecutionResult(true, "Media volume set to ${action.level} percent.")
+                val actual = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                if (actual != target) {
+                    ExecutionResult(false, "Android did not apply the requested media volume.")
+                } else {
+                    ExecutionResult(true, "Media volume set to ${action.level} percent.")
+                }
             }
         }
         is MobileAction.OpenApp -> when (val resolution = appResolver.resolve(
