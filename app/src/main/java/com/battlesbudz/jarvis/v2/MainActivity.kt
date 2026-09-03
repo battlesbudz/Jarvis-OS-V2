@@ -45,6 +45,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : ComponentActivity() {
@@ -197,6 +198,31 @@ class MainActivity : ComponentActivity() {
         return cleaned.ifBlank { "I couldn't complete that phone action." }
     }
 
+    private fun fallbackToolCall(prompt: String): com.battlesbudz.jarvis.v2.ai.ToolCall? {
+        val normalized = prompt.trim()
+        val openMatch = Regex(
+            """(?i)^(?:can you |please )?(?:open|launch|start) (?:the )?(.+?)[?.!]*$"""
+        ).find(normalized)
+        if (openMatch != null) {
+            val appName = openMatch.groupValues[1].trim()
+            if (appName.isNotBlank()) {
+                return com.battlesbudz.jarvis.v2.ai.ToolCall(
+                    name = "open_app",
+                    arguments = JSONObject().put("app", appName).toString()
+                )
+            }
+        }
+        if (Regex("""(?i)\b(what is|check|read|show).*\bbattery\b""").containsMatchIn(normalized) ||
+            Regex("""(?i)\bbattery\b.*\b(percent|percentage|level|left)\b""").containsMatchIn(normalized)
+        ) {
+            return com.battlesbudz.jarvis.v2.ai.ToolCall(
+                name = "read_battery",
+                arguments = JSONObject().toString()
+            )
+        }
+        return null
+    }
+
     private fun buildGemmaPrompt(
         userPrompt: String,
         actionResultContext: String?
@@ -270,15 +296,16 @@ class MainActivity : ComponentActivity() {
                     )
                     actionEngine.initialize()
                     val calls = actionEngine.generateToolCalls(prompt)
-                    if (calls.size == 1) {
-                        val request = FunctionGemmaActionDecoder.decode(calls.single())
+                    val selectedCall = calls.singleOrNull() ?: fallbackToolCall(prompt)
+                    if (selectedCall != null) {
+                        val request = FunctionGemmaActionDecoder.decode(selectedCall)
                         if (request != null) {
                             val result = MobileActionPipeline(
                                 executor = AndroidMobileActionExecutor(applicationContext)
                             ).execute(request)
                             actionResultForGemma = buildToolResultContext(
                                 userPrompt = prompt,
-                                toolName = calls.single().name,
+                                toolName = selectedCall.name,
                                 resultMessage = result.message,
                                 succeeded = result.succeeded
                             )
