@@ -9,7 +9,8 @@ import kotlin.math.round
 class AndroidMobileActionExecutor(
     context: Context
 ) : MobileActionExecutor {
-    private val appResolver = InstalledAppResolver(context.applicationContext)
+    private val context = context.applicationContext
+    private val appResolver = InstalledAppResolver(context)
     override fun execute(action: MobileAction): ExecutionResult = when (action) {
         MobileAction.ReadBattery -> {
             val batteryManager = context.getSystemService(BatteryManager::class.java)
