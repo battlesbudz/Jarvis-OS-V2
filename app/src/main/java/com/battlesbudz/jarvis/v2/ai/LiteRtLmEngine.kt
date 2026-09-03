@@ -1,8 +1,6 @@
 package com.battlesbudz.jarvis.v2.ai
 
-import com.google.ai.edge.litertlm.Backend
-import com.google.ai.edge.litertlm.Engine
-import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.*
 import kotlinx.coroutines.flow.collect
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
@@ -18,7 +16,8 @@ class LiteRtLmEngine(
     override val modelId: String,
     modelPath: String,
     cacheDir: String,
-    useGpu: Boolean
+    useGpu: Boolean,
+    private val tools: List<OpenApiTool> = emptyList()
 ) : LocalModelEngine, Closeable {
     private val engine = Engine(
         EngineConfig(
@@ -32,7 +31,29 @@ class LiteRtLmEngine(
 
     suspend fun initialize() {
         engine.initialize()
-        conversation = engine.createConversation()
+        conversation = if (tools.isEmpty()) {
+            engine.createConversation()
+        } else {
+            engine.createConversation(
+                ConversationConfig(
+                    tools = tools.map { tool(it) },
+                    automaticToolCalling = false
+                )
+            )
+        }
+    }
+
+    /**
+     * Requests a structured FunctionGemma tool call without allowing the
+     * runtime to execute it. Kotlin validates and executes the typed action.
+     */
+    suspend fun generateToolCalls(prompt: String): List<ToolCall> {
+        val activeConversation = requireNotNull(conversation) {
+            "LiteRT-LM engine must be initialized before generation."
+        }
+        return activeConversation.sendMessage(prompt).toolCalls.map {
+            ToolCall(name = it.name, arguments = it.arguments.toString())
+        }
     }
 
     override suspend fun generate(
@@ -70,3 +91,6 @@ class LiteRtLmEngine(
         }
     }
 }
+
+
+data class ToolCall(val name: String, val arguments: String)
