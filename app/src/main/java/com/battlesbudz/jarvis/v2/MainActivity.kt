@@ -32,6 +32,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
+import com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor
+import com.battlesbudz.jarvis.v2.actions.FunctionGemmaActionDecoder
+import com.battlesbudz.jarvis.v2.actions.MobileActionPipeline
+import com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions
 import com.battlesbudz.jarvis.v2.ai.ModelCatalog
 import com.battlesbudz.jarvis.v2.ai.ModelStore
 import kotlinx.coroutines.Dispatchers
@@ -128,7 +132,8 @@ class MainActivity : ComponentActivity() {
                     ModelCatalog.mobileActions270m.id,
                     modelStore.fileFor(ModelCatalog.mobileActions270m).path,
                     cacheDir.path,
-                    useGpu = false
+                    useGpu = false,
+                    tools = MobileActionToolDefinitions.all()
                 )
                 primary.initialize()
                 actions.initialize()
@@ -139,16 +144,11 @@ class MainActivity : ComponentActivity() {
                 check(primaryProbe.text.contains("GEMMA_PR1_OK", ignoreCase = true)) {
                     "The selected Gemma file did not pass its identity probe."
                 }
-                // FunctionGemma emits tool calls only when a tool schema is
-                // registered on the Conversation. PR1 does not yet wire the
-                // app's action schema into LiteRT-LM, so the setup probe must
-                // validate loading/generation rather than a bare action name.
-                val actionProbe = actions.generate(
-                    "Reply with a short confirmation that local MobileActions inference works.",
-                    onToken = {}
+                val actionCalls = actions.generateToolCalls(
+                    "What is my battery level?"
                 )
-                check(actionProbe.text.isNotBlank()) {
-                    "The selected MobileActions file initialized but produced no response."
+                check(actionCalls.any { it.name == "read_battery" }) {
+                    "The MobileActions model did not return a read_battery tool call."
                 }
                 smokeTestSucceeded = true
             } catch (error: Throwable) {
@@ -211,6 +211,38 @@ class MainActivity : ComponentActivity() {
                     conversationEngine = null
                     error("The Gemma model file changed or failed integrity verification. Re-import it.")
                 }
+                // Route natural-language action requests through FunctionGemma
+                // before sending general conversation to Gemma. Tool execution
+                // stays in Kotlin after validation; model output is never run
+                // as arbitrary code.
+                var actionEngine: LiteRtLmEngine? = null
+                try {
+                    actionEngine = LiteRtLmEngine(
+                        ModelCatalog.mobileActions270m.id,
+                        modelStore.fileFor(ModelCatalog.mobileActions270m).path,
+                        cacheDir.path,
+                        useGpu = false,
+                        tools = MobileActionToolDefinitions.all()
+                    )
+                    actionEngine.initialize()
+                    val calls = actionEngine.generateToolCalls(prompt)
+                    if (calls.size == 1) {
+                        val request = FunctionGemmaActionDecoder.decode(calls.single())
+                        if (request != null) {
+                            val result = MobileActionPipeline(
+                                executor = AndroidMobileActionExecutor(applicationContext)
+                            ).execute(request)
+                            mainHandler.post { onComplete(result.message) }
+                            return@launch
+                        }
+                    }
+                } catch (_: Throwable) {
+                    // A normal chat request or an unavailable action backend
+                    // falls through to the general Gemma conversation.
+                } finally {
+                    actionEngine?.close()
+                }
+
                 val engine: LiteRtLmEngine
                 if (conversationEngine == null) {
                     val created = LiteRtLmEngine(
