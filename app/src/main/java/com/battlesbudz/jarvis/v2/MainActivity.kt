@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
 import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
+import com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext
 import com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor
 import com.battlesbudz.jarvis.v2.actions.FunctionGemmaActionDecoder
 import com.battlesbudz.jarvis.v2.actions.MobileActionPipeline
@@ -61,6 +62,7 @@ class MainActivity : ComponentActivity() {
     private var conversationEngine: LiteRtLmEngine? = null
     private var conversationJob: Job? = null
     private var conversationCharacters = 0
+    private val shortTermContext = ShortTermConversationContext()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -243,9 +245,13 @@ class MainActivity : ComponentActivity() {
 
     private fun buildGemmaPrompt(
         userPrompt: String,
-        actionResultContext: String?
+        actionResultContext: String?,
+        history: List<ChatEntry>
     ): String {
         val actionContext = actionResultContext?.let { "\n\n$it" }.orEmpty()
+        val sessionContext = shortTermContext.promptContext(
+            history.map { it.role to it.text }
+        ).takeIf { it.isNotBlank() }?.let { "\n\n$it" }.orEmpty()
         return """
             You are Jarvis, a private local assistant. You have a separate
             MobileActions tool layer that can perform these validated phone
@@ -258,6 +264,7 @@ class MainActivity : ComponentActivity() {
             
             Current user message:
             $userPrompt
+            $sessionContext
             $actionContext
         """.trimIndent()
     }
@@ -365,7 +372,21 @@ class MainActivity : ComponentActivity() {
                 // context budget. The visible transcript remains available in
                 // the UI, while the runtime starts a clean model session
                 // before stale fragments can contaminate later turns.
-                if (conversationCharacters > 18_000) {
+                if (conversationCharacters > 14_000) {
+                    val compactedText = runCatching {
+                        engine.generate(
+                            prompt = """
+                                Summarize this active conversation for your next
+                                session. Keep only facts needed to answer follow-up
+                                questions, unresolved requests, and recent phone
+                                action results. Be concise and never emit tool-call markup.
+                            """.trimIndent(),
+                            onToken = {}
+                        )
+                    }.getOrNull()?.let { cleanAssistantText(it.text) }.orEmpty()
+                    if (compactedText.isNotBlank()) {
+                        shortTermContext.updateSummary(compactedText)
+                    }
                     engine.resetConversation()
                     conversationCharacters = 0
                 }
@@ -373,7 +394,7 @@ class MainActivity : ComponentActivity() {
                     mainHandler.post { onToken(safeText) }
                 }
                 val generated = engine.generate(
-                    prompt = buildGemmaPrompt(prompt, actionResultForGemma),
+                    prompt = buildGemmaPrompt(prompt, actionResultForGemma, history),
                     onToken = streamFilter::accept
                 )
                 val rawControlOutput = generated.text.contains("tool_call>") ||
