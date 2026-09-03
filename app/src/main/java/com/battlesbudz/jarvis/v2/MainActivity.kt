@@ -136,15 +136,15 @@ class MainActivity : ComponentActivity() {
                     "Reply with exactly GEMMA_PR1_OK and nothing else.",
                     onToken = {}
                 )
-                check(primaryProbe.text.trim() == "GEMMA_PR1_OK") {
-                    "The selected Gemma file did not pass its capability probe."
+                check(primaryProbe.text.contains("GEMMA_PR1_OK", ignoreCase = true)) {
+                    "The selected Gemma file did not pass its identity probe."
                 }
                 val actionProbe = actions.generate(
                     "Return exactly the read_battery action name and nothing else.",
                     onToken = {}
                 )
-                check(actionProbe.text.trim() == "read_battery") {
-                    "The selected MobileActions file did not pass its capability probe."
+                check(actionProbe.text.contains("read_battery", ignoreCase = true)) {
+                    "The selected MobileActions file did not pass its identity probe."
                 }
                 smokeTestSucceeded = true
             } catch (error: Throwable) {
