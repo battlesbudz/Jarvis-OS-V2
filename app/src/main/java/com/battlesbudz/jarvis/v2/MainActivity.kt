@@ -193,8 +193,10 @@ class MainActivity : ComponentActivity() {
             MobileActions tool layer that can perform these validated phone
             actions: read_battery, set_volume, and open_app. FunctionGemma
             selects those actions; Kotlin validates and executes them. You
-            should never claim that you have no tools. If a tool result is
-            included below, treat it as authoritative and explain it naturally.
+            should never claim that you have no tools. Tool calls are handled
+            internally by the app. Never emit <|tool_call>, <start_function_call>,
+            call:, or any other tool-call markup in your user-facing answer. If a
+            tool result is included below, treat it as authoritative and explain it naturally.
             
             User message:
             $userPrompt
