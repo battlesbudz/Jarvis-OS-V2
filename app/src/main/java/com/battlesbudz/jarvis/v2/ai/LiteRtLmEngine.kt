@@ -68,13 +68,16 @@ class LiteRtLmEngine(
     }
 
     private fun parseRawToolCalls(text: String): List<ToolCall> {
-        val patterns = listOf(
-            Regex("""<\|tool_call>\s*call:([^\{]+)\{(.*?)\}<\|tool_call\|>""", RegexOption.DOT_MATCHES_ALL),
-            Regex("""<start_function_call>\s*call:([^\{]+)\{(.*?)\}<end_function_call>""", RegexOption.DOT_MATCHES_ALL)
+        val callPattern = Regex(
+            """(?s)(?:<\|)?tool_call>\s*call:([A-Za-z0-9_.:-]+)\s*\{(.*?)\}(?:<\|tool_call\|>)?"""
         )
-        val argumentPattern = Regex("""([A-Za-z_][A-Za-z0-9_]*):\s*(?:<escape>(.*?)<escape>|"([^"]*)"|([^,}]+))""")
-        return patterns.asSequence()
-            .flatMap { pattern -> pattern.findAll(text).asSequence() }
+        val functionPattern = Regex(
+            """(?s)<start_function_call>\s*call:([A-Za-z0-9_.:-]+)\s*\{(.*?)\}<end_function_call>"""
+        )
+        val argumentPattern = Regex(
+            """([A-Za-z_][A-Za-z0-9_]*):\s*(?:<escape>(.*?)<escape>|"([^"]*)"|([^,}]+))"""
+        )
+        return (callPattern.findAll(text).asSequence() + functionPattern.findAll(text).asSequence())
             .mapNotNull { match ->
                 val rawName = match.groupValues[1].substringAfterLast(":").trim()
                 if (rawName.isBlank()) return@mapNotNull null
