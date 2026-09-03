@@ -30,6 +30,14 @@ class MobileActionValidatorTest {
     }
 
     @Test
+    fun validatesHumanReadableAppName() {
+        assertEquals(
+            ActionValidation.Valid(MobileAction.OpenApp("YouTube")),
+            validator.validate(ActionRequest("open_app", mapOf("app" to "YouTube")))
+        )
+    }
+
+    @Test
     fun rejectsPackageSegmentsStartingWithDigits() {
         val result = validator.validate(
             ActionRequest("open_app", mapOf("package" to "com.1example.app"))
