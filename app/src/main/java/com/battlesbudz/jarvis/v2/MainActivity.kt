@@ -194,6 +194,40 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun buildGemmaPrompt(
+        userPrompt: String,
+        actionResultContext: String?
+    ): String {
+        val actionContext = actionResultContext?.let { "\n\n$it" }.orEmpty()
+        return """
+            You are Jarvis, a private local assistant. You have a separate
+            MobileActions tool layer that can perform these validated phone
+            actions: read_battery, set_volume, and open_app. FunctionGemma
+            selects those actions; Kotlin validates and executes them. You
+            should never claim that you have no tools. If a tool result is
+            included below, treat it as authoritative and explain it naturally.
+            
+            User message:
+            $userPrompt
+            $actionContext
+        """.trimIndent()
+    }
+
+    private fun buildToolResultContext(
+        userPrompt: String,
+        toolName: String,
+        resultMessage: String,
+        succeeded: Boolean
+    ): String {
+        return """
+            MobileActions tool execution context:
+            - User request: $userPrompt
+            - Selected tool: $toolName
+            - Execution status: ${if (succeeded) "succeeded" else "failed"}
+            - Android result: $resultMessage
+        """.trimIndent()
+    }
+
     private fun runConversation(
         prompt: String,
         onToken: (String) -> Unit,
@@ -215,6 +249,11 @@ class MainActivity : ComponentActivity() {
                 // before sending general conversation to Gemma. Tool execution
                 // stays in Kotlin after validation; model output is never run
                 // as arbitrary code.
+                // FunctionGemma is a router, not a second chat session. If it
+                // selects a tool, execute it first and carry the typed result
+                // into the ongoing Gemma conversation so Gemma can explain
+                // what happened and preserve conversational context.
+                var actionResultForGemma: String? = null
                 var actionEngine: LiteRtLmEngine? = null
                 try {
                     actionEngine = LiteRtLmEngine(
@@ -232,8 +271,12 @@ class MainActivity : ComponentActivity() {
                             val result = MobileActionPipeline(
                                 executor = AndroidMobileActionExecutor(applicationContext)
                             ).execute(request)
-                            mainHandler.post { onComplete(result.message) }
-                            return@launch
+                            actionResultForGemma = buildToolResultContext(
+                                userPrompt = prompt,
+                                toolName = calls.single().name,
+                                resultMessage = result.message,
+                                succeeded = result.succeeded
+                            )
                         }
                     }
                 } catch (_: Throwable) {
@@ -258,7 +301,9 @@ class MainActivity : ComponentActivity() {
                 } else {
                     engine = conversationEngine!!
                 }
-                val generated = engine.generate(prompt) { token ->
+                val generated = engine.generate(
+                    prompt = buildGemmaPrompt(prompt, actionResultForGemma)
+                ) { token ->
                     mainHandler.post { onToken(token) }
                 }
                 mainHandler.post { onComplete(generated.text) }
