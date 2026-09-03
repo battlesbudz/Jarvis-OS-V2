@@ -1,5 +1,7 @@
 package com.battlesbudz.jarvis.v2.actions
 
+import kotlin.math.round
+
 sealed interface MobileAction {
     data object ReadBattery : MobileAction
     data class OpenApp(
