@@ -10,7 +10,11 @@ A standalone native Android voice assistant prototype.
 - Kotlin validates and executes typed actions
 - No cloud backend required for the core assistant loop
 
-The first implementation PR establishes the Android shell, model boundaries, action contracts, and local benchmark harness.
+PR #1 includes the testable local assistant loop. Type a request such as
+“What is my battery level?” in the chat: FunctionGemma emits the registered
+`read_battery` tool call, Kotlin validates it, and the Android executor returns
+the phone's live battery percentage. General questions fall back to Gemma 4 E2B.
+No cloud backend is required for this loop.
 
 ## APK signing
 
