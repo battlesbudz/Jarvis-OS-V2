@@ -106,7 +106,7 @@ class LiteRtLmEngine(
         activeConversation.sendMessageAsync(prompt).collect { message ->
             // LiteRT-LM versions may emit either a new text chunk or a
             // cumulative Message snapshot. Normalize both to one delta.
-            val messageText = message.text.ifBlank { message.toString() }
+            val messageText = message.toString()
             val alreadyProduced = output.toString()
             val delta = if (messageText.startsWith(alreadyProduced)) {
                 messageText.removePrefix(alreadyProduced)
