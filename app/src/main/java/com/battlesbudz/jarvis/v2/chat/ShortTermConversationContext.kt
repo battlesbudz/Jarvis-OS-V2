@@ -31,6 +31,23 @@ class ShortTermConversationContext(
         summary = newSummary.trim().take(summaryCharacterLimit).ifBlank { null }
     }
 
+    fun compactSnapshot(history: List<Pair<String, String>>): String {
+        val recent = history.takeLast(recentEntryLimit)
+            .joinToString("\n") { (role, text) -> "$role: $text" }
+            .takeLast(2_800)
+        return buildString {
+            summary?.take(1_000)?.takeIf { it.isNotBlank() }?.let {
+                append("Earlier session summary:\n")
+                append(it)
+            }
+            if (recent.isNotBlank()) {
+                if (isNotEmpty()) append("\n\n")
+                append("Newest turns:\n")
+                append(recent)
+            }
+        }.take(summaryCharacterLimit)
+    }
+
     fun restoreSummary(savedSummary: String?) {
         if (!savedSummary.isNullOrBlank()) updateSummary(savedSummary)
     }

@@ -87,6 +87,7 @@ class MainActivity : ComponentActivity() {
                 onImportModel = { uri, spec, report -> importModel(uri, spec, report) },
                 onCopyDiagnostics = { transcript -> copyDiagnostics(transcript) },
                 onMessagesChanged = { persistTranscript(it) },
+                onSendingChanged = { sessionPreferences.edit().putBoolean("sending", it).apply() },
                 onSend = { prompt, history, onToken, onComplete ->
                     runConversation(prompt, history, onToken, onComplete)
                 }
@@ -107,15 +108,18 @@ class MainActivity : ComponentActivity() {
     private fun restoreTranscript(): List<ChatEntry> = runCatching {
         val json = sessionPreferences.getString("transcript", "[]") ?: "[]"
         val array = JSONArray(json)
-        (0 until array.length()).map { index ->
+        val restored = (0 until array.length()).map { index ->
             val item = array.getJSONObject(index)
             ChatEntry(item.getString("role"), item.getString("text"))
         }
-            .mapIndexed { index, entry ->
-                if (index == array.length() - 1 && entry.role == "Jarvis" && entry.text.isBlank()) {
+        if (sessionPreferences.getBoolean("sending", false)) {
+            sessionPreferences.edit().putBoolean("sending", false).apply()
+            restored.mapIndexed { index, entry ->
+                if (index == restored.lastIndex && entry.role == "Jarvis") {
                     entry.copy(text = INTERRUPTED_RESPONSE)
                 } else entry
             }
+        } else restored
     }.getOrDefault(emptyList())
 
     private fun persistTranscript(messages: List<ChatEntry>) {
@@ -464,7 +468,7 @@ class MainActivity : ComponentActivity() {
                     // summarize itself. Build a bounded session summary from
                     // the persisted summary and recent visible turns, then
                     // reset the native conversation safely.
-                    val compactedText = shortTermContext.promptContext(
+                    val compactedText = shortTermContext.compactSnapshot(
                         history.map { it.role to it.text }
                     )
                     if (compactedText.isNotBlank()) {
@@ -548,6 +552,7 @@ private fun JarvisApp(
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onMessagesChanged: (List<ChatEntry>) -> Unit,
+    onSendingChanged: (Boolean) -> Unit,
     onSend: (String, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit
 ) {
     var modelsReady by remember { mutableStateOf(store.isUsable()) }
@@ -589,7 +594,7 @@ private fun JarvisApp(
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             if (modelsReady && smokeTestPassed) {
-                JarvisChat(onSend, onCopyDiagnostics, onMessagesChanged, initialMessages)
+                JarvisChat(onSend, onCopyDiagnostics, onMessagesChanged, onSendingChanged, initialMessages)
             } else {
                 ModelSetup(
                     ready = modelsReady,
@@ -667,7 +672,7 @@ private fun boundTranscript(messages: List<ChatEntry>): List<ChatEntry> =
     messages.takeLast(40).map { it.copy(text = it.text.take(4_000)) }
 
 private val chatEntriesSaver = listSaver<List<ChatEntry>, String>(
-    save = { entries -> entries.flatMap { listOf(it.role, it.text) } },
+    save = { entries -> entries.takeLast(12).flatMap { listOf(it.role, it.text.take(2_000)) } },
     restore = { values -> values.chunked(2).map { ChatEntry(it[0], it[1]) } }
 )
 
@@ -676,6 +681,7 @@ private fun JarvisChat(
     onSend: (String, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onMessagesChanged: (List<ChatEntry>) -> Unit,
+    onSendingChanged: (Boolean) -> Unit,
     initialMessages: List<ChatEntry>
 ) {
     var prompt by rememberSaveable { mutableStateOf("") }
@@ -735,6 +741,7 @@ private fun JarvisChat(
                 )
                 messages = updatedMessages
                 onMessagesChanged(updatedMessages)
+                onSendingChanged(true)
                 onSend(
                     submitted,
                     messages.dropLast(2),
@@ -747,6 +754,7 @@ private fun JarvisChat(
                     { result ->
                         messages = boundTranscript(messages.dropLast(1) + ChatEntry("Jarvis", result))
                         onMessagesChanged(messages)
+                        onSendingChanged(false)
                         isSending = false
                     }
                 )
