@@ -2,6 +2,7 @@ package com.battlesbudz.jarvis.v2.ai
 
 import com.google.ai.edge.litertlm.*
 import kotlinx.coroutines.flow.collect
+import org.json.JSONObject
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -59,9 +60,33 @@ class LiteRtLmEngine(
             User request:
             $prompt
         """.trimIndent()
-        return activeConversation.sendMessage(routingPrompt).toolCalls.map {
+        val response = activeConversation.sendMessage(routingPrompt)
+        val structuredCalls = response.toolCalls.map {
             ToolCall(name = it.name, arguments = it.arguments.toString())
         }
+        return structuredCalls.ifEmpty { parseRawToolCalls(response.toString()) }
+    }
+
+    private fun parseRawToolCalls(text: String): List<ToolCall> {
+        val patterns = listOf(
+            Regex("""<\\|tool_call>\\s*call:([^\\{]+)\\{(.*?)\\}<\\|tool_call\\|>""", RegexOption.DOT_MATCHES_ALL),
+            Regex("""<start_function_call>\\s*call:([^\\{]+)\\{(.*?)\\}<end_function_call>""", RegexOption.DOT_MATCHES_ALL)
+        )
+        val argumentPattern = Regex("""([A-Za-z_][A-Za-z0-9_]*):\\s*(?:<escape>(.*?)<escape>|"([^"]*)"|([^,}]+))""")
+        return patterns.asSequence()
+            .flatMap { pattern -> pattern.findAll(text).asSequence() }
+            .mapNotNull { match ->
+                val rawName = match.groupValues[1].substringAfterLast(":").trim()
+                if (rawName.isBlank()) return@mapNotNull null
+                val arguments = JSONObject()
+                argumentPattern.findAll(match.groupValues[2]).forEach { argument ->
+                    val value = argument.groupValues.drop(2).firstOrNull { it.isNotBlank() }
+                        ?.trim().orEmpty()
+                    arguments.put(argument.groupValues[1], value)
+                }
+                ToolCall(rawName, arguments.toString())
+            }
+            .toList()
     }
 
     override suspend fun generate(
