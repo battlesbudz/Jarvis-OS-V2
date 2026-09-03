@@ -37,12 +37,16 @@ object MobileActionToolDefinitions {
               "parameters": {
                 "type": "object",
                 "properties": {
+                  "app": {
+                    "type": "string",
+                    "description": "The installed app's human-readable name, such as Facebook or YouTube."
+                  },
                   "package": {
                     "type": "string",
-                    "description": "The Android package name to open."
+                    "description": "Optional exact Android package name when already known."
                   }
                 },
-                "required": ["package"]
+                "required": ["app"]
               }
             }
         """.trimIndent()
