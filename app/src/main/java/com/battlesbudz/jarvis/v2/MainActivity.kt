@@ -187,11 +187,11 @@ class MainActivity : ComponentActivity() {
     private fun cleanAssistantText(text: String): String {
         val cleaned = text
             .replace(
-                Regex("""(?s)<\|tool_call>.*?<\|tool_call\|>"""),
+                Regex("""(?s)(?:<\|)?tool_call>.*?(?:<\|tool_call\|>|$)"""),
                 ""
             )
             .replace(
-                Regex("""(?s)<start_function_call>.*?<end_function_call>"""),
+                Regex("""(?s)<start_function_call>.*?(?:<end_function_call>|$)"""),
                 ""
             )
             .trim()
