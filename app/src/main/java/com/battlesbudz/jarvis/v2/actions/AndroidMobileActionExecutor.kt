@@ -1,6 +1,7 @@
 package com.battlesbudz.jarvis.v2.actions
 
 import android.content.Context
+import android.content.Intent
 import android.media.AudioManager
 import android.os.BatteryManager
 import kotlin.math.round
@@ -31,9 +32,18 @@ class AndroidMobileActionExecutor(
                 ExecutionResult(true, "Media volume set to ${action.level} percent.")
             }
         }
-        is MobileAction.OpenApp -> ExecutionResult(
-            false,
-            "Opening apps will be added after the action adapter is verified."
-        )
+        is MobileAction.OpenApp -> {
+            val launchIntent = context.packageManager.getLaunchIntentForPackage(action.packageName)
+                ?: return ExecutionResult(false, "The app ${action.packageName} is not installed or has no launcher activity.")
+            runCatching {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(launchIntent)
+            }.fold(
+                { ExecutionResult(true, "Opened ${action.packageName}.") },
+                { error ->
+                    ExecutionResult(false, "Could not open ${action.packageName}: ${error.message ?: "Android rejected the launch."}")
+                }
+            )
+        }
     }
 }
