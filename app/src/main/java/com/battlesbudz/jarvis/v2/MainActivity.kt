@@ -4,6 +4,8 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -50,6 +52,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.Collections
 
 class MainActivity : ComponentActivity() {
     private companion object {
@@ -72,10 +75,42 @@ class MainActivity : ComponentActivity() {
                 store = modelStore,
                 onRunModelSmokeTest = { runModelSmokeTest(it) },
                 onImportModel = { uri, spec, report -> importModel(uri, spec, report) },
+                onCopyDiagnostics = { transcript -> copyDiagnostics(transcript) },
                 onSend = { prompt, history, onToken, onComplete ->
                     runConversation(prompt, history, onToken, onComplete)
                 }
             )
+        }
+    }
+
+    private val diagnosticTurns = Collections.synchronizedList(mutableListOf<String>())
+
+    private fun copyDiagnostics(transcript: List<ChatEntry>) {
+        val visibleTranscript = transcript.joinToString("\n") { "${it.role}: ${it.text}" }
+        val diagnostics = synchronized(diagnosticTurns) { diagnosticTurns.takeLast(20).joinToString("\n\n") }
+        val bundle = """
+            Jarvis OS V2 chat diagnostics
+            App: ${BuildConfig.APPLICATION_ID}
+            Android: ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})
+            Primary model: ${ModelCatalog.gemma4E2b.id}
+            Action model: ${ModelCatalog.mobileActions270m.id}
+            Session context: ${shortTermContext.diagnostics()}
+            Conversation character estimate: $conversationCharacters
+
+            Visible transcript:
+            $visibleTranscript
+
+            Recent runtime turns:
+            $diagnostics
+        """.trimIndent()
+        val clipboard = getSystemService(ClipboardManager::class.java)
+        clipboard?.setPrimaryClip(ClipData.newPlainText("Jarvis diagnostics", bundle))
+    }
+
+    private fun recordDiagnostic(entry: String) {
+        synchronized(diagnosticTurns) {
+            diagnosticTurns.add(entry.take(6_000))
+            while (diagnosticTurns.size > 20) diagnosticTurns.removeAt(0)
         }
     }
 
@@ -312,6 +347,7 @@ class MainActivity : ComponentActivity() {
                 // what happened and preserve conversational context.
                 var actionResultForGemma: String? = null
                 var actionResultMessage: String? = null
+                var actionName: String? = null
                 var actionEngine: LiteRtLmEngine? = null
                 try {
                     actionEngine = LiteRtLmEngine(
@@ -330,8 +366,9 @@ class MainActivity : ComponentActivity() {
                     "Prior visible conversation:\n$routingHistory\n\nCurrent user request:\n$prompt"
                 )
             } else emptyList()
-            val selectedCall = deterministicCall ?: calls.singleOrNull()
+                    val selectedCall = deterministicCall ?: calls.singleOrNull()
                     if (selectedCall != null) {
+                        actionName = selectedCall.name
                         val request = FunctionGemmaActionDecoder.decode(selectedCall)
                         if (request != null) {
                             val result = MobileActionPipeline(
@@ -424,8 +461,21 @@ class MainActivity : ComponentActivity() {
                 } else cleanedResponse.ifBlank {
                     "I couldn't complete that phone action."
                 }
+                recordDiagnostic(
+                    "Turn\n" +
+                        "user=${prompt.take(1_000)}\n" +
+                        "historyEntries=${history.size}\n" +
+                        "action=${actionName ?: "none"}\n" +
+                        "actionResult=${actionResultMessage ?: "none"}\n" +
+                        "generatedLength=${generated.text.length}\n" +
+                        "cleaned=${cleanedResponse.take(4_000)}\n" +
+                        "raw=${generated.text.take(4_000)}\n" +
+                        "repeatedFragment=$repeatedFragment\n" +
+                        "conversationCharacters=$conversationCharacters"
+                )
                 mainHandler.post { onComplete(finalResponse) }
             } catch (error: Throwable) {
+                recordDiagnostic("Turn failed\nuser=${prompt.take(1_000)}\nerror=${error.stackTraceToString().take(4_000)}")
                 mainHandler.post { onComplete("I could not load the local model: ${error.message ?: "unknown error"}") }
             } finally {
                 if (newlyCreatedEngine != null && conversationEngine !== newlyCreatedEngine) {
@@ -443,6 +493,7 @@ private fun JarvisApp(
     store: ModelStore,
     onRunModelSmokeTest: ((String) -> Unit) -> Unit,
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
+    onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onSend: (String, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit
 ) {
     var modelsReady by remember { mutableStateOf(store.isUsable()) }
@@ -484,7 +535,7 @@ private fun JarvisApp(
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             if (modelsReady && smokeTestPassed) {
-                JarvisChat(onSend)
+                JarvisChat(onSend, onCopyDiagnostics)
             } else {
                 ModelSetup(
                     ready = modelsReady,
@@ -565,7 +616,8 @@ private val chatEntriesSaver = listSaver<List<ChatEntry>, String>(
 
 @Composable
 private fun JarvisChat(
-    onSend: (String, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit
+    onSend: (String, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit,
+    onCopyDiagnostics: (List<ChatEntry>) -> Unit
 ) {
     var prompt by rememberSaveable { mutableStateOf("") }
     var messages by rememberSaveable(stateSaver = chatEntriesSaver) {
@@ -607,6 +659,13 @@ private fun JarvisChat(
             maxLines = 4,
             modifier = Modifier.fillMaxWidth()
         )
+        Button(
+            onClick = { onCopyDiagnostics(messages) },
+            enabled = messages.isNotEmpty() && !isSending,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        ) {
+            Text("Copy diagnostics")
+        }
         Button(
             onClick = {
                 val submitted = prompt.trim()

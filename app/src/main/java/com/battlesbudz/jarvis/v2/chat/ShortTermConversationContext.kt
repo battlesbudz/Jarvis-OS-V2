@@ -30,4 +30,10 @@ class ShortTermConversationContext(
     fun updateSummary(newSummary: String) {
         summary = newSummary.trim().take(summaryCharacterLimit).ifBlank { null }
     }
+
+    fun diagnostics(): String = if (summary.isNullOrBlank()) {
+        "summary=none; recentEntryLimit=$recentEntryLimit"
+    } else {
+        "summary=present(${summary!!.length} chars); recentEntryLimit=$recentEntryLimit"
+    }
 }
