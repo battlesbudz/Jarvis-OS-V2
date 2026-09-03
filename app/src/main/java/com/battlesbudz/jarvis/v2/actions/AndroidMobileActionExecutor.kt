@@ -48,11 +48,9 @@ class AndroidMobileActionExecutor(
                         ". Please specify one."
                 )
             is AppResolution.Found -> {
-                val launchIntent = context.packageManager.getLaunchIntentForPackage(
-                    resolution.app.packageName
-                ) ?: return ExecutionResult(
-                    false,
-                    "${resolution.app.label} does not expose a launcher activity."
+                val launchIntent = Intent().setClassName(
+                    resolution.app.packageName,
+                    resolution.app.activityName
                 )
                 runCatching {
                     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
