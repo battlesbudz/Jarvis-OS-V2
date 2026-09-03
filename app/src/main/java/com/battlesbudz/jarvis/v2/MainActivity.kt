@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -195,6 +196,8 @@ class MainActivity : ComponentActivity() {
                 Regex("""(?s)<start_function_call>.*?(?:<end_function_call>|$)"""),
                 ""
             )
+            .replace("<|tool_call|>", "")
+            .replace("<end_function_call>", "")
             .trim()
         return cleaned
     }
@@ -215,7 +218,7 @@ class MainActivity : ComponentActivity() {
         }
         val volumeCommand = Regex("""(?i)\b(set|make|turn|adjust|change)\b.*\bvolume\b""").containsMatchIn(normalized)
         if (volumeCommand) {
-            val volumeValue = Regex("""(?i)\b([0-9]{1,5})(?:\s*%)?\b""").find(normalized)
+            val volumeValue = Regex("""(?i)\bvolume\b[^0-9]{0,20}([0-9]{1,5})(?:\s*%)?\b""").find(normalized)
                 ?.groupValues?.getOrNull(1)
             if (volumeValue != null) {
                 return com.battlesbudz.jarvis.v2.ai.ToolCall(
@@ -225,7 +228,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        if (Regex("""(?i)\b(what is|check|read|show).*\bbattery\b""").containsMatchIn(normalized) ||
+        if (Regex("""(?i)\b(what is|check|read|show).*(my|phone|device).{0,20}\bbattery\b""").containsMatchIn(normalized) ||
             Regex("""(?i)\bbattery\b.*\b(percent|percentage|level|left)\b""").containsMatchIn(normalized)
         ) {
             return com.battlesbudz.jarvis.v2.ai.ToolCall(
@@ -238,16 +241,9 @@ class MainActivity : ComponentActivity() {
 
     private fun buildGemmaPrompt(
         userPrompt: String,
-        actionResultContext: String?,
-        history: List<ChatEntry>
+        actionResultContext: String?
     ): String {
         val actionContext = actionResultContext?.let { "\n\n$it" }.orEmpty()
-        val historyContext = history
-            .takeLast(12)
-            .joinToString("\n") { "${it.role}: ${it.text}" }
-            .takeIf { it.isNotBlank() }
-            ?.let { "\n\nPrior visible conversation:\n$it" }
-            .orEmpty()
         return """
             You are Jarvis, a private local assistant. You have a separate
             MobileActions tool layer that can perform these validated phone
@@ -258,9 +254,6 @@ class MainActivity : ComponentActivity() {
             call:, or any other tool-call markup in your user-facing answer. If a
             tool result is included below, treat it as authoritative and explain it naturally.
             
-            User message:
-            $historyContext
-
             Current user message:
             $userPrompt
             $actionContext
@@ -320,8 +313,15 @@ class MainActivity : ComponentActivity() {
                         tools = MobileActionToolDefinitions.all()
                     )
                     actionEngine.initialize()
-                    val calls = actionEngine.generateToolCalls(prompt)
-                    val selectedCall = calls.singleOrNull() ?: fallbackToolCall(prompt)
+            val deterministicCall = fallbackToolCall(prompt)
+            val calls = if (deterministicCall == null) {
+                val routingHistory = history.takeLast(12)
+                    .joinToString("\n") { "${it.role}: ${it.text}" }
+                actionEngine.generateToolCalls(
+                    "Prior visible conversation:\n$routingHistory\n\nCurrent user request:\n$prompt"
+                )
+            } else emptyList()
+            val selectedCall = deterministicCall ?: calls.singleOrNull()
                     if (selectedCall != null) {
                         val request = FunctionGemmaActionDecoder.decode(selectedCall)
                         if (request != null) {
@@ -363,7 +363,7 @@ class MainActivity : ComponentActivity() {
                     mainHandler.post { onToken(safeText) }
                 }
                 val generated = engine.generate(
-                    prompt = buildGemmaPrompt(prompt, actionResultForGemma, history),
+                    prompt = buildGemmaPrompt(prompt, actionResultForGemma),
                     onToken = streamFilter::accept
                 )
                 val rawControlOutput = generated.text.contains("tool_call>") ||
@@ -514,12 +514,19 @@ private data class ChatEntry(
     val text: String
 )
 
+private val chatEntriesSaver = listSaver<List<ChatEntry>, String>(
+    save = { entries -> entries.flatMap { listOf(it.role, it.text) } },
+    restore = { values -> values.chunked(2).map { ChatEntry(it[0], it[1]) } }
+)
+
 @Composable
 private fun JarvisChat(
     onSend: (String, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit
 ) {
     var prompt by rememberSaveable { mutableStateOf("") }
-    var messages by remember { mutableStateOf(emptyList<ChatEntry>()) }
+    var messages by rememberSaveable(stateSaver = chatEntriesSaver) {
+        mutableStateOf(emptyList())
+    }
     var isSending by remember { mutableStateOf(false) }
 
     Column(

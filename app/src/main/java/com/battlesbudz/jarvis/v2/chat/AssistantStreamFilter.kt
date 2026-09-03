@@ -9,9 +9,13 @@ class AssistantStreamFilter(
 ) {
     private val pending = StringBuilder()
     private var decided = false
+    private var suppressControl = false
 
     fun accept(chunk: String) {
         if (chunk.isEmpty()) return
+        if (suppressControl) {
+            return
+        }
         if (decided) {
             emit(chunk)
             return
@@ -24,10 +28,12 @@ class AssistantStreamFilter(
             trimmed.contains("start_function_call") ||
             trimmed.contains("call:MobileActions:")
         if (isControl) {
-            decided = true
+            suppressControl = true
             pending.clear()
             return
         }
+
+        if (trimmed.isEmpty()) return
 
         // Normal prose is emitted as soon as its first token is available.
         // A leading '<' is held briefly because it may begin model markup.

@@ -112,19 +112,14 @@ class LiteRtLmEngine(
         val output = StringBuilder()
 
         activeConversation.sendMessageAsync(prompt).collect { message ->
-            // LiteRT-LM versions may emit either a new text chunk or a
-            // cumulative Message snapshot. Normalize both to one delta.
+            // LiteRT-LM 0.12 emits incremental Message values. Treat each
+            // event as a delta; prefix matching would drop legitimate
+            // repeated chunks such as "ha" + "ha".
             val messageText = message.toString()
-            val alreadyProduced = output.toString()
-            val delta = if (messageText.startsWith(alreadyProduced)) {
-                messageText.removePrefix(alreadyProduced)
-            } else {
-                messageText
-            }
-            if (delta.isNotEmpty()) {
+            if (messageText.isNotEmpty()) {
                 firstTokenAt = firstTokenAt ?: System.nanoTime()
-                output.append(delta)
-                onToken(delta)
+                output.append(messageText)
+                onToken(messageText)
             }
         }
 

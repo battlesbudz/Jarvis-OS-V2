@@ -40,6 +40,12 @@ class InstalledAppResolver(private val context: Context) {
             }
         }
 
+        val literal = apps.filter {
+            normalize(it.label) == normalized ||
+                normalize(it.packageName) == normalized ||
+                normalize(it.packageName.substringAfterLast('.')) == normalized
+        }
+        if (literal.size == 1) return AppResolution.Found(literal.single())
         val exact = apps.filter { matchesName(it, normalized, requestedAliases) }
         if (exact.size == 1) return AppResolution.Found(exact.single())
 
