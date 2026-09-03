@@ -36,7 +36,7 @@ class ShortTermConversationContext(
             .joinToString("\n") { (role, text) -> "$role: $text" }
             .takeLast(2_800)
         return buildString {
-            summary?.take(1_000)?.takeIf { it.isNotBlank() }?.let {
+            summary?.takeLast(1_000)?.takeIf { it.isNotBlank() }?.let {
                 append("Earlier session summary:\n")
                 append(it)
             }
