@@ -51,6 +51,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import org.json.JSONObject
+import org.json.JSONArray
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.Collections
 
@@ -67,17 +68,24 @@ class MainActivity : ComponentActivity() {
     private var conversationJob: Job? = null
     private var conversationCharacters = 0
     private val shortTermContext = ShortTermConversationContext()
+    private lateinit var sessionPreferences: android.content.SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         modelStore = ModelStore(applicationContext)
-        shortTermContext.restoreSummary(savedInstanceState?.getString(SHORT_TERM_SUMMARY_KEY))
+        sessionPreferences = getSharedPreferences("chat_session", MODE_PRIVATE)
+        shortTermContext.restoreSummary(
+            savedInstanceState?.getString(SHORT_TERM_SUMMARY_KEY)
+                ?: sessionPreferences.getString(SHORT_TERM_SUMMARY_KEY, null)
+        )
         setContent {
             JarvisApp(
                 store = modelStore,
+                initialMessages = restoreTranscript(),
                 onRunModelSmokeTest = { runModelSmokeTest(it) },
                 onImportModel = { uri, spec, report -> importModel(uri, spec, report) },
                 onCopyDiagnostics = { transcript -> copyDiagnostics(transcript) },
+                onMessagesChanged = { persistTranscript(it) },
                 onSend = { prompt, history, onToken, onComplete ->
                     runConversation(prompt, history, onToken, onComplete)
                 }
@@ -87,14 +95,36 @@ class MainActivity : ComponentActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
+        sessionPreferences.edit()
+            .putString(SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
+            .apply()
         super.onSaveInstanceState(outState)
     }
 
     private val diagnosticTurns = Collections.synchronizedList(mutableListOf<String>())
 
+    private fun restoreTranscript(): List<ChatEntry> = runCatching {
+        val json = sessionPreferences.getString("transcript", "[]") ?: "[]"
+        val array = JSONArray(json)
+        (0 until array.length()).map { index ->
+            val item = array.getJSONObject(index)
+            ChatEntry(item.getString("role"), item.getString("text"))
+        }
+    }.getOrDefault(emptyList())
+
+    private fun persistTranscript(messages: List<ChatEntry>) {
+        val array = JSONArray()
+        messages.takeLast(80).forEach { message ->
+            array.put(JSONObject().put("role", message.role).put("text", message.text))
+        }
+        sessionPreferences.edit().putString("transcript", array.toString()).apply()
+    }
+
     private fun copyDiagnostics(transcript: List<ChatEntry>) {
         val visibleTranscript = transcript.joinToString("\n") { "${it.role}: ${it.text}" }
-        val diagnostics = synchronized(diagnosticTurns) { diagnosticTurns.takeLast(20).joinToString("\n\n") }
+        val diagnostics = synchronized(diagnosticTurns) {
+            diagnosticTurns.takeLast(20).joinToString("\n\n")
+        }.ifBlank { sessionPreferences.getString("diagnostics", "No prior runtime diagnostics.") }
         val bundle = """
             Jarvis OS V2 chat diagnostics
             App: ${applicationContext.packageName}
@@ -118,6 +148,13 @@ class MainActivity : ComponentActivity() {
         synchronized(diagnosticTurns) {
             diagnosticTurns.add(entry.take(6_000))
             while (diagnosticTurns.size > 20) diagnosticTurns.removeAt(0)
+        }
+        if (::sessionPreferences.isInitialized) {
+            sessionPreferences.edit()
+                .putString("diagnostics", synchronized(diagnosticTurns) {
+                    diagnosticTurns.joinToString("\n\n")
+                })
+                .apply()
         }
     }
 
@@ -417,19 +454,18 @@ class MainActivity : ComponentActivity() {
                 // the UI, while the runtime starts a clean model session
                 // before stale fragments can contaminate later turns.
                 if (conversationCharacters > 14_000) {
-                    val compactedText = runCatching {
-                        engine.generate(
-                            prompt = """
-                                Summarize this active conversation for your next
-                                session. Keep only facts needed to answer follow-up
-                                questions, unresolved requests, and recent phone
-                                action results. Be concise and never emit tool-call markup.
-                            """.trimIndent(),
-                            onToken = {}
-                        )
-                    }.getOrNull()?.let { cleanAssistantText(it.text) }.orEmpty()
+                    // Do not ask the already-full native conversation to
+                    // summarize itself. Build a bounded session summary from
+                    // the persisted summary and recent visible turns, then
+                    // reset the native conversation safely.
+                    val compactedText = shortTermContext.promptContext(
+                        history.map { it.role to it.text }
+                    )
                     if (compactedText.isNotBlank()) {
                         shortTermContext.updateSummary(compactedText)
+                        sessionPreferences.edit()
+                            .putString(SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
+                            .apply()
                     }
                     engine.resetConversation()
                     conversationCharacters = 0
@@ -499,9 +535,11 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun JarvisApp(
     store: ModelStore,
+    initialMessages: List<ChatEntry>,
     onRunModelSmokeTest: ((String) -> Unit) -> Unit,
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
+    onMessagesChanged: (List<ChatEntry>) -> Unit,
     onSend: (String, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit
 ) {
     var modelsReady by remember { mutableStateOf(store.isUsable()) }
@@ -543,7 +581,7 @@ private fun JarvisApp(
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             if (modelsReady && smokeTestPassed) {
-                JarvisChat(onSend, onCopyDiagnostics)
+                JarvisChat(onSend, onCopyDiagnostics, onMessagesChanged, initialMessages)
             } else {
                 ModelSetup(
                     ready = modelsReady,
@@ -625,11 +663,13 @@ private val chatEntriesSaver = listSaver<List<ChatEntry>, String>(
 @Composable
 private fun JarvisChat(
     onSend: (String, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit,
-    onCopyDiagnostics: (List<ChatEntry>) -> Unit
+    onCopyDiagnostics: (List<ChatEntry>) -> Unit,
+    onMessagesChanged: (List<ChatEntry>) -> Unit,
+    initialMessages: List<ChatEntry>
 ) {
     var prompt by rememberSaveable { mutableStateOf("") }
     var messages by rememberSaveable(stateSaver = chatEntriesSaver) {
-        mutableStateOf(emptyList())
+        mutableStateOf(initialMessages)
     }
     var isSending by remember { mutableStateOf(false) }
 
@@ -679,7 +719,9 @@ private fun JarvisChat(
                 val submitted = prompt.trim()
                 prompt = ""
                 isSending = true
-                messages = messages + ChatEntry("You", submitted) + ChatEntry("Jarvis", "")
+                val updatedMessages = messages + ChatEntry("You", submitted) + ChatEntry("Jarvis", "")
+                messages = updatedMessages
+                onMessagesChanged(updatedMessages)
                 onSend(
                     submitted,
                     messages.dropLast(2),
@@ -689,6 +731,7 @@ private fun JarvisChat(
                     },
                     { result ->
                         messages = messages.dropLast(1) + ChatEntry("Jarvis", result)
+                        onMessagesChanged(messages)
                         isSending = false
                     }
                 )
