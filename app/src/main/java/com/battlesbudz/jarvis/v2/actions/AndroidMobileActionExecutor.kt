@@ -7,8 +7,9 @@ import android.os.BatteryManager
 import kotlin.math.round
 
 class AndroidMobileActionExecutor(
-    private val context: Context
+    context: Context
 ) : MobileActionExecutor {
+    private val appResolver = InstalledAppResolver(context.applicationContext)
     override fun execute(action: MobileAction): ExecutionResult = when (action) {
         MobileAction.ReadBattery -> {
             val batteryManager = context.getSystemService(BatteryManager::class.java)
@@ -32,18 +33,39 @@ class AndroidMobileActionExecutor(
                 ExecutionResult(true, "Media volume set to ${action.level} percent.")
             }
         }
-        is MobileAction.OpenApp -> {
-            val launchIntent = context.packageManager.getLaunchIntentForPackage(action.packageName)
-                ?: return ExecutionResult(false, "The app ${action.packageName} is not installed or has no launcher activity.")
-            runCatching {
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(launchIntent)
-            }.fold(
-                { ExecutionResult(true, "Opened ${action.packageName}.") },
-                { error ->
-                    ExecutionResult(false, "Could not open ${action.packageName}: ${error.message ?: "Android rejected the launch."}")
-                }
-            )
+        is MobileAction.OpenApp -> when (val resolution = appResolver.resolve(
+            action.appName,
+            action.packageNameHint
+        )) {
+            is AppResolution.NotFound ->
+                ExecutionResult(false, "I could not find an installed app named ${resolution.requestedName}.")
+            is AppResolution.Ambiguous ->
+                ExecutionResult(
+                    false,
+                    "I found multiple apps matching ${resolution.requestedName}: " +
+                        resolution.matches.joinToString { it.label } +
+                        ". Please specify one."
+                )
+            is AppResolution.Found -> {
+                val launchIntent = context.packageManager.getLaunchIntentForPackage(
+                    resolution.app.packageName
+                ) ?: return ExecutionResult(
+                    false,
+                    "${resolution.app.label} does not expose a launcher activity."
+                )
+                runCatching {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(launchIntent)
+                }.fold(
+                    { ExecutionResult(true, "Opened ${resolution.app.label}.") },
+                    { error ->
+                        ExecutionResult(
+                            false,
+                            "Could not open ${resolution.app.label}: ${error.message ?: "Android rejected the launch."}"
+                        )
+                    }
+                )
+            }
         }
     }
 }
