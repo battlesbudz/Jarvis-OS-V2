@@ -68,8 +68,8 @@ class MainActivity : ComponentActivity() {
                 store = modelStore,
                 onRunModelSmokeTest = { runModelSmokeTest(it) },
                 onImportModel = { uri, spec, report -> importModel(uri, spec, report) },
-                onSend = { prompt, onToken, onComplete ->
-                    runConversation(prompt, onToken, onComplete)
+                onSend = { prompt, history, onToken, onComplete ->
+                    runConversation(prompt, history, onToken, onComplete)
                 }
             )
         }
@@ -238,9 +238,16 @@ class MainActivity : ComponentActivity() {
 
     private fun buildGemmaPrompt(
         userPrompt: String,
-        actionResultContext: String?
+        actionResultContext: String?,
+        history: List<ChatEntry>
     ): String {
         val actionContext = actionResultContext?.let { "\n\n$it" }.orEmpty()
+        val historyContext = history
+            .takeLast(12)
+            .joinToString("\n") { "${it.role}: ${it.text}" }
+            .takeIf { it.isNotBlank() }
+            ?.let { "\n\nPrior visible conversation:\n$it" }
+            .orEmpty()
         return """
             You are Jarvis, a private local assistant. You have a separate
             MobileActions tool layer that can perform these validated phone
@@ -252,6 +259,9 @@ class MainActivity : ComponentActivity() {
             tool result is included below, treat it as authoritative and explain it naturally.
             
             User message:
+            $historyContext
+
+            Current user message:
             $userPrompt
             $actionContext
         """.trimIndent()
@@ -274,6 +284,7 @@ class MainActivity : ComponentActivity() {
 
     private fun runConversation(
         prompt: String,
+        history: List<ChatEntry>,
         onToken: (String) -> Unit,
         onComplete: (String) -> Unit
     ) {
@@ -350,7 +361,7 @@ class MainActivity : ComponentActivity() {
                     mainHandler.post { onToken(safeText) }
                 }
                 val generated = engine.generate(
-                    prompt = buildGemmaPrompt(prompt, actionResultForGemma),
+                    prompt = buildGemmaPrompt(prompt, actionResultForGemma, history),
                     onToken = streamFilter::accept
                 )
                 mainHandler.post { onComplete(cleanAssistantText(generated.text)) }
@@ -372,7 +383,7 @@ private fun JarvisApp(
     store: ModelStore,
     onRunModelSmokeTest: ((String) -> Unit) -> Unit,
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
-    onSend: (String, (String) -> Unit, (String) -> Unit) -> Unit
+    onSend: (String, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit
 ) {
     var modelsReady by remember { mutableStateOf(store.isUsable()) }
     var smokeTestPassed by rememberSaveable { mutableStateOf(store.isUsable() && store.smokeTestPassed()) }
@@ -489,7 +500,7 @@ private data class ChatEntry(
 
 @Composable
 private fun JarvisChat(
-    onSend: (String, (String) -> Unit, (String) -> Unit) -> Unit
+    onSend: (String, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit
 ) {
     var prompt by rememberSaveable { mutableStateOf("") }
     var messages by remember { mutableStateOf(emptyList<ChatEntry>()) }
@@ -537,6 +548,7 @@ private fun JarvisChat(
                 messages = messages + ChatEntry("You", submitted) + ChatEntry("Jarvis", "")
                 onSend(
                     submitted,
+                    messages.dropLast(2),
                     { token ->
                         messages = messages.dropLast(1) +
                             ChatEntry("Jarvis", messages.lastOrNull()?.text.orEmpty() + token)
