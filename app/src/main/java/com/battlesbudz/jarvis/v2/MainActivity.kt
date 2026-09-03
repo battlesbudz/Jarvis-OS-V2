@@ -306,11 +306,13 @@ class MainActivity : ComponentActivity() {
                 } else {
                     engine = conversationEngine!!
                 }
+                // Hold the assistant output until generation completes. This keeps
+                // partially emitted model control tokens from ever becoming visible
+                // chat text; the transcript is still updated as one complete message.
                 val generated = engine.generate(
-                    prompt = buildGemmaPrompt(prompt, actionResultForGemma)
-                ) { token ->
-                    mainHandler.post { onToken(token) }
-                }
+                    prompt = buildGemmaPrompt(prompt, actionResultForGemma),
+                    onToken = {}
+                )
                 mainHandler.post { onComplete(cleanAssistantText(generated.text)) }
             } catch (error: Throwable) {
                 mainHandler.post { onComplete("I could not load the local model: ${error.message ?: "unknown error"}") }
