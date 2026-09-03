@@ -183,6 +183,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun cleanAssistantText(text: String): String {
+        val cleaned = text
+            .replace(
+                Regex("""(?s)<\|tool_call>.*?<\|tool_call\|>"""),
+                ""
+            )
+            .replace(
+                Regex("""(?s)<start_function_call>.*?<end_function_call>"""),
+                ""
+            )
+            .trim()
+        return cleaned.ifBlank { "I couldn't complete that phone action." }
+    }
+
     private fun buildGemmaPrompt(
         userPrompt: String,
         actionResultContext: String?
@@ -297,7 +311,7 @@ class MainActivity : ComponentActivity() {
                 ) { token ->
                     mainHandler.post { onToken(token) }
                 }
-                mainHandler.post { onComplete(generated.text) }
+                mainHandler.post { onComplete(cleanAssistantText(generated.text)) }
             } catch (error: Throwable) {
                 mainHandler.post { onComplete("I could not load the local model: ${error.message ?: "unknown error"}") }
             } finally {
