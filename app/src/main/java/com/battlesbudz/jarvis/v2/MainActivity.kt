@@ -213,6 +213,18 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+        val volumeCommand = Regex("""(?i)\b(set|make|turn|adjust|change)\b.*\bvolume\b""").containsMatchIn(normalized)
+        if (volumeCommand) {
+            val volumeValue = Regex("""(?i)\b([0-9]{1,5})(?:\s*%)?\b""").find(normalized)
+                ?.groupValues?.getOrNull(1)
+            if (volumeValue != null) {
+                return com.battlesbudz.jarvis.v2.ai.ToolCall(
+                    name = "set_volume",
+                    arguments = JSONObject().put("level", volumeValue).toString()
+                )
+            }
+        }
+
         if (Regex("""(?i)\b(what is|check|read|show).*\bbattery\b""").containsMatchIn(normalized) ||
             Regex("""(?i)\bbattery\b.*\b(percent|percentage|level|left)\b""").containsMatchIn(normalized)
         ) {
