@@ -90,7 +90,7 @@ class MainActivity : ComponentActivity() {
         val diagnostics = synchronized(diagnosticTurns) { diagnosticTurns.takeLast(20).joinToString("\n\n") }
         val bundle = """
             Jarvis OS V2 chat diagnostics
-            App: ${BuildConfig.APPLICATION_ID}
+            App: ${applicationContext.packageName}
             Android: ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})
             Primary model: ${ModelCatalog.gemma4E2b.id}
             Action model: ${ModelCatalog.mobileActions270m.id}
