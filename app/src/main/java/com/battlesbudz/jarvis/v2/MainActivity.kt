@@ -529,6 +529,7 @@ class MainActivity : ComponentActivity() {
                     seedContext = true
                 ).length
                 val pendingRequestSize = maxOf(existingPromptSize, freshPromptSize)
+                var promptHistory = history
                 if (conversationCharacters + pendingRequestSize + GENERATION_HEADROOM >
                     CONVERSATION_COMPACTION_LIMIT
                 ) {
@@ -541,6 +542,9 @@ class MainActivity : ComponentActivity() {
                             .putString(SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
                             .apply()
                     }
+                    // The compacted summary already contains the newest turns.
+                    // Do not seed them a second time from the visible transcript.
+                    promptHistory = emptyList()
                     conversationEngine?.close()
                     conversationEngine = null
                     conversationCharacters = 0
@@ -568,7 +572,7 @@ class MainActivity : ComponentActivity() {
                 val submittedPrompt = buildGemmaPrompt(
                     prompt,
                     actionResultForGemma,
-                    history,
+                    promptHistory,
                     seedContext
                 )
                 if (submittedPrompt.length + GENERATION_HEADROOM >
