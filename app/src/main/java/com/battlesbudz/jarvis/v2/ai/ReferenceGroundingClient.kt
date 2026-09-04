@@ -40,12 +40,11 @@ class ReferenceGroundingClient {
     private fun requestMediaWiki(query: String): ReferenceGrounding =
         runCatching {
             val encoded = URLEncoder.encode(query, "UTF-8")
-            val url = URL(
+            val searchUrl = URL(
                 "https://en.wikipedia.org/w/api.php?action=query&list=search" +
                     "&srsearch=$encoded&srnamespace=0&srlimit=3&format=json"
             )
-            val json = get(url)
-            val search = json.optJSONObject("query")?.optJSONArray("search")
+            val search = get(searchUrl).optJSONObject("query")?.optJSONArray("search")
             val parts = mutableListOf<String>()
             val sources = mutableListOf<String>()
             if (search != null) {
@@ -53,16 +52,29 @@ class ReferenceGroundingClient {
                     val item = search.optJSONObject(index) ?: continue
                     val title = item.optString("title")
                     if (title.isBlank()) continue
-                    val pageUrl = "https://en.wikipedia.org/wiki/${title.replace(" ", "_")}"
-                    val extract = item.optString("snippet")
-                        .replace(Regex("<[^>]+>"), "")
-                        .trim()
-                    parts += "Wikipedia — $title: $extract"
-                    sources += pageUrl
+                    val extract = requestPageExtract(title)
+                    val text = extract.ifBlank {
+                        item.optString("snippet").replace(Regex("<[^>]+>"), "").trim()
+                    }
+                    if (text.isNotBlank()) parts += "Wikipedia — $title: $text"
+                    sources += "https://en.wikipedia.org/wiki/" + title.replace(" ", "_")
                 }
             }
             ReferenceGrounding(parts.joinToString("\n"), sources)
         }.getOrElse { ReferenceGrounding("", emptyList()) }
+
+    private fun requestPageExtract(title: String): String =
+        runCatching {
+            val encodedTitle = URLEncoder.encode(title, "UTF-8")
+            val url = URL(
+                "https://en.wikipedia.org/w/api.php?action=query&prop=extracts" +
+                    "&explaintext=1&exintro=1&titles=$encodedTitle&format=json"
+            )
+            val pages = get(url).optJSONObject("query")?.optJSONObject("pages")
+            pages?.keys()?.asSequence()?.mapNotNull { key ->
+                pages.optJSONObject(key)?.optString("extract")
+            }?.firstOrNull { it.isNotBlank() }.orEmpty()
+        }.getOrDefault("")
 
     private fun requestWikidata(query: String): ReferenceGrounding =
         runCatching {
