@@ -58,11 +58,11 @@ class MainActivity : ComponentActivity() {
     private companion object {
         val activeConversationJobs = AtomicInteger(0)
         const val SHORT_TERM_SUMMARY_KEY = "short_term_summary"
-        // About 8K tokens for typical English chat; the engine is rebuilt
-        // before native KV-cache growth becomes risky on mobile.
-        // LiteRT's native budget is lower in practice than Gemma's advertised
-        // maximum on this phone. Rebuild before the next long turn can cross it.
-        const val CONVERSATION_COMPACTION_LIMIT = 8_000
+        // This is an app-side character budget, not Gemma's advertised
+        // context maximum. It leaves room for a normal long answer while
+        // rebuilding the native conversation before retained chat grows too far
+        // for this device/runtime.
+        const val CONVERSATION_COMPACTION_LIMIT = 16_000
         const val GENERATION_HEADROOM = 2_500
         const val INTERRUPTED_RESPONSE = "The previous response was interrupted. Please send that again."
     }
@@ -454,7 +454,7 @@ class MainActivity : ComponentActivity() {
                     )
                     mainHandler.post {
                         onComplete(
-                            "That message is too long for the local model's safe context. " +
+                            "That request is too large for the local model's safe mobile budget. " +
                                 "Please send it in smaller parts."
                         )
                     }
@@ -585,7 +585,7 @@ class MainActivity : ComponentActivity() {
                     )
                     mainHandler.post {
                         onComplete(
-                            "That message is too long for the local model's safe context. " +
+                            "That request is too large for the local model's safe mobile budget. " +
                                 "Please send it in smaller parts."
                         )
                     }
