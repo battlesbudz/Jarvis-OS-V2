@@ -15,13 +15,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -766,7 +769,9 @@ private fun JarvisApp(
         importModel(uri, ModelCatalog.mobileActions270m)
     }
 
-    MaterialTheme {
+    MaterialTheme(
+        colorScheme = darkColorScheme()
+    ) {
         Surface(modifier = Modifier.fillMaxSize()) {
             if (modelsReady && smokeTestPassed) {
                 JarvisChat(onSend, onCopyDiagnostics, onMessagesChanged, onSendingChanged, initialMessages)
@@ -854,11 +859,14 @@ private fun JarvisChat(
     initialMessages: List<ChatEntry>
 ) {
     var prompt by rememberSaveable { mutableStateOf("") }
-    var messages by remember {
-        mutableStateOf(initialMessages)
-    }
+    var messages by remember { mutableStateOf(initialMessages) }
     var isSending by remember { mutableStateOf(false) }
+    var attachedImageName by rememberSaveable { mutableStateOf<String?>(null) }
     val transcriptScrollState = rememberScrollState()
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        attachedImageName = uri?.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+            ?: if (uri != null) "selected image" else null
+    }
 
     LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length) {
         transcriptScrollState.scrollTo(transcriptScrollState.maxValue)
@@ -870,36 +878,79 @@ private fun JarvisChat(
     ) {
         if (messages.isNotEmpty()) {
             Column(
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .verticalScroll(transcriptScrollState)
-                    .padding(bottom = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(transcriptScrollState).padding(bottom = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 messages.forEach { message ->
-                    Column(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        horizontalAlignment = if (message.role == "You") {
+                            androidx.compose.ui.Alignment.End
+                        } else {
+                            androidx.compose.ui.Alignment.Start
+                        }
+                    ) {
                         Text(
                             message.role,
-                            style = MaterialTheme.typography.labelMedium
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (message.role == "You") {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.secondary
+                            }
                         )
-                        Text(
-                            message.text.ifBlank { "…" },
+                        Surface(
+                            color = if (message.role == "You") {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            },
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
                             modifier = Modifier.padding(top = 4.dp)
-                        )
+                        ) {
+                            Text(
+                                message.text.ifBlank { "…" },
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                color = if (message.role == "You") {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
                     }
                 }
             }
         }
-        OutlinedTextField(
-            value = prompt,
-            // Keep unsent drafts bounded because rememberSaveable stores them
-            // in the Activity state Bundle during rotation/backgrounding.
-            onValueChange = { prompt = it.take(MAX_SAVED_DRAFT_CHARS) },
-            label = { Text("Message Jarvis") },
-            maxLines = 4,
-            modifier = Modifier.fillMaxWidth()
-        )
+        if (attachedImageName != null) {
+            Text(
+                "Attached: $attachedImageName",
+                color = MaterialTheme.colorScheme.secondary,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = androidx.compose.ui.Alignment.Bottom
+        ) {
+            Button(
+                onClick = { imagePicker.launch("image/*") },
+                enabled = !isSending,
+                modifier = Modifier.padding(end = 8.dp)
+            ) {
+                Text("📎")
+            }
+            OutlinedTextField(
+                value = prompt,
+                onValueChange = { prompt = it.take(MAX_SAVED_DRAFT_CHARS) },
+                label = { Text("Message Jarvis") },
+                maxLines = 4,
+                modifier = Modifier.weight(1f)
+            )
+        }
         Button(
             onClick = { onCopyDiagnostics(messages) },
             enabled = messages.isNotEmpty() && !isSending,
@@ -909,8 +960,14 @@ private fun JarvisChat(
         }
         Button(
             onClick = {
-                val submitted = prompt.trim()
+                val submitted = buildString {
+                    append(prompt.trim())
+                    attachedImageName?.let {
+                        append("\n\n[Attached image: $it. The current local text model cannot inspect image pixels.]")
+                    }
+                }.trim()
                 prompt = ""
+                attachedImageName = null
                 isSending = true
                 val updatedMessages = messages + ChatEntry("You", submitted) + ChatEntry("Jarvis", "")
                 messages = updatedMessages
