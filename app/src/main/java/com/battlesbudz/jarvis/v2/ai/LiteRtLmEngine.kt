@@ -120,6 +120,20 @@ class LiteRtLmEngine(
     private suspend fun generateWithContents(
         contents: Contents,
         onToken: (String) -> Unit
+    ): GenerationResult = generateWithMessage(Message.user(contents), onToken)
+
+    suspend fun sendToolResult(
+        call: ToolCall,
+        resultMessage: String,
+        onToken: (String) -> Unit
+    ): GenerationResult = generateWithMessage(
+        Message.tool(Contents.of(Content.ToolResponse(call.name, resultMessage))),
+        onToken
+    )
+
+    private suspend fun generateWithMessage(
+        message: Message,
+        onToken: (String) -> Unit
     ): GenerationResult {
         val activeConversation = requireNotNull(conversation) {
             "LiteRT-LM engine must be initialized before generation."
@@ -127,12 +141,13 @@ class LiteRtLmEngine(
         val startedAt = System.nanoTime()
         var firstTokenAt: Long? = null
         val output = StringBuilder()
+        val toolCalls = mutableListOf<ToolCall>()
 
-        activeConversation.sendMessageAsync(contents).collect { message ->
-            // LiteRT-LM 0.12 emits incremental Message values. Treat each
-            // event as a delta; prefix matching would drop legitimate
-            // repeated chunks such as "ha" + "ha".
-            val messageText = message.toString()
+        activeConversation.sendMessageAsync(message).collect { response ->
+            response.toolCalls.forEach {
+                toolCalls += ToolCall(it.name, JSONObject(it.arguments).toString())
+            }
+            val messageText = response.toString()
             if (messageText.isNotEmpty()) {
                 firstTokenAt = firstTokenAt ?: System.nanoTime()
                 output.append(messageText)
@@ -144,7 +159,8 @@ class LiteRtLmEngine(
         return GenerationResult(
             text = output.toString(),
             timeToFirstTokenMs = firstTokenMs,
-            decodeTokensPerSecond = null
+            decodeTokensPerSecond = null,
+            toolCalls = toolCalls
         )
     }
 
