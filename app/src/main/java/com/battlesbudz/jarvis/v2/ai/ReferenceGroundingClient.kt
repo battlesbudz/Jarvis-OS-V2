@@ -7,12 +7,16 @@ import java.net.URL
 data class ReferenceGrounding(val context: String, val sources: List<String>)
 
 class ReferenceGroundingClient {
+    private companion object {
+        const val MAX_EVIDENCE_CHARS = 4_500
+        const val MAX_EXTRACT_CHARS = 1_800
+    }
     suspend fun fetchIfNeeded(query: String): ReferenceGrounding? {
         if (!needsReference(query)) return null
         val mediaWiki = requestMediaWiki(query)
         val wikidata = requestWikidata(query)
         val sources = (mediaWiki.sources + wikidata.sources).distinct()
-        val evidence = (mediaWiki.context + wikidata.context).trim()
+        val evidence = (mediaWiki.context + wikidata.context).trim().take(MAX_EVIDENCE_CHARS)
         if (evidence.isBlank()) return null
         return ReferenceGrounding(
             context = """
@@ -31,6 +35,7 @@ class ReferenceGroundingClient {
         val text = query.lowercase()
         return listOf(
             "history", "historical", "who was", "biography", "book",
+            "author",
             "law", "legal", "legislation", "conspiracy", "true story",
             "when did", "where did", "what happened", "scientific",
             "evidence", "fact", "president", "war", "attack", "event"
@@ -53,7 +58,7 @@ class ReferenceGroundingClient {
                     val title = item.optString("title")
                     if (title.isBlank()) continue
                     val extract = requestPageExtract(title)
-                    val text = extract.ifBlank {
+                    val text = extract.take(MAX_EXTRACT_CHARS).ifBlank {
                         item.optString("snippet").replace(Regex("<[^>]+>"), "").trim()
                     }
                     if (text.isNotBlank()) parts += "Wikipedia — $title: $text"
