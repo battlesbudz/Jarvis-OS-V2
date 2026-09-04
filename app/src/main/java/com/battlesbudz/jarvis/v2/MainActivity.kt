@@ -39,7 +39,6 @@ import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
 import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
 import com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext
 import com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor
-import com.battlesbudz.jarvis.v2.actions.FunctionGemmaActionDecoder
 import com.battlesbudz.jarvis.v2.actions.MobileActionPipeline
 import com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions
 import com.battlesbudz.jarvis.v2.ai.ModelCatalog
@@ -512,60 +511,9 @@ class MainActivity : ComponentActivity() {
                     return@launch
                 }
 
-                // Route natural-language action requests through FunctionGemma
-                // before sending general conversation to Gemma. Tool execution
-                // stays in Kotlin after validation; model output is never run
-                // as arbitrary code.
-                // FunctionGemma is a router, not a second chat session. If it
-                // selects a tool, execute it first and carry the typed result
-                // into the ongoing Gemma conversation so Gemma can explain
-                // what happened and preserve conversational context.
                 var actionResultForGemma: String? = null
                 var actionResultMessage: String? = null
                 var actionName: String? = null
-                var actionEngine: LiteRtLmEngine? = null
-                try {
-                    actionEngine = LiteRtLmEngine(
-                        ModelCatalog.mobileActions270m.id,
-                        modelStore.fileFor(ModelCatalog.mobileActions270m).path,
-                        cacheDir.path,
-                        useGpu = false,
-                        tools = MobileActionToolDefinitions.all()
-                    )
-                    actionEngine.initialize()
-            val deterministicCall = classifyActionIntent(prompt, history)
-            val calls = if (deterministicCall == null) {
-                actionEngine.generateToolCalls(
-                    "${shortTermContext.promptContext(history.map { it.role to it.text })}\n\n" +
-                        "Current user request:\n$prompt"
-                )
-            } else emptyList()
-                    val modelCall = calls.singleOrNull()
-                    val selectedCall = deterministicCall ?: modelCall?.takeIf {
-                        toolMatchesUserIntent(prompt, history, it)
-                    }
-                    if (selectedCall != null) {
-                        actionName = selectedCall.name
-                        val request = FunctionGemmaActionDecoder.decode(selectedCall)
-                        if (request != null) {
-                            val result = MobileActionPipeline(
-                                executor = AndroidMobileActionExecutor(applicationContext)
-                            ).execute(request)
-                            actionResultMessage = result.message
-                            actionResultForGemma = buildToolResultContext(
-                                userPrompt = prompt,
-                                toolName = selectedCall.name,
-                                resultMessage = result.message,
-                                succeeded = result.succeeded
-                            )
-                        }
-                    }
-                } catch (_: Throwable) {
-                    // A normal chat request or an unavailable action backend
-                    // falls through to the general Gemma conversation.
-                } finally {
-                    actionEngine?.close()
-                }
 
                 // Compact before the native conversation approaches its
                 // practical limit. Closing the whole engine releases native
@@ -614,12 +562,39 @@ class MainActivity : ComponentActivity() {
                     modelStore.fileFor(ModelCatalog.gemma4E2b).path,
                     cacheDir.path,
                     useGpu = true,
+                    tools = com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions.all(),
                     visionEnabled = true
                 )
                 newlyCreatedEngine = engine
                 engine.initialize()
                 conversationEngine = engine
                 conversationCharacters = 0
+                // Gemma 4 E2B is the semantic action planner. It sees
+                // the bounded conversation capsule and typed tool schemas.
+                // FunctionGemma and keyword gates are not used in chat.
+                val proposedCall = engine.generateToolCalls(
+                    "\${shortTermContext.promptContext(history.map { it.role to it.text })}\n\n" +
+                        "Current user request:\n\$prompt"
+                ).singleOrNull()
+                if (proposedCall != null &&
+                    proposedCall.name in setOf("read_battery", "set_volume", "open_app")
+                ) {
+                    actionName = proposedCall.name
+                    val request = com.battlesbudz.jarvis.v2.actions.FunctionGemmaActionDecoder.decode(proposedCall)
+                    if (request != null) {
+                        val result = com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
+                            executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(applicationContext)
+                        ).execute(request)
+                        actionResultMessage = result.message
+                        actionResultForGemma = buildToolResultContext(
+                            userPrompt = prompt,
+                            toolName = proposedCall.name,
+                            resultMessage = result.message,
+                            succeeded = result.succeeded
+                        )
+                    }
+                }
+
                 val streamFilter = AssistantStreamFilter { safeText ->
                     mainHandler.post { onToken(safeText) }
                 }
