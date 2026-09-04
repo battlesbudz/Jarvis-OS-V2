@@ -596,7 +596,13 @@ class MainActivity : ComponentActivity() {
                         onToken = streamFilter::accept
                     )
                 }
-                val proposedCall = generated.toolCalls.singleOrNull()
+                val candidateCall = generated.toolCalls.singleOrNull()
+                // Gemma can occasionally emit a tool call copied from the
+                // previous turn while answering a normal question. Never let
+                // that stale call cause a phone side effect.
+                val proposedCall = candidateCall?.takeIf {
+                    toolMatchesUserIntent(prompt, history, it)
+                }
                 if (proposedCall != null &&
                     proposedCall.name in setOf("read_battery", "set_volume", "open_app")
                 ) {
