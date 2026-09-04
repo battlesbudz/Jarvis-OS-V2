@@ -402,8 +402,10 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        if (Regex("""(?i)\b(what is|check|read|show).*(my|phone|device).{0,20}\bbattery\b""").containsMatchIn(normalized) ||
-            Regex("""(?i)\bbattery\b.*\b(percent|percentage|level|left)\b""").containsMatchIn(normalized)
+        if (
+            Regex("""(?i)\b(what(?:'s| is| does)|how much|check|read|show)\b.{0,30}\bbattery\b""").containsMatchIn(normalized) ||
+            Regex("""(?i)\b(my|phone|device)'?s?\s+battery\b""").containsMatchIn(normalized) ||
+            Regex("""(?i)\bbattery\b.{0,30}\b(say|percent|percentage|level|left|status|remaining)\b""").containsMatchIn(normalized)
         ) {
             return com.battlesbudz.jarvis.v2.ai.ToolCall(
                 name = "read_battery",
@@ -420,9 +422,11 @@ class MainActivity : ComponentActivity() {
     ): Boolean {
         val normalized = prompt.trim()
         return when (call.name.lowercase()) {
-            "read_battery" -> Regex(
-                """(?i)\\bbattery\\b.*\\b(percent|percentage|level|left|status|remaining)\\b|\\b(percent|percentage|level|left|status|remaining)\\b.*\\bbattery\\b"""
-            ).containsMatchIn(normalized)
+            "read_battery" -> (
+                Regex("""(?i)\b(what(?:'s| is| does)|how much|check|read|show)\b.{0,30}\bbattery\b""").containsMatchIn(normalized) ||
+                    Regex("""(?i)\b(my|phone|device)'?s?\s+battery\b""").containsMatchIn(normalized) ||
+                    Regex("""(?i)\bbattery\b.{0,30}\b(say|percent|percentage|level|left|status|remaining)\b""").containsMatchIn(normalized)
+                )
             "set_volume" -> Regex(
                 """(?i)\\b(volume|loudness)\\b.*\\b(set|make|turn|adjust|change|raise|lower|increase|decrease)\\b|\\b(set|make|turn|adjust|change|raise|lower|increase|decrease)\\b.*\\b(volume|loudness)\\b"""
             ).containsMatchIn(normalized)
