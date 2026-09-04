@@ -47,23 +47,22 @@ class ReferenceGroundingClient {
 
     private fun requestMediaWiki(query: String): ReferenceGrounding =
         runCatching {
-            val normalized = query.lowercase()
-            val searchTerms = when {
-                normalized.contains("martin luther king sr") ||
-                    normalized.contains("martin luther king senior") ||
-                    normalized.contains("daddy king") ->
-                    "Martin Luther King Sr."
-                normalized.contains("martin luther king jr") ||
-                    normalized.contains("martin luther king junior") ||
-                    normalized.contains("mlk jr") ->
-                    "Martin Luther King Jr."
-                normalized.contains("jack herer") &&
-                    normalized.contains("emperor wears no clothes") ->
-                    "The Emperor Wears No Clothes Jack Herer"
-                normalized.contains("henry anslinger") ||
-                    normalized.contains("harry anslinger") ->
-                    "Harry Anslinger"
-                else -> query
+            val preferredTitle = canonicalTitle(query)
+            val searchTerms = preferredTitle ?: query
+            val directParts = mutableListOf<String>()
+            val directSources = mutableListOf<String>()
+            if (preferredTitle != null) {
+                val directExtract = requestPageExtract(preferredTitle)
+                if (directExtract.isNotBlank()) {
+                    directParts += "Wikipedia — $preferredTitle: " + directExtract.take(MAX_EXTRACT_CHARS)
+                    directSources += "https://en.wikipedia.org/wiki/" + preferredTitle.replace(" ", "_")
+                }
+            }
+            if (preferredTitle != null && directParts.isNotEmpty()) {
+                return@runCatching ReferenceGrounding(
+                    directParts.joinToString("\n"),
+                    directSources
+                )
             }
             val encoded = URLEncoder.encode(searchTerms, "UTF-8")
             val searchUrl = URL(
@@ -102,9 +101,31 @@ class ReferenceGroundingClient {
             }?.firstOrNull { it.isNotBlank() }.orEmpty()
         }.getOrDefault("")
 
+    private fun canonicalTitle(query: String): String? {
+        val normalized = query.lowercase()
+        return when {
+            normalized.contains("martin luther king sr") ||
+                normalized.contains("martin luther king senior") ||
+                normalized.contains("daddy king") ->
+                "Martin Luther King Sr."
+            normalized.contains("martin luther king jr") ||
+                normalized.contains("martin luther king junior") ||
+                normalized.contains("mlk jr") ->
+                "Martin Luther King Jr."
+            normalized.contains("jack herer") &&
+                normalized.contains("emperor wears no clothes") ->
+                "The Emperor Wears No Clothes"
+            normalized.contains("henry anslinger") ||
+                normalized.contains("harry anslinger") ->
+                "Harry J. Anslinger"
+            else -> null
+        }
+    }
+
     private fun requestWikidata(query: String): ReferenceGrounding =
         runCatching {
-            val encoded = URLEncoder.encode(query, "UTF-8")
+            val lookupTerms = canonicalTitle(query) ?: query
+            val encoded = URLEncoder.encode(lookupTerms, "UTF-8")
             val url = URL(
                 "https://www.wikidata.org/w/api.php?action=wbsearchentities" +
                     "&search=$encoded&language=en&format=json&limit=3"
