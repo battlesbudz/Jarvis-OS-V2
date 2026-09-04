@@ -18,13 +18,16 @@ class LiteRtLmEngine(
     modelPath: String,
     cacheDir: String,
     useGpu: Boolean,
-    private val tools: List<OpenApiTool> = emptyList()
+    private val tools: List<OpenApiTool> = emptyList(),
+    private val visionEnabled: Boolean = false
 ) : LocalModelEngine, Closeable {
     private val engine = Engine(
         EngineConfig(
             modelPath = modelPath,
             cacheDir = cacheDir,
-            backend = if (useGpu) Backend.GPU() else Backend.CPU()
+            backend = if (useGpu) Backend.GPU() else Backend.CPU(),
+            visionBackend = if (visionEnabled) Backend.GPU() else null,
+            maxNumImages = if (visionEnabled) 1 else null
         )
     )
     private var conversation: com.google.ai.edge.litertlm.Conversation? = null
@@ -103,6 +106,20 @@ class LiteRtLmEngine(
     override suspend fun generate(
         prompt: String,
         onToken: (String) -> Unit
+    ): GenerationResult = generateWithContents(Contents.of(prompt), onToken)
+
+    suspend fun generate(
+        prompt: String,
+        imageBytes: ByteArray,
+        onToken: (String) -> Unit
+    ): GenerationResult = generateWithContents(
+        Contents.of(Content.ImageBytes(imageBytes), Content.Text(prompt)),
+        onToken
+    )
+
+    private suspend fun generateWithContents(
+        contents: Contents,
+        onToken: (String) -> Unit
     ): GenerationResult {
         val activeConversation = requireNotNull(conversation) {
             "LiteRT-LM engine must be initialized before generation."
@@ -111,7 +128,7 @@ class LiteRtLmEngine(
         var firstTokenAt: Long? = null
         val output = StringBuilder()
 
-        activeConversation.sendMessageAsync(prompt).collect { message ->
+        activeConversation.sendMessageAsync(contents).collect { message ->
             // LiteRT-LM 0.12 emits incremental Message values. Treat each
             // event as a delta; prefix matching would drop legitimate
             // repeated chunks such as "ha" + "ha".
