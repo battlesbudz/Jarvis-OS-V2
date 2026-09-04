@@ -13,5 +13,6 @@ interface LocalModelEngine {
 data class GenerationResult(
     val text: String,
     val timeToFirstTokenMs: Long,
-    val decodeTokensPerSecond: Double?
+    val decodeTokensPerSecond: Double?,
+    val toolCalls: List<ToolCall> = emptyList()
 )
