@@ -566,26 +566,20 @@ class MainActivity : ComponentActivity() {
                     conversationCharacters = 0
                 }
 
-                val engine: LiteRtLmEngine
-                if (conversationEngine == null) {
-                    val created = LiteRtLmEngine(
-                        ModelCatalog.gemma4E2b.id,
-                        modelStore.fileFor(ModelCatalog.gemma4E2b).path,
-                        cacheDir.path,
-                        useGpu = true
-                    )
-                    newlyCreatedEngine = created
-                    created.initialize()
-                    conversationEngine = created
-                    engine = created
-                } else {
-                    engine = conversationEngine!!
-                }
-                // Start each turn with a fresh native conversation. The
-                // visible transcript and bounded short-term summary below are the
-                // portable session context; retaining LiteRT's hidden context across
-                // many turns can exhaust native memory/context and kill the app.
-                engine.resetConversation()
+                // Fully recreate the native runtime for each turn. LiteRT's
+                // Conversation reset is not sufficient on this device because the
+                // Engine may retain GPU/context buffers after the conversation closes.
+                conversationEngine?.close()
+                conversationEngine = null
+                val engine = LiteRtLmEngine(
+                    ModelCatalog.gemma4E2b.id,
+                    modelStore.fileFor(ModelCatalog.gemma4E2b).path,
+                    cacheDir.path,
+                    useGpu = true
+                )
+                newlyCreatedEngine = engine
+                engine.initialize()
+                conversationEngine = engine
                 conversationCharacters = 0
                 val streamFilter = AssistantStreamFilter { safeText ->
                     mainHandler.post { onToken(safeText) }
