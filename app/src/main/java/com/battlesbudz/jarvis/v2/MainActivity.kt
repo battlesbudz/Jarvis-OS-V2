@@ -494,6 +494,11 @@ class MainActivity : ComponentActivity() {
                 var actionName: String? = null
                 val referenceContext = referenceGrounding.fetchIfNeeded(prompt)?.context
 
+                // Include retrieved evidence in the budget calculation. A
+                // factual lookup must trigger compaction before the fresh prompt
+                // is submitted, rather than being rejected after construction.
+                val referenceSize = referenceContext?.length ?: 0
+
                 // Compact before the native conversation approaches its
                 // practical limit. Closing the whole engine releases native
                 // buffers that a conversation-only reset may retain.
@@ -509,7 +514,7 @@ class MainActivity : ComponentActivity() {
                     history,
                     seedContext = true
                 ).length
-                val pendingRequestSize = maxOf(existingPromptSize, freshPromptSize)
+                val pendingRequestSize = maxOf(existingPromptSize, freshPromptSize) + referenceSize
                 var promptHistory = history
                 if (conversationCharacters + pendingRequestSize + GENERATION_HEADROOM >
                     CONVERSATION_COMPACTION_LIMIT
