@@ -430,6 +430,12 @@ class MainActivity : ComponentActivity() {
             treat it as authoritative and explain it naturally. Do not claim that
             you accessed or verified sources unless reference evidence is included
             in this prompt.
+            For historical or factual questions, do not fill gaps by guessing.
+            If you are not confident and no reference evidence is included, say
+            that you do not know and offer: "Would you like me to search Wikipedia?"
+            Do not claim Wikipedia or Wikidata was searched unless evidence is
+            included below. A lookup happens only after the user explicitly asks
+            to search Wikipedia, Wikidata, Wikimedia, verify, or look it up.
             
             $sessionContext
 
@@ -494,10 +500,15 @@ class MainActivity : ComponentActivity() {
                 var actionResultForGemma: String? = null
                 var actionResultMessage: String? = null
                 var actionName: String? = null
-                val recentReferenceContext = history.takeLast(4)
-                    .joinToString(" ") { it.role + ": " + it.text }
-                val referenceContext = referenceGrounding
-                    .fetchIfNeeded(prompt, recentReferenceContext)?.context
+                val previousUserQuestion = history.asReversed()
+                    .firstOrNull { it.role == "You" }?.text
+                val referenceQuery = referenceGrounding.buildExplicitLookupQuery(
+                    prompt,
+                    previousUserQuestion
+                )
+                val referenceContext = referenceQuery?.let {
+                    referenceGrounding.fetchIfRequested(it)?.context
+                }
 
                 // Include retrieved evidence in the budget calculation. A
                 // factual lookup must trigger compaction before the fresh prompt
