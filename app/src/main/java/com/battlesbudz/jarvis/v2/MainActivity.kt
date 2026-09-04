@@ -415,9 +415,10 @@ class MainActivity : ComponentActivity() {
             call:, or any other tool-call markup in your user-facing answer. If a
             tool result is included below, treat it as authoritative and explain it naturally.
             
+            $sessionContext
+
             Current user message:
             $userPrompt
-            $sessionContext
             $actionContext
         """.trimIndent()
     }
