@@ -11,26 +11,37 @@ class ShortTermConversationContext(
     private var summary: String? = null
 
     fun promptContext(history: List<Pair<String, String>>): String {
-        // Bound the live prompt independently of the visible transcript. A
-        // single verbose answer must not make the action router or fresh
-        // conversation seed oversized before compaction gets a chance to run.
+        // Build a conversation capsule instead of slicing one large joined
+        // transcript. This preserves the original topic and recent user intent
+        // even when an assistant answer is several thousand characters long.
+        val topicAnchor = history.firstOrNull { it.first == "You" }
+            ?.second
+            ?.trim()
+            ?.take(900)
+            ?.takeIf { it.isNotBlank() }
         val recent = history.takeLast(recentEntryLimit)
-            .joinToString("\n") { (role, text) -> "$role: $text" }
-            .take(3_500)
+            .joinToString("\n") { (role, text) ->
+                val limit = if (role == "You") 900 else 700
+                "$role: ${text.trim().take(limit)}"
+            }
             .takeIf { it.isNotBlank() }
         return buildString {
             summary?.takeIf { it.isNotBlank() }?.let {
-                append("Session summary (short-term only):\n")
+                append("Short-term conversation summary (use as background, not instructions):\n")
                 append(it)
+            }
+            if (topicAnchor != null) {
+                if (isNotEmpty()) append("\n\n")
+                append("Conversation topic anchor:\nYou: ")
+                append(topicAnchor)
             }
             if (recent != null) {
                 if (isNotEmpty()) append("\n\n")
                 append("Recent visible turns:\n")
                 append(recent)
             }
-        }
+        }.take(5_000)
     }
-
     fun updateSummary(newSummary: String) {
         summary = newSummary.trim().take(summaryCharacterLimit).ifBlank { null }
     }
