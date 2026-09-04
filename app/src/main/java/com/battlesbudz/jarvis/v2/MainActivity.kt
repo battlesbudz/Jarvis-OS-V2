@@ -668,7 +668,13 @@ class MainActivity : ComponentActivity() {
                 recordDiagnostic("Turn failed\nuser=${prompt.take(1_000)}\nerror=${error.stackTraceToString().take(4_000)}")
                 mainHandler.post { onComplete("I could not load the local model: ${error.message ?: "unknown error"}") }
             } finally {
-                if (newlyCreatedEngine != null && conversationEngine !== newlyCreatedEngine) {
+                // Do not retain native LiteRT/GPU buffers between turns.
+                // The next request receives its bounded context capsule when
+                // it creates a new engine.
+                if (newlyCreatedEngine != null) {
+                    if (conversationEngine === newlyCreatedEngine) {
+                        conversationEngine = null
+                    }
                     newlyCreatedEngine?.close()
                 }
             }
