@@ -60,10 +60,10 @@ class MainActivity : ComponentActivity() {
         const val SHORT_TERM_SUMMARY_KEY = "short_term_summary"
         // About 8K tokens for typical English chat; the engine is rebuilt
         // before native KV-cache growth becomes risky on mobile.
-        // About 8K tokens for typical English chat; include the pending
-        // request and output headroom before rebuilding the native engine.
-        const val CONVERSATION_COMPACTION_LIMIT = 32_000
-        const val GENERATION_HEADROOM = 8_000
+        // LiteRT's native budget is lower in practice than Gemma's advertised
+        // maximum on this phone. Rebuild before the next long turn can cross it.
+        const val CONVERSATION_COMPACTION_LIMIT = 8_000
+        const val GENERATION_HEADROOM = 2_500
         const val INTERRUPTED_RESPONSE = "The previous response was interrupted. Please send that again."
     }
 
