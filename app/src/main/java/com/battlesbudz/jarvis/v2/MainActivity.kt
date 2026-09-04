@@ -58,7 +58,9 @@ class MainActivity : ComponentActivity() {
     private companion object {
         val activeConversationJobs = AtomicInteger(0)
         const val SHORT_TERM_SUMMARY_KEY = "short_term_summary"
-        const val CONVERSATION_COMPACTION_LIMIT = 8_000
+        // About 8K tokens for typical English chat; the engine is rebuilt
+        // before native KV-cache growth becomes risky on mobile.
+        const val CONVERSATION_COMPACTION_LIMIT = 32_000
         const val INTERRUPTED_RESPONSE = "The previous response was interrupted. Please send that again."
     }
 
