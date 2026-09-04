@@ -538,8 +538,34 @@ class MainActivity : ComponentActivity() {
                     mainHandler.post { onToken(safeText) }
                 }
                 val seedContext = conversationCharacters == 0
+                val submittedPrompt = buildGemmaPrompt(
+                    prompt,
+                    actionResultForGemma,
+                    history,
+                    seedContext
+                )
+                if (submittedPrompt.length + GENERATION_HEADROOM >
+                    CONVERSATION_COMPACTION_LIMIT
+                ) {
+                    conversationEngine?.close()
+                    conversationEngine = null
+                    conversationCharacters = 0
+                    recordDiagnostic(
+                        "Turn rejected\\n" +
+                            "userLength=${prompt.length}\\n" +
+                            "submittedPromptLength=${submittedPrompt.length}\\n" +
+                            "reason=prompt exceeds fresh-session context budget"
+                    )
+                    mainHandler.post {
+                        onComplete(
+                            "That message is too long for the local model's safe context. " +
+                                "Please send it in smaller parts."
+                        )
+                    }
+                    return@launch
+                }
                 val generated = engine.generate(
-                    prompt = buildGemmaPrompt(prompt, actionResultForGemma, history, seedContext),
+                    prompt = submittedPrompt,
                     onToken = streamFilter::accept
                 )
                 val rawControlOutput = generated.text.contains("tool_call>") ||
@@ -552,7 +578,9 @@ class MainActivity : ComponentActivity() {
                 }
                 val cleanedResponse = cleanAssistantText(generated.text)
                 if (!rawControlOutput) {
-                    conversationCharacters += prompt.length + generated.text.length
+                    // Count the exact prompt submitted to the native engine,
+                    // including Jarvis instructions and injected tool/context data.
+                    conversationCharacters += submittedPrompt.length + generated.text.length
                 }
                 val previousAssistant = history.asReversed()
                     .firstOrNull { it.role == "Jarvis" }
