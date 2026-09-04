@@ -108,7 +108,7 @@ class MainActivity : ComponentActivity() {
                 onCopyDiagnostics = { transcript -> copyDiagnostics(transcript) },
                 onMessagesChanged = { persistTranscript(it) },
                 onSendingChanged = { sessionPreferences.edit().putBoolean("sending", it).apply() },
-                onSend = { prompt, history, onToken, onComplete ->
+                onSend = { prompt, imageUri, history, onToken, onComplete ->
                     runConversation(prompt, history, imageUri, onToken, onComplete)
                 }
             )
