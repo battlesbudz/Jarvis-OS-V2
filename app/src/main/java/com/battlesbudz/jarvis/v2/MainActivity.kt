@@ -372,7 +372,7 @@ class MainActivity : ComponentActivity() {
         // Resolve a pronoun or generic confirmation only when a recent turn
         // established a specific app-opening request or offer.
         val genericConfirmation = Regex(
-            """(?i)^(?:okay|ok|yes|sure|please|do it|go ahead|open it|open that)(?:\s+(?:please|now))?[?.!]*$"""
+            """(?i)^(?:(?:okay|ok|yes|sure)(?:\s+(?:thanks|thank you|can you|could you|please|do it|now|and))*|do it|go ahead|open it|open that)(?:\s+please)?[?.!]*$"""
         ).matches(normalized)
         if (genericConfirmation) {
             val priorApp = history.asReversed().asSequence()
