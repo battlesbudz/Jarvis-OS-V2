@@ -502,7 +502,7 @@ class MainActivity : ComponentActivity() {
                 var actionName: String? = null
                 val previousUserQuestion = history.asReversed()
                     .firstOrNull { it.role == "You" }?.text
-                val referenceQuery = referenceGrounding.buildExplicitLookupQuery(
+                val referenceQuery = referenceGrounding.buildLookupQuery(
                     prompt,
                     previousUserQuestion
                 )
