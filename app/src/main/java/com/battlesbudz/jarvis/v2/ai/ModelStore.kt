@@ -31,17 +31,18 @@ class ModelStore(context: Context) {
         fileFor(spec).let { it.isFile && it.length() > 0L }
 
     fun isReady(): Boolean =
-        hasModel(ModelCatalog.gemma4E2b) && hasModel(ModelCatalog.mobileActions270m)
+        hasModel(ModelCatalog.gemma4E2b)
 
-    fun isUsable(): Boolean =
-        isReady() && listOf(ModelCatalog.gemma4E2b, ModelCatalog.mobileActions270m).all { spec ->
-            val file = fileFor(spec)
-            val key = fingerprintKey(spec)
+    fun isUsable(): Boolean {
+        val spec = ModelCatalog.gemma4E2b
+        val file = fileFor(spec)
+        val key = fingerprintKey(spec)
+        return isReady() &&
             !preferences.getBoolean("${key}_invalid", false) &&
-                preferences.contains(key) &&
-                preferences.getLong("${key}_length", -1L) == file.length() &&
-                preferences.getLong("${key}_modified", -1L) == file.lastModified()
-        }
+            preferences.contains(key) &&
+            preferences.getLong("${key}_length", -1L) == file.length() &&
+            preferences.getLong("${key}_modified", -1L) == file.lastModified()
+    }
 
     /**
      * Verifies that the file is unchanged since it was accepted by setup.
