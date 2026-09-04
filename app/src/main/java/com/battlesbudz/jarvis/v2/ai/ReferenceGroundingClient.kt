@@ -49,10 +49,10 @@ class ReferenceGroundingClient {
         if (factualTerms.any(text::contains)) return true
 
         val asksKnowledge = Regex(
-            "^(who|what|when|where|why|which)\\\\b"
+            "^(who|what|when|where|why|which)\\b"
         ).containsMatchIn(text)
         val hasEntityShape = Regex(
-            "\\b[A-Z][a-z]{2,}(?:\\\\s+[A-Z][a-z]{2,})+\\b"
+            "\\b[A-Z][a-z]{2,}(?:\\s+[A-Z][a-z]{2,})+\\b"
         ).containsMatchIn(query) || Regex("\\b[A-Z]{2,}\\b").containsMatchIn(query)
         return asksKnowledge && hasEntityShape
     }
