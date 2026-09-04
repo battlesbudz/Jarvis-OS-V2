@@ -109,7 +109,7 @@ class MainActivity : ComponentActivity() {
                 onMessagesChanged = { persistTranscript(it) },
                 onSendingChanged = { sessionPreferences.edit().putBoolean("sending", it).apply() },
                 onSend = { prompt, history, onToken, onComplete ->
-                    runConversation(prompt, history, onToken, onComplete)
+                    runConversation(prompt, history, imageUri, onToken, onComplete)
                 }
             )
         }
@@ -479,6 +479,7 @@ class MainActivity : ComponentActivity() {
     private fun runConversation(
         prompt: String,
         history: List<ChatEntry>,
+        imageUri: Uri?,
         onToken: (String) -> Unit,
         onComplete: (String) -> Unit
     ) {
@@ -613,7 +614,8 @@ class MainActivity : ComponentActivity() {
                     ModelCatalog.gemma4E2b.id,
                     modelStore.fileFor(ModelCatalog.gemma4E2b).path,
                     cacheDir.path,
-                    useGpu = true
+                    useGpu = true,
+                    visionEnabled = true
                 )
                 newlyCreatedEngine = engine
                 engine.initialize()
@@ -649,10 +651,27 @@ class MainActivity : ComponentActivity() {
                     }
                     return@launch
                 }
-                val generated = engine.generate(
-                    prompt = submittedPrompt,
-                    onToken = streamFilter::accept
-                )
+                val imageBytes = imageUri?.let { uri ->
+                    contentResolver.openInputStream(uri)?.use { stream ->
+                        stream.readBytes().also { bytes ->
+                            check(bytes.size <= MAX_IMAGE_BYTES) {
+                                "The selected image is too large for safe local inference."
+                            }
+                        }
+                    } ?: error("The selected image could not be read.")
+                }
+                val generated = if (imageBytes != null) {
+                    engine.generate(
+                        prompt = submittedPrompt,
+                        imageBytes = imageBytes,
+                        onToken = streamFilter::accept
+                    )
+                } else {
+                    engine.generate(
+                        prompt = submittedPrompt,
+                        onToken = streamFilter::accept
+                    )
+                }
                 val rawControlOutput = generated.text.contains("tool_call>") ||
                     generated.text.contains("start_function_call") ||
                     generated.text.contains("call:MobileActions:")
@@ -731,7 +750,7 @@ private fun JarvisApp(
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onMessagesChanged: (List<ChatEntry>) -> Unit,
     onSendingChanged: (Boolean) -> Unit,
-    onSend: (String, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit
+    onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit
 ) {
     var modelsReady by remember { mutableStateOf(store.isUsable()) }
     var smokeTestPassed by rememberSaveable { mutableStateOf(store.isUsable() && store.smokeTestPassed()) }
@@ -844,6 +863,7 @@ private fun ModelSetup(
 }
 
 private const val MAX_SAVED_DRAFT_CHARS = 16_000
+private const val MAX_IMAGE_BYTES = 12 * 1024 * 1024
 
 private data class ChatEntry(
     val role: String,
@@ -852,7 +872,7 @@ private data class ChatEntry(
 
 @Composable
 private fun JarvisChat(
-    onSend: (String, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit,
+    onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onMessagesChanged: (List<ChatEntry>) -> Unit,
     onSendingChanged: (Boolean) -> Unit,
@@ -862,8 +882,10 @@ private fun JarvisChat(
     var messages by remember { mutableStateOf(initialMessages) }
     var isSending by remember { mutableStateOf(false) }
     var attachedImageName by rememberSaveable { mutableStateOf<String?>(null) }
+    var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
     val transcriptScrollState = rememberScrollState()
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        attachedImageUri = uri
         attachedImageName = uri?.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
             ?: if (uri != null) "selected image" else null
     }
@@ -960,13 +982,15 @@ private fun JarvisChat(
         }
         Button(
             onClick = {
+                val selectedImageUri = attachedImageUri
                 val submitted = buildString {
                     append(prompt.trim())
                     attachedImageName?.let {
-                        append("\n\n[Attached image: $it. The current local text model cannot inspect image pixels.]")
+                        append("\n\n[Attached image: $it]")
                     }
                 }.trim()
                 prompt = ""
+                attachedImageUri = null
                 attachedImageName = null
                 isSending = true
                 val updatedMessages = messages + ChatEntry("You", submitted) + ChatEntry("Jarvis", "")
@@ -975,6 +999,7 @@ private fun JarvisChat(
                 onSendingChanged(true)
                 onSend(
                     submitted,
+                    selectedImageUri,
                     messages.dropLast(2),
                     { token ->
                         messages = messages.dropLast(1) +
