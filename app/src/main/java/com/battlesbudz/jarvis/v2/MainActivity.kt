@@ -434,6 +434,33 @@ class MainActivity : ComponentActivity() {
                     conversationEngine = null
                     error("The Gemma model file changed or failed integrity verification. Re-import it.")
                 }
+                // Check the raw request before loading the action model or
+                // executing a phone side effect. Tool context can only make the
+                // final prompt larger.
+                val preActionPromptSize = buildGemmaPrompt(
+                    prompt,
+                    actionResultContext = null,
+                    history = history,
+                    seedContext = conversationCharacters == 0
+                ).length
+                if (preActionPromptSize + GENERATION_HEADROOM >
+                    CONVERSATION_COMPACTION_LIMIT
+                ) {
+                    recordDiagnostic(
+                        "Turn rejected before action routing\\n" +
+                            "userLength=${prompt.length}\\n" +
+                            "promptLength=${preActionPromptSize}\\n" +
+                            "reason=request exceeds safe pre-action context budget"
+                    )
+                    mainHandler.post {
+                        onComplete(
+                            "That message is too long for the local model's safe context. " +
+                                "Please send it in smaller parts."
+                        )
+                    }
+                    return@launch
+                }
+
                 // Route natural-language action requests through FunctionGemma
                 // before sending general conversation to Gemma. Tool execution
                 // stays in Kotlin after validation; model output is never run
