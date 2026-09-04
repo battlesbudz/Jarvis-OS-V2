@@ -502,9 +502,12 @@ class MainActivity : ComponentActivity() {
                 var actionName: String? = null
                 val previousUserQuestion = history.asReversed()
                     .firstOrNull { it.role == "You" }?.text
+                val previousAssistantMessage = history.asReversed()
+                    .firstOrNull { it.role == "Jarvis" }?.text
                 val referenceQuery = referenceGrounding.buildLookupQuery(
                     prompt,
-                    previousUserQuestion
+                    previousUserQuestion,
+                    previousAssistantMessage
                 )
                 val referenceContext = referenceQuery?.let {
                     referenceGrounding.fetchIfRequested(it)?.context
