@@ -580,10 +580,16 @@ class MainActivity : ComponentActivity() {
                 } else {
                     engine = conversationEngine!!
                 }
+                // Start each turn with a fresh native conversation. The
+                // visible transcript and bounded short-term summary below are the
+                // portable session context; retaining LiteRT's hidden context across
+                // many turns can exhaust native memory/context and kill the app.
+                engine.resetConversation()
+                conversationCharacters = 0
                 val streamFilter = AssistantStreamFilter { safeText ->
                     mainHandler.post { onToken(safeText) }
                 }
-                val seedContext = conversationCharacters == 0
+                val seedContext = true
                 val submittedPrompt = buildGemmaPrompt(
                     prompt,
                     actionResultForGemma,
