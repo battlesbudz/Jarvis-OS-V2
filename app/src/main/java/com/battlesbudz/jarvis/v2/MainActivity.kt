@@ -337,20 +337,57 @@ class MainActivity : ComponentActivity() {
         return cleaned
     }
 
-    private fun fallbackToolCall(prompt: String): com.battlesbudz.jarvis.v2.ai.ToolCall? {
+    private fun fallbackToolCall(
+        prompt: String,
+        history: List<ChatEntry>
+    ): com.battlesbudz.jarvis.v2.ai.ToolCall? {
         val normalized = prompt.trim()
-        val openMatch = Regex(
-            """(?i)^(?:can you |please )?(?:open|launch|start) (?:the )?(.+?)[?.!]*$"""
-        ).find(normalized)
-        if (openMatch != null) {
-            val appName = openMatch.groupValues[1].trim()
-            if (appName.isNotBlank()) {
-                return com.battlesbudz.jarvis.v2.ai.ToolCall(
+
+        fun openApp(appName: String): com.battlesbudz.jarvis.v2.ai.ToolCall? {
+            val cleanedName = appName.trim().trimEnd('.', '?', '!')
+            return cleanedName.takeIf { it.isNotBlank() }?.let {
+                com.battlesbudz.jarvis.v2.ai.ToolCall(
                     name = "open_app",
-                    arguments = JSONObject().put("app", appName).toString()
+                    arguments = JSONObject().put("app", it).toString()
                 )
             }
         }
+
+        // Handle direct requests such as "open YouTube please".
+        val directOpen = Regex(
+            """(?i)^(?:can you |could you |please )?(?:open|launch|start) (?:the )?(.+?)(?: please)?[?.!]*$"""
+        ).find(normalized)
+        if (directOpen != null && !directOpen.groupValues[1].equals("it", ignoreCase = true)) {
+            return openApp(directOpen.groupValues[1])
+        }
+
+        // Handle "what about Facebook, can you open it?" without allowing
+        // a generic mention of an app to trigger an action.
+        val namedContextualOpen = Regex(
+            """(?i)^what about (.+?)\s*,?\s*(?:can|could|would) you (?:please )?(?:open|launch|start) (?:it|that)[?.!]*$"""
+        ).find(normalized)
+        if (namedContextualOpen != null) {
+            return openApp(namedContextualOpen.groupValues[1])
+        }
+
+        // Resolve "okay, open it" only from a prior user turn that explicitly
+        // named an app in an opening request.
+        val pronounOpen = Regex(
+            """(?i)^(?:okay|ok|yes|sure|please)?\s*,?\s*(?:open|launch|start) (?:it|that)[?.!]*$"""
+        ).containsMatchIn(normalized)
+        if (pronounOpen) {
+            val priorApp = history.asReversed()
+                .asSequence()
+                .filter { it.role.equals("You", ignoreCase = true) }
+                .mapNotNull { entry ->
+                    Regex(
+                        """(?i)^(?:can you |could you |please )?(?:open|launch|start) (?:the )?(.+?)(?: please)?[?.!]*$"""
+                    ).find(entry.text.trim())?.groupValues?.getOrNull(1)
+                }
+                .firstOrNull { !it.equals("it", ignoreCase = true) }
+            if (priorApp != null) return openApp(priorApp)
+        }
+
         val volumeCommand = Regex("""(?i)\b(set|make|turn|adjust|change)\b.*\bvolume\b""").containsMatchIn(normalized)
         if (volumeCommand) {
             val volumeValue = Regex("""(?i)\bvolume\b[^0-9]{0,20}([0-9]{1,5})(?:\s*%)?\b""").find(normalized)
@@ -387,9 +424,7 @@ class MainActivity : ComponentActivity() {
             "set_volume" -> Regex(
                 """(?i)\\b(volume|loudness)\\b.*\\b(set|make|turn|adjust|change|raise|lower|increase|decrease)\\b|\\b(set|make|turn|adjust|change|raise|lower|increase|decrease)\\b.*\\b(volume|loudness)\\b"""
             ).containsMatchIn(normalized)
-            "open_app" -> Regex(
-                """(?i)^(?:can you |please )?(?:open|launch|start)\\b"""
-            ).containsMatchIn(normalized)
+            "open_app" -> fallbackToolCall(normalized, emptyList()) != null
             else -> false
         }
     }
@@ -495,7 +530,7 @@ class MainActivity : ComponentActivity() {
                         tools = MobileActionToolDefinitions.all()
                     )
                     actionEngine.initialize()
-            val deterministicCall = fallbackToolCall(prompt)
+            val deterministicCall = fallbackToolCall(prompt, history)
             val calls = if (deterministicCall == null) {
                 actionEngine.generateToolCalls(
                     "${shortTermContext.promptContext(history.map { it.role to it.text })}\n\n" +
