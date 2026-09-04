@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
     private companion object {
         val activeConversationJobs = AtomicInteger(0)
         const val SHORT_TERM_SUMMARY_KEY = "short_term_summary"
+        const val CONVERSATION_COMPACTION_LIMIT = 8_000
         const val INTERRUPTED_RESPONSE = "The previous response was interrupted. Please send that again."
     }
 
@@ -74,10 +75,18 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         modelStore = ModelStore(applicationContext)
         sessionPreferences = getSharedPreferences("chat_session", MODE_PRIVATE)
+        val interruptedSession = sessionPreferences.getBoolean("sending", false)
         shortTermContext.restoreSummary(
-            savedInstanceState?.getString(SHORT_TERM_SUMMARY_KEY)
-                ?: sessionPreferences.getString(SHORT_TERM_SUMMARY_KEY, null)
+            if (interruptedSession) null else {
+                savedInstanceState?.getString(SHORT_TERM_SUMMARY_KEY)
+                    ?: sessionPreferences.getString(SHORT_TERM_SUMMARY_KEY, null)
+            }
         )
+        if (interruptedSession) {
+            // Do not reuse context captured while the native engine was being
+            // torn down. The visible transcript remains recoverable.
+            sessionPreferences.edit().remove(SHORT_TERM_SUMMARY_KEY).apply()
+        }
         synchronized(diagnosticTurns) {
             diagnosticTurns.addAll(restoreDiagnostics())
         }
@@ -472,6 +481,24 @@ class MainActivity : ComponentActivity() {
                     actionEngine?.close()
                 }
 
+                // Compact before the native conversation approaches its
+                // practical limit. Closing the whole engine releases native
+                // buffers that a conversation-only reset may retain.
+                if (conversationCharacters > CONVERSATION_COMPACTION_LIMIT) {
+                    val compactedText = shortTermContext.compactSnapshot(
+                        history.map { it.role to it.text }
+                    )
+                    if (compactedText.isNotBlank()) {
+                        shortTermContext.updateSummary(compactedText)
+                        sessionPreferences.edit()
+                            .putString(SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
+                            .apply()
+                    }
+                    conversationEngine?.close()
+                    conversationEngine = null
+                    conversationCharacters = 0
+                }
+
                 val engine: LiteRtLmEngine
                 if (conversationEngine == null) {
                     val created = LiteRtLmEngine(
@@ -486,27 +513,6 @@ class MainActivity : ComponentActivity() {
                     engine = created
                 } else {
                     engine = conversationEngine!!
-                }
-                // Keep the retained conversation below the model's practical
-                // context budget. The visible transcript remains available in
-                // the UI, while the runtime starts a clean model session
-                // before stale fragments can contaminate later turns.
-                if (conversationCharacters > 14_000) {
-                    // Do not ask the already-full native conversation to
-                    // summarize itself. Build a bounded session summary from
-                    // the persisted summary and recent visible turns, then
-                    // reset the native conversation safely.
-                    val compactedText = shortTermContext.compactSnapshot(
-                        history.map { it.role to it.text }
-                    )
-                    if (compactedText.isNotBlank()) {
-                        shortTermContext.updateSummary(compactedText)
-                        sessionPreferences.edit()
-                            .putString(SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
-                            .apply()
-                    }
-                    engine.resetConversation()
-                    conversationCharacters = 0
                 }
                 val streamFilter = AssistantStreamFilter { safeText ->
                     mainHandler.post { onToken(safeText) }
@@ -559,6 +565,11 @@ class MainActivity : ComponentActivity() {
                 )
                 mainHandler.post { onComplete(finalResponse) }
             } catch (error: Throwable) {
+                // Leave the next turn with a fresh native session after any
+                // recoverable generation failure.
+                conversationEngine?.close()
+                conversationEngine = null
+                conversationCharacters = 0
                 recordDiagnostic("Turn failed\nuser=${prompt.take(1_000)}\nerror=${error.stackTraceToString().take(4_000)}")
                 mainHandler.post { onComplete("I could not load the local model: ${error.message ?: "unknown error"}") }
             } finally {
