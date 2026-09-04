@@ -40,18 +40,31 @@ class ReferenceGroundingClient {
             "author",
             "law", "legal", "legislation", "conspiracy", "true story",
             "when did", "where did", "what happened", "scientific",
-            "evidence", "fact", "president", "war", "attack", "event"
+            "evidence", "fact", "president", "war", "attack", "event", "difference between", "father",
+            "martin luther king", "mlk", "anslinger", "jack herer"
         ).any(text::contains)
     }
 
     private fun requestMediaWiki(query: String): ReferenceGrounding =
         runCatching {
-            val searchTerms = if (
-                query.contains("jack herer", ignoreCase = true) &&
-                query.contains("emperor wears no clothes", ignoreCase = true)
-            ) {
-                "The Emperor Wears No Clothes Jack Herer"
-            } else query
+            val normalized = query.lowercase()
+            val searchTerms = when {
+                normalized.contains("martin luther king sr") ||
+                    normalized.contains("martin luther king senior") ||
+                    normalized.contains("daddy king") ->
+                    "Martin Luther King Sr."
+                normalized.contains("martin luther king jr") ||
+                    normalized.contains("martin luther king junior") ||
+                    normalized.contains("mlk jr") ->
+                    "Martin Luther King Jr."
+                normalized.contains("jack herer") &&
+                    normalized.contains("emperor wears no clothes") ->
+                    "The Emperor Wears No Clothes Jack Herer"
+                normalized.contains("henry anslinger") ||
+                    normalized.contains("harry anslinger") ->
+                    "Harry Anslinger"
+                else -> query
+            }
             val encoded = URLEncoder.encode(searchTerms, "UTF-8")
             val searchUrl = URL(
                 "https://en.wikipedia.org/w/api.php?action=query&list=search" +
