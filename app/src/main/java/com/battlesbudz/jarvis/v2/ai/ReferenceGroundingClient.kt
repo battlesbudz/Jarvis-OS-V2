@@ -13,9 +13,20 @@ class ReferenceGroundingClient {
     }
     fun buildLookupQuery(
         currentPrompt: String,
-        previousUserQuestion: String?
+        previousUserQuestion: String?,
+        previousAssistantMessage: String? = null
     ): String? {
-        val explicit = isExplicitLookupRequest(currentPrompt)
+        val normalized = currentPrompt.lowercase().trim()
+        val confirmation = normalized in setOf(
+            "yes", "yes please", "sure", "okay", "ok", "go ahead", "do it"
+        )
+        val offeredLookup = previousAssistantMessage?.lowercase()?.let {
+            it.contains("search wikipedia") ||
+                it.contains("search wikimedia") ||
+                it.contains("search wikidata")
+        } == true
+        val explicit = isExplicitLookupRequest(currentPrompt) ||
+            (confirmation && offeredLookup)
         if (!explicit && !shouldAutomaticallyLookup(currentPrompt)) return null
         val previous = previousUserQuestion
             ?.takeIf { it.isNotBlank() && it != currentPrompt }
