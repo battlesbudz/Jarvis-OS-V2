@@ -7,6 +7,7 @@
         </intent>
     </queries>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:theme="@style/Theme.JarvisOSV2"
         android:label="Jarvis OS V2"
