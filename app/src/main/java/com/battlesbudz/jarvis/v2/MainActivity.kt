@@ -569,32 +569,6 @@ class MainActivity : ComponentActivity() {
                 engine.initialize()
                 conversationEngine = engine
                 conversationCharacters = 0
-                // Gemma 4 E2B is the semantic action planner. It sees
-                // the bounded conversation capsule and typed tool schemas.
-                // FunctionGemma and keyword gates are not used in chat.
-                val proposedCall = engine.generateToolCalls(
-                    "\${shortTermContext.promptContext(history.map { it.role to it.text })}\n\n" +
-                        "Current user request:\n\$prompt"
-                ).singleOrNull()
-                if (proposedCall != null &&
-                    proposedCall.name in setOf("read_battery", "set_volume", "open_app")
-                ) {
-                    actionName = proposedCall.name
-                    val request = com.battlesbudz.jarvis.v2.actions.FunctionGemmaActionDecoder.decode(proposedCall)
-                    if (request != null) {
-                        val result = com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
-                            executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(applicationContext)
-                        ).execute(request)
-                        actionResultMessage = result.message
-                        actionResultForGemma = buildToolResultContext(
-                            userPrompt = prompt,
-                            toolName = proposedCall.name,
-                            resultMessage = result.message,
-                            succeeded = result.succeeded
-                        )
-                    }
-                }
-
                 val streamFilter = AssistantStreamFilter { safeText ->
                     mainHandler.post { onToken(safeText) }
                 }
@@ -634,7 +608,7 @@ class MainActivity : ComponentActivity() {
                         }
                     } ?: error("The selected image could not be read.")
                 }
-                val generated = if (imageBytes != null) {
+                var generated = if (imageBytes != null) {
                     engine.generate(
                         prompt = submittedPrompt,
                         imageBytes = imageBytes,
@@ -646,7 +620,31 @@ class MainActivity : ComponentActivity() {
                         onToken = streamFilter::accept
                     )
                 }
-                val rawControlOutput = generated.text.contains("tool_call>") ||
+                val proposedCall = generated.toolCalls.singleOrNull()
+                if (proposedCall != null &&
+                    proposedCall.name in setOf("read_battery", "set_volume", "open_app")
+                ) {
+                    actionName = proposedCall.name
+                    val request = com.battlesbudz.jarvis.v2.actions.FunctionGemmaActionDecoder.decode(proposedCall)
+                    if (request != null) {
+                        val result = com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
+                            executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(applicationContext)
+                        ).execute(request)
+                        actionResultMessage = result.message
+                        actionResultForGemma = buildToolResultContext(
+                            userPrompt = prompt,
+                            toolName = proposedCall.name,
+                            resultMessage = result.message,
+                            succeeded = result.succeeded
+                        )
+                        generated = engine.sendToolResult(
+                            proposedCall,
+                            actionResultForGemma!!,
+                            streamFilter::accept
+                        )
+                    }
+                }
+                val rawControlOutput = generated.toolCalls.isNotEmpty() || generated.text.contains("tool_call>") ||
                     generated.text.contains("start_function_call") ||
                     generated.text.contains("call:MobileActions:")
                 if (rawControlOutput) {
