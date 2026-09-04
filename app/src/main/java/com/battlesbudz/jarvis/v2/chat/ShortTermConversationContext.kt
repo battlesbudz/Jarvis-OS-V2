@@ -16,7 +16,7 @@ class ShortTermConversationContext(
         // conversation seed oversized before compaction gets a chance to run.
         val recent = history.takeLast(recentEntryLimit)
             .joinToString("\n") { (role, text) -> "$role: $text" }
-            .takeLast(3_500)
+            .take(3_500)
             .takeIf { it.isNotBlank() }
         return buildString {
             summary?.takeIf { it.isNotBlank() }?.let {
