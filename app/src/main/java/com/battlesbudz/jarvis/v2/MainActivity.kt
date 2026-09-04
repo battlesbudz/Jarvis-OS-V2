@@ -62,8 +62,9 @@ class MainActivity : ComponentActivity() {
         // context maximum. It leaves room for a normal long answer while
         // rebuilding the native conversation before retained chat grows too far
         // for this device/runtime.
-        const val CONVERSATION_COMPACTION_LIMIT = 16_000
-        const val GENERATION_HEADROOM = 2_500
+        const val CONVERSATION_COMPACTION_LIMIT = 10_000
+        const val GENERATION_HEADROOM = 2_000
+        const val MAX_USER_PROMPT_CHARS = 12_000
         const val INTERRUPTED_RESPONSE = "The previous response was interrupted. Please send that again."
     }
 
@@ -434,23 +435,14 @@ class MainActivity : ComponentActivity() {
                     conversationEngine = null
                     error("The Gemma model file changed or failed integrity verification. Re-import it.")
                 }
-                // Check the raw request before loading the action model or
-                // executing a phone side effect. Tool context can only make the
-                // final prompt larger.
-                val preActionPromptSize = buildGemmaPrompt(
-                    prompt,
-                    actionResultContext = null,
-                    history = history,
-                    seedContext = conversationCharacters == 0
-                ).length
-                if (preActionPromptSize + GENERATION_HEADROOM >
-                    CONVERSATION_COMPACTION_LIMIT
-                ) {
+                // Reject only an exceptionally large single message before
+                // routing or executing a phone side effect. Retained history is
+                // handled by compaction below and must not reject a short follow-up.
+                if (prompt.length > MAX_USER_PROMPT_CHARS) {
                     recordDiagnostic(
                         "Turn rejected before action routing\\n" +
                             "userLength=${prompt.length}\\n" +
-                            "promptLength=${preActionPromptSize}\\n" +
-                            "reason=request exceeds safe pre-action context budget"
+                            "reason=single user message exceeds safe mobile budget"
                     )
                     mainHandler.post {
                         onComplete(

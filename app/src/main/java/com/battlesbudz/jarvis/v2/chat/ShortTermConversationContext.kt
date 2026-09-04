@@ -11,8 +11,12 @@ class ShortTermConversationContext(
     private var summary: String? = null
 
     fun promptContext(history: List<Pair<String, String>>): String {
+        // Bound the live prompt independently of the visible transcript. A
+        // single verbose answer must not make the action router or fresh
+        // conversation seed oversized before compaction gets a chance to run.
         val recent = history.takeLast(recentEntryLimit)
             .joinToString("\n") { (role, text) -> "$role: $text" }
+            .takeLast(3_500)
             .takeIf { it.isNotBlank() }
         return buildString {
             summary?.takeIf { it.isNotBlank() }?.let {
