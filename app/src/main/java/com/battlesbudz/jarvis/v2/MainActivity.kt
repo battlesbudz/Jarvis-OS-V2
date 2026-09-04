@@ -768,6 +768,11 @@ private fun JarvisChat(
         mutableStateOf(initialMessages)
     }
     var isSending by remember { mutableStateOf(false) }
+    val transcriptScrollState = rememberScrollState()
+
+    LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length) {
+        transcriptScrollState.scrollTo(transcriptScrollState.maxValue)
+    }
 
     Column(
         Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
@@ -778,7 +783,7 @@ private fun JarvisChat(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(transcriptScrollState)
                     .padding(bottom = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
