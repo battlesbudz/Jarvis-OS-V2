@@ -431,11 +431,10 @@ class MainActivity : ComponentActivity() {
             you accessed or verified sources unless reference evidence is included
             in this prompt.
             For historical or factual questions, do not fill gaps by guessing.
-            If you are not confident and no reference evidence is included, say
-            that you do not know and offer: "Would you like me to search Wikipedia?"
-            Do not claim Wikipedia or Wikidata was searched unless evidence is
-            included below. A lookup happens only after the user explicitly asks
-            to search Wikipedia, Wikidata, Wikimedia, verify, or look it up.
+            If you are not confident and no reference evidence is included,
+            begin with [NEEDS_WIKIPEDIA], say that you do not know, and offer:
+            "Would you like me to search Wikipedia?" Do not claim Wikipedia or
+            Wikidata was searched unless evidence is included below.
             
             $sessionContext
 
@@ -504,7 +503,7 @@ class MainActivity : ComponentActivity() {
                     .firstOrNull { it.role == "You" }?.text
                 val previousAssistantMessage = history.asReversed()
                     .firstOrNull { it.role == "Jarvis" }?.text
-                val referenceQuery = referenceGrounding.buildLookupQuery(
+                val referenceQuery = referenceGrounding.buildExplicitLookupQuery(
                     prompt,
                     previousUserQuestion,
                     previousAssistantMessage
@@ -678,6 +677,41 @@ class MainActivity : ComponentActivity() {
                             prompt = retryPrompt,
                             onToken = streamFilter::accept
                         )
+                    }
+                }
+                val localAnswer = cleanAssistantText(generated.text)
+                val shouldUseAutomaticFallback =
+                    referenceContext == null &&
+                        actionName == null &&
+                        referenceGrounding.shouldAutomaticallyLookup(prompt) &&
+                        referenceGrounding.isInsufficientAnswer(localAnswer)
+                if (shouldUseAutomaticFallback) {
+                    val fallbackQuery = referenceGrounding.buildAutomaticFallbackQuery(
+                        prompt,
+                        previousUserQuestion
+                    )
+                    val fallbackContext = referenceGrounding.fetchIfRequested(fallbackQuery)?.context
+                    if (!fallbackContext.isNullOrBlank()) {
+                        engine.resetConversation()
+                        conversationCharacters = 0
+                        val fallbackPrompt = buildGemmaPrompt(
+                            prompt,
+                            null,
+                            promptHistory,
+                            seedContext
+                        ) + "\n\n" + fallbackContext
+                        generated = if (imageBytes != null) {
+                            engine.generate(
+                                prompt = fallbackPrompt,
+                                imageBytes = imageBytes,
+                                onToken = streamFilter::accept
+                            )
+                        } else {
+                            engine.generate(
+                                prompt = fallbackPrompt,
+                                onToken = streamFilter::accept
+                            )
+                        }
                     }
                 }
                 val rawControlOutput = generated.toolCalls.isNotEmpty() || generated.text.contains("tool_call>") ||
