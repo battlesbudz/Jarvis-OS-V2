@@ -181,7 +181,7 @@ class MainActivity : ComponentActivity() {
             App: ${applicationContext.packageName}
             Android: ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})
             Primary model: ${ModelCatalog.gemma4E2b.id}
-            Action model: ${ModelCatalog.mobileActions270m.id}
+            Action model: Gemma-native structured tools
             Session context: ${shortTermContext.diagnostics()}
             Conversation character estimate: $conversationCharacters
 
@@ -230,64 +230,39 @@ class MainActivity : ComponentActivity() {
             return
         }
         val smokeTestJob = lifecycleScope.launch(Dispatchers.Default) {
-            mainHandler.post { report("Loading local models…") }
-            var primary: LiteRtLmEngine? = null
-            var actions: LiteRtLmEngine? = null
+            mainHandler.post { report("Loading Gemma 4 E2B…") }
+            var gemma: LiteRtLmEngine? = null
             var smokeTestSucceeded = false
             try {
-                if (!modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
-                    conversationEngine?.close()
-                    conversationEngine = null
-                    conversationCharacters = 0
-                    error("The Gemma model file changed or failed integrity verification. Re-import it.")
-                }
-                check(modelStore.verifyIntegrity(ModelCatalog.mobileActions270m)) {
-                    "The MobileActions model file changed or failed integrity verification. Re-import it."
+                check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
+                    "The Gemma model file changed or failed integrity verification. Re-import it."
                 }
                 conversationEngine?.close()
                 conversationEngine = null
-                primary = LiteRtLmEngine(
+                gemma = LiteRtLmEngine(
                     ModelCatalog.gemma4E2b.id,
                     modelStore.fileFor(ModelCatalog.gemma4E2b).path,
                     cacheDir.path,
-                    useGpu = true
+                    useGpu = true,
+                    tools = MobileActionToolDefinitions.all(),
+                    visionEnabled = true
                 )
-                actions = LiteRtLmEngine(
-                    ModelCatalog.mobileActions270m.id,
-                    modelStore.fileFor(ModelCatalog.mobileActions270m).path,
-                    cacheDir.path,
-                    useGpu = false,
-                    tools = MobileActionToolDefinitions.all()
-                )
-                primary.initialize()
-                actions.initialize()
-                val primaryProbe = primary.generate(
+                gemma.initialize()
+                val probe = gemma.generate(
                     "Reply with exactly GEMMA_PR1_OK and nothing else.",
                     onToken = {}
                 )
-                check(primaryProbe.text.trim() == "GEMMA_PR1_OK") {
+                check(probe.text.trim() == "GEMMA_PR1_OK") {
                     "The selected Gemma file did not pass its identity probe."
-                }
-                // Setup verifies that the action model can initialize and
-                // produce output. Whether a particular prompt becomes a
-                // structured call is the real chat acceptance test, not a
-                // brittle one-shot readiness sentinel.
-                val actionProbe = actions.generate(
-                    "Reply with a short confirmation that local MobileActions inference works.",
-                    onToken = {}
-                )
-                check(actionProbe.text.isNotBlank()) {
-                    "The selected MobileActions model initialized but produced no output."
                 }
                 smokeTestSucceeded = true
             } catch (error: Throwable) {
-                mainHandler.post { report("Local model test failed: ${error.message ?: "unknown error"}") }
+                mainHandler.post { report("Gemma model test failed: ${error.message ?: "unknown error"}") }
             } finally {
-                actions?.close()
-                primary?.close()
+                gemma?.close()
                 if (smokeTestSucceeded) {
                     modelStore.markSmokeTestPassed()
-                    mainHandler.post { report("Both local models initialized successfully.") }
+                    mainHandler.post { report("Gemma 4 E2B initialized successfully.") }
                 }
             }
         }
@@ -757,9 +732,6 @@ private fun JarvisApp(
     val gemmaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         importModel(uri, ModelCatalog.gemma4E2b)
     }
-    val actionsPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        importModel(uri, ModelCatalog.mobileActions270m)
-    }
 
     MaterialTheme(
         colorScheme = darkColorScheme()
@@ -774,13 +746,12 @@ private fun JarvisApp(
                     importing = modelImportRunning,
                     status = setupStatus,
                     onPickGemma = { gemmaPicker.launch(arrayOf("*/*")) },
-                    onPickActions = { actionsPicker.launch(arrayOf("*/*")) },
                     onTest = {
                         smokeTestRunning = true
                         onRunModelSmokeTest.invoke { result ->
                             smokeTestRunning = false
                             setupStatus = result
-                            if (result == "Both local models initialized successfully.") {
+                            if (result == "Gemma 4 E2B initialized successfully.") {
                                 smokeTestPassed = true
                             }
                         }
@@ -798,7 +769,6 @@ private fun ModelSetup(
     importing: Boolean,
     status: String,
     onPickGemma: () -> Unit,
-    onPickActions: () -> Unit,
     onTest: () -> Unit
 ) {
     Column(
@@ -811,18 +781,11 @@ private fun ModelSetup(
     ) {
         Text("Jarvis setup", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Choose the two local model files. They are stored privately on this phone.",
+            "Choose the Gemma 4 E2B local model file. Phone actions run through Gemma's built-in structured tools.",
             modifier = Modifier.padding(top = 12.dp, bottom = 20.dp)
         )
         Button(onClick = onPickGemma, modifier = Modifier.fillMaxWidth(), enabled = !testing && !importing) {
             Text("Choose Gemma 4 E2B")
-        }
-        Button(
-            onClick = onPickActions,
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-            enabled = !testing && !importing
-        ) {
-            Text("Choose MobileActions")
         }
         if (status.isNotBlank()) Text(status, modifier = Modifier.padding(top = 20.dp))
         Button(
@@ -830,7 +793,7 @@ private fun ModelSetup(
             enabled = ready && !testing && !importing,
             modifier = Modifier.fillMaxWidth().padding(top = 20.dp)
         ) {
-            Text(if (testing) "Testing local models…" else "Test local models")
+            Text(if (testing) "Testing Gemma 4 E2B…" else "Test Gemma 4 E2B")
         }
     }
 }
