@@ -14,9 +14,4 @@ object ModelCatalog {
         recommendedGpu = true
     )
 
-    val mobileActions270m = LocalModelSpec(
-        id = "MobileActions-270M",
-        fileName = "functiongemma-270m-ft-mobile-actions.litertlm",
-        recommendedGpu = false
-    )
 }
