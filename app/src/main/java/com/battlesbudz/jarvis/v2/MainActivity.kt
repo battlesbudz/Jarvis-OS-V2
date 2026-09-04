@@ -626,6 +626,32 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+                // A rejected tool call can sometimes contain no answer text at all.
+                // Retry that turn as ordinary conversation so a normal question
+                // never falls through to a phone-action error message.
+                if (candidateCall != null &&
+                    proposedCall == null &&
+                    cleanAssistantText(generated.text).isBlank()
+                ) {
+                    engine.resetConversation()
+                    conversationCharacters = 0
+                    val retryPrompt = submittedPrompt + """
+                        
+                        The previous output contained an invalid tool call. Answer the user's current message directly as normal text. Do not call a tool.
+                    """.trimIndent()
+                    generated = if (imageBytes != null) {
+                        engine.generate(
+                            prompt = retryPrompt,
+                            imageBytes = imageBytes,
+                            onToken = streamFilter::accept
+                        )
+                    } else {
+                        engine.generate(
+                            prompt = retryPrompt,
+                            onToken = streamFilter::accept
+                        )
+                    }
+                }
                 val rawControlOutput = generated.toolCalls.isNotEmpty() || generated.text.contains("tool_call>") ||
                     generated.text.contains("start_function_call") ||
                     generated.text.contains("call:MobileActions:")
@@ -655,7 +681,11 @@ class MainActivity : ComponentActivity() {
                 val finalResponse = actionResultMessage ?: if (repeatedFragment) {
                     "I lost the thread of the conversation. Please ask that again."
                 } else cleanedResponse.ifBlank {
-                    "I couldn't complete that phone action."
+                    if (actionName != null) {
+                        "I couldn't complete that phone action."
+                    } else {
+                        "I couldn't generate a response. Please try that again."
+                    }
                 }
                 recordDiagnostic(
                     "Turn\n" +
