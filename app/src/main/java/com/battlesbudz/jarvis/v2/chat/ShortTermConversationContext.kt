@@ -21,7 +21,7 @@ class ShortTermConversationContext(
             ?.takeIf { it.isNotBlank() }
         val recent = history.takeLast(recentEntryLimit)
             .joinToString("\n") { (role, text) ->
-                val limit = if (role == "You") 900 else 700
+                val limit = if (role == "You") 300 else 450
                 "$role: ${text.trim().take(limit)}"
             }
             .takeIf { it.isNotBlank() }
