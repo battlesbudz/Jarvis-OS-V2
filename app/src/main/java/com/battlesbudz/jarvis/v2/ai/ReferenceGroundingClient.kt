@@ -11,11 +11,32 @@ class ReferenceGroundingClient {
         const val MAX_EVIDENCE_CHARS = 4_500
         const val MAX_EXTRACT_CHARS = 1_800
     }
-    suspend fun fetchIfNeeded(query: String, recentContext: String = ""): ReferenceGrounding? {
-        val lookupQuery = "$query $recentContext".trim()
-        if (!needsReference(lookupQuery)) return null
-        val mediaWiki = requestMediaWiki(lookupQuery)
-        val wikidata = requestWikidata(lookupQuery)
+    fun buildExplicitLookupQuery(
+        currentPrompt: String,
+        previousUserQuestion: String?
+    ): String? {
+        if (!isExplicitLookupRequest(currentPrompt)) return null
+        val previous = previousUserQuestion
+            ?.takeIf { it.isNotBlank() && it != currentPrompt }
+        return listOfNotNull(previous, currentPrompt)
+            .joinToString("\n")
+            .takeIf { it.isNotBlank() }
+    }
+
+    fun isExplicitLookupRequest(query: String): Boolean {
+        val text = query.lowercase()
+        return listOf(
+            "search wikipedia", "search wikimedia", "search wikidata",
+            "look up on wikipedia", "look it up on wikipedia",
+            "check wikipedia", "verify on wikipedia", "use wikipedia",
+            "use wikimedia", "use wikidata", "search the web",
+            "look it up", "look this up", "verify this", "check the facts"
+        ).any(text::contains)
+    }
+
+    suspend fun fetchIfRequested(query: String): ReferenceGrounding? {
+        val mediaWiki = requestMediaWiki(query)
+        val wikidata = requestWikidata(query)
         val sources = (mediaWiki.sources + wikidata.sources).distinct()
         val evidence = (mediaWiki.context + wikidata.context).trim().take(MAX_EVIDENCE_CHARS)
         if (evidence.isBlank()) return null
@@ -32,39 +53,9 @@ class ReferenceGroundingClient {
         )
     }
 
-    private fun needsReference(query: String): Boolean {
-        val text = query.lowercase()
-        return listOf(
-            "history", "historical", "who was", "biography", "book", "what's it about",
-            "what is it about",
-            "author",
-            "law", "legal", "legislation", "conspiracy", "true story",
-            "when did", "where did", "what happened", "scientific",
-            "evidence", "fact", "president", "war", "attack", "event", "difference between", "father",
-            "martin luther king", "mlk", "anslinger", "jack herer"
-        ).any(text::contains)
-    }
-
     private fun requestMediaWiki(query: String): ReferenceGrounding =
         runCatching {
-            val preferredTitle = canonicalTitle(query)
-            val searchTerms = preferredTitle ?: query
-            val directParts = mutableListOf<String>()
-            val directSources = mutableListOf<String>()
-            if (preferredTitle != null) {
-                val directExtract = requestPageExtract(preferredTitle)
-                if (directExtract.isNotBlank()) {
-                    directParts += "Wikipedia — $preferredTitle: " + directExtract.take(MAX_EXTRACT_CHARS)
-                    directSources += "https://en.wikipedia.org/wiki/" + preferredTitle.replace(" ", "_")
-                }
-            }
-            if (preferredTitle != null && directParts.isNotEmpty()) {
-                return@runCatching ReferenceGrounding(
-                    directParts.joinToString("\n"),
-                    directSources
-                )
-            }
-            val encoded = URLEncoder.encode(searchTerms, "UTF-8")
+            val encoded = URLEncoder.encode(query, "UTF-8")
             val searchUrl = URL(
                 "https://en.wikipedia.org/w/api.php?action=query&list=search" +
                     "&srsearch=$encoded&srnamespace=0&srlimit=3&format=json"
@@ -101,31 +92,9 @@ class ReferenceGroundingClient {
             }?.firstOrNull { it.isNotBlank() }.orEmpty()
         }.getOrDefault("")
 
-    private fun canonicalTitle(query: String): String? {
-        val normalized = query.lowercase()
-        return when {
-            normalized.contains("martin luther king sr") ||
-                normalized.contains("martin luther king senior") ||
-                normalized.contains("daddy king") ->
-                "Martin Luther King Sr."
-            normalized.contains("martin luther king jr") ||
-                normalized.contains("martin luther king junior") ||
-                normalized.contains("mlk jr") ->
-                "Martin Luther King Jr."
-            normalized.contains("jack herer") &&
-                normalized.contains("emperor wears no clothes") ->
-                "The Emperor Wears No Clothes"
-            normalized.contains("henry anslinger") ||
-                normalized.contains("harry anslinger") ->
-                "Harry J. Anslinger"
-            else -> null
-        }
-    }
-
     private fun requestWikidata(query: String): ReferenceGrounding =
         runCatching {
-            val lookupTerms = canonicalTitle(query) ?: query
-            val encoded = URLEncoder.encode(lookupTerms, "UTF-8")
+            val encoded = URLEncoder.encode(query, "UTF-8")
             val url = URL(
                 "https://www.wikidata.org/w/api.php?action=wbsearchentities" +
                     "&search=$encoded&language=en&format=json&limit=3"
