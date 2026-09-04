@@ -11,10 +11,11 @@ class ReferenceGroundingClient {
         const val MAX_EVIDENCE_CHARS = 4_500
         const val MAX_EXTRACT_CHARS = 1_800
     }
-    suspend fun fetchIfNeeded(query: String): ReferenceGrounding? {
-        if (!needsReference(query)) return null
-        val mediaWiki = requestMediaWiki(query)
-        val wikidata = requestWikidata(query)
+    suspend fun fetchIfNeeded(query: String, recentContext: String = ""): ReferenceGrounding? {
+        val lookupQuery = "$query $recentContext".trim()
+        if (!needsReference(lookupQuery)) return null
+        val mediaWiki = requestMediaWiki(lookupQuery)
+        val wikidata = requestWikidata(lookupQuery)
         val sources = (mediaWiki.sources + wikidata.sources).distinct()
         val evidence = (mediaWiki.context + wikidata.context).trim().take(MAX_EVIDENCE_CHARS)
         if (evidence.isBlank()) return null
@@ -34,7 +35,8 @@ class ReferenceGroundingClient {
     private fun needsReference(query: String): Boolean {
         val text = query.lowercase()
         return listOf(
-            "history", "historical", "who was", "biography", "book",
+            "history", "historical", "who was", "biography", "book", "what's it about",
+            "what is it about",
             "author",
             "law", "legal", "legislation", "conspiracy", "true story",
             "when did", "where did", "what happened", "scientific",
@@ -44,7 +46,13 @@ class ReferenceGroundingClient {
 
     private fun requestMediaWiki(query: String): ReferenceGrounding =
         runCatching {
-            val encoded = URLEncoder.encode(query, "UTF-8")
+            val searchTerms = if (
+                query.contains("jack herer", ignoreCase = true) &&
+                query.contains("emperor wears no clothes", ignoreCase = true)
+            ) {
+                "The Emperor Wears No Clothes Jack Herer"
+            } else query
+            val encoded = URLEncoder.encode(searchTerms, "UTF-8")
             val searchUrl = URL(
                 "https://en.wikipedia.org/w/api.php?action=query&list=search" +
                     "&srsearch=$encoded&srnamespace=0&srlimit=3&format=json"
