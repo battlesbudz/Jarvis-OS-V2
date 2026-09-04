@@ -60,7 +60,10 @@ class MainActivity : ComponentActivity() {
         const val SHORT_TERM_SUMMARY_KEY = "short_term_summary"
         // About 8K tokens for typical English chat; the engine is rebuilt
         // before native KV-cache growth becomes risky on mobile.
+        // About 8K tokens for typical English chat; include the pending
+        // request and output headroom before rebuilding the native engine.
         const val CONVERSATION_COMPACTION_LIMIT = 32_000
+        const val GENERATION_HEADROOM = 8_000
         const val INTERRUPTED_RESPONSE = "The previous response was interrupted. Please send that again."
     }
 
@@ -486,7 +489,22 @@ class MainActivity : ComponentActivity() {
                 // Compact before the native conversation approaches its
                 // practical limit. Closing the whole engine releases native
                 // buffers that a conversation-only reset may retain.
-                if (conversationCharacters > CONVERSATION_COMPACTION_LIMIT) {
+                val existingPromptSize = buildGemmaPrompt(
+                    prompt,
+                    actionResultForGemma,
+                    history,
+                    seedContext = false
+                ).length
+                val freshPromptSize = buildGemmaPrompt(
+                    prompt,
+                    actionResultForGemma,
+                    history,
+                    seedContext = true
+                ).length
+                val pendingRequestSize = maxOf(existingPromptSize, freshPromptSize)
+                if (conversationCharacters + pendingRequestSize + GENERATION_HEADROOM >
+                    CONVERSATION_COMPACTION_LIMIT
+                ) {
                     val compactedText = shortTermContext.compactSnapshot(
                         history.map { it.role to it.text }
                     )
