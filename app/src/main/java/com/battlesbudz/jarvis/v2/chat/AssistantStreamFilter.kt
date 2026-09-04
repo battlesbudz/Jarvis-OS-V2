@@ -17,7 +17,17 @@ class AssistantStreamFilter(
             return
         }
         if (decided) {
-            emit(chunk)
+            // A model can begin with prose and then leak a control marker.
+            // Stop forwarding at the marker so protocol text never reaches UI.
+            val marker = Regex("""(?i)(<\\|tool_call>|<start_function_call>|tool_call>|function_call>|call:MobileActions:)""")
+                .find(chunk)
+            if (marker == null) {
+                emit(chunk)
+            } else {
+                val visible = chunk.substring(0, marker.range.first)
+                if (visible.isNotEmpty()) emit(visible)
+                suppressControl = true
+            }
             return
         }
 

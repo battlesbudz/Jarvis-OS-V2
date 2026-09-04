@@ -777,6 +777,8 @@ private fun ModelSetup(
     }
 }
 
+private const val MAX_SAVED_DRAFT_CHARS = 16_000
+
 private data class ChatEntry(
     val role: String,
     val text: String
@@ -830,7 +832,9 @@ private fun JarvisChat(
         }
         OutlinedTextField(
             value = prompt,
-            onValueChange = { prompt = it },
+            // Keep unsent drafts bounded because rememberSaveable stores them
+            // in the Activity state Bundle during rotation/backgrounding.
+            onValueChange = { prompt = it.take(MAX_SAVED_DRAFT_CHARS) },
             label = { Text("Message Jarvis") },
             maxLines = 4,
             modifier = Modifier.fillMaxWidth()
