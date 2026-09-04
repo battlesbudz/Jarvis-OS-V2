@@ -43,6 +43,7 @@ import com.battlesbudz.jarvis.v2.actions.MobileActionPipeline
 import com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions
 import com.battlesbudz.jarvis.v2.ai.ModelCatalog
 import com.battlesbudz.jarvis.v2.ai.ModelStore
+import com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -76,6 +77,7 @@ class MainActivity : ComponentActivity() {
     private var conversationJob: Job? = null
     private var conversationCharacters = 0
     private val shortTermContext = ShortTermConversationContext()
+    private val referenceGrounding = ReferenceGroundingClient()
     private lateinit var sessionPreferences: android.content.SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -490,6 +492,7 @@ class MainActivity : ComponentActivity() {
                 var actionResultForGemma: String? = null
                 var actionResultMessage: String? = null
                 var actionName: String? = null
+                val referenceContext = referenceGrounding.fetchIfNeeded(prompt)?.context
 
                 // Compact before the native conversation approaches its
                 // practical limit. Closing the whole engine releases native
@@ -549,12 +552,13 @@ class MainActivity : ComponentActivity() {
                     mainHandler.post { onToken(safeText) }
                 }
                 val seedContext = true
-                val submittedPrompt = buildGemmaPrompt(
+                var submittedPrompt = buildGemmaPrompt(
                     prompt,
                     actionResultForGemma,
                     promptHistory,
                     seedContext
                 )
+                submittedPrompt += referenceContext?.let { "\n\n$it" }.orEmpty()
                 if (submittedPrompt.length + GENERATION_HEADROOM >
                     CONVERSATION_COMPACTION_LIMIT
                 ) {
