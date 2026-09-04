@@ -374,6 +374,26 @@ class MainActivity : ComponentActivity() {
         return null
     }
 
+
+    private fun toolMatchesUserIntent(
+        prompt: String,
+        call: com.battlesbudz.jarvis.v2.ai.ToolCall
+    ): Boolean {
+        val normalized = prompt.trim()
+        return when (call.name.lowercase()) {
+            "read_battery" -> Regex(
+                """(?i)\\bbattery\\b.*\\b(percent|percentage|level|left|status|remaining)\\b|\\b(percent|percentage|level|left|status|remaining)\\b.*\\bbattery\\b"""
+            ).containsMatchIn(normalized)
+            "set_volume" -> Regex(
+                """(?i)\\b(volume|loudness)\\b.*\\b(set|make|turn|adjust|change|raise|lower|increase|decrease)\\b|\\b(set|make|turn|adjust|change|raise|lower|increase|decrease)\\b.*\\b(volume|loudness)\\b"""
+            ).containsMatchIn(normalized)
+            "open_app" -> Regex(
+                """(?i)^(?:can you |please )?(?:open|launch|start)\\b"""
+            ).containsMatchIn(normalized)
+            else -> false
+        }
+    }
+
     private fun buildGemmaPrompt(
         userPrompt: String,
         actionResultContext: String?,
@@ -481,7 +501,10 @@ class MainActivity : ComponentActivity() {
                         "Current user request:\n$prompt"
                 )
             } else emptyList()
-                    val selectedCall = deterministicCall ?: calls.singleOrNull()
+                    val modelCall = calls.singleOrNull()
+                    val selectedCall = deterministicCall ?: modelCall?.takeIf {
+                        toolMatchesUserIntent(prompt, it)
+                    }
                     if (selectedCall != null) {
                         actionName = selectedCall.name
                         val request = FunctionGemmaActionDecoder.decode(selectedCall)
