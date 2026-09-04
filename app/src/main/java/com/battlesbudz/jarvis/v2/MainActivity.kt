@@ -427,7 +427,9 @@ class MainActivity : ComponentActivity() {
             are handled internally by the app. Never emit <|tool_call>,
             <start_function_call>, call:, or any other tool-call markup in your
             user-facing answer. If a verified tool result is included below,
-            treat it as authoritative and explain it naturally.
+            treat it as authoritative and explain it naturally. Do not claim that
+            you accessed or verified sources unless reference evidence is included
+            in this prompt.
             
             $sessionContext
 
@@ -492,7 +494,10 @@ class MainActivity : ComponentActivity() {
                 var actionResultForGemma: String? = null
                 var actionResultMessage: String? = null
                 var actionName: String? = null
-                val referenceContext = referenceGrounding.fetchIfNeeded(prompt)?.context
+                val recentReferenceContext = history.takeLast(4)
+                    .joinToString(" ") { it.role + ": " + it.text }
+                val referenceContext = referenceGrounding
+                    .fetchIfNeeded(prompt, recentReferenceContext)?.context
 
                 // Include retrieved evidence in the budget calculation. A
                 // factual lookup must trigger compaction before the fresh prompt
