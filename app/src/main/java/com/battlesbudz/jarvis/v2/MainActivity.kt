@@ -79,6 +79,7 @@ class MainActivity : ComponentActivity() {
     private val shortTermContext = ShortTermConversationContext()
     private val referenceGrounding = ReferenceGroundingClient()
     private val factualityVerifier = com.battlesbudz.jarvis.v2.ai.FactualityVerifier()
+    private val turnOrchestrator = com.battlesbudz.jarvis.v2.ai.TurnOrchestrator(referenceGrounding)
     private lateinit var sessionPreferences: android.content.SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -500,18 +501,8 @@ class MainActivity : ComponentActivity() {
                 var actionResultForGemma: String? = null
                 var actionResultMessage: String? = null
                 var actionName: String? = null
-                val previousUserQuestion = history.asReversed()
-                    .firstOrNull {
-                        it.role == "You" && !referenceGrounding.isLookupConfirmation(it.text)
-                    }?.text
-                val previousAssistantMessage = history.asReversed()
-                    .firstOrNull { it.role == "Jarvis" }?.text
-                val referenceQuery = referenceGrounding.buildExplicitLookupQuery(
-                    prompt,
-                    previousUserQuestion,
-                    previousAssistantMessage
-                )
-                val referenceContext = referenceQuery?.let {
+                val turnPlan = turnOrchestrator.plan(prompt)
+                val referenceContext = turnPlan.lookupQuery?.let {
                     referenceGrounding.fetchIfRequested(it)?.context
                 }
 
@@ -686,7 +677,7 @@ class MainActivity : ComponentActivity() {
                 val isFactualQuestion =
                     referenceContext == null &&
                         actionName == null &&
-                        referenceGrounding.shouldAutomaticallyLookup(prompt)
+                        turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.FACTUAL_LOCAL_FIRST
                 val verifierRequestsLookup =
                     isFactualQuestion &&
                         !referenceGrounding.isInsufficientAnswer(localAnswer) &&
@@ -707,10 +698,7 @@ class MainActivity : ComponentActivity() {
                         (referenceGrounding.isInsufficientAnswer(localAnswer) ||
                             verifierRequestsLookup)
                 if (shouldUseAutomaticFallback) {
-                    val fallbackQuery = referenceGrounding.buildAutomaticFallbackQuery(
-                        prompt,
-                        previousUserQuestion
-                    )
+                    val fallbackQuery = turnOrchestrator.automaticFallbackQuery(prompt)
                     val fallbackContext = referenceGrounding.fetchIfRequested(fallbackQuery)?.context
                     if (!fallbackContext.isNullOrBlank()) {
                         engine.resetConversation()
@@ -770,6 +758,7 @@ class MainActivity : ComponentActivity() {
                         "I couldn't generate a response. Please try that again."
                     }
                 }
+                turnOrchestrator.recordResponse(prompt, finalResponse, turnPlan)
                 recordDiagnostic(
                     "Turn\n" +
                         "user=${prompt.take(1_000)}\n" +
