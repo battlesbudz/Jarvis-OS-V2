@@ -858,7 +858,7 @@ private fun ModelSetup(
 private const val MAX_SAVED_DRAFT_CHARS = 16_000
 private const val MAX_IMAGE_BYTES = 12 * 1024 * 1024
 
-private data class ChatEntry(
+data class ChatEntry(
     val role: String,
     val text: String
 )
