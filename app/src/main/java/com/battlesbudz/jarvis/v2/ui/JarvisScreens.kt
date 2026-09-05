@@ -26,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Image
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
@@ -264,6 +265,7 @@ fun JarvisApp(
     store: ModelStore,
     initialMessages: List<ChatEntry>,
     onRunModelSmokeTest: ((String) -> Unit) -> Unit,
+    onDownloadGemma: ((Long, Long) -> Unit, (String) -> Unit) -> Unit,
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onMessagesChanged: (List<ChatEntry>) -> Unit,
@@ -275,6 +277,9 @@ fun JarvisApp(
     var setupStatus by rememberSaveable { mutableStateOf("") }
     var smokeTestRunning by remember { mutableStateOf(false) }
     var modelImportRunning by remember { mutableStateOf(store.importInProgress()) }
+    var modelDownloadRunning by remember { mutableStateOf(false) }
+    var downloadBytes by remember { mutableStateOf(0L) }
+    var downloadTotalBytes by remember { mutableStateOf(-1L) }
 
     // An import can finish after the previous Activity is destroyed during
     // rotation/fold changes. Keep the replacement screen synchronized with
@@ -314,7 +319,25 @@ fun JarvisApp(
                     ready = modelsReady,
                     testing = smokeTestRunning,
                     importing = modelImportRunning,
+                    downloading = modelDownloadRunning,
+                    downloadBytes = downloadBytes,
+                    downloadTotalBytes = downloadTotalBytes,
                     status = setupStatus,
+                    onDownload = {
+                        modelDownloadRunning = true
+                        downloadBytes = 0L
+                        downloadTotalBytes = -1L
+                        setupStatus = "Preparing local Jarvis…"
+                        onDownloadGemma({ downloaded, total ->
+                            downloadBytes = downloaded
+                            downloadTotalBytes = total
+                        }) { result ->
+                            modelDownloadRunning = false
+                            setupStatus = result
+                            modelsReady = store.isUsable()
+                            smokeTestPassed = modelsReady && store.smokeTestPassed()
+                        }
+                    },
                     onPickGemma = { gemmaPicker.launch(arrayOf("*/*")) },
                     onTest = {
                         smokeTestRunning = true
@@ -337,7 +360,11 @@ private fun ModelSetup(
     ready: Boolean,
     testing: Boolean,
     importing: Boolean,
+    downloading: Boolean,
+    downloadBytes: Long,
+    downloadTotalBytes: Long,
     status: String,
+    onDownload: () -> Unit,
     onPickGemma: () -> Unit,
     onTest: () -> Unit
 ) {
@@ -351,16 +378,43 @@ private fun ModelSetup(
     ) {
         Text("Jarvis setup", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Choose the Gemma 4 E2B local model file. Phone actions run through Gemma's built-in structured tools.",
+            "Jarvis runs privately on your phone. The first setup downloads the verified local AI model once; future launches reuse it automatically.",
             modifier = Modifier.padding(top = 12.dp, bottom = 20.dp)
         )
-        Button(onClick = onPickGemma, modifier = Modifier.fillMaxWidth(), enabled = !testing && !importing) {
-            Text("Choose Gemma 4 E2B")
+        Button(
+            onClick = onDownload,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !testing && !importing && !downloading
+        ) {
+            Text(if (downloading) "Setting up Jarvis…" else "Download and set up Jarvis")
+        }
+        if (downloading && downloadTotalBytes > 0L) {
+            val progress = (downloadBytes.toFloat() / downloadTotalBytes.toFloat()).coerceIn(0f, 1f)
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+            )
+            Text(
+                "${(progress * 100).toInt()}% downloaded",
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        } else if (downloading) {
+            androidx.compose.material3.LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+            )
+            Text("Checking the phone and preparing the model…", modifier = Modifier.padding(top = 8.dp))
         }
         if (status.isNotBlank()) Text(status, modifier = Modifier.padding(top = 20.dp))
+        OutlinedButton(
+            onClick = onPickGemma,
+            enabled = !testing && !importing && !downloading,
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+        ) {
+            Text("Import an existing model file")
+        }
         Button(
             onClick = onTest,
-            enabled = ready && !testing && !importing,
+            enabled = ready && !testing && !importing && !downloading,
             modifier = Modifier.fillMaxWidth().padding(top = 20.dp)
         ) {
             Text(if (testing) "Testing Gemma 4 E2B…" else "Test Gemma 4 E2B")
