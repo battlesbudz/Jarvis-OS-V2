@@ -501,7 +501,9 @@ class MainActivity : ComponentActivity() {
                 var actionResultMessage: String? = null
                 var actionName: String? = null
                 val previousUserQuestion = history.asReversed()
-                    .firstOrNull { it.role == "You" }?.text
+                    .firstOrNull {
+                        it.role == "You" && !referenceGrounding.isLookupConfirmation(it.text)
+                    }?.text
                 val previousAssistantMessage = history.asReversed()
                     .firstOrNull { it.role == "Jarvis" }?.text
                 val referenceQuery = referenceGrounding.buildExplicitLookupQuery(
