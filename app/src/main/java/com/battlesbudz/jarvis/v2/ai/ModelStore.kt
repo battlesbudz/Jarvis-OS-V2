@@ -5,6 +5,7 @@ import android.content.ContentUris
 import android.os.CancellationSignal
 import android.os.Environment
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.provider.MediaStore
 import java.io.File
@@ -239,9 +240,66 @@ class ModelStore(context: Context) {
                     val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID))
                     ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
                 }
-            }.getOrNull()
+            }.getOrNull() ?: findExactDownloadsDocument(spec)
             if (continuation.isActive) continuation.resume(result)
         }
+
+    /**
+     * The system picker reads the Downloads DocumentsProvider, which can contain
+     * files that are not yet represented by the MediaStore Downloads table.
+     * Query that same provider as an exact-name fallback so setup agrees with
+     * what the user sees when manually importing from Downloads.
+     */
+    private fun findExactDownloadsDocument(spec: LocalModelSpec): Uri? = runCatching {
+        val authority = "com.android.providers.downloads.documents"
+        val rootProjection = arrayOf(
+            DocumentsContract.Root.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Root.COLUMN_TITLE
+        )
+        val rootDocumentId = context.contentResolver.query(
+            DocumentsContract.buildRootsUri(authority),
+            rootProjection,
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            var selected: String? = null
+            val documentIdIndex = cursor.getColumnIndex(DocumentsContract.Root.COLUMN_DOCUMENT_ID)
+            val titleIndex = cursor.getColumnIndex(DocumentsContract.Root.COLUMN_TITLE)
+            while (cursor.moveToNext()) {
+                val documentId = cursor.getString(documentIdIndex)
+                val title = cursor.getString(titleIndex)
+                if (title.equals(Environment.DIRECTORY_DOWNLOADS, ignoreCase = true) ||
+                    documentId.equals(Environment.DIRECTORY_DOWNLOADS, ignoreCase = true)
+                ) {
+                    selected = documentId
+                    break
+                }
+            }
+            selected
+        } ?: return@runCatching null
+
+        val childProjection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME
+        )
+        context.contentResolver.query(
+            DocumentsContract.buildChildDocumentsUri(authority, rootDocumentId),
+            childProjection,
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIndex) == spec.fileName) {
+                    return@use DocumentsContract.buildDocumentUri(authority, cursor.getString(idIndex))
+                }
+            }
+            null
+        }
+    }.getOrNull()
 
     private sealed interface DownloadLookupResult {
         data class Completed(val uri: Uri?) : DownloadLookupResult
