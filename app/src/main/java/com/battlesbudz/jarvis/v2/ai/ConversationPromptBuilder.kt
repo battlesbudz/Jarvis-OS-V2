@@ -6,7 +6,7 @@ import com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext
 class ConversationPromptBuilder(
     private val shortTermContext: ShortTermConversationContext
 ) {
-    private fun buildGemmaPrompt(
+    fun buildGemmaPrompt(
         userPrompt: String,
         actionResultContext: String?,
         history: List<ChatEntry>,
@@ -43,7 +43,7 @@ class ConversationPromptBuilder(
         """.trimIndent()
     }
 
-    private fun buildToolResultContext(
+    fun buildToolResultContext(
         userPrompt: String,
         toolName: String,
         resultMessage: String,
