@@ -251,9 +251,15 @@ class MainActivity : ComponentActivity() {
         }
         lifecycleScope.launch(Dispatchers.IO) {
             mainHandler.post { report("Checking for the existing Gemma model…") }
-            val result = modelStore.downloadOrReuse(ModelCatalog.gemma4E2b) { downloaded, total ->
-                mainHandler.post { onProgress(downloaded, total) }
-            }
+            val result = modelStore.downloadOrReuse(
+                spec = ModelCatalog.gemma4E2b,
+                onProgress = { downloaded, total ->
+                    mainHandler.post { onProgress(downloaded, total) }
+                },
+                onStatus = { status ->
+                    mainHandler.post { report(status) }
+                }
+            )
             result.fold(
                 onSuccess = {
                     mainHandler.post { report("Gemma found. Starting Jarvis’s final setup…") }
