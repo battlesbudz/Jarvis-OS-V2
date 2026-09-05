@@ -146,7 +146,13 @@ internal fun MainActivity.runConversationInternal(
                     conversationCharacters = 0
                 }
                 val streamFilter = AssistantStreamFilter { safeText ->
-                    mainHandler.post { onToken(safeText) }
+                    // Factual/reference turns are held until the final answer
+                    // passes the knowledge-gap guard. This prevents a draft
+                    // such as "I don't have that in my knowledge base" from
+                    // flashing into the transcript before the retry runs.
+                    if (turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT) {
+                        mainHandler.post { onToken(safeText) }
+                    }
                 }
                 var seedContext = !nativeConversationHasContext
                 var submittedPrompt = promptBuilder.buildGemmaPrompt(
@@ -330,7 +336,49 @@ internal fun MainActivity.runConversationInternal(
                     resetNativeConversation()
                     nativeConversationContainsCurrentTurn = false
                 }
-                val cleanedResponse = cleanAssistantText(generated.text)
+                var cleanedResponse = cleanAssistantText(generated.text)
+                val requiresReference = turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.FACTUAL_LOCAL_FIRST ||
+                    turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.EXPLICIT_LOOKUP ||
+                    turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.LOOKUP_CONFIRMATION
+                if (requiresReference && referenceGrounding.isInsufficientAnswer(cleanedResponse)) {
+                    // Never expose a local knowledge-base disclaimer for a
+                    // person/entity question. Re-query the reference APIs once
+                    // and regenerate from the fresh evidence before replying.
+                    val retryQuery = turnPlan.lookupQuery ?: prompt
+                    val retryContext = referenceGrounding.fetchIfRequested(retryQuery)?.context
+                    if (!retryContext.isNullOrBlank()) {
+                        diagnosticRecorder.record(
+                            "Reference retry after knowledge-gap draft\n" +
+                                "user=${prompt.take(1_000)}\n" +
+                                "lookupQuery=${retryQuery.take(1_000)}"
+                        )
+                        resetNativeConversation()
+                        val retryPrompt = promptBuilder.buildGemmaPrompt(
+                            prompt,
+                            null,
+                            promptHistory,
+                            seedContext = true
+                        ) + "\n\n" + retryContext + "\n\n" +
+                            "The previous draft was not acceptable. Answer from the reference evidence above. Do not mention your knowledge base or ask whether to search."
+                        generated = if (imageBytes != null) {
+                            engine.generate(
+                                prompt = retryPrompt,
+                                imageBytes = imageBytes,
+                                onToken = streamFilter::accept
+                            )
+                        } else {
+                            engine.generate(
+                                prompt = retryPrompt,
+                                onToken = streamFilter::accept
+                            )
+                        }
+                        nativeConversationContainsCurrentTurn = true
+                        cleanedResponse = cleanAssistantText(generated.text)
+                    }
+                }
+                if (requiresReference && referenceGrounding.isInsufficientAnswer(cleanedResponse)) {
+                    cleanedResponse = "I couldn't produce a verified answer from Wikipedia right now. Please try again."
+                }
                 if (!rawControlOutput) {
                     // Count the exact prompt submitted to the native engine,
                     // including Jarvis instructions and injected tool/context data.
