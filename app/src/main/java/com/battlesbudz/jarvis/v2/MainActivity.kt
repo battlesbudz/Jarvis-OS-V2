@@ -44,6 +44,7 @@ import com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions
 import com.battlesbudz.jarvis.v2.ai.ModelCatalog
 import com.battlesbudz.jarvis.v2.ai.ModelStore
 import com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient
+import com.battlesbudz.jarvis.v2.ui.JarvisApp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -577,111 +578,3 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun JarvisApp(
-    store: ModelStore,
-    initialMessages: List<ChatEntry>,
-    onRunModelSmokeTest: ((String) -> Unit) -> Unit,
-    onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
-    onCopyDiagnostics: (List<ChatEntry>) -> Unit,
-    onMessagesChanged: (List<ChatEntry>) -> Unit,
-    onSendingChanged: (Boolean) -> Unit,
-    onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit
-) {
-    var modelsReady by remember { mutableStateOf(store.isUsable()) }
-    var smokeTestPassed by rememberSaveable { mutableStateOf(store.isUsable() && store.smokeTestPassed()) }
-    var setupStatus by rememberSaveable { mutableStateOf("") }
-    var smokeTestRunning by remember { mutableStateOf(false) }
-    var modelImportRunning by remember { mutableStateOf(store.importInProgress()) }
-
-    // An import can finish after the previous Activity is destroyed during
-    // rotation/fold changes. Keep the replacement screen synchronized with
-    // the durable files even when the old callback was cancelled.
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(500)
-            modelsReady = store.isUsable()
-            modelImportRunning = store.importInProgress()
-            smokeTestPassed = modelsReady && store.smokeTestPassed()
-        }
-    }
-
-    val importModel: (Uri?, com.battlesbudz.jarvis.v2.ai.LocalModelSpec) -> Unit = { uri, spec ->
-        if (uri != null) {
-            modelImportRunning = true
-            setupStatus = "Importing local model…"
-            onImportModel(uri, spec) { result ->
-                modelImportRunning = false
-                setupStatus = result
-                if (result == "Model imported successfully.") modelsReady = store.isUsable()
-            }
-        }
-    }
-    val gemmaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        importModel(uri, ModelCatalog.gemma4E2b)
-    }
-
-    MaterialTheme(
-        colorScheme = darkColorScheme()
-    ) {
-        Surface(modifier = Modifier.fillMaxSize()) {
-            if (modelsReady && smokeTestPassed) {
-                JarvisChat(onSend, onCopyDiagnostics, onMessagesChanged, onSendingChanged, initialMessages)
-            } else {
-                ModelSetup(
-                    ready = modelsReady,
-                    testing = smokeTestRunning,
-                    importing = modelImportRunning,
-                    status = setupStatus,
-                    onPickGemma = { gemmaPicker.launch(arrayOf("*/*")) },
-                    onTest = {
-                        smokeTestRunning = true
-                        onRunModelSmokeTest.invoke { result ->
-                            smokeTestRunning = false
-                            setupStatus = result
-                            if (result == "Gemma 4 E2B initialized successfully.") {
-                                smokeTestPassed = true
-                            }
-                        }
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ModelSetup(
-    ready: Boolean,
-    testing: Boolean,
-    importing: Boolean,
-    status: String,
-    onPickGemma: () -> Unit,
-    onTest: () -> Unit
-) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .safeDrawingPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text("Jarvis setup", style = MaterialTheme.typography.headlineMedium)
-        Text(
-            "Choose the Gemma 4 E2B local model file. Phone actions run through Gemma's built-in structured tools.",
-            modifier = Modifier.padding(top = 12.dp, bottom = 20.dp)
-        )
-        Button(onClick = onPickGemma, modifier = Modifier.fillMaxWidth(), enabled = !testing && !importing) {
-            Text("Choose Gemma 4 E2B")
-        }
-        if (status.isNotBlank()) Text(status, modifier = Modifier.padding(top = 20.dp))
-        Button(
-            onClick = onTest,
-            enabled = ready && !testing && !importing,
-            modifier = Modifier.fillMaxWidth().padding(top = 20.dp)
-        ) {
-            Text(if (testing) "Testing Gemma 4 E2B…" else "Test Gemma 4 E2B")
-        }
-    }
-}
-
