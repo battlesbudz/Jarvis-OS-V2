@@ -131,12 +131,20 @@ class ModelStore(context: Context) {
             // already downloaded to the public Downloads location before
             // touching the network.
             onStatus("Searching Downloads for the exact filename: ${spec.fileName}")
-            val exactDownload = withTimeoutOrNull(30_000L) {
-                findExactDownloadedModel(spec)
-            } ?: run {
-                onStatus("The Downloads index is slow. Retrying the exact filename check…")
-                withTimeoutOrNull(30_000L) { findExactDownloadedModel(spec) }
-                    ?: error("Could not finish checking Downloads for ${spec.fileName}. No download was started.")
+            val firstLookup = withTimeoutOrNull(30_000L) {
+                DownloadLookupResult.Completed(findExactDownloadedModel(spec))
+            }
+            val exactDownload = when (firstLookup) {
+                is DownloadLookupResult.Completed -> firstLookup.uri
+                null -> {
+                    onStatus("The Downloads index is slow. Retrying the exact filename check…")
+                    when (val retry = withTimeoutOrNull(30_000L) {
+                        DownloadLookupResult.Completed(findExactDownloadedModel(spec))
+                    }) {
+                        is DownloadLookupResult.Completed -> retry.uri
+                        null -> error("Could not finish checking Downloads for ${spec.fileName}. No download was started.")
+                    }
+                }
             }
             if (exactDownload != null) {
                 onStatus("Found ${spec.fileName} in Downloads. Verifying that exact file…")
@@ -234,6 +242,10 @@ class ModelStore(context: Context) {
             }.getOrNull()
             if (continuation.isActive) continuation.resume(result)
         }
+
+    private sealed interface DownloadLookupResult {
+        data class Completed(val uri: Uri?) : DownloadLookupResult
+    }
 
     private fun importExactDownloadedModel(
         uri: Uri,
