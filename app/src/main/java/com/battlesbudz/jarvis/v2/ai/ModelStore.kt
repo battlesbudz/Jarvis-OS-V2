@@ -2,6 +2,8 @@ package com.battlesbudz.jarvis.v2.ai
 
 import android.content.Context
 import android.content.ContentUris
+import android.os.CancellationSignal
+import android.os.Environment
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.provider.MediaStore
@@ -11,7 +13,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
 
 class ModelStore(context: Context) {
     private companion object {
@@ -127,11 +131,11 @@ class ModelStore(context: Context) {
             // already downloaded to the public Downloads location before
             // touching the network.
             onStatus("Searching Downloads for the exact filename: ${spec.fileName}")
-            val exactDownload = withTimeoutOrNull(10_000L) {
+            val exactDownload = withTimeoutOrNull(30_000L) {
                 findExactDownloadedModel(spec)
             } ?: run {
-                onStatus("The Downloads search is taking longer than expected. Retrying the exact filename check…")
-                withTimeoutOrNull(10_000L) { findExactDownloadedModel(spec) }
+                onStatus("The Downloads index is slow. Retrying the exact filename check…")
+                withTimeoutOrNull(30_000L) { findExactDownloadedModel(spec) }
                     ?: error("Could not finish checking Downloads for ${spec.fileName}. No download was started.")
             }
             if (exactDownload != null) {
@@ -208,20 +212,28 @@ class ModelStore(context: Context) {
         }
     }
 
-    private fun findExactDownloadedModel(spec: LocalModelSpec): Uri? = runCatching {
-        val projection = arrayOf(MediaStore.Downloads._ID, MediaStore.Downloads.DISPLAY_NAME)
-        context.contentResolver.query(
-            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-            projection,
-            "${MediaStore.Downloads.DISPLAY_NAME} = ?",
-            arrayOf(spec.fileName),
-            "${MediaStore.Downloads.DATE_MODIFIED} DESC"
-        )?.use { cursor ->
-            if (!cursor.moveToFirst()) return@use null
-            val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID))
-            ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
+    private suspend fun findExactDownloadedModel(spec: LocalModelSpec): Uri? =
+        suspendCancellableCoroutine { continuation ->
+            val cancellationSignal = CancellationSignal()
+            continuation.invokeOnCancellation { cancellationSignal.cancel() }
+            val result = runCatching {
+                val projection = arrayOf(MediaStore.Downloads._ID)
+                context.contentResolver.query(
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    projection,
+                    "${MediaStore.Downloads.DISPLAY_NAME} = ? AND " +
+                        "${MediaStore.Downloads.RELATIVE_PATH} = ?",
+                    arrayOf(spec.fileName, "${Environment.DIRECTORY_DOWNLOADS}/"),
+                    null,
+                    cancellationSignal
+                )?.use { cursor ->
+                    if (!cursor.moveToFirst()) return@use null
+                    val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID))
+                    ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
+                }
+            }.getOrNull()
+            if (continuation.isActive) continuation.resume(result)
         }
-    }.getOrNull()
 
     private fun importExactDownloadedModel(
         uri: Uri,
