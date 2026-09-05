@@ -80,6 +80,7 @@ class MainActivity : ComponentActivity() {
     private val referenceGrounding = ReferenceGroundingClient()
     private val factualityVerifier = com.battlesbudz.jarvis.v2.ai.FactualityVerifier()
     private val turnOrchestrator = com.battlesbudz.jarvis.v2.ai.TurnOrchestrator(referenceGrounding)
+    private val promptBuilder = com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder(shortTermContext)
     private lateinit var sessionPreferences: android.content.SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -409,58 +410,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun buildGemmaPrompt(
-        userPrompt: String,
-        actionResultContext: String?,
-        history: List<ChatEntry>,
-        seedContext: Boolean
-    ): String {
-        val actionContext = actionResultContext?.let { "\n\n$it" }.orEmpty()
-        val sessionContext = if (seedContext) {
-            shortTermContext.promptContext(history.map { it.role to it.text })
-                .takeIf { it.isNotBlank() }?.let { "\n\n$it" }.orEmpty()
-        } else ""
-        return """
-            You are Jarvis, a private local assistant. Answer the current
-            user message directly and naturally. Do not list your capabilities,
-            describe your tools, or discuss the routing system unless the user
-            explicitly asks about them. Use a phone action only when the current
-            request actually asks you to inspect or change the phone. Tool calls
-            are handled internally by the app. Never emit <|tool_call>,
-            <start_function_call>, call:, or any other tool-call markup in your
-            user-facing answer. If a verified tool result is included below,
-            treat it as authoritative and explain it naturally. Do not claim that
-            you accessed or verified sources unless reference evidence is included
-            in this prompt.
-            For historical or factual questions, do not fill gaps by guessing.
-            If you are not confident and no reference evidence is included,
-            begin with [NEEDS_WIKIPEDIA], say that you do not know, and offer:
-            "Would you like me to search Wikipedia?" Do not claim Wikipedia or
-            Wikidata was searched unless evidence is included below.
-            
-            $sessionContext
-
-            Current user message:
-            $userPrompt
-            $actionContext
-        """.trimIndent()
-    }
-
-    private fun buildToolResultContext(
-        userPrompt: String,
-        toolName: String,
-        resultMessage: String,
-        succeeded: Boolean
-    ): String {
-        return """
-            MobileActions tool execution context:
-            - User request: $userPrompt
-            - Selected tool: $toolName
-            - Execution status: ${if (succeeded) "succeeded" else "failed"}
-            - Android result: $resultMessage
-        """.trimIndent()
-    }
-
     private fun runConversation(
         prompt: String,
         history: List<ChatEntry>,
@@ -514,13 +463,13 @@ class MainActivity : ComponentActivity() {
                 // Compact before the native conversation approaches its
                 // practical limit. Closing the whole engine releases native
                 // buffers that a conversation-only reset may retain.
-                val existingPromptSize = buildGemmaPrompt(
+                val existingPromptSize = promptBuilder.buildGemmaPrompt(
                     prompt,
                     actionResultForGemma,
                     history,
                     seedContext = false
                 ).length
-                val freshPromptSize = buildGemmaPrompt(
+                val freshPromptSize = promptBuilder.buildGemmaPrompt(
                     prompt,
                     actionResultForGemma,
                     history,
@@ -569,7 +518,7 @@ class MainActivity : ComponentActivity() {
                     mainHandler.post { onToken(safeText) }
                 }
                 val seedContext = true
-                var submittedPrompt = buildGemmaPrompt(
+                var submittedPrompt = promptBuilder.buildGemmaPrompt(
                     prompt,
                     actionResultForGemma,
                     promptHistory,
@@ -634,7 +583,7 @@ class MainActivity : ComponentActivity() {
                             executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(applicationContext)
                         ).execute(request)
                         actionResultMessage = result.message
-                        actionResultForGemma = buildToolResultContext(
+                        actionResultForGemma = promptBuilder.buildToolResultContext(
                             userPrompt = prompt,
                             toolName = proposedCall.name,
                             resultMessage = result.message,
@@ -703,7 +652,7 @@ class MainActivity : ComponentActivity() {
                     if (!fallbackContext.isNullOrBlank()) {
                         engine.resetConversation()
                         conversationCharacters = 0
-                        val fallbackPrompt = buildGemmaPrompt(
+                        val fallbackPrompt = promptBuilder.buildGemmaPrompt(
                             prompt,
                             null,
                             promptHistory,
