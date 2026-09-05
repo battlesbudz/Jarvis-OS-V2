@@ -167,7 +167,7 @@ internal fun MainActivity.runConversationInternal(
                     }
                     return@launch
                 }
-                val imageBytes = imageUri?.let(::readVisionImage)
+                val imageBytes = imageUri?.let { readVisionImage(it) }
                 var generated = if (imageBytes != null) {
                     engine.generate(
                         prompt = submittedPrompt,
@@ -363,7 +363,7 @@ internal fun MainActivity.runConversationInternal(
         conversationJob?.invokeOnCompletion { MainActivity.activeConversationJobs.decrementAndGet() }
     }
 
-    private fun readVisionImage(uri: Uri): ByteArray {
+private fun MainActivity.readVisionImage(uri: Uri): ByteArray {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         contentResolver.openInputStream(uri)?.use { input ->
             BitmapFactory.decodeStream(input, null, bounds)
@@ -378,3 +378,22 @@ internal fun MainActivity.runConversationInternal(
             sampleSize *= 2
         }
         val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        val bitmap = contentResolver.openInputStream(uri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, options)
+        } ?: error("The selected image could not be decoded.")
+
+        val output = ByteArrayOutputStream()
+        try {
+            val decoded = bitmap
+            check(decoded.compress(Bitmap.CompressFormat.JPEG, 85, output)) {
+                "The selected image could not be prepared for vision inference."
+            }
+        } finally {
+            bitmap.recycle()
+        }
+        return output.toByteArray().also { bytes ->
+            check(bytes.size <= MAX_IMAGE_BYTES) {
+                "The selected image is too large for safe local inference."
+            }
+        }
+    }
