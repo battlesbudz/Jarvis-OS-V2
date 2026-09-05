@@ -29,6 +29,8 @@ class ReferenceGroundingClient {
             "^(who|what)\\s+(is|was|are|were)\\s+.+"
         ).matches(text) || Regex(
             "^(tell me about|information about)\\s+.+"
+        ).matches(text) || Regex(
+            "^who\\s+[a-z][a-z .'-]{2,}\\??$"
         ).matches(text)
         val deviceRequest = listOf(
             "battery", "volume", "brightness", "wifi", "bluetooth", "screen",
@@ -126,7 +128,10 @@ class ReferenceGroundingClient {
         if (text.isBlank()) return true
         return listOf(
             "[needs_wikipedia]", "i don't know", "i do not know",
-            "no specific information", "not sure", "cannot answer",
+            "no specific information", "do not have any specific information",
+            "don't have any specific information", "not in my knowledge base",
+            "not in my current knowledge base", "not in my training data",
+            "not sure", "cannot answer",
             "can't answer", "couldn't find", "would you like me to search",
             "please provide more context"
         ).any(text::contains)
