@@ -3,6 +3,8 @@ package com.battlesbudz.jarvis.v2.conversation
 import android.net.Uri
 import com.battlesbudz.jarvis.v2.*
 import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
+import com.battlesbudz.jarvis.v2.ai.ModelCatalog
+import androidx.lifecycle.lifecycleScope
 import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
