@@ -120,7 +120,9 @@ class MainActivity : ComponentActivity() {
                 store = modelStore,
                 initialMessages = restoreTranscript(),
                 onRunModelSmokeTest = { runModelSmokeTest(it) },
-                onDownloadGemma = { onProgress, report -> downloadGemmaAndTest(onProgress, report) },
+                onDownloadGemma = { onProgress, onStatus, onFinished ->
+                    downloadGemmaAndTest(onProgress, onStatus, onFinished)
+                },
                 onImportModel = { uri, spec, report -> importModel(uri, spec, report) },
                 onCopyDiagnostics = { transcript -> copyDiagnostics(transcript) },
                 onMessagesChanged = { persistTranscript(it) },
@@ -195,15 +197,20 @@ class MainActivity : ComponentActivity() {
         conversationCharacters = 0
     }
 
-    private fun runModelSmokeTest(report: (String) -> Unit) {
+    private fun runModelSmokeTest(
+        report: (String) -> Unit,
+        onFinished: ((String) -> Unit)? = null
+    ) {
         if (!modelStore.tryBeginModelOperation()) {
             report("A model test is still finishing. Please try again in a moment.")
+            onFinished?.invoke("A model test is still finishing. Please try again in a moment.")
             return
         }
         val smokeTestJob = lifecycleScope.launch(Dispatchers.Default) {
             mainHandler.post { report("Loading Gemma 4 E2B…") }
             var gemma: LiteRtLmEngine? = null
             var smokeTestSucceeded = false
+            var finalMessage: String? = null
             try {
                 check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
                     "The Gemma model file changed or failed integrity verification. Re-import it."
@@ -229,12 +236,18 @@ class MainActivity : ComponentActivity() {
                 }
                 smokeTestSucceeded = true
             } catch (error: Throwable) {
-                mainHandler.post { report("Gemma model test failed: ${error.message ?: "unknown error"}") }
+                finalMessage = "Gemma model test failed: ${error.message ?: "unknown error"}"
             } finally {
                 gemma?.close()
                 if (smokeTestSucceeded) {
                     modelStore.markSmokeTestPassed()
-                    mainHandler.post { report("Gemma 4 E2B initialized successfully.") }
+                    finalMessage = "Gemma 4 E2B initialized successfully."
+                }
+                finalMessage?.let { message ->
+                    mainHandler.post {
+                        report(message)
+                        onFinished?.invoke(message)
+                    }
                 }
             }
         }
@@ -243,7 +256,8 @@ class MainActivity : ComponentActivity() {
 
     private fun downloadGemmaAndTest(
         onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
-        report: (String) -> Unit
+        report: (String) -> Unit,
+        onFinished: (String) -> Unit
     ) {
         if (modelStore.isModelOperationActive()) {
             report("A model operation is still finishing. Please try again in a moment.")
@@ -263,11 +277,13 @@ class MainActivity : ComponentActivity() {
             result.fold(
                 onSuccess = {
                     mainHandler.post { report("Gemma found. Starting Jarvis’s final setup…") }
-                    runModelSmokeTest(report)
+                    runModelSmokeTest(report, onFinished)
                 },
                 onFailure = { error ->
                     mainHandler.post {
-                        report("Model setup failed: ${error.message ?: "unknown error"}")
+                        val message = "Model setup failed: ${error.message ?: "unknown error"}"
+                        report(message)
+                        onFinished(message)
                     }
                 }
             )
