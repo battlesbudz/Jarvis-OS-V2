@@ -190,7 +190,7 @@ internal fun MainActivity.runConversationInternal(
                     conversationEngine?.close()
                     conversationEngine = null
                     conversationCharacters = 0
-                    recordDiagnostic(
+                    diagnosticRecorder.record(
                         "Turn rejected\\n" +
                             "userLength=${prompt.length}\\n" +
                             "submittedPromptLength=${submittedPrompt.length}\\n" +
@@ -367,7 +367,7 @@ internal fun MainActivity.runConversationInternal(
                     }
                 }
                 turnOrchestrator.recordResponse(prompt, finalResponse, turnPlan)
-                recordDiagnostic(
+                diagnosticRecorder.record(
                     "Turn\n" +
                         "user=${prompt.take(1_000)}\n" +
                         "historyEntries=${history.size}\n" +
@@ -386,7 +386,7 @@ internal fun MainActivity.runConversationInternal(
                 conversationEngine?.close()
                 conversationEngine = null
                 conversationCharacters = 0
-                recordDiagnostic("Turn failed\nuser=${prompt.take(1_000)}\nerror=${error.stackTraceToString().take(4_000)}")
+                diagnosticRecorder.record("Turn failed\nuser=${prompt.take(1_000)}\nerror=${error.stackTraceToString().take(4_000)}")
                 mainHandler.post { onComplete("I could not load the local model: ${error.message ?: "unknown error"}") }
             } finally {
                 // Do not retain native LiteRT/GPU buffers between turns.
