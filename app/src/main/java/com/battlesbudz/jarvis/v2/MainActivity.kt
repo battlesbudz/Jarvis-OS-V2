@@ -56,6 +56,13 @@ import org.json.JSONArray
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.Collections
 
+private const val MAX_IMAGE_BYTES = 12 * 1024 * 1024
+
+data class ChatEntry(
+    val role: String,
+    val text: String
+)
+
 class MainActivity : ComponentActivity() {
     private companion object {
         val activeConversationJobs = AtomicInteger(0)
