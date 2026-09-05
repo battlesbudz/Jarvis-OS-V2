@@ -84,15 +84,7 @@ fun JarvisChat(
     var attachedImageName by rememberSaveable { mutableStateOf<String?>(null) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
     val transcriptScrollState = rememberScrollState()
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    it,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            }
-        }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         attachedImageUri = uri
         attachedImageName = uri?.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
             ?: if (uri != null) "selected image" else null
@@ -192,7 +184,7 @@ fun JarvisChat(
             verticalAlignment = androidx.compose.ui.Alignment.Bottom
         ) {
             Button(
-                onClick = { imagePicker.launch(arrayOf("image/*")) },
+                onClick = { imagePicker.launch("image/*") },
                 enabled = !isSending,
                 modifier = Modifier.padding(end = 8.dp)
             ) {
