@@ -129,7 +129,7 @@ class ModelStore(context: Context) {
             onStatus("Checking Downloads for ${spec.fileName}…")
             withTimeoutOrNull(10_000L) { findExactDownloadedModel(spec) }?.let { uri ->
                 onStatus("Importing the existing Gemma model from Downloads…")
-                val imported = importExactDownloadedModel(uri, spec, onProgress)
+                val imported = importExactDownloadedModel(uri, spec, onProgress, onStatus)
                 if (imported != null) return@runCatching imported
             }
             onStatus("Downloading Gemma from the verified model source…")
@@ -217,7 +217,8 @@ class ModelStore(context: Context) {
     private fun importExactDownloadedModel(
         uri: Uri,
         spec: LocalModelSpec,
-        onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit
+        onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
+        onStatus: (String) -> Unit
     ): File? {
         val temporary = File(modelDirectory, "${spec.fileName}.part")
         return runCatching {
