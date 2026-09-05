@@ -1,9 +1,14 @@
 package com.battlesbudz.jarvis.v2.ai
 
 import android.content.Context
+import android.content.ContentUris
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.provider.MediaStore
 import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -94,6 +99,157 @@ class ModelStore(context: Context) {
     }
 
     fun isModelOperationActive(): Boolean = activeModelOperation.get() > 0
+
+    /**
+     * Reuses the canonical app-private copy when it is already present and
+     * valid. Otherwise downloads the pinned model into a resumable .part file,
+     * verifies it, and atomically installs it under the expected filename.
+     */
+    suspend fun downloadOrReuse(
+        spec: LocalModelSpec,
+        onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit = { _, _ -> }
+    ): Result<File> = runCatching {
+        check(tryBeginModelOperation()) { "Another model operation is still running." }
+        try {
+            if (verifyIntegrity(spec)) {
+                onProgress(fileFor(spec).length(), fileFor(spec).length())
+                return@runCatching fileFor(spec)
+            }
+            // Android does not permit a broad recursive storage scan, but it
+            // does allow an exact MediaStore query. Reuse a model the user
+            // already downloaded to the public Downloads location before
+            // touching the network.
+            findExactDownloadedModel(spec)?.let { uri ->
+                val imported = importExactDownloadedModel(uri, spec, onProgress)
+                if (imported != null) return@runCatching imported
+            }
+            val url = requireNotNull(spec.downloadUrl) { "No automatic download is configured for ${spec.id}." }
+            val destination = fileFor(spec)
+            val temporary = File(modelDirectory, "${spec.fileName}.part")
+            val existingBytes = temporary.length()
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 30_000
+                readTimeout = 60_000
+                instanceFollowRedirects = true
+                if (existingBytes > 0L) setRequestProperty("Range", "bytes=$existingBytes-")
+            }
+            try {
+                val responseCode = connection.responseCode
+                val append = existingBytes > 0L && responseCode == HttpURLConnection.HTTP_PARTIAL
+                check(responseCode in 200..299) {
+                    "Model download failed with HTTP $responseCode."
+                }
+                val startingBytes = if (append) existingBytes else 0L
+                if (!append && existingBytes > 0L) temporary.delete()
+                val totalBytes = connection.contentLengthLong
+                    .takeIf { it > 0L }
+                    ?.let { it + startingBytes }
+                    ?: -1L
+                var downloadedBytes = startingBytes
+                connection.inputStream.use { input ->
+                    FileOutputStream(temporary, append).use { output ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 16)
+                        var count: Int
+                        while (input.read(buffer).also { count = it } >= 0) {
+                            if (count == 0) continue
+                            output.write(buffer, 0, count)
+                            downloadedBytes += count
+                            onProgress(downloadedBytes, totalBytes)
+                        }
+                        output.fd.sync()
+                    }
+                }
+            } finally {
+                connection.disconnect()
+            }
+            check(temporary.isFile && temporary.length() > 0L) { "The downloaded model is empty." }
+            val actualSha256 = temporary.sha256()
+            spec.expectedSha256?.let { expected ->
+                check(actualSha256.equals(expected, ignoreCase = true)) {
+                    "The downloaded model failed integrity verification."
+                }
+            }
+            if (destination.exists()) check(destination.delete()) {
+                "Unable to replace the previous model file."
+            }
+            check(temporary.renameTo(destination)) { "Unable to finalize the downloaded model." }
+            val key = fingerprintKey(spec)
+            preferences.edit()
+                .putString(key, actualSha256)
+                .putLong("${key}_length", destination.length())
+                .putLong("${key}_modified", destination.lastModified())
+                .putBoolean("${key}_invalid", false)
+                .putBoolean("smoke_test_passed", false)
+                .apply()
+            destination
+        } finally {
+            endModelOperation()
+        }
+    }
+
+    private fun findExactDownloadedModel(spec: LocalModelSpec): Uri? = runCatching {
+        val projection = arrayOf(MediaStore.Downloads._ID, MediaStore.Downloads.DISPLAY_NAME)
+        context.contentResolver.query(
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+            projection,
+            "${MediaStore.Downloads.DISPLAY_NAME} = ?",
+            arrayOf(spec.fileName),
+            "${MediaStore.Downloads.DATE_MODIFIED} DESC"
+        )?.use { cursor ->
+            if (!cursor.moveToFirst()) return@use null
+            val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID))
+            ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
+        }
+    }.getOrNull()
+
+    private fun importExactDownloadedModel(
+        uri: Uri,
+        spec: LocalModelSpec,
+        onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit
+    ): File? {
+        val temporary = File(modelDirectory, "${spec.fileName}.part")
+        return runCatching {
+            temporary.delete()
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                temporary.outputStream().use { output ->
+                    val totalBytes = context.contentResolver.openAssetFileDescriptor(uri, "r")
+                        ?.use { it.length }
+                        ?.takeIf { it > 0L }
+                        ?: -1L
+                    var copiedBytes = 0L
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 16)
+                    var count: Int
+                    while (input.read(buffer).also { count = it } >= 0) {
+                        if (count == 0) continue
+                        output.write(buffer, 0, count)
+                        copiedBytes += count
+                        onProgress(copiedBytes, totalBytes)
+                    }
+                    output.flush()
+                }
+            } ?: return@runCatching null
+            if (!temporary.isFile || temporary.length() == 0L) return@runCatching null
+            val actualSha256 = temporary.sha256()
+            if (spec.expectedSha256 != null &&
+                !actualSha256.equals(spec.expectedSha256, ignoreCase = true)
+            ) return@runCatching null
+            val destination = fileFor(spec)
+            if (destination.exists()) check(destination.delete())
+            check(temporary.renameTo(destination)) { "Unable to finalize the existing model file." }
+            val key = fingerprintKey(spec)
+            preferences.edit()
+                .putString(key, actualSha256)
+                .putLong("${key}_length", destination.length())
+                .putLong("${key}_modified", destination.lastModified())
+                .putBoolean("${key}_invalid", false)
+                .putBoolean("smoke_test_passed", false)
+                .apply()
+            destination
+        }.getOrNull().also {
+            if (it == null) temporary.delete()
+        }
+    }
 
     fun markSmokeTestPassed() {
         preferences.edit().putBoolean("smoke_test_passed", true).apply()
