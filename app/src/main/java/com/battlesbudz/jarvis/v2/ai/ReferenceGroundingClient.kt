@@ -75,7 +75,7 @@ class ReferenceGroundingClient {
         return listOf(
             "yes please", "yes of course", "yes go ahead", "yes do that",
             "sure go ahead", "sure do that", "of course please", "yeah go ahead",
-            "yeah sure", "sounds good", "sounds like a good idea",
+            "yeah sure", "yeah sounds good", "yeah sounds like a good idea",
             "that sounds good", "that would be great", "i agree", "i approve"
         ).any { normalized == it || normalized.startsWith("$it ") }
     }
