@@ -577,4 +577,3 @@ class MainActivity : ComponentActivity() {
 
 }
 
-@Composable
