@@ -167,22 +167,16 @@ internal fun MainActivity.runConversationInternal(
                 if (submittedPrompt.length + MainActivity.GENERATION_HEADROOM >
                     MainActivity.CONVERSATION_COMPACTION_LIMIT
                 ) {
-                    conversationEngine?.close()
-                    conversationEngine = null
-                    conversationCharacters = 0
+                    // Do not reject a valid user turn just because retained
+                    // context is large. The prompt builder already removed
+                    // stale history; let the model answer as concisely as it
+                    // can and retain the diagnostic for later tuning.
                     diagnosticRecorder.record(
-                        "Turn rejected\\n" +
+                        "Turn context remains near budget\\n" +
                             "userLength=${prompt.length}\\n" +
                             "submittedPromptLength=${submittedPrompt.length}\\n" +
-                            "reason=prompt exceeds fresh-session context budget"
+                            "action=continue with concise response"
                     )
-                    mainHandler.post {
-                        onComplete(
-                            "That request is too large for the local model's safe mobile budget. " +
-                                "Please send it in smaller parts."
-                        )
-                    }
-                    return@launch
                 }
                 val imageBytes = imageUri?.let { uri ->
                     openVisionInputStream(uri)?.use { input ->
