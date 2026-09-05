@@ -524,6 +524,9 @@ class MainActivity : ComponentActivity() {
                     promptHistory,
                     seedContext
                 )
+                turnPlan.activeSubject?.let {
+                    submittedPrompt += "\n\nResolved subject for this turn: " + it
+                }
                 submittedPrompt += referenceContext?.let { "\n\n$it" }.orEmpty()
                 if (submittedPrompt.length + GENERATION_HEADROOM >
                     CONVERSATION_COMPACTION_LIMIT
