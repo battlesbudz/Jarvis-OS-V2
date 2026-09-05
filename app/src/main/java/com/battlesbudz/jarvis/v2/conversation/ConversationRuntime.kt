@@ -1,8 +1,6 @@
 package com.battlesbudz.jarvis.v2.conversation
 
 import android.net.Uri
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import com.battlesbudz.jarvis.v2.*
 import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
 import com.battlesbudz.jarvis.v2.ai.ModelCatalog
@@ -10,7 +8,7 @@ import androidx.lifecycle.lifecycleScope
 import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.io.ByteArrayOutputStream
+import java.io.InputStream
 
 internal fun MainActivity.runConversationInternal(
         prompt: String,
@@ -167,7 +165,15 @@ internal fun MainActivity.runConversationInternal(
                     }
                     return@launch
                 }
-                val imageBytes = imageUri?.let { readVisionImage(it) }
+                val imageBytes = imageUri?.let { uri ->
+                    openVisionInputStream(uri)?.use { input ->
+                        input.readBytes().also { bytes ->
+                            check(bytes.size <= MAX_IMAGE_BYTES) {
+                                "The selected image is too large for safe local inference."
+                            }
+                        }
+                    } ?: error("The selected image could not be read.")
+                }
                 var generated = if (imageBytes != null) {
                     engine.generate(
                         prompt = submittedPrompt,
@@ -363,37 +369,9 @@ internal fun MainActivity.runConversationInternal(
         conversationJob?.invokeOnCompletion { MainActivity.activeConversationJobs.decrementAndGet() }
     }
 
-private fun MainActivity.readVisionImage(uri: Uri): ByteArray {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        contentResolver.openInputStream(uri)?.use { input ->
-            BitmapFactory.decodeStream(input, null, bounds)
-        } ?: error("The selected image could not be read.")
-        check(bounds.outWidth > 0 && bounds.outHeight > 0) {
-            "The selected file is not a supported image."
-        }
-
-        val maxDimension = 1_536
-        var sampleSize = 1
-        while (maxOf(bounds.outWidth, bounds.outHeight) / sampleSize > maxDimension) {
-            sampleSize *= 2
-        }
-        val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-        val bitmap = contentResolver.openInputStream(uri)?.use { input ->
-            BitmapFactory.decodeStream(input, null, options)
-        } ?: error("The selected image could not be decoded.")
-
-        val output = ByteArrayOutputStream()
-        try {
-            val decoded = bitmap
-            check(decoded.compress(Bitmap.CompressFormat.JPEG, 85, output)) {
-                "The selected image could not be prepared for vision inference."
-            }
-        } finally {
-            bitmap.recycle()
-        }
-        return output.toByteArray().also { bytes ->
-            check(bytes.size <= MAX_IMAGE_BYTES) {
-                "The selected image is too large for safe local inference."
-            }
-        }
-    }
+private fun MainActivity.openVisionInputStream(uri: Uri): InputStream? {
+    return runCatching { contentResolver.openInputStream(uri) }.getOrNull()
+        ?: runCatching {
+            contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream()
+        }.getOrNull()
+}
