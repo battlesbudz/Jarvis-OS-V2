@@ -1,6 +1,8 @@
 package com.battlesbudz.jarvis.v2.conversation
 
 import android.net.Uri
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import com.battlesbudz.jarvis.v2.*
 import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
 import com.battlesbudz.jarvis.v2.ai.ModelCatalog
@@ -8,6 +10,7 @@ import androidx.lifecycle.lifecycleScope
 import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
 
 internal fun MainActivity.runConversationInternal(
         prompt: String,
@@ -164,15 +167,7 @@ internal fun MainActivity.runConversationInternal(
                     }
                     return@launch
                 }
-                val imageBytes = imageUri?.let { uri ->
-                    contentResolver.openInputStream(uri)?.use { stream ->
-                        stream.readBytes().also { bytes ->
-                            check(bytes.size <= MAX_IMAGE_BYTES) {
-                                "The selected image is too large for safe local inference."
-                            }
-                        }
-                    } ?: error("The selected image could not be read.")
-                }
+                val imageBytes = imageUri?.let(::readVisionImage)
                 var generated = if (imageBytes != null) {
                     engine.generate(
                         prompt = submittedPrompt,
@@ -346,7 +341,12 @@ internal fun MainActivity.runConversationInternal(
                 conversationEngine?.close()
                 conversationEngine = null
                 conversationCharacters = 0
-                diagnosticRecorder.record("Turn failed\nuser=${prompt.take(1_000)}\nerror=${error.stackTraceToString().take(4_000)}")
+                diagnosticRecorder.record(
+                    "Turn failed\n" +
+                        "user=${prompt.take(1_000)}\n" +
+                        "imageAttached=${imageUri != null}\n" +
+                        "error=${error.stackTraceToString().take(4_000)}"
+                )
                 mainHandler.post { onComplete("I could not load the local model: ${error.message ?: "unknown error"}") }
             } finally {
                 // Do not retain native LiteRT/GPU buffers between turns.
@@ -362,3 +362,19 @@ internal fun MainActivity.runConversationInternal(
         }
         conversationJob?.invokeOnCompletion { MainActivity.activeConversationJobs.decrementAndGet() }
     }
+
+    private fun readVisionImage(uri: Uri): ByteArray {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, bounds)
+        } ?: error("The selected image could not be read.")
+        check(bounds.outWidth > 0 && bounds.outHeight > 0) {
+            "The selected file is not a supported image."
+        }
+
+        val maxDimension = 1_536
+        var sampleSize = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sampleSize > maxDimension) {
+            sampleSize *= 2
+        }
+        val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
