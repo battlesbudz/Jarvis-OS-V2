@@ -45,6 +45,7 @@ import com.battlesbudz.jarvis.v2.ai.ModelCatalog
 import com.battlesbudz.jarvis.v2.ai.ModelStore
 import com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient
 import com.battlesbudz.jarvis.v2.ui.JarvisApp
+import com.battlesbudz.jarvis.v2.conversation.runConversationInternal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
