@@ -11,6 +11,36 @@ class ReferenceGroundingClient {
         const val MAX_EVIDENCE_CHARS = 4_500
         const val MAX_EXTRACT_CHARS = 1_800
     }
+    fun shouldAutomaticallyLookup(query: String): Boolean {
+        val text = query.lowercase().trim()
+        if (text.isBlank()) return false
+        val excluded = listOf(
+            "tell me a joke", "make me laugh", "tell me a story",
+            "write a story", "poem", "pretend", "imagine", "roleplay",
+            "what do you think", "should i", "can you help me", "what can you do",
+            "what is this"
+        )
+        if (excluded.any(text::contains)) return false
+
+        val factualTerms = listOf(
+            "history", "historical", "biography", "born", "died", "founded",
+            "author", "book", "law", "legal", "legislation", "president",
+            "war", "attack", "event", "evidence", "fact", "scientist",
+            "company", "worked", "difference between", "when did", "where did",
+            "who was", "what happened", "how did"
+        )
+        if (factualTerms.any(text::contains)) return true
+
+        val asksKnowledge = Regex(
+            "^(who|what|when|where|why|which)\\b"
+        ).containsMatchIn(text)
+        val hasEntityShape = Regex(
+            "\\b[A-Z][a-z]{2,}(?:\\s+[A-Z][a-z]{2,})+\\b"
+        ).containsMatchIn(query) || Regex("\\b[A-Z]{2,}\\b").containsMatchIn(query)
+        val asksAboutNamedEntity = text.contains("tell me about") && hasEntityShape
+        return (asksKnowledge || asksAboutNamedEntity) && hasEntityShape
+    }
+
     fun buildExplicitLookupQuery(
         currentPrompt: String,
         previousUserQuestion: String?,
