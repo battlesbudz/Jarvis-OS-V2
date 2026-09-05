@@ -54,6 +54,23 @@ internal fun MainActivity.runConversationInternal(
                     referenceGrounding.fetchIfRequested(it)?.context
                 }
 
+                if (turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.EXPLICIT_LOOKUP &&
+                    referenceContext.isNullOrBlank()
+                ) {
+                    diagnosticRecorder.record(
+                        "Turn lookup failed\\n" +
+                            "user=${prompt.take(1_000)}\\n" +
+                            "lookupQuery=${turnPlan.lookupQuery?.take(1_000)}\\n" +
+                            "reason=reference source returned no evidence"
+                    )
+                    mainHandler.post {
+                        onComplete(
+                            "I couldn't reach Wikipedia right now. Please check your connection and try again."
+                        )
+                    }
+                    return@launch
+                }
+
                 // Include retrieved evidence in the budget calculation. A
                 // factual lookup must trigger compaction before the fresh prompt
                 // is submitted, rather than being rejected after construction.
@@ -345,4 +362,3 @@ internal fun MainActivity.runConversationInternal(
         }
         conversationJob?.invokeOnCompletion { MainActivity.activeConversationJobs.decrementAndGet() }
     }
-
