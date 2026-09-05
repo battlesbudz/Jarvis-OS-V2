@@ -56,7 +56,7 @@ import org.json.JSONObject
 import org.json.JSONArray
 import java.util.concurrent.atomic.AtomicInteger
 
-private const val MAX_IMAGE_BYTES = 12 * 1024 * 1024
+internal const val MAX_IMAGE_BYTES = 12 * 1024 * 1024
 
 data class ChatEntry(
     val role: String,
