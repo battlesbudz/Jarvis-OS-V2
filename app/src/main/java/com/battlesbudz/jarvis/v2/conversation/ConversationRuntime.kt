@@ -1,70 +1,10 @@
 package com.battlesbudz.jarvis.v2.conversation
 
 import android.net.Uri
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.content.ClipData
-import android.content.ClipboardManager
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.lifecycle.lifecycleScope
+import com.battlesbudz.jarvis.v2.*
 import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
 import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
-import com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext
-import com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor
-import com.battlesbudz.jarvis.v2.actions.MobileActionPipeline
-import com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions
-import com.battlesbudz.jarvis.v2.ai.ModelCatalog
-import com.battlesbudz.jarvis.v2.ai.ModelStore
-import com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient
-import com.battlesbudz.jarvis.v2.ui.JarvisApp
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
-import org.json.JSONObject
-import org.json.JSONArray
-import java.util.concurrent.atomic.AtomicInteger
-
-private const val MAX_IMAGE_BYTES = 12 * 1024 * 1024
-
-data class ChatEntry(
-    val role: String,
-    val text: String
-)
-
-
-import com.battlesbudz.jarvis.v2.*
 
 internal fun MainActivity.runConversationInternal(
         prompt: String,
