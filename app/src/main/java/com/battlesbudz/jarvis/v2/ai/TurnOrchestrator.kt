@@ -37,7 +37,7 @@ class TurnOrchestrator(
             // active subject instead of searching for the command itself.
             val lookupQuery = grounding.buildExplicitLookupQuery(
                 currentPrompt = prompt,
-                previousUserQuestion = activeSubjectQuestion ?: activeSubject
+                previousUserQuestion = activeSubject ?: activeSubjectQuestion
             ) ?: prompt
             return TurnPlan(
                 kind = TurnKind.EXPLICIT_LOOKUP,
@@ -96,16 +96,22 @@ class TurnOrchestrator(
     }
 
     fun pendingSubjectForDiagnostics(): String? = pendingLookupSubject
-}    private fun extractNamedEntity(prompt: String): String? {
+
+    private fun extractNamedEntity(prompt: String): String? {
+        val cueMatch = Regex(
+            "(?i)\\b(?:tell me about|who was|what is|what was|information about)\\s+(.+?)(?:[?.!]\\s*$|$)"
+        ).find(prompt)
+        cueMatch?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
+
         val candidates = Regex(
-            "\\b[A-Z][a-z]{2,}(?:\\s+[A-Z][a-z]{2,}){1,4}\\b"
+            "\\b[A-Z][a-z]{2,}(?:\\s+(?:[A-Z]\\.?|[A-Z][a-z]{2,})){1,5}\\b"
         ).findAll(prompt).map { it.value.trim() }.toList()
         return candidates.lastOrNull { candidate ->
             candidate.lowercase() !in setOf(
-                "Can You", "What Is", "What Was", "Who Was", "Tell Me",
-                "How Did", "What About", "How About"
+                "can you", "what is", "what was", "who was", "tell me",
+                "how did", "what about", "how about"
             )
         } ?: Regex("\\b[A-Z]{2,}(?:\\s+[A-Z]{2,})*\\b")
             .find(prompt)?.value
     }
-
+}
