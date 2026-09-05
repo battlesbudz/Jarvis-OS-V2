@@ -56,6 +56,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.InputStream
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -147,7 +148,7 @@ fun JarvisChat(
                                     ) {
                                         value = withContext(kotlinx.coroutines.Dispatchers.IO) {
                                             runCatching {
-                                                context.contentResolver.openInputStream(Uri.parse(imageUri))
+                                                openTranscriptImageStream(context, Uri.parse(imageUri))
                                                     ?.use { BitmapFactory.decodeStream(it) }
                                             }.getOrNull()
                                         }
@@ -253,6 +254,16 @@ fun JarvisChat(
             Text(if (isSending) "Thinking…" else "Send")
         }
     }
+}
+
+private fun openTranscriptImageStream(
+    context: android.content.Context,
+    uri: Uri
+): InputStream? {
+    return runCatching { context.contentResolver.openInputStream(uri) }.getOrNull()
+        ?: runCatching {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream()
+        }.getOrNull()
 }
 
 @Composable
