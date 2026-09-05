@@ -24,6 +24,8 @@ class TurnOrchestratorTest {
         assertTrue(grounding.isLookupConfirmation("Yes, of course."))
         assertTrue(grounding.isLookupConfirmation("Yeah, sounds like a good idea."))
         assertTrue(grounding.isLookupConfirmation("Go for it."))
+        assertTrue(grounding.isLookupConfirmation("Yeah, of course."))
+        assertTrue(grounding.isLookupConfirmation("Sure, I guess."))
     }
 
     @Test
