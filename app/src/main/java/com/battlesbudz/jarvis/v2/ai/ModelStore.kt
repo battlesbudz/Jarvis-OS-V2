@@ -126,12 +126,21 @@ class ModelStore(context: Context) {
             // does allow an exact MediaStore query. Reuse a model the user
             // already downloaded to the public Downloads location before
             // touching the network.
-            onStatus("Checking Downloads for ${spec.fileName}…")
-            withTimeoutOrNull(10_000L) { findExactDownloadedModel(spec) }?.let { uri ->
+            onStatus("Searching Downloads for the exact filename: ${spec.fileName}")
+            val exactDownload = withTimeoutOrNull(10_000L) {
+                findExactDownloadedModel(spec)
+            } ?: run {
+                onStatus("The Downloads search is taking longer than expected. Retrying the exact filename check…")
+                withTimeoutOrNull(10_000L) { findExactDownloadedModel(spec) }
+                    ?: error("Could not finish checking Downloads for ${spec.fileName}. No download was started.")
+            }
+            if (exactDownload != null) {
+                onStatus("Found ${spec.fileName} in Downloads. Verifying that exact file…")
                 onStatus("Importing the existing Gemma model from Downloads…")
-                val imported = importExactDownloadedModel(uri, spec, onProgress, onStatus)
+                val imported = importExactDownloadedModel(exactDownload, spec, onProgress, onStatus)
                 if (imported != null) return@runCatching imported
             }
+            onStatus("No exact ${spec.fileName} file was found in Downloads. Starting the verified download…")
             onStatus("Downloading Gemma from the verified model source…")
             val url = requireNotNull(spec.downloadUrl) { "No automatic download is configured for ${spec.id}." }
             val destination = fileFor(spec)
@@ -349,24 +358,3 @@ class ModelStore(context: Context) {
         val digest = MessageDigest.getInstance("SHA-256")
         inputStream().use { input ->
             val totalBytes = length()
-            var processedBytes = 0L
-            var lastReportedBytes = -1L
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 16)
-            var count: Int
-            while (input.read(buffer).also { count = it } >= 0) {
-                if (count > 0) {
-                    digest.update(buffer, 0, count)
-                    processedBytes += count
-                    if (processedBytes == totalBytes ||
-                        lastReportedBytes < 0L ||
-                        processedBytes - lastReportedBytes >= 1L * 1024L * 1024L
-                    ) {
-                        lastReportedBytes = processedBytes
-                        onProgress(processedBytes, totalBytes)
-                    }
-                }
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
-    }
-}
