@@ -26,8 +26,10 @@ class ReferenceGroundingClient {
             "history", "historical", "biography", "born", "died", "founded",
             "author", "book", "law", "legal", "legislation", "president",
             "war", "attack", "event", "evidence", "fact", "scientist",
-            "company", "worked", "difference between", "when did", "where did",
-            "who was", "what happened", "how did"
+            "company", "worked", "person", "people", "place", "city", "country",
+            "capital", "located", "difference between", "when did", "when was",
+            "where did", "where was", "where is", "who was", "who is",
+            "what happened", "what is", "what was", "how did", "historical figure"
         )
         if (factualTerms.any(text::contains)) return true
 
