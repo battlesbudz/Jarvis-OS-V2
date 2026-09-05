@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
         internal const val INTERRUPTED_RESPONSE = "The previous response was interrupted. Please send that again."
     }
 
-    private val mainHandler = Handler(Looper.getMainLooper())
+    internal val mainHandler = Handler(Looper.getMainLooper())
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     internal lateinit var modelStore: ModelStore
     internal var conversationEngine: LiteRtLmEngine? = null
