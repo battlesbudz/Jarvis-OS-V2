@@ -11,6 +11,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.withTimeoutOrNull
 
 class ModelStore(context: Context) {
     private companion object {
@@ -54,7 +55,10 @@ class ModelStore(context: Context) {
      * A first verification pins an imported file's SHA-256 so a later file
      * replacement cannot silently pass the smoke test.
      */
-    fun verifyIntegrity(spec: LocalModelSpec): Boolean {
+    fun verifyIntegrity(
+        spec: LocalModelSpec,
+        onProgress: (processedBytes: Long, totalBytes: Long) -> Unit = { _, _ -> }
+    ): Boolean {
         val file = fileFor(spec)
         if (!file.isFile || file.length() == 0L) return false
         val length = file.length()
@@ -68,7 +72,8 @@ class ModelStore(context: Context) {
         ) {
             return true
         }
-        val actual = file.sha256()
+        onProgress(0L, length)
+        val actual = file.sha256(onProgress)
         spec.expectedSha256?.let { expected ->
             if (!actual.equals(expected, ignoreCase = true)) {
                 markIntegrityInvalid(key, length, modified)
@@ -107,11 +112,13 @@ class ModelStore(context: Context) {
      */
     suspend fun downloadOrReuse(
         spec: LocalModelSpec,
-        onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit = { _, _ -> }
+        onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit = { _, _ -> },
+        onStatus: (String) -> Unit = {}
     ): Result<File> = runCatching {
         check(tryBeginModelOperation()) { "Another model operation is still running." }
         try {
-            if (verifyIntegrity(spec)) {
+            onStatus("Checking Jarvis’s app storage…")
+            if (verifyIntegrity(spec, onProgress)) {
                 onProgress(fileFor(spec).length(), fileFor(spec).length())
                 return@runCatching fileFor(spec)
             }
@@ -119,10 +126,13 @@ class ModelStore(context: Context) {
             // does allow an exact MediaStore query. Reuse a model the user
             // already downloaded to the public Downloads location before
             // touching the network.
-            findExactDownloadedModel(spec)?.let { uri ->
+            onStatus("Checking Downloads for ${spec.fileName}…")
+            withTimeoutOrNull(10_000L) { findExactDownloadedModel(spec) }?.let { uri ->
+                onStatus("Importing the existing Gemma model from Downloads…")
                 val imported = importExactDownloadedModel(uri, spec, onProgress)
                 if (imported != null) return@runCatching imported
             }
+            onStatus("Downloading Gemma from the verified model source…")
             val url = requireNotNull(spec.downloadUrl) { "No automatic download is configured for ${spec.id}." }
             val destination = fileFor(spec)
             val temporary = File(modelDirectory, "${spec.fileName}.part")
@@ -164,7 +174,8 @@ class ModelStore(context: Context) {
                 connection.disconnect()
             }
             check(temporary.isFile && temporary.length() > 0L) { "The downloaded model is empty." }
-            val actualSha256 = temporary.sha256()
+            onStatus("Verifying the downloaded Gemma model…")
+            val actualSha256 = temporary.sha256(onProgress)
             spec.expectedSha256?.let { expected ->
                 check(actualSha256.equals(expected, ignoreCase = true)) {
                     "The downloaded model failed integrity verification."
@@ -230,7 +241,8 @@ class ModelStore(context: Context) {
                 }
             } ?: return@runCatching null
             if (!temporary.isFile || temporary.length() == 0L) return@runCatching null
-            val actualSha256 = temporary.sha256()
+            onStatus("Verifying the Gemma model copied from Downloads…")
+            val actualSha256 = temporary.sha256(onProgress)
             if (spec.expectedSha256 != null &&
                 !actualSha256.equals(spec.expectedSha256, ignoreCase = true)
             ) return@runCatching null
@@ -330,13 +342,28 @@ class ModelStore(context: Context) {
             .apply()
     }
 
-    private fun File.sha256(): String {
+    private fun File.sha256(
+        onProgress: (processedBytes: Long, totalBytes: Long) -> Unit = { _, _ -> }
+    ): String {
         val digest = MessageDigest.getInstance("SHA-256")
         inputStream().use { input ->
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            val totalBytes = length()
+            var processedBytes = 0L
+            var lastReportedBytes = -1L
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 16)
             var count: Int
             while (input.read(buffer).also { count = it } >= 0) {
-                if (count > 0) digest.update(buffer, 0, count)
+                if (count > 0) {
+                    digest.update(buffer, 0, count)
+                    processedBytes += count
+                    if (processedBytes == totalBytes ||
+                        lastReportedBytes < 0L ||
+                        processedBytes - lastReportedBytes >= 1L * 1024L * 1024L
+                    ) {
+                        lastReportedBytes = processedBytes
+                        onProgress(processedBytes, totalBytes)
+                    }
+                }
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
