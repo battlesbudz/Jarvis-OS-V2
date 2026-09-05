@@ -22,7 +22,6 @@ internal fun MainActivity.runConversationInternal(
             return
         }
         conversationJob = lifecycleScope.launch(Dispatchers.Default) {
-            var newlyCreatedEngine: LiteRtLmEngine? = null
             try {
                 if (!modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
                     conversationEngine?.close()
@@ -78,8 +77,8 @@ internal fun MainActivity.runConversationInternal(
                 val referenceSize = referenceContext?.length ?: 0
 
                 // Compact before the native conversation approaches its
-                // practical limit. Closing the whole engine releases native
-                // buffers that a conversation-only reset may retain.
+                // practical limit. Keep the transcript in the app and reset
+                // only the bounded native conversation.
                 val existingPromptSize = promptBuilder.buildGemmaPrompt(
                     prompt,
                     actionResultForGemma,
@@ -109,36 +108,33 @@ internal fun MainActivity.runConversationInternal(
                     // The compacted summary already contains the newest turns.
                     // Do not seed them a second time from the visible transcript.
                     promptHistory = emptyList()
-                    conversationEngine?.close()
-                    conversationEngine = null
-                    conversationCharacters = 0
+                    resetNativeConversation()
                 }
 
-                // Fully recreate the native runtime for each turn. LiteRT's
-                // Conversation reset is not sufficient on this device because the
-                // Engine may retain GPU/context buffers after the conversation closes.
-                conversationEngine?.close()
-                conversationEngine = null
-                val engine = LiteRtLmEngine(
+                // Keep the expensive model/GPU engine alive. The replaceable
+                // Conversation is reset only when the bounded context needs
+                // to be compacted or an isolated retry is required.
+                val engine = conversationEngine ?: LiteRtLmEngine(
                     ModelCatalog.gemma4E2b.id,
                     modelStore.fileFor(ModelCatalog.gemma4E2b).path,
                     cacheDir.path,
                     useGpu = true,
                     tools = com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions.all(),
                     visionEnabled = true
-                )
-                newlyCreatedEngine = engine
-                engine.initialize()
-                conversationEngine = engine
-                conversationCharacters = 0
+                ).also {
+                    it.initialize()
+                    conversationEngine = it
+                    nativeConversationHasContext = false
+                    conversationCharacters = 0
+                }
                 val streamFilter = AssistantStreamFilter { safeText ->
                     mainHandler.post { onToken(safeText) }
                 }
-                var seedContext = true
+                var seedContext = !nativeConversationHasContext
                 var submittedPrompt = promptBuilder.buildGemmaPrompt(
                     prompt,
                     actionResultForGemma,
-                    promptHistory,
+                    if (seedContext) promptHistory else emptyList(),
                     seedContext
                 )
                 turnPlan.activeSubject?.let {
@@ -199,6 +195,7 @@ internal fun MainActivity.runConversationInternal(
                         onToken = streamFilter::accept
                     )
                 }
+                var nativeConversationContainsCurrentTurn = true
                 val candidateCall = generated.toolCalls.singleOrNull()
                 // Gemma can occasionally emit a tool call copied from the
                 // previous turn while answering a normal question. Never let
@@ -236,8 +233,7 @@ internal fun MainActivity.runConversationInternal(
                     proposedCall == null &&
                     cleanAssistantText(generated.text).isBlank()
                 ) {
-                    engine.resetConversation()
-                    conversationCharacters = 0
+                    resetNativeConversation()
                     val retryPrompt = submittedPrompt + """
                         
                         The previous output contained an invalid tool call. Answer the user's current message directly as normal text. Do not call a tool.
@@ -260,21 +256,24 @@ internal fun MainActivity.runConversationInternal(
                     referenceContext == null &&
                         actionName == null &&
                         turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.FACTUAL_LOCAL_FIRST
-                val verifierRequestsLookup =
-                    isFactualQuestion &&
-                        !referenceGrounding.isInsufficientAnswer(localAnswer) &&
-                        run {
-                            // This pass is internal and never reaches the user.
-                            // It catches confident-looking entity or historical
-                            // errors that phrase matching cannot detect.
-                            engine.resetConversation()
-                            conversationCharacters = 0
-                            val verdict = engine.generate(
-                                prompt = factualityVerifier.buildPrompt(prompt, localAnswer),
-                                onToken = {}
-                            )
-                            factualityVerifier.requestsLookup(verdict.text)
-                        }
+                var verifierRequestsLookup = false
+                if (isFactualQuestion &&
+                    !referenceGrounding.isInsufficientAnswer(localAnswer)
+                ) {
+                    // This pass is internal and never reaches the user. It
+                    // catches confident-looking entity or historical errors
+                    // that phrase matching cannot detect.
+                    resetNativeConversation()
+                    val verdict = engine.generate(
+                        prompt = factualityVerifier.buildPrompt(prompt, localAnswer),
+                        onToken = {}
+                    )
+                    verifierRequestsLookup = factualityVerifier.requestsLookup(verdict.text)
+                    // The verifier is an isolated internal pass. Do not leave
+                    // its prompt in the user conversation.
+                    resetNativeConversation()
+                    nativeConversationContainsCurrentTurn = false
+                }
                 val shouldUseAutomaticFallback =
                     isFactualQuestion &&
                         (referenceGrounding.isInsufficientAnswer(localAnswer) ||
@@ -283,13 +282,12 @@ internal fun MainActivity.runConversationInternal(
                     val fallbackQuery = turnOrchestrator.automaticFallbackQuery(prompt)
                     val fallbackContext = referenceGrounding.fetchIfRequested(fallbackQuery)?.context
                     if (!fallbackContext.isNullOrBlank()) {
-                        engine.resetConversation()
-                        conversationCharacters = 0
+                        resetNativeConversation()
                         val fallbackPrompt = promptBuilder.buildGemmaPrompt(
                             prompt,
                             null,
                             promptHistory,
-                            seedContext
+                            seedContext = true
                         ) + "\n\n" + fallbackContext
                         generated = if (imageBytes != null) {
                             engine.generate(
@@ -303,6 +301,7 @@ internal fun MainActivity.runConversationInternal(
                                 onToken = streamFilter::accept
                             )
                         }
+                        nativeConversationContainsCurrentTurn = true
                     }
                 }
                 val rawControlOutput = generated.toolCalls.isNotEmpty() || generated.text.contains("tool_call>") ||
@@ -310,8 +309,8 @@ internal fun MainActivity.runConversationInternal(
                     generated.text.contains("call:MobileActions:")
                 if (rawControlOutput) {
                     // Do not carry protocol text into the next turn.
-                    engine.resetConversation()
-                    conversationCharacters = 0
+                    resetNativeConversation()
+                    nativeConversationContainsCurrentTurn = false
                 }
                 val cleanedResponse = cleanAssistantText(generated.text)
                 if (!rawControlOutput) {
@@ -325,8 +324,8 @@ internal fun MainActivity.runConversationInternal(
                 val repeatedFragment = cleanedResponse.length in 1..32 &&
                     cleanedResponse == previousAssistant
                 if (repeatedFragment) {
-                    engine.resetConversation()
-                    conversationCharacters = 0
+                    resetNativeConversation()
+                    nativeConversationContainsCurrentTurn = false
                 }
                 // Android's typed result is authoritative. Gemma is used to
                 // explain it, but must never replace a verified success (or
@@ -341,6 +340,7 @@ internal fun MainActivity.runConversationInternal(
                     }
                 }
                 turnOrchestrator.recordResponse(prompt, finalResponse, turnPlan)
+                nativeConversationHasContext = nativeConversationContainsCurrentTurn
                 diagnosticRecorder.record(
                     "Turn\n" +
                         "user=${prompt.take(1_000)}\n" +
@@ -359,6 +359,7 @@ internal fun MainActivity.runConversationInternal(
                 // recoverable generation failure.
                 conversationEngine?.close()
                 conversationEngine = null
+                nativeConversationHasContext = false
                 conversationCharacters = 0
                 diagnosticRecorder.record(
                     "Turn failed\n" +
@@ -367,16 +368,6 @@ internal fun MainActivity.runConversationInternal(
                         "error=${error.stackTraceToString().take(4_000)}"
                 )
                 mainHandler.post { onComplete("I could not load the local model: ${error.message ?: "unknown error"}") }
-            } finally {
-                // Do not retain native LiteRT/GPU buffers between turns.
-                // The next request receives its bounded context capsule when
-                // it creates a new engine.
-                if (newlyCreatedEngine != null) {
-                    if (conversationEngine === newlyCreatedEngine) {
-                        conversationEngine = null
-                    }
-                    newlyCreatedEngine?.close()
-                }
             }
         }
         conversationJob?.invokeOnCompletion { MainActivity.activeConversationJobs.decrementAndGet() }
