@@ -34,6 +34,9 @@ class ConversationPromptBuilder(
             begin with [NEEDS_WIKIPEDIA], say that you do not know, and offer:
             "Would you like me to search Wikipedia?" Do not claim Wikipedia or
             Wikidata was searched unless evidence is included below.
+            Prefer a concise answer that fits the current mobile turn budget.
+            For broad requests, give the key points first and avoid unnecessary
+            repetition or a long preamble.
             
             $sessionContext
 
