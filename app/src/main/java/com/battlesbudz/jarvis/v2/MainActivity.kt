@@ -110,9 +110,7 @@ class MainActivity : ComponentActivity() {
             // torn down. The visible transcript remains recoverable.
             sessionPreferences.edit().remove(SHORT_TERM_SUMMARY_KEY).apply()
         }
-        synchronized(diagnosticTurns) {
-            diagnosticRecorder.restore()
-        }
+        diagnosticRecorder.restore()
         setContent {
             JarvisApp(
                 store = modelStore,
@@ -127,6 +125,35 @@ class MainActivity : ComponentActivity() {
                 }
             )
         }
+    }
+
+    private fun restoreTranscript(): List<ChatEntry> {
+        val stored = sessionPreferences.getString("transcript", null).orEmpty()
+        if (stored.isBlank()) return emptyList()
+        return runCatching {
+            val array = JSONArray(stored)
+            (0 until array.length()).mapNotNull { index ->
+                val item = array.optJSONObject(index) ?: return@mapNotNull null
+                val role = item.optString("role")
+                val text = item.optString("text")
+                if (role.isBlank() || text.isBlank()) null else ChatEntry(role, text)
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun persistTranscript(messages: List<ChatEntry>) {
+        val array = JSONArray()
+        messages.takeLast(100).forEach { entry ->
+            array.put(JSONObject().put("role", entry.role).put("text", entry.text))
+        }
+        sessionPreferences.edit().putString("transcript", array.toString()).apply()
+    }
+
+    private fun copyDiagnostics(transcript: List<ChatEntry>) {
+        val visible = transcript.joinToString("\n\n") { "${it.role}: ${it.text}" }
+        val diagnostics = "Jarvis OS V2 chat diagnostics\n\nVisible transcript:\n$visible\n\nRecent runtime turns:\n${diagnosticRecorder.snapshot()}"
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Jarvis diagnostics", diagnostics))
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
