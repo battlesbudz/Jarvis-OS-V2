@@ -5,6 +5,7 @@ import com.battlesbudz.jarvis.v2.*
 import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
 import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 internal fun MainActivity.runConversationInternal(
         prompt: String,
