@@ -61,7 +61,8 @@ internal const val MAX_IMAGE_BYTES = 12 * 1024 * 1024
 
 data class ChatEntry(
     val role: String,
-    val text: String
+    val text: String,
+    val imageUri: String? = null
 )
 
 class MainActivity : ComponentActivity() {
@@ -136,7 +137,8 @@ class MainActivity : ComponentActivity() {
                 val item = array.optJSONObject(index) ?: return@mapNotNull null
                 val role = item.optString("role")
                 val text = item.optString("text")
-                if (role.isBlank() || text.isBlank()) null else ChatEntry(role, text)
+                val imageUri = item.optString("imageUri").takeIf { it.isNotBlank() }
+                if (role.isBlank() || text.isBlank()) null else ChatEntry(role, text, imageUri)
             }
         }.getOrDefault(emptyList())
     }
@@ -144,7 +146,12 @@ class MainActivity : ComponentActivity() {
     private fun persistTranscript(messages: List<ChatEntry>) {
         val array = JSONArray()
         messages.takeLast(100).forEach { entry ->
-            array.put(JSONObject().put("role", entry.role).put("text", entry.text))
+            array.put(
+                JSONObject()
+                    .put("role", entry.role)
+                    .put("text", entry.text)
+                    .apply { entry.imageUri?.let { put("imageUri", it) } }
+            )
         }
         sessionPreferences.edit().putString("transcript", array.toString()).apply()
     }
@@ -274,4 +281,3 @@ class MainActivity : ComponentActivity() {
         onComplete: (String) -> Unit
     ) = runConversationInternal(prompt, history, imageUri, onToken, onComplete)
 }
-
