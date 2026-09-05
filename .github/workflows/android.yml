@@ -3,7 +3,7 @@ name: Android APK
 on:
   pull_request:
   push:
-    branches: [main, feat/pr1-complete-testable-product]
+    branches: [main, PR1]
 
 permissions:
   contents: read
@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-pr:
     name: Build and test PR APK
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/feat/pr1-complete-testable-product')
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/PR1')
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -116,7 +116,7 @@ jobs:
 
   publish-pr-test:
     name: Publish permanent PR test APK
-    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/pr1-complete-testable-product'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/PR1'
     needs: build-pr
     runs-on: ubuntu-latest
     permissions:
