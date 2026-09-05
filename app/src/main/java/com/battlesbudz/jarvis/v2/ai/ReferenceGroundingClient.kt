@@ -35,7 +35,7 @@ class ReferenceGroundingClient {
             "^(who|what|when|where|why|which|is|are)\\b"
         ).containsMatchIn(text)
         val hasEntityShape = Regex(
-            "\\b[A-Z][a-z]{2,}(?:\\s+[A-Z][a-z]{2,})+\\b"
+            "\\b[A-Z][a-z]{2,}(?:\\s+(?:[A-Z]\\.?|[A-Z][a-z]{2,})){1,5}\\b"
         ).containsMatchIn(query) || Regex("\\b[A-Z]{2,}\\b").containsMatchIn(query)
         val asksAboutNamedEntity = text.contains("tell me about") && hasEntityShape
         return (asksKnowledge || asksAboutNamedEntity) && hasEntityShape
@@ -71,9 +71,10 @@ class ReferenceGroundingClient {
         if (!explicit) return null
         val previous = previousUserQuestion
             ?.takeIf { it.isNotBlank() && it != currentPrompt }
-        return listOfNotNull(previous, currentPrompt)
-            .joinToString("\n")
-            .takeIf { it.isNotBlank() }
+        // A short command such as "Verify with Wikipedia" is not useful
+        // search text. When a subject is already known, search that subject
+        // alone; the current prompt has already served its routing purpose.
+        return previous ?: currentPrompt.takeIf { it.isNotBlank() }
     }
 
     fun buildAutomaticFallbackQuery(
