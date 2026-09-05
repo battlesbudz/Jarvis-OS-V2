@@ -378,3 +378,5 @@ class ModelStore(context: Context) {
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
+
+}
