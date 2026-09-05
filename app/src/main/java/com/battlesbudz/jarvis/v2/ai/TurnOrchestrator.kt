@@ -16,6 +16,7 @@ class TurnOrchestrator(
     private val grounding: ReferenceGroundingClient
 ) {
     private var pendingLookupSubject: String? = null
+    private var activeSubjectQuestion: String? = null
 
     fun plan(prompt: String): TurnPlan {
         val confirmation = grounding.isLookupConfirmation(prompt)
@@ -32,6 +33,23 @@ class TurnOrchestrator(
                 lookupQuery = pendingLookupSubject?.let { it + "\n" + prompt } ?: prompt
             )
         }
+
+        if (!confirmation && !explicit && prompt.isNotBlank()) {
+            val normalized = prompt.lowercase().trim()
+            val isFollowUp = normalized.startsWith("what about") ||
+                normalized.startsWith("how about") ||
+                normalized.startsWith("and ") ||
+                normalized.contains("him") ||
+                normalized.contains("her ") ||
+                normalized.contains("his ") ||
+                normalized.contains("their ")
+            activeSubjectQuestion = if (isFollowUp && activeSubjectQuestion != null) {
+                activeSubjectQuestion + "\nFollow-up: " + prompt
+            } else {
+                prompt
+            }
+        }
+
         return if (grounding.shouldAutomaticallyLookup(prompt)) {
             TurnPlan(TurnKind.FACTUAL_LOCAL_FIRST)
         } else {
@@ -53,7 +71,7 @@ class TurnOrchestrator(
             normalized.contains("would you like me to search wikipedia") ||
             normalized.contains("would you like me to search wikidata")
         ) {
-            pendingLookupSubject = prompt
+            pendingLookupSubject = activeSubjectQuestion ?: prompt
         } else {
             pendingLookupSubject = null
         }
