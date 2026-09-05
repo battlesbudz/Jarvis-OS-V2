@@ -13,6 +13,16 @@ class TurnOrchestratorTest {
     }
 
     @Test
+    fun factualTurnCarriesLookupQueryBeforeGeneration() {
+        val orchestrator = TurnOrchestrator(ReferenceGroundingClient())
+
+        val plan = orchestrator.plan("Who was Harry J. Anslinger?")
+
+        assertEquals(TurnKind.FACTUAL_LOCAL_FIRST, plan.kind)
+        assertEquals("Harry J. Anslinger", plan.lookupQuery)
+    }
+
+    @Test
     fun explicitLookupFollowUpRetainsTheNewestFactualSubject() {
         val orchestrator = TurnOrchestrator(ReferenceGroundingClient())
 
