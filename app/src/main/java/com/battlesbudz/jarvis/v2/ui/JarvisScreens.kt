@@ -1,6 +1,8 @@
 package com.battlesbudz.jarvis.v2.ui
 
 import com.battlesbudz.jarvis.v2.*
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -17,9 +19,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.Image
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -30,10 +34,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
@@ -52,6 +59,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.json.JSONArray
 import java.util.concurrent.atomic.AtomicInteger
@@ -68,13 +76,22 @@ fun JarvisChat(
     onSendingChanged: (Boolean) -> Unit,
     initialMessages: List<ChatEntry>
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var prompt by rememberSaveable { mutableStateOf("") }
     var messages by remember { mutableStateOf(initialMessages) }
     var isSending by remember { mutableStateOf(false) }
     var attachedImageName by rememberSaveable { mutableStateOf<String?>(null) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
     val transcriptScrollState = rememberScrollState()
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    it,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+        }
         attachedImageUri = uri
         attachedImageName = uri?.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
             ?: if (uri != null) "selected image" else null
@@ -122,15 +139,40 @@ fun JarvisChat(
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
                             modifier = Modifier.padding(top = 4.dp)
                         ) {
-                            Text(
-                                message.text.ifBlank { "…" },
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                color = if (message.role == "You") {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
+                            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                                message.imageUri?.let { imageUri ->
+                                    val bitmap by produceState<Bitmap?>(
+                                        initialValue = null,
+                                        key1 = imageUri
+                                    ) {
+                                        value = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            runCatching {
+                                                context.contentResolver.openInputStream(Uri.parse(imageUri))
+                                                    ?.use { BitmapFactory.decodeStream(it) }
+                                            }.getOrNull()
+                                        }
+                                    }
+                                    bitmap?.let {
+                                        Image(
+                                            bitmap = it.asImageBitmap(),
+                                            contentDescription = "Attached image",
+                                            contentScale = ContentScale.Fit,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(max = 280.dp)
+                                                .padding(bottom = 8.dp)
+                                        )
+                                    }
                                 }
-                            )
+                                Text(
+                                    message.text.ifBlank { "…" },
+                                    color = if (message.role == "You") {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -149,7 +191,7 @@ fun JarvisChat(
             verticalAlignment = androidx.compose.ui.Alignment.Bottom
         ) {
             Button(
-                onClick = { imagePicker.launch("image/*") },
+                onClick = { imagePicker.launch(arrayOf("image/*")) },
                 enabled = !isSending,
                 modifier = Modifier.padding(end = 8.dp)
             ) {
@@ -183,7 +225,9 @@ fun JarvisChat(
                 attachedImageUri = null
                 attachedImageName = null
                 isSending = true
-                val updatedMessages = messages + ChatEntry("You", submitted) + ChatEntry("Jarvis", "")
+                val updatedMessages = messages +
+                    ChatEntry("You", submitted, selectedImageUri?.toString()) +
+                    ChatEntry("Jarvis", "")
                 messages = updatedMessages
                 onMessagesChanged(updatedMessages)
                 onSendingChanged(true)
@@ -319,4 +363,3 @@ private fun ModelSetup(
         }
     }
 }
-
