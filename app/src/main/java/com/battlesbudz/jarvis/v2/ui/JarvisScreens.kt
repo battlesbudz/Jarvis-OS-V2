@@ -212,7 +212,7 @@ fun JarvisChat(
 }
 
 @Composable
-private fun JarvisApp(
+fun JarvisApp(
     store: ModelStore,
     initialMessages: List<ChatEntry>,
     onRunModelSmokeTest: ((String) -> Unit) -> Unit,
