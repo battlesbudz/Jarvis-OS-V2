@@ -71,7 +71,15 @@ class TurnOrchestrator(
         } else {
             TurnKind.NORMAL_CHAT
         }
-        return TurnPlan(kind, activeSubject = activeSubject)
+        val lookupQuery = if (kind == TurnKind.FACTUAL_LOCAL_FIRST) {
+            // Deterministic factual routing must retrieve evidence before
+            // Gemma answers; post-answer verification is too late to prevent
+            // a confident hallucination from reaching the user.
+            activeSubject ?: prompt
+        } else {
+            null
+        }
+        return TurnPlan(kind, lookupQuery = lookupQuery, activeSubject = activeSubject)
     }
 
     fun automaticFallbackQuery(prompt: String): String =
