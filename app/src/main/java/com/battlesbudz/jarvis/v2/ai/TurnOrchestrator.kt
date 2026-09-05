@@ -31,9 +31,17 @@ class TurnOrchestrator(
             )
         }
         if (explicit) {
+            // An explicit lookup is often a short follow-up such as
+            // "Use Wikipedia." Keep the most recent factual question with
+            // the lookup request so the reference client searches for the
+            // active subject instead of searching for the command itself.
+            val lookupQuery = grounding.buildExplicitLookupQuery(
+                currentPrompt = prompt,
+                previousUserQuestion = activeSubjectQuestion ?: activeSubject
+            ) ?: prompt
             return TurnPlan(
                 kind = TurnKind.EXPLICIT_LOOKUP,
-                lookupQuery = pendingLookupSubject?.let { it + "\n" + prompt } ?: prompt,
+                lookupQuery = pendingLookupSubject?.let { it + "\n" + prompt } ?: lookupQuery,
                 activeSubject = activeSubject
             )
         }
@@ -100,5 +108,4 @@ class TurnOrchestrator(
         } ?: Regex("\\b[A-Z]{2,}(?:\\s+[A-Z]{2,})*\\b")
             .find(prompt)?.value
     }
-
 
