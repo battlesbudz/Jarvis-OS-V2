@@ -395,16 +395,21 @@ private fun ModelSetup(
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
             )
             Text(
-                "${(progress * 100).toInt()}% downloaded",
+                "${(progress * 100).toInt()}% complete",
                 modifier = Modifier.padding(top = 8.dp)
             )
         } else if (downloading) {
             androidx.compose.material3.LinearProgressIndicator(
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
             )
-            Text("Checking the phone and preparing the model…", modifier = Modifier.padding(top = 8.dp))
+            Text(
+                status.ifBlank { "Checking the phone and preparing the model…" },
+                modifier = Modifier.padding(top = 8.dp)
+            )
         }
-        if (status.isNotBlank()) Text(status, modifier = Modifier.padding(top = 20.dp))
+        if (status.isNotBlank() && !(downloading && downloadTotalBytes <= 0L)) {
+            Text(status, modifier = Modifier.padding(top = 20.dp))
+        }
         OutlinedButton(
             onClick = onPickGemma,
             enabled = !testing && !importing && !downloading,
