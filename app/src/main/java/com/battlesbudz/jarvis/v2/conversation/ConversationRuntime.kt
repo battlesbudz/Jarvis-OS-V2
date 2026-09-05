@@ -13,7 +13,7 @@ internal fun MainActivity.runConversationInternal(
         onToken: (String) -> Unit,
         onComplete: (String) -> Unit
     ) {
-        if (!activeConversationJobs.compareAndSet(0, 1)) {
+        if (!MainActivity.activeConversationJobs.compareAndSet(0, 1)) {
             onComplete("The previous response is still finishing. Please try again in a moment.")
             return
         }
@@ -28,7 +28,7 @@ internal fun MainActivity.runConversationInternal(
                 // Reject only an exceptionally large single message before
                 // routing or executing a phone side effect. Retained history is
                 // handled by compaction below and must not reject a short follow-up.
-                if (prompt.length > MAX_USER_PROMPT_CHARS) {
+                if (prompt.length > MainActivity.MAX_USER_PROMPT_CHARS) {
                     diagnosticRecorder.record(
                         "Turn rejected before action routing\\n" +
                             "userLength=${prompt.length}\\n" +
@@ -73,8 +73,8 @@ internal fun MainActivity.runConversationInternal(
                 ).length
                 val pendingRequestSize = maxOf(existingPromptSize, freshPromptSize) + referenceSize
                 var promptHistory = history
-                if (conversationCharacters + pendingRequestSize + GENERATION_HEADROOM >
-                    CONVERSATION_COMPACTION_LIMIT
+                if (conversationCharacters + pendingRequestSize + MainActivity.GENERATION_HEADROOM >
+                    MainActivity.CONVERSATION_COMPACTION_LIMIT
                 ) {
                     val compactedText = shortTermContext.compactSnapshot(
                         history.map { it.role to it.text }
@@ -82,7 +82,7 @@ internal fun MainActivity.runConversationInternal(
                     if (compactedText.isNotBlank()) {
                         shortTermContext.updateSummary(compactedText)
                         sessionPreferences.edit()
-                            .putString(SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
+                            .putString(MainActivity.SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
                             .apply()
                     }
                     // The compacted summary already contains the newest turns.
@@ -124,8 +124,8 @@ internal fun MainActivity.runConversationInternal(
                     submittedPrompt += "\n\nResolved subject for this turn: " + it
                 }
                 submittedPrompt += referenceContext?.let { "\n\n$it" }.orEmpty()
-                if (submittedPrompt.length + GENERATION_HEADROOM >
-                    CONVERSATION_COMPACTION_LIMIT
+                if (submittedPrompt.length + MainActivity.GENERATION_HEADROOM >
+                    MainActivity.CONVERSATION_COMPACTION_LIMIT
                 ) {
                     conversationEngine?.close()
                     conversationEngine = null
@@ -340,6 +340,6 @@ internal fun MainActivity.runConversationInternal(
                 }
             }
         }
-        conversationJob?.invokeOnCompletion { activeConversationJobs.decrementAndGet() }
+        conversationJob?.invokeOnCompletion { MainActivity.activeConversationJobs.decrementAndGet() }
     }
 
