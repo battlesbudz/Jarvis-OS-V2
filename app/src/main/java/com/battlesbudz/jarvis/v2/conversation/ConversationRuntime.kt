@@ -134,7 +134,7 @@ internal fun MainActivity.runConversationInternal(
                 val streamFilter = AssistantStreamFilter { safeText ->
                     mainHandler.post { onToken(safeText) }
                 }
-                val seedContext = true
+                var seedContext = true
                 var submittedPrompt = promptBuilder.buildGemmaPrompt(
                     prompt,
                     actionResultForGemma,
@@ -145,6 +145,25 @@ internal fun MainActivity.runConversationInternal(
                     submittedPrompt += "\n\nResolved subject for this turn: " + it
                 }
                 submittedPrompt += referenceContext?.let { "\n\n$it" }.orEmpty()
+                if (submittedPrompt.length + MainActivity.GENERATION_HEADROOM >
+                    MainActivity.CONVERSATION_COMPACTION_LIMIT
+                ) {
+                    // A compacted summary is useful background, but it must
+                    // never crowd out the current request or retrieved image /
+                    // Wikipedia evidence. Retry the fresh session without
+                    // seeded history before rejecting the user turn.
+                    seedContext = false
+                    submittedPrompt = promptBuilder.buildGemmaPrompt(
+                        prompt,
+                        actionResultForGemma,
+                        emptyList(),
+                        seedContext = false
+                    )
+                    turnPlan.activeSubject?.let {
+                        submittedPrompt += "\n\nResolved subject for this turn: " + it
+                    }
+                    submittedPrompt += referenceContext?.let { "\n\n$it" }.orEmpty()
+                }
                 if (submittedPrompt.length + MainActivity.GENERATION_HEADROOM >
                     MainActivity.CONVERSATION_COMPACTION_LIMIT
                 ) {
@@ -359,19 +378,3 @@ internal fun MainActivity.runConversationInternal(
                 // The next request receives its bounded context capsule when
                 // it creates a new engine.
                 if (newlyCreatedEngine != null) {
-                    if (conversationEngine === newlyCreatedEngine) {
-                        conversationEngine = null
-                    }
-                    newlyCreatedEngine?.close()
-                }
-            }
-        }
-        conversationJob?.invokeOnCompletion { MainActivity.activeConversationJobs.decrementAndGet() }
-    }
-
-private fun MainActivity.openVisionInputStream(uri: Uri): InputStream? {
-    return runCatching { contentResolver.openInputStream(uri) }.getOrNull()
-        ?: runCatching {
-            contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream()
-        }.getOrNull()
-}
