@@ -54,7 +54,6 @@ import kotlinx.coroutines.SupervisorJob
 import org.json.JSONObject
 import org.json.JSONArray
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.Collections
 
 private const val MAX_IMAGE_BYTES = 12 * 1024 * 1024
 
@@ -89,11 +88,13 @@ class MainActivity : ComponentActivity() {
     private val turnOrchestrator = com.battlesbudz.jarvis.v2.ai.TurnOrchestrator(referenceGrounding)
     private val promptBuilder = com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder(shortTermContext)
     private lateinit var sessionPreferences: android.content.SharedPreferences
+    private lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         modelStore = ModelStore(applicationContext)
         sessionPreferences = getSharedPreferences("chat_session", MODE_PRIVATE)
+        diagnosticRecorder = com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(sessionPreferences)
         val interruptedSession = sessionPreferences.getBoolean("sending", false)
         shortTermContext.restoreSummary(
             if (interruptedSession) null else {
@@ -107,7 +108,7 @@ class MainActivity : ComponentActivity() {
             sessionPreferences.edit().remove(SHORT_TERM_SUMMARY_KEY).apply()
         }
         synchronized(diagnosticTurns) {
-            diagnosticTurns.addAll(restoreDiagnostics())
+            diagnosticRecorder.restore()
         }
         setContent {
             JarvisApp(
@@ -133,97 +134,7 @@ class MainActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
     }
 
-    private val diagnosticTurns = Collections.synchronizedList(mutableListOf<String>())
-
-    private fun restoreDiagnostics(): List<String> {
-        val stored = sessionPreferences.getString("diagnostics", null).orEmpty()
-        if (stored.isBlank()) return emptyList()
-        return runCatching {
-            val array = JSONArray(stored)
-            (0 until array.length())
-                .map { array.getString(it) }
-                .filter { it.isNotBlank() }
-                .takeLast(20)
-        }.getOrElse {
-            // Read diagnostics written by older builds, but never use paragraph
-            // boundaries to frame new entries.
-            stored.split("\n\n").filter { it.isNotBlank() }.takeLast(20)
-        }
-    }
-
-    private fun diagnosticsSnapshot(): String {
-        val inMemory = synchronized(diagnosticTurns) {
-            diagnosticTurns.takeLast(20)
-        }
-        return (if (inMemory.isNotEmpty()) inMemory else restoreDiagnostics())
-            .joinToString("\n\n")
-            .ifBlank { "No prior runtime diagnostics." }
-    }
-
-    private fun restoreTranscript(): List<ChatEntry> = runCatching {
-        val json = sessionPreferences.getString("transcript", "[]") ?: "[]"
-        val array = JSONArray(json)
-        val restored = (0 until array.length()).map { index ->
-            val item = array.getJSONObject(index)
-            ChatEntry(item.getString("role"), item.getString("text"))
-        }
-        if (sessionPreferences.getBoolean("sending", false)) {
-            sessionPreferences.edit().putBoolean("sending", false).apply()
-            restored.mapIndexed { index, entry ->
-                if (index == restored.lastIndex && entry.role == "Jarvis") {
-                    entry.copy(text = INTERRUPTED_RESPONSE)
-                } else entry
-            }
-        } else restored
-    }.getOrDefault(emptyList())
-
-    private fun persistTranscript(messages: List<ChatEntry>) {
-        val array = JSONArray()
-        messages.takeLast(40).forEach { message ->
-            array.put(JSONObject().put("role", message.role).put("text", message.text.take(4_000)))
-        }
-        sessionPreferences.edit().putString("transcript", array.toString()).apply()
-    }
-
-    private fun copyDiagnostics(transcript: List<ChatEntry>) {
-        val visibleTranscript = transcript.joinToString("\n") { "${it.role}: ${it.text}" }
-        val diagnostics = diagnosticsSnapshot()
-        val bundle = """
-            Jarvis OS V2 chat diagnostics
-            App: ${applicationContext.packageName}
-            Android: ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})
-            Primary model: ${ModelCatalog.gemma4E2b.id}
-            Action model: Gemma-native structured tools
-            Session context: ${shortTermContext.diagnostics()}
-            Conversation character estimate: $conversationCharacters
-
-            Visible transcript:
-            $visibleTranscript
-
-            Recent runtime turns:
-            $diagnostics
-        """.trimIndent()
-        val clipboard = getSystemService(ClipboardManager::class.java)
-        clipboard?.setPrimaryClip(ClipData.newPlainText("Jarvis diagnostics", bundle))
-    }
-
-    private fun recordDiagnostic(entry: String) {
-        synchronized(diagnosticTurns) {
-            diagnosticTurns.add(entry.take(6_000))
-            while (diagnosticTurns.size > 20) diagnosticTurns.removeAt(0)
-        }
-        if (::sessionPreferences.isInitialized) {
-            val persisted = synchronized(diagnosticTurns) {
-                JSONArray().also { array ->
-                    diagnosticTurns.takeLast(20).forEach(array::put)
-                }.toString()
-            }
-            sessionPreferences.edit()
-                .putString("diagnostics", persisted)
-                .apply()
-        }
-    }
-
+    
     override fun onDestroy() {
         conversationJob?.cancel()
         val engine = conversationEngine
@@ -440,7 +351,7 @@ class MainActivity : ComponentActivity() {
                 // routing or executing a phone side effect. Retained history is
                 // handled by compaction below and must not reject a short follow-up.
                 if (prompt.length > MAX_USER_PROMPT_CHARS) {
-                    recordDiagnostic(
+                    diagnosticRecorder.record(
                         "Turn rejected before action routing\\n" +
                             "userLength=${prompt.length}\\n" +
                             "reason=single user message exceeds safe mobile budget"
