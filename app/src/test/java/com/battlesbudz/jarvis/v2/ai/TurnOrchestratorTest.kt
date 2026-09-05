@@ -18,6 +18,20 @@ class TurnOrchestratorTest {
     }
 
     @Test
+    fun whoNameWithoutIsStillTriggersAutomaticGrounding() {
+        assertTrue(ReferenceGroundingClient().shouldAutomaticallyLookup("Who Jack Herer?"))
+    }
+
+    @Test
+    fun knowledgeBaseFallbackAnswerIsInsufficient() {
+        assertTrue(
+            ReferenceGroundingClient().isInsufficientAnswer(
+                "I do not have any specific information about Jack Herer in my current knowledge base."
+            )
+        )
+    }
+
+    @Test
     fun naturalApprovalPhrasesTriggerLookupConfirmation() {
         val grounding = ReferenceGroundingClient()
 
