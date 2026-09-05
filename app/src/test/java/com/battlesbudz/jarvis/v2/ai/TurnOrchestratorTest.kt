@@ -6,6 +6,13 @@ import org.junit.Test
 
 class TurnOrchestratorTest {
     @Test
+    fun namedEntityWithMiddleInitialTriggersAutomaticGrounding() {
+        val grounding = ReferenceGroundingClient()
+
+        assertTrue(grounding.shouldAutomaticallyLookup("Who is Harry J. Anslinger?"))
+    }
+
+    @Test
     fun explicitLookupFollowUpRetainsTheNewestFactualSubject() {
         val orchestrator = TurnOrchestrator(ReferenceGroundingClient())
 
@@ -14,8 +21,7 @@ class TurnOrchestratorTest {
 
         assertEquals(TurnKind.EXPLICIT_LOOKUP, plan.kind)
         assertEquals("Harry J. Anslinger", plan.activeSubject)
-        assertTrue(plan.lookupQuery!!.contains("Harry J. Anslinger"))
-        assertTrue(plan.lookupQuery!!.contains("Use Wikipedia."))
+        assertEquals("Harry J. Anslinger", plan.lookupQuery)
     }
 
     @Test
@@ -25,7 +31,6 @@ class TurnOrchestratorTest {
         orchestrator.plan("Who was Harry J. Anslinger?")
         val query = orchestrator.plan("Check Wikipedia for that.").lookupQuery
 
-        assertTrue(query!!.contains("Harry J. Anslinger"))
-        assertTrue(!query.equals("Check Wikipedia for that."))
+        assertEquals("Harry J. Anslinger", query)
     }
 }
