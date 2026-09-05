@@ -70,9 +70,8 @@ class MainActivity : ComponentActivity() {
         val activeConversationJobs = AtomicInteger(0)
         internal const val SHORT_TERM_SUMMARY_KEY = "short_term_summary"
         // This is an app-side character budget, not Gemma's advertised
-        // context maximum. It leaves room for a normal long answer while
-        // rebuilding the native conversation before retained chat grows too far
-        // for this device/runtime.
+        // context maximum. It leaves room for a normal answer before the
+        // bounded native conversation is reset and reseeded from app context.
         internal const val CONVERSATION_COMPACTION_LIMIT = 10_000
         internal const val GENERATION_HEADROOM = 2_000
         internal const val MAX_USER_PROMPT_CHARS = 12_000
@@ -85,6 +84,10 @@ class MainActivity : ComponentActivity() {
     internal var conversationEngine: LiteRtLmEngine? = null
     internal var conversationJob: Job? = null
     internal var conversationCharacters = 0
+    // The full transcript and rolling summary live in the app. This flag only
+    // describes whether the current native Conversation has received that
+    // app-managed context capsule.
+    internal var nativeConversationHasContext = false
     internal val shortTermContext = ShortTermConversationContext()
     internal val referenceGrounding = ReferenceGroundingClient()
     internal val factualityVerifier = com.battlesbudz.jarvis.v2.ai.FactualityVerifier()
@@ -184,6 +187,13 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    /** Reset the native conversation without tearing down the initialized Engine. */
+    internal suspend fun resetNativeConversation() {
+        conversationEngine?.resetConversation()
+        nativeConversationHasContext = false
+        conversationCharacters = 0
+    }
+
     private fun runModelSmokeTest(report: (String) -> Unit) {
         if (!modelStore.tryBeginModelOperation()) {
             report("A model test is still finishing. Please try again in a moment.")
@@ -199,6 +209,7 @@ class MainActivity : ComponentActivity() {
                 }
                 conversationEngine?.close()
                 conversationEngine = null
+                nativeConversationHasContext = false
                 gemma = LiteRtLmEngine(
                     ModelCatalog.gemma4E2b.id,
                     modelStore.fileFor(ModelCatalog.gemma4E2b).path,
@@ -240,6 +251,7 @@ class MainActivity : ComponentActivity() {
                 if (result.isSuccess && spec.id == ModelCatalog.gemma4E2b.id) {
                     conversationEngine?.close()
                     conversationEngine = null
+                    nativeConversationHasContext = false
                 }
                 report(result.fold(
                     { "Model imported successfully." },
@@ -254,6 +266,7 @@ class MainActivity : ComponentActivity() {
             importJob.invokeOnCompletion {
                 conversationEngine?.close()
                 conversationEngine = null
+                nativeConversationHasContext = false
             }
         }
     }
