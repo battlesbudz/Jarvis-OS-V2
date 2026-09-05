@@ -260,7 +260,9 @@ class MainActivity : ComponentActivity() {
         onFinished: (String) -> Unit
     ) {
         if (modelStore.isModelOperationActive()) {
-            report("A model operation is still finishing. Please try again in a moment.")
+            val message = "A model operation is still finishing. Please try again in a moment."
+            report(message)
+            onFinished(message)
             return
         }
         lifecycleScope.launch(Dispatchers.IO) {
