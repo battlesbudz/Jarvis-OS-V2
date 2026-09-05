@@ -6,7 +6,7 @@ package com.battlesbudz.jarvis.v2.chat
  */
 class ShortTermConversationContext(
     private val recentEntryLimit: Int = 8,
-    private val summaryCharacterLimit: Int = 4_000
+    private val summaryCharacterLimit: Int = 2_000
 ) {
     private var summary: String? = null
 
@@ -40,7 +40,7 @@ class ShortTermConversationContext(
                 append("Recent visible turns:\n")
                 append(recent)
             }
-        }.take(5_000)
+        }.take(3_000)
     }
     fun updateSummary(newSummary: String) {
         summary = newSummary.trim().take(summaryCharacterLimit).ifBlank { null }
