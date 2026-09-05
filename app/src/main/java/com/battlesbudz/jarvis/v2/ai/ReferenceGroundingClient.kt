@@ -77,7 +77,12 @@ class ReferenceGroundingClient {
             "sure go ahead", "sure do that", "of course please", "yeah go ahead",
             "yeah sure", "yeah sounds good", "yeah sounds like a good idea",
             "that sounds good", "that would be great", "i agree", "i approve"
-        ).any { normalized == it || normalized.startsWith("$it ") }
+        ).any { normalized == it || normalized.startsWith("$it ") } ||
+            Regex(
+                "^(yes|yeah|yep|yup|sure|okay|ok|alright|all right)\\s+" +
+                    "(of course|i guess|sounds good|sounds like a good idea|" +
+                    "that sounds good|that would be great|go ahead|go for it|do it)$"
+            ).matches(normalized)
     }
 
     fun buildExplicitLookupQuery(
