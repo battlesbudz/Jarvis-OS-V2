@@ -78,6 +78,7 @@ class MainActivity : ComponentActivity() {
     private var conversationCharacters = 0
     private val shortTermContext = ShortTermConversationContext()
     private val referenceGrounding = ReferenceGroundingClient()
+    private val factualityVerifier = com.battlesbudz.jarvis.v2.ai.FactualityVerifier()
     private lateinit var sessionPreferences: android.content.SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -680,11 +681,29 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 val localAnswer = cleanAssistantText(generated.text)
-                val shouldUseAutomaticFallback =
+                val isFactualQuestion =
                     referenceContext == null &&
                         actionName == null &&
-                        referenceGrounding.shouldAutomaticallyLookup(prompt) &&
-                        referenceGrounding.isInsufficientAnswer(localAnswer)
+                        referenceGrounding.shouldAutomaticallyLookup(prompt)
+                val verifierRequestsLookup =
+                    isFactualQuestion &&
+                        !referenceGrounding.isInsufficientAnswer(localAnswer) &&
+                        run {
+                            // This pass is internal and never reaches the user.
+                            // It catches confident-looking entity or historical
+                            // errors that phrase matching cannot detect.
+                            engine.resetConversation()
+                            conversationCharacters = 0
+                            val verdict = engine.generate(
+                                prompt = factualityVerifier.buildPrompt(prompt, localAnswer),
+                                onToken = {}
+                            )
+                            factualityVerifier.requestsLookup(verdict.text)
+                        }
+                val shouldUseAutomaticFallback =
+                    isFactualQuestion &&
+                        (referenceGrounding.isInsufficientAnswer(localAnswer) ||
+                            verifierRequestsLookup)
                 if (shouldUseAutomaticFallback) {
                     val fallbackQuery = referenceGrounding.buildAutomaticFallbackQuery(
                         prompt,
