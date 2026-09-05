@@ -32,7 +32,7 @@ class ReferenceGroundingClient {
         if (factualTerms.any(text::contains)) return true
 
         val asksKnowledge = Regex(
-            "^(who|what|when|where|why|which)\\b"
+            "^(who|what|when|where|why|which|is|are)\\b"
         ).containsMatchIn(text)
         val hasEntityShape = Regex(
             "\\b[A-Z][a-z]{2,}(?:\\s+[A-Z][a-z]{2,})+\\b"
@@ -41,15 +41,26 @@ class ReferenceGroundingClient {
         return (asksKnowledge || asksAboutNamedEntity) && hasEntityShape
     }
 
+    fun isLookupConfirmation(query: String): Boolean {
+        val normalized = query.lowercase()
+            .replace(Regex("[^a-z\\s]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        return normalized in setOf(
+            "yes", "yes please", "sure", "okay", "ok", "go ahead", "do it"
+        )
+    }
+
     fun buildExplicitLookupQuery(
         currentPrompt: String,
         previousUserQuestion: String?,
         previousAssistantMessage: String? = null
     ): String? {
-        val normalized = currentPrompt.lowercase().trim()
-        val confirmation = normalized in setOf(
-            "yes", "yes please", "sure", "okay", "ok", "go ahead", "do it"
-        )
+        val normalized = currentPrompt.lowercase()
+            .replace(Regex("[^a-z\\s]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        val confirmation = isLookupConfirmation(currentPrompt)
         val offeredLookup = previousAssistantMessage?.lowercase()?.let {
             it.contains("search wikipedia") ||
                 it.contains("search wikimedia") ||
