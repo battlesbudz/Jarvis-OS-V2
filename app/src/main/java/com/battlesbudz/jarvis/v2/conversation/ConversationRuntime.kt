@@ -378,3 +378,19 @@ internal fun MainActivity.runConversationInternal(
                 // The next request receives its bounded context capsule when
                 // it creates a new engine.
                 if (newlyCreatedEngine != null) {
+                    if (conversationEngine === newlyCreatedEngine) {
+                        conversationEngine = null
+                    }
+                    newlyCreatedEngine?.close()
+                }
+            }
+        }
+        conversationJob?.invokeOnCompletion { MainActivity.activeConversationJobs.decrementAndGet() }
+    }
+
+private fun MainActivity.openVisionInputStream(uri: Uri): InputStream? {
+    return runCatching { contentResolver.openInputStream(uri) }.getOrNull()
+        ?: runCatching {
+            contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream()
+        }.getOrNull()
+}
