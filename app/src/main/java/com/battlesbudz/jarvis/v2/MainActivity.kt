@@ -120,6 +120,7 @@ class MainActivity : ComponentActivity() {
                 store = modelStore,
                 initialMessages = restoreTranscript(),
                 onRunModelSmokeTest = { runModelSmokeTest(it) },
+                onDownloadGemma = { onProgress, report -> downloadGemmaAndTest(onProgress, report) },
                 onImportModel = { uri, spec, report -> importModel(uri, spec, report) },
                 onCopyDiagnostics = { transcript -> copyDiagnostics(transcript) },
                 onMessagesChanged = { persistTranscript(it) },
@@ -238,6 +239,33 @@ class MainActivity : ComponentActivity() {
             }
         }
         smokeTestJob.invokeOnCompletion { modelStore.endModelOperation() }
+    }
+
+    private fun downloadGemmaAndTest(
+        onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
+        report: (String) -> Unit
+    ) {
+        if (modelStore.isModelOperationActive()) {
+            report("A model operation is still finishing. Please try again in a moment.")
+            return
+        }
+        lifecycleScope.launch(Dispatchers.IO) {
+            mainHandler.post { report("Checking for the existing Gemma model…") }
+            val result = modelStore.downloadOrReuse(ModelCatalog.gemma4E2b) { downloaded, total ->
+                mainHandler.post { onProgress(downloaded, total) }
+            }
+            result.fold(
+                onSuccess = {
+                    mainHandler.post { report("Gemma found. Starting Jarvis’s final setup…") }
+                    runModelSmokeTest(report)
+                },
+                onFailure = { error ->
+                    mainHandler.post {
+                        report("Model setup failed: ${error.message ?: "unknown error"}")
+                    }
+                }
+            )
+        }
     }
 
     private fun importModel(
