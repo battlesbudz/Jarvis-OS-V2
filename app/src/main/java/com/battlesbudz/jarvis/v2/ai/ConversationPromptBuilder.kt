@@ -6,6 +6,7 @@ import com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext
 class ConversationPromptBuilder(
     private val shortTermContext: ShortTermConversationContext
 ) {
+    // Keep the prompt policy centralized so mobile turns can stay concise.
     fun buildGemmaPrompt(
         userPrompt: String,
         actionResultContext: String?,
