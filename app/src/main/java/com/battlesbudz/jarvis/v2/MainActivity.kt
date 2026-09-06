@@ -178,7 +178,7 @@ class MainActivity : ComponentActivity() {
             var gemma: LiteRtLmEngine? = null
             var finalMessage = "Direct E2B audio test failed."
             try {
-                mainHandler.post { report("Recording a 4-second microphone sample…") }
+                mainHandler.post { report("Recording a 25-second microphone sample…") }
                 val audioBytes = recordVoiceSample()
                 mainHandler.post { report("Loading Gemma 4 E2B audio runtime…") }
                 check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
@@ -222,7 +222,9 @@ class MainActivity : ComponentActivity() {
 
     private fun recordVoiceSample(): ByteArray {
         val sampleRate = 16_000
-        val durationMs = 4_000
+        // Keep this below Gemma 4's documented 30-second audio clip limit
+        // while allowing a realistic spoken batch for the first voice test.
+        val durationMs = 25_000
         val samples = sampleRate * durationMs / 1_000
         val minBuffer = AudioRecord.getMinBufferSize(
             sampleRate,
