@@ -9,6 +9,9 @@ import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.provider.MediaStore
 import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -107,11 +110,7 @@ class ModelStore(context: Context) {
 
     fun isModelOperationActive(): Boolean = activeModelOperation.get() > 0
 
-    /**
-     * Reuses the canonical app-private copy or imports the exact model file
-     * already present in Downloads. Network downloading is intentionally
-     * disabled until exact local-file registration is proven reliable.
-     */
+    /** Reuses a verified app copy, imports a matching local file, or downloads the pinned model. */
     suspend fun downloadOrReuse(
         spec: LocalModelSpec,
         onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit = { _, _ -> },
@@ -124,10 +123,9 @@ class ModelStore(context: Context) {
                 onProgress(fileFor(spec).length(), fileFor(spec).length())
                 return@runCatching fileFor(spec)
             }
-            // Android does not permit a broad recursive storage scan, but it
-            // does allow an exact MediaStore query. Reuse a model the user
-            // already downloaded to the public Downloads location before
-            // touching the network.
+            // Try the exact Downloads lookup first, but preserve download as
+            // the explicit one-tap setup fallback when Android hides the file
+            // from the app's background provider query.
             onStatus("Searching Downloads for the exact filename: ${spec.fileName}")
             val firstLookup = withTimeoutOrNull(30_000L) {
                 DownloadLookupResult.Completed(findExactDownloadedModel(spec))
@@ -150,7 +148,67 @@ class ModelStore(context: Context) {
                 val imported = importExactDownloadedModel(exactDownload, spec, onProgress, onStatus)
                 if (imported != null) return@runCatching imported
             }
-            error("The exact ${spec.fileName} model file was not found in Downloads. No model download is available yet. Use Import an existing model file.")
+            onStatus("No exact ${spec.fileName} file was found in Downloads. Starting the verified download…")
+            onStatus("Downloading Gemma from the verified model source…")
+            val url = requireNotNull(spec.downloadUrl) { "No automatic download is configured for ${spec.id}." }
+            val destination = fileFor(spec)
+            val temporary = File(modelDirectory, "${spec.fileName}.part")
+            val existingBytes = temporary.length()
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 30_000
+                readTimeout = 60_000
+                instanceFollowRedirects = true
+                if (existingBytes > 0L) setRequestProperty("Range", "bytes=$existingBytes-")
+            }
+            try {
+                val responseCode = connection.responseCode
+                val append = existingBytes > 0L && responseCode == HttpURLConnection.HTTP_PARTIAL
+                check(responseCode in 200..299) { "Model download failed with HTTP $responseCode." }
+                val startingBytes = if (append) existingBytes else 0L
+                if (!append && existingBytes > 0L) temporary.delete()
+                val totalBytes = connection.contentLengthLong
+                    .takeIf { it > 0L }
+                    ?.let { it + startingBytes }
+                    ?: -1L
+                var downloadedBytes = startingBytes
+                connection.inputStream.use { input ->
+                    FileOutputStream(temporary, append).use { output ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 16)
+                        var count: Int
+                        while (input.read(buffer).also { count = it } >= 0) {
+                            if (count == 0) continue
+                            output.write(buffer, 0, count)
+                            downloadedBytes += count
+                            onProgress(downloadedBytes, totalBytes)
+                        }
+                        output.fd.sync()
+                    }
+                }
+            } finally {
+                connection.disconnect()
+            }
+            check(temporary.isFile && temporary.length() > 0L) { "The downloaded model is empty." }
+            onStatus("Verifying the downloaded Gemma model…")
+            val actualSha256 = temporary.sha256(onProgress)
+            spec.expectedSha256?.let { expected ->
+                check(actualSha256.equals(expected, ignoreCase = true)) {
+                    "The downloaded model failed integrity verification."
+                }
+            }
+            if (destination.exists()) check(destination.delete()) {
+                "Unable to replace the previous model file."
+            }
+            check(temporary.renameTo(destination)) { "Unable to finalize the downloaded model." }
+            val key = fingerprintKey(spec)
+            preferences.edit()
+                .putString(key, actualSha256)
+                .putLong("${key}_length", destination.length())
+                .putLong("${key}_modified", destination.lastModified())
+                .putBoolean("${key}_invalid", false)
+                .putBoolean("smoke_test_passed", false)
+                .apply()
+            destination
         } finally {
             endModelOperation()
         }
