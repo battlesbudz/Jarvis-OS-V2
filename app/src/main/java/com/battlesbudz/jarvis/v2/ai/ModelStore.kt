@@ -161,23 +161,76 @@ class ModelStore(context: Context) {
             val cancellationSignal = CancellationSignal()
             continuation.invokeOnCancellation { cancellationSignal.cancel() }
             val result = runCatching {
-                val projection = arrayOf(MediaStore.Downloads._ID)
+                val projection = arrayOf(
+                    MediaStore.Downloads._ID,
+                    MediaStore.Downloads.RELATIVE_PATH
+                )
                 context.contentResolver.query(
                     MediaStore.Downloads.EXTERNAL_CONTENT_URI,
                     projection,
-                    "${MediaStore.Downloads.DISPLAY_NAME} = ? AND " +
-                        "${MediaStore.Downloads.RELATIVE_PATH} = ?",
-                    arrayOf(spec.fileName, "${Environment.DIRECTORY_DOWNLOADS}/"),
+                    "${MediaStore.Downloads.DISPLAY_NAME} = ?",
+                    arrayOf(spec.fileName),
                     null,
                     cancellationSignal
                 )?.use { cursor ->
-                    if (!cursor.moveToFirst()) return@use null
-                    val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID))
-                    ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
+                    val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID)
+                    val pathIndex = cursor.getColumnIndexOrThrow(MediaStore.Downloads.RELATIVE_PATH)
+                    while (cursor.moveToNext()) {
+                        if (cursor.getString(pathIndex).equals(
+                                "${Environment.DIRECTORY_DOWNLOADS}/",
+                                ignoreCase = true
+                            )
+                        ) {
+                            return@use ContentUris.withAppendedId(
+                                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                cursor.getLong(idIndex)
+                            )
+                        }
+                    }
+                    null
                 }
-            }.getOrNull() ?: findExactDownloadsDocument(spec)
+            }.getOrNull()
+                ?: findExactFileInMediaStore(spec, cancellationSignal)
+                ?: findExactDownloadsDocument(spec)
             if (continuation.isActive) continuation.resume(result)
         }
+
+    /**
+     * Some Android builds expose Downloads files through Files rather than
+     * MediaStore.Downloads. Keep this an exact display-name/path query; it is
+     * not a storage scan.
+     */
+    private fun findExactFileInMediaStore(
+        spec: LocalModelSpec,
+        cancellationSignal: CancellationSignal
+    ): Uri? = runCatching {
+        val collection = MediaStore.Files.getContentUri("external")
+        val projection = arrayOf(
+            MediaStore.Files.FileColumns._ID,
+            MediaStore.Files.FileColumns.RELATIVE_PATH
+        )
+        context.contentResolver.query(
+            collection,
+            projection,
+            "${MediaStore.Files.FileColumns.DISPLAY_NAME} = ?",
+            arrayOf(spec.fileName),
+            null,
+            cancellationSignal
+        )?.use { cursor ->
+            val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
+            val pathIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.RELATIVE_PATH)
+            while (cursor.moveToNext()) {
+                if (cursor.getString(pathIndex).equals(
+                        "${Environment.DIRECTORY_DOWNLOADS}/",
+                        ignoreCase = true
+                    )
+                ) {
+                    return@use ContentUris.withAppendedId(collection, cursor.getLong(idIndex))
+                }
+            }
+            null
+        }
+    }.getOrNull()
 
     /**
      * The system picker reads the Downloads DocumentsProvider, which can contain
