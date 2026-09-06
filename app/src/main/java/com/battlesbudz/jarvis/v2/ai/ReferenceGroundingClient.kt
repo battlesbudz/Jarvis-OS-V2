@@ -29,6 +29,8 @@ class ReferenceGroundingClient {
             "^(who|what)\\s+(is|was|are|were)\\s+.+"
         ).matches(text) || Regex(
             "^(tell me about|information about)\\s+.+"
+        ).matches(text) || Regex(
+            "^who\\s+[a-z][a-z .'-]{2,}\\??$"
         ).matches(text)
         val deviceRequest = listOf(
             "battery", "volume", "brightness", "wifi", "bluetooth", "screen",
@@ -77,7 +79,12 @@ class ReferenceGroundingClient {
             "sure go ahead", "sure do that", "of course please", "yeah go ahead",
             "yeah sure", "yeah sounds good", "yeah sounds like a good idea",
             "that sounds good", "that would be great", "i agree", "i approve"
-        ).any { normalized == it || normalized.startsWith("$it ") }
+        ).any { normalized == it || normalized.startsWith("$it ") } ||
+            Regex(
+                "^(yes|yeah|yep|yup|sure|okay|ok|alright|all right)\\s+" +
+                    "(of course|i guess|sounds good|sounds like a good idea|" +
+                    "that sounds good|that would be great|go ahead|go for it|do it)$"
+            ).matches(normalized)
     }
 
     fun buildExplicitLookupQuery(
@@ -121,7 +128,10 @@ class ReferenceGroundingClient {
         if (text.isBlank()) return true
         return listOf(
             "[needs_wikipedia]", "i don't know", "i do not know",
-            "no specific information", "not sure", "cannot answer",
+            "no specific information", "do not have any specific information",
+            "don't have any specific information", "not in my knowledge base",
+            "not in my current knowledge base", "not in my training data",
+            "not sure", "cannot answer",
             "can't answer", "couldn't find", "would you like me to search",
             "please provide more context"
         ).any(text::contains)

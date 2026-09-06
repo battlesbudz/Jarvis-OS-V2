@@ -2,7 +2,10 @@ package com.battlesbudz.jarvis.v2.ai
 
 import android.content.Context
 import android.content.ContentUris
+import android.os.CancellationSignal
+import android.os.Environment
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.provider.MediaStore
 import java.io.File
@@ -11,7 +14,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
 
 class ModelStore(context: Context) {
     private companion object {
@@ -105,11 +110,7 @@ class ModelStore(context: Context) {
 
     fun isModelOperationActive(): Boolean = activeModelOperation.get() > 0
 
-    /**
-     * Reuses the canonical app-private copy when it is already present and
-     * valid. Otherwise downloads the pinned model into a resumable .part file,
-     * verifies it, and atomically installs it under the expected filename.
-     */
+    /** Reuses a verified app copy, imports a matching local file, or downloads the pinned model. */
     suspend fun downloadOrReuse(
         spec: LocalModelSpec,
         onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit = { _, _ -> },
@@ -122,16 +123,32 @@ class ModelStore(context: Context) {
                 onProgress(fileFor(spec).length(), fileFor(spec).length())
                 return@runCatching fileFor(spec)
             }
-            // Android does not permit a broad recursive storage scan, but it
-            // does allow an exact MediaStore query. Reuse a model the user
-            // already downloaded to the public Downloads location before
-            // touching the network.
-            onStatus("Checking Downloads for ${spec.fileName}…")
-            withTimeoutOrNull(10_000L) { findExactDownloadedModel(spec) }?.let { uri ->
+            // Try the exact Downloads lookup first, but preserve download as
+            // the explicit one-tap setup fallback when Android hides the file
+            // from the app's background provider query.
+            onStatus("Searching Downloads for the exact filename: ${spec.fileName}")
+            val firstLookup = withTimeoutOrNull(30_000L) {
+                DownloadLookupResult.Completed(findExactDownloadedModel(spec))
+            }
+            val exactDownload = when (firstLookup) {
+                is DownloadLookupResult.Completed -> firstLookup.uri
+                null -> {
+                    onStatus("The Downloads index is slow. Retrying the exact filename check…")
+                    when (val retry = withTimeoutOrNull(30_000L) {
+                        DownloadLookupResult.Completed(findExactDownloadedModel(spec))
+                    }) {
+                        is DownloadLookupResult.Completed -> retry.uri
+                        null -> error("Could not finish checking Downloads for ${spec.fileName}. No download was started.")
+                    }
+                }
+            }
+            if (exactDownload != null) {
+                onStatus("Found ${spec.fileName} in Downloads. Verifying that exact file…")
                 onStatus("Importing the existing Gemma model from Downloads…")
-                val imported = importExactDownloadedModel(uri, spec, onProgress, onStatus)
+                val imported = importExactDownloadedModel(exactDownload, spec, onProgress, onStatus)
                 if (imported != null) return@runCatching imported
             }
+            onStatus("No exact ${spec.fileName} file was found in Downloads. Starting the verified download…")
             onStatus("Downloading Gemma from the verified model source…")
             val url = requireNotNull(spec.downloadUrl) { "No automatic download is configured for ${spec.id}." }
             val destination = fileFor(spec)
@@ -147,9 +164,7 @@ class ModelStore(context: Context) {
             try {
                 val responseCode = connection.responseCode
                 val append = existingBytes > 0L && responseCode == HttpURLConnection.HTTP_PARTIAL
-                check(responseCode in 200..299) {
-                    "Model download failed with HTTP $responseCode."
-                }
+                check(responseCode in 200..299) { "Model download failed with HTTP $responseCode." }
                 val startingBytes = if (append) existingBytes else 0L
                 if (!append && existingBytes > 0L) temporary.delete()
                 val totalBytes = connection.contentLengthLong
@@ -199,20 +214,161 @@ class ModelStore(context: Context) {
         }
     }
 
-    private fun findExactDownloadedModel(spec: LocalModelSpec): Uri? = runCatching {
-        val projection = arrayOf(MediaStore.Downloads._ID, MediaStore.Downloads.DISPLAY_NAME)
+    private suspend fun findExactDownloadedModel(spec: LocalModelSpec): Uri? =
+        suspendCancellableCoroutine { continuation ->
+            val cancellationSignal = CancellationSignal()
+            continuation.invokeOnCancellation { cancellationSignal.cancel() }
+            val result = runCatching {
+                val projection = arrayOf(
+                    MediaStore.Downloads._ID,
+                    MediaStore.Downloads.RELATIVE_PATH
+                )
+                context.contentResolver.query(
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    projection,
+                    "${MediaStore.Downloads.DISPLAY_NAME} = ?",
+                    arrayOf(spec.fileName),
+                    null,
+                    cancellationSignal
+                )?.use { cursor ->
+                    val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID)
+                    val pathIndex = cursor.getColumnIndexOrThrow(MediaStore.Downloads.RELATIVE_PATH)
+                    while (cursor.moveToNext()) {
+                        if (cursor.getString(pathIndex).equals(
+                                "${Environment.DIRECTORY_DOWNLOADS}/",
+                                ignoreCase = true
+                            )
+                        ) {
+                            return@use ContentUris.withAppendedId(
+                                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                cursor.getLong(idIndex)
+                            )
+                        }
+                    }
+                    null
+                }
+            }.getOrNull()
+                ?: findExactFileInMediaStore(spec, cancellationSignal)
+                ?: findExactDownloadsDocument(spec)
+            if (continuation.isActive) continuation.resume(result)
+        }
+
+    /**
+     * Some Android builds expose Downloads files through Files rather than
+     * MediaStore.Downloads. Keep this an exact display-name/path query; it is
+     * not a storage scan.
+     */
+    private fun findExactFileInMediaStore(
+        spec: LocalModelSpec,
+        cancellationSignal: CancellationSignal
+    ): Uri? = runCatching {
+        val collection = MediaStore.Files.getContentUri("external")
+        val projection = arrayOf(
+            MediaStore.Files.FileColumns._ID,
+            MediaStore.Files.FileColumns.RELATIVE_PATH
+        )
         context.contentResolver.query(
-            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+            collection,
             projection,
-            "${MediaStore.Downloads.DISPLAY_NAME} = ?",
+            "${MediaStore.Files.FileColumns.DISPLAY_NAME} = ?",
             arrayOf(spec.fileName),
-            "${MediaStore.Downloads.DATE_MODIFIED} DESC"
+            null,
+            cancellationSignal
         )?.use { cursor ->
-            if (!cursor.moveToFirst()) return@use null
-            val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID))
-            ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
+            val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
+            val pathIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.RELATIVE_PATH)
+            while (cursor.moveToNext()) {
+                if (cursor.getString(pathIndex).equals(
+                        "${Environment.DIRECTORY_DOWNLOADS}/",
+                        ignoreCase = true
+                    )
+                ) {
+                    return@use ContentUris.withAppendedId(collection, cursor.getLong(idIndex))
+                }
+            }
+            null
         }
     }.getOrNull()
+
+    /**
+     * The system picker reads the Downloads DocumentsProvider, which can contain
+     * files that are not yet represented by the MediaStore Downloads table.
+     * Query that same provider as an exact-name fallback so setup agrees with
+     * what the user sees when manually importing from Downloads.
+     */
+    private fun findExactDownloadsDocument(spec: LocalModelSpec): Uri? {
+        // DocumentsUI exposes the phone's public Downloads folder through the
+        // external-storage provider as primary:Download. This is the provider
+        // shown by the picker in the setup screenshots.
+        findExactDocumentInChildren(
+            authority = "com.android.externalstorage.documents",
+            parentDocumentId = "primary:Download",
+            spec = spec
+        )?.let { return it }
+
+        return runCatching {
+            val authority = "com.android.providers.downloads.documents"
+            val rootProjection = arrayOf(
+                DocumentsContract.Root.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Root.COLUMN_TITLE
+            )
+            val rootDocumentId = context.contentResolver.query(
+                DocumentsContract.buildRootsUri(authority),
+                rootProjection,
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                var selected: String? = null
+                val documentIdIndex = cursor.getColumnIndex(DocumentsContract.Root.COLUMN_DOCUMENT_ID)
+                val titleIndex = cursor.getColumnIndex(DocumentsContract.Root.COLUMN_TITLE)
+                while (cursor.moveToNext()) {
+                    val documentId = cursor.getString(documentIdIndex)
+                    val title = cursor.getString(titleIndex)
+                    if (title.equals(Environment.DIRECTORY_DOWNLOADS, ignoreCase = true) ||
+                        documentId.equals(Environment.DIRECTORY_DOWNLOADS, ignoreCase = true)
+                    ) {
+                        selected = documentId
+                        break
+                    }
+                }
+                selected
+            } ?: return@runCatching null
+
+            findExactDocumentInChildren(authority, rootDocumentId, spec)
+        }.getOrNull()
+    }
+
+    private fun findExactDocumentInChildren(
+        authority: String,
+        parentDocumentId: String,
+        spec: LocalModelSpec
+    ): Uri? = runCatching {
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME
+        )
+        context.contentResolver.query(
+            DocumentsContract.buildChildDocumentsUri(authority, parentDocumentId),
+            projection,
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIndex) == spec.fileName) {
+                    return@use DocumentsContract.buildDocumentUri(authority, cursor.getString(idIndex))
+                }
+            }
+            null
+        }
+    }.getOrNull()
+
+    private sealed interface DownloadLookupResult {
+        data class Completed(val uri: Uri?) : DownloadLookupResult
+    }
 
     private fun importExactDownloadedModel(
         uri: Uri,
@@ -369,4 +525,5 @@ class ModelStore(context: Context) {
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
+
 }

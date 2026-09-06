@@ -107,7 +107,7 @@ class TurnOrchestrator(
 
     private fun extractNamedEntity(prompt: String): String? {
         val cueMatch = Regex(
-            "(?i)\\b(?:tell me about|who is|who was|what is|what was|information about)\\s+(.+?)(?:[?.!]\\s*$|$)"
+            "(?i)\\b(?:tell me about|who is|who was|who|what is|what was|information about)\\s+(.+?)(?:[?.!]\\s*$|$)"
         ).find(prompt)
         cueMatch?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
 
