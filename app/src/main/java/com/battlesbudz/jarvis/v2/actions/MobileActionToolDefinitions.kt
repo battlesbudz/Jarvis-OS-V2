@@ -3,7 +3,7 @@ package com.battlesbudz.jarvis.v2.actions
 import com.google.ai.edge.litertlm.OpenApiTool
 
 /**
- * The tool declarations supplied to FunctionGemma. The model must select from
+ * The tool declarations supplied to Gemma. The model must select from
  * these names; Kotlin remains responsible for validation and execution.
  */
 object MobileActionToolDefinitions {

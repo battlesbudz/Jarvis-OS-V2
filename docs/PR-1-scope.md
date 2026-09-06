@@ -3,10 +3,10 @@
 ## Scope
 
 This PR establishes the native Android shell and the first real local inference
-boundary for the two confirmed models:
+boundary for the confirmed local model:
 
 - Gemma 4 E2B is the primary conversational model.
-- FunctionGemma MobileActions-270M is the fast local action router.
+- Gemma 4 E2B emits native structured tool calls for phone actions.
 - LiteRT-LM is the Android inference runtime.
 - Kotlin owns typed action validation and Android execution.
 
@@ -28,7 +28,7 @@ chat screen while their verified local models remain available.
   maintains a conversation, streams generated text, and reports time to first
   token.
 - The action-pipeline test sends a structured request shaped like
-  MobileActions-270M output, validates it, and passes it to a recording
+  Gemma's native tool output, validates it, and passes it to a recording
   executor.
 - Invalid model output is rejected before it can reach an executor.
 
@@ -36,17 +36,17 @@ chat screen while their verified local models remain available.
 
 - Kotlin + Jetpack Compose Android shell
 - LiteRT-LM Android dependency and streaming adapter
-- Local model catalog for Gemma 4 E2B and MobileActions-270M
+- Local model catalog for Gemma 4 E2B
 - Replaceable local model interface
 - Typed mobile action contracts
-- Mobile action router and executor boundary
+- Native mobile-action and executor boundary
 - End-to-end action-pipeline contract tests
 - Confirmed Galaxy Z Fold 6 benchmark record
 - PR scope and acceptance documentation
 
 ## Deliberately deferred
 
-Model download delivery, model-specific MobileActions tool-schema decoding,
+Model download delivery, broader native tool-schema decoding,
 full assistant-session wiring, speech and Kokoro, wake-word detection, EYE VUE,
 Bluetooth, memory persistence, and broader real Android action coverage will be
 separate focused PRs. The battery and volume executor is present as a safe

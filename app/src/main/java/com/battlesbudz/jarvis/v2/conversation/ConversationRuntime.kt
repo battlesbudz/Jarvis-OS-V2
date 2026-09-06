@@ -239,7 +239,7 @@ internal fun MainActivity.runConversationInternal(
                     proposedCall.name in setOf("read_battery", "set_volume", "open_app")
                 ) {
                     actionName = proposedCall.name
-                    val request = com.battlesbudz.jarvis.v2.actions.FunctionGemmaActionDecoder.decode(proposedCall)
+                    val request = com.battlesbudz.jarvis.v2.actions.NativeActionDecoder.decode(proposedCall)
                     if (request != null) {
                         val result = com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
                             executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(applicationContext)
@@ -337,8 +337,7 @@ internal fun MainActivity.runConversationInternal(
                     }
                 }
                 val rawControlOutput = generated.toolCalls.isNotEmpty() || generated.text.contains("tool_call>") ||
-                    generated.text.contains("start_function_call") ||
-                    generated.text.contains("call:MobileActions:")
+                    generated.text.contains("start_function_call")
                 if (rawControlOutput) {
                     // Do not carry protocol text into the next turn.
                     resetNativeConversation()

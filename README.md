@@ -6,14 +6,14 @@ A standalone native Android voice assistant prototype.
 
 - Kotlin and Jetpack Compose
 - Local Gemma 4 E2B for conversation and reasoning
-- FunctionGemma MobileActions-270M for local mobile-action routing
+- Gemma 4 E2B native tool calls for local mobile-action routing
 - Kotlin validates and executes typed actions
 - No cloud backend required for the core assistant loop
 
 PR #1 includes the testable local assistant loop. Type a request such as
-“What is my battery level?” in the chat: FunctionGemma emits the registered
+“What is my battery level?” in the chat: Gemma 4 E2B emits the registered
 `read_battery` tool call, Kotlin validates it, and the Android executor returns
-the phone's live battery percentage. General questions fall back to Gemma 4 E2B.
+the phone's live battery percentage.
 No cloud backend is required for this loop.
 
 ## APK signing

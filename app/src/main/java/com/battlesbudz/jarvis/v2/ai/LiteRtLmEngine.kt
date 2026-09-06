@@ -2,7 +2,6 @@ package com.battlesbudz.jarvis.v2.ai
 
 import com.google.ai.edge.litertlm.*
 import kotlinx.coroutines.flow.collect
-import org.json.JSONObject
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -53,54 +52,6 @@ class LiteRtLmEngine(
     suspend fun resetConversation() {
         conversation?.close()
         conversation = createConversation()
-    }
-
-    /**
-     * Requests a structured FunctionGemma tool call without allowing the
-     * runtime to execute it. Kotlin validates and executes the typed action.
-     */
-    suspend fun generateToolCalls(prompt: String): List<ToolCall> {
-        val activeConversation = requireNotNull(conversation) {
-            "LiteRT-LM engine must be initialized before generation."
-        }
-        val routingPrompt = """
-            You are a model that can do function calling with the following functions.
-            Select a function when the user's request requires a phone action.
-            Return a structured function call instead of a natural-language answer.
-            
-            User request:
-            $prompt
-        """.trimIndent()
-        val response = activeConversation.sendMessage(routingPrompt)
-        val structuredCalls = response.toolCalls.map {
-            ToolCall(name = it.name, arguments = it.arguments.toString())
-        }
-        return structuredCalls.ifEmpty { parseRawToolCalls(response.toString()) }
-    }
-
-    private fun parseRawToolCalls(text: String): List<ToolCall> {
-        val callPattern = Regex(
-            """(?s)(?:<\|)?tool_call>\s*call:([A-Za-z0-9_.:-]+)\s*\{(.*?)\}(?:<\|tool_call\|>)?"""
-        )
-        val functionPattern = Regex(
-            """(?s)<start_function_call>\s*call:([A-Za-z0-9_.:-]+)\s*\{(.*?)\}<end_function_call>"""
-        )
-        val argumentPattern = Regex(
-            """([A-Za-z_][A-Za-z0-9_]*):\s*(?:<escape>(.*?)<escape>|"([^"]*)"|([^,}]+))"""
-        )
-        return (callPattern.findAll(text).asSequence() + functionPattern.findAll(text).asSequence())
-            .mapNotNull { match ->
-                val rawName = match.groupValues[1].substringAfterLast(":").trim()
-                if (rawName.isBlank()) return@mapNotNull null
-                val arguments = JSONObject()
-                argumentPattern.findAll(match.groupValues[2]).forEach { argument ->
-                    val value = argument.groupValues.drop(2).firstOrNull { it.isNotBlank() }
-                        ?.trim().orEmpty()
-                    arguments.put(argument.groupValues[1], value)
-                }
-                ToolCall(rawName, arguments.toString())
-            }
-            .toList()
     }
 
     override suspend fun generate(

@@ -13,7 +13,7 @@ class MobileActionPipelineTest {
             ExecutionResult(true, "Action executed")
         }
 
-        // This represents the structured request emitted by MobileActions-270M.
+        // This represents the structured request emitted by Gemma's native tool call.
         val result = pipeline.execute(
             ActionRequest("set_volume", mapOf("level" to "50"))
         )

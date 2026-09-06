@@ -55,7 +55,7 @@ class ConversationPromptBuilder(
         succeeded: Boolean
     ): String {
         return """
-            MobileActions tool execution context:
+            Native tool execution context:
             - User request: $userPrompt
             - Selected tool: $toolName
             - Execution status: ${if (succeeded) "succeeded" else "failed"}
