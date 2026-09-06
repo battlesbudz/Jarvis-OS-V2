@@ -2,8 +2,8 @@ package com.battlesbudz.jarvis.v2.ai
 
 import com.google.ai.edge.litertlm.*
 import kotlinx.coroutines.flow.collect
-import java.io.Closeable
 import org.json.JSONObject
+import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -19,7 +19,8 @@ class LiteRtLmEngine(
     cacheDir: String,
     useGpu: Boolean,
     private val tools: List<OpenApiTool> = emptyList(),
-    private val visionEnabled: Boolean = false
+    private val visionEnabled: Boolean = false,
+    private val audioEnabled: Boolean = false
 ) : LocalModelEngine, Closeable {
     private val engine = Engine(
         EngineConfig(
@@ -27,6 +28,7 @@ class LiteRtLmEngine(
             cacheDir = cacheDir,
             backend = if (useGpu) Backend.GPU() else Backend.CPU(),
             visionBackend = if (visionEnabled) Backend.GPU() else null,
+            audioBackend = if (audioEnabled) Backend.CPU() else null,
             maxNumImages = if (visionEnabled) 1 else null
         )
     )
@@ -66,6 +68,20 @@ class LiteRtLmEngine(
         onToken: (String) -> Unit
     ): GenerationResult = generateWithContents(
         Contents.of(Content.ImageBytes(imageBytes), Content.Text(prompt)),
+        onToken
+    )
+
+    /**
+     * Sends audio directly to the multimodal Gemma conversation.
+     * The byte array should contain a supported audio file, preferably a
+     * 16 kHz mono WAV for predictable on-device preprocessing.
+     */
+    suspend fun generate(
+        prompt: String,
+        audioBytes: ByteArray,
+        onToken: (String) -> Unit
+    ): GenerationResult = generateWithContents(
+        Contents.of(Content.AudioBytes(audioBytes), Content.Text(prompt)),
         onToken
     )
 
