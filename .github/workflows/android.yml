@@ -115,8 +115,10 @@ jobs:
   publish:
     name: Publish signed release APK
     if: >-
-      github.event_name == 'push' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/audio-pr2')
+      (github.event_name == 'push' &&
+       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/audio-pr2')) ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     needs: build-release
     runs-on: ubuntu-latest
     permissions:
@@ -131,9 +133,9 @@ jobs:
       - name: Publish GitHub Release APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref == 'refs/heads/audio-pr2' && format('audio-pr2-build.{0}', github.run_number) || format('v0.1.0-build.{0}', github.run_number) }}
-          target_commitish: ${{ github.sha }}
-          name: Jarvis OS V2 ${{ github.ref == 'refs/heads/audio-pr2' && 'Audio PR2' || 'test' }} build ${{ github.run_number }}
+          tag_name: ${{ github.event_name == 'pull_request' && format('audio-pr2-pr{0}-build.{1}', github.event.pull_request.number, github.run_number) || github.ref == 'refs/heads/audio-pr2' && format('audio-pr2-build.{0}', github.run_number) || format('v0.1.0-build.{0}', github.run_number) }}
+          target_commitish: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          name: Jarvis OS V2 ${{ github.event_name == 'pull_request' && 'Audio PR2' || github.ref == 'refs/heads/audio-pr2' && 'Audio PR2' || 'test' }} build ${{ github.run_number }}
           generate_release_notes: true
           files: dist/app-release.apk
 
@@ -160,3 +162,4 @@ jobs:
           prerelease: true
           generate_release_notes: false
           files: dist/app-debug.apk
+
