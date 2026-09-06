@@ -73,6 +73,7 @@ private const val MAX_SAVED_DRAFT_CHARS = 16_000
 @Composable
 fun JarvisChat(
     onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit,
+    onRunDirectAudioTest: ((String) -> Unit, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onMessagesChanged: (List<ChatEntry>) -> Unit,
     onSendingChanged: (Boolean) -> Unit,
@@ -82,6 +83,8 @@ fun JarvisChat(
     var prompt by rememberSaveable { mutableStateOf("") }
     var messages by remember { mutableStateOf(initialMessages) }
     var isSending by remember { mutableStateOf(false) }
+    var directAudioTestRunning by remember { mutableStateOf(false) }
+    var directAudioTestStatus by rememberSaveable { mutableStateOf("") }
     var attachedImageName by rememberSaveable { mutableStateOf<String?>(null) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
     val transcriptScrollState = rememberScrollState()
@@ -208,6 +211,30 @@ fun JarvisChat(
         }
         Button(
             onClick = {
+                directAudioTestRunning = true
+                directAudioTestStatus = "Requesting microphone…"
+                onRunDirectAudioTest(
+                    { status -> directAudioTestStatus = status },
+                    { result ->
+                        directAudioTestStatus = result
+                        directAudioTestRunning = false
+                    }
+                )
+            },
+            enabled = !isSending && !directAudioTestRunning,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        ) {
+            Text(if (directAudioTestRunning) "Testing direct E2B audio…" else "Test direct E2B audio")
+        }
+        if (directAudioTestStatus.isNotBlank()) {
+            Text(
+                directAudioTestStatus,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+        }
+        Button(
+            onClick = {
                 val selectedImageUri = attachedImageUri
                 val submitted = buildString {
                     append(prompt.trim())
@@ -265,6 +292,7 @@ fun JarvisApp(
     store: ModelStore,
     initialMessages: List<ChatEntry>,
     onRunModelSmokeTest: ((String) -> Unit) -> Unit,
+    onRunDirectAudioTest: ((String) -> Unit, (String) -> Unit) -> Unit,
     onDownloadGemma: ((Long, Long) -> Unit, (String) -> Unit, (String) -> Unit) -> Unit,
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
@@ -326,7 +354,14 @@ fun JarvisApp(
     ) {
         Surface(modifier = Modifier.fillMaxSize()) {
             if (modelsReady && smokeTestPassed) {
-                JarvisChat(onSend, onCopyDiagnostics, onMessagesChanged, onSendingChanged, initialMessages)
+                JarvisChat(
+                    onSend,
+                    onRunDirectAudioTest,
+                    onCopyDiagnostics,
+                    onMessagesChanged,
+                    onSendingChanged,
+                    initialMessages
+                )
             } else {
                 ModelSetup(
                     ready = modelsReady,
