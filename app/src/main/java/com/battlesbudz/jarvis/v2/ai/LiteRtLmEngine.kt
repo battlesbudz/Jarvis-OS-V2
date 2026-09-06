@@ -76,7 +76,7 @@ class LiteRtLmEngine(
      * The byte array should contain a supported audio file, preferably a
      * 16 kHz mono WAV for predictable on-device preprocessing.
      */
-    suspend fun generate(
+    suspend fun generateAudio(
         prompt: String,
         audioBytes: ByteArray,
         onToken: (String) -> Unit
