@@ -8,6 +8,8 @@ plugins {
 android {
     namespace = "com.battlesbudz.jarvis.v2"
     compileSdk = 35
+    val buildVersionCode = System.getenv("ANDROID_VERSION_CODE")?.toIntOrNull() ?: 1
+    val buildVersionName = System.getenv("ANDROID_VERSION_NAME") ?: "0.1.0"
     signingConfigs {
         create("release") {
             val keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
@@ -23,8 +25,8 @@ android {
         applicationId = "com.battlesbudz.jarvis.v2"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = buildVersionCode
+        versionName = buildVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {

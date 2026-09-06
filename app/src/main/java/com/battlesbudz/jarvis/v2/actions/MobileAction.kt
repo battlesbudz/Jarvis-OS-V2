@@ -52,7 +52,7 @@ class MobileActionValidator {
         val trimmed = raw.trim()
         val hasPercentSuffix = trimmed.endsWith("%")
         val value = trimmed.removeSuffix("%").trim().toDoubleOrNull() ?: return null
-        // Some FunctionGemma outputs scale a percentage by 100 (50% -> 5000).
+        // Some model outputs scale a percentage by 100 (50% -> 5000).
         val percent = if (
             !hasPercentSuffix &&
             value >= 1000.0 &&
