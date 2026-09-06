@@ -129,6 +129,14 @@ internal fun MainActivity.runConversationInternal(
                     resetNativeConversation()
                 }
 
+                // LiteRT-LM can retain a text-only native conversation, but
+                // Gemma vision is reliable only when the image starts a fresh
+                // native conversation. Keep the app transcript/history intact
+                // and reseed that history into the fresh conversation below.
+                if (imageUri != null) {
+                    resetNativeConversation()
+                }
+
                 // Keep the expensive model/GPU engine alive. The replaceable
                 // Conversation is reset only when the bounded context needs
                 // to be compacted or an isolated retry is required.
