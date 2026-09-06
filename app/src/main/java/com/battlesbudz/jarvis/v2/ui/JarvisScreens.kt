@@ -353,7 +353,17 @@ fun JarvisApp(
                                 downloadTotalBytes = -1L
                             }
                             modelDownloadRunning = false
-                            setupStatus = result
+                            if (result.contains("not found in Downloads", ignoreCase = true)) {
+                                // Android may hide arbitrary Downloads files from silent
+                                // MediaStore/DocumentsProvider enumeration. The system picker
+                                // grants the URI permission that the copy step needs, so make
+                                // that the automatic recovery path instead of showing a dead
+                                // end error to the user.
+                                setupStatus = "Select ${ModelCatalog.gemma4E2b.fileName} in Downloads to finish setup."
+                                gemmaPicker.launch(arrayOf("*/*"))
+                            } else {
+                                setupStatus = result
+                            }
                             modelsReady = store.isUsable()
                             smokeTestPassed = modelsReady && store.smokeTestPassed()
                         }
