@@ -145,6 +145,9 @@ class MainActivity : ComponentActivity() {
                 onRunDirectAudioTest = { report, onFinished ->
                     runDirectAudioSmokeTest(report, onFinished)
                 },
+                onRunDirectAudioToolTest = { report, onFinished ->
+                    runDirectAudioToolSmokeTest(report, onFinished)
+                },
                 onDownloadGemma = { onProgress, onStatus, onFinished ->
                     downloadGemmaAndTest(onProgress, onStatus, onFinished)
                 },
@@ -218,6 +221,86 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun runDirectAudioToolSmokeTest(
+        report: (String) -> Unit,
+        onFinished: (String) -> Unit
+    ) {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            pendingVoiceTest = report to onFinished
+            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        if (!modelStore.tryBeginModelOperation()) {
+            val message = "Another model operation is still finishing. Please try again in a moment."
+            report(message)
+            onFinished(message)
+            return
+        }
+        lifecycleScope.launch(Dispatchers.Default) {
+            var gemma: LiteRtLmEngine? = null
+            var finalMessage = "Direct E2B voice-tool test failed."
+            try {
+                mainHandler.post { report("Recording a 25-second voice command…") }
+                val audioBytes = recordVoiceSample()
+                mainHandler.post { report("Loading E2B with Jarvis tool schemas…") }
+                check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
+                    "The Gemma model file changed or failed integrity verification. Re-import it."
+                }
+                gemma = LiteRtLmEngine(
+                    modelId = ModelCatalog.gemma4E2b.id,
+                    modelPath = modelStore.fileFor(ModelCatalog.gemma4E2b).path,
+                    cacheDir = cacheDir.path,
+                    useGpu = true,
+                    tools = com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions.all(),
+                    audioEnabled = true
+                )
+                gemma.initialize()
+                mainHandler.post { report("Asking E2B to select a Jarvis tool…") }
+                val generated = gemma.generateAudio(
+                    prompt = """
+                        You are testing Jarvis voice tool calls. Listen to the user's spoken request.
+                        If it requests a phone action, call exactly one matching tool from the available tools.
+                        Use read_battery for battery questions, set_volume for media volume, and open_app for app launches.
+                        Do not invent a tool. Do not execute anything yourself. If the request is not one of those actions, answer briefly without a tool.
+                    """.trimIndent(),
+                    audioBytes = audioBytes,
+                    onToken = { token -> mainHandler.post { report("E2B response: ${token.trim()}") } }
+                )
+                val call = generated.toolCalls.singleOrNull()
+                if (call == null) {
+                    finalMessage = "No structured tool call detected. E2B text: ${generated.text.trim().ifBlank { "(empty)" }}"
+                } else {
+                    val simulatedResult = simulatedVoiceToolResult(call)
+                    mainHandler.post {
+                        report("Tool selected: ${call.name}\nArguments: ${call.arguments}\nSimulating result…")
+                    }
+                    val followUp = gemma.sendToolResult(
+                        call,
+                        simulatedResult,
+                        onToken = { token -> mainHandler.post { report("Final response: ${token.trim()}") } }
+                    )
+                    finalMessage = "Voice tool test succeeded. Tool: ${call.name}; arguments: ${call.arguments}; simulated result: $simulatedResult; final response: ${followUp.text.trim()}"
+                }
+            } catch (error: Throwable) {
+                finalMessage = "Direct E2B voice-tool test failed: ${error.message ?: "unknown error"}"
+            } finally {
+                gemma?.close()
+                modelStore.endModelOperation()
+                mainHandler.post {
+                    report(finalMessage)
+                    onFinished(finalMessage)
+                }
+            }
+        }
+    }
+
+    private fun simulatedVoiceToolResult(call: com.battlesbudz.jarvis.v2.ai.ToolCall): String = when (call.name) {
+        "read_battery" -> "{\"battery_percent\":87,\"charging\":false,\"status\":\"discharging\"}"
+        "set_volume" -> "{\"success\":true,\"level\":40,\"note\":\"Simulated only; phone volume was not changed.\"}"
+        "open_app" -> "{\"success\":true,\"app\":\"simulated\",\"note\":\"Simulated only; no application was opened.\"}"
+        else -> "{\"success\":false,\"error\":\"Tool is not allowed in this simulation.\"}"
     }
 
     private fun recordVoiceSample(): ByteArray {
