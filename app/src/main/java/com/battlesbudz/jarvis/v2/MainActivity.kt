@@ -194,7 +194,7 @@ class MainActivity : ComponentActivity() {
                 gemma.initialize()
                 mainHandler.post { report("Sending audio directly to Gemma…") }
                 val streamedTranscript = StringBuilder()
-                val result = gemma.generate(
+                val result = gemma.generateAudio(
                     prompt = "Transcribe the following speech segment. Return only the words you heard, with no explanation.",
                     audioBytes = audioBytes,
                     onToken = { token ->
