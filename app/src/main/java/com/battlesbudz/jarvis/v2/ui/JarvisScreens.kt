@@ -224,7 +224,7 @@ fun JarvisChat(
             enabled = !isSending && !directAudioTestRunning,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
         ) {
-            Text(if (directAudioTestRunning) "Testing direct E2B audio…" else "Test direct E2B audio")
+            Text(if (directAudioTestRunning) "Recording / testing E2B audio…" else "Test 25-second E2B audio")
         }
         if (directAudioTestStatus.isNotBlank()) {
             Text(
