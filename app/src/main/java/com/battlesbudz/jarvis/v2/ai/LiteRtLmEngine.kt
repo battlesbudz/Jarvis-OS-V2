@@ -2,7 +2,6 @@ package com.battlesbudz.jarvis.v2.ai
 
 import com.google.ai.edge.litertlm.*
 import kotlinx.coroutines.flow.collect
-import org.json.JSONObject
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
 
