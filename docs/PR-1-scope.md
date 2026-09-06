@@ -11,16 +11,16 @@ boundary for the confirmed local model:
 - Kotlin owns typed action validation and Android execution.
 
 Model binaries are intentionally not committed to the repository. The app
-accepts model paths from the future setup/model-delivery flow.
+accepts the Gemma model path from the future setup/model-delivery flow.
 
 ## User-visible acceptance test
 
 After merge, build and install the APK. On a clean install it opens a guided
-model setup screen so the two user-supplied `.litertlm` files can be imported
-privately. After both files pass the local smoke test, the app opens a simple
+model setup screen so the user-supplied Gemma `.litertlm` file can be imported
+privately. After the file passes the local smoke test, the app opens a simple
 black-box Jarvis chat screen with no model names, implementation details, or
 settings exposed in the main experience. Returning users go directly to that
-chat screen while their verified local models remain available.
+chat screen while their verified local Gemma model remains available.
 
 ## Automated acceptance tests
 
