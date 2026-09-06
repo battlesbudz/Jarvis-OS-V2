@@ -265,7 +265,7 @@ fun JarvisApp(
     store: ModelStore,
     initialMessages: List<ChatEntry>,
     onRunModelSmokeTest: ((String) -> Unit) -> Unit,
-    onDownloadGemma: ((Long, Long) -> Unit, (String) -> Unit) -> Unit,
+    onDownloadGemma: ((Long, Long) -> Unit, (String) -> Unit, (String) -> Unit) -> Unit,
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onMessagesChanged: (List<ChatEntry>) -> Unit,
@@ -280,6 +280,19 @@ fun JarvisApp(
     var modelDownloadRunning by remember { mutableStateOf(false) }
     var downloadBytes by remember { mutableStateOf(0L) }
     var downloadTotalBytes by remember { mutableStateOf(-1L) }
+    var setupElapsedSeconds by remember { mutableStateOf(0L) }
+
+    LaunchedEffect(modelDownloadRunning) {
+        if (!modelDownloadRunning) {
+            setupElapsedSeconds = 0L
+            return@LaunchedEffect
+        }
+        val startedAt = System.currentTimeMillis()
+        while (true) {
+            setupElapsedSeconds = (System.currentTimeMillis() - startedAt) / 1_000L
+            delay(1_000L)
+        }
+    }
 
     // An import can finish after the previous Activity is destroyed during
     // rotation/fold changes. Keep the replacement screen synchronized with
@@ -323,6 +336,7 @@ fun JarvisApp(
                     downloadBytes = downloadBytes,
                     downloadTotalBytes = downloadTotalBytes,
                     status = setupStatus,
+                    elapsedSeconds = setupElapsedSeconds,
                     onDownload = {
                         modelDownloadRunning = true
                         downloadBytes = 0L
@@ -331,7 +345,13 @@ fun JarvisApp(
                         onDownloadGemma({ downloaded, total ->
                             downloadBytes = downloaded
                             downloadTotalBytes = total
+                        }, { status ->
+                            setupStatus = status
                         }) { result ->
+                            if (result.startsWith("Gemma found") || result.startsWith("Loading Gemma")) {
+                                downloadBytes = 0L
+                                downloadTotalBytes = -1L
+                            }
                             modelDownloadRunning = false
                             setupStatus = result
                             modelsReady = store.isUsable()
@@ -364,6 +384,7 @@ private fun ModelSetup(
     downloadBytes: Long,
     downloadTotalBytes: Long,
     status: String,
+    elapsedSeconds: Long,
     onDownload: () -> Unit,
     onPickGemma: () -> Unit,
     onTest: () -> Unit
@@ -378,7 +399,7 @@ private fun ModelSetup(
     ) {
         Text("Jarvis setup", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Jarvis runs privately on your phone. The first setup downloads the verified local AI model once; future launches reuse it automatically.",
+            "Jarvis runs privately on your phone. Setup looks for the exact Gemma model file in Downloads and imports it locally. Network model downloads are temporarily disabled.",
             modifier = Modifier.padding(top = 12.dp, bottom = 20.dp)
         )
         Button(
@@ -386,7 +407,7 @@ private fun ModelSetup(
             modifier = Modifier.fillMaxWidth(),
             enabled = !testing && !importing && !downloading
         ) {
-            Text(if (downloading) "Setting up Jarvis…" else "Download and set up Jarvis")
+            Text(if (downloading) "Checking Downloads…" else "Find and set up Jarvis")
         }
         if (downloading && downloadTotalBytes > 0L) {
             val progress = (downloadBytes.toFloat() / downloadTotalBytes.toFloat()).coerceIn(0f, 1f)
@@ -395,7 +416,7 @@ private fun ModelSetup(
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
             )
             Text(
-                "${(progress * 100).toInt()}% complete",
+                "${setupPhase(status)} · ${(progress * 100).toInt()}% complete · ${elapsedSeconds}s elapsed",
                 modifier = Modifier.padding(top = 8.dp)
             )
         } else if (downloading) {
@@ -403,11 +424,13 @@ private fun ModelSetup(
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
             )
             Text(
-                status.ifBlank { "Checking the phone and preparing the model…" },
+                "${setupPhase(status)} · ${elapsedSeconds}s elapsed",
                 modifier = Modifier.padding(top = 8.dp)
             )
         }
-        if (status.isNotBlank() && !(downloading && downloadTotalBytes <= 0L)) {
+        if (status.isNotBlank() && downloading) {
+            Text(status, modifier = Modifier.padding(top = 20.dp))
+        } else if (status.isNotBlank()) {
             Text(status, modifier = Modifier.padding(top = 20.dp))
         }
         OutlinedButton(
@@ -425,4 +448,15 @@ private fun ModelSetup(
             Text(if (testing) "Testing Gemma 4 E2B…" else "Test Gemma 4 E2B")
         }
     }
+}
+
+private fun setupPhase(status: String): String = when {
+    status.contains("app storage", ignoreCase = true) -> "Step 1 of 5: checking app storage"
+    status.contains("Downloads", ignoreCase = true) || status.contains("exact filename", ignoreCase = true) ->
+        "Step 2 of 5: checking Downloads"
+    status.contains("Importing", ignoreCase = true) -> "Step 3 of 5: importing the existing model"
+    status.contains("Verifying", ignoreCase = true) -> "Step 4 of 5: verifying the model"
+    status.contains("Loading Gemma", ignoreCase = true) || status.contains("initializing", ignoreCase = true) ->
+        "Step 5 of 5: initializing Gemma"
+    else -> "Preparing Jarvis"
 }
