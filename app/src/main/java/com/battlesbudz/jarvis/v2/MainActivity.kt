@@ -4,8 +4,13 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -56,6 +61,9 @@ import kotlinx.coroutines.SupervisorJob
 import org.json.JSONObject
 import org.json.JSONArray
 import java.util.concurrent.atomic.AtomicInteger
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 internal const val MAX_IMAGE_BYTES = 12 * 1024 * 1024
 
@@ -96,6 +104,20 @@ class MainActivity : ComponentActivity() {
     internal val actionIntentRouter = com.battlesbudz.jarvis.v2.actions.ActionIntentRouter()
     internal lateinit var sessionPreferences: android.content.SharedPreferences
     internal lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
+    private var pendingVoiceTest: Pair<(String) -> Unit, (String) -> Unit>? = null
+    private val audioPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val pending = pendingVoiceTest
+        pendingVoiceTest = null
+        if (pending == null) return@registerForActivityResult
+        if (granted) {
+            runDirectAudioSmokeTest(pending.first, pending.second)
+        } else {
+            pending.first("Microphone permission is required for the direct E2B audio test.")
+            pending.second("Microphone permission is required for the direct E2B audio test.")
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -120,6 +142,9 @@ class MainActivity : ComponentActivity() {
                 store = modelStore,
                 initialMessages = restoreTranscript(),
                 onRunModelSmokeTest = { runModelSmokeTest(it) },
+                onRunDirectAudioTest = { report, onFinished ->
+                    runDirectAudioSmokeTest(report, onFinished)
+                },
                 onDownloadGemma = { onProgress, onStatus, onFinished ->
                     downloadGemmaAndTest(onProgress, onStatus, onFinished)
                 },
@@ -132,6 +157,127 @@ class MainActivity : ComponentActivity() {
                 }
             )
         }
+    }
+
+    private fun runDirectAudioSmokeTest(
+        report: (String) -> Unit,
+        onFinished: (String) -> Unit
+    ) {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            pendingVoiceTest = report to onFinished
+            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        if (!modelStore.tryBeginModelOperation()) {
+            val message = "Another model operation is still finishing. Please try again in a moment."
+            report(message)
+            onFinished(message)
+            return
+        }
+        lifecycleScope.launch(Dispatchers.Default) {
+            var gemma: LiteRtLmEngine? = null
+            var finalMessage = "Direct E2B audio test failed."
+            try {
+                mainHandler.post { report("Recording a 4-second microphone sample…") }
+                val audioBytes = recordVoiceSample()
+                mainHandler.post { report("Loading Gemma 4 E2B audio runtime…") }
+                check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
+                    "The Gemma model file changed or failed integrity verification. Re-import it."
+                }
+                gemma = LiteRtLmEngine(
+                    modelId = ModelCatalog.gemma4E2b.id,
+                    modelPath = modelStore.fileFor(ModelCatalog.gemma4E2b).path,
+                    cacheDir = cacheDir.path,
+                    useGpu = true,
+                    audioEnabled = true
+                )
+                gemma.initialize()
+                mainHandler.post { report("Sending audio directly to Gemma…") }
+                val streamedTranscript = StringBuilder()
+                val result = gemma.generate(
+                    prompt = "Transcribe the following speech segment. Return only the words you heard, with no explanation.",
+                    audioBytes = audioBytes,
+                    onToken = { token ->
+                        streamedTranscript.append(token)
+                        mainHandler.post {
+                            report("Gemma transcript: ${streamedTranscript.toString().trim().takeLast(160)}")
+                        }
+                    }
+                )
+                val transcript = result.text.trim()
+                check(transcript.isNotBlank()) { "Gemma returned an empty transcription." }
+                finalMessage = "Direct E2B audio succeeded (${result.timeToFirstTokenMs} ms to first token). Transcript: $transcript"
+            } catch (error: Throwable) {
+                finalMessage = "Direct E2B audio test failed: ${error.message ?: "unknown error"}"
+            } finally {
+                gemma?.close()
+                modelStore.endModelOperation()
+                mainHandler.post {
+                    report(finalMessage)
+                    onFinished(finalMessage)
+                }
+            }
+        }
+    }
+
+    private fun recordVoiceSample(): ByteArray {
+        val sampleRate = 16_000
+        val durationMs = 4_000
+        val samples = sampleRate * durationMs / 1_000
+        val minBuffer = AudioRecord.getMinBufferSize(
+            sampleRate,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        )
+        check(minBuffer > 0) { "The microphone could not be initialized." }
+        val bufferSize = maxOf(minBuffer, sampleRate / 2)
+        val pcm = ByteArray(samples * 2)
+        val recorder = AudioRecord(
+            MediaRecorder.AudioSource.MIC,
+            sampleRate,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+            bufferSize
+        )
+        check(recorder.state == AudioRecord.STATE_INITIALIZED) { "The microphone could not be initialized." }
+        try {
+            recorder.startRecording()
+            var offset = 0
+            while (offset < pcm.size) {
+                val count = recorder.read(pcm, offset, pcm.size - offset)
+                check(count > 0) { "The microphone stopped recording unexpectedly." }
+                offset += count
+            }
+        } finally {
+            runCatching { recorder.stop() }
+            recorder.release()
+        }
+        return wavBytes(pcm, sampleRate)
+    }
+
+    private fun wavBytes(pcm: ByteArray, sampleRate: Int): ByteArray {
+        val output = ByteArrayOutputStream(44 + pcm.size)
+        fun writeAscii(value: String) = output.write(value.toByteArray(Charsets.US_ASCII))
+        fun writeInt(value: Int) {
+            output.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(value).array())
+        }
+        fun writeShort(value: Int) {
+            output.write(ByteBuffer.allocate(2).order(ByteOrder.LITTLE_ENDIAN).putShort(value.toShort()).array())
+        }
+        writeAscii("RIFF")
+        writeInt(36 + pcm.size)
+        writeAscii("WAVEfmt ")
+        writeInt(16)
+        writeShort(1)
+        writeShort(1)
+        writeInt(sampleRate)
+        writeInt(sampleRate * 2)
+        writeShort(2)
+        writeShort(16)
+        writeAscii("data")
+        writeInt(pcm.size)
+        output.write(pcm)
+        return output.toByteArray()
     }
 
     private fun restoreTranscript(): List<ChatEntry> {
