@@ -353,17 +353,7 @@ fun JarvisApp(
                                 downloadTotalBytes = -1L
                             }
                             modelDownloadRunning = false
-                            if (result.contains("not found in Downloads", ignoreCase = true)) {
-                                // Android may hide arbitrary Downloads files from silent
-                                // MediaStore/DocumentsProvider enumeration. The system picker
-                                // grants the URI permission that the copy step needs, so make
-                                // that the automatic recovery path instead of showing a dead
-                                // end error to the user.
-                                setupStatus = "Select ${ModelCatalog.gemma4E2b.fileName} in Downloads to finish setup."
-                                gemmaPicker.launch(arrayOf("*/*"))
-                            } else {
-                                setupStatus = result
-                            }
+                            setupStatus = result
                             modelsReady = store.isUsable()
                             smokeTestPassed = modelsReady && store.smokeTestPassed()
                         }
@@ -409,7 +399,7 @@ private fun ModelSetup(
     ) {
         Text("Jarvis setup", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Jarvis runs privately on your phone. Setup looks for the exact Gemma model file in Downloads and imports it locally. Network model downloads are temporarily disabled.",
+            "Jarvis runs privately on your phone. Download the verified Gemma model, or choose the exact model file if you already downloaded it.",
             modifier = Modifier.padding(top = 12.dp, bottom = 20.dp)
         )
         Button(
@@ -417,7 +407,7 @@ private fun ModelSetup(
             modifier = Modifier.fillMaxWidth(),
             enabled = !testing && !importing && !downloading
         ) {
-            Text(if (downloading) "Checking Downloads…" else "Find and set up Jarvis")
+            Text(if (downloading) "Downloading and installing…" else "Download and install Jarvis")
         }
         if (downloading && downloadTotalBytes > 0L) {
             val progress = (downloadBytes.toFloat() / downloadTotalBytes.toFloat()).coerceIn(0f, 1f)
@@ -448,7 +438,7 @@ private fun ModelSetup(
             enabled = !testing && !importing && !downloading,
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
         ) {
-            Text("Import an existing model file")
+            Text("Already downloaded — choose the model")
         }
         Button(
             onClick = onTest,
