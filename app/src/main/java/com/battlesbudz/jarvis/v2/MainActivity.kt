@@ -307,7 +307,10 @@ class MainActivity : ComponentActivity() {
                     val voiceOutput = check(kokoroModelStore.isReady()) {
                         "The local voice output model is still preparing. Please finish setup first."
                     }.let {
-                        SherpaKokoroVoiceOutput(kokoroModelStore.directory().path)
+                        SherpaKokoroVoiceOutput(
+                            modelDirectory = kokoroModelStore.directory().path,
+                            log = { event -> diagnosticRecorder.record("Voice TTS: $event") }
+                        )
                     }
                     mainHandler.post { onTranscript("You", transcript, true) }
                     val response = coordinator.processTurn(transcript) { onToken ->
@@ -335,6 +338,9 @@ class MainActivity : ComponentActivity() {
                                 // Audio playback must never bring down the
                                 // voice-call coroutine or the Activity. The
                                 // text transcript remains authoritative.
+                                diagnosticRecorder.record(
+                                    "Voice TTS failure: ${error.stackTraceToString().take(4_000)}"
+                                )
                                 mainHandler.post {
                                     report("Jarvis answered in text, but local voice playback failed: ${error.message ?: "unknown audio error"}")
                                 }

@@ -9,44 +9,122 @@ import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import kotlinx.coroutines.flow.Flow
+import java.io.File
 
 /** Local Jarvis voice output: Gemma text -> Kokoro PCM -> Android audio route. */
 class SherpaKokoroVoiceOutput(
     private val modelDirectory: String,
     private val speakerId: Int = 10,
-    private val numThreads: Int = 2
+    private val numThreads: Int = 2,
+    private val log: (String) -> Unit = {}
 ) : VoiceOutput {
     @Volatile private var stopped = false
     private var audioTrack: AudioTrack? = null
-    private var tts: OfflineTts? = null
 
     override suspend fun speak(chunks: Flow<String>, onChunkStarted: (String) -> Unit) {
         stopped = false
-        val engine = tts ?: OfflineTts(
-            config = OfflineTtsConfig(
-                model = OfflineTtsModelConfig(
-                    kokoro = OfflineTtsKokoroModelConfig(
-                        model = "$modelDirectory/model.onnx",
-                        voices = "$modelDirectory/voices.bin",
-                        tokens = "$modelDirectory/tokens.txt",
-                        dataDir = "$modelDirectory/espeak-ng-data"
-                    ),
-                    numThreads = numThreads,
-                    debug = false,
-                    provider = "cpu"
-                ),
-                maxNumSentences = 1,
-                silenceScale = 0.2f
-            )
-        ).also { tts = it }
+        log("tts_session_started modelDir=$modelDirectory speaker=$speakerId threads=$numThreads")
+        val buffer = StringBuilder()
+        try {
+            chunks.collect { token ->
+                if (stopped) return@collect
+                buffer.append(token)
+                while (true) {
+                    val boundary = sentenceBoundary(buffer)
+                    if (boundary <= 0) break
+                    val phrase = buffer.substring(0, boundary).trim()
+                    buffer.delete(0, boundary)
+                    if (phrase.isNotBlank()) synthesize(phrase, onChunkStarted)
+                }
+                if (buffer.length >= 220) {
+                    val phrase = buffer.toString().trim()
+                    buffer.clear()
+                    if (phrase.isNotBlank()) synthesize(phrase, onChunkStarted)
+                }
+            }
+            if (!stopped) {
+                val phrase = buffer.toString().trim()
+                if (phrase.isNotBlank()) synthesize(phrase, onChunkStarted)
+            }
+        } finally {
+            audioTrack?.stopSafely()
+            audioTrack = null
+            log("tts_session_finished stopped=$stopped")
+        }
+    }
 
-        val sampleRate = engine.sampleRate()
+    override fun stopSpeaking() {
+        stopped = true
+        audioTrack?.stopSafely()
+    }
+
+    fun release() {
+        stopSpeaking()
+    }
+
+    private fun synthesize(
+        phrase: String,
+        onChunkStarted: (String) -> Unit
+    ) {
+        if (stopped) return
+        log("tts_generation_started chars=${phrase.length} preview=${phrase.take(80)}")
+        onChunkStarted(phrase)
+        check(File(modelDirectory, "model.onnx").isFile) { "Kokoro model.onnx is missing." }
+        check(File(modelDirectory, "voices.bin").isFile) { "Kokoro voices.bin is missing." }
+        check(File(modelDirectory, "tokens.txt").isFile) { "Kokoro tokens.txt is missing." }
+        check(File(modelDirectory, "lexicon-us-en.txt").isFile) { "Kokoro English lexicon is missing." }
+        // Sherpa-ONNX has had Android crashes when one native OfflineTts
+        // pointer is reused for multiple generations. Generate one phrase
+        // with one native instance, then release it before the next phrase.
+        val engine = OfflineTts(config = config())
+        try {
+            val generated = engine.generateWithConfig(
+                phrase,
+                GenerationConfig(silenceScale = 0.2f, sid = speakerId)
+            )
+            if (stopped) return
+            val track = audioTrack ?: createTrack(generated.sampleRate).also {
+                audioTrack = it
+                it.play()
+            }
+            val pcm = ShortArray(generated.samples.size) { index ->
+                (generated.samples[index].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
+            }
+            check(track.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING) >= 0) {
+                "AudioTrack rejected Kokoro PCM output."
+            }
+            log("tts_generation_finished samples=${pcm.size} sampleRate=${generated.sampleRate}")
+        } finally {
+            engine.release()
+        }
+    }
+
+    private fun config() = OfflineTtsConfig(
+        model = OfflineTtsModelConfig(
+            kokoro = OfflineTtsKokoroModelConfig(
+                model = "$modelDirectory/model.onnx",
+                voices = "$modelDirectory/voices.bin",
+                tokens = "$modelDirectory/tokens.txt",
+                dataDir = "$modelDirectory/espeak-ng-data",
+                lexicon = "$modelDirectory/lexicon-us-en.txt",
+                lang = "en-us"
+            ),
+            numThreads = numThreads,
+            debug = false,
+            provider = "cpu"
+        ),
+        maxNumSentences = 1,
+        silenceScale = 0.2f
+    )
+
+    private fun createTrack(sampleRate: Int): AudioTrack {
+        log("audio_track_create sampleRate=$sampleRate")
         val minBuffer = AudioTrack.getMinBufferSize(
             sampleRate,
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT
         ).coerceAtLeast(sampleRate / 5)
-        val track = AudioTrack.Builder()
+        return AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ASSISTANT)
@@ -63,70 +141,6 @@ class SherpaKokoroVoiceOutput(
             .setBufferSizeInBytes(minBuffer)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
-        audioTrack = track
-        track.play()
-
-        val buffer = StringBuilder()
-        try {
-            chunks.collect { token ->
-                if (stopped) return@collect
-                buffer.append(token)
-                while (true) {
-                    val boundary = sentenceBoundary(buffer)
-                    if (boundary <= 0) break
-                    val phrase = buffer.substring(0, boundary).trim()
-                    buffer.delete(0, boundary)
-                    if (phrase.isNotBlank()) synthesize(engine, track, phrase, onChunkStarted)
-                }
-                if (buffer.length >= 220) {
-                    val phrase = buffer.toString().trim()
-                    buffer.clear()
-                    if (phrase.isNotBlank()) synthesize(engine, track, phrase, onChunkStarted)
-                }
-            }
-            if (!stopped) {
-                val phrase = buffer.toString().trim()
-                if (phrase.isNotBlank()) synthesize(engine, track, phrase, onChunkStarted)
-            }
-        } finally {
-            track.stopSafely()
-            audioTrack = null
-        }
-    }
-
-    override fun stopSpeaking() {
-        stopped = true
-        audioTrack?.stopSafely()
-    }
-
-    fun release() {
-        stopSpeaking()
-        tts?.release()
-        tts = null
-    }
-
-    private fun synthesize(
-        engine: OfflineTts,
-        track: AudioTrack,
-        phrase: String,
-        onChunkStarted: (String) -> Unit
-    ) {
-        if (stopped) return
-        onChunkStarted(phrase)
-        engine.generateWithConfigAndCallback(
-            phrase,
-            GenerationConfig(silenceScale = 0.2f, sid = speakerId)
-        ) { samples ->
-            if (stopped) {
-                0
-            } else {
-                val pcm = ShortArray(samples.size) { index ->
-                    (samples[index].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
-                }
-                track.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING)
-                1
-            }
-        }
     }
 
     private fun sentenceBoundary(buffer: StringBuilder): Int {

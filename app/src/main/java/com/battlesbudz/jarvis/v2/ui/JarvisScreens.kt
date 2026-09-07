@@ -445,7 +445,8 @@ fun JarvisApp(
             if (modelsReady && smokeTestPassed) {
                 VoiceCallScreen(
                     onVoiceTurn = onVoiceTurn,
-                    onEndVoiceCall = onEndVoiceCall
+                    onEndVoiceCall = onEndVoiceCall,
+                    onCopyDiagnostics = { onCopyDiagnostics(initialMessages) }
                 )
             } else {
                 ModelSetup(
@@ -499,7 +500,8 @@ fun JarvisApp(
 @Composable
 private fun VoiceCallScreen(
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
-    onEndVoiceCall: ((String) -> Unit) -> Unit
+    onEndVoiceCall: ((String) -> Unit) -> Unit,
+    onCopyDiagnostics: () -> Unit
 ) {
     var callStarted by remember { mutableStateOf(false) }
     var listening by remember { mutableStateOf(false) }
@@ -654,6 +656,12 @@ private fun VoiceCallScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
             )
+        }
+        TextButton(
+            onClick = onCopyDiagnostics,
+            modifier = Modifier.padding(top = 4.dp)
+        ) {
+            Text("Copy diagnostics")
         }
     }
 }
