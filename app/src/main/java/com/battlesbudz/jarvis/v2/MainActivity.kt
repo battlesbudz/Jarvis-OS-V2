@@ -301,6 +301,15 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     )
+                    diagnosticRecorder.record(
+                        "Inference\n" +
+                            "stage=voice_audio_transcription\n" +
+                            "timeToFirstTokenMs=${transcriptResult.timeToFirstTokenMs}\n" +
+                            "totalGenerationTimeMs=${transcriptResult.totalGenerationTimeMs}\n" +
+                            "outputTokensEstimated=${transcriptResult.outputTokens ?: -1}\n" +
+                            "streamEvents=${transcriptResult.streamEvents}\n" +
+                            "decodeTokensPerSecondEstimated=${transcriptResult.decodeTokensPerSecond ?: -1.0}"
+                    )
                     val transcript = transcriptResult.text.trim()
                     check(transcript.isNotBlank()) { "Gemma returned an empty transcription." }
                     val coordinator = VoiceTurnCoordinator(voiceSessionController)

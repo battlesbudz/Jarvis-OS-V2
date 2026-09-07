@@ -215,6 +215,18 @@ internal fun MainActivity.runConversationInternal(
                         }
                     } ?: error("The selected image could not be read.")
                 }
+                fun recordInference(label: String, result: com.battlesbudz.jarvis.v2.ai.GenerationResult) {
+                    diagnosticRecorder.record(
+                        "Inference\n" +
+                            "stage=$label\n" +
+                            "promptChars=${submittedPrompt.length}\n" +
+                            "timeToFirstTokenMs=${result.timeToFirstTokenMs}\n" +
+                            "totalGenerationTimeMs=${result.totalGenerationTimeMs}\n" +
+                            "outputTokensEstimated=${result.outputTokens ?: -1}\n" +
+                            "streamEvents=${result.streamEvents}\n" +
+                            "decodeTokensPerSecondEstimated=${result.decodeTokensPerSecond ?: -1.0}"
+                    )
+                }
                 var generated = if (imageBytes != null) {
                     engine.generate(
                         prompt = submittedPrompt,
@@ -227,6 +239,7 @@ internal fun MainActivity.runConversationInternal(
                         onToken = streamFilter::accept
                     )
                 }
+                recordInference("answer", generated)
                 var nativeConversationContainsCurrentTurn = true
                 val candidateCall = generated.toolCalls.singleOrNull()
                 // Gemma can occasionally emit a tool call copied from the

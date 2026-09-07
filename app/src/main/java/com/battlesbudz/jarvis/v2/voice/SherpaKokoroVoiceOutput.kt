@@ -84,6 +84,7 @@ class SherpaKokoroVoiceOutput(
         onChunkStarted: (String) -> Unit
     ): Pair<Int, Int> {
         if (stopped) return 0 to 0
+        val generationStartedAt = System.nanoTime()
         log("tts_generation_started chars=${phrase.length} preview=${phrase.take(80)}")
         onChunkStarted(phrase)
         check(File(modelDirectory, "model.onnx").isFile) { "Kokoro model.onnx is missing." }
@@ -109,7 +110,13 @@ class SherpaKokoroVoiceOutput(
             check(track.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING) >= 0) {
                 "AudioTrack rejected Kokoro PCM output."
             }
-            log("tts_generation_finished samples=${pcm.size} sampleRate=${generated.sampleRate}")
+            val generationMs = (System.nanoTime() - generationStartedAt) / 1_000_000
+            val audioMs = pcm.size * 1_000L / generated.sampleRate
+            log(
+                "tts_generation_finished samples=${pcm.size} sampleRate=${generated.sampleRate} " +
+                    "generationMs=$generationMs audioDurationMs=$audioMs " +
+                    "realtimeFactor=${if (audioMs > 0) generationMs.toDouble() / audioMs else -1.0}"
+            )
             return generated.sampleRate to pcm.size
         } finally {
             engine.release()

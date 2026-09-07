@@ -110,6 +110,7 @@ class LiteRtLmEngine(
         var firstTokenAt: Long? = null
         val output = StringBuilder()
         val toolCalls = mutableListOf<ToolCall>()
+        var streamEvents = 0
 
         activeConversation.sendMessageAsync(message).collect { response ->
             response.toolCalls.forEach {
@@ -118,19 +119,38 @@ class LiteRtLmEngine(
             val messageText = response.toString()
             if (messageText.isNotEmpty()) {
                 firstTokenAt = firstTokenAt ?: System.nanoTime()
+                streamEvents++
                 output.append(messageText)
                 onToken(messageText)
             }
         }
 
+        val finishedAt = System.nanoTime()
         val firstTokenMs = firstTokenAt?.let { (it - startedAt) / 1_000_000 } ?: -1L
+        val totalMs = (finishedAt - startedAt) / 1_000_000
+        // LiteRT-LM currently exposes streamed text rather than token IDs on
+        // Android. Four characters per token is a useful English estimate;
+        // keep streamEvents separately so diagnostics remain honest.
+        val estimatedTokens = output.toString().estimateTokenCount()
+        val decodeMs = firstTokenAt?.let { finishedAt - it } ?: 0L
         return GenerationResult(
             text = output.toString(),
             timeToFirstTokenMs = firstTokenMs,
-            decodeTokensPerSecond = null,
+            decodeTokensPerSecond = if (decodeMs > 0 && estimatedTokens > 0) {
+                estimatedTokens * 1_000.0 / (decodeMs / 1_000_000.0)
+            } else null,
+            outputTokens = estimatedTokens,
+            totalGenerationTimeMs = totalMs,
+            streamEvents = streamEvents,
             toolCalls = toolCalls
         )
     }
+
+    private fun String.estimateTokenCount(): Int =
+        if (isBlank()) 0 else ((trim().length + 3) / 4).coerceAtLeast(streamEventsFallback())
+
+    private fun String.streamEventsFallback(): Int =
+        trim().split(Regex("\\s+")).count().coerceAtLeast(1)
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {

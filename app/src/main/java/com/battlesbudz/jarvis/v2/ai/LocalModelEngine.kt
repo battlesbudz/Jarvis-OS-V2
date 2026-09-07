@@ -14,5 +14,9 @@ data class GenerationResult(
     val text: String,
     val timeToFirstTokenMs: Long,
     val decodeTokensPerSecond: Double?,
+    /** LiteRT-LM does not expose token IDs; this is a tokenizer-free estimate. */
+    val outputTokens: Int? = null,
+    val totalGenerationTimeMs: Long = -1L,
+    val streamEvents: Int = 0,
     val toolCalls: List<ToolCall> = emptyList()
 )
