@@ -15,6 +15,9 @@ class KokoroModelStore(context: Context) {
         private const val ARCHIVE_URL =
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-en-v0_19.tar.bz2"
         private const val DIRECTORY = "kokoro-en-v0_19"
+        // Total uncompressed bytes in the pinned archive above. This lets the
+        // UI show unpacked/total without performing a second decompression pass.
+        const val EXTRACTED_BYTES = 369_315_617L
         private val REQUIRED = listOf("model.onnx", "voices.bin", "tokens.txt", "espeak-ng-data")
     }
 
@@ -101,6 +104,7 @@ class KokoroModelStore(context: Context) {
                                                     "${extractedBytes / (1024L * 1024L)} MB unpacked"
                                             )
                                             nextProgressReport += 8L * 1024L * 1024L
+                                            onProgress(extractedBytes, EXTRACTED_BYTES)
                                         }
                                     }
                                 }
