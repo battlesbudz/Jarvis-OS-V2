@@ -221,7 +221,14 @@ class SherpaKokoroVoiceOutput(
             sampleRate,
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT
-        ).coerceAtLeast(sampleRate / 5)
+        )
+        // The minimum device buffer is only about 200 ms on this phone. That
+        // is too little headroom while a long phrase is being written and the
+        // next phrase is still being synthesized. Two seconds is still tiny
+        // in memory for mono PCM (~96 KB at 24 kHz) but prevents transition
+        // underruns from turning into clipped or garbled speech.
+        val bufferSize = maxOf(minBuffer, sampleRate * 2 * 2)
+        log("audio_track_buffer minBytes=$minBuffer selectedBytes=$bufferSize bufferMs=${bufferSize * 1_000L / (sampleRate * 2)}")
         return AudioTrack.Builder()
             .setAudioAttributes(
                     AudioAttributes.Builder()
@@ -236,14 +243,14 @@ class SherpaKokoroVoiceOutput(
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build()
             )
-            .setBufferSizeInBytes(minBuffer)
+            .setBufferSizeInBytes(bufferSize)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build().also { track ->
                 check(track.state == AudioTrack.STATE_INITIALIZED) {
                     "AudioTrack could not initialize for Kokoro output."
                 }
                 track.setVolume(1.0f)
-                log("audio_track_ready state=${track.state} sampleRate=$sampleRate buffer=$minBuffer")
+                log("audio_track_ready state=${track.state} sampleRate=$sampleRate buffer=$bufferSize")
             }
     }
 
