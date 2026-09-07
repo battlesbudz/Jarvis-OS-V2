@@ -11,6 +11,8 @@ import android.content.ClipboardManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import kotlin.math.abs
+import kotlin.math.sqrt
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -273,6 +275,19 @@ class MainActivity : ComponentActivity() {
                 mainHandler.post { report("Processing your Voice Call turn locally…") }
                 val audioBytes = capture.stop()
                 check(audioBytes.size > 44) { "No microphone audio was captured." }
+                val audioStats = analyzeCapturedAudio(audioBytes)
+                diagnosticRecorder.record(
+                    "Voice audio capture\n" +
+                        "bytes=${audioBytes.size}\n" +
+                        "durationMs=${audioStats.durationMs}\n" +
+                        "rms=${audioStats.rms}\n" +
+                        "peak=${audioStats.peak}\n" +
+                        "activeSampleRatio=${audioStats.activeSampleRatio}"
+                )
+                if (audioStats.isLikelySilence) {
+                    finalMessage = "I didn't hear anything to process. Please try speaking after starting the turn."
+                    return@launch
+                }
                 check(modelStore.tryBeginModelOperation()) {
                     "Another model operation is still finishing. Please try again in a moment."
                 }
@@ -365,11 +380,11 @@ class MainActivity : ComponentActivity() {
                                     onToken(token)
                                     streamedSpeech.append(token)
                                     mainHandler.post { onTranscript("Jarvis", token, false) }
-                                    speechChunks.trySend(token)
+                                    speechChunks.trySend(cleanSpeechText(token))
                                 },
                                 onComplete = {
                                     if (streamedSpeech.isBlank() && it.isNotBlank()) {
-                                        speechChunks.trySend(it)
+                                        speechChunks.trySend(cleanSpeechText(it))
                                     }
                                     completed.complete(it)
                                 }
@@ -807,6 +822,53 @@ class MainActivity : ComponentActivity() {
             .replace(Regex("""(?i)<\|tool_call\|>|<end_function_call>|<\|end_function_call\|>"""), "")
             .trim()
         return cleaned
+    }
+
+    /** Removes visual Markdown syntax before text is sent to Kokoro. */
+    internal fun cleanSpeechText(text: String): String = text
+        .replace("*", "")
+        .replace("_", "")
+        .replace("`", "")
+        .replace(Regex("(?m)^\\s*#+\\s*"), "")
+        .replace(Regex("(?m)^\\s*[-•]\\s+"), "")
+
+    private data class CapturedAudioStats(
+        val durationMs: Long,
+        val rms: Int,
+        val peak: Int,
+        val activeSampleRatio: Double,
+        val isLikelySilence: Boolean
+    )
+
+    private fun analyzeCapturedAudio(wav: ByteArray): CapturedAudioStats {
+        val pcmStart = 44.coerceAtMost(wav.size)
+        val sampleCount = ((wav.size - pcmStart) / 2).coerceAtLeast(0)
+        if (sampleCount == 0) return CapturedAudioStats(0, 0, 0, 0.0, true)
+        var sumSquares = 0.0
+        var peak = 0
+        var active = 0
+        var offset = pcmStart
+        repeat(sampleCount) {
+            val sample = (wav[offset].toInt() and 0xff) or (wav[offset + 1].toInt() shl 8)
+            val signed = if (sample and 0x8000 != 0) sample - 0x10000 else sample
+            val magnitude = abs(signed)
+            sumSquares += signed.toDouble() * signed.toDouble()
+            peak = maxOf(peak, magnitude)
+            if (magnitude >= 500) active++
+            offset += 2
+        }
+        val rms = sqrt(sumSquares / sampleCount).toInt()
+        val activeRatio = active.toDouble() / sampleCount
+        // Conservative gate: normal speech is retained, but a stopped turn
+        // containing only mic/electrical noise never reaches Gemma audio.
+        val silence = rms < 220 || (peak < 700 && activeRatio < 0.01)
+        return CapturedAudioStats(
+            durationMs = sampleCount * 1_000L / 16_000L,
+            rms = rms,
+            peak = peak,
+            activeSampleRatio = activeRatio,
+            isLikelySilence = silence
+        )
     }
 
     private fun runConversation(
