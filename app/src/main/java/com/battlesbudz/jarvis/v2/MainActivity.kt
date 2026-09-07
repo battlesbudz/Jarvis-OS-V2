@@ -316,16 +316,29 @@ class MainActivity : ComponentActivity() {
                         // Release it before handing the text request to the
                         // existing conversation runtime, which owns tool
                         // routing, action validation, and context handling.
-                        activeGemma.close()
+                        // Release the audio-capable engine before the text
+                        // conversation starts, but mark it consumed so the
+                        // outer cleanup cannot close the native engine twice.
+                        runCatching { activeGemma.close() }
+                        gemma = null
                         val completed = CompletableDeferred<String>()
                         val speechChunks = Channel<String>(Channel.UNLIMITED)
                         val speechJob = lifecycleScope.launch(Dispatchers.Default) {
-                            voiceOutput.speak(
-                                speechChunks.receiveAsFlow(),
-                                onChunkStarted = { phrase ->
-                                    mainHandler.post { report("Jarvis is speaking… ${phrase.take(80)}") }
+                            try {
+                                voiceOutput.speak(
+                                    speechChunks.receiveAsFlow(),
+                                    onChunkStarted = { phrase ->
+                                        mainHandler.post { report("Jarvis is speaking… ${phrase.take(80)}") }
+                                    }
+                                )
+                            } catch (error: Throwable) {
+                                // Audio playback must never bring down the
+                                // voice-call coroutine or the Activity. The
+                                // text transcript remains authoritative.
+                                mainHandler.post {
+                                    report("Jarvis answered in text, but local voice playback failed: ${error.message ?: "unknown audio error"}")
                                 }
-                            )
+                            }
                         }
                         val streamedSpeech = StringBuilder()
                         try {
@@ -356,7 +369,7 @@ class MainActivity : ComponentActivity() {
                         } finally {
                             speechChunks.close()
                             speechJob.join()
-                            voiceOutput.release()
+                            runCatching { voiceOutput.release() }
                         }
                         val completedText = completed.getCompleted()
                         com.battlesbudz.jarvis.v2.ai.GenerationResult(
