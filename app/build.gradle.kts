@@ -5,6 +5,20 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+// Both SDKs ship libonnxruntime.so but require different versioned C symbols.
+// Namespace Moonshine's matching runtime instead of picking/replacing a library.
+val moonshineSdk by configurations.creating { isTransitive = false }
+val moonshineDir = layout.buildDirectory.dir("moonshine-sdk")
+val extractMoonshine by tasks.registering(Exec::class) {
+    inputs.files(moonshineSdk)
+    inputs.file(rootProject.file("scripts/prepare_moonshine_sdk.py"))
+    outputs.dir(moonshineDir)
+    doFirst {
+        commandLine("python3", rootProject.file("scripts/prepare_moonshine_sdk.py"),
+            moonshineSdk.singleFile, moonshineDir.get().asFile)
+    }
+}
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(extractMoonshine) }
 android {
     namespace = "com.battlesbudz.jarvis.v2"
     compileSdk = 35
@@ -50,9 +64,15 @@ android {
             jvmTarget.set(JvmTarget.JVM_17)
         }
     }
+    sourceSets.getByName("main").jniLibs.srcDir(moonshineDir.map { it.dir("jni") })
     buildFeatures { compose = true }
 }
 dependencies {
+    moonshineSdk("ai.moonshine:moonshine-voice:0.1.5@aar")
+    implementation(files(moonshineDir.map { it.file("classes.jar") }).builtBy(extractMoonshine))
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("com.google.android.material:material:1.10.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.compose.material3:material3")
@@ -68,4 +88,5 @@ dependencies {
     implementation("com.github.k2-fsa.sherpa-onnx:sherpa-onnx:v1.13.7")
     implementation("org.apache.commons:commons-compress:1.27.1")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

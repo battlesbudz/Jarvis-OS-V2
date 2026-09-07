@@ -31,6 +31,9 @@ jobs:
       - name: Run unit tests and assemble APK
         run: gradle --no-daemon testDebugUnitTest assembleDebug
 
+      - name: Verify ASR native packaging
+        run: python3 scripts/check_asr_apk.py app/build/outputs/apk/debug/app-debug.apk
+
       - name: Stage debug APK
         run: |
           mkdir -p artifact
@@ -90,6 +93,9 @@ jobs:
           ANDROID_VERSION_CODE: ${{ github.run_number }}
           ANDROID_VERSION_NAME: 0.1.0-build.${{ github.run_number }}
         run: gradle --no-daemon testReleaseUnitTest assembleRelease
+
+      - name: Verify ASR native packaging
+        run: python3 scripts/check_asr_apk.py app/build/outputs/apk/release/app-release.apk
 
       - name: Verify signed release APK
         run: |

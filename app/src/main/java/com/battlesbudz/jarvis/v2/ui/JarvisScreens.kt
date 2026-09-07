@@ -358,6 +358,8 @@ private fun openTranscriptImageStream(
 @Composable
 fun JarvisApp(
     store: ModelStore,
+    asrComparisonStore: com.battlesbudz.jarvis.v2.voice.AsrComparisonStore,
+    onSelectAsr: (com.battlesbudz.jarvis.v2.voice.AsrEngine) -> Boolean,
     voiceModelStore: com.battlesbudz.jarvis.v2.voice.KokoroModelStore,
     initialMessages: List<ChatEntry>,
     initialVoiceCalls: List<VoiceCallRecord>,
@@ -475,6 +477,8 @@ fun JarvisApp(
                         }
                     )
                     else -> VoiceCallScreen(
+                        asrComparisonStore = asrComparisonStore,
+                        onSelectAsr = onSelectAsr,
                         onVoiceTurn = onVoiceTurn,
                         onEndVoiceCall = onEndVoiceCall,
                         onOpenVoiceCalls = {
@@ -535,11 +539,15 @@ fun JarvisApp(
 
 @Composable
 private fun VoiceCallScreen(
+    asrComparisonStore: com.battlesbudz.jarvis.v2.voice.AsrComparisonStore,
+    onSelectAsr: (com.battlesbudz.jarvis.v2.voice.AsrEngine) -> Boolean,
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
     onEndVoiceCall: ((String) -> Unit) -> Unit,
     onOpenVoiceCalls: () -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit
 ) {
+    var asrSettingsOpen by remember { mutableStateOf(false) }
+    var selectedAsr by remember { mutableStateOf(asrComparisonStore.selectedEngine()) }
     var callStarted by remember { mutableStateOf(false) }
     var listening by remember { mutableStateOf(false) }
     var turnInFlight by remember { mutableStateOf(false) }
@@ -552,6 +560,11 @@ private fun VoiceCallScreen(
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "voice pulse"
+    )
+    if (asrSettingsOpen) AsrComparisonDialog(
+        store = asrComparisonStore, selected = selectedAsr, canSelect = !callStarted && !turnInFlight,
+        onSelect = { if (onSelectAsr(it)) selectedAsr = it },
+        onDismiss = { asrSettingsOpen = false }
     )
     val waveformActiveColor = MaterialTheme.colorScheme.primary
     val waveformIdleColor = MaterialTheme.colorScheme.outline
@@ -645,6 +658,9 @@ private fun VoiceCallScreen(
             ) {
                 Text("New Voice Call")
             }
+        }
+        TextButton(onClick = { asrSettingsOpen = true }) {
+            Text("Speech recognition: ${selectedAsr.label}")
         }
         Canvas(
             modifier = Modifier

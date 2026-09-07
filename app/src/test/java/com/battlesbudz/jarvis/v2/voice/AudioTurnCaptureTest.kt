@@ -246,6 +246,32 @@ class AudioTurnCaptureTest {
         fixture.capture.stop()
     }
 
+    @Test
+    fun reportsAsrMeasurementsWithoutCountingFinalFlushAsPartial() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, FakeTranscriber())
+        fixture.capture.start()
+        fixture.emit(100, 2000, speech = true, samples = 1600)
+        fixture.emit(1300, 0, samples = 1600)
+        assertTrue(fixture.capture.awaitTurnCompletion())
+        val result = fixture.metrics.single()
+        assertEquals("story about astronauts", result.second)
+        assertEquals(200L, result.first.audioMs)
+        assertEquals(1, result.first.partialUpdates)
+        assertEquals(0L, result.first.firstPartialAfterSpeechMs)
+        assertEquals("trailing_silence", result.first.endpointReason)
+        fixture.capture.stop()
+        assertEquals(1, fixture.metrics.size)
+    }
+
+    @Test
+    fun cancellationDoesNotPublishACompletedComparison() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, FakeTranscriber())
+        fixture.capture.start()
+        fixture.emit(100, 2000, speech = true)
+        fixture.capture.stop()
+        assertTrue(fixture.metrics.isEmpty())
+    }
+
     private class FakeTranscriber : StreamingTranscriber {
         var accepts = 0
         val receivedSamples = mutableListOf<Int>()
@@ -273,6 +299,7 @@ class AudioTurnCaptureTest {
 
     private class CaptureFixture(scope: CoroutineScope, transcriber: StreamingTranscriber? = null) {
         val partials = mutableListOf<String>()
+        val metrics = mutableListOf<Pair<AsrCaptureMetrics, String>>()
         private var clock = 0L
         private val chunks = MutableSharedFlow<ByteArray>()
         val events = mutableListOf<String>()
@@ -285,7 +312,8 @@ class AudioTurnCaptureTest {
         }
         val detector = FakeDetector()
         val capture = AudioTurnCapture(input, scope, createDetector = { detector }, nowMs = { clock }, log = events::add,
-            createTranscriber = transcriber?.let { { it } }, onPartialTranscript = { text, _ -> partials.add(text) })
+            createTranscriber = transcriber?.let { { it } }, onPartialTranscript = { text, _ -> partials.add(text) },
+            onMetrics = { stats, text -> metrics.add(stats to text) })
 
         suspend fun emit(atMs: Long, sample: Int, speech: Boolean = false, samples: Int = 1) {
             clock = atMs

@@ -128,6 +128,7 @@ class MainActivity : ComponentActivity() {
     internal lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
     internal lateinit var voiceCallStore: SharedPreferencesVoiceCallStore
     internal lateinit var voiceSessionController: VoiceSessionController
+    private lateinit var asrComparisonStore: com.battlesbudz.jarvis.v2.voice.AsrComparisonStore
     private var activeVoiceCapture: AudioTurnCapture? = null
     private var voiceTurnJob: Job? = null
     private var activeVoiceOutput: SherpaKokoroVoiceOutput? = null
@@ -175,6 +176,7 @@ class MainActivity : ComponentActivity() {
             getSharedPreferences("voice_calls", MODE_PRIVATE)
         )
         voiceSessionController = VoiceSessionController(voiceCallStore)
+        asrComparisonStore = com.battlesbudz.jarvis.v2.voice.AsrComparisonStore(getSharedPreferences("asr_comparison", MODE_PRIVATE))
         diagnosticRecorder = com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(sessionPreferences)
         val interruptedSession = sessionPreferences.getBoolean("sending", false)
         shortTermContext.restoreSummary(
@@ -193,6 +195,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             JarvisApp(
                 store = modelStore,
+                asrComparisonStore = asrComparisonStore,
+                onSelectAsr = { selected ->
+                    if (voiceTurnJob?.isActive == true) false
+                    else { asrComparisonStore.select(selected); true }
+                },
                 voiceModelStore = kokoroModelStore,
                 initialMessages = restoreTranscript(),
                 initialVoiceCalls = voiceCallStore.list(),
@@ -253,6 +260,10 @@ class MainActivity : ComponentActivity() {
                 diagnosticRecorder.startSession("Voice Call ${it.id}")
             }
         }
+        val asrEngine = asrComparisonStore.selectedEngine()
+        val asrTurnId = java.util.UUID.randomUUID().toString()
+        val finalReadyAt = java.util.concurrent.atomic.AtomicLong(0)
+        val firstPlayback = java.util.concurrent.atomic.AtomicBoolean(true)
         val voiceHistory = voiceSessionController.conversationContext().map { ChatEntry(it.role, it.text) }
         voiceTurnJob = lifecycleScope.launch(Dispatchers.Default) {
             var operationOwned = false
@@ -269,7 +280,8 @@ class MainActivity : ComponentActivity() {
                 }
                 operationOwned = true
                 status("Preparing speech recognition…")
-                val asrDirectory = AsrModelStore(applicationContext).ensureReady(::status)
+                val asrDirectory = AsrModelStore(applicationContext, asrEngine).ensureReady(::status)
+                diagnosticRecorder.record("Voice ASR selected engine=${asrEngine.id} model=${asrEngine.modelVersion} turn=$asrTurnId")
                 check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) { "The Gemma model failed integrity verification." }
                 if (conversationEngine?.audioEnabled != true) {
                     conversationEngine?.close()
@@ -293,7 +305,13 @@ class MainActivity : ComponentActivity() {
                 // Preload Kokoro while listening; this channel stays empty until final validation.
                 speechJob = launch(Dispatchers.Default) {
                     try {
-                        output.speak(speechChunks.receiveAsFlow()) { status("Jarvis is speaking…") }
+                        output.speak(speechChunks.receiveAsFlow()) {
+                            if (firstPlayback.compareAndSet(true, false) && finalReadyAt.get() != 0L) {
+                                asrComparisonStore.update(asrTurnId, "final_to_playback_start_ms",
+                                    (System.nanoTime() - finalReadyAt.get()) / 1_000_000)
+                            }
+                            status("Jarvis is speaking…")
+                        }
                     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                     catch (error: Throwable) {
                         diagnosticRecorder.record("Voice TTS failure: ${error.message}")
@@ -312,7 +330,15 @@ class MainActivity : ComponentActivity() {
                     AndroidAudioInput(this), this,
                     createDetector = { SileroSpeechDetector.create(assets) },
                     log = { diagnosticRecorder.record("Voice input: $it") },
-                    createTranscriber = { SherpaStreamingTranscriber(asrDirectory) },
+                    createTranscriber = {
+                        when (asrEngine) {
+                            com.battlesbudz.jarvis.v2.voice.AsrEngine.ZIPFORMER -> SherpaStreamingTranscriber(asrDirectory)
+                            com.battlesbudz.jarvis.v2.voice.AsrEngine.MOONSHINE -> com.battlesbudz.jarvis.v2.voice.MoonshineStreamingTranscriber(asrDirectory)
+                        }
+                    },
+                    onMetrics = { metrics, text ->
+                        asrComparisonStore.add(asrTurnId, asrEngine, metrics, text)
+                    },
                     onPartialTranscript = { text, audio ->
                         speculative.submit(text, audio)
                         mainHandler.post {
@@ -326,6 +352,7 @@ class MainActivity : ComponentActivity() {
                 status("Voice Call is listening. Speak naturally; I’ll detect when you finish.")
                 activeCapture.awaitTurnCompletion()
                 val endpointAt = System.nanoTime()
+                finalReadyAt.set(endpointAt)
                 val firstFinalToken = java.util.concurrent.atomic.AtomicBoolean(true)
                 val audioBytes = activeCapture.stop()
                 if (activeVoiceCapture === activeCapture) activeVoiceCapture = null
@@ -336,6 +363,7 @@ class MainActivity : ComponentActivity() {
                 }
                 val transcript = activeCapture.finalTranscript
                 val draft = speculative.seal(transcript)
+                asrComparisonStore.update(asrTurnId, "prepared", draft != null)
                 if (draft == null) resetNativeConversation()
                 diagnosticRecorder.record("Voice ASR final\ntext=$transcript\naudioBytes=${audioBytes.size}\nprepared=${draft != null}")
                 mainHandler.post { onTranscript("You", transcript, true) }
@@ -348,6 +376,7 @@ class MainActivity : ComponentActivity() {
                         preparedVoice = draft, voiceAudio = audioBytes,
                         onToken = { token ->
                             if (firstFinalToken.compareAndSet(true, false)) {
+                                asrComparisonStore.update(asrTurnId, "final_to_first_text_ms", (System.nanoTime() - endpointAt) / 1_000_000)
                                 diagnosticRecorder.record("Voice latency: endpoint_to_first_text_ms=${(System.nanoTime() - endpointAt) / 1_000_000}")
                             }
                             onToken(token)
@@ -628,7 +657,7 @@ class MainActivity : ComponentActivity() {
 
     private fun copyDiagnostics(transcript: List<ChatEntry>) {
         val visible = transcript.joinToString("\n\n") { "${it.role}: ${it.text}" }
-        val diagnostics = "Jarvis OS V2 chat diagnostics\n\nVisible transcript:\n$visible\n\nRuntime diagnostics (retained until the next session):\n${diagnosticRecorder.snapshot()}"
+        val diagnostics = "Jarvis OS V2 chat diagnostics\n\nVisible transcript:\n$visible\n\nRuntime diagnostics (retained until the next session):\n${diagnosticRecorder.snapshot()}\n\nASR comparisons (last 20 turns, retained across calls):\n${asrComparisonStore.snapshot()}"
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Jarvis diagnostics", diagnostics))
     }
