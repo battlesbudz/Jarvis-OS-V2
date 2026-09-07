@@ -25,6 +25,8 @@ class SherpaKokoroVoiceOutput(
         stopped = false
         log("tts_session_started modelDir=$modelDirectory speaker=$speakerId threads=$numThreads")
         val buffer = StringBuilder()
+        var framesWritten = 0
+        var outputSampleRate = 0
         try {
             chunks.collect { token ->
                 if (stopped) return@collect
@@ -34,19 +36,34 @@ class SherpaKokoroVoiceOutput(
                     if (boundary <= 0) break
                     val phrase = buffer.substring(0, boundary).trim()
                     buffer.delete(0, boundary)
-                    if (phrase.isNotBlank()) synthesize(phrase, onChunkStarted)
+                    if (phrase.isNotBlank()) {
+                        val result = synthesize(phrase, onChunkStarted)
+                        outputSampleRate = result.first
+                        framesWritten += result.second
+                    }
                 }
                 if (buffer.length >= 220) {
                     val phrase = buffer.toString().trim()
                     buffer.clear()
-                    if (phrase.isNotBlank()) synthesize(phrase, onChunkStarted)
+                    if (phrase.isNotBlank()) {
+                        val result = synthesize(phrase, onChunkStarted)
+                        outputSampleRate = result.first
+                        framesWritten += result.second
+                    }
                 }
             }
             if (!stopped) {
                 val phrase = buffer.toString().trim()
-                if (phrase.isNotBlank()) synthesize(phrase, onChunkStarted)
+                if (phrase.isNotBlank()) {
+                    val result = synthesize(phrase, onChunkStarted)
+                    outputSampleRate = result.first
+                    framesWritten += result.second
+                }
             }
         } finally {
+            if (!stopped && framesWritten > 0 && outputSampleRate > 0) {
+                drainAudioTrack(framesWritten, outputSampleRate)
+            }
             audioTrack?.stopSafely()
             audioTrack = null
             log("tts_session_finished stopped=$stopped")
@@ -65,8 +82,8 @@ class SherpaKokoroVoiceOutput(
     private fun synthesize(
         phrase: String,
         onChunkStarted: (String) -> Unit
-    ) {
-        if (stopped) return
+    ): Pair<Int, Int> {
+        if (stopped) return 0 to 0
         log("tts_generation_started chars=${phrase.length} preview=${phrase.take(80)}")
         onChunkStarted(phrase)
         check(File(modelDirectory, "model.onnx").isFile) { "Kokoro model.onnx is missing." }
@@ -93,9 +110,22 @@ class SherpaKokoroVoiceOutput(
                 "AudioTrack rejected Kokoro PCM output."
             }
             log("tts_generation_finished samples=${pcm.size} sampleRate=${generated.sampleRate}")
+            return generated.sampleRate to pcm.size
         } finally {
             engine.release()
         }
+    }
+
+    private fun drainAudioTrack(framesWritten: Int, sampleRate: Int) {
+        val track = audioTrack ?: return
+        val deadline = System.currentTimeMillis() +
+            (framesWritten * 1_000L / sampleRate).coerceAtLeast(1_000L) + 2_000L
+        log("audio_track_drain_started frames=$framesWritten sampleRate=$sampleRate state=${track.state}")
+        while (!stopped && System.currentTimeMillis() < deadline) {
+            if (track.playbackHeadPosition.toLong() >= framesWritten.toLong()) break
+            Thread.sleep(20L)
+        }
+        log("audio_track_drain_finished playbackHead=${track.playbackHeadPosition} stopped=$stopped")
     }
 
     private fun config() = OfflineTtsConfig(
@@ -131,8 +161,8 @@ class SherpaKokoroVoiceOutput(
         ).coerceAtLeast(sampleRate / 5)
         return AudioTrack.Builder()
             .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )
@@ -145,7 +175,13 @@ class SherpaKokoroVoiceOutput(
             )
             .setBufferSizeInBytes(minBuffer)
             .setTransferMode(AudioTrack.MODE_STREAM)
-            .build()
+            .build().also { track ->
+                check(track.state == AudioTrack.STATE_INITIALIZED) {
+                    "AudioTrack could not initialize for Kokoro output."
+                }
+                track.setVolume(1.0f)
+                log("audio_track_ready state=${track.state} sampleRate=$sampleRate buffer=$minBuffer")
+            }
     }
 
     private fun sentenceBoundary(buffer: StringBuilder): Int {
