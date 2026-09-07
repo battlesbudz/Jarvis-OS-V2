@@ -40,6 +40,23 @@ class VoiceSessionController(
         checkpoint()
     }
 
+    fun currentTranscript(): List<TranscriptEntry> = activeCall?.transcript.orEmpty()
+
+    /** Starts a new linked session with the prior call's transcript as context. */
+    fun resumeCall(call: VoiceCallRecord): VoiceCallRecord {
+        check(activeCall == null) { "A Voice Call is already active." }
+        return VoiceCallRecord(
+            id = UUID.randomUUID().toString(),
+            startedAtMs = nowMs(),
+            transcript = call.transcript,
+            taskStatus = call.taskStatus
+        ).also {
+            activeCall = it
+            _state.value = VoiceSessionState.ACTIVELY_LISTENING
+            checkpoint()
+        }
+    }
+
     fun setState(state: VoiceSessionState) {
         requireActiveCall()
         _state.value = state

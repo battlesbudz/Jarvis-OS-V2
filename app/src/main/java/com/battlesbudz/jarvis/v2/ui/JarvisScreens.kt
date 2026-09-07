@@ -1,6 +1,7 @@
 package com.battlesbudz.jarvis.v2.ui
 
 import com.battlesbudz.jarvis.v2.*
+import com.battlesbudz.jarvis.v2.voice.VoiceCallRecord
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -74,6 +75,10 @@ import org.json.JSONObject
 import org.json.JSONArray
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.Collections
+import java.util.Date
+import java.text.DateFormat
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 
 
 private const val MAX_SAVED_DRAFT_CHARS = 16_000
@@ -355,11 +360,15 @@ fun JarvisApp(
     store: ModelStore,
     voiceModelStore: com.battlesbudz.jarvis.v2.voice.KokoroModelStore,
     initialMessages: List<ChatEntry>,
+    initialVoiceCalls: List<VoiceCallRecord>,
     onRunModelSmokeTest: ((String) -> Unit) -> Unit,
     onRunDirectAudioTest: ((String) -> Unit, (String) -> Unit) -> Unit,
     onRunDirectAudioToolTest: ((String) -> Unit, (String) -> Unit) -> Unit,
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
     onEndVoiceCall: ((String) -> Unit) -> Unit,
+    onResumeVoiceCall: (VoiceCallRecord) -> Unit,
+    onDeleteVoiceCall: (String) -> Unit,
+    onRefreshVoiceCalls: () -> List<VoiceCallRecord>,
     onDownloadGemma: ((Long, Long) -> Unit, (String) -> Unit, (String) -> Unit) -> Unit,
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
@@ -378,6 +387,9 @@ fun JarvisApp(
     var downloadBytes by remember { mutableStateOf(0L) }
     var downloadTotalBytes by remember { mutableStateOf(-1L) }
     var setupElapsedSeconds by remember { mutableStateOf(0L) }
+    var showingVoiceCalls by rememberSaveable { mutableStateOf(false) }
+    var voiceCalls by remember { mutableStateOf(initialVoiceCalls) }
+    var selectedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
 
     LaunchedEffect(modelDownloadRunning) {
         if (!modelDownloadRunning) {
@@ -443,11 +455,35 @@ fun JarvisApp(
     ) {
         Surface(modifier = Modifier.fillMaxSize()) {
             if (modelsReady && smokeTestPassed) {
-                VoiceCallScreen(
-                    onVoiceTurn = onVoiceTurn,
-                    onEndVoiceCall = onEndVoiceCall,
-                    onCopyDiagnostics = { onCopyDiagnostics(initialMessages) }
-                )
+                when {
+                    selectedVoiceCall != null -> VoiceCallDetailScreen(
+                        call = selectedVoiceCall!!,
+                        onBack = { selectedVoiceCall = null },
+                        onResume = {
+                            onResumeVoiceCall(selectedVoiceCall!!)
+                            selectedVoiceCall = null
+                            showingVoiceCalls = false
+                        }
+                    )
+                    showingVoiceCalls -> VoiceCallsScreen(
+                        calls = voiceCalls,
+                        onBack = { showingVoiceCalls = false },
+                        onSelect = { selectedVoiceCall = it },
+                        onDelete = {
+                            onDeleteVoiceCall(it)
+                            voiceCalls = onRefreshVoiceCalls()
+                        }
+                    )
+                    else -> VoiceCallScreen(
+                        onVoiceTurn = onVoiceTurn,
+                        onEndVoiceCall = onEndVoiceCall,
+                        onOpenVoiceCalls = {
+                            voiceCalls = onRefreshVoiceCalls()
+                            showingVoiceCalls = true
+                        },
+                        onCopyDiagnostics = { onCopyDiagnostics(initialMessages) }
+                    )
+                }
             } else {
                 ModelSetup(
                     ready = modelsReady,
@@ -501,6 +537,7 @@ fun JarvisApp(
 private fun VoiceCallScreen(
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
     onEndVoiceCall: ((String) -> Unit) -> Unit,
+    onOpenVoiceCalls: () -> Unit,
     onCopyDiagnostics: () -> Unit
 ) {
     var callStarted by remember { mutableStateOf(false) }
@@ -649,6 +686,12 @@ private fun VoiceCallScreen(
                 Text("End Voice Call")
             }
         }
+        TextButton(
+            onClick = onOpenVoiceCalls,
+            modifier = Modifier.padding(top = 4.dp)
+        ) {
+            Text("Voice Calls")
+        }
         if (status.isNotBlank()) {
             Text(
                 status.substringAfterLast("Voice Call turn complete. ").takeIf { it != status } ?: status,
@@ -662,6 +705,102 @@ private fun VoiceCallScreen(
             modifier = Modifier.padding(top = 4.dp)
         ) {
             Text("Copy diagnostics")
+        }
+    }
+}
+
+@Composable
+private fun VoiceCallsScreen(
+    calls: List<VoiceCallRecord>,
+    onBack: () -> Unit,
+    onSelect: (VoiceCallRecord) -> Unit,
+    onDelete: (String) -> Unit
+) {
+    Column(
+        Modifier.fillMaxSize().safeDrawingPadding().padding(28.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Voice Calls", style = MaterialTheme.typography.headlineMedium)
+            TextButton(onClick = onBack) { Text("Back") }
+        }
+        if (calls.isEmpty()) {
+            Text(
+                "Completed Voice Calls will appear here.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(calls.sortedByDescending { it.startedAtMs }, key = { it.id }) { call ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(call.title ?: "Untitled Voice Call")
+                                Text(
+                                    DateFormat.getDateTimeInstance(
+                                        DateFormat.MEDIUM,
+                                        DateFormat.SHORT
+                                    ).format(Date(call.startedAtMs)),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            TextButton(onClick = { onSelect(call) }) { Text("Open") }
+                            TextButton(onClick = { onDelete(call.id) }) { Text("Delete") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoiceCallDetailScreen(
+    call: VoiceCallRecord,
+    onBack: () -> Unit,
+    onResume: () -> Unit
+) {
+    val scrollState = rememberScrollState()
+    Column(
+        Modifier.fillMaxSize().safeDrawingPadding().padding(28.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(call.title ?: "Voice Call", style = MaterialTheme.typography.headlineSmall)
+            TextButton(onClick = onBack) { Text("Back") }
+        }
+        Text(
+            DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                .format(Date(call.startedAtMs)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Column(
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            call.transcript.forEach { entry ->
+                Text(
+                    "${entry.role}: ${entry.text}",
+                    color = if (entry.role == "You") MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            call.taskStatus?.let { task ->
+                Text("Task status: ${task.state}", style = MaterialTheme.typography.labelLarge)
+                task.completedSteps.forEach { Text("✓ $it", style = MaterialTheme.typography.bodySmall) }
+                task.pendingSteps.forEach { Text("○ $it", style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+        Button(onClick = onResume, modifier = Modifier.fillMaxWidth()) {
+            Text("Resume conversation")
         }
     }
 }

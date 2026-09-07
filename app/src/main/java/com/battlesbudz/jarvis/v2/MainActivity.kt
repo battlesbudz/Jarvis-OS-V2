@@ -189,6 +189,7 @@ class MainActivity : ComponentActivity() {
                 store = modelStore,
                 voiceModelStore = kokoroModelStore,
                 initialMessages = restoreTranscript(),
+                initialVoiceCalls = voiceCallStore.list(),
                 onRunModelSmokeTest = { runModelSmokeTest(it) },
                 onRunDirectAudioTest = { report, onFinished ->
                     runDirectAudioSmokeTest(report, onFinished)
@@ -200,6 +201,15 @@ class MainActivity : ComponentActivity() {
                     runVoiceTurn(start, report, onTranscript, onFinished)
                 },
                 onEndVoiceCall = { report -> endVoiceCall(report) },
+                onResumeVoiceCall = { call ->
+                    voiceSessionController.resumeCall(call)
+                    conversationEngine?.close()
+                    conversationEngine = null
+                    nativeConversationHasContext = false
+                    conversationCharacters = 0
+                },
+                onDeleteVoiceCall = { callId -> voiceCallStore.delete(callId) },
+                onRefreshVoiceCalls = { voiceCallStore.list() },
                 onDownloadGemma = { onProgress, onStatus, onFinished ->
                     downloadGemmaAndTest(onProgress, onStatus, onFinished)
                 },
@@ -337,6 +347,9 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     mainHandler.post { onTranscript("You", transcript, true) }
+                    val voiceHistory = voiceSessionController.currentTranscript()
+                        .dropLast(1)
+                        .map { ChatEntry(it.role, it.text) }
                     val response = coordinator.processTurn(transcript) { onToken ->
                         mainHandler.post { report("Jarvis is responding…") }
                         // The audio-capable engine has completed the input turn.
@@ -374,7 +387,7 @@ class MainActivity : ComponentActivity() {
                         try {
                             runConversation(
                                 prompt = transcript,
-                                history = emptyList(),
+                                history = voiceHistory,
                                 imageUri = null,
                                 onToken = { token ->
                                     onToken(token)
