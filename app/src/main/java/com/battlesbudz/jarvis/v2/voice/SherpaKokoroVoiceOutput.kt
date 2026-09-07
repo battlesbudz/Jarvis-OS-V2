@@ -8,6 +8,12 @@ import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import java.io.File
 
@@ -22,53 +28,67 @@ class SherpaKokoroVoiceOutput(
     private var audioTrack: AudioTrack? = null
     private var preloadedEngine: OfflineTts? = null
 
-    override suspend fun speak(chunks: Flow<String>, onChunkStarted: (String) -> Unit) {
+    private data class SynthesizedPhrase(
+        val sampleRate: Int,
+        val pcm: ShortArray
+    )
+
+    override suspend fun speak(chunks: Flow<String>, onChunkStarted: (String) -> Unit) = coroutineScope {
         stopped = false
         log("tts_session_started modelDir=$modelDirectory speaker=$speakerId threads=$numThreads")
-        val buffer = StringBuilder()
         var framesWritten = 0
         var outputSampleRate = 0
+        val phraseQueue = Channel<kotlinx.coroutines.Deferred<SynthesizedPhrase>>(Channel.UNLIMITED)
+        val producer = launch(Dispatchers.Default) {
+            val buffer = StringBuilder()
+            try {
+                log("tts_engine_preload_started")
+                preloadedEngine = OfflineTts(config = config())
+                log("tts_engine_preload_finished")
+                suspend fun enqueuePhrase(phrase: String) {
+                    if (phrase.isBlank() || stopped) return
+                    onChunkStarted(phrase)
+                    phraseQueue.send(async(Dispatchers.Default) { synthesize(phrase) })
+                }
+                chunks.collect { token ->
+                    if (stopped) return@collect
+                    buffer.append(token)
+                    while (true) {
+                        val boundary = sentenceBoundary(buffer)
+                        if (boundary <= 0) break
+                        val phrase = buffer.substring(0, boundary).trim()
+                        buffer.delete(0, boundary)
+                        enqueuePhrase(phrase)
+                    }
+                    if (buffer.length >= 220) {
+                        val phrase = buffer.toString().trim()
+                        buffer.clear()
+                        enqueuePhrase(phrase)
+                    }
+                }
+                if (!stopped) enqueuePhrase(buffer.toString().trim())
+            } finally {
+                phraseQueue.close()
+            }
+        }
         try {
-            // Hide Kokoro's fixed model-construction cost behind Gemma's
-            // answer generation. Release this instance after its first phrase
-            // because some Sherpa Android builds cannot safely reuse native
-            // OfflineTts pointers for multiple generations.
-            log("tts_engine_preload_started")
-            preloadedEngine = OfflineTts(config = config())
-            log("tts_engine_preload_finished")
-            chunks.collect { token ->
-                if (stopped) return@collect
-                buffer.append(token)
-                while (true) {
-                    val boundary = sentenceBoundary(buffer)
-                    if (boundary <= 0) break
-                    val phrase = buffer.substring(0, boundary).trim()
-                    buffer.delete(0, boundary)
-                    if (phrase.isNotBlank()) {
-                        val result = synthesize(phrase, onChunkStarted)
-                        outputSampleRate = result.first
-                        framesWritten += result.second
+            for (pending in phraseQueue) {
+                val phrase = pending.await()
+                if (!stopped) {
+                    outputSampleRate = phrase.sampleRate
+                    val track = audioTrack ?: createTrack(phrase.sampleRate).also {
+                        audioTrack = it
+                        it.play()
                     }
-                }
-                if (buffer.length >= 220) {
-                    val phrase = buffer.toString().trim()
-                    buffer.clear()
-                    if (phrase.isNotBlank()) {
-                        val result = synthesize(phrase, onChunkStarted)
-                        outputSampleRate = result.first
-                        framesWritten += result.second
+                    check(track.write(phrase.pcm, 0, phrase.pcm.size, AudioTrack.WRITE_BLOCKING) >= 0) {
+                        "AudioTrack rejected Kokoro PCM output."
                     }
+                    framesWritten += phrase.pcm.size
                 }
             }
-            if (!stopped) {
-                val phrase = buffer.toString().trim()
-                if (phrase.isNotBlank()) {
-                    val result = synthesize(phrase, onChunkStarted)
-                    outputSampleRate = result.first
-                    framesWritten += result.second
-                }
-            }
+            producer.join()
         } finally {
+            producer.cancelAndJoin()
             if (!stopped && framesWritten > 0 && outputSampleRate > 0) {
                 drainAudioTrack(framesWritten, outputSampleRate)
             }
@@ -89,37 +109,27 @@ class SherpaKokoroVoiceOutput(
         stopSpeaking()
     }
 
-    private fun synthesize(
-        phrase: String,
-        onChunkStarted: (String) -> Unit
-    ): Pair<Int, Int> {
-        if (stopped) return 0 to 0
+    private fun synthesize(phrase: String): SynthesizedPhrase {
+        if (stopped) return SynthesizedPhrase(0, ShortArray(0))
         val generationStartedAt = System.nanoTime()
         log("tts_generation_started chars=${phrase.length} preview=${phrase.take(80)}")
-        onChunkStarted(phrase)
         check(File(modelDirectory, "model.onnx").isFile) { "Kokoro model.onnx is missing." }
         check(File(modelDirectory, "voices.bin").isFile) { "Kokoro voices.bin is missing." }
         check(File(modelDirectory, "tokens.txt").isFile) { "Kokoro tokens.txt is missing." }
         // Sherpa-ONNX has had Android crashes when one native OfflineTts
         // pointer is reused for multiple generations. Generate one phrase
         // with one native instance, then release it before the next phrase.
-        val engine = preloadedEngine ?: OfflineTts(config = config())
-        preloadedEngine = null
+        val engine = synchronized(this) {
+            preloadedEngine?.also { preloadedEngine = null }
+        } ?: OfflineTts(config = config())
         try {
             val generated = engine.generateWithConfig(
                 phrase,
                 GenerationConfig(silenceScale = 0.2f, sid = speakerId)
             )
-            if (stopped) return 0 to 0
-            val track = audioTrack ?: createTrack(generated.sampleRate).also {
-                audioTrack = it
-                it.play()
-            }
+            if (stopped) return SynthesizedPhrase(0, ShortArray(0))
             val pcm = ShortArray(generated.samples.size) { index ->
                 (generated.samples[index].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
-            }
-            check(track.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING) >= 0) {
-                "AudioTrack rejected Kokoro PCM output."
             }
             val generationMs = (System.nanoTime() - generationStartedAt) / 1_000_000
             val audioMs = pcm.size * 1_000L / generated.sampleRate
@@ -128,7 +138,7 @@ class SherpaKokoroVoiceOutput(
                     "generationMs=$generationMs audioDurationMs=$audioMs " +
                     "realtimeFactor=${if (audioMs > 0) generationMs.toDouble() / audioMs else -1.0}"
             )
-            return generated.sampleRate to pcm.size
+            return SynthesizedPhrase(generated.sampleRate, pcm)
         } finally {
             engine.release()
         }
