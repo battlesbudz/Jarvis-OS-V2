@@ -57,6 +57,10 @@ import com.battlesbudz.jarvis.v2.voice.AudioTurnCapture
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionController
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionState
 import com.battlesbudz.jarvis.v2.voice.VoiceTurnCoordinator
+import com.battlesbudz.jarvis.v2.voice.KokoroModelStore
+import com.battlesbudz.jarvis.v2.voice.SherpaKokoroVoiceOutput
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -96,6 +100,7 @@ class MainActivity : ComponentActivity() {
     internal val mainHandler = Handler(Looper.getMainLooper())
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     internal lateinit var modelStore: ModelStore
+    internal lateinit var kokoroModelStore: KokoroModelStore
     internal var conversationEngine: LiteRtLmEngine? = null
     internal var conversationJob: Job? = null
     internal var conversationCharacters = 0
@@ -146,6 +151,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         modelStore = ModelStore(applicationContext)
+        kokoroModelStore = KokoroModelStore(applicationContext)
         sessionPreferences = getSharedPreferences("chat_session", MODE_PRIVATE)
         voiceCallStore = SharedPreferencesVoiceCallStore(
             getSharedPreferences("voice_calls", MODE_PRIVATE)
@@ -168,6 +174,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             JarvisApp(
                 store = modelStore,
+                voiceModelStore = kokoroModelStore,
                 initialMessages = restoreTranscript(),
                 onRunModelSmokeTest = { runModelSmokeTest(it) },
                 onRunDirectAudioTest = { report, onFinished ->
@@ -284,6 +291,11 @@ class MainActivity : ComponentActivity() {
                     val transcript = transcriptResult.text.trim()
                     check(transcript.isNotBlank()) { "Gemma returned an empty transcription." }
                     val coordinator = VoiceTurnCoordinator(voiceSessionController)
+                    val voiceOutput = check(kokoroModelStore.isReady()) {
+                        "The local voice output model is still preparing. Please finish setup first."
+                    }.let {
+                        SherpaKokoroVoiceOutput(kokoroModelStore.directory().path)
+                    }
                     val response = coordinator.processTurn(transcript) { onToken ->
                         mainHandler.post { report("Jarvis is responding…") }
                         // The audio-capable engine has completed the input turn.
@@ -292,13 +304,31 @@ class MainActivity : ComponentActivity() {
                         // routing, action validation, and context handling.
                         activeGemma.close()
                         val completed = CompletableDeferred<String>()
-                        runConversation(
-                            prompt = transcript,
-                            history = emptyList(),
-                            imageUri = null,
-                            onToken = onToken,
-                            onComplete = { completed.complete(it) }
-                        )
+                        val speechChunks = Channel<String>(Channel.UNLIMITED)
+                        val speechJob = lifecycleScope.launch(Dispatchers.Default) {
+                            voiceOutput.speak(
+                                speechChunks.receiveAsFlow(),
+                                onChunkStarted = { phrase ->
+                                    mainHandler.post { report("Jarvis is speaking… ${phrase.take(80)}") }
+                                }
+                            )
+                        }
+                        try {
+                            runConversation(
+                                prompt = transcript,
+                                history = emptyList(),
+                                imageUri = null,
+                                onToken = { token ->
+                                    onToken(token)
+                                    speechChunks.trySend(token)
+                                },
+                                onComplete = { completed.complete(it) }
+                            )
+                        } finally {
+                            speechChunks.close()
+                            speechJob.join()
+                            voiceOutput.release()
+                        }
                         com.battlesbudz.jarvis.v2.ai.GenerationResult(
                             text = completed.await(),
                             timeToFirstTokenMs = -1L,
@@ -642,10 +672,27 @@ class MainActivity : ComponentActivity() {
                     mainHandler.post { report(status) }
                 }
             )
-            result.fold(
+                result.fold(
                 onSuccess = {
-                    mainHandler.post { report("Gemma found. Starting Jarvis’s final setup…") }
-                    runModelSmokeTest(report, onFinished)
+                    mainHandler.post { report("Gemma found. Preparing Jarvis’s local voice…") }
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        val voiceResult = kokoroModelStore.downloadOrReuse(
+                            onProgress = { downloaded, total ->
+                                mainHandler.post { onProgress(downloaded, total) }
+                            },
+                            onStatus = { status -> mainHandler.post { report(status) } }
+                        )
+                        voiceResult.fold(
+                            onSuccess = { runModelSmokeTest(report, onFinished) },
+                            onFailure = { error ->
+                                mainHandler.post {
+                                    val message = "Voice model setup failed: ${error.message ?: "unknown error"}"
+                                    report(message)
+                                    onFinished(message)
+                                }
+                            }
+                        )
+                    }
                 },
                 onFailure = { error ->
                     mainHandler.post {

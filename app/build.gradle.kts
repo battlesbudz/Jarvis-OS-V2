@@ -59,5 +59,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.12.0")
+    implementation("com.github.k2-fsa.sherpa-onnx:sherpa-onnx:v1.13.7")
+    implementation("org.apache.commons:commons-compress:1.27.1")
     testImplementation("junit:junit:4.13.2")
 }

@@ -346,6 +346,7 @@ private fun openTranscriptImageStream(
 @Composable
 fun JarvisApp(
     store: ModelStore,
+    voiceModelStore: com.battlesbudz.jarvis.v2.voice.KokoroModelStore,
     initialMessages: List<ChatEntry>,
     onRunModelSmokeTest: ((String) -> Unit) -> Unit,
     onRunDirectAudioTest: ((String) -> Unit, (String) -> Unit) -> Unit,
@@ -358,7 +359,7 @@ fun JarvisApp(
     onSendingChanged: (Boolean) -> Unit,
     onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit
 ) {
-    var modelsReady by remember { mutableStateOf(store.isUsable()) }
+    var modelsReady by remember { mutableStateOf(store.isUsable() && voiceModelStore.isReady()) }
     var smokeTestPassed by rememberSaveable { mutableStateOf(store.isUsable() && store.smokeTestPassed()) }
     var setupStatus by rememberSaveable { mutableStateOf("") }
     var smokeTestRunning by remember { mutableStateOf(false) }
@@ -386,7 +387,7 @@ fun JarvisApp(
     LaunchedEffect(Unit) {
         while (true) {
             delay(500)
-            modelsReady = store.isUsable()
+            modelsReady = store.isUsable() && voiceModelStore.isReady()
             modelImportRunning = store.importInProgress()
             smokeTestPassed = modelsReady && store.smokeTestPassed()
         }
@@ -443,7 +444,7 @@ fun JarvisApp(
                             }
                             modelDownloadRunning = false
                             setupStatus = result
-                            modelsReady = store.isUsable()
+                            modelsReady = store.isUsable() && voiceModelStore.isReady()
                             smokeTestPassed = modelsReady && store.smokeTestPassed()
                         }
                     },
