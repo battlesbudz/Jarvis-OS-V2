@@ -15,6 +15,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.io.File
 
 /** Local Jarvis voice output: Gemma text -> Kokoro PCM -> Android audio route. */
@@ -29,6 +31,7 @@ class SherpaKokoroVoiceOutput(
     private var preloadedEngine: OfflineTts? = null
 
     private data class SynthesizedPhrase(
+        val index: Int,
         val sampleRate: Int,
         val pcm: ShortArray
     )
@@ -39,16 +42,21 @@ class SherpaKokoroVoiceOutput(
         var framesWritten = 0
         var outputSampleRate = 0
         val phraseQueue = Channel<kotlinx.coroutines.Deferred<SynthesizedPhrase>>(Channel.UNLIMITED)
+        val synthesisSlots = Semaphore(2)
         val producer = launch(Dispatchers.Default) {
             val buffer = StringBuilder()
+            var nextPhraseIndex = 0
             try {
                 log("tts_engine_preload_started")
                 preloadedEngine = OfflineTts(config = config())
                 log("tts_engine_preload_finished")
                 suspend fun enqueuePhrase(phrase: String) {
                     if (phrase.isBlank() || stopped) return
+                    val phraseIndex = nextPhraseIndex++
                     onChunkStarted(phrase)
-                    phraseQueue.send(async(Dispatchers.Default) { synthesize(phrase) })
+                    phraseQueue.send(async(Dispatchers.Default) {
+                        synthesisSlots.withPermit { synthesize(phraseIndex, phrase) }
+                    })
                 }
                 chunks.collect { token ->
                     if (stopped) return@collect
@@ -73,17 +81,33 @@ class SherpaKokoroVoiceOutput(
         }
         try {
             for (pending in phraseQueue) {
+                val waitStartedAt = System.nanoTime()
                 val phrase = pending.await()
+                val waitMs = (System.nanoTime() - waitStartedAt) / 1_000_000
                 if (!stopped) {
                     outputSampleRate = phrase.sampleRate
+                    val pcm = addInterPhraseSilence(phrase)
                     val track = audioTrack ?: createTrack(phrase.sampleRate).also {
                         audioTrack = it
                         it.play()
                     }
-                    check(track.write(phrase.pcm, 0, phrase.pcm.size, AudioTrack.WRITE_BLOCKING) >= 0) {
+                    val playbackHeadBefore = track.playbackHeadPosition
+                    val queuedBefore = (framesWritten - playbackHeadBefore).coerceAtLeast(0)
+                    log(
+                        "audio_phrase_ready index=${phrase.index} awaitMs=$waitMs " +
+                            "pcmFrames=${phrase.pcm.size} paddingFrames=${pcm.size - phrase.pcm.size} " +
+                            "queuedBeforeFrames=$queuedBefore underruns=${track.underrunCount}"
+                    )
+                    val writeStartedAt = System.nanoTime()
+                    check(track.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING) >= 0) {
                         "AudioTrack rejected Kokoro PCM output."
                     }
-                    framesWritten += phrase.pcm.size
+                    framesWritten += pcm.size
+                    val queuedAfter = (framesWritten - track.playbackHeadPosition).coerceAtLeast(0)
+                    log(
+                        "audio_phrase_written index=${phrase.index} writeMs=${(System.nanoTime() - writeStartedAt) / 1_000_000} " +
+                            "queuedAfterFrames=$queuedAfter underruns=${track.underrunCount}"
+                    )
                 }
             }
             producer.join()
@@ -109,10 +133,10 @@ class SherpaKokoroVoiceOutput(
         stopSpeaking()
     }
 
-    private fun synthesize(phrase: String): SynthesizedPhrase {
-        if (stopped) return SynthesizedPhrase(0, ShortArray(0))
+    private fun synthesize(index: Int, phrase: String): SynthesizedPhrase {
+        if (stopped) return SynthesizedPhrase(index, 0, ShortArray(0))
         val generationStartedAt = System.nanoTime()
-        log("tts_generation_started chars=${phrase.length} preview=${phrase.take(80)}")
+        log("tts_generation_started index=$index chars=${phrase.length} preview=${phrase.take(80)}")
         check(File(modelDirectory, "model.onnx").isFile) { "Kokoro model.onnx is missing." }
         check(File(modelDirectory, "voices.bin").isFile) { "Kokoro voices.bin is missing." }
         check(File(modelDirectory, "tokens.txt").isFile) { "Kokoro tokens.txt is missing." }
@@ -127,18 +151,19 @@ class SherpaKokoroVoiceOutput(
                 phrase,
                 GenerationConfig(silenceScale = 0.2f, sid = speakerId)
             )
-            if (stopped) return SynthesizedPhrase(0, ShortArray(0))
+            if (stopped) return SynthesizedPhrase(index, 0, ShortArray(0))
             val pcm = ShortArray(generated.samples.size) { index ->
                 (generated.samples[index].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
             }
             val generationMs = (System.nanoTime() - generationStartedAt) / 1_000_000
             val audioMs = pcm.size * 1_000L / generated.sampleRate
             log(
-                "tts_generation_finished samples=${pcm.size} sampleRate=${generated.sampleRate} " +
+                "tts_generation_finished index=$index samples=${pcm.size} sampleRate=${generated.sampleRate} " +
                     "generationMs=$generationMs audioDurationMs=$audioMs " +
-                    "realtimeFactor=${if (audioMs > 0) generationMs.toDouble() / audioMs else -1.0}"
+                    "realtimeFactor=${if (audioMs > 0) generationMs.toDouble() / audioMs else -1.0} " +
+                    "underruns=${audioTrack?.underrunCount ?: -1}"
             )
-            return SynthesizedPhrase(generated.sampleRate, pcm)
+            return SynthesizedPhrase(index, generated.sampleRate, pcm)
         } finally {
             engine.release()
         }
@@ -148,12 +173,22 @@ class SherpaKokoroVoiceOutput(
         val track = audioTrack ?: return
         val deadline = System.currentTimeMillis() +
             (framesWritten * 1_000L / sampleRate).coerceAtLeast(1_000L) + 2_000L
-        log("audio_track_drain_started frames=$framesWritten sampleRate=$sampleRate state=${track.state}")
+        log("audio_track_drain_started frames=$framesWritten sampleRate=$sampleRate state=${track.state} underruns=${track.underrunCount}")
         while (!stopped && System.currentTimeMillis() < deadline) {
             if (track.playbackHeadPosition.toLong() >= framesWritten.toLong()) break
             Thread.sleep(20L)
         }
-        log("audio_track_drain_finished playbackHead=${track.playbackHeadPosition} stopped=$stopped")
+        log("audio_track_drain_finished playbackHead=${track.playbackHeadPosition} stopped=$stopped underruns=${track.underrunCount}")
+    }
+
+    private fun addInterPhraseSilence(phrase: SynthesizedPhrase): ShortArray {
+        if (phrase.index == 0 || phrase.pcm.isEmpty()) return phrase.pcm
+        val paddingMs = 120L
+        val paddingFrames = (phrase.sampleRate * paddingMs / 1_000L).toInt()
+        log("audio_phrase_padding index=${phrase.index} paddingMs=$paddingMs")
+        return ShortArray(paddingFrames + phrase.pcm.size).also { padded ->
+            phrase.pcm.copyInto(padded, destinationOffset = paddingFrames)
+        }
     }
 
     private fun config() = OfflineTtsConfig(
