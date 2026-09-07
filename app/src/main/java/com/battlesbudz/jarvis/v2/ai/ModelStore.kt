@@ -14,6 +14,11 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
@@ -22,6 +27,8 @@ class ModelStore(context: Context) {
     private companion object {
         val activeImports = AtomicInteger(0)
         val activeModelOperation = AtomicInteger(0)
+        const val PARALLEL_CHUNKS = 6
+        const val PARALLEL_DOWNLOAD_THRESHOLD = 128L * 1024L * 1024L
     }
 
     private val preferences = context.getSharedPreferences("model_setup", Context.MODE_PRIVATE)
@@ -154,41 +161,12 @@ class ModelStore(context: Context) {
             val url = requireNotNull(spec.downloadUrl) { "No automatic download is configured for ${spec.id}." }
             val destination = fileFor(spec)
             val temporary = File(modelDirectory, "${spec.fileName}.part")
-            val existingBytes = temporary.length()
-            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 30_000
-                readTimeout = 60_000
-                instanceFollowRedirects = true
-                if (existingBytes > 0L) setRequestProperty("Range", "bytes=$existingBytes-")
-            }
-            try {
-                val responseCode = connection.responseCode
-                val append = existingBytes > 0L && responseCode == HttpURLConnection.HTTP_PARTIAL
-                check(responseCode in 200..299) { "Model download failed with HTTP $responseCode." }
-                val startingBytes = if (append) existingBytes else 0L
-                if (!append && existingBytes > 0L) temporary.delete()
-                val totalBytes = connection.contentLengthLong
-                    .takeIf { it > 0L }
-                    ?.let { it + startingBytes }
-                    ?: -1L
-                var downloadedBytes = startingBytes
-                connection.inputStream.use { input ->
-                    FileOutputStream(temporary, append).use { output ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 16)
-                        var count: Int
-                        while (input.read(buffer).also { count = it } >= 0) {
-                            if (count == 0) continue
-                            output.write(buffer, 0, count)
-                            downloadedBytes += count
-                            onProgress(downloadedBytes, totalBytes)
-                        }
-                        output.fd.sync()
-                    }
-                }
-            } finally {
-                connection.disconnect()
-            }
+            downloadModelResumably(
+                url = url,
+                temporary = temporary,
+                onProgress = onProgress,
+                onStatus = onStatus
+            )
             check(temporary.isFile && temporary.length() > 0L) { "The downloaded model is empty." }
             onStatus("Verifying the downloaded Gemma model…")
             val actualSha256 = temporary.sha256(onProgress)
@@ -213,6 +191,177 @@ class ModelStore(context: Context) {
             destination
         } finally {
             endModelOperation()
+        }
+    }
+
+    /**
+     * Downloads large model files using resumable HTTP ranges. Several ranges
+     * are fetched concurrently when the host supports Range requests; each
+     * range has its own checkpoint file so an interrupted setup resumes without
+     * discarding completed work.
+     */
+    private suspend fun downloadModelResumably(
+        url: String,
+        temporary: File,
+        onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
+        onStatus: (String) -> Unit
+    ) {
+        val totalBytes = discoverDownloadSize(url)
+        if (totalBytes <= PARALLEL_DOWNLOAD_THRESHOLD) {
+            downloadSingleStream(url, temporary, totalBytes, onProgress)
+            return
+        }
+
+        val chunkDirectory = File(modelDirectory, "${temporary.name}.chunks")
+        val chunkSize = (totalBytes + PARALLEL_CHUNKS - 1L) / PARALLEL_CHUNKS
+        val progressLock = Any()
+        val completedBytes = AtomicLong(0L)
+        chunkDirectory.mkdirs()
+        chunkDirectory.listFiles()?.filter { it.name.endsWith(".part") }?.forEach { file ->
+            val index = file.name.removeSuffix(".part").toIntOrNull()
+            if (index == null || index * chunkSize >= totalBytes) file.delete()
+            else completedBytes.addAndGet(file.length().coerceAtMost(chunkSize))
+        }
+        temporary.delete()
+        onStatus("Downloading Gemma in $PARALLEL_CHUNKS resumable parts…")
+        onProgress(completedBytes.get(), totalBytes)
+
+        try {
+            coroutineScope {
+                (0 until PARALLEL_CHUNKS).map { index ->
+                    async(Dispatchers.IO) {
+                        val start = index * chunkSize
+                        if (start >= totalBytes) return@async
+                        val end = minOf(totalBytes - 1L, start + chunkSize - 1L)
+                        val part = File(chunkDirectory, "$index.part")
+                        val expected = end - start + 1L
+                        if (part.length() > expected) part.delete()
+                        if (part.length() < expected) {
+                            downloadRange(
+                                url = url,
+                                start = start + part.length(),
+                                end = end,
+                                part = part,
+                                onBytes = { count ->
+                                    val current = completedBytes.addAndGet(count)
+                                    synchronized(progressLock) { onProgress(current, totalBytes) }
+                                }
+                            )
+                        }
+                        check(part.length() == expected) { "Gemma download part $index is incomplete." }
+                    }
+                }.awaitAll()
+            }
+            FileOutputStream(temporary).use { output ->
+                for (index in 0 until PARALLEL_CHUNKS) {
+                    val start = index * chunkSize
+                    if (start >= totalBytes) break
+                    val end = minOf(totalBytes - 1L, start + chunkSize - 1L)
+                    val part = File(chunkDirectory, "$index.part")
+                    check(part.length() == end - start + 1L) { "Gemma download part $index is incomplete." }
+                    part.inputStream().use { input -> input.copyTo(output, DEFAULT_BUFFER_SIZE * 16) }
+                }
+                output.fd.sync()
+            }
+            check(temporary.length() == totalBytes) { "Gemma download size is incorrect." }
+        } finally {
+            chunkDirectory.deleteRecursively()
+        }
+    }
+
+    private suspend fun discoverDownloadSize(url: String): Long {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 30_000
+            readTimeout = 60_000
+            instanceFollowRedirects = true
+            setRequestProperty("Range", "bytes=0-0")
+        }
+        return try {
+            val responseCode = connection.responseCode
+            if (responseCode != HttpURLConnection.HTTP_PARTIAL) return -1L
+            val range = connection.getHeaderField("Content-Range") ?: return -1L
+            range.substringAfterLast("/").toLongOrNull() ?: -1L
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun downloadSingleStream(
+        url: String,
+        temporary: File,
+        totalBytes: Long,
+        onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit
+    ) {
+        val existingBytes = temporary.length()
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 30_000
+            readTimeout = 60_000
+            instanceFollowRedirects = true
+            if (existingBytes > 0L) setRequestProperty("Range", "bytes=$existingBytes-")
+        }
+        try {
+            val responseCode = connection.responseCode
+            val append = existingBytes > 0L && responseCode == HttpURLConnection.HTTP_PARTIAL
+            check(responseCode in 200..299) { "Model download failed with HTTP $responseCode." }
+            val startingBytes = if (append) existingBytes else 0L
+            if (!append && existingBytes > 0L) temporary.delete()
+            val resolvedTotal = totalBytes.takeIf { it > 0L }
+                ?: connection.contentLengthLong.takeIf { it > 0L }?.let { it + startingBytes }
+                ?: -1L
+            var downloadedBytes = startingBytes
+            connection.inputStream.use { input ->
+                FileOutputStream(temporary, append).use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 16)
+                    var count: Int
+                    while (input.read(buffer).also { count = it } >= 0) {
+                        if (count == 0) continue
+                        output.write(buffer, 0, count)
+                        downloadedBytes += count
+                        onProgress(downloadedBytes, resolvedTotal)
+                    }
+                    output.fd.sync()
+                }
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun downloadRange(
+        url: String,
+        start: Long,
+        end: Long,
+        part: File,
+        onBytes: (Long) -> Unit
+    ) {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 30_000
+            readTimeout = 60_000
+            instanceFollowRedirects = true
+            setRequestProperty("Range", "bytes=$start-$end")
+        }
+        try {
+            check(connection.responseCode == HttpURLConnection.HTTP_PARTIAL) {
+                "The Gemma host does not support resumable range downloads."
+            }
+            part.parentFile?.mkdirs()
+            connection.inputStream.use { input ->
+                FileOutputStream(part, start < end && part.exists()).use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 16)
+                    var count: Int
+                    while (input.read(buffer).also { count = it } >= 0) {
+                        if (count == 0) continue
+                        output.write(buffer, 0, count)
+                        onBytes(count.toLong())
+                    }
+                    output.fd.sync()
+                }
+            }
+        } finally {
+            connection.disconnect()
         }
     }
 
@@ -245,8 +394,9 @@ class ModelStore(context: Context) {
                                 MediaStore.Downloads.EXTERNAL_CONTENT_URI,
                                 cursor.getLong(idIndex)
                             )
-                        }
-                    }
+    }
+
+}
                     null
                 }
             }.getOrNull()
