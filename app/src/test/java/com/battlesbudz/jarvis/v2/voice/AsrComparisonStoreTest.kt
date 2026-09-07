@@ -8,6 +8,14 @@ import org.junit.Test
 class AsrComparisonStoreTest {
     private val metrics = AsrCaptureMetrics(100, 400, 2000, 500, 150, 350, 4, 70, "trailing_silence")
 
+    @Test fun newInstallDefaultsToMoonshineButExplicitZipformerSurvives() {
+        val preferences = preferences()
+        val store = AsrComparisonStore(preferences)
+        assertEquals(AsrEngine.MOONSHINE, store.selectedEngine())
+        store.select(AsrEngine.ZIPFORMER)
+        assertEquals(AsrEngine.ZIPFORMER, AsrComparisonStore(preferences).selectedEngine())
+    }
+
     @Test fun keepsEngineReferenceAndTimingAcrossStoreRecreation() {
         val preferences = preferences()
         val store = AsrComparisonStore(preferences)

@@ -368,7 +368,7 @@ fun JarvisApp(
     onRunDirectAudioToolTest: ((String) -> Unit, (String) -> Unit) -> Unit,
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
     onEndVoiceCall: ((String) -> Unit) -> Unit,
-    onResumeVoiceCall: (VoiceCallRecord) -> Unit,
+    onResumeVoiceCall: (VoiceCallRecord, (String?) -> Unit) -> Unit,
     onDeleteVoiceCall: (String) -> Unit,
     onRefreshVoiceCalls: () -> List<VoiceCallRecord>,
     onDownloadGemma: ((Long, Long) -> Unit, (String) -> Unit, (String) -> Unit) -> Unit,
@@ -392,6 +392,7 @@ fun JarvisApp(
     var showingVoiceCalls by rememberSaveable { mutableStateOf(false) }
     var voiceCalls by remember { mutableStateOf(initialVoiceCalls) }
     var selectedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
+    var resumedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
 
     LaunchedEffect(modelDownloadRunning) {
         if (!modelDownloadRunning) {
@@ -458,15 +459,23 @@ fun JarvisApp(
         Surface(modifier = Modifier.fillMaxSize()) {
             if (modelsReady && smokeTestPassed) {
                 when {
-                    selectedVoiceCall != null -> VoiceCallDetailScreen(
-                        call = selectedVoiceCall!!,
-                        onBack = { selectedVoiceCall = null },
-                        onResume = {
-                            onResumeVoiceCall(selectedVoiceCall!!)
-                            selectedVoiceCall = null
-                            showingVoiceCalls = false
-                        }
-                    )
+                    selectedVoiceCall != null -> {
+                        val selected = requireNotNull(selectedVoiceCall)
+                        VoiceCallDetailScreen(
+                            call = selected,
+                            onBack = { selectedVoiceCall = null },
+                            onResume = { done ->
+                                onResumeVoiceCall(selected) { error ->
+                                    done(error)
+                                    if (error == null) {
+                                        resumedVoiceCall = selected
+                                        selectedVoiceCall = null
+                                        showingVoiceCalls = false
+                                    }
+                                }
+                            }
+                        )
+                    }
                     showingVoiceCalls -> VoiceCallsScreen(
                         calls = voiceCalls,
                         onBack = { showingVoiceCalls = false },
@@ -477,6 +486,8 @@ fun JarvisApp(
                         }
                     )
                     else -> VoiceCallScreen(
+                        resumedCall = resumedVoiceCall,
+                        onResumeConsumed = { resumedVoiceCall = null },
                         asrComparisonStore = asrComparisonStore,
                         onSelectAsr = onSelectAsr,
                         onVoiceTurn = onVoiceTurn,
@@ -539,6 +550,8 @@ fun JarvisApp(
 
 @Composable
 private fun VoiceCallScreen(
+    resumedCall: VoiceCallRecord?,
+    onResumeConsumed: () -> Unit,
     asrComparisonStore: com.battlesbudz.jarvis.v2.voice.AsrComparisonStore,
     onSelectAsr: (com.battlesbudz.jarvis.v2.voice.AsrEngine) -> Boolean,
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
@@ -552,7 +565,7 @@ private fun VoiceCallScreen(
     var listening by remember { mutableStateOf(false) }
     var turnInFlight by remember { mutableStateOf(false) }
     var status by rememberSaveable { mutableStateOf("") }
-    var turns by remember { mutableStateOf(listOf<ChatEntry>()) }
+    var turns by remember { mutableStateOf(resumedCall?.transcript.orEmpty().map { ChatEntry(it.role, it.text) }) }
     var provisionalUser by remember { mutableStateOf("") }
     val transcriptScrollState = rememberScrollState()
     val pulse = rememberInfiniteTransition(label = "voice waveform").animateFloat(
@@ -617,6 +630,14 @@ private fun VoiceCallScreen(
                 }
             }
         )
+    }
+
+    LaunchedEffect(Unit) {
+        if (resumedCall != null) {
+            callStarted = true
+            requestVoiceTurn(start = true)
+            onResumeConsumed()
+        }
     }
 
     Column(
@@ -833,8 +854,10 @@ private fun VoiceCallsScreen(
 private fun VoiceCallDetailScreen(
     call: VoiceCallRecord,
     onBack: () -> Unit,
-    onResume: () -> Unit
+    onResume: ((String?) -> Unit) -> Unit
 ) {
+    var resuming by remember(call.id) { mutableStateOf(false) }
+    var resumeError by remember(call.id) { mutableStateOf<String?>(null) }
     val scrollState = rememberScrollState()
     Column(
         Modifier.fillMaxSize().safeDrawingPadding().padding(28.dp),
@@ -842,7 +865,7 @@ private fun VoiceCallDetailScreen(
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(call.title ?: "Voice Call", style = MaterialTheme.typography.headlineSmall)
-            TextButton(onClick = onBack) { Text("Back") }
+            TextButton(onClick = onBack, enabled = !resuming) { Text("Back") }
         }
         Text(
             DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
@@ -867,8 +890,19 @@ private fun VoiceCallDetailScreen(
                 task.pendingSteps.forEach { Text("○ $it", style = MaterialTheme.typography.bodySmall) }
             }
         }
-        Button(onClick = onResume, modifier = Modifier.fillMaxWidth()) {
-            Text("Resume conversation")
+        resumeError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        Button(onClick = {
+            if (!resuming) {
+                resuming = true
+                resumeError = null
+                onResume { error ->
+                    // Keep a successful button latched until this screen leaves composition.
+                    if (error != null) resuming = false
+                    resumeError = error
+                }
+            }
+        }, enabled = !resuming, modifier = Modifier.fillMaxWidth()) {
+            Text(if (resuming) "Preparing call…" else "Resume conversation")
         }
     }
 }

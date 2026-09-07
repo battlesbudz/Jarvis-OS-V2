@@ -3,6 +3,7 @@ package com.battlesbudz.jarvis.v2.voice
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.media.PlaybackParams
 import com.k2fsa.sherpa.onnx.GenerationConfig
 import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
@@ -29,7 +30,8 @@ class SherpaKokoroVoiceOutput(
         val index: Int,
         val sampleRate: Int,
         val pcm: ShortArray,
-        val startupWaitMs: Long
+        val startupWaitMs: Long,
+        val playbackSpeed: Float
     )
 
     override suspend fun speak(chunks: Flow<String>, onChunkStarted: (String) -> Unit) = coroutineScope {
@@ -42,6 +44,8 @@ class SherpaKokoroVoiceOutput(
         var totalAudioMs = 0L
         var totalQueueWaitMs = 0L
         var phraseCount = 0
+        var playbackSpeed = 1f
+        var estimatedGapMs = 0L
         // One owner creates, invokes and releases the native engine. Playback never owns it.
         // Bounded PCM backpressure prevents long answers from accumulating unlimited audio.
         val audio = NativeAudioQueue<SynthesizedPhrase>(2)
@@ -82,7 +86,8 @@ class SherpaKokoroVoiceOutput(
                     log("tts_first_audio index=$phraseIndex latencyMs=${elapsedMs(started)}")
                     val waitStart = System.nanoTime()
                     audio.sendFromNative(SynthesizedPhrase(phraseIndex, rate, pcm,
-                        PlaybackBufferPolicy.startupWaitMs(elapsedMs(started), frames * 1000 / rate)))
+                        PlaybackBufferPolicy.startupWaitMs(elapsedMs(started), frames * 1000 / rate),
+                        PlaybackBufferPolicy.playbackSpeed(elapsedMs(started), frames * 1000 / rate)))
                     val queueWaitMs = elapsedMs(waitStart)
                     val totalMs = elapsedMs(started)
                     val synthesisMs = (totalMs - queueWaitMs).coerceAtLeast(0)
@@ -116,6 +121,8 @@ class SherpaKokoroVoiceOutput(
         try {
             withContext(Dispatchers.IO) {
                 var first = true
+                var lastWriteAt = 0L
+                var lastQueuedMs = 0L
                 for (phrase in audio.chunks) {
                     ensureActive()
                     if (stopped || phrase.pcm.isEmpty()) continue
@@ -128,7 +135,24 @@ class SherpaKokoroVoiceOutput(
                         first = false
                         if (stopped) break
                     }
-                    val track = audioTrack ?: createTrack(phrase.sampleRate).also { audioTrack = it; it.play() }
+                    val track = audioTrack ?: createTrack(phrase.sampleRate).also {
+                        audioTrack = it
+                        // Stretch existing PCM instead of asking Kokoro to synthesize more samples.
+                        // Unsupported device routes retain normal-speed playback.
+                        runCatching {
+                            it.playbackParams = PlaybackParams().allowDefaults()
+                                .setAudioFallbackMode(PlaybackParams.AUDIO_FALLBACK_MODE_FAIL)
+                                .setPitch(1f).setSpeed(phrase.playbackSpeed)
+                        }.onFailure { error -> log("audio_pace_fallback reason=${error.message}") }
+                        playbackSpeed = it.playbackParams.speed
+                        log("audio_playback_pace speed=$playbackSpeed pitch=1.0")
+                        it.play()
+                    }
+                    if (lastWriteAt != 0L) {
+                        val gap = (elapsedMs(lastWriteAt) - lastQueuedMs).coerceAtLeast(0)
+                        estimatedGapMs += gap
+                        if (gap > 50) log("audio_supply_gap index=${phrase.index} estimatedMs=$gap")
+                    }
                     onChunkStarted("audio")
                     val queued = (framesWritten.toLong() - unsignedHead(track)).coerceAtLeast(0)
                     log("audio_phrase_ready index=${phrase.index} pcmFrames=${phrase.pcm.size} " +
@@ -143,11 +167,14 @@ class SherpaKokoroVoiceOutput(
                         offset += written
                         framesWritten += written
                     }
+                    lastWriteAt = System.nanoTime()
+                    lastQueuedMs = ((framesWritten.toLong() - unsignedHead(track)).coerceAtLeast(0) *
+                        1000.0 / phrase.sampleRate / playbackSpeed).toLong()
                     log("audio_phrase_written index=${phrase.index} writeMs=${elapsedMs(start)} " +
                         "queuedAfterFrames=${(framesWritten.toLong() - unsignedHead(track)).coerceAtLeast(0)} underruns=${track.underrunCount}")
                 }
                 producer.join()
-                if (!stopped && framesWritten > 0) drainAudioTrack(framesWritten, outputSampleRate)
+                if (!stopped && framesWritten > 0) drainAudioTrack(framesWritten, outputSampleRate, playbackSpeed)
             }
         } finally {
             stopped = true
@@ -159,7 +186,8 @@ class SherpaKokoroVoiceOutput(
             nativeDispatcher.close()
             speaking.set(false)
             log("tts_session_finished phrases=$phraseCount synthesisMs=$totalSynthesisMs " +
-                "audioDurationMs=$totalAudioMs queueWaitMs=$totalQueueWaitMs " +
+                "audioDurationMs=$totalAudioMs queueWaitMs=$totalQueueWaitMs playbackSpeed=$playbackSpeed " +
+                "estimatedSupplyGapMs=$estimatedGapMs " +
                 "realtimeFactor=${if (totalAudioMs > 0) totalSynthesisMs.toDouble() / totalAudioMs else 0.0}")
         }
     }
@@ -175,10 +203,10 @@ class SherpaKokoroVoiceOutput(
     private fun elapsedMs(start: Long) = (System.nanoTime() - start) / 1_000_000
     private fun unsignedHead(track: AudioTrack) = track.playbackHeadPosition.toLong() and 0xffffffffL
 
-    private suspend fun drainAudioTrack(framesWritten: Int, sampleRate: Int) {
+    private suspend fun drainAudioTrack(framesWritten: Int, sampleRate: Int, speed: Float) {
         val track = audioTrack ?: return
         val deadline = System.currentTimeMillis() +
-            (framesWritten * 1_000L / sampleRate).coerceAtLeast(1_000L) + 2_000L
+            (framesWritten * 1_000.0 / sampleRate / speed).toLong().coerceAtLeast(1_000L) + 2_000L
         log("audio_track_drain_started frames=$framesWritten sampleRate=$sampleRate state=${track.state} underruns=${track.underrunCount}")
         while (!stopped && System.currentTimeMillis() < deadline) {
             if (unsignedHead(track) >= framesWritten.toLong()) break

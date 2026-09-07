@@ -4,6 +4,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class PlaybackBufferPolicyTest {
+    @Test fun paceCompensationIsBoundedAndFastAnswersStayNormal() {
+        assertEquals(1f, PlaybackBufferPolicy.playbackSpeed(400, 2000), 0.001f)
+        assertEquals(0.9f, PlaybackBufferPolicy.playbackSpeed(2000, 2000), 0.001f)
+        assertEquals(0.85f, PlaybackBufferPolicy.playbackSpeed(136667, 102296), 0.001f)
+        assertEquals(1f, PlaybackBufferPolicy.playbackSpeed(500, 0), 0.001f)
+    }
+
     @Test fun fastSynthesisAddsNoStartupWait() {
         assertEquals(0L, PlaybackBufferPolicy.startupWaitMs(400, 2000))
     }

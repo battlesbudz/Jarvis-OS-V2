@@ -131,6 +131,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var asrComparisonStore: com.battlesbudz.jarvis.v2.voice.AsrComparisonStore
     private var activeVoiceCapture: AudioTurnCapture? = null
     private var voiceTurnJob: Job? = null
+    private val voiceCallResumer by lazy {
+        com.battlesbudz.jarvis.v2.voice.VoiceCallResumer(voiceSessionController)
+    }
     private var activeVoiceOutput: SherpaKokoroVoiceOutput? = null
     private data class PendingVoiceTurn(
         val start: Boolean,
@@ -214,11 +217,27 @@ class MainActivity : ComponentActivity() {
                     runVoiceTurn(start, report, onTranscript, onFinished)
                 },
                 onEndVoiceCall = { report -> endVoiceCall(report) },
-                onResumeVoiceCall = { call ->
-                    voiceSessionController.resumeCall(call).also {
-                        diagnosticRecorder.startSession("Voice Call ${it.id} (resumed)")
+                onResumeVoiceCall = { call, onComplete ->
+                    lifecycleScope.launch {
+                        val result = voiceCallResumer.resume(call) {
+                            pendingVoiceTurn = null
+                            activeVoiceOutput?.stopSpeaking()
+                            val previousVoice = voiceTurnJob
+                            val previousConversation = conversationJob
+                            previousVoice?.cancel()
+                            previousConversation?.cancel()
+                            previousVoice?.join()
+                            previousConversation?.join()
+                        }
+                        result.onSuccess {
+                            diagnosticRecorder.startSession("Voice Call ${it.id} (resumed)")
+                        }.onFailure {
+                            diagnosticRecorder.record("Voice resume failed: ${it.stackTraceToString().take(4000)}")
+                        }
+                        onComplete(result.exceptionOrNull()?.let {
+                            "Could not resume this call: ${it.message ?: "unknown error"}"
+                        })
                     }
-                    // The next voice job resets the engine after prior work has joined.
                 },
                 onDeleteVoiceCall = { callId -> voiceCallStore.delete(callId) },
                 onRefreshVoiceCalls = { voiceCallStore.list() },

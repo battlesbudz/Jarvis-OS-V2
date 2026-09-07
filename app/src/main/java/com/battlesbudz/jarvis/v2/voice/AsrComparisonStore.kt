@@ -7,7 +7,7 @@ import java.util.Locale
 
 /** Separate from the runtime event ring: comparisons survive playback, new calls and restarts. */
 class AsrComparisonStore(private val preferences: SharedPreferences) {
-    @Synchronized fun selectedEngine() = AsrEngine.fromId(preferences.getString("engine", null))
+    @Synchronized fun selectedEngine() = AsrEngine.fromId(preferences.getString("engine", AsrEngine.MOONSHINE.id))
     @Synchronized fun select(engine: AsrEngine) { preferences.edit().putString("engine", engine.id).apply() }
 
     @Synchronized fun records(): List<JSONObject> = runCatching {
