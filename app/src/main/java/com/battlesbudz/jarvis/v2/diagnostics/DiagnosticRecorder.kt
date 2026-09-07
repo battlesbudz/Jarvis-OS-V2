@@ -52,7 +52,7 @@ class DiagnosticRecorder(
     fun recordPreviousProcessExit(context: android.content.Context) {
         if (android.os.Build.VERSION.SDK_INT < 30) return
         runCatching {
-            val manager = context.getSystemService(android.app.ActivityManager::class.java)
+            val manager = context.getSystemService(android.app.ActivityManager::class.java) ?: return
             val exit = manager.getHistoricalProcessExitReasons(context.packageName, 0, 5)
                 .firstOrNull { it.pid != android.os.Process.myPid() } ?: return
             if (exit.timestamp <= preferences.getLong("previous_process_exit_at", 0)) return
