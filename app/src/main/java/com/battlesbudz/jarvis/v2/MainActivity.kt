@@ -51,6 +51,8 @@ import com.battlesbudz.jarvis.v2.ai.ModelStore
 import com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient
 import com.battlesbudz.jarvis.v2.ui.JarvisApp
 import com.battlesbudz.jarvis.v2.conversation.runConversationInternal
+import com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore
+import com.battlesbudz.jarvis.v2.voice.VoiceSessionController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -104,6 +106,8 @@ class MainActivity : ComponentActivity() {
     internal val actionIntentRouter = com.battlesbudz.jarvis.v2.actions.ActionIntentRouter()
     internal lateinit var sessionPreferences: android.content.SharedPreferences
     internal lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
+    internal lateinit var voiceCallStore: SharedPreferencesVoiceCallStore
+    internal lateinit var voiceSessionController: VoiceSessionController
     private var pendingVoiceTest: Pair<(String) -> Unit, (String) -> Unit>? = null
     private val audioPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -123,6 +127,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         modelStore = ModelStore(applicationContext)
         sessionPreferences = getSharedPreferences("chat_session", MODE_PRIVATE)
+        voiceCallStore = SharedPreferencesVoiceCallStore(
+            getSharedPreferences("voice_calls", MODE_PRIVATE)
+        )
+        voiceSessionController = VoiceSessionController(voiceCallStore)
         diagnosticRecorder = com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(sessionPreferences)
         val interruptedSession = sessionPreferences.getBoolean("sending", false)
         shortTermContext.restoreSummary(
