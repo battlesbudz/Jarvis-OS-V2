@@ -25,6 +25,11 @@ android {
         applicationId = "com.battlesbudz.jarvis.v2"
         minSdk = 29
         targetSdk = 35
+        // Jarvis is currently shipped for modern ARM64 Android phones.
+        // Excluding unused x86/32-bit native runtimes keeps the APK much smaller.
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
         versionCode = buildVersionCode
         versionName = buildVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
