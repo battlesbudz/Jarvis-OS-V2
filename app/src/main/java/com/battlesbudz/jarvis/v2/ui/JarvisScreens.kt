@@ -561,6 +561,8 @@ private fun VoiceCallScreen(
     }
 
     fun requestVoiceTurn(start: Boolean) {
+        listening = false
+        status = "Preparing microphone…"
         turnInFlight = true
         onVoiceTurn(
             start,
@@ -594,7 +596,6 @@ private fun VoiceCallScreen(
                     result.contains("didn't hear", ignoreCase = true) ||
                     result.contains("permission", ignoreCase = true)
                 if (callStarted && !failed) {
-                    listening = true
                     requestVoiceTurn(start = true)
                 } else {
                     listening = false
@@ -714,7 +715,6 @@ private fun VoiceCallScreen(
         Button(
             onClick = {
                 callStarted = true
-                listening = true
                 requestVoiceTurn(start = true)
             },
             // Once a turn is armed, silence detection owns the turn boundary.

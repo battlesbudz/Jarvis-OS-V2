@@ -55,7 +55,6 @@ class AudioTurnCapture(
                     val signal = Pcm16Signal.measure(chunk)
                     val decision = activeDetector.accept(chunk)
                     val now = nowMs()
-                    val alreadySpeaking = hasSpeech
                     synchronized(pcm) {
                         if (hasSpeech) {
                             val remaining = MAX_TURN_BYTES - pcm.size()
@@ -73,10 +72,10 @@ class AudioTurnCapture(
                             lastSpeechAt = now
                         }
                     }
-                    if (hasSpeech) {
-                        val inputPcm = if (alreadySpeaking) chunk else synchronized(pcm) { pcm.toByteArray() }
-                        transcriber?.accept(inputPcm)?.let { publishPartial(it) }
-                    }
+                    // ASR receives every frame from microphone startup. VAD controls
+                    // submission and endpointing, not whether initial words reach the recognizer.
+                    val partial = transcriber?.accept(chunk)
+                    if (hasSpeech && partial != null) publishPartial(partial)
                     val reason = when {
                         hasSpeech && now - lastSpeechAt >= 1_200L -> "trailing_silence"
                         hasSpeech && synchronized(pcm) { pcm.size() >= MAX_TURN_BYTES } -> "max_turn_duration"
@@ -111,6 +110,7 @@ class AudioTurnCapture(
             }
         }
         input.start()
+        log("capture_ready pcmStartupMs=300")
     }
 
     suspend fun awaitTurnCompletion(): Boolean = turnCompleted.await()

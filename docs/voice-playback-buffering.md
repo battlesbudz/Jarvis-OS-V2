@@ -10,12 +10,18 @@ dedicated native-owner thread. All generation calls and release run sequentially
 on that thread. This removes repeated loading and overlapping native calls;
 repeated-generation stability still needs verification on ARM64 Android.
 
-Sherpa's Kokoro callback emits completed internal sentence chunks, not words.
-The callback copies audio into a two-chunk queue. Playback consumes that queue
-while the engine prepares following chunks. Backpressure blocks only the native
-producer when the queue is full, limiting PCM accumulation. Queue cancellation
-unblocks that callback before native release. AudioTrack writes handle partial
-writes and poll nonblocking so cancellation remains responsive.
+Build 547 exposed a callback ABI incompatibility: Sherpa 1.13.7 looks up
+`invoke([F)Ljava/lang/Integer;`, while Kotlin 2.3.0's default invokedynamic
+lambda exposes `invoke(Object): Object`. A compiler probe reproduced the
+missing typed method. The native crash on the first phrase is consistent with
+this failure; Android process-exit diagnostics now provide additional evidence.
+
+The output path uses `generateWithConfig` without a JNI callback. Each bounded
+sentence/clause completes and enters a two-chunk PCM queue while playback
+continues. The one native owner and engine reuse remain. Queue cancellation
+unblocks the producer before release; native generation itself must return
+before its engine can be freed. AudioTrack writes remain nonblocking and
+cancellable, so already-playing audio stops without waiting for synthesis.
 
 Text chunking targets a short opening (70 characters), then 180 characters when
 synthesis is faster than playback or 120 when slower. Punctuation and whitespace
@@ -40,3 +46,10 @@ end playback midway, then start another call. Compare session RTF and underruns
 against build 543. One-versus-two-worker throughput and thermal behavior cannot
 be established by desktop tests; the new default is one worker to remove the
 observed competing loads. No claim of gap-free device playback is made yet.
+
+Microphone readiness now requires 300 ms of captured PCM, retained for ASR,
+before the UI receives Listening. The UI no longer sets Listening on the button
+press or automatic rearm. ASR receives every frame from capture startup; VAD
+still gates visible hypotheses and turn submission, preserving opening speech
+that precedes VAD confirmation. The microphone buffer is one second and the
+bounded handoff holds 6.4 seconds to absorb temporary ASR decoding stalls.

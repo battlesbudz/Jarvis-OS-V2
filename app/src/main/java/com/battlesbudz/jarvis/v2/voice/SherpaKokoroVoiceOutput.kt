@@ -65,40 +65,25 @@ class SherpaKokoroVoiceOutput(
                     if (stopped) return
                     val phraseIndex = index++
                     val started = System.nanoTime()
-                    var frames = 0L
-                    var queueWaitMs = 0L
-                    var first = true
-                    var callbackFailure: Throwable? = null
-                    val rate = tts.sampleRate()
-                    log("tts_generation_started index=$phraseIndex chars=${text.length} preview=${text.take(80)}")
-                    tts.generateWithConfigAndCallback(
+                    log("tts_generation_started index=$phraseIndex chars=${text.length} preview=${text.take(80)} api=generateWithConfig")
+                    // Use the established non-callback JNI path. Kotlin lambda callback ABI
+                    // changes can abort the process before Java can report an exception.
+                    val generated = tts.generateWithConfig(
                         text, GenerationConfig(silenceScale = 0.2f, sid = speakerId)
-                    ) { samples ->
-                        if (stopped || !owner.isActive) 0 else {
-                            try {
-                                if (first) {
-                                    log("tts_first_audio index=$phraseIndex latencyMs=${elapsedMs(started)}")
-                                    first = false
-                                }
-                                // Copy before returning: Sherpa owns the callback's native audio.
-                                val pcm = ShortArray(samples.size) { i ->
-                                    (samples[i].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
-                                }
-                                frames += pcm.size
-                                val waitStart = System.nanoTime()
-                                audio.sendFromNative(SynthesizedPhrase(phraseIndex, rate, pcm,
-                                    PlaybackBufferPolicy.startupWaitMs(elapsedMs(started) - queueWaitMs, frames * 1000 / rate)))
-                                queueWaitMs += elapsedMs(waitStart)
-                                1
-                            } catch (error: Throwable) {
-                                // Do not throw through JNI; stop generation and rethrow on return.
-                                callbackFailure = error
-                                0
-                            }
-                        }
-                    }
-                    callbackFailure?.let { throw it }
+                    )
                     owner.ensureActive()
+                    if (stopped) return
+                    val rate = generated.sampleRate
+                    check(rate > 0) { "Kokoro returned an invalid sample rate." }
+                    val pcm = ShortArray(generated.samples.size) { i ->
+                        (generated.samples[i].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
+                    }
+                    val frames = pcm.size.toLong()
+                    log("tts_first_audio index=$phraseIndex latencyMs=${elapsedMs(started)}")
+                    val waitStart = System.nanoTime()
+                    audio.sendFromNative(SynthesizedPhrase(phraseIndex, rate, pcm,
+                        PlaybackBufferPolicy.startupWaitMs(elapsedMs(started), frames * 1000 / rate)))
+                    val queueWaitMs = elapsedMs(waitStart)
                     val totalMs = elapsedMs(started)
                     val synthesisMs = (totalMs - queueWaitMs).coerceAtLeast(0)
                     val audioMs = frames * 1000 / rate

@@ -189,6 +189,7 @@ class MainActivity : ComponentActivity() {
             sessionPreferences.edit().remove(SHORT_TERM_SUMMARY_KEY).apply()
         }
         diagnosticRecorder.restore()
+        diagnosticRecorder.recordPreviousProcessExit(applicationContext)
         setContent {
             JarvisApp(
                 store = modelStore,

@@ -196,7 +196,7 @@ class AudioTurnCaptureTest {
     }
 
     @Test
-    fun noiseOnlyDoesNotFeedAsrOrProducePartials() = runBlocking<Unit> {
+    fun noiseOnlyIsNotPublishedOrFinalized() = runBlocking<Unit> {
         val transcriber = FakeTranscriber()
         val fixture = CaptureFixture(this, transcriber)
         fixture.capture.start()
@@ -204,15 +204,34 @@ class AudioTurnCaptureTest {
         assertFalse(fixture.capture.awaitTurnCompletion())
         fixture.capture.stop()
         assertTrue(fixture.partials.isEmpty())
-        assertEquals(0, transcriber.accepts)
+        assertEquals(1, transcriber.accepts)
         assertEquals(0, transcriber.finishes)
+    }
+
+    @Test
+    fun recognizerReceivesOpeningAudioBeforeVadConfirmsSpeech() = runBlocking<Unit> {
+        val transcriber = FakeTranscriber()
+        val fixture = CaptureFixture(this, transcriber)
+        fixture.capture.start()
+        fixture.emit(100, 111)
+        fixture.emit(900, 222)
+        assertTrue(fixture.partials.isEmpty())
+        fixture.emit(1000, 333, speech = true)
+        assertEquals(listOf(111, 222, 333), transcriber.receivedSamples)
+        assertTrue(fixture.partials.isNotEmpty())
+        fixture.capture.stop()
     }
 
     private class FakeTranscriber : StreamingTranscriber {
         var accepts = 0
+        val receivedSamples = mutableListOf<Int>()
         var finishes = 0
         var releases = 0
-        override fun accept(pcm: ByteArray): String { accepts++; return "story about pirates" }
+        override fun accept(pcm: ByteArray): String {
+            accepts++
+            receivedSamples.add((pcm[0].toInt() and 255) or (pcm[1].toInt() shl 8))
+            return "story about pirates"
+        }
         override fun finish(): String { finishes++; return "story about astronauts" }
         override fun close() { releases++ }
     }

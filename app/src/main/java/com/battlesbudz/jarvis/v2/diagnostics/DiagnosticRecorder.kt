@@ -43,8 +43,31 @@ class DiagnosticRecorder(
 
     fun snapshot(): String {
         return synchronized(entries) {
-            "$sessionLabel\n\n" + entries.takeLast(20).joinToString("\n\n")
+            preferences.getString("previous_process_exit", "").orEmpty() + "\n\n" +
+                "$sessionLabel\n\n" + entries.takeLast(20).joinToString("\n\n")
                 .ifBlank { "No runtime events in this session yet." }
+        }
+    }
+
+    fun recordPreviousProcessExit(context: android.content.Context) {
+        if (android.os.Build.VERSION.SDK_INT < 30) return
+        runCatching {
+            val manager = context.getSystemService(android.app.ActivityManager::class.java)
+            val exit = manager.getHistoricalProcessExitReasons(context.packageName, 0, 5)
+                .firstOrNull { it.pid != android.os.Process.myPid() } ?: return
+            if (exit.timestamp <= preferences.getLong("previous_process_exit_at", 0)) return
+            val reason = when (exit.reason) {
+                android.app.ApplicationExitInfo.REASON_CRASH_NATIVE -> "native_crash"
+                android.app.ApplicationExitInfo.REASON_CRASH -> "managed_crash"
+                android.app.ApplicationExitInfo.REASON_LOW_MEMORY -> "low_memory"
+                android.app.ApplicationExitInfo.REASON_ANR -> "not_responding"
+                else -> "reason_${exit.reason}"
+            }
+            preferences.edit().putLong("previous_process_exit_at", exit.timestamp)
+                .putString("previous_process_exit", "Previous Android process exit (not the current call): " +
+                    "atMs=${exit.timestamp} reason=$reason status=${exit.status} " +
+                    "pssKb=${exit.pss} rssKb=${exit.rss} description=${exit.description?.take(1000)}")
+                .apply()
         }
     }
 
