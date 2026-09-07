@@ -8,15 +8,10 @@ import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.Executors
 import java.io.File
 
 /** Local Jarvis voice output: Gemma text -> Kokoro PCM -> Android audio route. */
@@ -27,8 +22,8 @@ class SherpaKokoroVoiceOutput(
     private val log: (String) -> Unit = {}
 ) : VoiceOutput {
     @Volatile private var stopped = false
-    private var audioTrack: AudioTrack? = null
-    private var preloadedEngine: OfflineTts? = null
+    @Volatile private var audioTrack: AudioTrack? = null
+    private val speaking = AtomicBoolean(false)
 
     private data class SynthesizedPhrase(
         val index: Int,
@@ -37,158 +32,172 @@ class SherpaKokoroVoiceOutput(
     )
 
     override suspend fun speak(chunks: Flow<String>, onChunkStarted: (String) -> Unit) = coroutineScope {
+        check(speaking.compareAndSet(false, true)) { "Voice output is already active." }
         stopped = false
-        log("tts_session_started modelDir=$modelDirectory speaker=$speakerId threads=$numThreads")
+        log("tts_session_started modelDir=$modelDirectory speaker=$speakerId threads=$numThreads workers=1")
         var framesWritten = 0
         var outputSampleRate = 0
-        val phraseQueue = Channel<kotlinx.coroutines.Deferred<SynthesizedPhrase>>(Channel.UNLIMITED)
-        val synthesisSlots = Semaphore(2)
-        val producer = launch(Dispatchers.Default) {
-            val buffer = StringBuilder()
-            var nextPhraseIndex = 0
+        var totalSynthesisMs = 0L
+        var totalAudioMs = 0L
+        var totalQueueWaitMs = 0L
+        var phraseCount = 0
+        // One owner creates, invokes and releases the native engine. Playback never owns it.
+        // Bounded PCM backpressure prevents long answers from accumulating unlimited audio.
+        val audio = NativeAudioQueue<SynthesizedPhrase>(2)
+        val chunker = SpeechChunker()
+        val nativeDispatcher = Executors.newSingleThreadExecutor { task ->
+            Thread(task, "jarvis-kokoro").apply { isDaemon = true }
+        }.asCoroutineDispatcher()
+        val producer = launch(nativeDispatcher) {
+            var engine: OfflineTts? = null
+            var failure: Throwable? = null
+            var index = 0
+            val owner = currentCoroutineContext()
             try {
+                val loadStart = System.nanoTime()
                 log("tts_engine_preload_started")
-                preloadedEngine = OfflineTts(config = config())
-                log("tts_engine_preload_finished")
-                suspend fun enqueuePhrase(phrase: String) {
-                    if (phrase.isBlank() || stopped) return
-                    val phraseIndex = nextPhraseIndex++
-                    onChunkStarted(phrase)
-                    phraseQueue.send(async(Dispatchers.Default) {
-                        synthesisSlots.withPermit { synthesize(phraseIndex, phrase) }
-                    })
+                val tts = OfflineTts(config = config())
+                engine = tts
+                log("tts_engine_preload_finished loadMs=${elapsedMs(loadStart)}")
+                suspend fun generate(text: String) {
+                    owner.ensureActive()
+                    if (stopped) return
+                    val phraseIndex = index++
+                    val started = System.nanoTime()
+                    var frames = 0L
+                    var queueWaitMs = 0L
+                    var first = true
+                    var callbackFailure: Throwable? = null
+                    val rate = tts.sampleRate()
+                    log("tts_generation_started index=$phraseIndex chars=${text.length} preview=${text.take(80)}")
+                    tts.generateWithConfigAndCallback(
+                        text, GenerationConfig(silenceScale = 0.2f, sid = speakerId)
+                    ) { samples ->
+                        if (stopped || !owner.isActive) 0 else {
+                            try {
+                                if (first) {
+                                    log("tts_first_audio index=$phraseIndex latencyMs=${elapsedMs(started)}")
+                                    first = false
+                                }
+                                // Copy before returning: Sherpa owns the callback's native audio.
+                                val pcm = ShortArray(samples.size) { i ->
+                                    (samples[i].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
+                                }
+                                frames += pcm.size
+                                val waitStart = System.nanoTime()
+                                audio.sendFromNative(SynthesizedPhrase(phraseIndex, rate, pcm))
+                                queueWaitMs += elapsedMs(waitStart)
+                                1
+                            } catch (error: Throwable) {
+                                // Do not throw through JNI; stop generation and rethrow on return.
+                                callbackFailure = error
+                                0
+                            }
+                        }
+                    }
+                    callbackFailure?.let { throw it }
+                    owner.ensureActive()
+                    val totalMs = elapsedMs(started)
+                    val synthesisMs = (totalMs - queueWaitMs).coerceAtLeast(0)
+                    val audioMs = frames * 1000 / rate
+                    val rtf = if (audioMs > 0) synthesisMs.toDouble() / audioMs else 0.0
+                    totalSynthesisMs += synthesisMs
+                    totalAudioMs += audioMs
+                    totalQueueWaitMs += queueWaitMs
+                    phraseCount++
+                    chunker.observe(rtf)
+                    log("tts_generation_finished index=$phraseIndex synthesisMs=$synthesisMs queueWaitMs=$queueWaitMs " +
+                        "audioDurationMs=$audioMs realtimeFactor=$rtf")
                 }
                 chunks.collect { token ->
-                    if (stopped) return@collect
-                    buffer.append(token)
-                    while (true) {
-                        val boundary = sentenceBoundary(buffer)
-                        if (boundary <= 0) break
-                        val phrase = buffer.substring(0, boundary).trim()
-                        buffer.delete(0, boundary)
-                        enqueuePhrase(phrase)
-                    }
-                    if (buffer.length >= 220) {
-                        val phrase = buffer.toString().trim()
-                        buffer.clear()
-                        enqueuePhrase(phrase)
+                    owner.ensureActive()
+                    if (!stopped) {
+                        chunker.append(token)
+                        while (true) generate(chunker.take() ?: break)
                     }
                 }
-                if (!stopped) enqueuePhrase(buffer.toString().trim())
+                while (true) generate(chunker.take(final = true) ?: break)
+            } catch (error: Throwable) {
+                failure = error
+                throw error
             } finally {
-                phraseQueue.close()
+                // Release only after generate has returned, including when cancellation was requested.
+                engine?.release()
+                audio.close(failure)
             }
         }
         try {
-            for (pending in phraseQueue) {
-                val waitStartedAt = System.nanoTime()
-                val phrase = pending.await()
-                val waitMs = (System.nanoTime() - waitStartedAt) / 1_000_000
-                if (!stopped) {
+            withContext(Dispatchers.IO) {
+                var first = true
+                for (phrase in audio.chunks) {
+                    ensureActive()
+                    if (stopped || phrase.pcm.isEmpty()) continue
                     outputSampleRate = phrase.sampleRate
-                    val pcm = addInterPhraseSilence(phrase)
-                    val track = audioTrack ?: createTrack(phrase.sampleRate).also {
-                        audioTrack = it
-                        it.play()
+                    if (first) {
+                        // Small startup headroom; never hold a short, completed answer for this delay.
+                        val start = System.nanoTime()
+                        withTimeoutOrNull(700) { producer.join() }
+                        log("audio_startup_buffer waitMs=${elapsedMs(start)}")
+                        first = false
+                        if (stopped) break
                     }
-                    val playbackHeadBefore = track.playbackHeadPosition
-                    val queuedBefore = (framesWritten - playbackHeadBefore).coerceAtLeast(0)
-                    log(
-                        "audio_phrase_ready index=${phrase.index} awaitMs=$waitMs " +
-                            "pcmFrames=${phrase.pcm.size} paddingFrames=${pcm.size - phrase.pcm.size} " +
-                            "queuedBeforeFrames=$queuedBefore underruns=${track.underrunCount}"
-                    )
-                    val writeStartedAt = System.nanoTime()
-                    check(track.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING) >= 0) {
-                        "AudioTrack rejected Kokoro PCM output."
+                    val track = audioTrack ?: createTrack(phrase.sampleRate).also { audioTrack = it; it.play() }
+                    onChunkStarted("audio")
+                    val queued = (framesWritten.toLong() - unsignedHead(track)).coerceAtLeast(0)
+                    log("audio_phrase_ready index=${phrase.index} pcmFrames=${phrase.pcm.size} " +
+                        "queuedBeforeFrames=$queued underruns=${track.underrunCount}")
+                    val start = System.nanoTime()
+                    var offset = 0
+                    while (offset < phrase.pcm.size && !stopped) {
+                        ensureActive()
+                        val written = track.write(phrase.pcm, offset, phrase.pcm.size - offset, AudioTrack.WRITE_NON_BLOCKING)
+                        check(written >= 0) { "AudioTrack rejected Kokoro PCM output: $written" }
+                        if (written == 0) { delay(10); continue }
+                        offset += written
+                        framesWritten += written
                     }
-                    framesWritten += pcm.size
-                    val queuedAfter = (framesWritten - track.playbackHeadPosition).coerceAtLeast(0)
-                    log(
-                        "audio_phrase_written index=${phrase.index} writeMs=${(System.nanoTime() - writeStartedAt) / 1_000_000} " +
-                            "queuedAfterFrames=$queuedAfter underruns=${track.underrunCount}"
-                    )
+                    log("audio_phrase_written index=${phrase.index} writeMs=${elapsedMs(start)} " +
+                        "queuedAfterFrames=${(framesWritten.toLong() - unsignedHead(track)).coerceAtLeast(0)} underruns=${track.underrunCount}")
                 }
+                producer.join()
+                if (!stopped && framesWritten > 0) drainAudioTrack(framesWritten, outputSampleRate)
             }
-            producer.join()
         } finally {
-            producer.cancelAndJoin()
-            if (!stopped && framesWritten > 0 && outputSampleRate > 0) {
-                drainAudioTrack(framesWritten, outputSampleRate)
-            }
+            stopped = true
+            // Unblock a callback waiting on a full queue before joining its native owner.
+            audio.cancel()
             audioTrack?.stopSafely()
             audioTrack = null
-            preloadedEngine?.release()
-            preloadedEngine = null
-            log("tts_session_finished stopped=$stopped")
+            withContext(NonCancellable) { producer.cancelAndJoin() }
+            nativeDispatcher.close()
+            speaking.set(false)
+            log("tts_session_finished phrases=$phraseCount synthesisMs=$totalSynthesisMs " +
+                "audioDurationMs=$totalAudioMs queueWaitMs=$totalQueueWaitMs " +
+                "realtimeFactor=${if (totalAudioMs > 0) totalSynthesisMs.toDouble() / totalAudioMs else 0.0}")
         }
     }
 
     override fun stopSpeaking() {
         stopped = true
-        audioTrack?.stopSafely()
+        // Never release an AudioTrack while its writer is using it.
+        audioTrack?.let { track -> runCatching { track.pause() }; runCatching { track.flush() } }
     }
 
-    fun release() {
-        stopSpeaking()
-    }
+    fun release() { stopSpeaking() }
 
-    private fun synthesize(index: Int, phrase: String): SynthesizedPhrase {
-        if (stopped) return SynthesizedPhrase(index, 0, ShortArray(0))
-        val generationStartedAt = System.nanoTime()
-        log("tts_generation_started index=$index chars=${phrase.length} preview=${phrase.take(80)}")
-        check(File(modelDirectory, "model.onnx").isFile) { "Kokoro model.onnx is missing." }
-        check(File(modelDirectory, "voices.bin").isFile) { "Kokoro voices.bin is missing." }
-        check(File(modelDirectory, "tokens.txt").isFile) { "Kokoro tokens.txt is missing." }
-        // Sherpa-ONNX has had Android crashes when one native OfflineTts
-        // pointer is reused for multiple generations. Generate one phrase
-        // with one native instance, then release it before the next phrase.
-        val engine = synchronized(this) {
-            preloadedEngine?.also { preloadedEngine = null }
-        } ?: OfflineTts(config = config())
-        try {
-            val generated = engine.generateWithConfig(
-                phrase,
-                GenerationConfig(silenceScale = 0.2f, sid = speakerId)
-            )
-            if (stopped) return SynthesizedPhrase(index, 0, ShortArray(0))
-            val pcm = ShortArray(generated.samples.size) { index ->
-                (generated.samples[index].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
-            }
-            val generationMs = (System.nanoTime() - generationStartedAt) / 1_000_000
-            val audioMs = pcm.size * 1_000L / generated.sampleRate
-            log(
-                "tts_generation_finished index=$index samples=${pcm.size} sampleRate=${generated.sampleRate} " +
-                    "generationMs=$generationMs audioDurationMs=$audioMs " +
-                    "realtimeFactor=${if (audioMs > 0) generationMs.toDouble() / audioMs else -1.0} " +
-                    "underruns=${audioTrack?.underrunCount ?: -1}"
-            )
-            return SynthesizedPhrase(index, generated.sampleRate, pcm)
-        } finally {
-            engine.release()
-        }
-    }
+    private fun elapsedMs(start: Long) = (System.nanoTime() - start) / 1_000_000
+    private fun unsignedHead(track: AudioTrack) = track.playbackHeadPosition.toLong() and 0xffffffffL
 
-    private fun drainAudioTrack(framesWritten: Int, sampleRate: Int) {
+    private suspend fun drainAudioTrack(framesWritten: Int, sampleRate: Int) {
         val track = audioTrack ?: return
         val deadline = System.currentTimeMillis() +
             (framesWritten * 1_000L / sampleRate).coerceAtLeast(1_000L) + 2_000L
         log("audio_track_drain_started frames=$framesWritten sampleRate=$sampleRate state=${track.state} underruns=${track.underrunCount}")
         while (!stopped && System.currentTimeMillis() < deadline) {
-            if (track.playbackHeadPosition.toLong() >= framesWritten.toLong()) break
-            Thread.sleep(20L)
+            if (unsignedHead(track) >= framesWritten.toLong()) break
+            delay(20L)
         }
         log("audio_track_drain_finished playbackHead=${track.playbackHeadPosition} stopped=$stopped underruns=${track.underrunCount}")
-    }
-
-    private fun addInterPhraseSilence(phrase: SynthesizedPhrase): ShortArray {
-        if (phrase.index == 0 || phrase.pcm.isEmpty()) return phrase.pcm
-        val paddingMs = 120L
-        val paddingFrames = (phrase.sampleRate * paddingMs / 1_000L).toInt()
-        log("audio_phrase_padding index=${phrase.index} paddingMs=$paddingMs")
-        return ShortArray(paddingFrames + phrase.pcm.size).also { padded ->
-            phrase.pcm.copyInto(padded, destinationOffset = paddingFrames)
-        }
     }
 
     private fun config() = OfflineTtsConfig(
@@ -222,11 +231,8 @@ class SherpaKokoroVoiceOutput(
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT
         )
-        // The minimum device buffer is only about 200 ms on this phone. That
-        // is too little headroom while a long phrase is being written and the
-        // next phrase is still being synthesized. Two seconds is still tiny
-        // in memory for mono PCM (~96 KB at 24 kHz) but prevents transition
-        // underruns from turning into clipped or garbled speech.
+        // Two seconds of device buffering complements the bounded PCM queue.
+        // It absorbs scheduling jitter, but cannot compensate for sustained slow synthesis.
         val bufferSize = maxOf(minBuffer, sampleRate * 2 * 2)
         log("audio_track_buffer minBytes=$minBuffer selectedBytes=$bufferSize bufferMs=${bufferSize * 1_000L / (sampleRate * 2)}")
         return AudioTrack.Builder()
@@ -252,15 +258,6 @@ class SherpaKokoroVoiceOutput(
                 track.setVolume(1.0f)
                 log("audio_track_ready state=${track.state} sampleRate=$sampleRate buffer=$bufferSize")
             }
-    }
-
-    private fun sentenceBoundary(buffer: StringBuilder): Int {
-        for (index in buffer.indices) {
-            if (buffer[index] in ".!?\n" && (index + 1 == buffer.length || buffer[index + 1].isWhitespace())) {
-                return index + 1
-            }
-        }
-        return -1
     }
 
     private fun AudioTrack.stopSafely() {
