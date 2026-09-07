@@ -3,12 +3,15 @@ package com.battlesbudz.jarvis.v2.voice
 import android.media.AudioFormat as AndroidAudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -24,11 +27,11 @@ class AndroidAudioInput(
     override val sampleRateHz: Int = format.sampleRateHz
     override val channelCount: Int = format.channelCount
 
-    private val emittedChunks = MutableSharedFlow<ByteArray>(extraBufferCapacity = 4)
+    private val emittedChunks = MutableSharedFlow<Result<ByteArray>>(extraBufferCapacity = 4)
     private var recorder: AudioRecord? = null
     private var captureJob: Job? = null
 
-    override fun chunks(): Flow<ByteArray> = emittedChunks.asSharedFlow()
+    override fun chunks(): Flow<ByteArray> = emittedChunks.map { it.getOrThrow() }
 
     override suspend fun start() {
         if (captureJob?.isActive == true) return
@@ -53,28 +56,41 @@ class AndroidAudioInput(
             created.release()
             error("The microphone could not be initialized.")
         }
+        try {
+            created.startRecording()
+        } catch (error: Throwable) {
+            created.release()
+            throw error
+        }
         recorder = created
-        created.startRecording()
-        captureJob = scope.launch(Dispatchers.IO) {
-            val pcm = ByteArray(chunkSamples * 2)
+        captureJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
-                while (isActive) {
-                    val count = created.read(pcm, 0, pcm.size)
-                    if (count > 0) emittedChunks.emit(pcm.copyOf(count))
-                    else if (count < 0) error("The microphone stopped recording unexpectedly.")
+                withContext(Dispatchers.IO) {
+                    val pcm = ByteArray(chunkSamples * 2)
+                    while (isActive) {
+                        val count = created.read(pcm, 0, pcm.size)
+                        if (count > 0) emittedChunks.emit(Result.success(pcm.copyOf(count)))
+                        else if (count < 0) error("The microphone stopped recording unexpectedly.")
+                    }
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                emittedChunks.emit(Result.failure(error))
             } finally {
                 runCatching { created.stop() }
                 created.release()
-                recorder = null
+                if (recorder === created) recorder = null
             }
         }
     }
 
     override suspend fun stop() {
-        captureJob?.cancel()
+        val job = captureJob
+        job?.cancel()
+        // Unblock read(), then wait for its sole owner to release the recorder.
+        recorder?.let { runCatching { it.stop() } }
+        job?.join()
         captureJob = null
-        recorder?.let { runCatching { it.stop() }; it.release() }
-        recorder = null
     }
 }

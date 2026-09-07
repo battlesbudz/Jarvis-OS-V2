@@ -3,18 +3,13 @@ package com.battlesbudz.jarvis.v2.voice
 import kotlin.math.abs
 import kotlin.math.sqrt
 
-/** Shared PCM16 little-endian measurements for endpointing and diagnostics. */
+/** PCM16 little-endian measurements for diagnostics, never speech classification. */
 internal data class Pcm16Signal(
     val sampleCount: Int,
     val rms: Double,
     val peak: Int,
     val activeSampleRatio: Double
 ) {
-    val isSpeech: Boolean
-        get() = rms >= 500.0 || (peak >= 1_400 && activeSampleRatio >= 0.01)
-    val isLikelySilence: Boolean
-        get() = rms < 220.0 || (peak < 700 && activeSampleRatio < 0.01)
-
     companion object {
         fun measure(bytes: ByteArray, start: Int = 0): Pcm16Signal {
             var sumSquares = 0.0

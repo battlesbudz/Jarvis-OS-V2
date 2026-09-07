@@ -53,6 +53,7 @@ import com.battlesbudz.jarvis.v2.ui.JarvisApp
 import com.battlesbudz.jarvis.v2.conversation.runConversationInternal
 import com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore
 import com.battlesbudz.jarvis.v2.voice.AndroidAudioInput
+import com.battlesbudz.jarvis.v2.voice.SileroSpeechDetector
 import com.battlesbudz.jarvis.v2.voice.Pcm16Signal
 import com.battlesbudz.jarvis.v2.voice.AudioTurnCapture
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionController
@@ -243,33 +244,30 @@ class MainActivity : ComponentActivity() {
                 report("A Voice Call turn is already listening.")
                 return
             }
-            activeVoiceCapture = AudioTurnCapture(
-                AndroidAudioInput(
-                    lifecycleScope,
-                    com.battlesbudz.jarvis.v2.voice.AudioFormat()
-                ),
-                lifecycleScope,
+            val firstTurn = voiceSessionController.currentTranscript().isEmpty()
+            if (voiceSessionController.state.value == VoiceSessionState.PASSIVE_LISTENING) {
+                voiceSessionController.beginCall().also {
+                    diagnosticRecorder.startSession("Voice Call ${it.id}")
+                }
+            }
+            val capture = AudioTurnCapture(
+                AndroidAudioInput(lifecycleScope, com.battlesbudz.jarvis.v2.voice.AudioFormat()),
+                CoroutineScope(lifecycleScope.coroutineContext + Dispatchers.Default),
+                createDetector = { SileroSpeechDetector.create(assets) },
                 log = { diagnosticRecorder.record("Voice input: $it") }
             )
-            val capture = activeVoiceCapture
+            activeVoiceCapture = capture
             lifecycleScope.launch(Dispatchers.Default) {
                 try {
-                    val firstTurn = voiceSessionController.currentTranscript().isEmpty()
-                    if (voiceSessionController.state.value == VoiceSessionState.PASSIVE_LISTENING) {
-                        voiceSessionController.beginCall().also {
-                            diagnosticRecorder.startSession("Voice Call ${it.id}")
-                        }
-                    }
-                    capture?.start()
+                    capture.start(initialSilenceTimeoutMs = if (firstTurn) 6_000L else null)
                     mainHandler.post {
+                        if (activeVoiceCapture !== capture) return@post
                         report("Voice Call is listening. Speak naturally; I’ll detect when you finish.")
                     }
                     // Give the initial invocation a finite follow-up window;
                     // once the call has real context, remain armed indefinitely
                     // until speech arrives or the user ends the call.
-                    capture?.awaitTurnCompletion(
-                        initialSilenceTimeoutMs = if (firstTurn) 6_000L else null
-                    )
+                    capture.awaitTurnCompletion()
                     // Route the completed automatic turn through the same
                     // model/tool/TTS pipeline used by the explicit fallback.
                     // The capture remains installed until runVoiceTurn(false)
@@ -280,10 +278,13 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    capture.stop()
                     throw cancelled
                 } catch (error: Throwable) {
-                    activeVoiceCapture = null
+                    capture.stop()
                     mainHandler.post {
+                        if (activeVoiceCapture !== capture) return@post
+                        activeVoiceCapture = null
                         val message = "Voice Call could not start: ${error.message ?: "unknown error"}"
                         report(message)
                         onFinished(message)
@@ -317,7 +318,7 @@ class MainActivity : ComponentActivity() {
                         "peak=${audioStats.peak}\n" +
                         "activeSampleRatio=${audioStats.activeSampleRatio}"
                 )
-                if (audioStats.isLikelySilence) {
+                if (!capture.hasSpeech) {
                     finalMessage = "I didn't hear anything to process. Please try speaking after starting the turn."
                     return@launch
                 }
@@ -708,6 +709,9 @@ class MainActivity : ComponentActivity() {
 
     
     override fun onDestroy() {
+        val capture = activeVoiceCapture
+        activeVoiceCapture = null
+        if (capture != null) cleanupScope.launch { capture.stop() }
         conversationJob?.cancel()
         val engine = conversationEngine
         conversationEngine = null
@@ -882,8 +886,7 @@ class MainActivity : ComponentActivity() {
         val durationMs: Long,
         val rms: Int,
         val peak: Int,
-        val activeSampleRatio: Double,
-        val isLikelySilence: Boolean
+        val activeSampleRatio: Double
     )
 
     private fun analyzeCapturedAudio(wav: ByteArray): CapturedAudioStats {
@@ -893,8 +896,7 @@ class MainActivity : ComponentActivity() {
             durationMs = signal.sampleCount * 1_000L / 16_000L,
             rms = signal.rms.toInt(),
             peak = signal.peak,
-            activeSampleRatio = signal.activeSampleRatio,
-            isLikelySilence = signal.isLikelySilence
+            activeSampleRatio = signal.activeSampleRatio
         )
     }
 

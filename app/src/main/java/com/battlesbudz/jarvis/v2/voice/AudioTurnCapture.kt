@@ -1,95 +1,125 @@
 package com.battlesbudz.jarvis.v2.voice
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
-import kotlinx.coroutines.CoroutineStart
 
-/** Captures one explicit user turn without writing raw audio to disk. */
+/** Captures one speech turn, with bounded idle pre-roll and no raw audio on disk. */
 class AudioTurnCapture(
     private val input: AudioInput,
     private val scope: CoroutineScope,
+    private val createDetector: () -> SpeechDetector,
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
     private val log: (String) -> Unit = {}
 ) {
     private val pcm = ByteArrayOutputStream()
+    private val preRoll = RollingAudioBuffer(AudioFormat(input.sampleRateHz), maxDurationMs = 600)
+    private val lifecycle = Mutex()
     private var collectionJob: Job? = null
-    private var turnCompleted: CompletableDeferred<Boolean>? = null
-    @Volatile private var speechDetected = false
-    @Volatile private var lastSpeechAtMs = 0L
-    private var captureStartedAtMs = 0L
-    private var lastLevelLogAtMs = 0L
-    @Volatile private var initialSilenceTimeoutMs: Long? = INITIAL_SILENCE_TIMEOUT_MS
+    private var detector: SpeechDetector? = null
+    private val turnCompleted = CompletableDeferred<Boolean>()
+    private var stopped = false
+    @Volatile var hasSpeech: Boolean = false
+        private set
 
-    suspend fun start() {
-        check(collectionJob?.isActive != true) { "Audio capture is already active." }
-        pcm.reset()
-        speechDetected = false
-        lastSpeechAtMs = 0L
-        captureStartedAtMs = nowMs()
-        lastLevelLogAtMs = captureStartedAtMs
-        turnCompleted = CompletableDeferred()
-        log("capture_started trailingSilenceMs=$TRAILING_SILENCE_MS")
+    suspend fun start(initialSilenceTimeoutMs: Long? = 6_000L) = lifecycle.withLock {
+        check(!stopped && collectionJob == null) { "Audio capture is already started or stopped." }
+        check(input.sampleRateHz == 16_000 && input.channelCount == 1) { "VAD requires 16 kHz mono audio." }
+        val activeDetector = createDetector()
+        detector = activeDetector
+        val startedAt = nowMs()
+        var lastSpeechAt = startedAt
+        var lastLevelLogAt = startedAt
+        log("capture_started vad=silero threshold=0.5 speechConfirmationMs=96 " +
+            "trailingSilenceMs=1200 initialSilenceTimeoutMs=$initialSilenceTimeoutMs maxTurnMs=25000")
         collectionJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            input.chunks().collect { chunk ->
-                synchronized(pcm) { pcm.write(chunk) }
-                val signal = Pcm16Signal.measure(chunk)
-                val now = nowMs()
-                if (signal.isSpeech) {
-                    if (!speechDetected) log("speech_started elapsedMs=${now - captureStartedAtMs}")
-                    speechDetected = true
-                    lastSpeechAtMs = now
+            try {
+                input.chunks().collect { chunk ->
+                    if (turnCompleted.isCompleted) return@collect
+                    val signal = Pcm16Signal.measure(chunk)
+                    val decision = activeDetector.accept(chunk)
+                    val now = nowMs()
+                    synchronized(pcm) {
+                        if (hasSpeech) {
+                            val remaining = MAX_TURN_BYTES - pcm.size()
+                            pcm.write(chunk, 0, minOf(remaining, chunk.size))
+                        } else {
+                            preRoll.append(chunk)
+                        }
+                        if (decision.isSpeech) {
+                            if (!hasSpeech) {
+                                pcm.write(preRoll.snapshot())
+                                preRoll.clear()
+                                log("speech_started vad=silero elapsedMs=${now - startedAt}")
+                            }
+                            hasSpeech = true
+                            lastSpeechAt = now
+                        }
+                    }
+                    val reason = when {
+                        hasSpeech && now - lastSpeechAt >= 1_200L -> "trailing_silence"
+                        hasSpeech && synchronized(pcm) { pcm.size() >= MAX_TURN_BYTES } -> "max_turn_duration"
+                        !hasSpeech && initialSilenceTimeoutMs != null && now - startedAt >= initialSilenceTimeoutMs -> "initial_silence"
+                        else -> null
+                    }
+                    if (reason != null && turnCompleted.complete(hasSpeech)) {
+                        log("turn_endpoint reason=$reason elapsedMs=${now - startedAt} " +
+                            "silenceMs=${now - lastSpeechAt} speechDetected=$hasSpeech")
+                    } else if (now - lastLevelLogAt >= 1_000L) {
+                        lastLevelLogAt = now
+                        log("capture_level vad=silero rms=${signal.rms.toInt()} peak=${signal.peak} " +
+                            "probability=${decision.probability} speech=${decision.isSpeech} speechDetected=$hasSpeech " +
+                            "silenceMs=${now - lastSpeechAt}")
+                    }
                 }
-                val silentLongEnough = if (speechDetected) {
-                    now - lastSpeechAtMs >= TRAILING_SILENCE_MS
-                } else {
-                    initialSilenceTimeoutMs?.let { now - captureStartedAtMs >= it } == true
+                if (!turnCompleted.isCompleted) {
+                    turnCompleted.completeExceptionally(IllegalStateException("Microphone stream ended before the turn completed."))
                 }
-                if (silentLongEnough && turnCompleted?.complete(speechDetected) == true) {
-                    log("turn_endpoint reason=${if (speechDetected) "trailing_silence" else "initial_silence"} " +
-                        "elapsedMs=${now - captureStartedAtMs} silenceMs=${now - lastSpeechAtMs}")
-                } else if (now - lastLevelLogAtMs >= 1_000L && turnCompleted?.isCompleted == false) {
-                    lastLevelLogAtMs = now
-                    log("capture_level rms=${signal.rms.toInt()} peak=${signal.peak} " +
-                        "speech=${signal.isSpeech} speechDetected=$speechDetected " +
-                        "silenceMs=${if (speechDetected) now - lastSpeechAtMs else now - captureStartedAtMs}")
-                }
+            } catch (cancelled: CancellationException) {
+                turnCompleted.cancel()
+                throw cancelled
+            } catch (error: Throwable) {
+                // Deliver model/stream failures to the owner, not the Activity's uncaught handler.
+                turnCompleted.completeExceptionally(error)
             }
         }
         input.start()
     }
 
-    /**
-     * Waits for a natural end-of-turn. The first six seconds allow the user
-     * to begin speaking; after speech begins, a shorter trailing pause ends
-     * the turn. This keeps the microphone hands-free without sending empty
-     * turns to Gemma.
-     */
-    suspend fun awaitTurnCompletion(initialSilenceTimeoutMs: Long? = INITIAL_SILENCE_TIMEOUT_MS): Boolean {
-        val completion = requireNotNull(turnCompleted) { "Audio capture has not started." }
-        this.initialSilenceTimeoutMs = initialSilenceTimeoutMs
-        log("awaiting_turn initialSilenceTimeoutMs=$initialSilenceTimeoutMs")
-        return completion.await()
-    }
+    suspend fun awaitTurnCompletion(): Boolean = turnCompleted.await()
 
-    suspend fun stop(): ByteArray {
-        input.stop()
-        collectionJob?.cancel()
-        collectionJob?.join()
-        collectionJob = null
-        turnCompleted?.cancel()
-        turnCompleted = null
-        log("capture_stopped")
-        return synchronized(pcm) {
-            WavEncoder.pcm16Mono(pcm.toByteArray(), input.sampleRateHz)
+    suspend fun stop(): ByteArray = withContext(NonCancellable) {
+        lifecycle.withLock {
+            if (!stopped) {
+                stopped = true
+                try {
+                    input.stop()
+                } finally {
+                    collectionJob?.cancel()
+                    collectionJob?.join()
+                    collectionJob = null
+                    turnCompleted.cancel()
+                    detector?.close()
+                    detector = null
+                    log("capture_stopped speechDetected=$hasSpeech")
+                }
+            }
+            synchronized(pcm) {
+                WavEncoder.pcm16Mono(if (hasSpeech) pcm.toByteArray() else preRoll.snapshot(), input.sampleRateHz)
+            }
         }
     }
 
     private companion object {
-        const val INITIAL_SILENCE_TIMEOUT_MS = 6_000L
-        const val TRAILING_SILENCE_MS = 1_200L
+        const val MAX_TURN_BYTES = 25 * 16_000 * 2
     }
 }
