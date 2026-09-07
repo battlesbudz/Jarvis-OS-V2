@@ -13,7 +13,9 @@ class VoiceTurnCoordinatorTest {
             calls.removeAll { it.id == call.id }
             calls += call
         }
-        override fun delete(callId: String) = calls.removeAll { it.id == callId }
+        override fun delete(callId: String) {
+            calls.removeAll { it.id == callId }
+        }
     }
 
     @Test
