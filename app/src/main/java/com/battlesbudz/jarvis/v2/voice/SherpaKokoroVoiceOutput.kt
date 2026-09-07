@@ -117,12 +117,15 @@ class SherpaKokoroVoiceOutput(
             phrase,
             GenerationConfig(silenceScale = 0.2f, sid = speakerId)
         ) { samples ->
-            if (stopped) return@generateWithConfigAndCallback 0
-            val pcm = ShortArray(samples.size) { index ->
-                (samples[index].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
+            if (stopped) {
+                0
+            } else {
+                val pcm = ShortArray(samples.size) { index ->
+                    (samples[index].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
+                }
+                track.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING)
+                1
             }
-            track.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING)
-            1
         }
     }
 
