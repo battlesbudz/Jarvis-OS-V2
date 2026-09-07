@@ -32,6 +32,7 @@ class JarvisModelSetupWorker(
         var downloaded = 0L
         var total = -1L
         var stage = "Preparing local Jarvis…"
+        val progressLock = Any()
         fun publishProgress() = runBlocking {
             setProgress(workDataOf(
                 "stage" to stage,
@@ -42,14 +43,18 @@ class JarvisModelSetupWorker(
         val gemma = models.downloadOrReuse(
             spec = ModelCatalog.gemma4E2b,
             onProgress = { bytes, length ->
-                downloaded = bytes
-                total = length
-                stage = "Gemma"
-                publishProgress()
+                synchronized(progressLock) {
+                    downloaded = bytes
+                    total = length
+                    stage = "Gemma"
+                    publishProgress()
+                }
             },
             onStatus = { status ->
-                stage = status
-                publishProgress()
+                synchronized(progressLock) {
+                    stage = status
+                    publishProgress()
+                }
             }
         ).getOrElse { error ->
             return Result.failure(workDataOf("error" to (error.message ?: "Gemma setup failed.")))
@@ -57,19 +62,23 @@ class JarvisModelSetupWorker(
         check(gemma.isFile) { "Gemma setup did not produce a model file." }
         val kokoro = voice.downloadOrReuse(
             onProgress = { bytes, length ->
-                val unpacking = stage.contains("Installing Kokoro", ignoreCase = true)
-                downloaded = bytes
-                total = length
-                stage = if (unpacking) "Kokoro unpacking" else "Kokoro voice"
-                publishProgress()
+                synchronized(progressLock) {
+                    val unpacking = stage.contains("Installing Kokoro", ignoreCase = true)
+                    downloaded = bytes
+                    total = length
+                    stage = if (unpacking) "Kokoro unpacking" else "Kokoro voice"
+                    publishProgress()
+                }
             },
             onStatus = { status ->
-                stage = status
-                if (status.contains("Installing Kokoro", ignoreCase = true)) {
-                    downloaded = 0L
-                    total = -1L
+                synchronized(progressLock) {
+                    stage = status
+                    if (status.contains("Installing Kokoro", ignoreCase = true)) {
+                        downloaded = 0L
+                        total = -1L
+                    }
+                    publishProgress()
                 }
-                publishProgress()
             }
         ).getOrElse { error ->
             return Result.failure(workDataOf("error" to (error.message ?: "Voice model setup failed.")))
