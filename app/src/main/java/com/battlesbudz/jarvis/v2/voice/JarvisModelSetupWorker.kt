@@ -46,7 +46,9 @@ class JarvisModelSetupWorker(
                 synchronized(progressLock) {
                     downloaded = bytes
                     total = length
-                    stage = "Gemma"
+                    if (!stage.contains("resumable parts", ignoreCase = true)) {
+                        stage = "Gemma"
+                    }
                     publishProgress()
                 }
             },
