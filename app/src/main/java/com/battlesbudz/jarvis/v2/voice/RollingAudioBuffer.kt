@@ -29,7 +29,7 @@ class RollingAudioBuffer(
     @Synchronized
     fun snapshot(): ByteArray {
         val output = ByteArrayOutputStream(byteCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
-        chunks.forEach(output::write)
+        chunks.forEach { output.write(it) }
         return output.toByteArray()
     }
 

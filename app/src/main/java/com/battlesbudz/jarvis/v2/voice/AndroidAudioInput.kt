@@ -49,9 +49,9 @@ class AndroidAudioInput(
             AndroidAudioFormat.ENCODING_PCM_16BIT,
             bufferSize
         )
-        check(created.state == AudioRecord.STATE_INITIALIZED) {
+        if (created.state != AudioRecord.STATE_INITIALIZED) {
             created.release()
-            "The microphone could not be initialized."
+            error("The microphone could not be initialized.")
         }
         recorder = created
         created.startRecording()
