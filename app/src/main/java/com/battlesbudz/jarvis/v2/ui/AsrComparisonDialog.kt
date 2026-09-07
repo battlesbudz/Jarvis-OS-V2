@@ -57,7 +57,7 @@ internal fun AsrComparisonDialog(
                     Text("Word-error rate compares exact words, ignoring case and punctuation. Keep false starts and corrections. It does not score intent; numbers and contractions can differ. An empty reference leaves accuracy unscored.",
                         style = MaterialTheme.typography.bodySmall)
                 }
-                Text("First-partial timing begins when speech is detected. Finalization measures the last ASR flush. Final-to-text/playback begins after that flush and excludes the 1.2-second silence wait. Playback start is the app's audio submission, not an acoustic measurement. Decode factor includes all audio fed, including silence; below 1 means decoding cost less than the audio duration.",
+                Text("First-partial timing begins when speech is detected. Finalization measures the last ASR flush. Final-to-text/playback begins after that flush and excludes the 3-second silence wait. Playback start is the app's audio submission, not an acoustic measurement. Decode factor includes all audio fed, including silence; below 1 means decoding cost less than the audio duration.",
                     style = MaterialTheme.typography.bodySmall)
                 Text("Copy diagnostics on the call screen includes these comparisons.")
             }

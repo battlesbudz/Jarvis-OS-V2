@@ -254,7 +254,6 @@ class MainActivity : ComponentActivity() {
             onFinished(message)
             return
         }
-        val firstTurn = voiceSessionController.currentTranscript().isEmpty()
         if (voiceSessionController.state.value == VoiceSessionState.PASSIVE_LISTENING) {
             voiceSessionController.beginCall().also {
                 diagnosticRecorder.startSession("Voice Call ${it.id}")
@@ -348,7 +347,7 @@ class MainActivity : ComponentActivity() {
                 )
                 capture = activeCapture
                 activeVoiceCapture = activeCapture
-                activeCapture.start(initialSilenceTimeoutMs = if (firstTurn) 6_000L else null)
+                activeCapture.start()
                 status("Voice Call is listening. Speak naturally; I’ll detect when you finish.")
                 activeCapture.awaitTurnCompletion()
                 val endpointAt = System.nanoTime()
@@ -358,10 +357,21 @@ class MainActivity : ComponentActivity() {
                 if (activeVoiceCapture === activeCapture) activeVoiceCapture = null
                 status("Processing your Voice Call turn locally…")
                 if (!activeCapture.hasSpeech || activeCapture.finalTranscript.isBlank()) {
-                    finalMessage = "I didn't hear anything to process. Please try speaking after starting the turn."
+                    diagnosticRecorder.record("Voice call ended reason=inactivity timeoutMs=20000")
+                    voiceSessionController.end()
+                    finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " no recognized speech for 20 seconds."
                     return@launch
                 }
                 val transcript = activeCapture.finalTranscript
+                if (com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.isGoodbye(transcript)) {
+                    speculative.close()
+                    voiceSessionController.appendTranscript("You", transcript)
+                    voiceSessionController.end()
+                    mainHandler.post { onTranscript("You", transcript, true) }
+                    diagnosticRecorder.record("Voice call ended reason=spoken_goodbye")
+                    finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " goodbye."
+                    return@launch
+                }
                 val draft = speculative.seal(transcript)
                 asrComparisonStore.update(asrTurnId, "prepared", draft != null)
                 if (draft == null) resetNativeConversation()

@@ -606,8 +606,10 @@ private fun VoiceCallScreen(
                 // sets callStarted=false, which prevents this re-arm.
                 val failed = result.contains("could not start", ignoreCase = true) ||
                     result.contains("turn failed", ignoreCase = true) ||
-                    result.contains("didn't hear", ignoreCase = true) ||
                     result.contains("permission", ignoreCase = true)
+                if (result.startsWith(com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX) || failed) {
+                    callStarted = false
+                }
                 if (callStarted && !failed) {
                     requestVoiceTurn(start = true)
                 } else {

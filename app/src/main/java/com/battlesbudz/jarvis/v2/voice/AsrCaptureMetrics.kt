@@ -9,5 +9,6 @@ data class AsrCaptureMetrics(
     val firstPartialAfterSpeechMs: Long?,
     val partialUpdates: Int,
     val finalizationMs: Long,
-    val endpointReason: String
+    val endpointReason: String,
+    val emptyCandidates: Int = 0
 )

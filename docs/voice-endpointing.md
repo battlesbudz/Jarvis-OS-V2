@@ -4,11 +4,12 @@ Audio PR2 uses bundled Silero VAD through Sherpa-ONNX 1.13.7. RMS and peak are d
 
 - Input: 16 kHz mono signed PCM16, framed into 512 samples (32 ms).
 - Speech: three consecutive frames with probability at least 0.5 (96 ms).
-- End: 1.2 seconds since the last chunk containing confirmed speech. Model classification latency is additional to this pause.
-- First-turn no-speech window: six seconds. An established call can wait indefinitely for the next spoken turn.
+- Turn end: 3 seconds since the last chunk containing confirmed speech. Resumed speech restarts this pause. Model classification latency is additional. A turn ending does not end the call.
+- Call inactivity: 20 seconds waiting for a recognized turn, on initial and follow-up capture. A completed Jarvis response starts a new listening window; generating/speaking time is excluded.
 - Idle audio: bounded 600 ms pre-roll, preserving speech onset without accumulating an entire idle call.
 - Active audio: bounded 25 seconds; a continuously positive detector is segmented at that limit. Raw microphone audio stays in memory.
-- No detected speech: skip Gemma, regardless of how loud the noise is.
+- Empty ASR after a VAD speech candidate: skip Gemma and reset the sealed recognizer while keeping the microphone running. Its bounded input queue preserves speech arriving during reload. Do not reset the original inactivity deadline. At inactivity expiry, save/end the call and stop automatic re-arm.
+- Spoken ending: whole utterances `goodbye`, `goodbye Jarvis`, `stop listening`, or `stop listening Jarvis` (including leading Jarvis) save/end the call before model execution. Mentioning goodbye within another request does not hang up. Manual End remains immediate.
 - The model runs on one CPU thread off the UI thread. The microphone reader owns recorder release; capture waits for it before allowing a subsequent turn to acquire the mic.
 
 ## Bundled model
@@ -32,3 +33,25 @@ A host ONNX Runtime check of the bundled model used 15 seconds each of seeded wh
 Speech fixture source (not bundled): https://github.com/snakers4/silero-vad/blob/master/tests/data/test.wav
 
 Host fixtures do not reproduce the user's room. Phone acceptance: ask a question, stop speaking while normal background sound remains, hear the reply, then ask a second question after automatic rearming. Copy diagnostics if the turn remains stuck; `capture_level` now includes `vad=silero` and its speech probability.
+
+
+## Build 555 diagnostic follow-up
+
+A false speech detection immediately after playback produced an empty transcript
+and a 1.2-second endpoint. MainActivity returned "didn't hear", and the UI treated
+that as a terminal failure, leaving the call without an armed microphone. Empty
+candidates now stay inside the capture session until recognized speech or the
+20-second inactivity deadline. `empty_candidates` appears in retained ASR metrics;
+model-load and decode costs include internal retries.
+
+Regression coverage includes an empty post-playback candidate followed by real
+speech without restarting the microphone, repeated empty candidates preserving
+the 20-second deadline, and a 2.5-second thinking pause followed by resumed speech.
+The older VAD timing tests explicitly use a 1.2-second test configuration; the
+production policy is tested separately at 3 seconds.
+
+Opening-word loss in the supplied phone transcripts is not claimed fixed here.
+Zipformer decoded at about 0.06–0.07 realtime factor in those measurements. A host
+fixture with 0, 2, 5, 10 and 20 seconds of leading silence retained its opening
+words after current priming. The phone recordings were not provided; comparison
+with Moonshine remains necessary to separate recognizer accuracy from capture.

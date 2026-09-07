@@ -95,9 +95,11 @@ class AudioTurnCaptureTest {
         val completion = async(start = CoroutineStart.UNDISPATCHED) {
             fixture.capture.awaitTurnCompletion()
         }
-        fixture.emit(5999, -100)
-        assertFalse(completion.isCompleted)
         fixture.emit(6000, -100)
+        assertFalse(completion.isCompleted)
+        fixture.emit(19999, -100)
+        assertFalse(completion.isCompleted)
+        fixture.emit(20000, -100)
         assertFalse(withTimeout(1000) { completion.await() })
         fixture.capture.stop()
     }
@@ -149,7 +151,7 @@ class AudioTurnCaptureTest {
         fixture.capture.start()
         val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
         fixture.emit(1000, 4300)
-        fixture.emit(6000, -3300)
+        fixture.emit(20000, -3300)
         assertFalse(withTimeout(1000) { completion.await() })
         assertFalse(fixture.capture.hasSpeech)
         fixture.capture.stop()
@@ -224,7 +226,7 @@ class AudioTurnCaptureTest {
         val transcriber = FakeTranscriber()
         val fixture = CaptureFixture(this, transcriber)
         fixture.capture.start()
-        fixture.emit(6000, 4300)
+        fixture.emit(20000, 4300)
         assertFalse(fixture.capture.awaitTurnCompletion())
         fixture.capture.stop()
         assertTrue(fixture.partials.isEmpty())
@@ -272,7 +274,68 @@ class AudioTurnCaptureTest {
         assertTrue(fixture.metrics.isEmpty())
     }
 
-    private class FakeTranscriber : StreamingTranscriber {
+    @Test
+    fun emptyPostPlaybackDetectionKeepsMicrophoneOpenAndAcceptsLaterSpeech() = runBlocking<Unit> {
+        var created = 0
+        val fixture = CaptureFixture(this, factory = {
+            if (created++ == 0) FakeTranscriber("", "") else FakeTranscriber()
+        })
+        fixture.capture.start()
+        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+        fixture.emit(100, 2000, speech = true)
+        fixture.emit(1300, 0)
+        assertFalse(completion.isCompleted)
+        assertEquals(1, fixture.microphoneStarts)
+        assertEquals(0, fixture.microphoneStops)
+        assertEquals(2, created)
+        fixture.emit(10000, 2000, speech = true)
+        fixture.emit(11200, 0)
+        assertTrue(withTimeout(1000) { completion.await() })
+        assertEquals("story about astronauts", fixture.capture.finalTranscript)
+        assertEquals(1, fixture.metrics.single().first.emptyCandidates)
+        fixture.capture.stop()
+        assertEquals(1, fixture.microphoneStops)
+    }
+
+    @Test
+    fun repeatedEmptyDetectionsDoNotRestartTwentySecondInactivityDeadline() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, factory = { FakeTranscriber("", "") })
+        fixture.capture.start()
+        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+        for (start in listOf(100L, 6000L, 12000L)) {
+            fixture.emit(start, 2000, speech = true)
+            fixture.emit(start + 1200, 0)
+            assertFalse(completion.isCompleted)
+        }
+        fixture.emit(19999, 0)
+        assertFalse(completion.isCompleted)
+        fixture.emit(20000, 0)
+        assertFalse(withTimeout(1000) { completion.await() })
+        assertEquals(3, fixture.metrics.single().first.emptyCandidates)
+        assertEquals("initial_silence", fixture.metrics.single().first.endpointReason)
+        fixture.capture.stop()
+    }
+
+    @Test
+    fun thinkingPauseDoesNotFinishTurnAndResumedSpeechRestartsThreeSecondWait() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, FakeTranscriber(), trailingSilenceMs = VoiceCallPolicy.TURN_SILENCE_MS)
+        fixture.capture.start()
+        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+        fixture.emit(100, 2000, speech = true)
+        fixture.emit(1300, 0)
+        assertFalse(completion.isCompleted)
+        fixture.emit(2600, 2000, speech = true)
+        fixture.emit(5599, 0)
+        assertFalse(completion.isCompleted)
+        fixture.emit(5600, 0)
+        assertTrue(withTimeout(1000) { completion.await() })
+        fixture.capture.stop()
+    }
+
+    private class FakeTranscriber(
+        private val partial: String = "story about pirates",
+        private val final: String = "story about astronauts"
+    ) : StreamingTranscriber {
         var accepts = 0
         val receivedSamples = mutableListOf<Int>()
         var finishes = 0
@@ -280,9 +343,9 @@ class AudioTurnCaptureTest {
         override fun accept(pcm: ByteArray): String {
             accepts++
             receivedSamples.add((pcm[0].toInt() and 255) or (pcm[1].toInt() shl 8))
-            return "story about pirates"
+            return partial
         }
-        override fun finish(): String { finishes++; return "story about astronauts" }
+        override fun finish(): String { finishes++; return final }
         override fun close() { releases++ }
     }
 
@@ -297,7 +360,12 @@ class AudioTurnCaptureTest {
         override fun close() { releases++ }
     }
 
-    private class CaptureFixture(scope: CoroutineScope, transcriber: StreamingTranscriber? = null) {
+    private class CaptureFixture(scope: CoroutineScope, transcriber: StreamingTranscriber? = null,
+        factory: (() -> StreamingTranscriber)? = transcriber?.let { { it } },
+        trailingSilenceMs: Long = 1200L
+    ) {
+        var microphoneStarts = 0
+        var microphoneStops = 0
         val partials = mutableListOf<String>()
         val metrics = mutableListOf<Pair<AsrCaptureMetrics, String>>()
         private var clock = 0L
@@ -307,13 +375,13 @@ class AudioTurnCaptureTest {
             override val sampleRateHz = 16_000
             override val channelCount = 1
             override fun chunks() = chunks
-            override suspend fun start() = Unit
-            override suspend fun stop() = Unit
+            override suspend fun start() { microphoneStarts++ }
+            override suspend fun stop() { microphoneStops++ }
         }
         val detector = FakeDetector()
         val capture = AudioTurnCapture(input, scope, createDetector = { detector }, nowMs = { clock }, log = events::add,
-            createTranscriber = transcriber?.let { { it } }, onPartialTranscript = { text, _ -> partials.add(text) },
-            onMetrics = { stats, text -> metrics.add(stats to text) })
+            createTranscriber = factory, onPartialTranscript = { text, _ -> partials.add(text) },
+            onMetrics = { stats, text -> metrics.add(stats to text) }, trailingSilenceMs = trailingSilenceMs)
 
         suspend fun emit(atMs: Long, sample: Int, speech: Boolean = false, samples: Int = 1) {
             clock = atMs

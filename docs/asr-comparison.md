@@ -8,7 +8,7 @@ eight runtime files are pinned to the 2026-08-21 English quantization, with leng
 and SHA-256 verification before loading. Subsequent use is offline.
 
 Both engines receive the same continuous 16 kHz mono PCM, including opening audio,
-through AudioTurnCapture. Silero still owns Jarvis's 1.2-second turn endpoint.
+through AudioTurnCapture. Silero still owns Jarvis's 3-second turn endpoint.
 Moonshine also segments lines internally: its adapter combines lines by stable ID,
 replaces provisional text, and forces a final update at Jarvis's endpoint. No
 native line event independently submits a tool action or a Gemma response.
@@ -43,6 +43,7 @@ Measurements:
 - `final_to_first_text_ms`, `final_to_playback_start_ms`: after final ASR flush
   and before first answer text/audio submission. Exclude silence and finalization.
   Audio submission is not an acoustic measurement from the speaker.
+- `empty_candidates`: false/empty detections retried inside the same microphone session, without restarting call inactivity. Load/decode totals include retries.
 - `prepared`: whether speculative Gemma preparation matched the final transcript.
 
 Accuracy is unscored until a reference is entered. Word-error rate is word-level

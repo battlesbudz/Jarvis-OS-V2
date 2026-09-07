@@ -23,7 +23,7 @@ class AsrComparisonStore(private val preferences: SharedPreferences) {
             .put("decode_ms", metrics.decodeMs).put("max_decode_chunk_ms", metrics.maxDecodeChunkMs)
             .put("speech_detected_to_first_partial_ms", metrics.firstPartialAfterSpeechMs ?: JSONObject.NULL)
             .put("partial_updates", metrics.partialUpdates).put("finalization_ms", metrics.finalizationMs)
-            .put("endpoint_reason", metrics.endpointReason)
+            .put("endpoint_reason", metrics.endpointReason).put("empty_candidates", metrics.emptyCandidates)
             .put("decode_realtime_factor", if (metrics.audioMs > 0)
                 (metrics.decodeMs + metrics.finalizationMs).toDouble() / metrics.audioMs else JSONObject.NULL)
         save((records() + entry).takeLast(20))
@@ -52,7 +52,7 @@ class AsrComparisonStore(private val preferences: SharedPreferences) {
             appendLine("transcript=${entry.optString("transcript")}")
             for (key in listOf("model_load_ms", "capture_ready_ms", "audio_fed_ms", "decode_ms",
                 "decode_realtime_factor", "max_decode_chunk_ms", "speech_detected_to_first_partial_ms",
-                "partial_updates", "finalization_ms", "endpoint_reason", "final_to_first_text_ms",
+                "partial_updates", "empty_candidates", "finalization_ms", "endpoint_reason", "final_to_first_text_ms",
                 "final_to_playback_start_ms", "prepared")) {
                 appendLine("$key=${if (entry.has(key) && !entry.isNull(key)) entry.get(key) else "unavailable"}")
             }

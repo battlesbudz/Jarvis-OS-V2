@@ -22,7 +22,8 @@ class AudioTurnCapture(
     private val log: (String) -> Unit = {},
     private val createTranscriber: (() -> StreamingTranscriber)? = null,
     private val onPartialTranscript: (String, ByteArray) -> Unit = { _, _ -> },
-    private val onMetrics: (AsrCaptureMetrics, String) -> Unit = { _, _ -> }
+    private val onMetrics: (AsrCaptureMetrics, String) -> Unit = { _, _ -> },
+    private val trailingSilenceMs: Long = VoiceCallPolicy.TURN_SILENCE_MS
 ) {
     private val pcm = ByteArrayOutputStream()
     private val preRoll = RollingAudioBuffer(AudioFormat(input.sampleRateHz), maxDurationMs = 600)
@@ -42,7 +43,7 @@ class AudioTurnCapture(
     @Volatile var hasSpeech: Boolean = false
         private set
 
-    suspend fun start(initialSilenceTimeoutMs: Long? = 6_000L) = lifecycle.withLock {
+    suspend fun start(initialSilenceTimeoutMs: Long? = VoiceCallPolicy.CALL_INACTIVITY_MS) = lifecycle.withLock {
         check(!stopped && collectionJob == null) { "Audio capture is already started or stopped." }
         check(input.sampleRateHz == 16_000 && input.channelCount == 1) { "VAD requires 16 kHz mono audio." }
         // Start the hardware first; AndroidAudioInput buffers PCM even without a collector.
@@ -53,15 +54,16 @@ class AudioTurnCapture(
         detector = activeDetector
         val loadStartedAt = nowMs()
         transcriber = createTranscriber?.invoke()
-        val modelLoadMs = nowMs() - loadStartedAt
+        var modelLoadMs = nowMs() - loadStartedAt
         val startedAt = nowMs()
         var audioBytes = 0L
         var decodeMs = 0L
         var maxDecodeChunkMs = 0L
+        var emptyCandidates = 0
         var lastSpeechAt = startedAt
         var lastLevelLogAt = startedAt
         log("capture_started vad=silero threshold=0.5 speechConfirmationMs=96 " +
-            "trailingSilenceMs=1200 initialSilenceTimeoutMs=$initialSilenceTimeoutMs maxTurnMs=25000")
+            "trailingSilenceMs=$trailingSilenceMs initialSilenceTimeoutMs=$initialSilenceTimeoutMs maxTurnMs=25000")
         captureReadyMs = nowMs() - captureRequestedAt
         collectionJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
@@ -97,8 +99,8 @@ class AudioTurnCapture(
                     decodeMs += chunkDecodeMs
                     maxDecodeChunkMs = maxOf(maxDecodeChunkMs, chunkDecodeMs)
                     if (hasSpeech && partial != null) publishPartial(partial)
-                    val reason = when {
-                        hasSpeech && now - lastSpeechAt >= 1_200L -> "trailing_silence"
+                    var reason = when {
+                        hasSpeech && now - lastSpeechAt >= trailingSilenceMs -> "trailing_silence"
                         hasSpeech && synchronized(pcm) { pcm.size() >= MAX_TURN_BYTES } -> "max_turn_duration"
                         !hasSpeech && initialSilenceTimeoutMs != null && now - startedAt >= initialSilenceTimeoutMs -> "initial_silence"
                         else -> null
@@ -107,12 +109,34 @@ class AudioTurnCapture(
                         val finalizeStartedAt = nowMs()
                         if (hasSpeech) {
                             finalTranscript = transcriber?.finish().orEmpty().trim()
+                            if (transcriber != null && finalTranscript.isBlank()) {
+                                emptyCandidates++
+                                hasSpeech = false
+                                synchronized(pcm) { pcm.reset(); preRoll.clear() }
+                                firstSpeechAt = null
+                                firstPartialAfterSpeechMs = null
+                                lastPartial = ""
+                                log("empty_speech_candidate ignored=true count=$emptyCandidates microphone=kept_open")
+                                if (initialSilenceTimeoutMs == null || nowMs() - startedAt < initialSilenceTimeoutMs) {
+                                    decodeMs += nowMs() - finalizeStartedAt
+                                    // Finish seals an ASR stream, so replace only that stream/engine.
+                                    // The microphone keeps buffering opening words during model reload.
+                                    val previous = transcriber
+                                    transcriber = null
+                                    previous?.close()
+                                    val reloadAt = nowMs()
+                                    transcriber = createTranscriber?.invoke()
+                                    modelLoadMs += nowMs() - reloadAt
+                                    return@collect
+                                }
+                                reason = "initial_silence"
+                            }
                             publishPartial(finalTranscript, isFinal = true)
                             log("asr_final chars=${finalTranscript.length}")
                         }
                         onMetrics(AsrCaptureMetrics(modelLoadMs, captureReadyMs, audioBytes / 32,
                             decodeMs, maxDecodeChunkMs, firstPartialAfterSpeechMs, partialUpdates,
-                            nowMs() - finalizeStartedAt, reason), finalTranscript)
+                            nowMs() - finalizeStartedAt, reason, emptyCandidates), finalTranscript)
                         turnCompleted.complete(hasSpeech)
                         log("turn_endpoint reason=$reason elapsedMs=${now - startedAt} " +
                             "silenceMs=${now - lastSpeechAt} speechDetected=$hasSpeech")
