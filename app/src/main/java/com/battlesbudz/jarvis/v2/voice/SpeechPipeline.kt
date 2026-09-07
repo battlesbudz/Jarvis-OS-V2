@@ -23,3 +23,4 @@ interface VoiceOutput {
     suspend fun speak(chunks: Flow<String>, onChunkStarted: (String) -> Unit = {})
     fun stopSpeaking()
 }
+

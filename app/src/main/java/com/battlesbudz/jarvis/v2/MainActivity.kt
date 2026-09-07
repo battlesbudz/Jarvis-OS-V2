@@ -124,7 +124,13 @@ class MainActivity : ComponentActivity() {
     internal lateinit var voiceCallStore: SharedPreferencesVoiceCallStore
     internal lateinit var voiceSessionController: VoiceSessionController
     private var activeVoiceCapture: AudioTurnCapture? = null
-    private var pendingVoiceTurn: Triple<Boolean, (String) -> Unit, (String) -> Unit>? = null
+    private data class PendingVoiceTurn(
+        val start: Boolean,
+        val report: (String) -> Unit,
+        val onTranscript: (String, String, Boolean) -> Unit,
+        val onFinished: (String) -> Unit
+    )
+    private var pendingVoiceTurn: PendingVoiceTurn? = null
     private var pendingVoiceTest: Pair<(String) -> Unit, (String) -> Unit>? = null
     private val audioPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -146,10 +152,10 @@ class MainActivity : ComponentActivity() {
         pendingVoiceTurn = null
         if (pending == null) return@registerForActivityResult
         if (granted) {
-            runVoiceTurn(pending.first, pending.second, pending.third)
+            runVoiceTurn(pending.start, pending.report, pending.onTranscript, pending.onFinished)
         } else {
-            pending.second("Microphone permission is required for Voice Calls.")
-            pending.third("Voice Call could not start because microphone permission was denied.")
+            pending.report("Microphone permission is required for Voice Calls.")
+            pending.onFinished("Voice Call could not start because microphone permission was denied.")
         }
     }
 
@@ -188,9 +194,10 @@ class MainActivity : ComponentActivity() {
                 onRunDirectAudioToolTest = { report, onFinished ->
                     runDirectAudioToolSmokeTest(report, onFinished)
                 },
-                onVoiceTurn = { start, report, onFinished ->
-                    runVoiceTurn(start, report, onFinished)
+                onVoiceTurn = { start, report, onTranscript, onFinished ->
+                    runVoiceTurn(start, report, onTranscript, onFinished)
                 },
+                onEndVoiceCall = { report -> endVoiceCall(report) },
                 onDownloadGemma = { onProgress, onStatus, onFinished ->
                     downloadGemmaAndTest(onProgress, onStatus, onFinished)
                 },
@@ -209,10 +216,11 @@ class MainActivity : ComponentActivity() {
     private fun runVoiceTurn(
         start: Boolean,
         report: (String) -> Unit,
+        onTranscript: (String, String, Boolean) -> Unit,
         onFinished: (String) -> Unit
     ) {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            pendingVoiceTurn = Triple(start, report, onFinished)
+            pendingVoiceTurn = PendingVoiceTurn(start, report, onTranscript, onFinished)
             voicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             return
         }
@@ -301,6 +309,7 @@ class MainActivity : ComponentActivity() {
                     }.let {
                         SherpaKokoroVoiceOutput(kokoroModelStore.directory().path)
                     }
+                    mainHandler.post { onTranscript("You", transcript, true) }
                     val response = coordinator.processTurn(transcript) { onToken ->
                         mainHandler.post { report("Jarvis is responding…") }
                         // The audio-capable engine has completed the input turn.
@@ -318,6 +327,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                         }
+                        val streamedSpeech = StringBuilder()
                         try {
                             runConversation(
                                 prompt = transcript,
@@ -325,21 +335,41 @@ class MainActivity : ComponentActivity() {
                                 imageUri = null,
                                 onToken = { token ->
                                     onToken(token)
+                                    streamedSpeech.append(token)
+                                    mainHandler.post { onTranscript("Jarvis", token, false) }
                                     speechChunks.trySend(token)
                                 },
-                                onComplete = { completed.complete(it) }
+                                onComplete = {
+                                    if (streamedSpeech.isBlank() && it.isNotBlank()) {
+                                        speechChunks.trySend(it)
+                                    }
+                                    completed.complete(it)
+                                }
                             )
+                            // runConversation posts its completion callback to
+                            // the main thread. Keep the speech channel open
+                            // until that callback has supplied the final text.
+                            val completedText = completed.await()
+                            if (completedText.isNotBlank()) {
+                                mainHandler.post { onTranscript("Jarvis", completedText, true) }
+                            }
                         } finally {
                             speechChunks.close()
                             speechJob.join()
                             voiceOutput.release()
                         }
+                        val completedText = completed.getCompleted()
                         com.battlesbudz.jarvis.v2.ai.GenerationResult(
-                            text = completed.await(),
+                            text = completedText,
                             timeToFirstTokenMs = -1L,
                             decodeTokensPerSecond = null
                         )
                     }
+                    // Tool/action turns can intentionally suppress streaming
+                    // tokens. Persist the authoritative final response too,
+                    // so the Voice Call transcript never loses a reply.
+                    voiceSessionController.appendTranscript("Jarvis", response.text.trim(), complete = true)
+                    mainHandler.post { report("Voice Call turn complete.") }
                     finalMessage = "Voice Call turn complete. Heard: $transcript\nJarvis: ${response.text.trim()}"
                 } finally {
                     modelStore.endModelOperation()
@@ -355,6 +385,15 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun endVoiceCall(report: (String) -> Unit) {
+        runCatching {
+            if (voiceSessionController.state.value != VoiceSessionState.PASSIVE_LISTENING) {
+                voiceSessionController.end()
+            }
+        }.onFailure { report("Voice Call could not be saved: ${it.message ?: "unknown error"}") }
+            .onSuccess { report("Voice Call saved on this phone.") }
     }
 
     private fun runDirectAudioSmokeTest(

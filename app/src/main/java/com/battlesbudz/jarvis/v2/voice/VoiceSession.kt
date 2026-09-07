@@ -34,3 +34,4 @@ data class TranscriptEntry(
     val timestampMs: Long = System.currentTimeMillis(),
     val complete: Boolean = true
 )
+

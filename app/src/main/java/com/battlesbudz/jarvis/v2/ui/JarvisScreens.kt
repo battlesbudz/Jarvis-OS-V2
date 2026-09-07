@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -40,6 +41,12 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -76,7 +83,8 @@ fun JarvisChat(
     onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit,
     onRunDirectAudioTest: ((String) -> Unit, (String) -> Unit) -> Unit,
     onRunDirectAudioToolTest: ((String) -> Unit, (String) -> Unit) -> Unit,
-    onVoiceTurn: (Boolean, (String) -> Unit, (String) -> Unit) -> Unit,
+    onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
+    onEndVoiceCall: ((String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onMessagesChanged: (List<ChatEntry>) -> Unit,
     onSendingChanged: (Boolean) -> Unit,
@@ -351,7 +359,8 @@ fun JarvisApp(
     onRunModelSmokeTest: ((String) -> Unit) -> Unit,
     onRunDirectAudioTest: ((String) -> Unit, (String) -> Unit) -> Unit,
     onRunDirectAudioToolTest: ((String) -> Unit, (String) -> Unit) -> Unit,
-    onVoiceTurn: (Boolean, (String) -> Unit, (String) -> Unit) -> Unit,
+    onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
+    onEndVoiceCall: ((String) -> Unit) -> Unit,
     onDownloadGemma: ((Long, Long) -> Unit, (String) -> Unit, (String) -> Unit) -> Unit,
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
@@ -437,7 +446,7 @@ fun JarvisApp(
             if (modelsReady && smokeTestPassed) {
                 VoiceCallScreen(
                     onVoiceTurn = onVoiceTurn,
-                    onCopyDiagnostics = { onCopyDiagnostics(initialMessages) }
+                    onEndVoiceCall = onEndVoiceCall
                 )
             } else {
                 ModelSetup(
@@ -490,11 +499,24 @@ fun JarvisApp(
 
 @Composable
 private fun VoiceCallScreen(
-    onVoiceTurn: (Boolean, (String) -> Unit, (String) -> Unit) -> Unit,
-    onCopyDiagnostics: () -> Unit
+    onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
+    onEndVoiceCall: ((String) -> Unit) -> Unit
 ) {
-    var active by remember { mutableStateOf(false) }
+    var callStarted by remember { mutableStateOf(false) }
+    var listening by remember { mutableStateOf(false) }
     var status by rememberSaveable { mutableStateOf("") }
+    var turns by remember { mutableStateOf(listOf<ChatEntry>()) }
+    val transcriptScrollState = rememberScrollState()
+    val pulse = rememberInfiniteTransition(label = "voice waveform").animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "voice pulse"
+    )
+
+    LaunchedEffect(turns.size, turns.lastOrNull()?.text?.length) {
+        transcriptScrollState.scrollTo(transcriptScrollState.maxValue)
+    }
 
     Column(
         Modifier
@@ -502,7 +524,7 @@ private fun VoiceCallScreen(
             .safeDrawingPadding()
             .padding(horizontal = 28.dp, vertical = 24.dp),
         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Bottom
     ) {
         Text(
             "JARVIS",
@@ -514,66 +536,123 @@ private fun VoiceCallScreen(
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(top = 4.dp)
         )
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 150.dp, max = 190.dp)
+                .padding(vertical = 22.dp)
+        ) {
+            val centerY = size.height / 2f
+            val barWidth = size.width / 32f
+            repeat(24) { index ->
+                val distance = kotlin.math.abs(index - 11.5f) / 11.5f
+                val height = (size.height * 0.12f + size.height * 0.55f * (1f - distance) * pulse.value)
+                drawRoundRect(
+                    color = if (listening) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                    topLeft = androidx.compose.ui.geometry.Offset(index * barWidth + barWidth * .25f, centerY - height / 2f),
+                    size = androidx.compose.ui.geometry.Size(barWidth * .5f, height),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth, barWidth)
+                )
+            }
+        }
         Surface(
-            color = if (active) MaterialTheme.colorScheme.primaryContainer
+            color = if (listening) MaterialTheme.colorScheme.primaryContainer
             else MaterialTheme.colorScheme.surfaceVariant,
             shape = androidx.compose.foundation.shape.CircleShape,
-            modifier = Modifier.padding(vertical = 36.dp)
+            modifier = Modifier.padding(bottom = 18.dp)
         ) {
             Text(
                 when {
-                    active -> "Listening"
-                    status.startsWith("Processing") || status.startsWith("Gemma") || status.startsWith("Jarvis") -> "Working"
+                    listening -> "Listening"
+                    status.contains("speaking", true) -> "Speaking"
+                    status.contains("responding", true) || status.contains("Processing", true) -> "Working"
+                    callStarted -> "Ready"
                     else -> "Ready"
                 },
                 style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(48.dp)
+                modifier = Modifier.padding(horizontal = 42.dp, vertical = 24.dp)
             )
         }
         Text(
             when {
-                active -> "Speak naturally, then tap below when you finish."
-                status.isBlank() -> "Your Voice Calls stay on this phone."
-                else -> "The latest turn is shown below."
+                listening -> "Speak naturally. Tap when you are finished."
+                callStarted -> "Your Voice Call is open. Start another turn or end the call."
+                else -> "Your Voice Calls stay on this phone."
             },
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        if (turns.isNotEmpty()) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .heightIn(max = 230.dp)
+                    .verticalScroll(transcriptScrollState)
+                    .padding(top = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                turns.forEach { turn ->
+                    Text(
+                        "${turn.role}: ${turn.text.ifBlank { "…" }}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (turn.role == "You") MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
         Button(
             onClick = {
-                val start = !active
-                active = start
+                val start = !listening
+                if (start) {
+                    callStarted = true
+                    listening = true
+                } else {
+                    listening = false
+                }
                 onVoiceTurn(
                     start,
                     { update -> status = update },
+                    { role, text, complete ->
+                        turns = if (role == "Jarvis" && turns.lastOrNull()?.role == "Jarvis") {
+                            turns.dropLast(1) + ChatEntry(role, if (complete) text else turns.last().text + text)
+                        } else {
+                            turns + ChatEntry(role, text)
+                        }
+                    },
                     { result ->
                         status = result
-                        active = false
+                        listening = false
                     }
                 )
             },
             modifier = Modifier.fillMaxWidth().padding(top = 24.dp)
         ) {
-            Text(if (active) "Stop and send" else "Start listening")
+            Text(if (listening) "Stop and send" else "Start listening")
         }
-        if (status.isNotBlank()) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth().padding(top = 20.dp)
+        if (callStarted) {
+            TextButton(
+                onClick = {
+                    onEndVoiceCall { result ->
+                        status = result
+                        callStarted = false
+                        listening = false
+                    }
+                },
+                enabled = !listening,
+                modifier = Modifier.padding(top = 4.dp)
             ) {
-                Text(
-                    status,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(16.dp)
-                )
+                Text("End Voice Call")
             }
         }
-        TextButton(
-            onClick = onCopyDiagnostics,
-            modifier = Modifier.padding(top = 12.dp)
-        ) {
-            Text("Copy diagnostics")
+        if (status.isNotBlank()) {
+            Text(
+                status.substringAfterLast("Voice Call turn complete. ").takeIf { it != status } ?: status,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+            )
         }
     }
 }

@@ -67,7 +67,8 @@ class VoiceSessionController(
     }
 
     private fun endInternal(title: String? = null): VoiceCallRecord {
-        val ended = requireActiveCall().copy(endedAtMs = nowMs(), title = title)
+        val call = requireActiveCall()
+        val ended = call.copy(endedAtMs = nowMs(), title = title ?: deriveTitle(call.transcript))
         store.save(ended)
         activeCall = null
         _state.value = VoiceSessionState.PASSIVE_LISTENING
@@ -80,4 +81,15 @@ class VoiceSessionController(
 
     private fun requireActiveCall(): VoiceCallRecord =
         requireNotNull(activeCall) { "No active Voice Call." }
+
+    /** Keep the history list useful without asking the user to name a call. */
+    private fun deriveTitle(entries: List<TranscriptEntry>): String? {
+        val words = entries
+            .filter { it.role == "You" }
+            .flatMap { Regex("[A-Za-z]{4,}").findAll(it.text.lowercase()).map { match -> match.value }.toList() }
+            .filterNot { it in setOf("that", "this", "what", "with", "could", "would", "please", "jarvis") }
+        if (words.isEmpty()) return null
+        return words.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
+            ?.replaceFirstChar { it.uppercase() }
+    }
 }

@@ -19,3 +19,4 @@ data class AudioFormat(
     val channelCount: Int = 1,
     val bitsPerSample: Int = 16
 )
+
