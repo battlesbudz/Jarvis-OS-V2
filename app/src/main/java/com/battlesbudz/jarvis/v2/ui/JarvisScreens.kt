@@ -359,6 +359,7 @@ fun JarvisApp(
     onSendingChanged: (Boolean) -> Unit,
     onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit
 ) {
+    val gemmaReady = store.isUsable()
     var modelsReady by remember { mutableStateOf(store.isUsable() && voiceModelStore.isReady()) }
     var smokeTestPassed by rememberSaveable { mutableStateOf(store.isUsable() && store.smokeTestPassed()) }
     var setupStatus by rememberSaveable { mutableStateOf("") }
@@ -416,7 +417,12 @@ fun JarvisApp(
             onImportModel(uri, spec) { result ->
                 modelImportRunning = false
                 setupStatus = result
-                if (result == "Model imported successfully.") modelsReady = store.isUsable()
+                if (result == "Model imported successfully.") {
+                    modelsReady = store.isUsable() && voiceModelStore.isReady()
+                    if (!voiceModelStore.isReady()) {
+                        setupStatus = "Gemma E2B imported. Install the local voice model to continue."
+                    }
+                }
             }
         }
     }
@@ -436,6 +442,7 @@ fun JarvisApp(
             } else {
                 ModelSetup(
                     ready = modelsReady,
+                    gemmaReady = gemmaReady,
                     testing = smokeTestRunning,
                     importing = modelImportRunning,
                     downloading = modelDownloadRunning,
@@ -574,6 +581,7 @@ private fun VoiceCallScreen(
 @Composable
 private fun ModelSetup(
     ready: Boolean,
+    gemmaReady: Boolean,
     testing: Boolean,
     importing: Boolean,
     downloading: Boolean,
@@ -595,7 +603,11 @@ private fun ModelSetup(
     ) {
         Text("Jarvis setup", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Jarvis runs privately on your phone. Install Gemma and the local Kokoro voice model, or choose your own compatible E2B file.",
+            if (gemmaReady) {
+                "Gemma E2B is ready. Install the local Kokoro voice model to enable Jarvis speaking."
+            } else {
+                "Jarvis runs privately on your phone. Install Gemma and the local Kokoro voice model, or choose your own compatible E2B file."
+            },
             modifier = Modifier.padding(top = 12.dp, bottom = 20.dp)
         )
         Button(
@@ -603,7 +615,13 @@ private fun ModelSetup(
             modifier = Modifier.fillMaxWidth(),
             enabled = !testing && !importing && !downloading
         ) {
-            Text(if (downloading) "Downloading and installing…" else "Download and install Jarvis")
+            Text(
+                when {
+                    downloading -> "Downloading and installing…"
+                    gemmaReady -> "Install voice model"
+                    else -> "Download and install Jarvis"
+                }
+            )
         }
         if (downloading && downloadTotalBytes > 0L) {
             val progress = (downloadBytes.toFloat() / downloadTotalBytes.toFloat()).coerceIn(0f, 1f)
