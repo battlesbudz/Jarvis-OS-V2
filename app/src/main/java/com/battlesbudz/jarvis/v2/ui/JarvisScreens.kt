@@ -542,6 +542,7 @@ private fun VoiceCallScreen(
 ) {
     var callStarted by remember { mutableStateOf(false) }
     var listening by remember { mutableStateOf(false) }
+    var turnInFlight by remember { mutableStateOf(false) }
     var status by rememberSaveable { mutableStateOf("") }
     var turns by remember { mutableStateOf(listOf<ChatEntry>()) }
     val transcriptScrollState = rememberScrollState()
@@ -558,13 +559,45 @@ private fun VoiceCallScreen(
         transcriptScrollState.scrollTo(transcriptScrollState.maxValue)
     }
 
+    fun requestVoiceTurn(start: Boolean) {
+        turnInFlight = true
+        onVoiceTurn(
+            start,
+            { update -> status = update },
+            { role, text, complete ->
+                turns = if (role == "Jarvis" && turns.lastOrNull()?.role == "Jarvis") {
+                    turns.dropLast(1) + ChatEntry(role, if (complete) text else turns.last().text + text)
+                } else {
+                    turns + ChatEntry(role, text)
+                }
+            },
+            { result ->
+                status = result
+                turnInFlight = false
+                // A Voice Call is one continuous interaction. Once Jarvis has
+                // finished the turn (including any tool action and speech),
+                // immediately arm the next microphone turn. Explicit call end
+                // sets callStarted=false, which prevents this re-arm.
+                val failed = result.contains("could not start", ignoreCase = true) ||
+                    result.contains("turn failed", ignoreCase = true) ||
+                    result.contains("permission", ignoreCase = true)
+                if (callStarted && !failed) {
+                    listening = true
+                    requestVoiceTurn(start = true)
+                } else {
+                    listening = false
+                }
+            }
+        )
+    }
+
     Column(
         Modifier
             .fillMaxSize()
             .safeDrawingPadding()
             .padding(horizontal = 28.dp, vertical = 24.dp),
         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Bottom
+        verticalArrangement = Arrangement.Top
     ) {
         Text(
             "JARVIS",
@@ -590,10 +623,11 @@ private fun VoiceCallScreen(
                 onClick = {
                     callStarted = false
                     listening = false
+                    turnInFlight = false
                     turns = emptyList()
                     status = "Ready for a new Voice Call."
                 },
-                enabled = !listening
+                enabled = !turnInFlight
             ) {
                 Text("New Voice Call")
             }
@@ -673,22 +707,9 @@ private fun VoiceCallScreen(
                 } else {
                     listening = false
                 }
-                onVoiceTurn(
-                    start,
-                    { update -> status = update },
-                    { role, text, complete ->
-                        turns = if (role == "Jarvis" && turns.lastOrNull()?.role == "Jarvis") {
-                            turns.dropLast(1) + ChatEntry(role, if (complete) text else turns.last().text + text)
-                        } else {
-                            turns + ChatEntry(role, text)
-                        }
-                    },
-                    { result ->
-                        status = result
-                        listening = false
-                    }
-                )
+                requestVoiceTurn(start)
             },
+            enabled = listening || !turnInFlight,
             modifier = Modifier.fillMaxWidth().padding(top = 24.dp)
         ) {
             Text(if (listening) "Stop and send" else "Start listening")
@@ -696,13 +717,15 @@ private fun VoiceCallScreen(
         if (callStarted) {
             TextButton(
                 onClick = {
+                    // Prevent the completion callback from arming another
+                    // microphone turn after the user explicitly ends the call.
+                    callStarted = false
+                    listening = false
+                    turnInFlight = false
                     onEndVoiceCall { result ->
                         status = result
-                        callStarted = false
-                        listening = false
                     }
                 },
-                enabled = !listening,
                 modifier = Modifier.padding(top = 4.dp)
             ) {
                 Text("End Voice Call")

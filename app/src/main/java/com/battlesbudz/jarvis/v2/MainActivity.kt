@@ -444,6 +444,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun endVoiceCall(report: (String) -> Unit) {
+        // Ending a call must also release an armed microphone turn. Otherwise
+        // the capture coroutine can survive the UI transition and the next
+        // Voice Call cannot acquire the microphone.
+        val capture = activeVoiceCapture
+        activeVoiceCapture = null
+        if (capture != null) {
+            lifecycleScope.launch(Dispatchers.Default) {
+                runCatching { capture.stop() }
+            }
+        }
         runCatching {
             if (voiceSessionController.state.value != VoiceSessionState.PASSIVE_LISTENING) {
                 voiceSessionController.end()
