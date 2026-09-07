@@ -75,6 +75,7 @@ fun JarvisChat(
     onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit,
     onRunDirectAudioTest: ((String) -> Unit, (String) -> Unit) -> Unit,
     onRunDirectAudioToolTest: ((String) -> Unit, (String) -> Unit) -> Unit,
+    onVoiceTurn: (Boolean, (String) -> Unit, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onMessagesChanged: (List<ChatEntry>) -> Unit,
     onSendingChanged: (Boolean) -> Unit,
@@ -88,6 +89,8 @@ fun JarvisChat(
     var directAudioTestStatus by rememberSaveable { mutableStateOf("") }
     var directAudioToolTestRunning by remember { mutableStateOf(false) }
     var directAudioToolTestStatus by rememberSaveable { mutableStateOf("") }
+    var voiceTurnActive by remember { mutableStateOf(false) }
+    var voiceTurnStatus by rememberSaveable { mutableStateOf("") }
     var attachedImageName by rememberSaveable { mutableStateOf<String?>(null) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
     val transcriptScrollState = rememberScrollState()
@@ -206,6 +209,31 @@ fun JarvisChat(
             )
         }
         Button(
+            onClick = {
+                val start = !voiceTurnActive
+                voiceTurnActive = start
+                onVoiceTurn(
+                    start,
+                    { status -> voiceTurnStatus = status },
+                    { result ->
+                        voiceTurnStatus = result
+                        voiceTurnActive = false
+                    }
+                )
+            },
+            enabled = !isSending && !directAudioTestRunning && !directAudioToolTestRunning,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        ) {
+            Text(if (voiceTurnActive) "Stop and send voice turn" else "Start Voice Call turn")
+        }
+        if (voiceTurnStatus.isNotBlank()) {
+            Text(
+                voiceTurnStatus,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+        }
+        Button(
             onClick = { onCopyDiagnostics(messages) },
             enabled = messages.isNotEmpty() && !isSending,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
@@ -321,6 +349,7 @@ fun JarvisApp(
     onRunModelSmokeTest: ((String) -> Unit) -> Unit,
     onRunDirectAudioTest: ((String) -> Unit, (String) -> Unit) -> Unit,
     onRunDirectAudioToolTest: ((String) -> Unit, (String) -> Unit) -> Unit,
+    onVoiceTurn: (Boolean, (String) -> Unit, (String) -> Unit) -> Unit,
     onDownloadGemma: ((Long, Long) -> Unit, (String) -> Unit, (String) -> Unit) -> Unit,
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
@@ -386,6 +415,7 @@ fun JarvisApp(
                     onSend,
                     onRunDirectAudioTest,
                     onRunDirectAudioToolTest,
+                    onVoiceTurn,
                     onCopyDiagnostics,
                     onMessagesChanged,
                     onSendingChanged,

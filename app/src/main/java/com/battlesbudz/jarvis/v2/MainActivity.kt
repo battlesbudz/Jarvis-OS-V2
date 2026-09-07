@@ -52,7 +52,11 @@ import com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient
 import com.battlesbudz.jarvis.v2.ui.JarvisApp
 import com.battlesbudz.jarvis.v2.conversation.runConversationInternal
 import com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore
+import com.battlesbudz.jarvis.v2.voice.AndroidAudioInput
+import com.battlesbudz.jarvis.v2.voice.AudioTurnCapture
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionController
+import com.battlesbudz.jarvis.v2.voice.VoiceSessionState
+import com.battlesbudz.jarvis.v2.voice.VoiceTurnCoordinator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -108,6 +112,8 @@ class MainActivity : ComponentActivity() {
     internal lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
     internal lateinit var voiceCallStore: SharedPreferencesVoiceCallStore
     internal lateinit var voiceSessionController: VoiceSessionController
+    private var activeVoiceCapture: AudioTurnCapture? = null
+    private var pendingVoiceTurn: Triple<Boolean, (String) -> Unit, (String) -> Unit>? = null
     private var pendingVoiceTest: Pair<(String) -> Unit, (String) -> Unit>? = null
     private val audioPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -120,6 +126,19 @@ class MainActivity : ComponentActivity() {
         } else {
             pending.first("Microphone permission is required for the direct E2B audio test.")
             pending.second("Microphone permission is required for the direct E2B audio test.")
+        }
+    }
+    private val voicePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val pending = pendingVoiceTurn
+        pendingVoiceTurn = null
+        if (pending == null) return@registerForActivityResult
+        if (granted) {
+            runVoiceTurn(pending.first, pending.second, pending.third)
+        } else {
+            pending.second("Microphone permission is required for Voice Calls.")
+            pending.third("Voice Call could not start because microphone permission was denied.")
         }
     }
 
@@ -156,6 +175,9 @@ class MainActivity : ComponentActivity() {
                 onRunDirectAudioToolTest = { report, onFinished ->
                     runDirectAudioToolSmokeTest(report, onFinished)
                 },
+                onVoiceTurn = { start, report, onFinished ->
+                    runVoiceTurn(start, report, onFinished)
+                },
                 onDownloadGemma = { onProgress, onStatus, onFinished ->
                     downloadGemmaAndTest(onProgress, onStatus, onFinished)
                 },
@@ -167,6 +189,118 @@ class MainActivity : ComponentActivity() {
                     runConversation(prompt, history, imageUri, onToken, onComplete)
                 }
             )
+        }
+    }
+
+    /** Runs one explicit live Voice Call turn without persisting raw audio. */
+    private fun runVoiceTurn(
+        start: Boolean,
+        report: (String) -> Unit,
+        onFinished: (String) -> Unit
+    ) {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            pendingVoiceTurn = Triple(start, report, onFinished)
+            voicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+
+        if (start) {
+            if (activeVoiceCapture != null) {
+                report("A Voice Call turn is already listening.")
+                return
+            }
+            activeVoiceCapture = AudioTurnCapture(
+                AndroidAudioInput(
+                    lifecycleScope,
+                    com.battlesbudz.jarvis.v2.voice.AudioFormat()
+                ),
+                lifecycleScope
+            )
+            lifecycleScope.launch(Dispatchers.Default) {
+                try {
+                    if (voiceSessionController.state.value == VoiceSessionState.PASSIVE_LISTENING) {
+                        voiceSessionController.beginCall()
+                    }
+                    activeVoiceCapture?.start()
+                    mainHandler.post {
+                        report("Voice Call is listening. Tap again when you finish speaking.")
+                    }
+                } catch (error: Throwable) {
+                    activeVoiceCapture = null
+                    mainHandler.post {
+                        val message = "Voice Call could not start: ${error.message ?: "unknown error"}"
+                        report(message)
+                        onFinished(message)
+                    }
+                }
+            }
+            return
+        }
+
+        val capture = activeVoiceCapture
+        if (capture == null) {
+            val message = "There is no active Voice Call turn to send."
+            report(message)
+            onFinished(message)
+            return
+        }
+        activeVoiceCapture = null
+        lifecycleScope.launch(Dispatchers.Default) {
+            var gemma: LiteRtLmEngine? = null
+            var finalMessage = "Voice Call turn failed."
+            try {
+                mainHandler.post { report("Processing your Voice Call turn locally…") }
+                val audioBytes = capture.stop()
+                check(audioBytes.size > 44) { "No microphone audio was captured." }
+                check(modelStore.tryBeginModelOperation()) {
+                    "Another model operation is still finishing. Please try again in a moment."
+                }
+                try {
+                    check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
+                        "The Gemma model file changed or failed integrity verification. Re-import it."
+                    }
+                    gemma = LiteRtLmEngine(
+                        modelId = ModelCatalog.gemma4E2b.id,
+                        modelPath = modelStore.fileFor(ModelCatalog.gemma4E2b).path,
+                        cacheDir = cacheDir.path,
+                        useGpu = true,
+                        audioEnabled = true
+                    )
+                    val activeGemma = gemma ?: error("Gemma audio runtime was not created.")
+                    activeGemma.initialize()
+                    mainHandler.post { report("Gemma is understanding the audio…") }
+                    val streamedTranscript = StringBuilder()
+                    val transcriptResult = activeGemma.generateAudio(
+                        prompt = "Transcribe the user's speech. Return only the words you heard, with no explanation.",
+                        audioBytes = audioBytes,
+                        onToken = { token ->
+                            streamedTranscript.append(token)
+                            mainHandler.post {
+                                report("Heard: ${streamedTranscript.toString().trim().takeLast(180)}")
+                            }
+                        }
+                    )
+                    val transcript = transcriptResult.text.trim()
+                    check(transcript.isNotBlank()) { "Gemma returned an empty transcription." }
+                    val coordinator = VoiceTurnCoordinator(voiceSessionController)
+                    val response = coordinator.processTurn(transcript) { onToken ->
+                        mainHandler.post { report("Jarvis is responding…") }
+                        activeGemma.generate(transcript, onToken)
+                    }
+                    finalMessage = "Voice Call turn complete. Heard: $transcript\nJarvis: ${response.text.trim()}"
+                } finally {
+                    modelStore.endModelOperation()
+                }
+            } catch (error: Throwable) {
+                runCatching { voiceSessionController.interrupt() }
+                finalMessage = "Voice Call turn failed: ${error.message ?: "unknown error"}"
+            } finally {
+                gemma?.close()
+                mainHandler.post {
+                    report(finalMessage)
+                    onFinished(finalMessage)
+                }
+            }
         }
     }
 
