@@ -20,8 +20,9 @@ writes and poll nonblocking so cancellation remains responsive.
 Text chunking targets a short opening (70 characters), then 180 characters when
 synthesis is faster than playback or 120 when slower. Punctuation and whitespace
 boundaries preserve words; final text is flushed. These are initial heuristics,
-not a phone benchmark. A startup grace period of at most 700 ms gives longer
-answers some headroom; completed short answers do not wait for the full period.
+not a phone benchmark. A startup grace period adapts from 0 to 1200 ms based on the first chunk's
+measured synthesis time versus audio duration, reserving 20% scheduling headroom.
+Completed short answers do not wait for the full period.
 The separate 120 ms artificial inter-phrase padding is removed. Voice speed is
 unchanged.
 

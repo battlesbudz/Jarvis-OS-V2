@@ -28,7 +28,8 @@ class SherpaKokoroVoiceOutput(
     private data class SynthesizedPhrase(
         val index: Int,
         val sampleRate: Int,
-        val pcm: ShortArray
+        val pcm: ShortArray,
+        val startupWaitMs: Long
     )
 
     override suspend fun speak(chunks: Flow<String>, onChunkStarted: (String) -> Unit) = coroutineScope {
@@ -85,7 +86,8 @@ class SherpaKokoroVoiceOutput(
                                 }
                                 frames += pcm.size
                                 val waitStart = System.nanoTime()
-                                audio.sendFromNative(SynthesizedPhrase(phraseIndex, rate, pcm))
+                                audio.sendFromNative(SynthesizedPhrase(phraseIndex, rate, pcm,
+                                    PlaybackBufferPolicy.startupWaitMs(elapsedMs(started) - queueWaitMs, frames * 1000 / rate)))
                                 queueWaitMs += elapsedMs(waitStart)
                                 1
                             } catch (error: Throwable) {
@@ -136,8 +138,8 @@ class SherpaKokoroVoiceOutput(
                     if (first) {
                         // Small startup headroom; never hold a short, completed answer for this delay.
                         val start = System.nanoTime()
-                        withTimeoutOrNull(700) { producer.join() }
-                        log("audio_startup_buffer waitMs=${elapsedMs(start)}")
+                        if (phrase.startupWaitMs > 0) withTimeoutOrNull(phrase.startupWaitMs) { producer.join() }
+                        log("audio_startup_buffer targetMs=${phrase.startupWaitMs} waitMs=${elapsedMs(start)}")
                         first = false
                         if (stopped) break
                     }
