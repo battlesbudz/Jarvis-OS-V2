@@ -7,16 +7,14 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
-import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 
-/** Downloads and atomically installs the pinned Sherpa Kokoro model bundle. */
+/** Downloads and atomically installs the pinned full-precision Kokoro model bundle. */
 class KokoroModelStore(context: Context) {
     companion object {
         private const val ARCHIVE_URL =
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-en-v0_19.tar.bz2"
+            "https://github.com/battlesbudz/Jarvis-OS-V2/releases/download/voice-model-kokoro-v0_19/kokoro-en-v0_19.tar"
         private const val DIRECTORY = "kokoro-en-v0_19"
-        // Total uncompressed bytes in the pinned archive above. This lets the
-        // UI show unpacked/total without performing a second decompression pass.
+        // Total bytes in the plain TAR bundle and extracted model contents.
         const val EXTRACTED_BYTES = 369_315_617L
         private val REQUIRED = listOf("model.onnx", "voices.bin", "tokens.txt", "espeak-ng-data")
     }
@@ -28,7 +26,7 @@ class KokoroModelStore(context: Context) {
         // Failed/interrupted installs must never accumulate large leftovers.
         // A later WorkManager attempt starts cleanly if the final model is not ready.
         if (!isReady()) {
-            File(root, "$DIRECTORY.tar.bz2.part").delete()
+            File(root, "$DIRECTORY.tar.part").delete()
             File(root, "$DIRECTORY.staging").deleteRecursively()
         }
     }
@@ -43,7 +41,7 @@ class KokoroModelStore(context: Context) {
     ): Result<File> = runCatching {
         if (isReady()) return@runCatching modelDir
         root.mkdirs()
-        val archive = File(root, "$DIRECTORY.tar.bz2.part")
+        val archive = File(root, "$DIRECTORY.tar.part")
         val staging = File(root, "$DIRECTORY.staging")
         try {
             onStatus("Downloading the local Jarvis voice model…")
@@ -78,7 +76,7 @@ class KokoroModelStore(context: Context) {
             var extractedBytes = 0L
             var nextProgressReport = 8L * 1024L * 1024L
             FileInputStream(archive).use { input ->
-                TarArchiveInputStream(BZip2CompressorInputStream(input)).use { tar ->
+                TarArchiveInputStream(input).use { tar ->
                     var entry = tar.nextTarEntry
                     while (entry != null) {
                         val isRootEntry = entry.name == DIRECTORY || entry.name == "$DIRECTORY/"
