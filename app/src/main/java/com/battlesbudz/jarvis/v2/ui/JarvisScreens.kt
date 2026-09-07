@@ -365,6 +365,7 @@ fun JarvisApp(
     var smokeTestRunning by remember { mutableStateOf(false) }
     var modelImportRunning by remember { mutableStateOf(store.importInProgress()) }
     var modelDownloadRunning by remember { mutableStateOf(false) }
+    var automaticSmokeTestAttempted by remember { mutableStateOf(false) }
     var downloadBytes by remember { mutableStateOf(0L) }
     var downloadTotalBytes by remember { mutableStateOf(-1L) }
     var setupElapsedSeconds by remember { mutableStateOf(0L) }
@@ -390,6 +391,21 @@ fun JarvisApp(
             modelsReady = store.isUsable() && voiceModelStore.isReady()
             modelImportRunning = store.importInProgress()
             smokeTestPassed = modelsReady && store.smokeTestPassed()
+        }
+    }
+
+    LaunchedEffect(modelsReady, smokeTestPassed, modelDownloadRunning, smokeTestRunning) {
+        if (!modelsReady) automaticSmokeTestAttempted = false
+        if (modelsReady && !smokeTestPassed && !modelDownloadRunning &&
+            !smokeTestRunning && !automaticSmokeTestAttempted
+        ) {
+            automaticSmokeTestAttempted = true
+            smokeTestRunning = true
+            onRunModelSmokeTest { result ->
+                smokeTestRunning = false
+                setupStatus = result
+                smokeTestPassed = result == "Gemma 4 E2B initialized successfully."
+            }
         }
     }
 
@@ -579,7 +595,7 @@ private fun ModelSetup(
     ) {
         Text("Jarvis setup", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Jarvis runs privately on your phone. Download the verified Gemma model, or choose the exact model file if you already downloaded it.",
+            "Jarvis runs privately on your phone. Install Gemma and the local Kokoro voice model, or choose your own compatible E2B file.",
             modifier = Modifier.padding(top = 12.dp, bottom = 20.dp)
         )
         Button(
@@ -625,7 +641,7 @@ private fun ModelSetup(
             enabled = ready && !testing && !importing && !downloading,
             modifier = Modifier.fillMaxWidth().padding(top = 20.dp)
         ) {
-            Text(if (testing) "Testing Gemma 4 E2B…" else "Test Gemma 4 E2B")
+            Text(if (testing) "Preparing Gemma 4 E2B…" else "Test Gemma 4 E2B")
         }
     }
 }
