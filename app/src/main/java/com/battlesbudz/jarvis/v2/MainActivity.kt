@@ -53,6 +53,9 @@ import com.battlesbudz.jarvis.v2.ui.JarvisApp
 import com.battlesbudz.jarvis.v2.conversation.runConversationInternal
 import com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore
 import com.battlesbudz.jarvis.v2.voice.AndroidAudioInput
+import com.battlesbudz.jarvis.v2.voice.AsrModelStore
+import com.battlesbudz.jarvis.v2.voice.SherpaStreamingTranscriber
+import com.battlesbudz.jarvis.v2.voice.VoicePreparation
 import com.battlesbudz.jarvis.v2.voice.SileroSpeechDetector
 import com.battlesbudz.jarvis.v2.voice.Pcm16Signal
 import com.battlesbudz.jarvis.v2.voice.AudioTurnCapture
@@ -126,6 +129,8 @@ class MainActivity : ComponentActivity() {
     internal lateinit var voiceCallStore: SharedPreferencesVoiceCallStore
     internal lateinit var voiceSessionController: VoiceSessionController
     private var activeVoiceCapture: AudioTurnCapture? = null
+    private var voiceTurnJob: Job? = null
+    private var activeVoiceOutput: SherpaKokoroVoiceOutput? = null
     private data class PendingVoiceTurn(
         val start: Boolean,
         val report: (String) -> Unit,
@@ -205,10 +210,7 @@ class MainActivity : ComponentActivity() {
                     voiceSessionController.resumeCall(call).also {
                         diagnosticRecorder.startSession("Voice Call ${it.id} (resumed)")
                     }
-                    conversationEngine?.close()
-                    conversationEngine = null
-                    nativeConversationHasContext = false
-                    conversationCharacters = 0
+                    // The next voice job resets the engine after prior work has joined.
                 },
                 onDeleteVoiceCall = { callId -> voiceCallStore.delete(callId) },
                 onRefreshVoiceCalls = { voiceCallStore.list() },
@@ -226,7 +228,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Runs one explicit live Voice Call turn without persisting raw audio. */
+    /** Streaming ASR -> speculative Gemma -> final validation -> tools and speech. */
     private fun runVoiceTurn(
         start: Boolean,
         report: (String) -> Unit,
@@ -238,230 +240,164 @@ class MainActivity : ComponentActivity() {
             voicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             return
         }
-
-        if (start) {
-            if (activeVoiceCapture != null) {
-                report("A Voice Call turn is already listening.")
-                return
-            }
-            val firstTurn = voiceSessionController.currentTranscript().isEmpty()
-            if (voiceSessionController.state.value == VoiceSessionState.PASSIVE_LISTENING) {
-                voiceSessionController.beginCall().also {
-                    diagnosticRecorder.startSession("Voice Call ${it.id}")
-                }
-            }
-            val capture = AudioTurnCapture(
-                AndroidAudioInput(lifecycleScope, com.battlesbudz.jarvis.v2.voice.AudioFormat()),
-                CoroutineScope(lifecycleScope.coroutineContext + Dispatchers.Default),
-                createDetector = { SileroSpeechDetector.create(assets) },
-                log = { diagnosticRecorder.record("Voice input: $it") }
-            )
-            activeVoiceCapture = capture
-            lifecycleScope.launch(Dispatchers.Default) {
-                try {
-                    capture.start(initialSilenceTimeoutMs = if (firstTurn) 6_000L else null)
-                    mainHandler.post {
-                        if (activeVoiceCapture !== capture) return@post
-                        report("Voice Call is listening. Speak naturally; I’ll detect when you finish.")
-                    }
-                    // Give the initial invocation a finite follow-up window;
-                    // once the call has real context, remain armed indefinitely
-                    // until speech arrives or the user ends the call.
-                    capture.awaitTurnCompletion()
-                    // Route the completed automatic turn through the same
-                    // model/tool/TTS pipeline used by the explicit fallback.
-                    // The capture remains installed until runVoiceTurn(false)
-                    // stops it and takes ownership of the recorded WAV.
-                    mainHandler.post {
-                        if (activeVoiceCapture === capture) {
-                            runVoiceTurn(false, report, onTranscript, onFinished)
-                        }
-                    }
-                } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                    capture.stop()
-                    throw cancelled
-                } catch (error: Throwable) {
-                    capture.stop()
-                    mainHandler.post {
-                        if (activeVoiceCapture !== capture) return@post
-                        activeVoiceCapture = null
-                        val message = "Voice Call could not start: ${error.message ?: "unknown error"}"
-                        report(message)
-                        onFinished(message)
-                    }
-                }
-            }
-            return
-        }
-
-        val capture = activeVoiceCapture
-        if (capture == null) {
-            val message = "There is no active Voice Call turn to send."
+        if (!start || voiceTurnJob?.isActive == true) {
+            val message = "Voice Call turn failed: the previous turn is still finishing."
             report(message)
             onFinished(message)
             return
         }
-        activeVoiceCapture = null
-        lifecycleScope.launch(Dispatchers.Default) {
-            var gemma: LiteRtLmEngine? = null
+        val firstTurn = voiceSessionController.currentTranscript().isEmpty()
+        if (voiceSessionController.state.value == VoiceSessionState.PASSIVE_LISTENING) {
+            voiceSessionController.beginCall().also {
+                diagnosticRecorder.startSession("Voice Call ${it.id}")
+            }
+        }
+        val voiceHistory = voiceSessionController.currentTranscript().map { ChatEntry(it.role, it.text) }
+        voiceTurnJob = lifecycleScope.launch(Dispatchers.Default) {
+            var operationOwned = false
+            var preparation: VoicePreparation? = null
+            var capture: AudioTurnCapture? = null
+            var voiceOutput: SherpaKokoroVoiceOutput? = null
+            val speechChunks = Channel<String>(Channel.UNLIMITED)
+            var speechJob: Job? = null
             var finalMessage = "Voice Call turn failed."
+            fun status(message: String) { mainHandler.post { report(message) } }
             try {
-                mainHandler.post { report("Processing your Voice Call turn locally…") }
-                val audioBytes = capture.stop()
-                check(audioBytes.size > 44) { "No microphone audio was captured." }
-                val audioStats = analyzeCapturedAudio(audioBytes)
-                diagnosticRecorder.record(
-                    "Voice audio capture\n" +
-                        "bytes=${audioBytes.size}\n" +
-                        "durationMs=${audioStats.durationMs}\n" +
-                        "rms=${audioStats.rms}\n" +
-                        "peak=${audioStats.peak}\n" +
-                        "activeSampleRatio=${audioStats.activeSampleRatio}"
+                check(activeConversationJobs.get() == 0 && modelStore.tryBeginModelOperation()) {
+                    "Another model operation is still finishing. Please try again in a moment."
+                }
+                operationOwned = true
+                status("Preparing speech recognition…")
+                val asrDirectory = AsrModelStore(applicationContext).ensureReady(::status)
+                check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) { "The Gemma model failed integrity verification." }
+                if (conversationEngine?.audioEnabled != true) {
+                    conversationEngine?.close()
+                    conversationEngine = null
+                    val created = LiteRtLmEngine(
+                        ModelCatalog.gemma4E2b.id, modelStore.fileFor(ModelCatalog.gemma4E2b).path,
+                        cacheDir.path, useGpu = true,
+                        tools = MobileActionToolDefinitions.all(), audioEnabled = true
+                    )
+                    try { created.initialize() } catch (error: Throwable) { created.close(); throw error }
+                    conversationEngine = created
+                }
+                val engine = requireNotNull(conversationEngine)
+                resetNativeConversation()
+                conversationCharacters = 0
+                check(kokoroModelStore.isReady()) { "The local voice output model is not ready." }
+                val output = SherpaKokoroVoiceOutput(kokoroModelStore.directory().path,
+                    log = { diagnosticRecorder.record("Voice TTS: $it") })
+                voiceOutput = output
+                activeVoiceOutput = output
+                // Preload Kokoro while listening; this channel stays empty until final validation.
+                speechJob = launch(Dispatchers.Default) {
+                    try {
+                        output.speak(speechChunks.receiveAsFlow()) { status("Jarvis is speaking…") }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (error: Throwable) {
+                        diagnosticRecorder.record("Voice TTS failure: ${error.message}")
+                        status("Voice playback failed: ${error.message}")
+                    }
+                }
+                val speculative = VoicePreparation(this, generate = { partial, audio, onToken ->
+                    resetNativeConversation()
+                    conversationCharacters = 0
+                    val prompt = promptBuilder.buildGemmaPrompt(partial, null, voiceHistory, seedContext = true) +
+                        "\nThe text above is the current speech transcript. Use the attached audio for tone and emphasis. " +
+                        "Treat the transcript as the words being requested; do not transcribe it again."
+                    engine.generateAudio(prompt, audio, onToken)
+                }, log = { diagnosticRecorder.record("Voice preparation: $it") })
+                preparation = speculative
+                val activeCapture = AudioTurnCapture(
+                    AndroidAudioInput(this), this,
+                    createDetector = { SileroSpeechDetector.create(assets) },
+                    log = { diagnosticRecorder.record("Voice input: $it") },
+                    createTranscriber = { SherpaStreamingTranscriber(asrDirectory) },
+                    onPartialTranscript = { text, audio ->
+                        speculative.submit(text, audio)
+                        mainHandler.post {
+                            if (activeVoiceCapture === capture) onTranscript("You", text, false)
+                        }
+                    }
                 )
-                if (!capture.hasSpeech) {
+                capture = activeCapture
+                activeVoiceCapture = activeCapture
+                activeCapture.start(initialSilenceTimeoutMs = if (firstTurn) 6_000L else null)
+                status("Voice Call is listening. Speak naturally; I’ll detect when you finish.")
+                activeCapture.awaitTurnCompletion()
+                val endpointAt = System.nanoTime()
+                val firstFinalToken = java.util.concurrent.atomic.AtomicBoolean(true)
+                val audioBytes = activeCapture.stop()
+                if (activeVoiceCapture === activeCapture) activeVoiceCapture = null
+                status("Processing your Voice Call turn locally…")
+                if (!activeCapture.hasSpeech || activeCapture.finalTranscript.isBlank()) {
                     finalMessage = "I didn't hear anything to process. Please try speaking after starting the turn."
                     return@launch
                 }
-                check(modelStore.tryBeginModelOperation()) {
-                    "Another model operation is still finishing. Please try again in a moment."
-                }
-                try {
-                    check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
-                        "The Gemma model file changed or failed integrity verification. Re-import it."
-                    }
-                    gemma = LiteRtLmEngine(
-                        modelId = ModelCatalog.gemma4E2b.id,
-                        modelPath = modelStore.fileFor(ModelCatalog.gemma4E2b).path,
-                        cacheDir = cacheDir.path,
-                        useGpu = true,
-                        audioEnabled = true
-                    )
-                    val activeGemma = gemma ?: error("Gemma audio runtime was not created.")
-                    activeGemma.initialize()
-                    mainHandler.post { report("Gemma is understanding the audio…") }
-                    val streamedTranscript = StringBuilder()
-                    val transcriptResult = activeGemma.generateAudio(
-                        prompt = "Transcribe the user's speech. Return only the words you heard, with no explanation.",
-                        audioBytes = audioBytes,
+                val transcript = activeCapture.finalTranscript
+                val draft = speculative.seal(transcript)
+                if (draft == null) resetNativeConversation()
+                diagnosticRecorder.record("Voice ASR final\ntext=$transcript\naudioBytes=${audioBytes.size}\nprepared=${draft != null}")
+                mainHandler.post { onTranscript("You", transcript, true) }
+                val coordinator = VoiceTurnCoordinator(voiceSessionController)
+                val response = coordinator.processTurn(transcript) { onToken ->
+                    val completed = CompletableDeferred<String>()
+                    val streamed = StringBuilder()
+                    runConversationInternal(
+                        prompt = transcript, history = voiceHistory, imageUri = null,
+                        preparedVoice = draft, voiceAudio = audioBytes,
                         onToken = { token ->
-                            streamedTranscript.append(token)
-                            mainHandler.post {
-                                report("Heard: ${streamedTranscript.toString().trim().takeLast(180)}")
+                            if (firstFinalToken.compareAndSet(true, false)) {
+                                diagnosticRecorder.record("Voice latency: endpoint_to_first_text_ms=${(System.nanoTime() - endpointAt) / 1_000_000}")
                             }
+                            onToken(token)
+                            streamed.append(token)
+                            mainHandler.post { onTranscript("Jarvis", token, false) }
+                            speechChunks.trySend(cleanSpeechText(token))
+                        },
+                        onComplete = { text ->
+                            if (streamed.isBlank() && text.isNotBlank()) speechChunks.trySend(cleanSpeechText(text))
+                            completed.complete(text)
                         }
                     )
-                    diagnosticRecorder.record(
-                        "Inference\n" +
-                            "stage=voice_audio_transcription\n" +
-                            "timeToFirstTokenMs=${transcriptResult.timeToFirstTokenMs}\n" +
-                            "totalGenerationTimeMs=${transcriptResult.totalGenerationTimeMs}\n" +
-                            "outputTokensEstimated=${transcriptResult.outputTokens ?: -1}\n" +
-                            "streamEvents=${transcriptResult.streamEvents}\n" +
-                            "decodeTokensPerSecondEstimated=${transcriptResult.decodeTokensPerSecond ?: -1.0}"
-                    )
-                    val transcript = transcriptResult.text.trim()
-                    check(transcript.isNotBlank()) { "Gemma returned an empty transcription." }
-                    val coordinator = VoiceTurnCoordinator(voiceSessionController)
-                    val voiceOutput = check(kokoroModelStore.isReady()) {
-                        "The local voice output model is still preparing. Please finish setup first."
-                    }.let {
-                        SherpaKokoroVoiceOutput(
-                            modelDirectory = kokoroModelStore.directory().path,
-                            log = { event -> diagnosticRecorder.record("Voice TTS: $event") }
-                        )
-                    }
-                    mainHandler.post { onTranscript("You", transcript, true) }
-                    val voiceHistory = voiceSessionController.currentTranscript()
-                        .dropLast(1)
-                        .map { ChatEntry(it.role, it.text) }
-                    val response = coordinator.processTurn(transcript) { onToken ->
-                        mainHandler.post { report("Jarvis is responding…") }
-                        // The audio-capable engine has completed the input turn.
-                        // Release it before handing the text request to the
-                        // existing conversation runtime, which owns tool
-                        // routing, action validation, and context handling.
-                        // Release the audio-capable engine before the text
-                        // conversation starts, but mark it consumed so the
-                        // outer cleanup cannot close the native engine twice.
-                        runCatching { activeGemma.close() }
-                        gemma = null
-                        val completed = CompletableDeferred<String>()
-                        val speechChunks = Channel<String>(Channel.UNLIMITED)
-                        val speechJob = lifecycleScope.launch(Dispatchers.Default) {
-                            try {
-                                voiceOutput.speak(
-                                    speechChunks.receiveAsFlow(),
-                                    onChunkStarted = { phrase ->
-                                        mainHandler.post { report("Jarvis is speaking… ${phrase.take(80)}") }
-                                    }
-                                )
-                            } catch (error: Throwable) {
-                                // Audio playback must never bring down the
-                                // voice-call coroutine or the Activity. The
-                                // text transcript remains authoritative.
-                                diagnosticRecorder.record(
-                                    "Voice TTS failure: ${error.stackTraceToString().take(4_000)}"
-                                )
-                                mainHandler.post {
-                                    report("Jarvis answered in text, but local voice playback failed: ${error.message ?: "unknown audio error"}")
-                                }
-                            }
-                        }
-                        val streamedSpeech = StringBuilder()
-                        try {
-                            runConversation(
-                                prompt = transcript,
-                                history = voiceHistory,
-                                imageUri = null,
-                                onToken = { token ->
-                                    onToken(token)
-                                    streamedSpeech.append(token)
-                                    mainHandler.post { onTranscript("Jarvis", token, false) }
-                                    speechChunks.trySend(cleanSpeechText(token))
-                                },
-                                onComplete = {
-                                    if (streamedSpeech.isBlank() && it.isNotBlank()) {
-                                        speechChunks.trySend(cleanSpeechText(it))
-                                    }
-                                    completed.complete(it)
-                                }
-                            )
-                            // runConversation posts its completion callback to
-                            // the main thread. Keep the speech channel open
-                            // until that callback has supplied the final text.
-                            val completedText = completed.await()
-                            if (completedText.isNotBlank()) {
-                                mainHandler.post { onTranscript("Jarvis", completedText, true) }
-                            }
-                        } finally {
-                            speechChunks.close()
-                            speechJob.join()
-                            runCatching { voiceOutput.release() }
-                        }
-                        val completedText = completed.getCompleted()
-                        com.battlesbudz.jarvis.v2.ai.GenerationResult(
-                            text = completedText,
-                            timeToFirstTokenMs = -1L,
-                            decodeTokensPerSecond = null
-                        )
-                    }
-                    // Tool/action turns can intentionally suppress streaming
-                    // tokens. Persist the authoritative final response too,
-                    // so the Voice Call transcript never loses a reply.
-                    voiceSessionController.appendTranscript("Jarvis", response.text.trim(), complete = true)
-                    mainHandler.post { report("Voice Call turn complete.") }
-                    finalMessage = "Voice Call turn complete. Heard: $transcript\nJarvis: ${response.text.trim()}"
-                } finally {
-                    modelStore.endModelOperation()
+                    val text = completed.await()
+                    conversationJob?.join()
+                    mainHandler.post { onTranscript("Jarvis", text, true) }
+                    com.battlesbudz.jarvis.v2.ai.GenerationResult(text, -1L, null)
                 }
+                val last = voiceSessionController.currentTranscript().lastOrNull()
+                if (last?.role != "Jarvis" || last.text != response.text) {
+                    voiceSessionController.appendTranscript("Jarvis", response.text, complete = true)
+                }
+                speechChunks.close()
+                speechJob?.join()
+                finalMessage = "Voice Call turn complete. Heard: $transcript\nJarvis: ${response.text}"
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
+                diagnosticRecorder.record("Voice turn failed: ${error.stackTraceToString().take(4000)}")
                 runCatching { voiceSessionController.interrupt() }
                 finalMessage = "Voice Call turn failed: ${error.message ?: "unknown error"}"
             } finally {
-                gemma?.close()
-                mainHandler.post {
-                    report(finalMessage)
-                    onFinished(finalMessage)
+                val cancelled = kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive != true
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    if (cancelled) { conversationJob?.cancel(); conversationJob?.join() }
+                    try {
+                        runCatching { capture?.stop() }
+                        preparation?.close()
+                    } finally {
+                        speechChunks.close()
+                        runCatching { voiceOutput?.stopSpeaking() }
+                        speechJob?.cancel()
+                        speechJob?.join()
+                        runCatching { voiceOutput?.release() }
+                        if (activeVoiceOutput === voiceOutput) activeVoiceOutput = null
+                        if (activeVoiceCapture === capture) activeVoiceCapture = null
+                        if (operationOwned) modelStore.endModelOperation()
+                    }
+                }
+                if (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true) {
+                    mainHandler.post { report(finalMessage); onFinished(finalMessage) }
                 }
             }
         }
@@ -471,13 +407,11 @@ class MainActivity : ComponentActivity() {
         // Ending a call must also release an armed microphone turn. Otherwise
         // the capture coroutine can survive the UI transition and the next
         // Voice Call cannot acquire the microphone.
-        val capture = activeVoiceCapture
+        pendingVoiceTurn = null
+        activeVoiceOutput?.stopSpeaking()
+        voiceTurnJob?.cancel()
+        conversationJob?.cancel()
         activeVoiceCapture = null
-        if (capture != null) {
-            lifecycleScope.launch(Dispatchers.Default) {
-                runCatching { capture.stop() }
-            }
-        }
         runCatching {
             if (voiceSessionController.state.value != VoiceSessionState.PASSIVE_LISTENING) {
                 voiceSessionController.end()
@@ -709,16 +643,15 @@ class MainActivity : ComponentActivity() {
 
     
     override fun onDestroy() {
-        val capture = activeVoiceCapture
-        activeVoiceCapture = null
-        if (capture != null) cleanupScope.launch { capture.stop() }
+        activeVoiceOutput?.stopSpeaking()
+        voiceTurnJob?.cancel()
         conversationJob?.cancel()
         val engine = conversationEngine
         conversationEngine = null
-        if (engine != null) {
-            conversationJob?.invokeOnCompletion {
-                cleanupScope.launch { engine.close() }
-            } ?: cleanupScope.launch { engine.close() }
+        cleanupScope.launch {
+            voiceTurnJob?.join()
+            conversationJob?.join()
+            engine?.close()
         }
         super.onDestroy()
     }

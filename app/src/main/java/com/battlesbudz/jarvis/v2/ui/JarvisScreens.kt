@@ -545,6 +545,7 @@ private fun VoiceCallScreen(
     var turnInFlight by remember { mutableStateOf(false) }
     var status by rememberSaveable { mutableStateOf("") }
     var turns by remember { mutableStateOf(listOf<ChatEntry>()) }
+    var provisionalUser by remember { mutableStateOf("") }
     val transcriptScrollState = rememberScrollState()
     val pulse = rememberInfiniteTransition(label = "voice waveform").animateFloat(
         initialValue = 0.35f,
@@ -565,18 +566,25 @@ private fun VoiceCallScreen(
             start,
             { update ->
                 status = update
-                if (update.startsWith("Processing your Voice Call")) listening = false
+                if (update.startsWith("Processing your Voice Call") || update.startsWith("Preparing")) listening = false
+                if (update.startsWith("Voice Call is listening")) listening = true
             },
             { role, text, complete ->
+                if (role == "You" && !complete) {
+                    provisionalUser = text
+                } else {
+                    if (role == "You") provisionalUser = ""
                 turns = if (role == "Jarvis" && turns.lastOrNull()?.role == "Jarvis") {
                     turns.dropLast(1) + ChatEntry(role, if (complete) text else turns.last().text + text)
                 } else {
                     turns + ChatEntry(role, text)
                 }
+                }
             },
             { result ->
                 status = result
                 turnInFlight = false
+                provisionalUser = ""
                 // A Voice Call is one continuous interaction. Once Jarvis has
                 // finished the turn (including any tool action and speech),
                 // immediately arm the next microphone turn. Explicit call end
@@ -629,6 +637,7 @@ private fun VoiceCallScreen(
                     listening = false
                     turnInFlight = false
                     turns = emptyList()
+                    provisionalUser = ""
                     status = "Ready for a new Voice Call."
                 },
                 enabled = !turnInFlight
@@ -682,7 +691,7 @@ private fun VoiceCallScreen(
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        if (turns.isNotEmpty()) {
+        if (turns.isNotEmpty() || provisionalUser.isNotBlank()) {
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -692,7 +701,7 @@ private fun VoiceCallScreen(
                     .padding(top = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                turns.forEach { turn ->
+                (turns + if (provisionalUser.isNotBlank()) listOf(ChatEntry("You", provisionalUser)) else emptyList()).forEach { turn ->
                     Text(
                         "${turn.role}: ${turn.text.ifBlank { "…" }}",
                         style = MaterialTheme.typography.bodyMedium,
@@ -742,7 +751,7 @@ private fun VoiceCallScreen(
             )
         }
         TextButton(
-            onClick = { onCopyDiagnostics(turns) },
+            onClick = { onCopyDiagnostics(turns + if (provisionalUser.isNotBlank()) listOf(ChatEntry("You", provisionalUser)) else emptyList()) },
             modifier = Modifier.padding(top = 4.dp)
         ) {
             Text("Copy diagnostics")

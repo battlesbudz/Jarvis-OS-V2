@@ -15,6 +15,7 @@ class VoiceTurnCoordinator(
         if (session.state.value == VoiceSessionState.PASSIVE_LISTENING) {
             session.beginCall()
         }
+        val callId = session.currentCallId()
         transcript?.takeIf { it.isNotBlank() }?.let {
             session.appendTranscript("You", it)
         }
@@ -22,19 +23,21 @@ class VoiceTurnCoordinator(
         val response = StringBuilder()
         return try {
             val result = generate { token ->
+                if (session.currentCallId() != callId) throw kotlinx.coroutines.CancellationException("The voice call ended.")
                 response.append(token)
                 session.setState(VoiceSessionState.SPEAKING)
                 session.appendTranscript("Jarvis", response.toString(), complete = false)
             }
+            if (session.currentCallId() != callId) throw kotlinx.coroutines.CancellationException("The voice call ended.")
             if (response.isNotBlank()) {
                 session.appendTranscript("Jarvis", response.toString(), complete = true)
             }
             result
         } catch (error: Throwable) {
-            if (response.isNotBlank()) {
-                session.appendTranscript("Jarvis", response.toString(), complete = false)
+            if (session.currentCallId() == callId) {
+                if (response.isNotBlank()) session.appendTranscript("Jarvis", response.toString(), complete = false)
+                session.interrupt()
             }
-            session.interrupt()
             throw error
         }
     }

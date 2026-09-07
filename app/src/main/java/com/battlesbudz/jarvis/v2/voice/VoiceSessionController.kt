@@ -40,6 +40,8 @@ class VoiceSessionController(
         checkpoint()
     }
 
+    fun currentCallId(): String? = activeCall?.id
+
     fun currentTranscript(): List<TranscriptEntry> = activeCall?.transcript.orEmpty()
 
     /** Starts a new linked session with the prior call's transcript as context. */

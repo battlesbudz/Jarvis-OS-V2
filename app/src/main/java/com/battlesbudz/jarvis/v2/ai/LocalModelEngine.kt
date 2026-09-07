@@ -20,3 +20,6 @@ data class GenerationResult(
     val streamEvents: Int = 0,
     val toolCalls: List<ToolCall> = emptyList()
 )
+
+
+data class ToolCall(val name: String, val arguments: String)

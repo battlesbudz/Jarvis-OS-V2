@@ -1,7 +1,11 @@
 package com.battlesbudz.jarvis.v2.ai
 
 import com.google.ai.edge.litertlm.*
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
@@ -19,8 +23,8 @@ class LiteRtLmEngine(
     cacheDir: String,
     useGpu: Boolean,
     private val tools: List<OpenApiTool> = emptyList(),
-    private val visionEnabled: Boolean = false,
-    private val audioEnabled: Boolean = false
+    val visionEnabled: Boolean = false,
+    val audioEnabled: Boolean = false
 ) : LocalModelEngine, Closeable {
     private val engine = Engine(
         EngineConfig(
@@ -103,6 +107,7 @@ class LiteRtLmEngine(
         message: Message,
         onToken: (String) -> Unit
     ): GenerationResult {
+        if (conversation == null && !closed.get()) conversation = createConversation()
         val activeConversation = requireNotNull(conversation) {
             "LiteRT-LM engine must be initialized before generation."
         }
@@ -112,16 +117,49 @@ class LiteRtLmEngine(
         val toolCalls = mutableListOf<ToolCall>()
         var streamEvents = 0
 
-        activeConversation.sendMessageAsync(message).collect { response ->
-            response.toolCalls.forEach {
-                toolCalls += ToolCall(it.name, JSONObject(it.arguments).toString())
+        val responses = Channel<Message>(Channel.UNLIMITED)
+        val terminal = CompletableDeferred<Unit>()
+        try {
+            try {
+            activeConversation.sendMessageAsync(message, object : MessageCallback {
+                override fun onMessage(message: Message) { responses.trySend(message) }
+                override fun onDone() { terminal.complete(Unit); responses.close() }
+                override fun onError(throwable: Throwable) {
+                    terminal.complete(Unit)
+                    responses.close(throwable)
+                }
+            })
+            } catch (error: Throwable) {
+                terminal.complete(Unit)
+                throw error
             }
-            val messageText = response.toString()
-            if (messageText.isNotEmpty()) {
-                firstTokenAt = firstTokenAt ?: System.nanoTime()
-                streamEvents++
-                output.append(messageText)
-                onToken(messageText)
+            for (response in responses) {
+                response.toolCalls.forEach {
+                    toolCalls += ToolCall(it.name, JSONObject(it.arguments).toString())
+                }
+                val messageText = response.toString()
+                if (messageText.isNotEmpty()) {
+                    firstTokenAt = firstTokenAt ?: System.nanoTime()
+                    streamEvents++
+                    output.append(messageText)
+                    onToken(messageText)
+                }
+            }
+
+        } finally {
+            withContext(NonCancellable) {
+                if (!terminal.isCompleted) {
+                    // The SDK's Flow awaitClose does not cancel native inference.
+                    // Wait for the native terminal callback before freeing its conversation.
+                    try {
+                        activeConversation.cancelProcess()
+                        withTimeout(10_000) { terminal.await() }
+                    } finally {
+                        activeConversation.close()
+                        if (conversation === activeConversation) conversation = null
+                    }
+                }
+                responses.cancel()
             }
         }
 
@@ -159,6 +197,3 @@ class LiteRtLmEngine(
         }
     }
 }
-
-
-data class ToolCall(val name: String, val arguments: String)

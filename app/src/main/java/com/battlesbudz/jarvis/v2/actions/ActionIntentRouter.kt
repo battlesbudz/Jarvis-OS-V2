@@ -58,8 +58,7 @@ class ActionIntentRouter {
         val volumeCommand = Regex("""(?i)\b(set|make|turn|adjust|change|raise|lower|increase|decrease)\b.*\bvolume\b""")
             .containsMatchIn(normalized)
         if (volumeCommand) {
-            val volumeValue = Regex("""(?i)\bvolume\b[^0-9]{0,20}([0-9]{1,5})(?:\s*%)?\b""")
-                .find(normalized)?.groupValues?.getOrNull(1)
+            val volumeValue = com.battlesbudz.jarvis.v2.voice.SpokenVolumeLevel.fromTranscript(normalized)?.toString()
             if (volumeValue != null) {
                 return com.battlesbudz.jarvis.v2.ai.ToolCall(
                     name = "set_volume",

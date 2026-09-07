@@ -1,0 +1,5 @@
+Streaming English ASR model: csukuangfj/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17
+Model card: https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17
+Exported from: https://huggingface.co/desh2608/icefall-asr-librispeech-pruned-transducer-stateless7-streaming-small
+The model card declares Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
+Runtime model weights are downloaded separately and verified by AsrModelStore.

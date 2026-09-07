@@ -86,6 +86,14 @@ class JarvisModelSetupWorker(
             return Result.failure(workDataOf("error" to (error.message ?: "Voice model setup failed.")))
         }
         check(kokoro.isDirectory) { "Kokoro setup did not produce a model directory." }
+        try {
+            AsrModelStore(applicationContext).ensureReady { status ->
+                synchronized(progressLock) { stage = status; publishProgress() }
+            }
+        } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            return Result.failure(workDataOf("error" to (error.message ?: "Speech recognition setup failed.")))
+        }
         return Result.success()
     }
 

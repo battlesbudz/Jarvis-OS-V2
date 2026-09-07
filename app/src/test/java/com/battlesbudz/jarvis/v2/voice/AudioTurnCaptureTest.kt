@@ -166,6 +166,57 @@ class AudioTurnCaptureTest {
         assertEquals(1, fixture.detector.releases)
     }
 
+    @Test
+    fun streamsProvisionalWordsAndSealsTheFlushedFinalTranscript() = runBlocking<Unit> {
+        val transcriber = FakeTranscriber()
+        val fixture = CaptureFixture(this, transcriber)
+        fixture.capture.start()
+        fixture.emit(100, 2000, speech = true)
+        assertEquals(listOf("story about pirates"), fixture.partials)
+        assertEquals("", fixture.capture.finalTranscript)
+        fixture.emit(1300, -1)
+        assertTrue(fixture.capture.awaitTurnCompletion())
+        assertEquals("story about astronauts", fixture.capture.finalTranscript)
+        assertEquals("story about astronauts", fixture.partials.last())
+        fixture.capture.stop()
+        assertEquals(1, transcriber.finishes)
+        assertEquals(1, transcriber.releases)
+    }
+
+    @Test
+    fun explicitStopDoesNotFinalizeOrSubmitAsr() = runBlocking<Unit> {
+        val transcriber = FakeTranscriber()
+        val fixture = CaptureFixture(this, transcriber)
+        fixture.capture.start()
+        fixture.emit(100, 2000, speech = true)
+        fixture.capture.stop()
+        assertEquals(0, transcriber.finishes)
+        assertEquals("", fixture.capture.finalTranscript)
+        assertEquals(1, transcriber.releases)
+    }
+
+    @Test
+    fun noiseOnlyDoesNotFeedAsrOrProducePartials() = runBlocking<Unit> {
+        val transcriber = FakeTranscriber()
+        val fixture = CaptureFixture(this, transcriber)
+        fixture.capture.start()
+        fixture.emit(6000, 4300)
+        assertFalse(fixture.capture.awaitTurnCompletion())
+        fixture.capture.stop()
+        assertTrue(fixture.partials.isEmpty())
+        assertEquals(0, transcriber.accepts)
+        assertEquals(0, transcriber.finishes)
+    }
+
+    private class FakeTranscriber : StreamingTranscriber {
+        var accepts = 0
+        var finishes = 0
+        var releases = 0
+        override fun accept(pcm: ByteArray): String { accepts++; return "story about pirates" }
+        override fun finish(): String { finishes++; return "story about astronauts" }
+        override fun close() { releases++ }
+    }
+
     private class FakeDetector : SpeechDetector {
         var decision = SpeechDecision(false, 0.01f)
         var releases = 0
@@ -177,7 +228,8 @@ class AudioTurnCaptureTest {
         override fun close() { releases++ }
     }
 
-    private class CaptureFixture(scope: CoroutineScope) {
+    private class CaptureFixture(scope: CoroutineScope, transcriber: StreamingTranscriber? = null) {
+        val partials = mutableListOf<String>()
         private var clock = 0L
         private val chunks = MutableSharedFlow<ByteArray>()
         val events = mutableListOf<String>()
@@ -189,7 +241,8 @@ class AudioTurnCaptureTest {
             override suspend fun stop() = Unit
         }
         val detector = FakeDetector()
-        val capture = AudioTurnCapture(input, scope, createDetector = { detector }, nowMs = { clock }, log = events::add)
+        val capture = AudioTurnCapture(input, scope, createDetector = { detector }, nowMs = { clock }, log = events::add,
+            createTranscriber = transcriber?.let { { it } }, onPartialTranscript = { text, _ -> partials.add(text) })
 
         suspend fun emit(atMs: Long, sample: Int, speech: Boolean = false, samples: Int = 1) {
             clock = atMs

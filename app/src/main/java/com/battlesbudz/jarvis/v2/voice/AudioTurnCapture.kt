@@ -19,13 +19,19 @@ class AudioTurnCapture(
     private val scope: CoroutineScope,
     private val createDetector: () -> SpeechDetector,
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
-    private val log: (String) -> Unit = {}
+    private val log: (String) -> Unit = {},
+    private val createTranscriber: (() -> StreamingTranscriber)? = null,
+    private val onPartialTranscript: (String, ByteArray) -> Unit = { _, _ -> }
 ) {
     private val pcm = ByteArrayOutputStream()
     private val preRoll = RollingAudioBuffer(AudioFormat(input.sampleRateHz), maxDurationMs = 600)
     private val lifecycle = Mutex()
     private var collectionJob: Job? = null
     private var detector: SpeechDetector? = null
+    private var transcriber: StreamingTranscriber? = null
+    @Volatile var finalTranscript: String = ""
+        private set
+    private var lastPartial = ""
     private val turnCompleted = CompletableDeferred<Boolean>()
     private var stopped = false
     @Volatile var hasSpeech: Boolean = false
@@ -36,6 +42,7 @@ class AudioTurnCapture(
         check(input.sampleRateHz == 16_000 && input.channelCount == 1) { "VAD requires 16 kHz mono audio." }
         val activeDetector = createDetector()
         detector = activeDetector
+        transcriber = createTranscriber?.invoke()
         val startedAt = nowMs()
         var lastSpeechAt = startedAt
         var lastLevelLogAt = startedAt
@@ -48,6 +55,7 @@ class AudioTurnCapture(
                     val signal = Pcm16Signal.measure(chunk)
                     val decision = activeDetector.accept(chunk)
                     val now = nowMs()
+                    val alreadySpeaking = hasSpeech
                     synchronized(pcm) {
                         if (hasSpeech) {
                             val remaining = MAX_TURN_BYTES - pcm.size()
@@ -65,13 +73,23 @@ class AudioTurnCapture(
                             lastSpeechAt = now
                         }
                     }
+                    if (hasSpeech) {
+                        val inputPcm = if (alreadySpeaking) chunk else synchronized(pcm) { pcm.toByteArray() }
+                        transcriber?.accept(inputPcm)?.let { publishPartial(it) }
+                    }
                     val reason = when {
                         hasSpeech && now - lastSpeechAt >= 1_200L -> "trailing_silence"
                         hasSpeech && synchronized(pcm) { pcm.size() >= MAX_TURN_BYTES } -> "max_turn_duration"
                         !hasSpeech && initialSilenceTimeoutMs != null && now - startedAt >= initialSilenceTimeoutMs -> "initial_silence"
                         else -> null
                     }
-                    if (reason != null && turnCompleted.complete(hasSpeech)) {
+                    if (reason != null && !turnCompleted.isCompleted) {
+                        if (hasSpeech) {
+                            finalTranscript = transcriber?.finish().orEmpty().trim()
+                            publishPartial(finalTranscript)
+                            log("asr_final chars=${finalTranscript.length}")
+                        }
+                        turnCompleted.complete(hasSpeech)
                         log("turn_endpoint reason=$reason elapsedMs=${now - startedAt} " +
                             "silenceMs=${now - lastSpeechAt} speechDetected=$hasSpeech")
                     } else if (now - lastLevelLogAt >= 1_000L) {
@@ -108,7 +126,8 @@ class AudioTurnCapture(
                     collectionJob?.join()
                     collectionJob = null
                     turnCompleted.cancel()
-                    detector?.close()
+                    try { transcriber?.close() } finally { detector?.close() }
+                    transcriber = null
                     detector = null
                     log("capture_stopped speechDetected=$hasSpeech")
                 }
@@ -116,6 +135,17 @@ class AudioTurnCapture(
             synchronized(pcm) {
                 WavEncoder.pcm16Mono(if (hasSpeech) pcm.toByteArray() else preRoll.snapshot(), input.sampleRateHz)
             }
+        }
+    }
+
+    private fun publishPartial(text: String) {
+        val partial = text.trim()
+        if (partial.isNotBlank() && partial != lastPartial) {
+            lastPartial = partial
+            log("asr_partial chars=${partial.length}")
+            onPartialTranscript(partial, synchronized(pcm) {
+                WavEncoder.pcm16Mono(pcm.toByteArray(), input.sampleRateHz)
+            })
         }
     }
 

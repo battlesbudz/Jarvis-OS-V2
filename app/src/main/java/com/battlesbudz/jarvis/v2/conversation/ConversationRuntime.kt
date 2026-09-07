@@ -15,8 +15,14 @@ internal fun MainActivity.runConversationInternal(
         history: List<ChatEntry>,
         imageUri: Uri?,
         onToken: (String) -> Unit,
-        onComplete: (String) -> Unit
+        onComplete: (String) -> Unit,
+        preparedVoice: com.battlesbudz.jarvis.v2.voice.PreparedVoiceDraft? = null,
+        voiceAudio: ByteArray? = null
     ) {
+        if (voiceAudio == null && modelStore.isModelOperationActive()) {
+            onComplete("A voice or model operation is still active. Please finish it first.")
+            return
+        }
         if (!MainActivity.activeConversationJobs.compareAndSet(0, 1)) {
             onComplete("The previous response is still finishing. Please try again in a moment.")
             return
@@ -24,6 +30,7 @@ internal fun MainActivity.runConversationInternal(
         conversationJob = lifecycleScope.launch(Dispatchers.Default) {
             try {
                 if (!modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
+                    preparedVoice?.discard()
                     conversationEngine?.close()
                     conversationEngine = null
                     error("The Gemma model file changed or failed integrity verification. Re-import it.")
@@ -50,6 +57,14 @@ internal fun MainActivity.runConversationInternal(
                 var actionResultMessage: String? = null
                 var actionName: String? = null
                 val turnPlan = turnOrchestrator.plan(prompt)
+                val acceptedPreparation = preparedVoice?.takeIf {
+                    imageUri == null && turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT &&
+                        it.matches(prompt) && !it.failed
+                }
+                if (acceptedPreparation == null && preparedVoice != null) {
+                    preparedVoice.discard()
+                    resetNativeConversation()
+                }
                 val referenceContext = turnPlan.lookupQuery?.let {
                     referenceGrounding.fetchIfRequested(it)?.context
                 }
@@ -111,7 +126,7 @@ internal fun MainActivity.runConversationInternal(
                 ).length
                 val pendingRequestSize = maxOf(existingPromptSize, freshPromptSize) + referenceSize
                 var promptHistory = history
-                if (conversationCharacters + pendingRequestSize + MainActivity.GENERATION_HEADROOM >
+                if (acceptedPreparation == null && conversationCharacters + pendingRequestSize + MainActivity.GENERATION_HEADROOM >
                     MainActivity.CONVERSATION_COMPACTION_LIMIT
                 ) {
                     val compactedText = shortTermContext.compactSnapshot(
@@ -134,7 +149,12 @@ internal fun MainActivity.runConversationInternal(
                 // native conversation. Keep the app transcript/history intact
                 // and reseed that history into the fresh conversation below.
                 if (imageUri != null) {
-                    resetNativeConversation()
+                    if (conversationEngine?.visionEnabled != true) {
+                        conversationEngine?.close()
+                        conversationEngine = null
+                        nativeConversationHasContext = false
+                        conversationCharacters = 0
+                    } else resetNativeConversation()
                 }
 
                 // Keep the expensive model/GPU engine alive. The replaceable
@@ -146,7 +166,8 @@ internal fun MainActivity.runConversationInternal(
                     cacheDir.path,
                     useGpu = true,
                     tools = com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions.all(),
-                    visionEnabled = true
+                    visionEnabled = true,
+                    audioEnabled = voiceAudio != null
                 ).also {
                     it.initialize()
                     conversationEngine = it
@@ -158,7 +179,9 @@ internal fun MainActivity.runConversationInternal(
                     // passes the knowledge-gap guard. This prevents a draft
                     // such as "I don't have that in my knowledge base" from
                     // flashing into the transcript before the retry runs.
-                    if (turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT) {
+                    if (turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT &&
+                        (voiceAudio == null || actionIntentRouter.classifyActionIntent(prompt, history) == null)
+                    ) {
                         mainHandler.post { onToken(safeText) }
                     }
                 }
@@ -227,7 +250,16 @@ internal fun MainActivity.runConversationInternal(
                             "decodeTokensPerSecondEstimated=${result.decodeTokensPerSecond ?: -1.0}"
                     )
                 }
-                var generated = if (imageBytes != null) {
+                var generated = if (acceptedPreparation != null) {
+                    diagnosticRecorder.record("Voice preparation: consuming_validated_draft")
+                    acceptedPreparation.consume(streamFilter::accept)
+                } else if (voiceAudio != null) {
+                    engine.generateAudio(
+                        prompt = submittedPrompt + "\nUse this final transcript as the request and the attached audio for tone. Do not transcribe again.",
+                        audioBytes = voiceAudio,
+                        onToken = streamFilter::accept
+                    )
+                } else if (imageBytes != null) {
                     engine.generate(
                         prompt = submittedPrompt,
                         imageBytes = imageBytes,
@@ -246,7 +278,10 @@ internal fun MainActivity.runConversationInternal(
                 // previous turn while answering a normal question. Never let
                 // that stale call cause a phone side effect.
                 val proposedCall = candidateCall?.takeIf {
-                    actionIntentRouter.toolMatchesUserIntent(prompt, history, it)
+                    actionIntentRouter.toolMatchesUserIntent(prompt, history, it) &&
+                        (voiceAudio == null || com.battlesbudz.jarvis.v2.actions.NativeActionDecoder.decode(it)?.let { request ->
+                            com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard.allows(prompt, request.name, request.arguments)
+                        } == true)
                 }
                 if (proposedCall != null &&
                     proposedCall.name in setOf("read_battery", "set_volume", "open_app")
@@ -440,7 +475,10 @@ internal fun MainActivity.runConversationInternal(
                         "conversationCharacters=$conversationCharacters"
                 )
                 mainHandler.post { onComplete(finalResponse) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
+                preparedVoice?.discard()
                 // Leave the next turn with a fresh native session after any
                 // recoverable generation failure.
                 conversationEngine?.close()
