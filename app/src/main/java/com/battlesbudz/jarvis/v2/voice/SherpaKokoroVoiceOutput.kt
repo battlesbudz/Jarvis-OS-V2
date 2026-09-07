@@ -15,11 +15,12 @@ import java.io.File
 class SherpaKokoroVoiceOutput(
     private val modelDirectory: String,
     private val speakerId: Int = 10,
-    private val numThreads: Int = 2,
+    private val numThreads: Int = Runtime.getRuntime().availableProcessors().coerceIn(2, 4),
     private val log: (String) -> Unit = {}
 ) : VoiceOutput {
     @Volatile private var stopped = false
     private var audioTrack: AudioTrack? = null
+    private var preloadedEngine: OfflineTts? = null
 
     override suspend fun speak(chunks: Flow<String>, onChunkStarted: (String) -> Unit) {
         stopped = false
@@ -28,6 +29,13 @@ class SherpaKokoroVoiceOutput(
         var framesWritten = 0
         var outputSampleRate = 0
         try {
+            // Hide Kokoro's fixed model-construction cost behind Gemma's
+            // answer generation. Release this instance after its first phrase
+            // because some Sherpa Android builds cannot safely reuse native
+            // OfflineTts pointers for multiple generations.
+            log("tts_engine_preload_started")
+            preloadedEngine = OfflineTts(config = config())
+            log("tts_engine_preload_finished")
             chunks.collect { token ->
                 if (stopped) return@collect
                 buffer.append(token)
@@ -66,6 +74,8 @@ class SherpaKokoroVoiceOutput(
             }
             audioTrack?.stopSafely()
             audioTrack = null
+            preloadedEngine?.release()
+            preloadedEngine = null
             log("tts_session_finished stopped=$stopped")
         }
     }
@@ -93,7 +103,8 @@ class SherpaKokoroVoiceOutput(
         // Sherpa-ONNX has had Android crashes when one native OfflineTts
         // pointer is reused for multiple generations. Generate one phrase
         // with one native instance, then release it before the next phrase.
-        val engine = OfflineTts(config = config())
+        val engine = preloadedEngine ?: OfflineTts(config = config())
+        preloadedEngine = null
         try {
             val generated = engine.generateWithConfig(
                 phrase,
