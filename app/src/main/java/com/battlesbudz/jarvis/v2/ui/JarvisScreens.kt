@@ -576,6 +576,28 @@ private fun VoiceCallScreen(
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(top = 4.dp)
         )
+        Row(
+            Modifier.fillMaxWidth().padding(top = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            TextButton(
+                onClick = onOpenVoiceCalls,
+                enabled = !callStarted && !listening
+            ) {
+                Text("Voice Calls")
+            }
+            TextButton(
+                onClick = {
+                    callStarted = false
+                    listening = false
+                    turns = emptyList()
+                    status = "Ready for a new Voice Call."
+                },
+                enabled = !listening
+            ) {
+                Text("New Voice Call")
+            }
+        }
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
@@ -685,12 +707,6 @@ private fun VoiceCallScreen(
             ) {
                 Text("End Voice Call")
             }
-        }
-        TextButton(
-            onClick = onOpenVoiceCalls,
-            modifier = Modifier.padding(top = 4.dp)
-        ) {
-            Text("Voice Calls")
         }
         if (status.isNotBlank()) {
             Text(
