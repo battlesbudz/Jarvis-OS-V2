@@ -72,7 +72,6 @@ class SherpaKokoroVoiceOutput(
         check(File(modelDirectory, "model.onnx").isFile) { "Kokoro model.onnx is missing." }
         check(File(modelDirectory, "voices.bin").isFile) { "Kokoro voices.bin is missing." }
         check(File(modelDirectory, "tokens.txt").isFile) { "Kokoro tokens.txt is missing." }
-        check(File(modelDirectory, "lexicon-us-en.txt").isFile) { "Kokoro English lexicon is missing." }
         // Sherpa-ONNX has had Android crashes when one native OfflineTts
         // pointer is reused for multiple generations. Generate one phrase
         // with one native instance, then release it before the next phrase.
@@ -106,7 +105,13 @@ class SherpaKokoroVoiceOutput(
                 voices = "$modelDirectory/voices.bin",
                 tokens = "$modelDirectory/tokens.txt",
                 dataDir = "$modelDirectory/espeak-ng-data",
-                lexicon = "$modelDirectory/lexicon-us-en.txt",
+                // The official kokoro-en-v0_19 bundle does not include a
+                // separate lexicon file. Its bundled espeak-ng data handles
+                // English pronunciation, so leave lexicon empty when absent.
+                lexicon = File(modelDirectory, "lexicon-us-en.txt")
+                    .takeIf { it.isFile }
+                    ?.path
+                    .orEmpty(),
                 lang = "en-us"
             ),
             numThreads = numThreads,
