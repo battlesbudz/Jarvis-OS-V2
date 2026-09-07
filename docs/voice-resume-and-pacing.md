@@ -25,3 +25,9 @@ Android reference: https://developer.android.com/reference/android/media/Playbac
 44 focused host JVM tests cover resume cleanup ordering, duplicate attempts, failure/retry, cancellation, context preservation, pacing bounds, ASR preference persistence, and existing capture/inactivity behavior. Android CI additionally compiles both APK variants, runs unit tests, and verifies isolated ASR native library packaging. Device playback and history resumption remain user acceptance checks.
 
 The previous build's 3-second turn pause and 20-second call inactivity policy are retained. The user's Moonshine log was from the older 1.2-second endpoint configuration.
+
+## Phone feedback: cap time stretching at 10%
+
+The 0.85 pace sounded robotic in the user's device test. The lower bound is now 0.90 (at most 10% slower), still with unchanged pitch and a stable speed per answer. The earlier 0.85 calculations above describe the preceding build. This is a listening-quality preference, not a synthesis-speed improvement.
+
+Final-transcript-to-first-text timing now also records replies delivered exclusively through the completion callback. Previously those guarded/tool replies showed `unavailable` despite producing text and speech. A nonblank streamed token still wins if it arrives first.

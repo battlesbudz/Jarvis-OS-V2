@@ -400,20 +400,26 @@ class MainActivity : ComponentActivity() {
                 val response = coordinator.processTurn(transcript) { onToken ->
                     val completed = CompletableDeferred<String>()
                     val streamed = StringBuilder()
+                    fun recordFirstText(text: String) {
+                        if (text.isNotBlank() && firstFinalToken.compareAndSet(true, false)) {
+                            val elapsedMs = (System.nanoTime() - endpointAt) / 1_000_000
+                            asrComparisonStore.update(asrTurnId, "final_to_first_text_ms", elapsedMs)
+                            diagnosticRecorder.record("Voice latency: endpoint_to_first_text_ms=$elapsedMs")
+                        }
+                    }
                     runConversationInternal(
                         prompt = transcript, history = voiceHistory, imageUri = null,
                         preparedVoice = draft, voiceAudio = audioBytes,
                         onToken = { token ->
-                            if (firstFinalToken.compareAndSet(true, false)) {
-                                asrComparisonStore.update(asrTurnId, "final_to_first_text_ms", (System.nanoTime() - endpointAt) / 1_000_000)
-                                diagnosticRecorder.record("Voice latency: endpoint_to_first_text_ms=${(System.nanoTime() - endpointAt) / 1_000_000}")
-                            }
+                            recordFirstText(token)
                             onToken(token)
                             streamed.append(token)
                             mainHandler.post { onTranscript("Jarvis", token, false) }
                             speechChunks.trySend(cleanSpeechText(token))
                         },
                         onComplete = { text ->
+                            // Guarded/tool replies may arrive only through completion, with no token callback.
+                            recordFirstText(text)
                             if (streamed.isBlank() && text.isNotBlank()) speechChunks.trySend(cleanSpeechText(text))
                             completed.complete(text)
                         }
