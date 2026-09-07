@@ -285,7 +285,19 @@ class MainActivity : ComponentActivity() {
                     val coordinator = VoiceTurnCoordinator(voiceSessionController)
                     val response = coordinator.processTurn(transcript) { onToken ->
                         mainHandler.post { report("Jarvis is responding…") }
-                        activeGemma.generate(transcript, onToken)
+                        activeGemma.generate(
+                            prompt = """
+                                You are Jarvis answering the user's spoken request.
+                                Answer the request directly and helpfully. Do not repeat,
+                                quote, or merely correct the user's words. If the request
+                                asks for an action, explain the next step or use an
+                                available tool when this voice path supports it.
+
+                                User's spoken request:
+                                $transcript
+                            """.trimIndent(),
+                            onToken = onToken
+                        )
                     }
                     finalMessage = "Voice Call turn complete. Heard: $transcript\nJarvis: ${response.text.trim()}"
                 } finally {
