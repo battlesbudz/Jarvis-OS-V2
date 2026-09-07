@@ -64,6 +64,10 @@ class JarvisModelSetupWorker(
             },
             onStatus = { status ->
                 stage = status
+                if (status.contains("Installing Kokoro", ignoreCase = true)) {
+                    downloaded = 0L
+                    total = -1L
+                }
                 publishProgress()
             }
         ).getOrElse { error ->
