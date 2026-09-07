@@ -61,6 +61,11 @@ import com.battlesbudz.jarvis.v2.voice.KokoroModelStore
 import com.battlesbudz.jarvis.v2.voice.SherpaKokoroVoiceOutput
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.takeWhile
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -655,53 +660,39 @@ class MainActivity : ComponentActivity() {
         report: (String) -> Unit,
         onFinished: (String) -> Unit
     ) {
-        if (modelStore.isModelOperationActive()) {
-            val message = "A model operation is still finishing. Please try again in a moment."
-            report(message)
-            onFinished(message)
-            return
-        }
-        lifecycleScope.launch(Dispatchers.IO) {
-            mainHandler.post { report("Checking for the existing Gemma model…") }
-            val result = modelStore.downloadOrReuse(
-                spec = ModelCatalog.gemma4E2b,
-                onProgress = { downloaded, total ->
-                    mainHandler.post { onProgress(downloaded, total) }
-                },
-                onStatus = { status ->
-                    mainHandler.post { report(status) }
+        val workName = "jarvis-local-model-setup"
+        val request = OneTimeWorkRequestBuilder<com.battlesbudz.jarvis.v2.voice.JarvisModelSetupWorker>()
+            .addTag(workName)
+            .build()
+        val workManager = WorkManager.getInstance(applicationContext)
+        workManager.enqueueUniqueWork(workName, ExistingWorkPolicy.KEEP, request)
+        lifecycleScope.launch {
+            var terminal: WorkInfo? = null
+            workManager.getWorkInfosForUniqueWorkFlow(workName)
+                .takeWhile { infos ->
+                    val info = infos.firstOrNull()
+                    if (info != null) {
+                        val stage = info.progress.getString("stage")
+                        val downloaded = info.progress.getLong("downloaded", 0L)
+                        val total = info.progress.getLong("total", -1L)
+                        if (!stage.isNullOrBlank()) report(stage)
+                        if (downloaded > 0L) onProgress(downloaded, total)
+                        if (info.state.isFinished) {
+                            terminal = info
+                            false
+                        } else true
+                    } else true
                 }
-            )
-                result.fold(
-                onSuccess = {
-                    mainHandler.post { report("Gemma found. Preparing Jarvis’s local voice…") }
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        val voiceResult = kokoroModelStore.downloadOrReuse(
-                            onProgress = { downloaded, total ->
-                                mainHandler.post { onProgress(downloaded, total) }
-                            },
-                            onStatus = { status -> mainHandler.post { report(status) } }
-                        )
-                        voiceResult.fold(
-                            onSuccess = { runModelSmokeTest(report, onFinished) },
-                            onFailure = { error ->
-                                mainHandler.post {
-                                    val message = "Voice model setup failed: ${error.message ?: "unknown error"}"
-                                    report(message)
-                                    onFinished(message)
-                                }
-                            }
-                        )
-                    }
-                },
-                onFailure = { error ->
-                    mainHandler.post {
-                        val message = "Model setup failed: ${error.message ?: "unknown error"}"
-                        report(message)
-                        onFinished(message)
-                    }
-                }
-            )
+                .collect { }
+            val result = terminal
+            if (result?.state == WorkInfo.State.SUCCEEDED) {
+                runModelSmokeTest(report, onFinished)
+            } else {
+                val message = result?.outputData?.getString("error")
+                    ?: "Jarvis model setup did not complete."
+                report(message)
+                onFinished(message)
+            }
         }
     }
 

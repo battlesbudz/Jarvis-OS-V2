@@ -79,7 +79,8 @@ class ModelStore(context: Context) {
         }
         onProgress(0L, length)
         val actual = file.sha256(onProgress)
-        spec.expectedSha256?.let { expected ->
+        val enforceCatalogHash = preferences.getBoolean("${key}_enforce_catalog_hash", pinned == null)
+        if (enforceCatalogHash) spec.expectedSha256?.let { expected ->
             if (!actual.equals(expected, ignoreCase = true)) {
                 markIntegrityInvalid(key, length, modified)
                 return false
@@ -206,6 +207,7 @@ class ModelStore(context: Context) {
                 .putLong("${key}_length", destination.length())
                 .putLong("${key}_modified", destination.lastModified())
                 .putBoolean("${key}_invalid", false)
+                .putBoolean("${key}_enforce_catalog_hash", true)
                 .putBoolean("smoke_test_passed", false)
                 .apply()
             destination
@@ -412,6 +414,7 @@ class ModelStore(context: Context) {
                 .putLong("${key}_length", destination.length())
                 .putLong("${key}_modified", destination.lastModified())
                 .putBoolean("${key}_invalid", false)
+                .putBoolean("${key}_enforce_catalog_hash", true)
                 .putBoolean("smoke_test_passed", false)
                 .apply()
             destination
@@ -461,11 +464,9 @@ class ModelStore(context: Context) {
                 } ?: error("Unable to open selected model file.")
                 require(temporary.length() > 0L) { "The selected model file is empty." }
                 val actualSha256 = temporary.sha256()
-                spec.expectedSha256?.let { expected ->
-                    require(actualSha256.equals(expected, ignoreCase = true)) {
-                        "The selected model failed integrity verification."
-                    }
-                }
+                // An explicitly selected model is validated by the native
+                // Gemma smoke test below, not forced to match the catalog's
+                // download hash. This makes “upload your own E2B” supported.
                 check(temporary.renameTo(destination)) { "Unable to finalize model file." }
                 val fingerprint = fingerprintKey(spec)
                 preferences.edit()
@@ -473,6 +474,7 @@ class ModelStore(context: Context) {
                     .putLong("${fingerprint}_length", destination.length())
                     .putLong("${fingerprint}_modified", destination.lastModified())
                     .putBoolean("${fingerprint}_invalid", false)
+                    .putBoolean("${fingerprint}_enforce_catalog_hash", false)
                     .putBoolean("smoke_test_passed", false)
                     .apply()
                 destination

@@ -66,8 +66,9 @@ class KokoroModelStore(context: Context) {
             TarArchiveInputStream(BZip2CompressorInputStream(input)).use { tar ->
                 var entry = tar.nextTarEntry
                 while (entry != null) {
-                    val relative = entry.name.substringAfter("$DIRECTORY/", entry.name)
-                    if (relative.isNotBlank() && relative != entry.name || entry.name.startsWith("$DIRECTORY/")) {
+                    val isRootEntry = entry.name == DIRECTORY || entry.name == "$DIRECTORY/"
+                    val relative = entry.name.substringAfter("$DIRECTORY/", "")
+                    if (!isRootEntry && relative.isNotBlank() && !relative.startsWith("/")) {
                         val output = File(staging, relative)
                         check(output.canonicalPath.startsWith(staging.canonicalPath + File.separator)) {
                             "Voice model archive contained an unsafe path."
