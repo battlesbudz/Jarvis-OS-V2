@@ -22,7 +22,12 @@ class RollingAudioBuffer(
         chunks.addLast(copy)
         byteCount += copy.size.toLong()
         while (byteCount > maxBytes && chunks.isNotEmpty()) {
-            byteCount -= chunks.removeFirst().size.toLong()
+            val oldest = chunks.removeFirst()
+            val bytesToDrop = (byteCount - maxBytes).coerceAtMost(oldest.size.toLong()).toInt()
+            if (bytesToDrop < oldest.size) {
+                chunks.addFirst(oldest.copyOfRange(bytesToDrop, oldest.size))
+            }
+            byteCount -= bytesToDrop.toLong()
         }
     }
 
