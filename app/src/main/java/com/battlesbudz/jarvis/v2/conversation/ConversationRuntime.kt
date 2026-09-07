@@ -255,7 +255,7 @@ internal fun MainActivity.runConversationInternal(
                     acceptedPreparation.consume(streamFilter::accept)
                 } else if (voiceAudio != null) {
                     engine.generateAudio(
-                        prompt = submittedPrompt + "\nUse this final transcript as the request and the attached audio for tone. Do not transcribe again.",
+                        prompt = submittedPrompt + "\n" + com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions,
                         audioBytes = voiceAudio,
                         onToken = streamFilter::accept
                     )

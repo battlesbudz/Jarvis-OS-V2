@@ -40,6 +40,9 @@ class AudioTurnCapture(
     suspend fun start(initialSilenceTimeoutMs: Long? = 6_000L) = lifecycle.withLock {
         check(!stopped && collectionJob == null) { "Audio capture is already started or stopped." }
         check(input.sampleRateHz == 16_000 && input.channelCount == 1) { "VAD requires 16 kHz mono audio." }
+        // Start the hardware first; AndroidAudioInput buffers PCM even without a collector.
+        // Model construction must not erase speech spoken during microphone preparation.
+        input.start()
         val activeDetector = createDetector()
         detector = activeDetector
         transcriber = createTranscriber?.invoke()
@@ -109,7 +112,6 @@ class AudioTurnCapture(
                 turnCompleted.completeExceptionally(error)
             }
         }
-        input.start()
         log("capture_ready pcmStartupMs=300")
     }
 

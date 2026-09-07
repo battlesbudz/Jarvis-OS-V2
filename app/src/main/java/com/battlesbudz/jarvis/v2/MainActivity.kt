@@ -253,7 +253,7 @@ class MainActivity : ComponentActivity() {
                 diagnosticRecorder.startSession("Voice Call ${it.id}")
             }
         }
-        val voiceHistory = voiceSessionController.currentTranscript().map { ChatEntry(it.role, it.text) }
+        val voiceHistory = voiceSessionController.conversationContext().map { ChatEntry(it.role, it.text) }
         voiceTurnJob = lifecycleScope.launch(Dispatchers.Default) {
             var operationOwned = false
             var preparation: VoicePreparation? = null
@@ -303,9 +303,8 @@ class MainActivity : ComponentActivity() {
                 val speculative = VoicePreparation(this, generate = { partial, audio, onToken ->
                     resetNativeConversation()
                     conversationCharacters = 0
-                    val prompt = promptBuilder.buildGemmaPrompt(partial, null, voiceHistory, seedContext = true) +
-                        "\nThe text above is the current speech transcript. Use the attached audio for tone and emphasis. " +
-                        "Treat the transcript as the words being requested; do not transcribe it again."
+                    val prompt = promptBuilder.buildGemmaPrompt(partial, null, voiceHistory, seedContext = true) + "\n" +
+                        com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions
                     engine.generateAudio(prompt, audio, onToken)
                 }, log = { diagnosticRecorder.record("Voice preparation: $it") })
                 preparation = speculative

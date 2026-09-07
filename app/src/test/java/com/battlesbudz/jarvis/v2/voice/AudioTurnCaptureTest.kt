@@ -14,6 +14,30 @@ import org.junit.Test
 
 class AudioTurnCaptureTest {
     @Test
+    fun microphoneStartsBeforeModelsAndBufferedOpeningAudioReachesAsr() = runBlocking<Unit> {
+        val chunks = kotlinx.coroutines.channels.Channel<ByteArray>(4)
+        var microphoneStarted = false
+        val input = object : AudioInput {
+            override val sampleRateHz = 16_000
+            override val channelCount = 1
+            override fun chunks() = kotlinx.coroutines.flow.flow { for (chunk in chunks) emit(chunk) }
+            override suspend fun start() {
+                microphoneStarted = true
+                chunks.send(byteArrayOf(111, 0))
+            }
+            override suspend fun stop() { chunks.close() }
+        }
+        val transcriber = FakeTranscriber()
+        val capture = AudioTurnCapture(input, this,
+            createDetector = { assertTrue(microphoneStarted); FakeDetector() },
+            createTranscriber = { assertTrue(microphoneStarted); transcriber })
+        capture.start()
+        kotlinx.coroutines.yield()
+        assertEquals(listOf(111), transcriber.receivedSamples)
+        capture.stop()
+    }
+
+    @Test
     fun stopReturnsWavAndDoesNotPersistRawAudio() = runBlocking<Unit> {
         val chunks = MutableSharedFlow<ByteArray>(extraBufferCapacity = 2)
         val input = object : AudioInput {
@@ -272,4 +296,3 @@ class AudioTurnCaptureTest {
         }
     }
 }
-

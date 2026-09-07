@@ -8,12 +8,12 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -29,11 +29,11 @@ class AndroidAudioInput(
     override val sampleRateHz: Int = format.sampleRateHz
     override val channelCount: Int = format.channelCount
 
-    private val emittedChunks = MutableSharedFlow<Result<ByteArray>>(extraBufferCapacity = 64)
+    private val emittedChunks = Channel<ByteArray>(64)
     private var recorder: AudioRecord? = null
     private var captureJob: Job? = null
 
-    override fun chunks(): Flow<ByteArray> = emittedChunks.map { it.getOrThrow() }
+    override fun chunks(): Flow<ByteArray> = emittedChunks.receiveAsFlow()
 
     override suspend fun start() {
         if (captureJob?.isActive == true) return
@@ -75,7 +75,9 @@ class AndroidAudioInput(
                     while (isActive) {
                         val count = created.read(pcm, 0, pcm.size)
                         if (count > 0) {
-                            emittedChunks.emit(Result.success(pcm.copyOf(count)))
+                            check(emittedChunks.trySend(pcm.copyOf(count)).isSuccess) {
+                                "Microphone processing fell behind: audio queue is full."
+                            }
                             capturedBytes += count
                             // Retain startup audio while allowing the hardware capture path to warm up.
                             if (capturedBytes >= format.sampleRateHz * 2 * 300 / 1000) ready.complete(Unit)
@@ -88,7 +90,7 @@ class AndroidAudioInput(
                 throw cancelled
             } catch (error: Throwable) {
                 ready.completeExceptionally(error)
-                emittedChunks.emit(Result.failure(error))
+                emittedChunks.close(error)
             } finally {
                 runCatching { created.stop() }
                 created.release()
@@ -106,5 +108,6 @@ class AndroidAudioInput(
         recorder?.let { runCatching { it.stop() } }
         job?.join()
         captureJob = null
+        emittedChunks.cancel()
     }
 }

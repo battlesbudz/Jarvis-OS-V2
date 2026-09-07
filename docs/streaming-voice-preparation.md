@@ -38,3 +38,33 @@ Diagnostics distinguish `asr_partial`, `asr_final`, `preparation_started`, `prep
 5. End a call during preparation or speech, then start another call; no abandoned draft should execute or enter the new history.
 
 The unit suite verifies transcript flushing, noise gating, revisions, silent preparation, exact final validation, single consumption, serialized cancellation, corrected tool arguments, and bounded capture. Actual concurrent ASR/Gemma/Kokoro performance still requires the phone test.
+
+
+## Opening speech and call continuity
+
+The 20M recognizer is primed with 12,800 zero-valued samples before live audio.
+This supplies 0.8 seconds of left context without a wall-clock sleep. On the
+model's official 0.wav fixture, the unprimed decoder omitted "AFTER EARLY
+NIGHTFALL"; priming restored it. Another fixture still misrecognized its first
+word: this is a targeted onset fix, not proof of general dictation accuracy.
+`scripts/check_asr_onset.py` reproduces the comparison. Four-path modified beam
+search did not consistently improve these two fixtures and increased host decode
+time, so greedy search remains the default.
+
+The microphone now starts before VAD/ASR model construction. A bounded Channel
+retains audio before the consumer subscribes (SharedFlow previously dropped
+frames with no subscriber). Queue overflow produces an explicit capture error.
+Listening is reported after microphone readiness and recognizer initialization.
+
+A newly started call can use the latest nonempty ended call from the past 15
+minutes as background, limited to six completed entries and eight entries total
+with the current dialogue. It never copies old dialogue into the new saved call,
+imports task state, or restarts a tool. Explicitly resuming an older saved call
+continues to use the existing resume path.
+
+Speculative and final voice generation share correction guidance. Gemma may use
+raw audio and dialogue to resolve clear conversational mishearings. Latest
+corrections replace earlier details without discarding the original task.
+Native tool arguments still must match the final ASR transcript; uncertain
+numbers/targets cannot be guessed. No extra inference or transcript-rewrite
+pass is introduced.

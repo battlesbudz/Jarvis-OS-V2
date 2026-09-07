@@ -27,6 +27,18 @@ class SherpaStreamingTranscriber(directory: File) : StreamingTranscriber {
     private var finished = false
     private var lowByte: Int? = null
 
+    init {
+        try {
+            // Prime the encoder with left context without waiting or discarding real speech.
+            // The shipped 20M model drops opening words on its own test WAV without this.
+            stream.acceptWaveform(FloatArray(12_800), 16_000)
+            decode()
+        } catch (error: Throwable) {
+            close()
+            throw error
+        }
+    }
+
     override fun accept(pcm: ByteArray): String {
         check(!closed && !finished)
         val samples = FloatArray((pcm.size + if (lowByte != null) 1 else 0) / 2)

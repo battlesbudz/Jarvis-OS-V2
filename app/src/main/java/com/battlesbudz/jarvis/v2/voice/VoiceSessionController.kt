@@ -17,10 +17,17 @@ class VoiceSessionController(
     val state: StateFlow<VoiceSessionState> = _state.asStateFlow()
 
     private var activeCall: VoiceCallRecord? = null
+    private var recentCallContext: List<TranscriptEntry> = emptyList()
 
     fun beginCall(): VoiceCallRecord {
         check(activeCall == null) { "A Voice Call is already active." }
-        return VoiceCallRecord(UUID.randomUUID().toString(), nowMs()).also {
+        val now = nowMs()
+        recentCallContext = store.list().filter { call ->
+            call.transcript.any { it.complete } &&
+                call.endedAtMs?.let { now - it in 0..(15 * 60 * 1000L) } == true
+        }.maxByOrNull { it.endedAtMs ?: 0 }?.transcript.orEmpty()
+            .filter { it.complete }.takeLast(6)
+        return VoiceCallRecord(UUID.randomUUID().toString(), now).also {
             activeCall = it
             _state.value = VoiceSessionState.ACTIVELY_LISTENING
             checkpoint()
@@ -44,9 +51,14 @@ class VoiceSessionController(
 
     fun currentTranscript(): List<TranscriptEntry> = activeCall?.transcript.orEmpty()
 
+    /** Background dialogue only: never imports task state or appends old entries to the new call. */
+    fun conversationContext(): List<TranscriptEntry> =
+        (recentCallContext + currentTranscript()).takeLast(8)
+
     /** Starts a new linked session with the prior call's transcript as context. */
     fun resumeCall(call: VoiceCallRecord): VoiceCallRecord {
         check(activeCall == null) { "A Voice Call is already active." }
+        recentCallContext = emptyList()
         return VoiceCallRecord(
             id = UUID.randomUUID().toString(),
             startedAtMs = nowMs(),
