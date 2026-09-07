@@ -83,8 +83,7 @@ fun JarvisChat(
     onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit,
     onRunDirectAudioTest: ((String) -> Unit, (String) -> Unit) -> Unit,
     onRunDirectAudioToolTest: ((String) -> Unit, (String) -> Unit) -> Unit,
-    onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
-    onEndVoiceCall: ((String) -> Unit) -> Unit,
+    onVoiceTurn: (Boolean, (String) -> Unit, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onMessagesChanged: (List<ChatEntry>) -> Unit,
     onSendingChanged: (Boolean) -> Unit,
@@ -513,6 +512,8 @@ private fun VoiceCallScreen(
         animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "voice pulse"
     )
+    val waveformActiveColor = MaterialTheme.colorScheme.primary
+    val waveformIdleColor = MaterialTheme.colorScheme.outline
 
     LaunchedEffect(turns.size, turns.lastOrNull()?.text?.length) {
         transcriptScrollState.scrollTo(transcriptScrollState.maxValue)
@@ -548,7 +549,7 @@ private fun VoiceCallScreen(
                 val distance = kotlin.math.abs(index - 11.5f) / 11.5f
                 val height = (size.height * 0.12f + size.height * 0.55f * (1f - distance) * pulse.value)
                 drawRoundRect(
-                    color = if (listening) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                    color = if (listening) waveformActiveColor else waveformIdleColor,
                     topLeft = androidx.compose.ui.geometry.Offset(index * barWidth + barWidth * .25f, centerY - height / 2f),
                     size = androidx.compose.ui.geometry.Size(barWidth * .5f, height),
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth, barWidth)
