@@ -64,6 +64,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CompletableDeferred
 import org.json.JSONObject
 import org.json.JSONArray
 import java.util.concurrent.atomic.AtomicInteger
@@ -285,18 +286,23 @@ class MainActivity : ComponentActivity() {
                     val coordinator = VoiceTurnCoordinator(voiceSessionController)
                     val response = coordinator.processTurn(transcript) { onToken ->
                         mainHandler.post { report("Jarvis is responding…") }
-                        activeGemma.generate(
-                            prompt = """
-                                You are Jarvis answering the user's spoken request.
-                                Answer the request directly and helpfully. Do not repeat,
-                                quote, or merely correct the user's words. If the request
-                                asks for an action, explain the next step or use an
-                                available tool when this voice path supports it.
-
-                                User's spoken request:
-                                $transcript
-                            """.trimIndent(),
-                            onToken = onToken
+                        // The audio-capable engine has completed the input turn.
+                        // Release it before handing the text request to the
+                        // existing conversation runtime, which owns tool
+                        // routing, action validation, and context handling.
+                        activeGemma.close()
+                        val completed = CompletableDeferred<String>()
+                        runConversation(
+                            prompt = transcript,
+                            history = emptyList(),
+                            imageUri = null,
+                            onToken = onToken,
+                            onComplete = { completed.complete(it) }
+                        )
+                        com.battlesbudz.jarvis.v2.ai.GenerationResult(
+                            text = completed.await(),
+                            timeToFirstTokenMs = -1L,
+                            decodeTokensPerSecond = null
                         )
                     }
                     finalMessage = "Voice Call turn complete. Heard: $transcript\nJarvis: ${response.text.trim()}"

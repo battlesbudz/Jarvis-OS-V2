@@ -29,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -411,15 +412,9 @@ fun JarvisApp(
     ) {
         Surface(modifier = Modifier.fillMaxSize()) {
             if (modelsReady && smokeTestPassed) {
-                JarvisChat(
-                    onSend,
-                    onRunDirectAudioTest,
-                    onRunDirectAudioToolTest,
-                    onVoiceTurn,
-                    onCopyDiagnostics,
-                    onMessagesChanged,
-                    onSendingChanged,
-                    initialMessages
+                VoiceCallScreen(
+                    onVoiceTurn = onVoiceTurn,
+                    onCopyDiagnostics = { onCopyDiagnostics(initialMessages) }
                 )
             } else {
                 ModelSetup(
@@ -465,6 +460,96 @@ fun JarvisApp(
                     }
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun VoiceCallScreen(
+    onVoiceTurn: (Boolean, (String) -> Unit, (String) -> Unit) -> Unit,
+    onCopyDiagnostics: () -> Unit
+) {
+    var active by remember { mutableStateOf(false) }
+    var status by rememberSaveable { mutableStateOf("") }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .padding(horizontal = 28.dp, vertical = 24.dp),
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            "JARVIS",
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            "Voice Call",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        Surface(
+            color = if (active) MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surfaceVariant,
+            shape = androidx.compose.foundation.shape.CircleShape,
+            modifier = Modifier.padding(vertical = 36.dp)
+        ) {
+            Text(
+                when {
+                    active -> "Listening"
+                    status.startsWith("Processing") || status.startsWith("Gemma") || status.startsWith("Jarvis") -> "Working"
+                    else -> "Ready"
+                },
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(48.dp)
+            )
+        }
+        Text(
+            when {
+                active -> "Speak naturally, then tap below when you finish."
+                status.isBlank() -> "Your Voice Calls stay on this phone."
+                else -> "The latest turn is shown below."
+            },
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Button(
+            onClick = {
+                val start = !active
+                active = start
+                onVoiceTurn(
+                    start,
+                    { update -> status = update },
+                    { result ->
+                        status = result
+                        active = false
+                    }
+                )
+            },
+            modifier = Modifier.fillMaxWidth().padding(top = 24.dp)
+        ) {
+            Text(if (active) "Stop and send" else "Start listening")
+        }
+        if (status.isNotBlank()) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 20.dp)
+            ) {
+                Text(
+                    status,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        }
+        TextButton(
+            onClick = onCopyDiagnostics,
+            modifier = Modifier.padding(top = 12.dp)
+        ) {
+            Text("Copy diagnostics")
         }
     }
 }
