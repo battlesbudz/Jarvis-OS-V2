@@ -250,14 +250,27 @@ class MainActivity : ComponentActivity() {
                 lifecycleScope
             )
             lifecycleScope.launch(Dispatchers.Default) {
+                val capture = activeVoiceCapture
                 try {
+                    val firstTurn = voiceSessionController.currentTranscript().isEmpty()
                     if (voiceSessionController.state.value == VoiceSessionState.PASSIVE_LISTENING) {
                         voiceSessionController.beginCall()
                     }
-                    activeVoiceCapture?.start()
+                    capture?.start()
                     mainHandler.post {
-                        report("Voice Call is listening. Tap again when you finish speaking.")
+                        report("Voice Call is listening. Speak naturally; I’ll detect when you finish.")
                     }
+                    // Give the initial invocation a finite follow-up window;
+                    // once the call has real context, remain armed indefinitely
+                    // until speech arrives or the user ends the call.
+                    capture?.awaitTurnCompletion(
+                        initialSilenceTimeoutMs = if (firstTurn) 6_000L else null
+                    )
+                    // Route the completed automatic turn through the same
+                    // model/tool/TTS pipeline used by the explicit fallback.
+                    // The capture remains installed until runVoiceTurn(false)
+                    // stops it and takes ownership of the recorded WAV.
+                    runVoiceTurn(false, report, onTranscript, onFinished)
                 } catch (error: Throwable) {
                     activeVoiceCapture = null
                     mainHandler.post {

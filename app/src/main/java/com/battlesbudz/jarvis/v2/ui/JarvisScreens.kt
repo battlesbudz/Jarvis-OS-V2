@@ -580,6 +580,7 @@ private fun VoiceCallScreen(
                 // sets callStarted=false, which prevents this re-arm.
                 val failed = result.contains("could not start", ignoreCase = true) ||
                     result.contains("turn failed", ignoreCase = true) ||
+                    result.contains("didn't hear", ignoreCase = true) ||
                     result.contains("permission", ignoreCase = true)
                 if (callStarted && !failed) {
                     listening = true
@@ -671,7 +672,7 @@ private fun VoiceCallScreen(
         }
         Text(
             when {
-                listening -> "Speak naturally. Tap when you are finished."
+                listening -> "Speak naturally. Jarvis will detect when you finish."
                 callStarted -> "Your Voice Call is open. Start another turn or end the call."
                 else -> "Your Voice Calls stay on this phone."
             },
@@ -700,19 +701,17 @@ private fun VoiceCallScreen(
         }
         Button(
             onClick = {
-                val start = !listening
-                if (start) {
-                    callStarted = true
-                    listening = true
-                } else {
-                    listening = false
-                }
-                requestVoiceTurn(start)
+                callStarted = true
+                listening = true
+                requestVoiceTurn(start = true)
             },
-            enabled = listening || !turnInFlight,
+            // Once a turn is armed, silence detection owns the turn boundary.
+            // The separate End Voice Call control remains available for an
+            // explicit stop.
+            enabled = !listening && !turnInFlight,
             modifier = Modifier.fillMaxWidth().padding(top = 24.dp)
         ) {
-            Text(if (listening) "Stop and send" else "Start listening")
+            Text(if (listening) "Listening automatically…" else "Start Voice Call")
         }
         if (callStarted) {
             TextButton(
