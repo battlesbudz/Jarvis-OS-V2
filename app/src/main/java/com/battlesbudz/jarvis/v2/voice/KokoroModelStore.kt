@@ -71,7 +71,9 @@ class KokoroModelStore(context: Context) {
             }
             staging.deleteRecursively()
             staging.mkdirs()
-            onStatus("Installing and checking the local voice model…")
+            onStatus("Installing Kokoro voice model… unpacking files")
+            var extractedBytes = 0L
+            var nextProgressReport = 8L * 1024L * 1024L
             FileInputStream(archive).use { input ->
                 TarArchiveInputStream(BZip2CompressorInputStream(input)).use { tar ->
                     var entry = tar.nextTarEntry
@@ -86,7 +88,22 @@ class KokoroModelStore(context: Context) {
                             if (entry.isDirectory) output.mkdirs()
                             else {
                                 output.parentFile?.mkdirs()
-                                FileOutputStream(output).use { tar.copyTo(it) }
+                                FileOutputStream(output).use { outputStream ->
+                                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 16)
+                                    var count: Int
+                                    while (tar.read(buffer).also { count = it } >= 0) {
+                                        if (count == 0) continue
+                                        outputStream.write(buffer, 0, count)
+                                        extractedBytes += count
+                                        if (extractedBytes >= nextProgressReport) {
+                                            onStatus(
+                                                "Installing Kokoro voice model… " +
+                                                    "${extractedBytes / (1024L * 1024L)} MB unpacked"
+                                            )
+                                            nextProgressReport += 8L * 1024L * 1024L
+                                        }
+                                    }
+                                }
                             }
                         }
                         entry = tar.nextTarEntry
