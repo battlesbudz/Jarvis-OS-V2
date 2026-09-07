@@ -98,7 +98,7 @@ class SherpaKokoroVoiceOutput(
                 phrase,
                 GenerationConfig(silenceScale = 0.2f, sid = speakerId)
             )
-            if (stopped) return
+            if (stopped) return 0 to 0
             val track = audioTrack ?: createTrack(generated.sampleRate).also {
                 audioTrack = it
                 it.play()
