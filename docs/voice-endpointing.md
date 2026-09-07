@@ -8,7 +8,7 @@ Audio PR2 uses bundled Silero VAD through Sherpa-ONNX 1.13.7. RMS and peak are d
 - Call inactivity: 20 seconds waiting for a recognized turn, on initial and follow-up capture. A completed Jarvis response starts a new listening window; generating/speaking time is excluded.
 - Idle audio: bounded 600 ms pre-roll, preserving speech onset without accumulating an entire idle call.
 - Active audio: bounded 25 seconds; a continuously positive detector is segmented at that limit. Raw microphone audio stays in memory.
-- Empty ASR after a VAD speech candidate: skip Gemma and reset the sealed recognizer while keeping the microphone running. Its bounded input queue preserves speech arriving during reload. Do not reset the original inactivity deadline. At inactivity expiry, save/end the call and stop automatic re-arm.
+- Empty ASR after a VAD speech candidate: skip Gemma and reset the sealed recognizer while keeping the microphone running. Its bounded input queue preserves speech arriving during reload, and the previous 600 ms is replayed so a just-starting phoneme in an unconfirmed VAD frame is not lost. Do not reset the original inactivity deadline. At inactivity expiry, save/end the call and stop automatic re-arm.
 - Spoken ending: whole utterances `goodbye`, `goodbye Jarvis`, `stop listening`, or `stop listening Jarvis` (including leading Jarvis) save/end the call before model execution. Mentioning goodbye within another request does not hang up. Manual End remains immediate.
 - The model runs on one CPU thread off the UI thread. The microphone reader owns recorder release; capture waits for it before allowing a subsequent turn to acquire the mic.
 

@@ -277,8 +277,9 @@ class AudioTurnCaptureTest {
     @Test
     fun emptyPostPlaybackDetectionKeepsMicrophoneOpenAndAcceptsLaterSpeech() = runBlocking<Unit> {
         var created = 0
+        val replacement = FakeTranscriber()
         val fixture = CaptureFixture(this, factory = {
-            if (created++ == 0) FakeTranscriber("", "") else FakeTranscriber()
+            if (created++ == 0) FakeTranscriber("", "") else replacement
         })
         fixture.capture.start()
         val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
@@ -288,6 +289,7 @@ class AudioTurnCaptureTest {
         assertEquals(1, fixture.microphoneStarts)
         assertEquals(0, fixture.microphoneStops)
         assertEquals(2, created)
+        assertEquals(listOf(2000), replacement.receivedSamples) // The pre-reset tail is replayed.
         fixture.emit(10000, 2000, speech = true)
         fixture.emit(11200, 0)
         assertTrue(withTimeout(1000) { completion.await() })

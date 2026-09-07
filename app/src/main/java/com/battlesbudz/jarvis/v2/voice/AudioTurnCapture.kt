@@ -112,7 +112,16 @@ class AudioTurnCapture(
                             if (transcriber != null && finalTranscript.isBlank()) {
                                 emptyCandidates++
                                 hasSpeech = false
-                                synchronized(pcm) { pcm.reset(); preRoll.clear() }
+                                // A new word may be starting in the final, not-yet-confirmed
+                                // VAD frame. Replay the tail into the replacement recognizer.
+                                val tail = synchronized(pcm) {
+                                    val recorded = pcm.toByteArray()
+                                    val retained = recorded.copyOfRange((recorded.size - 19_200).coerceAtLeast(0), recorded.size)
+                                    pcm.reset()
+                                    preRoll.clear()
+                                    preRoll.append(retained)
+                                    retained
+                                }
                                 firstSpeechAt = null
                                 firstPartialAfterSpeechMs = null
                                 lastPartial = ""
@@ -126,6 +135,7 @@ class AudioTurnCapture(
                                     previous?.close()
                                     val reloadAt = nowMs()
                                     transcriber = createTranscriber?.invoke()
+                                    if (tail.isNotEmpty()) transcriber?.accept(tail)
                                     modelLoadMs += nowMs() - reloadAt
                                     return@collect
                                 }
