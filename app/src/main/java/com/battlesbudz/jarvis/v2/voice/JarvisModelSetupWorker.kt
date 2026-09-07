@@ -57,9 +57,10 @@ class JarvisModelSetupWorker(
         check(gemma.isFile) { "Gemma setup did not produce a model file." }
         val kokoro = voice.downloadOrReuse(
             onProgress = { bytes, length ->
+                val unpacking = stage.contains("Installing Kokoro", ignoreCase = true)
                 downloaded = bytes
                 total = length
-                stage = "Kokoro voice"
+                stage = if (unpacking) "Kokoro unpacking" else "Kokoro voice"
                 publishProgress()
             },
             onStatus = { status ->
