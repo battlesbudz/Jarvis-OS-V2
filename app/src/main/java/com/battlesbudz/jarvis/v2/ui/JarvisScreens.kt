@@ -630,7 +630,8 @@ private fun ModelSetup(
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
             )
             Text(
-                "${setupPhase(status)} · ${(progress * 100).toInt()}% complete · ${elapsedSeconds}s elapsed",
+                "${setupPhase(status)} · ${formatMegabytes(downloadBytes)} / ${formatMegabytes(downloadTotalBytes)} MB " +
+                    "(${(progress * 100).toInt()}%) · ${elapsedSeconds}s elapsed",
                 modifier = Modifier.padding(top = 8.dp)
             )
         } else if (downloading) {
@@ -638,7 +639,9 @@ private fun ModelSetup(
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
             )
             Text(
-                "${setupPhase(status)} · ${elapsedSeconds}s elapsed",
+                "${setupPhase(status)} · " +
+                    (if (downloadBytes > 0L) "${formatMegabytes(downloadBytes)} MB processed · " else "") +
+                    "${elapsedSeconds}s elapsed",
                 modifier = Modifier.padding(top = 8.dp)
             )
         }
@@ -672,5 +675,12 @@ private fun setupPhase(status: String): String = when {
     status.contains("Verifying", ignoreCase = true) -> "Step 4 of 5: verifying the model"
     status.contains("Loading Gemma", ignoreCase = true) || status.contains("initializing", ignoreCase = true) ->
         "Step 5 of 5: initializing Gemma"
+    status.contains("Downloading the local Jarvis voice model", ignoreCase = true) ->
+        "Step 2 of 5: downloading Kokoro"
+    status.contains("Installing Kokoro", ignoreCase = true) || status.contains("Kokoro unpack", ignoreCase = true) ->
+        "Step 3 of 5: unpacking Kokoro"
     else -> "Preparing Jarvis"
 }
+
+private fun formatMegabytes(bytes: Long): String =
+    if (bytes < 0L) "—" else String.format(java.util.Locale.US, "%.1f", bytes / (1024.0 * 1024.0))
