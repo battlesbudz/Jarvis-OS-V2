@@ -481,7 +481,7 @@ fun JarvisApp(
                             voiceCalls = onRefreshVoiceCalls()
                             showingVoiceCalls = true
                         },
-                        onCopyDiagnostics = { onCopyDiagnostics(initialMessages) }
+                        onCopyDiagnostics = onCopyDiagnostics
                     )
                 }
             } else {
@@ -538,7 +538,7 @@ private fun VoiceCallScreen(
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
     onEndVoiceCall: ((String) -> Unit) -> Unit,
     onOpenVoiceCalls: () -> Unit,
-    onCopyDiagnostics: () -> Unit
+    onCopyDiagnostics: (List<ChatEntry>) -> Unit
 ) {
     var callStarted by remember { mutableStateOf(false) }
     var listening by remember { mutableStateOf(false) }
@@ -563,7 +563,10 @@ private fun VoiceCallScreen(
         turnInFlight = true
         onVoiceTurn(
             start,
-            { update -> status = update },
+            { update ->
+                status = update
+                if (update.startsWith("Processing your Voice Call")) listening = false
+            },
             { role, text, complete ->
                 turns = if (role == "Jarvis" && turns.lastOrNull()?.role == "Jarvis") {
                     turns.dropLast(1) + ChatEntry(role, if (complete) text else turns.last().text + text)
@@ -739,7 +742,7 @@ private fun VoiceCallScreen(
             )
         }
         TextButton(
-            onClick = onCopyDiagnostics,
+            onClick = { onCopyDiagnostics(turns) },
             modifier = Modifier.padding(top = 4.dp)
         ) {
             Text("Copy diagnostics")

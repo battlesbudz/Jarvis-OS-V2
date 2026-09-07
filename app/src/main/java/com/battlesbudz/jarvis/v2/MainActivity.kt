@@ -11,8 +11,6 @@ import android.content.ClipboardManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
-import kotlin.math.abs
-import kotlin.math.sqrt
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -55,6 +53,7 @@ import com.battlesbudz.jarvis.v2.ui.JarvisApp
 import com.battlesbudz.jarvis.v2.conversation.runConversationInternal
 import com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore
 import com.battlesbudz.jarvis.v2.voice.AndroidAudioInput
+import com.battlesbudz.jarvis.v2.voice.Pcm16Signal
 import com.battlesbudz.jarvis.v2.voice.AudioTurnCapture
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionController
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionState
@@ -202,7 +201,9 @@ class MainActivity : ComponentActivity() {
                 },
                 onEndVoiceCall = { report -> endVoiceCall(report) },
                 onResumeVoiceCall = { call ->
-                    voiceSessionController.resumeCall(call)
+                    voiceSessionController.resumeCall(call).also {
+                        diagnosticRecorder.startSession("Voice Call ${it.id} (resumed)")
+                    }
                     conversationEngine?.close()
                     conversationEngine = null
                     nativeConversationHasContext = false
@@ -247,14 +248,17 @@ class MainActivity : ComponentActivity() {
                     lifecycleScope,
                     com.battlesbudz.jarvis.v2.voice.AudioFormat()
                 ),
-                lifecycleScope
+                lifecycleScope,
+                log = { diagnosticRecorder.record("Voice input: $it") }
             )
+            val capture = activeVoiceCapture
             lifecycleScope.launch(Dispatchers.Default) {
-                val capture = activeVoiceCapture
                 try {
                     val firstTurn = voiceSessionController.currentTranscript().isEmpty()
                     if (voiceSessionController.state.value == VoiceSessionState.PASSIVE_LISTENING) {
-                        voiceSessionController.beginCall()
+                        voiceSessionController.beginCall().also {
+                            diagnosticRecorder.startSession("Voice Call ${it.id}")
+                        }
                     }
                     capture?.start()
                     mainHandler.post {
@@ -270,7 +274,13 @@ class MainActivity : ComponentActivity() {
                     // model/tool/TTS pipeline used by the explicit fallback.
                     // The capture remains installed until runVoiceTurn(false)
                     // stops it and takes ownership of the recorded WAV.
-                    runVoiceTurn(false, report, onTranscript, onFinished)
+                    mainHandler.post {
+                        if (activeVoiceCapture === capture) {
+                            runVoiceTurn(false, report, onTranscript, onFinished)
+                        }
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
                 } catch (error: Throwable) {
                     activeVoiceCapture = null
                     mainHandler.post {
@@ -683,7 +693,7 @@ class MainActivity : ComponentActivity() {
 
     private fun copyDiagnostics(transcript: List<ChatEntry>) {
         val visible = transcript.joinToString("\n\n") { "${it.role}: ${it.text}" }
-        val diagnostics = "Jarvis OS V2 chat diagnostics\n\nVisible transcript:\n$visible\n\nRecent runtime turns:\n${diagnosticRecorder.snapshot()}"
+        val diagnostics = "Jarvis OS V2 chat diagnostics\n\nVisible transcript:\n$visible\n\nRuntime diagnostics (retained until the next session):\n${diagnosticRecorder.snapshot()}"
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Jarvis diagnostics", diagnostics))
     }
@@ -878,32 +888,13 @@ class MainActivity : ComponentActivity() {
 
     private fun analyzeCapturedAudio(wav: ByteArray): CapturedAudioStats {
         val pcmStart = 44.coerceAtMost(wav.size)
-        val sampleCount = ((wav.size - pcmStart) / 2).coerceAtLeast(0)
-        if (sampleCount == 0) return CapturedAudioStats(0, 0, 0, 0.0, true)
-        var sumSquares = 0.0
-        var peak = 0
-        var active = 0
-        var offset = pcmStart
-        repeat(sampleCount) {
-            val sample = (wav[offset].toInt() and 0xff) or (wav[offset + 1].toInt() shl 8)
-            val signed = if (sample and 0x8000 != 0) sample - 0x10000 else sample
-            val magnitude = abs(signed)
-            sumSquares += signed.toDouble() * signed.toDouble()
-            peak = maxOf(peak, magnitude)
-            if (magnitude >= 500) active++
-            offset += 2
-        }
-        val rms = sqrt(sumSquares / sampleCount).toInt()
-        val activeRatio = active.toDouble() / sampleCount
-        // Conservative gate: normal speech is retained, but a stopped turn
-        // containing only mic/electrical noise never reaches Gemma audio.
-        val silence = rms < 220 || (peak < 700 && activeRatio < 0.01)
+        val signal = Pcm16Signal.measure(wav, pcmStart)
         return CapturedAudioStats(
-            durationMs = sampleCount * 1_000L / 16_000L,
-            rms = rms,
-            peak = peak,
-            activeSampleRatio = activeRatio,
-            isLikelySilence = silence
+            durationMs = signal.sampleCount * 1_000L / 16_000L,
+            rms = signal.rms.toInt(),
+            peak = signal.peak,
+            activeSampleRatio = signal.activeSampleRatio,
+            isLikelySilence = signal.isLikelySilence
         )
     }
 

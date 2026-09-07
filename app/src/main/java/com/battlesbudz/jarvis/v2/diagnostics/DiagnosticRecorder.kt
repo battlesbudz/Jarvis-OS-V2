@@ -7,6 +7,16 @@ class DiagnosticRecorder(
     private val preferences: SharedPreferences
 ) {
     private val entries = mutableListOf<String>()
+    private var sessionLabel = "Previous app runtime (may include earlier calls or chat)"
+
+    fun startSession(label: String) {
+        synchronized(entries) {
+            sessionLabel = "$label startedAtMs=${System.currentTimeMillis()}"
+            entries.clear()
+            preferences.edit().putString("diagnostics_session", sessionLabel)
+                .putString("diagnostics", "[]").apply()
+        }
+    }
 
     fun restore(): List<String> {
         val stored = preferences.getString("diagnostics", null).orEmpty()
@@ -24,6 +34,7 @@ class DiagnosticRecorder(
             }
         }
         synchronized(entries) {
+            sessionLabel = preferences.getString("diagnostics_session", null) ?: sessionLabel
             entries.clear()
             entries.addAll(restored)
         }
@@ -31,14 +42,15 @@ class DiagnosticRecorder(
     }
 
     fun snapshot(): String {
-        val current = synchronized(entries) { entries.takeLast(20) }
-        return current.joinToString("\n\n")
-            .ifBlank { "No prior runtime diagnostics." }
+        return synchronized(entries) {
+            "$sessionLabel\n\n" + entries.takeLast(20).joinToString("\n\n")
+                .ifBlank { "No runtime events in this session yet." }
+        }
     }
 
     fun record(entry: String) {
         synchronized(entries) {
-            entries.add(entry.take(6_000))
+            entries.add("atMs=${System.currentTimeMillis()}\n${entry.take(6_000)}")
             while (entries.size > 20) entries.removeAt(0)
             val persisted = JSONArray().also { array ->
                 entries.takeLast(20).forEach(array::put)

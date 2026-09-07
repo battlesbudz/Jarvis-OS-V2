@@ -6,13 +6,14 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
-import kotlin.math.abs
-import kotlin.math.sqrt
+import kotlinx.coroutines.CoroutineStart
 
 /** Captures one explicit user turn without writing raw audio to disk. */
 class AudioTurnCapture(
     private val input: AudioInput,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
+    private val log: (String) -> Unit = {}
 ) {
     private val pcm = ByteArrayOutputStream()
     private var collectionJob: Job? = null
@@ -20,6 +21,7 @@ class AudioTurnCapture(
     @Volatile private var speechDetected = false
     @Volatile private var lastSpeechAtMs = 0L
     private var captureStartedAtMs = 0L
+    private var lastLevelLogAtMs = 0L
     @Volatile private var initialSilenceTimeoutMs: Long? = INITIAL_SILENCE_TIMEOUT_MS
 
     suspend fun start() {
@@ -27,14 +29,17 @@ class AudioTurnCapture(
         pcm.reset()
         speechDetected = false
         lastSpeechAtMs = 0L
-        captureStartedAtMs = System.currentTimeMillis()
+        captureStartedAtMs = nowMs()
+        lastLevelLogAtMs = captureStartedAtMs
         turnCompleted = CompletableDeferred()
-        collectionJob = scope.launch {
+        log("capture_started trailingSilenceMs=$TRAILING_SILENCE_MS")
+        collectionJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             input.chunks().collect { chunk ->
                 synchronized(pcm) { pcm.write(chunk) }
-                val signal = speechSignal(chunk)
-                val now = System.currentTimeMillis()
-                if (signal) {
+                val signal = Pcm16Signal.measure(chunk)
+                val now = nowMs()
+                if (signal.isSpeech) {
+                    if (!speechDetected) log("speech_started elapsedMs=${now - captureStartedAtMs}")
                     speechDetected = true
                     lastSpeechAtMs = now
                 }
@@ -43,8 +48,14 @@ class AudioTurnCapture(
                 } else {
                     initialSilenceTimeoutMs?.let { now - captureStartedAtMs >= it } == true
                 }
-                if (silentLongEnough) {
-                    turnCompleted?.complete(speechDetected)
+                if (silentLongEnough && turnCompleted?.complete(speechDetected) == true) {
+                    log("turn_endpoint reason=${if (speechDetected) "trailing_silence" else "initial_silence"} " +
+                        "elapsedMs=${now - captureStartedAtMs} silenceMs=${now - lastSpeechAtMs}")
+                } else if (now - lastLevelLogAtMs >= 1_000L && turnCompleted?.isCompleted == false) {
+                    lastLevelLogAtMs = now
+                    log("capture_level rms=${signal.rms.toInt()} peak=${signal.peak} " +
+                        "speech=${signal.isSpeech} speechDetected=$speechDetected " +
+                        "silenceMs=${if (speechDetected) now - lastSpeechAtMs else now - captureStartedAtMs}")
                 }
             }
         }
@@ -60,6 +71,7 @@ class AudioTurnCapture(
     suspend fun awaitTurnCompletion(initialSilenceTimeoutMs: Long? = INITIAL_SILENCE_TIMEOUT_MS): Boolean {
         val completion = requireNotNull(turnCompleted) { "Audio capture has not started." }
         this.initialSilenceTimeoutMs = initialSilenceTimeoutMs
+        log("awaiting_turn initialSilenceTimeoutMs=$initialSilenceTimeoutMs")
         return completion.await()
     }
 
@@ -68,40 +80,16 @@ class AudioTurnCapture(
         collectionJob?.cancel()
         collectionJob?.join()
         collectionJob = null
+        turnCompleted?.cancel()
         turnCompleted = null
+        log("capture_stopped")
         return synchronized(pcm) {
             WavEncoder.pcm16Mono(pcm.toByteArray(), input.sampleRateHz)
         }
     }
 
-    private fun speechSignal(chunk: ByteArray): Boolean {
-        if (chunk.size < 2) return false
-        var sumSquares = 0.0
-        var peak = 0
-        var activeSamples = 0
-        var samples = 0
-        var offset = 0
-        while (offset + 1 < chunk.size) {
-            val raw = (chunk[offset].toInt() and 0xff) or (chunk[offset + 1].toInt() shl 8)
-            val sample = if (raw and 0x8000 != 0) raw - 0x10000 else raw
-            val magnitude = abs(sample)
-            sumSquares += sample.toDouble() * sample.toDouble()
-            peak = maxOf(peak, magnitude)
-            if (magnitude >= SPEECH_SAMPLE_THRESHOLD) activeSamples++
-            samples++
-            offset += 2
-        }
-        if (samples == 0) return false
-        val rms = sqrt(sumSquares / samples)
-        val activeRatio = activeSamples.toDouble() / samples
-        return rms >= SPEECH_RMS_THRESHOLD || (peak >= SPEECH_PEAK_THRESHOLD && activeRatio >= 0.01)
-    }
-
     private companion object {
         const val INITIAL_SILENCE_TIMEOUT_MS = 6_000L
         const val TRAILING_SILENCE_MS = 1_200L
-        const val SPEECH_SAMPLE_THRESHOLD = 500
-        const val SPEECH_RMS_THRESHOLD = 500.0
-        const val SPEECH_PEAK_THRESHOLD = 1_400
     }
 }
