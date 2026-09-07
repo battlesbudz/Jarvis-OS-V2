@@ -6,6 +6,15 @@ import org.junit.Test
 
 class RollingAudioBufferTest {
     @Test
+    fun wavEncoderWritesPcm16MonoHeader() {
+        val wav = WavEncoder.pcm16Mono(byteArrayOf(1, 2), sampleRateHz = 16_000)
+        assertEquals(44 + 2, wav.size)
+        assertEquals("RIFF", String(wav, 0, 4))
+        assertEquals("WAVE", String(wav, 8, 4))
+        assertEquals("data", String(wav, 36, 4))
+    }
+
+    @Test
     fun retainsOnlyConfiguredRollingWindow() {
         val buffer = RollingAudioBuffer(AudioFormat(sampleRateHz = 1, channelCount = 1), maxDurationMs = 2_000)
         buffer.append(byteArrayOf(1, 2, 3))

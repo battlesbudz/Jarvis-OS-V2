@@ -337,32 +337,7 @@ class MainActivity : ComponentActivity() {
             runCatching { recorder.stop() }
             recorder.release()
         }
-        return wavBytes(pcm, sampleRate)
-    }
-
-    private fun wavBytes(pcm: ByteArray, sampleRate: Int): ByteArray {
-        val output = ByteArrayOutputStream(44 + pcm.size)
-        fun writeAscii(value: String) = output.write(value.toByteArray(Charsets.US_ASCII))
-        fun writeInt(value: Int) {
-            output.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(value).array())
-        }
-        fun writeShort(value: Int) {
-            output.write(ByteBuffer.allocate(2).order(ByteOrder.LITTLE_ENDIAN).putShort(value.toShort()).array())
-        }
-        writeAscii("RIFF")
-        writeInt(36 + pcm.size)
-        writeAscii("WAVEfmt ")
-        writeInt(16)
-        writeShort(1)
-        writeShort(1)
-        writeInt(sampleRate)
-        writeInt(sampleRate * 2)
-        writeShort(2)
-        writeShort(16)
-        writeAscii("data")
-        writeInt(pcm.size)
-        output.write(pcm)
-        return output.toByteArray()
+        return com.battlesbudz.jarvis.v2.voice.WavEncoder.pcm16Mono(pcm, sampleRate)
     }
 
     private fun restoreTranscript(): List<ChatEntry> {
