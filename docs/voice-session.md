@@ -1,6 +1,6 @@
 # Passive Jarvis sessions
 
-Start Jarvis session in the visible app and allow microphone/notification permissions. The first use downloads a pinned, hash-verified dedicated keyword model (about 17 MB archive; about 5 MB installed). Moonshine remains the call transcriber; the retired Zipformer ASR selector is not restored.
+Start Jarvis session in the visible app and allow microphone/notification permissions. The first use downloads a pinned, hash-verified dedicated keyword model (about 33 MB archive; about 5.5 MB installed). Moonshine remains the call transcriber; the retired Zipformer ASR selector is not restored.
 
 The microphone feeds only the local keyword spotter while the UI/notification says “Waiting for Hey Jarvis”. No transcript, WAV, or Gemma request is created from passive audio. Say “Hey Jarvis”, wait for the short readiness beep and “Voice Call is listening — speak now”, then speak. The existing call pipeline uses Moonshine and in-memory WAV audio for Gemma, and speaks with the selected Kokoro/Miro voice. Goodbye or 20 seconds without recognized speech ends the saved call and returns to passive listening. Stop Jarvis session or the notification's Stop session action releases the microphone and stops the foreground service.
 
@@ -22,4 +22,10 @@ Use Set Jarvis as default assistant, open Digital assistant app in Android Setti
 6. Select Jarvis as default assistant, start a session, press Home, wake Jarvis and ask Open Facebook. Verify Facebook visibly opens; a spoken launch acknowledgement alone is not proof.
 7. Copy diagnostics. The report contains only the most recent call, retaining action records separately from audio events.
 
-Passive diagnostics include microphone RMS every three seconds without storing audio or transcription. Cancellation and Activity destruction are recorded as call events. Preparation is labeled Preparing rather than Thinking; the full current state is displayed below the controls. A wake match alone does not prove command capture or app launch succeeded.
+Passive diagnostics include microphone RMS and peak measured over each complete three-second window without storing audio or transcription. Cancellation and Activity destruction are recorded as call events. Preparation is labeled Preparing rather than Thinking; the full current state is displayed below the controls. A wake match alone does not prove command capture or app launch succeeded.
+
+## Wake detector regression (build after 577)
+
+The 2024 English BPE keyword model missed synthesized “Hey Jarvis” at the shipped settings. Replace it with the [2025 pronunciation-based Sherpa keyword model](https://k2-fsa.github.io/sherpa/onnx/kws/pretrained_models/index.html), using its en.phone entries HEY and JARVIS, int8 encoder/joiner, float decoder, score 2.0, threshold 0.25, eight search paths and two trailing blanks. The download and installed files are hash-verified. The previous keyword model is removed after successful installation. This is still keyword spotting only; Moonshine starts after a match.
+
+Reproduce the native acoustic check with `python scripts/check_wake_word.py <extracted-2025-kws-directory> <extracted-vits-piper-en_US-lessac-low-directory>` using sherpa-onnx 1.13.7 and numpy. Piper is a desktop test-fixture generator only; it is not restored to the app. With deterministic synthesis, three positive phrases and eight negative phrases, three speeds, two volumes, and added ambient noise: 65/66 cases matched expectation. All normal-volume wake cases and all 48 negative cases passed. One fast, quiet, paused phrase was missed. A separate 60-second ambient-input test had no false wake and detected the subsequent phrase. Quiet/noisy recall is reported separately from the normal-volume/false-positive regression gate. These synthetic tests do not establish accuracy for a particular person, microphone, or acoustic environment.

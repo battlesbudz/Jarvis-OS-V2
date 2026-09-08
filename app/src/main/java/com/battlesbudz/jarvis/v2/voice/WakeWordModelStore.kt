@@ -17,7 +17,7 @@ import kotlin.coroutines.coroutineContext
 /** A small dedicated keyword model; Moonshine remains the only call transcriber. */
 class WakeWordModelStore(context: Context) {
     private val root = File(context.filesDir, "voice-models")
-    private val destination = File(root, "hey-jarvis-kws-v1")
+    private val destination = File(root, "hey-jarvis-kws-v2")
     suspend fun ensureReady(report: (String) -> Unit): File = withContext(Dispatchers.IO) {
         mutex.withLock {
             if (valid(destination)) return@withLock destination
@@ -39,12 +39,12 @@ class WakeWordModelStore(context: Context) {
                             val n = input.read(buffer)
                             if (n < 0) break
                             copied += n
-                            check(copied <= 25_000_000) { "Unexpected wake-word download size." }
+                            check(copied <= 40_000_000) { "Unexpected wake-word download size." }
                             output.write(buffer, 0, n)
                         }
                     } }
                 } finally { connection.disconnect() }
-                check(digest(archive) == "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a") { "Wake-word archive integrity check failed." }
+                check(digest(archive) == "68447f4fbc67e70eee3a93961f36e81e98f47aef73ce7e7ca00885c6cd3616a6") { "Wake-word archive integrity check failed." }
                 staging.deleteRecursively()
                 staging.mkdirs()
                 TarArchiveInputStream(BZip2CompressorInputStream(archive.inputStream())).use { tar ->
@@ -62,6 +62,7 @@ class WakeWordModelStore(context: Context) {
                 check(valid(staging)) { "Wake-word model integrity check failed." }
                 destination.deleteRecursively()
                 check(staging.renameTo(destination)) { "Unable to install wake-word model." }
+                File(root, "hey-jarvis-kws-v1").deleteRecursively()
                 destination
             } finally { archive.delete(); staging.deleteRecursively() }
         }
@@ -77,14 +78,15 @@ class WakeWordModelStore(context: Context) {
         return hash.digest().joinToString("") { "%02x".format(it) }
     }
     companion object {
-        const val SUFFIX = "epoch-12-avg-2-chunk-16-left-64.int8.onnx"
-        private const val URL_STRING = "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2"
+        const val DECODER_FILE = "decoder-epoch-13-avg-2-chunk-16-left-64.onnx"
+        const val SUFFIX = "epoch-13-avg-2-chunk-16-left-64.int8.onnx"
+        private const val URL_STRING = "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2"
         private val mutex = Mutex()
         private val files = mapOf(
-            "encoder-$SUFFIX" to "1e721676515bcd42a186979733981213c66c80db680e1cc582dfedf3be76e678",
-            "decoder-$SUFFIX" to "e40ff43297abe815e8898494c17e71bba2152d9d40fa3eb803f75d0f7533329a",
-            "joiner-$SUFFIX" to "eae9da0c7e1e6c6a3f4cc42d167899c388f6c6701b94cb96320e4f55df79624c",
-            "tokens.txt" to "fd2ded4050a55d2b1578870ba8697d02371980217806b7558bd0a5cc60f3ba53"
+            "encoder-$SUFFIX" to "408bbd740838c42d5bf6d1c5b80b3c88b616c7860b92d980328b5b068c76ae48",
+            DECODER_FILE to "63a22dd60f40fff082ac3e09afa507f6787da36df76ded2fbe145fa233e22c21",
+            "joiner-$SUFFIX" to "190d4067b4cc20b72a42a1916e69d92052000fb7051a427ebb1bc72a69207dc1",
+            "tokens.txt" to "2d3f32311f9b692b964da3c90e830258d3e78e013cb0c992dbfb15cd5a1a71b0"
         )
     }
 }
