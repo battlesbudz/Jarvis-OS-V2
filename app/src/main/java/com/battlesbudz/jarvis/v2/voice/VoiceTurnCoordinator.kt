@@ -36,7 +36,9 @@ class VoiceTurnCoordinator(
         } catch (error: Throwable) {
             if (session.currentCallId() == callId) {
                 if (response.isNotBlank()) session.appendTranscript("Jarvis", response.toString(), complete = false)
-                session.interrupt()
+                if (error is VoiceControlCancellation && error.control == VoiceControl.STOP_REPLY) {
+                    session.setState(VoiceSessionState.ACTIVELY_LISTENING)
+                } else session.interrupt()
             }
             throw error
         }

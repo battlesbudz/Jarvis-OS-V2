@@ -136,6 +136,10 @@ class MainActivity : ComponentActivity() {
     private var voiceTurnJob: Job? = null
     private var voiceServiceStarted = false
     private var voiceSessionArmed = false
+        set(value) {
+            field = value
+            com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.armed.value = value
+        }
     private var sessionReport: (String) -> Unit = {}
     private var notificationPermissionAsked = false
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -191,6 +195,19 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             com.battlesbudz.jarvis.v2.voice.VoiceCallService.stopRequested.collect { stop ->
                 if (stop && voiceSessionArmed) endVoiceCall(sessionReport)
+            }
+        }
+        lifecycleScope.launch {
+            for (control in com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.controls) {
+                if (!voiceSessionArmed) continue
+                val ui = com.battlesbudz.jarvis.v2.voice.VoiceSessionUi
+                if (control == com.battlesbudz.jarvis.v2.voice.VoiceControl.RESUME) {
+                    ui.paused.value = false
+                } else {
+                    if (control == com.battlesbudz.jarvis.v2.voice.VoiceControl.PAUSE) ui.paused.value = true
+                    activeVoiceOutput?.stopSpeaking()
+                    voiceTurnJob?.cancel(com.battlesbudz.jarvis.v2.voice.VoiceControlCancellation(control))
+                }
             }
         }
         asrComparisonStore = com.battlesbudz.jarvis.v2.voice.AsrComparisonStore(getSharedPreferences("asr_comparison", MODE_PRIVATE))
@@ -342,6 +359,10 @@ class MainActivity : ComponentActivity() {
                 mainHandler.post { report(message) }
             }
             try {
+                while (com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value) {
+                    status("Paused — microphone off. Tap Resume microphone to listen again.")
+                    kotlinx.coroutines.delay(250)
+                }
                 check(activeConversationJobs.get() == 0 && modelStore.tryBeginModelOperation()) {
                     "Another model operation is still finishing. Please try again in a moment."
                 }
@@ -368,6 +389,7 @@ class MainActivity : ComponentActivity() {
                 val ttsDirectory = ttsModels.ensureReady(ttsEngine, ::status)
                 val input = AndroidAudioInput(this,
                     audioManager = getSystemService(android.media.AudioManager::class.java),
+                    onLevel = { com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.level.value = it },
                     onWaiting = { waiting -> status(if (waiting) "Paused — microphone in use by another app" else "Preparing microphone…") })
                 microphone = input
                 if (voiceSessionController.currentCallId() == null) {
@@ -395,9 +417,9 @@ class MainActivity : ComponentActivity() {
                 microphoneWatcher = launch {
                     val manager = getSystemService(android.media.AudioManager::class.java)
                     while (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true) {
-                        if (!input.ownsRecorder && com.battlesbudz.jarvis.v2.voice.MicrophonePolicy.shouldYield(
+                        if (!input.ownsRecorder && (com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.dictationRequested || com.battlesbudz.jarvis.v2.voice.MicrophonePolicy.shouldYield(
                             manager.activeRecordingConfigurations.size, false, manager.isMicrophoneMute,
-                            manager.mode == android.media.AudioManager.MODE_IN_CALL || manager.mode == android.media.AudioManager.MODE_IN_COMMUNICATION)) {
+                            manager.mode == android.media.AudioManager.MODE_IN_CALL || manager.mode == android.media.AudioManager.MODE_IN_COMMUNICATION))) {
                             output.stopSpeaking()
                             turnOwner.cancel(com.battlesbudz.jarvis.v2.voice.MicrophoneYieldCancellation())
                             break
@@ -535,7 +557,14 @@ class MainActivity : ComponentActivity() {
                 runCatching { voiceSessionController.interrupt() }
                 finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " microphone yielded."
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                if (cancelled is com.battlesbudz.jarvis.v2.voice.MicrophoneYieldCancellation ||
+                if (cancelled is com.battlesbudz.jarvis.v2.voice.VoiceControlCancellation) {
+                    microphoneYielded = true // Use the same cleanup-before-rearm path.
+                    diagnosticRecorder.recordImportant("Voice control requested: ${cancelled.control}")
+                    if (cancelled.control != com.battlesbudz.jarvis.v2.voice.VoiceControl.STOP_REPLY) {
+                        runCatching { voiceSessionController.end() }
+                    }
+                    finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " user control."
+                } else if (cancelled is com.battlesbudz.jarvis.v2.voice.MicrophoneYieldCancellation ||
                     cancelled.cause is com.battlesbudz.jarvis.v2.voice.MicrophoneYieldCancellation) {
                     microphoneYielded = true
                     diagnosticRecorder.recordImportant("Mic use by another app interrupted speech/reasoning; returning to passive mode.")
@@ -646,6 +675,8 @@ class MainActivity : ComponentActivity() {
         diagnosticRecorder.recordImportant("Session stop requested by UI or foreground service.")
         pendingVoiceTurn = null
         voiceSessionArmed = false
+        com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
+        com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.report("Jarvis session stopped — microphone off.")
         stopVoiceService()
         activeVoiceOutput?.stopSpeaking()
         voiceTurnJob?.cancel()

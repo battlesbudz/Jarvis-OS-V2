@@ -37,3 +37,27 @@ The new detector does not resolve the Android battery limitation or make microph
 Build the same frontend and engine on a host with `cmake -S app/src/main/cpp/microwakeword -B /tmp/mww-build` followed by `cmake --build /tmp/mww-build -j4`. Run `microwakeword_test <model.tflite> <16-kHz-mono-PCM16-file>`. Use at least four seconds of ambient audio before the first phrase for the initial warm-up. Android uses the same C++ files through JNI.
 
 Initial generated speech checks recognized all three positive variants (Hey Jarvis, Hey comma Jarvis, and Hey Jarvis followed by a battery question). Ordinary greeting, Hey Google, and Jarvis without Hey were rejected. The synthetic Hey Travis clip falsely triggered (peak averaged score 0.978824); similar-name rejection and real-phone sensitivity remain device acceptance checks. No threshold changes were made to hide that limitation. These results do not establish phone microphone routing or real-world accuracy.
+
+
+## Microphone handoff and voice controls (September 8 follow-up)
+
+Android dictation requests routed to Jarvis's RecognitionService now claim priority
+before acquiring the recorder. Wake/call capture releases its recorder, waits while
+dictation owns priority, then returns to passive listening after recognition cleanup.
+Other recognition engines continue to use Android recording/silencing detection.
+Pause microphone is also available in the ongoing notification for keyboard providers
+that refuse to request recording while another recorder is open.
+
+The screen exposes Stop reply (keep the current call and rearm command capture), End
+conversation (save and return to Hey Jarvis), Pause/Resume microphone, and Stop session.
+The waveform uses measured input levels while listening. Setup, wake testing, voice
+comparison and latest-call diagnostics are in Voice settings. The screen scrolls on
+compact displays and large text. Typed runtime phase/status survives screen navigation;
+Activity recreation is still a separate runtime-ownership limitation.
+
+Phone acceptance: with Jarvis selected as assistant, arm Hey Jarvis, switch to a text
+field and dictate through the keyboard; confirm text entry, then wake Jarvis again.
+Repeat with the keyboard's own recognition provider. During a long reply tap Stop reply
+and give a correction without another wake word. End a conversation and wake again.
+Pause from the notification: verify the microphone indicator turns off once cleanup
+finishes, then resume. Check the folded screen and large text. EYE VUE is a separate PR.

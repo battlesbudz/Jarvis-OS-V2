@@ -26,7 +26,9 @@ class AndroidAudioInput(
     private val format: AudioFormat = AudioFormat(),
     private val chunkSamples: Int = 1_600,
     private val audioManager: android.media.AudioManager? = null,
-    private val onWaiting: (Boolean) -> Unit = {}
+    private val onWaiting: (Boolean) -> Unit = {},
+    private val dictation: Boolean = false,
+    private val onLevel: (Float) -> Unit = {}
 ) : AudioInput {
     override val sampleRateHz: Int = format.sampleRateHz
     override val channelCount: Int = format.channelCount
@@ -90,6 +92,12 @@ class AndroidAudioInput(
                         if (busy(created)) throw MicrophoneBusyException()
                         if (count == 0) { kotlinx.coroutines.delay(20); continue }
                         if (count > 0) {
+                            var squares = 0.0
+                            for (i in 0 until count - 1 step 2) {
+                                val sample = ((pcm[i].toInt() and 255) or (pcm[i + 1].toInt() shl 8)).toShort().toDouble()
+                                squares += sample * sample
+                            }
+                            onLevel((kotlin.math.sqrt(squares / (count / 2).coerceAtLeast(1)) / 4000.0).toFloat().coerceIn(0f, 1f))
                             check(emittedChunks.trySend(pcm.copyOf(count)).isSuccess) {
                                 "Microphone processing fell behind: audio queue is full."
                             }
@@ -110,6 +118,7 @@ class AndroidAudioInput(
                 runCatching { created.stop() }
                 created.release()
                 if (recorder === created) { recorder = null; ownsRecorder = false }
+                onLevel(0f)
             }
         }
         try { withTimeout(5000) { ready.await() } }
@@ -117,6 +126,7 @@ class AndroidAudioInput(
     }
 
     private fun busy(record: AudioRecord?): Boolean {
+        if (!dictation && MicrophoneHandoff.dictationRequested) return true
         val manager = audioManager ?: return false
         return MicrophonePolicy.shouldYield(
             manager.activeRecordingConfigurations.size, record != null,

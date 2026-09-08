@@ -49,4 +49,22 @@ class VoiceTurnCoordinatorTest {
         assertFalse(call.transcript.last().complete)
         assertEquals(VoiceTaskState.INTERRUPTED, call.taskStatus?.state)
     }
+    @Test fun stoppingReplyKeepsSameCallAndAllowsNextCommand() = runBlocking {
+        val store = MemoryStore()
+        val session = VoiceSessionController(store)
+        val coordinator = VoiceTurnCoordinator(session)
+        val id = session.beginCall().id
+        runCatching {
+            coordinator.processTurn("Tell me a story") { emit ->
+                emit("Once upon a time")
+                throw VoiceControlCancellation(VoiceControl.STOP_REPLY)
+            }
+        }
+        assertEquals(id, session.currentCallId())
+        assertFalse(store.calls.single().transcript.last().complete)
+        coordinator.processTurn("Actually, what is my battery?") { emit -> emit("Battery is 50 percent") }
+        assertEquals(id, session.currentCallId())
+        assertEquals(4, session.currentTranscript().size)
+    }
+
 }

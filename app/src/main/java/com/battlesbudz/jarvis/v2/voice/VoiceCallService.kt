@@ -38,15 +38,22 @@ class VoiceCallService : Service() {
         val stop = PendingIntent.getService(this, 1,
             Intent(this, VoiceCallService::class.java).setAction(STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val pause = PendingIntent.getService(this, 2,
+            Intent(this, VoiceCallService::class.java).setAction(TOGGLE_MIC),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("Jarvis session")
             .setContentText(status)
             .setContentIntent(open)
+            .addAction(Notification.Action.Builder(null,
+                if (VoiceSessionUi.paused.value) "Resume mic" else "Pause mic", pause).build())
             .addAction(Notification.Action.Builder(null, "Stop session", stop).build())
             .setCategory(Notification.CATEGORY_SERVICE).setOngoing(true).setOnlyAlertOnce(true).build()
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == TOGGLE_MIC) VoiceSessionUi.controls.trySend(
+            if (VoiceSessionUi.paused.value) VoiceControl.RESUME else VoiceControl.PAUSE)
         if (intent?.action == STOP) { stopRequested.value = true; stopSelf() }
         return START_NOT_STICKY
     }
@@ -63,10 +70,12 @@ class VoiceCallService : Service() {
 
     companion object {
         private const val CHANNEL = "jarvis_voice_calls"
+        private const val TOGGLE_MIC = "com.battlesbudz.jarvis.v2.TOGGLE_MIC"
         private const val STOP = "com.battlesbudz.jarvis.v2.STOP_SESSION"
         private var instance: VoiceCallService? = null
         val stopRequested = kotlinx.coroutines.flow.MutableStateFlow(false)
         fun updateStatus(message: String) {
+            VoiceSessionUi.report(message)
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 instance?.let {
                     if (it.status != message) {

@@ -36,9 +36,9 @@ internal fun VoiceOrb(phase: String, level: Float) {
             drawCircle(color.copy(alpha = .25f), radius, style = Stroke(1.dp.toPx()))
             repeat(80) { i ->
                 val angle = i * 2 * PI / 80
-                val active = phase != "Ready"
+                val active = phase != "Ready" && phase != "Mic paused"
                 val wave = (sin(angle * 5 + motion) + 1).toFloat() / 2
-                val energy = if (phase == "Speaking") amplitude else if (active) .15f else .025f
+                val energy = if (phase == "Speaking" || phase == "Listening" || phase == "Hey Jarvis") amplitude else if (active) .15f else .025f
                 val length = 3.dp.toPx() + (8 + 30 * wave).dp.toPx() * energy
                 val start = radius + 5.dp.toPx()
                 drawLine(color.copy(alpha = if (active) .9f else .4f),

@@ -17,7 +17,7 @@ class JarvisRecognitionService : RecognitionService() {
     @Volatile private var capture: AudioTurnCapture? = null
     override fun onStartListening(intent: Intent?, callback: Callback) {
         val manager = getSystemService(android.media.AudioManager::class.java)
-        if (job?.isActive == true || manager.activeRecordingConfigurations.isNotEmpty()) {
+        if (job?.isCompleted == false || !MicrophoneHandoff.requestDictation()) {
             callback.error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
             return
         }
@@ -25,14 +25,22 @@ class JarvisRecognitionService : RecognitionService() {
             var activeCapture: AudioTurnCapture? = null
             try {
                 val directory = AsrModelStore(applicationContext).ensureReady()
-                activeCapture = AudioTurnCapture(AndroidAudioInput(this, audioManager = manager), this,
+                activeCapture = AudioTurnCapture(AndroidAudioInput(this, audioManager = manager, dictation = true), this,
                     createDetector = { SileroSpeechDetector.create(assets) },
-                    createTranscriber = { MoonshineStreamingTranscriber(directory) })
+                    createTranscriber = { MoonshineStreamingTranscriber(directory) },
+                    onPartialTranscript = { text, _ ->
+                        if (intent?.getBooleanExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, false) == true) {
+                            handler.post { callback.partialResults(Bundle().apply {
+                                putStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION, arrayListOf(text))
+                            }) }
+                        }
+                    })
                 capture = activeCapture
-                activeCapture.start()
+                withTimeout(10_000) { activeCapture.start() }
                 handler.post { callback.readyForSpeech(Bundle()) }
                 activeCapture.awaitTurnCompletion()
                 val text = activeCapture.finalTranscript
+                activeCapture.stop()
                 handler.post {
                     callback.endOfSpeech()
                     if (text.isBlank()) callback.error(SpeechRecognizer.ERROR_NO_MATCH)
@@ -40,6 +48,8 @@ class JarvisRecognitionService : RecognitionService() {
                         putStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION, arrayListOf(text))
                     })
                 }
+            } catch (timeout: TimeoutCancellationException) {
+                handler.post { callback.error(SpeechRecognizer.ERROR_AUDIO) }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (denied: SecurityException) { handler.post { callback.error(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) } }
             catch (error: Exception) { handler.post { callback.error(SpeechRecognizer.ERROR_AUDIO) } }
@@ -47,6 +57,9 @@ class JarvisRecognitionService : RecognitionService() {
                 withContext(NonCancellable) { activeCapture?.stop() }
                 if (capture === activeCapture) capture = null
             }
+        }.also { recognitionJob ->
+            // Completion also runs if cancellation occurs before the coroutine body starts.
+            recognitionJob.invokeOnCompletion { MicrophoneHandoff.finishDictation() }
         }
     }
     override fun onStopListening(callback: Callback) { capture?.finishNow() }
