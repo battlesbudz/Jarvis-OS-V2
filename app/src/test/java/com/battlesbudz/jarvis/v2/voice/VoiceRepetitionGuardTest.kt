@@ -62,4 +62,13 @@ class VoiceRepetitionGuardTest {
         assertEquals(2, guard.suppressedSentences)
     }
 
+    @Test fun multiSentenceUserEchoIsBlockedEvenWhenEachQuestionIsShort() {
+        val spoken = StringBuilder()
+        val guard = VoiceRepetitionGuard("What now? Why?", null, spoken::append)
+        "What now? Why?".chunked(2).forEach(guard::accept)
+        guard.finish()
+        assertTrue(spoken.isEmpty())
+        assertEquals(2, guard.suppressedSentences)
+    }
+
 }
