@@ -681,27 +681,25 @@ private fun VoiceCallScreen(
         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
-        Text(
-            "JARVIS",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            "Voice Call",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(top = 4.dp)
-        )
-        Row(
-            Modifier.fillMaxWidth().padding(top = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            TextButton(
-                onClick = onOpenVoiceCalls,
-                enabled = !callStarted && !listening
+        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            androidx.compose.material3.IconButton(
+                onClick = onOpenVoiceCalls, enabled = !callStarted && !listening
             ) {
-                Text("Voice Calls")
+                androidx.compose.material3.Icon(
+                    androidx.compose.ui.res.painterResource(com.battlesbudz.jarvis.v2.R.drawable.ic_voice_history),
+                    contentDescription = "Voice calls", tint = MaterialTheme.colorScheme.primary)
             }
-            TextButton(onClick = { settingsOpen = true }) { Text("Voice settings") }
+            Column(Modifier.weight(1f), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                Text("JARVIS", style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.primary)
+                Text("Voice Call", style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = 4.dp))
+            }
+            androidx.compose.material3.IconButton(onClick = { settingsOpen = true }) {
+                androidx.compose.material3.Icon(
+                    androidx.compose.ui.res.painterResource(com.battlesbudz.jarvis.v2.R.drawable.ic_voice_settings),
+                    contentDescription = "Voice settings", tint = MaterialTheme.colorScheme.primary)
+            }
         }
         val phase = if (runtimeArmed) runtimePhase.label else "Ready"
         val isListening = runtimeArmed && runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.LISTENING
