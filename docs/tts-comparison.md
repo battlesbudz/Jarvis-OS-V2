@@ -2,9 +2,9 @@
 
 ## User test
 
-End any call, then tap **Voice: …**. Select Kokoro original, Piper Lessac (US), Piper Alan (British), or Piper Ryan High (US) for the next call. **Test selected voice** reads a fixed short reply, paragraph and story. **Test all voices** runs the same samples sequentially with each engine without changing the selected call voice. **Stop benchmark** cancels playback and retains completed results; native synthesis may take a moment to retire before controls become available again.
+End any call, then tap **Voice: …**. Select Kokoro original, Piper Lessac (US), Piper Alan (British), Piper Ryan High (US), or Piper Miro High (British) for the next call. **Test selected voice** reads a fixed short reply, paragraph and story. **Test all voices** runs the same samples sequentially with each engine without changing the selected call voice. **Stop benchmark** cancels playback and retains completed results; native synthesis may take a moment to retire before controls become available again.
 
-First use downloads Ryan High (~116 MB) or Lessac/Alan (~67 MB each), with a pinned SHA-256 and byte count. Extracted model lengths and essential phonemizer files are checked. Bundles install in separate directories; original Kokoro remains available. Downloads and extraction are cancellable for the alternatives. The original model retains its existing installer. All models operate locally after installation.
+First use downloads Ryan High (~116 MB) or Lessac/Alan/Miro (~67 MB each), with a pinned SHA-256 and byte count. Extracted model lengths and essential phonemizer files are checked. Bundles install in separate directories; original Kokoro remains available. Downloads and extraction are cancellable for the alternatives. The original model retains its existing installer. All models operate locally after installation.
 
 Each benchmark sample creates a fresh native engine. All engines use the same 2–4 thread limit, non-callback JNI generation, fixed phrase boundaries, and normal 1.0 playback speed. Model loading and queue waits are reported separately from synthesis. Downloads, Gemma generation and microphone recognition are excluded. The benchmark does not unload Gemma weights already resident in memory; it prevents competing model operations. These are in-app synthesis/playback measurements, not laboratory isolated hardware timings. Try repeated runs in similar temperature/power conditions and listen to pronunciation and voice quality.
 
@@ -40,7 +40,7 @@ The benchmark dialog now has a persistent **Copy diagnostics** action beside Don
 Piper Alan medium is an additional British English option, keeping Lessac and original Kokoro available. Alan uses the same VITS path and default medium-model inference configuration; it is a different voice/accent, not a guaranteed fidelity upgrade. Its model card says it was fine-tuned from Lessac medium. Model card: https://huggingface.co/rhasspy/piper-voices/blob/main/en/en_GB/alan/medium/MODEL_CARD
 
 Archive: https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-alan-medium.tar.bz2
-Archive bytes: 67220121; SHA-256: `a48d4017da0f77668b27bed63fe6e04dd64c6397e1fadad4f460efb0ef7c9012`; extracted ONNX bytes: 63201430. Model card and dataset attribution remain in the installed bundle. Existing saved selection and historical results keep their IDs. Test all voices includes all four choices; Test selected voice runs just the chosen one.
+Archive bytes: 67220121; SHA-256: `a48d4017da0f77668b27bed63fe6e04dd64c6397e1fadad4f460efb0ef7c9012`; extracted ONNX bytes: 63201430. Model card and dataset attribution remain in the installed bundle. Existing saved selection and historical results keep their IDs. Test all voices includes all five choices; Test selected voice runs just the chosen one.
 
 ## Ryan High and INT8 retirement
 
@@ -55,3 +55,15 @@ Ryan High is a higher-capacity Piper male US English voice, trained from scratch
 Kokoro INT8 is removed from selection and Test all voices. A saved INT8 selection resolves to original Kokoro. Historical INT8 results retain their own name and model ID, marked retired, so previous measurements are not mislabeled as original Kokoro. The next voice model preparation removes only the retired INT8 model directory and its installer staging/partial files, under the existing model-operation gate. Other models and all saved measurements remain available.
 
 Validation adds a regression test for retired selection fallback and historical identity, alongside the existing persistence/retention test now exercising Ryan High. Ryan's exact pinned bundle generated nonempty 22,050 Hz speech using Sherpa 1.13.7 on the host; this checks runtime compatibility, not phone latency or subjective voice quality.
+
+## Miro High (British)
+
+Miro is an additional British English male voice from TigreGotico Lda / OpenVoiceOS, distributed as `vits-piper-en_GB-miro-high` by Sherpa. Its first-use download is about 67 MB. It uses the existing VITS configuration and is selectable for calls and both benchmark modes; no existing voice preference is changed. Its stable diagnostic ID is `piper_miro_high`. The High name follows the upstream package, not a claim of perceptual equivalence to Kokoro or a measured phone speed.
+
+- Model source and attribution: https://huggingface.co/OpenVoiceOS/pipertts_en-GB_miro
+- Samples/configuration: https://k2-fsa.github.io/sherpa/onnx/tts/all/English/vits-piper-en_GB-miro-high.html
+- Archive: https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-miro-high.tar.bz2
+- Archive bytes: 67194499; SHA-256: `c42907615e1a95bb69a85674f9d7979eeb2352c40fe86a0ae84d5479149c03d1`; ONNX bytes: 63511174; expanded bundle: 81511809 bytes.
+- Preserve the included README and license information. The pinned Sherpa bundle README states CC BY-NC-SA 4.0; the current upstream model card states CC BY-NC-ND 4.0. Both restrict commercial use. The app identifies the creator and non-commercial restriction when selected; commercial release needs permission from the rights holder. The model is downloaded unchanged, with no retraining or voice conversion.
+
+Validation: the exact pinned archive generated nonempty 22,050 Hz audio through Sherpa 1.13.7 on the host. Android CI covers compilation, unit tests, native packaging and signing. Phone acceptance is selecting Miro, running Test selected voice, copying diagnostics, and comparing pronunciation and long-response gaps against Alan and Kokoro.
