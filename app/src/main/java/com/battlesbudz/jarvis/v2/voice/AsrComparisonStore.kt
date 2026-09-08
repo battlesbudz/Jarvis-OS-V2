@@ -7,17 +7,14 @@ import java.util.Locale
 
 /** Separate from the runtime event ring: comparisons survive playback, new calls and restarts. */
 class AsrComparisonStore(private val preferences: SharedPreferences) {
-    @Synchronized fun selectedEngine() = AsrEngine.fromId(preferences.getString("engine", AsrEngine.MOONSHINE.id))
-    @Synchronized fun select(engine: AsrEngine) { preferences.edit().putString("engine", engine.id).apply() }
-
     @Synchronized fun records(): List<JSONObject> = runCatching {
         val array = JSONArray(preferences.getString("turns", "[]"))
         (0 until array.length()).map { array.getJSONObject(it) }.takeLast(20)
     }.getOrDefault(emptyList())
 
-    @Synchronized fun add(id: String, engine: AsrEngine, metrics: AsrCaptureMetrics, transcript: String) {
+    @Synchronized fun add(id: String, metrics: AsrCaptureMetrics, transcript: String) {
         val entry = JSONObject().put("id", id).put("atMs", System.currentTimeMillis())
-            .put("engine", engine.id).put("model", engine.modelVersion)
+            .put("engine", MoonshineModelInfo.id).put("model", MoonshineModelInfo.modelVersion)
             .put("transcript", transcript.take(4000)).put("model_load_ms", metrics.modelLoadMs)
             .put("capture_ready_ms", metrics.captureReadyMs).put("audio_fed_ms", metrics.audioMs)
             .put("decode_ms", metrics.decodeMs).put("max_decode_chunk_ms", metrics.maxDecodeChunkMs)
@@ -45,9 +42,15 @@ class AsrComparisonStore(private val preferences: SharedPreferences) {
     }
 
     companion object {
+        private fun engineLabel(id: String) = when (id) {
+            MoonshineModelInfo.id -> MoonshineModelInfo.label
+            "zipformer" -> "Zipformer (retired)"
+            else -> id.ifBlank { "Unknown recognizer" }
+        }
+
         fun describe(entry: JSONObject): String = buildString {
             appendLine("ASR turn ${entry.optString("id")} atMs=${entry.optLong("atMs")}")
-            appendLine("engine=${AsrEngine.fromId(entry.optString("engine")).label}")
+            appendLine("engine=${engineLabel(entry.optString("engine"))}")
             appendLine("model=${entry.optString("model")}")
             appendLine("transcript=${entry.optString("transcript")}")
             for (key in listOf("model_load_ms", "capture_ready_ms", "audio_fed_ms", "decode_ms",

@@ -21,8 +21,4 @@ class WordErrorRateTest {
         assertNull(WordErrorRate.score("...", "hello"))
         assertEquals(100.0, WordErrorRate.score("hello Jarvis", "")!!.percent, 0.001)
     }
-    @Test fun unknownSavedEngineKeepsWorkingDefault() {
-        assertEquals(AsrEngine.ZIPFORMER, AsrEngine.fromId("missing"))
-        assertEquals(AsrEngine.MOONSHINE, AsrEngine.fromId("moonshine_small"))
-    }
 }

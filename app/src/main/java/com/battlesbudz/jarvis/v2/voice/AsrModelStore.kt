@@ -13,15 +13,15 @@ import java.security.MessageDigest
 import kotlin.coroutines.coroutineContext
 
 /** Pinned ASR runtime files, verified before use and installed atomically per file. */
-class AsrModelStore(context: Context, private val engine: AsrEngine = AsrEngine.ZIPFORMER) {
-    private val directory = File(context.filesDir, if (engine == AsrEngine.ZIPFORMER)
-        "voice-models/zipformer-en-20m" else "voice-models/moonshine-small-en-26-08-21")
-    private val files = if (engine == AsrEngine.ZIPFORMER) ZIPFORMER_FILES else MOONSHINE_FILES
-    private val base = if (engine == AsrEngine.ZIPFORMER) BASE else MOONSHINE_BASE
-    fun isReady(): Boolean = files.all { File(directory, it.name).length() == it.bytes }
+class AsrModelStore(context: Context) {
+    private val retiredDirectory = File(context.filesDir, "voice-models/zipformer-en-20m")
+    private val directory = File(context.filesDir, "voice-models/moonshine-small-en-26-08-21")
+    private val files = MOONSHINE_FILES
+    private val base = MOONSHINE_BASE
 
     suspend fun ensureReady(report: (String) -> Unit = {}): File = withContext(Dispatchers.IO) {
         installMutex.withLock {
+            retiredDirectory.deleteRecursively()
             directory.mkdirs()
             var completed = 0L
             for (spec in files) {
@@ -48,7 +48,7 @@ class AsrModelStore(context: Context, private val engine: AsrEngine = AsrEngine.
                                     output.write(buffer, 0, count)
                                     if (copied - lastReport >= 1024 * 1024) {
                                         lastReport = copied
-                                        report("Preparing ${engine.label}: ${(completed + copied) / 1_000_000} / ${files.sumOf { it.bytes } / 1_000_000} MB")
+                                        report("Preparing ${MoonshineModelInfo.label}: ${(completed + copied) / 1_000_000} / ${files.sumOf { it.bytes } / 1_000_000} MB")
                                     }
                                 }
                             }
@@ -83,10 +83,6 @@ class AsrModelStore(context: Context, private val engine: AsrEngine = AsrEngine.
     }
 
     companion object {
-        const val ENCODER = "encoder-epoch-99-avg-1.int8.onnx"
-        const val DECODER = "decoder-epoch-99-avg-1.int8.onnx"
-        const val JOINER = "joiner-epoch-99-avg-1.int8.onnx"
-        private const val BASE = "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17/resolve/main"
         private const val MOONSHINE_BASE = "https://download.moonshine.ai/model/small-streaming-en/quantized_26_08_21"
         private val MOONSHINE_FILES = listOf(
             ModelFile("adapter.ort", 2870368, "c665f742364febad597cc9ac1e0b341ffbee0e24a1466e2f3bde95e6e4771762"),
@@ -100,11 +96,5 @@ class AsrModelStore(context: Context, private val engine: AsrEngine = AsrEngine.
         )
         private val installMutex = Mutex()
         private data class ModelFile(val name: String, val bytes: Long, val sha256: String)
-        private val ZIPFORMER_FILES = listOf(
-            ModelFile(ENCODER, 42845182, "3810755ce7c3ab26b42a8bcf39d191308fa27fb0f53358823ba46141d03b7eb3"),
-            ModelFile(DECODER, 539499, "21e2a2acd961b3ac72f55be2f10f1a285e1b0b0ba010d7c0b6eab141411b163c"),
-            ModelFile(JOINER, 259572, "e085d73b593cf9b0707f370dbd656d58327d3fe36d80d849202ef81df02cb01e"),
-            ModelFile("tokens.txt", 5048, "49e3c2646595fd907228b3c6787069658f67b17377c60aeb8619c4551b2316fb")
-        )
     }
 }

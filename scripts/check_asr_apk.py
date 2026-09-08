@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail packaging if either recognizer would bind to the other SDK's ORT."""
+"""Verify Moonshine ASR and Sherpa TTS/VAD native packaging."""
 import argparse
 from pathlib import Path
 import subprocess
@@ -13,6 +13,9 @@ def check(apk):
         prefix = "lib/arm64-v8a/"
         required = ["libmoonshine.so", "libmoonshine-jni.so", "libms_ort_1232.so",
                     "libsherpa-onnx-jni.so", "libonnxruntime.so"]
+        for retired in ["libsherpa-onnx-c-api.so", "libsherpa-onnx-cxx-api.so"]:
+            assert prefix + retired not in names, f"Unused native wrapper packaged: {retired}"
+        assert "assets/voice/silero_vad.onnx" in names, "Missing speech detector model"
         metadata = {}
         for name in required:
             assert names.count(prefix + name) == 1, f"Missing/duplicate {name}"

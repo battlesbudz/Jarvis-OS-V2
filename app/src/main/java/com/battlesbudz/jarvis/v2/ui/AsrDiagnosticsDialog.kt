@@ -8,14 +8,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.battlesbudz.jarvis.v2.voice.AsrComparisonStore
-import com.battlesbudz.jarvis.v2.voice.AsrEngine
 
 @Composable
-internal fun AsrComparisonDialog(
+internal fun AsrDiagnosticsDialog(
     store: AsrComparisonStore,
-    selected: AsrEngine,
-    canSelect: Boolean,
-    onSelect: (AsrEngine) -> Unit,
     onDismiss: () -> Unit
 ) {
     var records by remember { mutableStateOf(store.records().asReversed()) }
@@ -28,17 +24,10 @@ internal fun AsrComparisonDialog(
         text = {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                AsrEngine.entries.forEach { engine ->
-                    OutlinedButton(onClick = { onSelect(engine) }, enabled = canSelect,
-                        modifier = Modifier.fillMaxWidth()) {
-                        Text((if (engine == selected) "✓ " else "") + engine.label)
-                    }
-                }
-                Text(if (canSelect) "Used for the next call. Moonshine downloads about 142 MB on first use; recognition then works offline."
-                    else "End the call to change recognizers.")
+                Text("Moonshine Small Streaming is the speech recognizer. It downloads about 142 MB on first use, then works offline.")
                 HorizontalDivider()
                 Text("Compare turns", style = MaterialTheme.typography.titleMedium)
-                Text("Say the same phrase with each engine in similar conditions. Lower latency and word-error rate are better. These are live calls; timings include competition from Gemma and voice output.")
+                Text("Compare turns recorded in similar conditions. Lower latency and word-error rate are better. These are live calls; timings include competition from Gemma and voice output.")
                 TextButton(onClick = { records = store.records().asReversed(); index = 0 }) { Text("Refresh results") }
                 if (record == null) Text("Results appear after a turn finishes. The last 20 stay available across calls and app restarts.")
                 else {
@@ -57,7 +46,7 @@ internal fun AsrComparisonDialog(
                     Text("Word-error rate compares exact words, ignoring case and punctuation. Keep false starts and corrections. It does not score intent; numbers and contractions can differ. An empty reference leaves accuracy unscored.",
                         style = MaterialTheme.typography.bodySmall)
                 }
-                Text("First-partial timing begins when speech is detected. Finalization measures the last ASR flush. Final-to-text/playback begins after that flush and excludes the 3-second silence wait. Playback start is the app's audio submission, not an acoustic measurement. Decode factor includes all audio fed, including silence; below 1 means decoding cost less than the audio duration.",
+                Text("First-partial timing begins when speech is detected. Finalization measures the last ASR flush. Final-to-text/playback begins after that flush and excludes the 3-second silence wait. Playback start measures Android playback-head movement, not an acoustic measurement; older records measured submission. Decode factor includes all audio fed, including silence; below 1 means decoding cost less than the audio duration.",
                     style = MaterialTheme.typography.bodySmall)
                 Text("Copy diagnostics on the call screen includes these comparisons.")
             }

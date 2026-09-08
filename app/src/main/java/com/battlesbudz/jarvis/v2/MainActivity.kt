@@ -54,7 +54,6 @@ import com.battlesbudz.jarvis.v2.conversation.runConversationInternal
 import com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore
 import com.battlesbudz.jarvis.v2.voice.AndroidAudioInput
 import com.battlesbudz.jarvis.v2.voice.AsrModelStore
-import com.battlesbudz.jarvis.v2.voice.SherpaStreamingTranscriber
 import com.battlesbudz.jarvis.v2.voice.VoicePreparation
 import com.battlesbudz.jarvis.v2.voice.SileroSpeechDetector
 import com.battlesbudz.jarvis.v2.voice.Pcm16Signal
@@ -216,10 +215,6 @@ class MainActivity : ComponentActivity() {
                 onTtsBenchmark = { engine, status, finished -> ttsBenchmarks.start(engine, status, finished) },
                 onStopTtsBenchmark = { ttsBenchmarks.stop() },
                 asrComparisonStore = asrComparisonStore,
-                onSelectAsr = { selected ->
-                    if (voiceTurnJob?.isActive == true) false
-                    else { asrComparisonStore.select(selected); true }
-                },
                 voiceModelStore = kokoroModelStore,
                 initialMessages = restoreTranscript(),
                 initialVoiceCalls = voiceCallStore.list(),
@@ -295,7 +290,7 @@ class MainActivity : ComponentActivity() {
                 diagnosticRecorder.startSession("Voice Call ${it.id}")
             }
         }
-        val asrEngine = asrComparisonStore.selectedEngine()
+        val asrEngine = com.battlesbudz.jarvis.v2.voice.MoonshineModelInfo
         val ttsEngine = ttsComparisonStore.selectedEngine()
         val asrTurnId = java.util.UUID.randomUUID().toString()
         val finalReadyAt = java.util.concurrent.atomic.AtomicLong(0)
@@ -316,7 +311,7 @@ class MainActivity : ComponentActivity() {
                 }
                 operationOwned = true
                 status("Preparing speech recognition…")
-                val asrDirectory = AsrModelStore(applicationContext, asrEngine).ensureReady(::status)
+                val asrDirectory = AsrModelStore(applicationContext).ensureReady(::status)
                 diagnosticRecorder.record("Voice ASR selected engine=${asrEngine.id} model=${asrEngine.modelVersion} turn=$asrTurnId")
                 check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) { "The Gemma model failed integrity verification." }
                 if (conversationEngine?.audioEnabled != true) {
@@ -368,13 +363,10 @@ class MainActivity : ComponentActivity() {
                     createDetector = { SileroSpeechDetector.create(assets) },
                     log = { diagnosticRecorder.record("Voice input: $it") },
                     createTranscriber = {
-                        when (asrEngine) {
-                            com.battlesbudz.jarvis.v2.voice.AsrEngine.ZIPFORMER -> SherpaStreamingTranscriber(asrDirectory)
-                            com.battlesbudz.jarvis.v2.voice.AsrEngine.MOONSHINE -> com.battlesbudz.jarvis.v2.voice.MoonshineStreamingTranscriber(asrDirectory)
-                        }
+                        com.battlesbudz.jarvis.v2.voice.MoonshineStreamingTranscriber(asrDirectory)
                     },
                     onMetrics = { metrics, text ->
-                        asrComparisonStore.add(asrTurnId, asrEngine, metrics, text)
+                        asrComparisonStore.add(asrTurnId, metrics, text)
                     },
                     onPartialTranscript = { text, audio ->
                         speculative.submit(text, audio)

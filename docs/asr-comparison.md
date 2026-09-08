@@ -1,13 +1,10 @@
-# Selectable speech recognition
+# Speech recognition diagnostics
 
-The call screen's **Speech recognition** button selects Zipformer (the existing
-default) or Moonshine Small Streaming. End the call before switching. The backend
-also rejects changes until the previous voice job has released its resources.
-Only the selected recognizer loads. Moonshine's first use downloads 142.3 MB;
+Moonshine Small Streaming is the sole recognizer. Its first use downloads 142.3 MB;
 eight runtime files are pinned to the 2026-08-21 English quantization, with length
 and SHA-256 verification before loading. Subsequent use is offline.
 
-Both engines receive the same continuous 16 kHz mono PCM, including opening audio,
+Moonshine receives the same continuous 16 kHz mono PCM, including opening audio,
 through AudioTurnCapture. Silero still owns Jarvis's 3-second turn endpoint.
 Moonshine also segments lines internally: its adapter combines lines by stable ID,
 replaces provisional text, and forces a final update at Jarvis's endpoint. No
@@ -15,12 +12,14 @@ native line event independently submits a tool action or a Gemma response.
 
 ## Comparing on a phone
 
-1. Select Zipformer, make a call, say a test phrase, and let Jarvis finish.
-2. End the call; select Moonshine; repeat the phrase in similar conditions.
-3. Open Speech recognition / Compare turns. Newer/Older selects measurements.
-4. Enter **What I actually said**, including false starts and corrections, and
-   save the reference to compute word-error rate. Copy diagnostics includes all
-   the last 20 measurements, even after new calls and app restarts.
+1. Make a call and say a test phrase.
+2. Open Speech recognition diagnostics. Newer/Older selects measurements.
+3. Enter **What I actually said**, including false starts and corrections, and
+   save the reference to compute word-error rate. Copy diagnostics includes the
+   last 20 measurements across calls and app restarts.
+
+Old Zipformer measurements remain labeled as retired. Its saved selection is
+ignored and its downloaded model directory is removed on recognition setup.
 
 Useful phrases cover greetings/opening words, a corrected noun ("tell me a story
 about pirates, no, astronauts on the moon"), names, and numbers. Do not use
@@ -29,7 +28,7 @@ calls, not a sandboxed tool test. Conversation context, Gemma speculation, CPU
 contention, cold starts and thermal conditions can affect response latency.
 
 Measurements:
-- `model_load_ms`: recognizer construction, including Zipformer's synthetic priming.
+- `model_load_ms`: recognizer construction.
 - `capture_ready_ms`: microphone startup plus detector/recognizer preparation;
   excludes downloads and earlier Gemma initialization.
 - `speech_detected_to_first_partial_ms`: from Silero's first speech detection to
@@ -41,8 +40,9 @@ Measurements:
 - `decode_realtime_factor`: accept plus finalization time / all audio fed,
   including silence. Long idle periods affect this denominator.
 - `final_to_first_text_ms`, `final_to_playback_start_ms`: after final ASR flush
-  and before first answer text/audio submission. Exclude silence and finalization.
-  Audio submission is not an acoustic measurement from the speaker.
+  and before first answer text / observed playback-head movement. Exclude silence
+  and finalization. Older builds measured audio submission instead; neither is
+  an acoustic measurement from the speaker.
 - `empty_candidates`: false/empty detections retried inside the same microphone session, without restarting call inactivity. Load/decode totals include retries.
 - `prepared`: whether speculative Gemma preparation matched the final transcript.
 

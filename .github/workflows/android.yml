@@ -106,6 +106,13 @@ jobs:
           test -x "$APKSIGNER"
           "$APKSIGNER" verify --verbose "$APK"
 
+      - name: Upload release shrinker reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-os-v2-release-r8-reports
+          path: app/build/outputs/mapping/release/
+          if-no-files-found: error
+
       - name: Stage release APK
         run: |
           mkdir -p artifact

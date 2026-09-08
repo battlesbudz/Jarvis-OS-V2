@@ -363,7 +363,6 @@ fun JarvisApp(
     onTtsBenchmark: (com.battlesbudz.jarvis.v2.voice.TtsEngine?, (String) -> Unit, () -> Unit) -> Unit,
     onStopTtsBenchmark: () -> Unit,
     asrComparisonStore: com.battlesbudz.jarvis.v2.voice.AsrComparisonStore,
-    onSelectAsr: (com.battlesbudz.jarvis.v2.voice.AsrEngine) -> Boolean,
     voiceModelStore: com.battlesbudz.jarvis.v2.voice.KokoroModelStore,
     initialMessages: List<ChatEntry>,
     initialVoiceCalls: List<VoiceCallRecord>,
@@ -497,7 +496,6 @@ fun JarvisApp(
                         onTtsBenchmark = onTtsBenchmark,
                         onStopTtsBenchmark = onStopTtsBenchmark,
                         asrComparisonStore = asrComparisonStore,
-                        onSelectAsr = onSelectAsr,
                         onVoiceTurn = onVoiceTurn,
                         onEndVoiceCall = onEndVoiceCall,
                         onOpenVoiceCalls = {
@@ -565,7 +563,6 @@ private fun VoiceCallScreen(
     onTtsBenchmark: (com.battlesbudz.jarvis.v2.voice.TtsEngine?, (String) -> Unit, () -> Unit) -> Unit,
     onStopTtsBenchmark: () -> Unit,
     asrComparisonStore: com.battlesbudz.jarvis.v2.voice.AsrComparisonStore,
-    onSelectAsr: (com.battlesbudz.jarvis.v2.voice.AsrEngine) -> Boolean,
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
     onEndVoiceCall: ((String) -> Unit) -> Unit,
     onOpenVoiceCalls: () -> Unit,
@@ -574,7 +571,6 @@ private fun VoiceCallScreen(
     var ttsSettingsOpen by remember { mutableStateOf(false) }
     var selectedTts by remember { mutableStateOf(ttsComparisonStore.selectedEngine()) }
     var asrSettingsOpen by remember { mutableStateOf(false) }
-    var selectedAsr by remember { mutableStateOf(asrComparisonStore.selectedEngine()) }
     var callStarted by remember { mutableStateOf(false) }
     var listening by remember { mutableStateOf(false) }
     var turnInFlight by remember { mutableStateOf(false) }
@@ -594,9 +590,8 @@ private fun VoiceCallScreen(
         onBenchmark = onTtsBenchmark, onStop = onStopTtsBenchmark,
         onDismiss = { ttsSettingsOpen = false }
     )
-    if (asrSettingsOpen) AsrComparisonDialog(
-        store = asrComparisonStore, selected = selectedAsr, canSelect = !callStarted && !turnInFlight,
-        onSelect = { if (onSelectAsr(it)) selectedAsr = it },
+    if (asrSettingsOpen) AsrDiagnosticsDialog(
+        store = asrComparisonStore,
         onDismiss = { asrSettingsOpen = false }
     )
     val waveformActiveColor = MaterialTheme.colorScheme.primary
@@ -704,7 +699,7 @@ private fun VoiceCallScreen(
         }
         TextButton(onClick = { ttsSettingsOpen = true }) { Text("Voice: ${selectedTts.label}") }
         TextButton(onClick = { asrSettingsOpen = true }) {
-            Text("Speech recognition: ${selectedAsr.label}")
+            Text("Speech recognition: ${com.battlesbudz.jarvis.v2.voice.MoonshineModelInfo.label}")
         }
         Canvas(
             modifier = Modifier

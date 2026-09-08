@@ -1,6 +1,6 @@
 package com.battlesbudz.jarvis.v2.voice
 
-/** Zipformer emits number words; retain the last requested value after a correction. */
+/** Speech recognition can emit number words; retain the last requested value after a correction. */
 object SpokenVolumeLevel {
     private val small = listOf("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen")
     private val tens = listOf("twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety")

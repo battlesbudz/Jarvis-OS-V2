@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Android microphone adapter. It emits bounded PCM chunks and owns only the
- * microphone lifecycle; wake-word and model decisions stay in SpeechPipeline.
+ * microphone lifecycle; turn detection and model decisions stay in the voice coordinator.
  */
 class AndroidAudioInput(
     private val scope: CoroutineScope,
