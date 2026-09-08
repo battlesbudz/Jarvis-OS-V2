@@ -48,7 +48,7 @@ internal fun TtsComparisonDialog(
                         Text((if (selected == engine) "✓ " else "") + engine.label)
                     }
                 }
-                Text("Selected voice is used for the next call. First use downloads about 103 MB for INT8 Kokoro or 67 MB per Piper voice. All voices then work offline.")
+                Text("Selected voice is used for the next call. First use downloads about 116 MB for Ryan High or 67 MB for Lessac or Alan. All voices then work offline.")
                 if (!canChange) Text("End your call before changing voices or benchmarking.")
                 HorizontalDivider()
                 Text("Fixed-text benchmark", style = MaterialTheme.typography.titleMedium)

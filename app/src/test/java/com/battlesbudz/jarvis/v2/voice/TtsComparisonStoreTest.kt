@@ -11,11 +11,11 @@ class TtsComparisonStoreTest {
         val store = TtsComparisonStore(prefs)
         store.select(TtsEngine.PIPER)
         val metrics = TtsSessionMetrics(100, 200, 400, 2000, 20, 1f, 0, 1, 2, 50, "abc", 4, true, null)
-        store.add(TtsEngine.KOKORO_INT8, "benchmark-v1", "short-v1", metrics)
+        store.add(TtsEngine.PIPER_RYAN, "benchmark-v1", "short-v1", metrics)
         val restored = TtsComparisonStore(prefs)
         assertEquals(TtsEngine.PIPER, restored.selectedEngine())
         val entry = restored.records().single()
-        assertEquals(TtsEngine.KOKORO_INT8.id, entry.getString("engine"))
+        assertEquals(TtsEngine.PIPER_RYAN.id, entry.getString("engine"))
         assertEquals(0.2, entry.getDouble("rtf"), 0.0001)
         assertTrue(entry.getBoolean("completed"))
         repeat(45) { restored.add(TtsEngine.PIPER, "voice-call", "$it", metrics.copy(completed = false, error = "stopped")) }
@@ -23,6 +23,18 @@ class TtsComparisonStoreTest {
         assertFalse(restored.records().last().getBoolean("completed"))
         assertTrue(restored.snapshot().contains("error=stopped"))
     }
+    @Test fun retiredSelectionFallsBackButHistoricalIdentitySurvives() {
+        val prefs = preferences()
+        prefs.edit().putString("engine", "kokoro_int8")
+            .putString("results", """[{"engine":"kokoro_int8","model":"kokoro-int8-en-v0_19","atMs":1}]""").apply()
+        val restored = TtsComparisonStore(prefs)
+        assertEquals(TtsEngine.KOKORO, restored.selectedEngine())
+        assertFalse(TtsEngine.entries.any { it.id == "kokoro_int8" })
+        assertTrue(restored.snapshot().contains("TTS Kokoro INT8 (retired)"))
+        assertTrue(restored.snapshot().contains("model=kokoro-int8-en-v0_19"))
+        assertEquals("future_voice", TtsEngine.diagnosticLabel("future_voice"))
+    }
+
     private fun preferences(): SharedPreferences {
         val data = mutableMapOf<String, String?>()
         lateinit var editor: SharedPreferences.Editor

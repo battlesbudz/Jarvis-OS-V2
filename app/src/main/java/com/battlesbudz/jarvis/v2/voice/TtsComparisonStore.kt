@@ -40,7 +40,7 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
 
     companion object {
         fun describe(item: JSONObject) = buildString {
-            appendLine("TTS ${TtsEngine.fromId(item.optString("engine")).label} atMs=${item.optLong("atMs")}")
+            appendLine("TTS ${TtsEngine.diagnosticLabel(item.optString("engine"))} atMs=${item.optLong("atMs")}")
             for (key in listOf("model", "source", "sample", "completed", "load_ms", "first_phrase_synthesis_ms",
                 "synthesis_ms", "raw_audio_ms", "rtf", "playback_speed", "estimated_supply_gap_ms",
                 "queue_wait_ms", "underruns_including_drain", "phrases", "threads", "text_chars", "text_sha256", "error"))
