@@ -371,6 +371,8 @@ fun JarvisApp(
     onRunDirectAudioTest: ((String) -> Unit, (String) -> Unit) -> Unit,
     onRunDirectAudioToolTest: ((String) -> Unit, (String) -> Unit) -> Unit,
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
+    onWakeTest: ((String) -> Unit, () -> Unit) -> Unit,
+    onStopWakeTest: () -> Unit,
     onEndVoiceCall: ((String) -> Unit) -> Unit,
     onResumeVoiceCall: (VoiceCallRecord, (String?) -> Unit) -> Unit,
     onDeleteVoiceCall: (String) -> Unit,
@@ -498,6 +500,8 @@ fun JarvisApp(
                         onStopTtsBenchmark = onStopTtsBenchmark,
                         voicePlayback = voicePlayback,
                         onVoiceTurn = onVoiceTurn,
+                        onWakeTest = onWakeTest,
+                        onStopWakeTest = onStopWakeTest,
                         onEndVoiceCall = onEndVoiceCall,
                         onOpenVoiceCalls = {
                             voiceCalls = onRefreshVoiceCalls()
@@ -565,10 +569,28 @@ private fun VoiceCallScreen(
     onStopTtsBenchmark: () -> Unit,
     voicePlayback: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame>,
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
+    onWakeTest: ((String) -> Unit, () -> Unit) -> Unit,
+    onStopWakeTest: () -> Unit,
     onEndVoiceCall: ((String) -> Unit) -> Unit,
     onOpenVoiceCalls: () -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit
 ) {
+    var wakeTesting by remember { mutableStateOf(false) }
+    var wakeTestStatus by remember { mutableStateOf("") }
+    val wakeContext = androidx.compose.ui.platform.LocalContext.current
+    fun startWakeTest() {
+        wakeTesting = true
+        wakeTestStatus = "Preparing wake test…"
+        onWakeTest({ wakeTestStatus = it }, { wakeTesting = false })
+    }
+    val wakePermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) startWakeTest() else wakeTestStatus = "Microphone permission is required for the wake test."
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { onStopWakeTest() }
+    }
     var ttsSettingsOpen by remember { mutableStateOf(false) }
     var selectedTts by remember { mutableStateOf(ttsComparisonStore.selectedEngine()) }
     val playback by voicePlayback.collectAsState()
@@ -579,7 +601,7 @@ private fun VoiceCallScreen(
     var turns by remember { mutableStateOf(resumedCall?.transcript.orEmpty().map { ChatEntry(it.role, it.text) }) }
     var provisionalUser by remember { mutableStateOf("") }
     if (ttsSettingsOpen) TtsComparisonDialog(
-        store = ttsComparisonStore, canChange = !callStarted && !turnInFlight,
+        store = ttsComparisonStore, canChange = !callStarted && !turnInFlight && !wakeTesting,
         onSelect = { engine -> onSelectTts(engine).also { if (it) selectedTts = engine } },
         onBenchmark = onTtsBenchmark, onStop = onStopTtsBenchmark,
         onDismiss = { ttsSettingsOpen = false }
@@ -681,7 +703,7 @@ private fun VoiceCallScreen(
                 Text("New Voice Call")
             }
         }
-        TextButton(onClick = { ttsSettingsOpen = true }) { Text("Voice: ${selectedTts.label}") }
+        TextButton(onClick = { ttsSettingsOpen = true }, enabled = !wakeTesting) { Text("Voice: ${selectedTts.label}") }
         val assistantContext = androidx.compose.ui.platform.LocalContext.current
         var assistantSettingsMessage by remember { mutableStateOf("") }
         val assistantSettingsLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -738,7 +760,7 @@ private fun VoiceCallScreen(
             // Once a turn is armed, silence detection owns the turn boundary.
             // The separate End Voice Call control remains available for an
             // explicit stop.
-            enabled = !callStarted && !listening && !turnInFlight,
+            enabled = !callStarted && !listening && !turnInFlight && !wakeTesting,
             modifier = Modifier.fillMaxWidth().padding(top = 24.dp)
         ) {
             Text(if (callStarted) "Jarvis session active" else "Start Jarvis session")
@@ -763,6 +785,14 @@ private fun VoiceCallScreen(
         if (status.isNotBlank() && !status.startsWith("Voice Call turn complete")) {
             Text(status, style = MaterialTheme.typography.bodySmall)
         }
+        TextButton(onClick = {
+            if (wakeTesting) onStopWakeTest()
+            else if (wakeContext.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startWakeTest()
+            else wakePermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+        }, enabled = !callStarted && !turnInFlight) {
+            Text(if (wakeTesting) "Stop wake test" else "Test wake word")
+        }
+        if (wakeTestStatus.isNotBlank()) Text(wakeTestStatus, style = MaterialTheme.typography.bodySmall)
         TextButton(
             onClick = { onCopyDiagnostics(turns + if (provisionalUser.isNotBlank()) listOf(ChatEntry("You", provisionalUser)) else emptyList()) },
             modifier = Modifier.padding(top = 4.dp)

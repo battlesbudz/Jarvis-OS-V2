@@ -22,6 +22,8 @@ tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(extractMoonsh
 android {
     namespace = "com.battlesbudz.jarvis.v2"
     compileSdk = 35
+    ndkVersion = "27.2.12479018"
+    externalNativeBuild { cmake { path = file("src/main/cpp/microwakeword/CMakeLists.txt"); version = "3.22.1" } }
     val buildVersionCode = System.getenv("ANDROID_VERSION_CODE")?.toIntOrNull() ?: 1
     val buildVersionName = System.getenv("ANDROID_VERSION_NAME") ?: "0.1.0"
     signingConfigs {
@@ -44,6 +46,7 @@ android {
         ndk {
             abiFilters += "arm64-v8a"
         }
+        externalNativeBuild { cmake { arguments += "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON" } }
         versionCode = buildVersionCode
         versionName = buildVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

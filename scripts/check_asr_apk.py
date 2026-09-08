@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify Moonshine ASR and Sherpa TTS/VAD native packaging."""
 import argparse
+import hashlib
 from pathlib import Path
 import subprocess
 import tempfile
@@ -12,10 +13,11 @@ def check(apk):
         names = archive.namelist()
         prefix = "lib/arm64-v8a/"
         required = ["libmoonshine.so", "libmoonshine-jni.so", "libms_ort_1232.so",
-                    "libsherpa-onnx-jni.so", "libonnxruntime.so"]
+                    "libsherpa-onnx-jni.so", "libonnxruntime.so", "libmicrowakeword.so"]
         for retired in ["libsherpa-onnx-c-api.so", "libsherpa-onnx-cxx-api.so"]:
             assert prefix + retired not in names, f"Unused native wrapper packaged: {retired}"
         assert "assets/voice/silero_vad.onnx" in names, "Missing speech detector model"
+        assert hashlib.sha256(archive.read("assets/microwakeword/hey_jarvis.tflite")).hexdigest() == "21a7976add39ee24ec96c63d96b7aaa18e24d1d9824b963e451da8feb4b78b77", "Wrong microWakeWord model"
         metadata = {}
         for name in required:
             assert names.count(prefix + name) == 1, f"Missing/duplicate {name}"

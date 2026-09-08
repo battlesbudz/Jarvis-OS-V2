@@ -14,3 +14,6 @@
 -keep class ai.moonshine.voice.TtsChunk { *; }
 -keep class com.google.ai.edge.litertlm.** { *; }
 -keepattributes Signature,InnerClasses,EnclosingMethod,*Annotation*
+
+-keep class com.battlesbudz.jarvis.v2.voice.MicroWakeWord { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.MicroWakeWord$Companion { *; }

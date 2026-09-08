@@ -242,6 +242,8 @@ class MainActivity : ComponentActivity() {
                     sessionReport = report
                     runVoiceTurn(start, report, onTranscript, onFinished)
                 },
+                onWakeTest = { report, finished -> runWakeTest(report, finished) },
+                onStopWakeTest = { wakeTestJob?.cancel() },
                 onEndVoiceCall = { report -> endVoiceCall(report) },
                 onResumeVoiceCall = { call, onComplete ->
                     lifecycleScope.launch {
@@ -371,9 +373,10 @@ class MainActivity : ComponentActivity() {
                 if (voiceSessionController.currentCallId() == null) {
                     val wakeDirectory = com.battlesbudz.jarvis.v2.voice.WakeWordModelStore(applicationContext).ensureReady(::status)
                     com.battlesbudz.jarvis.v2.voice.PassiveWakeListener(wakeDirectory,
-                        log = { diagnosticRecorder.record("Voice wake: $it") }).use { wake ->
+                        log = { diagnosticRecorder.record("Voice wake: $it") },
+                        onReady = { status("Waiting for Hey Jarvis — microphone active") }).use { wake ->
                         input.start()
-                        status("Waiting for Hey Jarvis — microphone active")
+                        status("Preparing wake detector — microphone warming up…")
                         wake.awaitWake(input)
                     }
                     voiceSessionController.beginCall().also { startVoiceDiagnostics("Voice Call ${it.id}") }
@@ -583,6 +586,55 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private var wakeTestJob: Job? = null
+
+    private fun runWakeTest(report: (String) -> Unit, finished: () -> Unit) {
+        if (wakeTestJob?.isActive == true || voiceSessionArmed || !modelStore.tryBeginModelOperation()) {
+            report("Stop the current session or model operation before testing the wake word.")
+            finished()
+            return
+        }
+        startVoiceDiagnostics("microWakeWord microphone test")
+        wakeTestJob = lifecycleScope.launch(Dispatchers.Default) {
+            fun status(message: String) { mainHandler.post { report(message) } }
+            val input = AndroidAudioInput(this,
+                audioManager = getSystemService(android.media.AudioManager::class.java),
+                onWaiting = { status("Wake test paused — another app is using the microphone.") })
+            try {
+                val directory = com.battlesbudz.jarvis.v2.voice.WakeWordModelStore(applicationContext).ensureReady(::status)
+                val detected = kotlinx.coroutines.withTimeoutOrNull(30_000) {
+                    com.battlesbudz.jarvis.v2.voice.PassiveWakeListener(directory,
+                        log = { diagnosticRecorder.record("Wake test: $it") },
+                        onReady = { status("Say Hey Jarvis — testing microphone and wake model only.") },
+                        onLevel = { rms, score -> status("Microphone level: $rms · Wake score: ${"%.3f".format(java.util.Locale.US, score)} / 0.97") }
+                    ).use { wake -> input.start(); wake.awaitWake(input) }
+                    true
+                } == true
+                if (detected) {
+                    diagnosticRecorder.recordImportant("Wake test passed: Hey Jarvis matched without ASR or Gemma.")
+                    status("Hey Jarvis detected! Wake test passed.")
+                    val cue = android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 65)
+                    try { cue.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 100); kotlinx.coroutines.delay(130) }
+                    finally { cue.release() }
+                } else {
+                    diagnosticRecorder.recordImportant("Wake test ended: no match in 30 seconds.")
+                    status("No wake detected in 30 seconds. Copy diagnostics to share this test.")
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                diagnosticRecorder.recordImportant("Wake test stopped.")
+                status("Wake test stopped — microphone off.")
+                throw cancelled
+            } catch (error: Throwable) {
+                diagnosticRecorder.recordImportant("Wake test failed: ${error.message}")
+                status("Wake test failed: ${error.message}")
+            } finally {
+                withContext(kotlinx.coroutines.NonCancellable) { input.stop() }
+                modelStore.endModelOperation()
+                mainHandler.post { finished() }
             }
         }
     }
@@ -844,6 +896,7 @@ class MainActivity : ComponentActivity() {
 
     
     override fun onDestroy() {
+        wakeTestJob?.cancel()
         if (voiceSessionArmed) diagnosticRecorder.recordImportant("Session stopped: activity destroyed changingConfiguration=$isChangingConfigurations finishing=$isFinishing")
         voiceSessionArmed = false
         stopVoiceService()

@@ -1,63 +1,57 @@
 package com.battlesbudz.jarvis.v2.voice
 
-import com.k2fsa.sherpa.onnx.KeywordSpotter
-import com.k2fsa.sherpa.onnx.KeywordSpotterConfig
-import com.k2fsa.sherpa.onnx.OnlineModelConfig
-import com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig
 import java.io.File
+import java.nio.ByteBuffer
 
-/** Only keyword scores are computed here. No ASR, transcript, WAV, or Gemma input exists yet. */
-class PassiveWakeListener(directory: File, private val log: (String) -> Unit = {}) : AutoCloseable {
-    private val keywordFile = File(directory, "hey-jarvis.txt").apply {
-        writeText("HH EY1 JH AA1 R V AH0 S @HEY_JARVIS\n")
-    }
-    private val spotter = KeywordSpotter(config = KeywordSpotterConfig(
-        modelConfig = OnlineModelConfig(
-            transducer = OnlineTransducerModelConfig(
-                encoder = File(directory, "encoder-${WakeWordModelStore.SUFFIX}").path,
-                decoder = File(directory, WakeWordModelStore.DECODER_FILE).path,
-                joiner = File(directory, "joiner-${WakeWordModelStore.SUFFIX}").path),
-            tokens = File(directory, "tokens.txt").path,
-            numThreads = 1, modelType = "zipformer2"),
-        keywordsFile = keywordFile.path, keywordsScore = 2.0f, keywordsThreshold = 0.25f,
-        numTrailingBlanks = 2, maxActivePaths = 8
-    ))
-    // Pronunciation from the pinned model's en.phone lexicon (HEY + JARVIS).
-    private val stream = spotter.createStream()
+/** Dedicated microWakeWord inference. No ASR, transcript, WAV or Gemma input before a match. */
+class PassiveWakeListener(
+    directory: File,
+    private val log: (String) -> Unit = {},
+    private val onReady: () -> Unit = {},
+    private val onLevel: (Int, Float) -> Unit = { _, _ -> }
+) : AutoCloseable {
+    private val detector = MicroWakeWord(
+        modelBuffer = File(directory, "hey_jarvis.tflite").readBytes().let {
+            ByteBuffer.allocateDirect(it.size).apply { put(it); rewind() }
+        },
+        featureStepSizeMs = 10, probabilityCutoff = 0.97f, slidingWindowSize = 5
+    )
     suspend fun awaitWake(input: AudioInput) {
+        require(input.sampleRateHz == 16000 && input.channelCount == 1) { "microWakeWord needs 16 kHz mono PCM" }
         var frames = 0L
-        var lastReport = 0L
-        var windowSquares = 0.0
         var windowFrames = 0
-        var windowPeak = 0f
-        log("wake_capture_started model=phone-kws-v2 sampleRate=${input.sampleRateHz} threshold=0.25 score=2.0 paths=8")
+        var squares = 0.0
+        var peak = 0
+        var maxScore = 0f
+        var readyReported = false
+        log("wake_capture_started engine=microWakeWord model=hey_jarvis_v2 sampleRate=16000 threshold=0.97 window=5")
         WakeWordGate.await(input) { pcm ->
-            val samples = FloatArray(pcm.size / 2) { i ->
-                (((pcm[i * 2].toInt() and 255) or (pcm[i * 2 + 1].toInt() shl 8)).toShort().toFloat() / 32768f)
+            require(pcm.size % 2 == 0) { "Incomplete PCM16 sample" }
+            val samples = ShortArray(pcm.size / 2) { i ->
+                ((pcm[i * 2].toInt() and 255) or (pcm[i * 2 + 1].toInt() shl 8)).toShort()
+            }
+            for (sample in samples) {
+                squares += sample.toDouble() * sample
+                peak = maxOf(peak, kotlin.math.abs(sample.toInt()))
             }
             frames += samples.size
-            for (sample in samples) {
-                windowSquares += sample.toDouble() * sample
-                windowPeak = maxOf(windowPeak, kotlin.math.abs(sample))
-            }
             windowFrames += samples.size
-            if (frames - lastReport >= input.sampleRateHz * 3L) {
-                lastReport = frames
-                val rms = kotlin.math.sqrt(windowSquares / windowFrames.coerceAtLeast(1))
-                log("wake_capture_level elapsedMs=${frames * 1000 / input.sampleRateHz} rmsPcm16=${(rms * 32768).toInt()} peakPcm16=${(windowPeak * 32768).toInt()}")
-                windowSquares = 0.0
-                windowFrames = 0
-                windowPeak = 0f
+            val found = detector.processAudio(samples)
+            maxScore = maxOf(maxScore, detector.probability)
+            if (!readyReported && detector.ready) {
+                readyReported = true
+                log("wake_detector_ready elapsedMs=${frames * 1000 / 16000}")
+                onReady()
             }
-            stream.acceptWaveform(samples, input.sampleRateHz)
-            var found = false
-            while (spotter.isReady(stream)) {
-                spotter.decode(stream)
-                if (spotter.getResult(stream).keyword.isNotBlank()) { found = true; break }
+            if (windowFrames >= 16000 || found) {
+                val rms = kotlin.math.sqrt(squares / windowFrames.coerceAtLeast(1)).toInt()
+                log("wake_capture_level elapsedMs=${frames * 1000 / 16000} rmsPcm16=$rms peakPcm16=$peak maxScore=$maxScore ready=$readyReported")
+                onLevel(rms, maxScore)
+                squares = 0.0; peak = 0; windowFrames = 0; maxScore = 0f
             }
-            if (found) log("wake_keyword_matched keyword=HEY_JARVIS")
+            if (found) log("wake_keyword_matched engine=microWakeWord keyword=Hey_Jarvis score=${detector.probability}")
             found
         }
     }
-    override fun close() { stream.release(); spotter.release() }
+    override fun close() = detector.close()
 }
