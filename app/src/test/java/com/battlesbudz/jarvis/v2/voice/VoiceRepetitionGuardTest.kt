@@ -53,4 +53,13 @@ class VoiceRepetitionGuardTest {
         assertEquals("", finalOnly.finish("THAT IS ALL!"))
         assertEquals(1, finalOnly.suppressedSentences)
     }
+    @Test fun shortSentencesCannotLeakBeforeTheFinalReplyCheck() {
+        val spoken = StringBuilder()
+        val guard = VoiceRepetitionGuard("What next?", "Good idea. Let's go.", spoken::append)
+        "Good idea. Let's go.".chunked(2).forEach(guard::accept)
+        guard.finish()
+        assertTrue(spoken.isEmpty())
+        assertEquals(2, guard.suppressedSentences)
+    }
+
 }

@@ -4,7 +4,9 @@ import java.util.Locale
 
 /** Checks complete speech phrases before publication; never retracts already-spoken text. */
 class VoiceRepetitionGuard(user: String, previousReply: String?, private val emit: (String) -> Unit) {
-    private val references = mutableListOf(user, previousReply.orEmpty()).filter { it.isNotBlank() }.toMutableList()
+    private val references = (listOf(user, previousReply.orEmpty()) +
+        previousReply.orEmpty().split(Regex("[.!?\\n]+")))
+        .filter { it.isNotBlank() }.toMutableList()
     private val pending = StringBuilder()
     private val accepted = StringBuilder()
     private var received = false
