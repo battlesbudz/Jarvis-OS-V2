@@ -4,27 +4,44 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BargeInGateTest {
-    @Test fun speechWhileThinkingNeedsNoPlaybackProbe() {
+    @Test fun speechWhileThinkingConfirmsWithoutWaitingForWords() {
         assertEquals(BargeInGate.Action.CONFIRM, BargeInGate().update(true, false, 0))
     }
-    @Test fun speakerEchoThatDisappearsWhenPausedCannotInterrupt() {
+    @Test fun repeatedSpeakerEchoNeverInterruptsOrRequestsAPause() {
         val gate = BargeInGate()
-        assertEquals(BargeInGate.Action.PAUSE, gate.update(true, true, 0))
-        assertEquals(BargeInGate.Action.WAIT, gate.update(true, false, 100))
-        assertEquals(BargeInGate.Action.RESET_DETECTOR, gate.update(true, false, 200))
-        assertEquals(BargeInGate.Action.WAIT, gate.update(false, false, 400))
-        assertEquals(BargeInGate.Action.RESUME, gate.update(false, false, 700))
+        repeat(100) { assertEquals(BargeInGate.Action.WAIT,
+            gate.update(true, true, it * 100L, "The garden gate is open", "The garden gate is open, and the breeze is cool.")) }
         assertFalse(gate.confirmed)
     }
-    @Test fun speechSurvivingEchoDecayConfirmsAndDoesNotReprobe() {
+    @Test fun stableDifferentWordsConfirmExactlyOnce() {
         val gate = BargeInGate()
-        gate.update(true, true, 0)
-        gate.update(false, false, 200)
-        assertEquals(BargeInGate.Action.CONFIRM, gate.update(true, false, 400))
-        assertEquals(BargeInGate.Action.CONFIRM, gate.update(false, false, 500))
+        assertEquals(BargeInGate.Action.WAIT, gate.update(true, true, 0, "open youtube", "The sky is blue"))
+        assertEquals(BargeInGate.Action.WAIT, gate.update(true, true, 199, "open youtube", "The sky is blue"))
+        assertEquals(BargeInGate.Action.CONFIRM, gate.update(false, true, 200, "open youtube", "The sky is blue"))
+        assertEquals(BargeInGate.Action.CONFIRM, gate.update(false, true, 201))
     }
-    @Test fun silenceNeverPausesOrInterruptsPlayback() {
+    @Test fun changingWordsRestartConfirmation() {
         val gate = BargeInGate()
-        repeat(100) { assertEquals(BargeInGate.Action.WAIT, gate.update(false, true, it * 100L)) }
+        gate.update(true, true, 0, "open instagram", "Hello there")
+        assertEquals(BargeInGate.Action.WAIT, gate.update(true, true, 200, "open youtube", "Hello there"))
+        assertEquals(BargeInGate.Action.CONFIRM, gate.update(true, true, 400, "open youtube", "Hello there"))
+    }
+    @Test fun hallucinatedWordsWithoutAcousticSpeechCannotInterrupt() {
+        val gate = BargeInGate()
+        repeat(20) { assertEquals(BargeInGate.Action.WAIT,
+            gate.update(false, true, it * 100L, "open youtube", "The sky is blue")) }
+    }
+    @Test fun stopCanInterruptButJarvisSayingStopCannot() {
+        val gate = BargeInGate()
+        gate.update(true, true, 0, "stop", "The sky is blue")
+        assertEquals(BargeInGate.Action.CONFIRM, gate.update(true, true, 200, "stop", "The sky is blue"))
+        val echo = BargeInGate()
+        repeat(10) { assertEquals(BargeInGate.Action.WAIT,
+            echo.update(true, true, it * 100L, "stop", "You can say stop to interrupt me")) }
+    }
+    @Test fun isolatedRecognitionErrorInEchoIsRejected() {
+        val gate = BargeInGate()
+        repeat(10) { assertEquals(BargeInGate.Action.WAIT,
+            gate.update(true, true, it * 100L, "The garden grate is open", "The garden gate is open")) }
     }
 }

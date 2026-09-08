@@ -3,11 +3,11 @@
 Audio PR2 uses bundled Silero VAD through Sherpa-ONNX 1.13.7. RMS and peak are diagnostics only: the previous fixed energy threshold could classify continuous room noise as speech and prevent a turn from ending.
 
 - Input: 16 kHz mono signed PCM16, framed into 512 samples (32 ms).
-- Speech: three consecutive frames with probability at least 0.5 (96 ms).
+- Strong speech: three consecutive frames with probability at least 0.5 (96 ms). Quiet speech now uses bounded input gain and stable ASR words to corroborate weaker VAD; see [voice-duplex-and-quiet-speech.md](voice-duplex-and-quiet-speech.md).
 - Turn end: adaptive acoustic silence plus stable transcript cues. A complete-looking question, sentence, or short reply can finish after 350 ms of silence once its text has been stable for 300 ms. Uncertain text waits 1500 ms; unfinished phrases, hesitation, and missing text wait 3000 ms. These are conservative local text rules, not a trained semantic turn detector. Model classification latency is additional. A turn ending does not end the call.
 - Pending microphone audio blocks automatic endpointing. Read timestamps keep an ASR decoding stall from appearing to be acoustic silence. A new speech candidate above the existing VAD threshold restarts the silence window, including before three-frame confirmation finishes. Resumed speech immediately invalidates a prepared answer/audio opening, even before ASR changes its text.
 - Call inactivity: 20 seconds waiting for a recognized turn, on initial and follow-up capture. A completed Jarvis response starts a new listening window; generating/speaking time is excluded.
-- Idle audio: bounded 600 ms pre-roll, preserving speech onset without accumulating an entire idle call.
+- Idle audio: bounded 1200 ms pre-roll, preserving speech onset without accumulating an entire idle call.
 - Active audio: bounded 25 seconds; a continuously positive detector is segmented at that limit. Raw microphone audio stays in memory.
 - Empty ASR after confirmed speech: live voice sends the bounded audio to Gemma for recovery. Captures explicitly requiring a transcript retain the existing recognizer recovery path. Inactivity is measured from the last detected speech. At inactivity expiry, save/end the call and stop automatic re-arm.
 - Spoken ending: whole utterances `goodbye`, `goodbye Jarvis`, `stop listening`, or `stop listening Jarvis` (including leading Jarvis) save/end the call before model execution. Mentioning goodbye within another request does not hang up. Manual End remains immediate.

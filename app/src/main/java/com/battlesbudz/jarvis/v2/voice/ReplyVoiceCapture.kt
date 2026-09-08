@@ -15,14 +15,14 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 audioManager = context.getSystemService(AudioManager::class.java),
                 echoCancellation = true, log = log)
             val confirmed = CompletableDeferred<Unit>()
-            val gated = BargeInAudioInput(input,
+            val gated = BargeInAudioInput(QuietSpeechAudioInput(input, log),
                 createDetector = { SileroSpeechDetector.create(context.assets) },
-                playing = { output.isPlayingAudio }, pauseProbe = output::setProbePaused,
-                discardQueued = input::discardBufferedAudio,
+                playing = { output.isPlayingAudio }, spokenText = output::recentSpokenText,
+                createTranscriber = { MoonshineStreamingTranscriber(asrDirectory, updateIntervalSeconds = 0.5) },
                 onConfirmed = { confirmed.complete(Unit); onConfirmed() }, log = log)
             val capture = AudioTurnCapture(gated, this,
                 createDetector = { SileroSpeechDetector.create(context.assets) },
-                createTranscriber = { MoonshineStreamingTranscriber(asrDirectory) }, log = log,
+                createTranscriber = { LazyStreamingTranscriber { MoonshineStreamingTranscriber(asrDirectory) } }, log = log,
                 allowAudioOnlyTurns = true)
             try {
                 capture.start(initialSilenceTimeoutMs = null)

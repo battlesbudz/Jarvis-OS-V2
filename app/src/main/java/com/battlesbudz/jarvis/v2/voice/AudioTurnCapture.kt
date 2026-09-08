@@ -45,6 +45,7 @@ class AudioTurnCapture(
     private val turnCompleted = CompletableDeferred<Boolean>()
     private var stopped = false
     private val turnEnd = AdaptiveTurnEnd()
+    private val quietEvidence = QuietSpeechEvidence()
     @Volatile var lastSpeechAtMs: Long? = null
         private set
     @Volatile private var endRequested = false
@@ -114,9 +115,15 @@ class AudioTurnCapture(
                     val chunkDecodeMs = nowMs() - decodeStartedAt
                     decodeMs += chunkDecodeMs
                     maxDecodeChunkMs = maxOf(maxDecodeChunkMs, chunkDecodeMs)
-                    // A short word can produce credible ASR text before Silero's three-frame
-                    // confirmation. Require BOTH text and the unchanged 0.5 speech threshold.
-                    if (!hasSpeech && !partial.isNullOrBlank() && decision.probability >= 0.5f) {
+                    // Stable words corroborate weak whisper VAD; blank/noisy audio cannot
+                    // qualify on amplitude alone. Strong VAD retains its existing fast path.
+                    val corroborated = quietEvidence.accept(partial.orEmpty(), decision.probability, nowMs(), hasSpeech)
+                    if (hasSpeech && corroborated) {
+                        if (audioAt - lastSpeechAt >= 180) onSpeechResumed()
+                        lastSpeechAt = audioAt
+                        lastSpeechAtMs = audioAt
+                    }
+                    if (!hasSpeech && corroborated) {
                         synchronized(pcm) {
                             firstSpeechAt = now
                             pcm.write(preRoll.snapshot())
@@ -171,6 +178,7 @@ class AudioTurnCapture(
                                 firstPartialAfterSpeechMs = null
                                 lastPartial = ""
                                 turnEnd.reset()
+                                quietEvidence.reset()
                                 onSpeechResumed()
                                 log("empty_speech_candidate ignored=true count=$emptyCandidates microphone=kept_open inactivitySince=last_detected_speech")
                                 if (initialSilenceTimeoutMs == null || nowMs() - lastSpeechAt < initialSilenceTimeoutMs) {

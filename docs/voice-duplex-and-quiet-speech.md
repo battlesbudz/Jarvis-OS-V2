@@ -1,0 +1,59 @@
+# Continuous reply listening and quiet speech
+
+This change follows Fold 6 reports of low-level speech missing recognition and replies
+repeatedly stopping despite queued PCM and no supply gaps. Those logs support, but do
+not alone prove, false interruption probes. The old code explicitly paused playback
+for a 700 ms echo probe and could repeat that after a one-second cooldown.
+
+## Playback and interruption
+
+The pause-probe API is removed. Reply capture now uses AEC when Android supplies it,
+plus continuous Moonshine recognition. While Jarvis is audible, a candidate needs
+recent acoustic evidence and stable words differing from the recent spoken reply.
+Known reply words and isolated recognition substitutions are rejected. A short stop
+command can confirm when it is not itself part of Jarvis's recent speech. This is
+conservative text-based echo rejection, not a claim of complete acoustic echo cancellation.
+Repeating Jarvis's exact words may not interrupt it; device testing must check this
+tradeoff and real interruption accuracy. The explicit stop control remains available.
+
+A probe recognizer uses 500 ms transcription updates to limit CPU contention. It
+resets after ten seconds of audio to bound context. It closes before the lazily
+loaded correction recognizer starts, so only one Moonshine model is resident in this
+listener. Three seconds of in-memory pre-roll retain the user's onset during recognition.
+No speculative recognition executes tools. Native ownership and the existing confirmed
+turn/tool guards remain in place. Extra recognition CPU can affect synthesis throughput;
+phone tests must check underruns and long-answer smoothness as well as barge-in accuracy.
+
+## Quiet speech
+
+A bounded gain stage precedes VAD, ASR and retained Gemma audio. It targets PCM RMS 900,
+caps gain at 8x, preserves digital silence, and immediately reduces gain for loud peaks.
+It does not decide whether noise is speech. Moonshine's streaming VAD threshold is
+explicitly 0.3. Silero's strong speech confirmation remains 0.5 over three frames.
+Weak scores of at least 0.15 require a recent, stable transcript containing at least
+two words; scores below that or stale words do not qualify. This permits corroborated
+whispers without treating quiet microphone activity by itself as a command.
+These are initial tunings requiring recordings on the Fold 6, not a universal whisper guarantee.
+
+## Cancellation and diagnostics
+
+Unexpected cancellation of an armed call now joins native/microphone cleanup before
+rearming, with a shared maximum of two audio recovery attempts. Intentional stop
+(disarm first), process shutdown, and saved-call replacement do not use that restart.
+The original cancellation cause in the supplied excerpt remains undetermined. New
+logs include phase, cause and recovery attempt; saved-call replacement labels its
+cancellation. Retention grows to 64 important and 100 recent events so microphone
+reopen messages are less likely to erase the cause and the reply's interruption events.
+
+## Phone checks
+
+1. Whisper a question after the ready cue, then repeat at normal volume.
+2. Ask for a paragraph and remain silent: speech should continue without periodic probe pauses.
+3. Interrupt with “stop”, then with a different request such as “open YouTube”.
+4. Stop the session deliberately and verify it stays stopped; resume a saved call.
+5. Copy call diagnostics if any whisper, false interruption, unexpected stop or gap remains.
+
+Host tests exercise repeated echo rejection, fresh/changed interruption words,
+recognizer handoff without overlapping native owners, quiet amplification, loud-peak
+protection, and weak-VAD corroboration. Android CI verifies compilation and packaging;
+it cannot substitute for acoustic tests on the phone.

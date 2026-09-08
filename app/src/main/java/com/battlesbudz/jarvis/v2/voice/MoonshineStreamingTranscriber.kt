@@ -7,10 +7,11 @@ import ai.moonshine.voice.TranscriptEvent
 import java.io.File
 
 /** Owns one utterance. Native calls are serialized by AudioTurnCapture's collector. */
-class MoonshineStreamingTranscriber(private val directory: File) : StreamingTranscriber {
+class MoonshineStreamingTranscriber(private val directory: File, private val updateIntervalSeconds: Double = 0.25) : StreamingTranscriber {
     private val lines = linkedMapOf<Long, String>()
     private var transcriber = Transcriber(listOf(
-        TranscriberOption("transcription_interval", "0.25"),
+        TranscriberOption("transcription_interval", updateIntervalSeconds.toString()),
+        TranscriberOption("vad_threshold", "0.3"),
         TranscriberOption("identify_speakers", "false"),
         TranscriberOption("return_audio_data", "false")
     ))
@@ -34,7 +35,7 @@ class MoonshineStreamingTranscriber(private val directory: File) : StreamingTran
                 if (line != null) lines[line.id] = line.text.orEmpty()
             }
             transcriber.loadFromFiles(directory.path, JNI.MOONSHINE_MODEL_ARCH_SMALL_STREAMING)
-            transcriber.setUpdateInterval(0.25)
+            transcriber.setUpdateInterval(updateIntervalSeconds)
             transcriber.start()
         } catch (error: Throwable) {
             close()

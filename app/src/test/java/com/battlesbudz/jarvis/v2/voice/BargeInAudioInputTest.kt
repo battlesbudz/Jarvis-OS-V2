@@ -2,40 +2,52 @@ package com.battlesbudz.jarvis.v2.voice
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.flow.collect
 import org.junit.Assert.*
 import org.junit.Test
 
 class BargeInAudioInputTest {
-    @Test fun echoIsRejectedThenUserOnsetIsDeliveredOnce() = runBlocking {
+    @Test fun echoIsDiscardedAndRecognizerReleasesBeforeFinalTurnOwnerStarts() = runBlocking {
         var clock = 0L
-        var closed = 0
+        var openModels = 0
+        var maxModels = 0
         var confirmed = 0
-        var discarded = 0
-        val pauses = mutableListOf<Boolean>()
-        // Echo starts a probe, disappears during silence, then real speech arrives.
-        val samples = listOf(0L to 1, 200L to 0, 700L to 0, 1800L to 2, 1900L to 3)
+        var detectorClosed = false
+        fun recognizer(probe: Boolean) = object : StreamingTranscriber {
+            init { openModels++; maxModels = maxOf(maxModels, openModels) }
+            override fun accept(pcm: ByteArray) = if (probe && clock < 300) "The sky is blue" else "open youtube"
+            override fun finish() = "open youtube"
+            override fun close() { openModels-- }
+        }
+        val finalAsr = LazyStreamingTranscriber { recognizer(false) }
         val input = object : AudioInput {
             override val sampleRateHz = 16000
             override val channelCount = 1
             override suspend fun start() {}
             override suspend fun stop() {}
             override fun chunks() = flow {
-                for ((at, value) in samples) { clock = at; emit(byteArrayOf(value.toByte(), 0)) }
+                for (at in listOf(0L, 100L, 300L, 500L, 600L)) {
+                    clock = at; emit(byteArrayOf((at / 100).toByte(), 0))
+                }
             }
         }
         val gated = BargeInAudioInput(input,
             createDetector = { object : SpeechDetector {
-                override fun accept(pcm: ByteArray) = SpeechDecision(pcm[0] != 0.toByte(), 1f)
-                override fun close() { closed++ }
-            } }, playing = { clock < 1800 }, pauseProbe = { pauses += it },
-            discardQueued = { discarded++ }, onConfirmed = { confirmed++ }, nowMs = { clock })
-        val delivered = gated.chunks().toList()
+                override fun accept(pcm: ByteArray) = SpeechDecision(true, 0.9f)
+                override fun close() { detectorClosed = true }
+            } }, playing = { true }, createTranscriber = { recognizer(true) },
+            spokenText = { "The sky is blue" }, onConfirmed = {
+                assertEquals(0, openModels); confirmed++
+            }, nowMs = { clock })
+        val delivered = mutableListOf<ByteArray>()
+        gated.chunks().collect { delivered += it; finalAsr.accept(it) }
+        finalAsr.close()
         assertEquals(1, confirmed)
-        assertEquals(2, closed)
-        assertEquals(2, discarded)
-        assertArrayEquals(byteArrayOf(2, 0), delivered[0])
-        assertArrayEquals(byteArrayOf(3, 0), delivered[1])
-        assertEquals(listOf(true, false, false), pauses)
+        assertEquals(1, maxModels)
+        assertEquals(0, openModels)
+        assertTrue(detectorClosed)
+        assertEquals(2, delivered.size)
+        assertArrayEquals(byteArrayOf(0, 0, 1, 0, 3, 0, 5, 0), delivered[0])
+        assertArrayEquals(byteArrayOf(6, 0), delivered[1])
     }
 }

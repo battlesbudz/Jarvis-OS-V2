@@ -272,7 +272,7 @@ class MainActivity : ComponentActivity() {
                             activeVoiceOutput?.stopSpeaking()
                             val previousVoice = voiceTurnJob
                             val previousConversation = conversationJob
-                            previousVoice?.cancel()
+                            previousVoice?.cancel(kotlinx.coroutines.CancellationException("resuming_saved_voice_call"))
                             previousConversation?.cancel()
                             previousVoice?.join()
                             previousConversation?.join()

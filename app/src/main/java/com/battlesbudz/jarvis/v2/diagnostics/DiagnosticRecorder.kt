@@ -30,9 +30,9 @@ class DiagnosticRecorder(
                 (0 until array.length())
                     .map { array.getString(it) }
                     .filter { it.isNotBlank() }
-                    .takeLast(20)
+                    .takeLast(100)
             }.getOrElse {
-                stored.split("\n\n").filter { it.isNotBlank() }.takeLast(20)
+                stored.split("\n\n").filter { it.isNotBlank() }.takeLast(100)
             }
         }
         synchronized(entries) {
@@ -42,7 +42,7 @@ class DiagnosticRecorder(
             important.clear()
             runCatching {
                 val saved = JSONArray(preferences.getString("diagnostics_important", "[]"))
-                (0 until saved.length()).map { saved.getString(it).take(1200) }.takeLast(8)
+                (0 until saved.length()).map { saved.getString(it).take(1200) }.takeLast(64)
             }.getOrDefault(emptyList()).forEach(important::add)
         }
         return restored
@@ -50,7 +50,7 @@ class DiagnosticRecorder(
 
     fun snapshot(): String {
         return synchronized(entries) {
-            "$sessionLabel\n\nCall actions and turns:\n${important.joinToString("\n\n")}\n\nRecent audio events:\n" + entries.takeLast(20).joinToString("\n\n")
+            "$sessionLabel\n\nCall actions and turns:\n${important.joinToString("\n\n")}\n\nRecent audio events:\n" + entries.takeLast(100).joinToString("\n\n")
                 .ifBlank { "No runtime events in this session yet." }
         }
     }
@@ -80,7 +80,7 @@ class DiagnosticRecorder(
     fun recordImportant(entry: String) {
         synchronized(entries) {
             important.add("atMs=${System.currentTimeMillis()}\n${entry.take(1200)}")
-            while (important.size > 8) important.removeAt(0)
+            while (important.size > 64) important.removeAt(0)
             val saved = JSONArray().also { array -> important.forEach(array::put) }
             preferences.edit().putString("diagnostics_important", saved.toString()).apply()
         }
@@ -89,9 +89,9 @@ class DiagnosticRecorder(
     fun record(entry: String) {
         synchronized(entries) {
             entries.add("atMs=${System.currentTimeMillis()}\n${entry.take(1_200)}")
-            while (entries.size > 20) entries.removeAt(0)
+            while (entries.size > 100) entries.removeAt(0)
             val persisted = JSONArray().also { array ->
-                entries.takeLast(20).forEach(array::put)
+                entries.takeLast(100).forEach(array::put)
             }.toString()
             preferences.edit().putString("diagnostics", persisted).apply()
         }

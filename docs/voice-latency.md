@@ -106,3 +106,5 @@ uses an S26 Ultra, not the Fold 6 and not the entire voice pipeline.
 Host tests verify endpoint policies, cancellation, exact-once authorized PCM reuse,
 text preservation, and existing tool guards. Real Fold 6 latency, synthesis quality,
 and acceleration gains require the phone benchmark; no sub-500-ms result is asserted.
+
+For subsequent quiet-speech, continuous interruption detection, and cancellation recovery changes, see [voice-duplex-and-quiet-speech.md](voice-duplex-and-quiet-speech.md).

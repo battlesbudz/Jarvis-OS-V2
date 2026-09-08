@@ -1,29 +1,37 @@
 package com.battlesbudz.jarvis.v2.voice
 
-/** AEC is opportunistic; speech must survive a quiet playback probe before it can interrupt. */
-class BargeInGate(private val settleMs: Long = 200, private val probeMs: Long = 700) {
-    enum class Action { WAIT, PAUSE, RESET_DETECTOR, CONFIRM, RESUME }
-    private var probeAt: Long? = null
-    private var detectorReset = false
-    private var cooldownUntil = 0L
+import java.util.Locale
+
+/** Confirm new user words without pausing the speaker to test for echo. */
+class BargeInGate(private val stableMs: Long = 200) {
+    enum class Action { WAIT, CONFIRM }
+    private var candidate = ""
+    private var candidateAt = 0L
+    private var speechAt: Long? = null
     var confirmed = false
         private set
-    fun update(speech: Boolean, playing: Boolean, nowMs: Long): Action {
+
+    fun update(speech: Boolean, playing: Boolean, nowMs: Long,
+               transcript: String = "", spokenText: String = ""): Action {
         if (confirmed) return Action.CONFIRM
-        val start = probeAt
-        if (start != null) {
-            if (nowMs - start < settleMs) return Action.WAIT
-            if (!detectorReset) { detectorReset = true; return Action.RESET_DETECTOR }
-            if (speech) { confirmed = true; return Action.CONFIRM }
-            if (nowMs - start >= probeMs) {
-                probeAt = null; detectorReset = false; cooldownUntil = nowMs + 1000
-                return Action.RESUME
-            }
-            return Action.WAIT
+        if (speech) speechAt = nowMs
+        if (!playing && speech) { confirmed = true; return Action.CONFIRM }
+        val heard = words(transcript).takeLast(6)
+        val echo = words(spokenText).toSet()
+        val novel = heard.filter { it !in echo }
+        val command = novel.any { it in setOf("stop", "pause", "cancel", "wait", "jarvis") }
+        val credible = heard.isNotEmpty() && (command ||
+            (novel.distinct().size >= 2 && novel.size * 2 >= heard.size))
+        if (!credible || speechAt?.let { nowMs - it > 1000 } != false) {
+            candidate = ""; return Action.WAIT
         }
-        if (!speech || nowMs < cooldownUntil) return Action.WAIT
-        if (!playing) { confirmed = true; return Action.CONFIRM }
-        probeAt = nowMs
-        return Action.PAUSE
+        val key = heard.joinToString(" ")
+        if (key != candidate) { candidate = key; candidateAt = nowMs; return Action.WAIT }
+        if (nowMs - candidateAt < stableMs) return Action.WAIT
+        confirmed = true
+        return Action.CONFIRM
     }
+
+    private fun words(text: String) = Regex("[\\p{L}\\p{N}']+")
+        .findAll(text.lowercase(Locale.ROOT)).map { it.value }.toList()
 }

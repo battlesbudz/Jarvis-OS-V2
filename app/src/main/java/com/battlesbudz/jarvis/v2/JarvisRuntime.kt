@@ -42,6 +42,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CompletableDeferred
@@ -275,7 +276,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     prepareOpening = output::prepareOpening, speechText = ::cleanSpeechText)
                 preparation = speculative
                 val activeCapture = AudioTurnCapture(
-                    input, this,
+                    com.battlesbudz.jarvis.v2.voice.QuietSpeechAudioInput(input) {
+                        diagnosticRecorder.record("Voice input: $it")
+                    }, this,
                     allowAudioOnlyTurns = true,
                     createDetector = { SileroSpeechDetector.create(assets) },
                     log = {
@@ -292,6 +295,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     onMetrics = { metrics, text ->
                         asrComparisonStore.add(asrTurnId, metrics, text)
                         capture?.lastSpeechAtMs?.let { speechEndedAt.set(it) }
+                        diagnosticRecorder.recordImportant("Voice input summary: turn=$asrTurnId " +
+                            "reason=${metrics.endpointReason} speech=${capture?.hasSpeech} chars=${text.length} " +
+                            "partials=${metrics.partialUpdates} firstPartialMs=${metrics.firstPartialAfterSpeechMs} " +
+                            "endpointMs=${metrics.endpointDetectionMs}")
                     },
                     onSpeechResumed = speculative::speechResumed,
                     onPartialTranscript = { text, audio ->
@@ -449,7 +456,17 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     }
                     finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " user control."
                 } else {
-                    diagnosticRecorder.recordImportant("Voice capture cancelled: ${cancelled.message ?: cancelled.javaClass.simpleName}")
+                    diagnosticRecorder.recordImportant("Voice capture cancelled: ${cancelled.message ?: cancelled.javaClass.simpleName} cause=${cancelled.cause?.javaClass?.simpleName}:${cancelled.cause?.message} armed=$voiceSessionArmed phase=$latestStatus")
+                    if (voiceSessionArmed && runtimeScope.isActive && cancelled.message != "resuming_saved_voice_call") {
+                        // An unexpected child cancellation must not leave an armed call deaf.
+                        // Intentional stop disarms first; saved-call replacement owns its own restart.
+                        microphoneYielded = true
+                        audioRecoveryAttempts++
+                        finalMessage = if (audioRecoveryAttempts <= 2)
+                            "Recovering interrupted voice capture…"
+                        else "Voice Call turn failed: capture repeatedly cancelled. Restart the session."
+                        diagnosticRecorder.recordImportant("Capture cancellation recovery attempt=$audioRecoveryAttempts max=2")
+                    }
                     throw cancelled
                 }
             } catch (error: Throwable) {
