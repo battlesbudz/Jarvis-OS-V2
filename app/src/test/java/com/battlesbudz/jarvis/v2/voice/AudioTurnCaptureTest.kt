@@ -432,6 +432,31 @@ class AudioTurnCaptureTest {
         fixture.capture.stop()
     }
 
+    @Test fun audioModelReceivesConfirmedSpeechWhenAsrIsEmpty() = runBlocking<Unit> {
+        val asr = FakeTranscriber("", "")
+        val fixture = CaptureFixture(this, asr, allowAudioOnlyTurns = true)
+        fixture.capture.start()
+        fixture.emit(100, 1234, speech = true, samples = 1600)
+        fixture.emit(1300, 0, samples = 1600)
+        assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+        assertTrue(fixture.capture.hasSpeech)
+        assertEquals("", fixture.capture.finalTranscript)
+        assertEquals(0, asr.recoveries)
+        val wav = fixture.capture.stop()
+        assertEquals(44 + 6400, wav.size)
+        assertEquals(1234.toByte(), wav[44])
+        assertTrue(fixture.events.any { "destination=gemma" in it })
+    }
+
+    @Test fun audioModelDoesNotReceiveSilenceOnlyCapture() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, FakeTranscriber("", ""), allowAudioOnlyTurns = true)
+        fixture.capture.start()
+        fixture.emit(20000, 100)
+        assertFalse(fixture.capture.awaitTurnCompletion())
+        assertFalse(fixture.capture.hasSpeech)
+        fixture.capture.stop()
+    }
+
     private class FakeTranscriber(
         private val partial: String = "story about pirates",
         private val final: String = "story about astronauts",
@@ -471,7 +496,8 @@ class AudioTurnCaptureTest {
 
     private class CaptureFixture(scope: CoroutineScope, transcriber: StreamingTranscriber? = null,
         factory: (() -> StreamingTranscriber)? = transcriber?.let { { it } },
-        trailingSilenceMs: Long = 1200L
+        trailingSilenceMs: Long = 1200L,
+        allowAudioOnlyTurns: Boolean = false
     ) {
         var microphoneStarts = 0
         var microphoneStops = 0
@@ -492,7 +518,7 @@ class AudioTurnCaptureTest {
         val capture = AudioTurnCapture(input, scope, createDetector = { detector }, nowMs = { clock }, log = events::add,
             createTranscriber = factory, onPartialTranscript = { text, _ -> partials.add(text) },
             onMetrics = { stats, text -> metrics.add(stats to text) }, trailingSilenceMs = trailingSilenceMs,
-            onRecognitionRecovery = recoveryStates::add)
+            onRecognitionRecovery = recoveryStates::add, allowAudioOnlyTurns = allowAudioOnlyTurns)
 
         suspend fun emit(atMs: Long, sample: Int, speech: Boolean = false, samples: Int = 1, probability: Float = if (speech) 0.95f else 0.01f) {
             clock = atMs

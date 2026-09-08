@@ -269,6 +269,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 preparation = speculative
                 val activeCapture = AudioTurnCapture(
                     input, this,
+                    allowAudioOnlyTurns = true,
                     createDetector = { SileroSpeechDetector.create(assets) },
                     log = {
                         if (it.startsWith("asr_recovery_") || it.startsWith("empty_speech_candidate")) {
@@ -308,14 +309,31 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 finalReadyAt.set(endpointAt)
                 val firstFinalToken = java.util.concurrent.atomic.AtomicBoolean(true)
                 val audioBytes = correction?.wav ?: activeCapture.stop()
-                val transcript = correction?.transcript ?: activeCapture.finalTranscript
+                val asrTranscript = correction?.transcript ?: activeCapture.finalTranscript
                 if (activeVoiceCapture === activeCapture) activeVoiceCapture = null
                 status("Processing your Voice Call turn locally…")
-                if ((correction == null && !activeCapture.hasSpeech) || transcript.isBlank()) {
+                if (correction == null && !activeCapture.hasSpeech) {
                     diagnosticRecorder.record("Voice call ended reason=inactivity timeoutMs=20000")
                     voiceSessionController.end()
                     finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " no recognized speech for 20 seconds."
                     return@launch
+                }
+                val draft = speculative.seal(asrTranscript)
+                val transcript = com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.resolve(
+                    asrTranscript, audioBytes
+                ) { audio ->
+                    status("Listening to your recorded speech with Gemma…")
+                    diagnosticRecorder.recordImportant("Voice audio fallback: Moonshine empty; Gemma receiving ${audio.size} bytes")
+                    resetNativeConversation()
+                    try {
+                        val heard = engine.generateAudio(
+                            com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.instructions, audio, {})
+                        // This recognition pass never dispatches tools or speaks model output.
+                        if (heard.toolCalls.isEmpty()) heard.text else ""
+                    } finally { resetNativeConversation() }
+                }
+                if (asrTranscript.isBlank()) {
+                    diagnosticRecorder.recordImportant("Voice audio fallback finished: chars=${transcript.length} source=gemma")
                 }
                 if (com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.isGoodbye(transcript)) {
                     speculative.close()
@@ -326,7 +344,6 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " goodbye."
                     return@launch
                 }
-                val draft = speculative.seal(transcript)
                 asrComparisonStore.update(asrTurnId, "prepared", draft != null)
                 if (draft == null) resetNativeConversation()
                 diagnosticRecorder.record("Voice ASR final\ntext=$transcript\naudioBytes=${audioBytes.size}\nprepared=${draft != null}")
@@ -390,7 +407,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 )
                 if (outcome is com.battlesbudz.jarvis.v2.voice.ReplyOutcome.Interrupted) {
                     conversationJob?.join()
-                    if (outcome.correction.transcript.isNotBlank()) pendingVoiceCorrection.set(outcome.correction)
+                    if (outcome.correction.wav.size > 44) pendingVoiceCorrection.set(outcome.correction)
                     finalMessage = "Voice reply interrupted; continuing the same call."
                     return@launch
                 }

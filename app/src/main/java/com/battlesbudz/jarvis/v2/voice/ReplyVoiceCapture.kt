@@ -22,7 +22,8 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 onConfirmed = { confirmed.complete(Unit); onConfirmed() }, log = log)
             val capture = AudioTurnCapture(gated, this,
                 createDetector = { SileroSpeechDetector.create(context.assets) },
-                createTranscriber = { MoonshineStreamingTranscriber(asrDirectory) }, log = log)
+                createTranscriber = { MoonshineStreamingTranscriber(asrDirectory) }, log = log,
+                allowAudioOnlyTurns = true)
             try {
                 capture.start(initialSilenceTimeoutMs = null)
                 log("barge_listener_ready")

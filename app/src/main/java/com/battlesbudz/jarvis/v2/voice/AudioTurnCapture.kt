@@ -24,7 +24,8 @@ class AudioTurnCapture(
     private val onPartialTranscript: (String, ByteArray) -> Unit = { _, _ -> },
     private val onMetrics: (AsrCaptureMetrics, String) -> Unit = { _, _ -> },
     private val trailingSilenceMs: Long = VoiceCallPolicy.TURN_SILENCE_MS,
-    private val onRecognitionRecovery: (Boolean) -> Unit = {}
+    private val onRecognitionRecovery: (Boolean) -> Unit = {},
+    private val allowAudioOnlyTurns: Boolean = false
 ) {
     private val pcm = ByteArrayOutputStream()
     private val preRoll = RollingAudioBuffer(AudioFormat(input.sampleRateHz), maxDurationMs = 1200)
@@ -129,7 +130,7 @@ class AudioTurnCapture(
                         val finalizeStartedAt = nowMs()
                         if (hasSpeech) {
                             finalTranscript = transcriber?.finish().orEmpty().trim()
-                            if (transcriber != null && finalTranscript.isBlank()) {
+                            if (transcriber != null && finalTranscript.isBlank() && !allowAudioOnlyTurns) {
                                 val candidate = recoveryAudio.snapshot()
                                 val recoveryAt = nowMs()
                                 log("asr_recovery_started candidateAudioMs=${candidate.size / 32} reason=empty_stream source=full_capture_window nativeVad=bypassed")
@@ -141,7 +142,7 @@ class AudioTurnCapture(
                                     onRecognitionRecovery(false)
                                 }
                             }
-                            if (transcriber != null && finalTranscript.isBlank()) {
+                            if (transcriber != null && finalTranscript.isBlank() && !allowAudioOnlyTurns) {
                                 emptyCandidates++
                                 hasSpeech = false
                                 // A new word may be starting in the final, not-yet-confirmed
@@ -174,6 +175,9 @@ class AudioTurnCapture(
                                     return@collect
                                 }
                                 reason = "initial_silence"
+                            }
+                            if (finalTranscript.isBlank() && allowAudioOnlyTurns) {
+                                log("audio_only_turn speechDetected=true destination=gemma")
                             }
                             publishPartial(finalTranscript, isFinal = true)
                             log("asr_final chars=${finalTranscript.length}")
