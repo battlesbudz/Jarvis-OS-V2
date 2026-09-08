@@ -7,9 +7,9 @@ import android.os.BatteryManager
 import kotlin.math.round
 
 class AndroidMobileActionExecutor(
-    context: Context
+    private val context: Context,
+    private val canLaunchDirectly: () -> Boolean = { false }
 ) : MobileActionExecutor {
-    private val context = context.applicationContext
     private val appResolver = InstalledAppResolver(context)
     override fun execute(action: MobileAction): ExecutionResult = when (action) {
         MobileAction.ReadBattery -> {
@@ -57,11 +57,13 @@ class AndroidMobileActionExecutor(
                     resolution.app.packageName,
                     resolution.app.activityName
                 )
-                runCatching {
+                if (!canLaunchDirectly()) {
+                    AppLaunchNotification.offer(context, launchIntent, resolution.app.label)
+                } else runCatching {
                     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(launchIntent)
                 }.fold(
-                    { ExecutionResult(true, "Opened ${resolution.app.label}.") },
+                    { ExecutionResult(true, "Opening ${resolution.app.label}.") },
                     { error ->
                         ExecutionResult(
                             false,

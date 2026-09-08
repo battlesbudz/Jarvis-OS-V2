@@ -7,13 +7,15 @@ class DiagnosticRecorder(
     private val preferences: SharedPreferences
 ) {
     private val entries = mutableListOf<String>()
+    private val important = mutableListOf<String>()
     private var sessionLabel = "Previous app runtime (may include earlier calls or chat)"
 
     fun startSession(label: String) {
         synchronized(entries) {
             sessionLabel = "$label startedAtMs=${System.currentTimeMillis()}"
             entries.clear()
-            preferences.edit().putString("diagnostics_session", sessionLabel)
+            important.clear()
+            preferences.edit().remove("diagnostics_important").putString("diagnostics_session", sessionLabel)
                 .putString("diagnostics", "[]").apply()
         }
     }
@@ -37,13 +39,18 @@ class DiagnosticRecorder(
             sessionLabel = preferences.getString("diagnostics_session", null) ?: sessionLabel
             entries.clear()
             entries.addAll(restored)
+            important.clear()
+            runCatching {
+                val saved = JSONArray(preferences.getString("diagnostics_important", "[]"))
+                (0 until saved.length()).map { saved.getString(it).take(1200) }.takeLast(8)
+            }.getOrDefault(emptyList()).forEach(important::add)
         }
         return restored
     }
 
     fun snapshot(): String {
         return synchronized(entries) {
-            "$sessionLabel\n\n" + entries.takeLast(20).joinToString("\n\n")
+            "$sessionLabel\n\nCall actions and turns:\n${important.joinToString("\n\n")}\n\nRecent audio events:\n" + entries.takeLast(20).joinToString("\n\n")
                 .ifBlank { "No runtime events in this session yet." }
         }
     }
@@ -67,6 +74,15 @@ class DiagnosticRecorder(
                     "atMs=${exit.timestamp} reason=$reason status=${exit.status} " +
                     "pssKb=${exit.pss} rssKb=${exit.rss} description=${exit.description?.take(1000)}")
                 .apply()
+        }
+    }
+
+    fun recordImportant(entry: String) {
+        synchronized(entries) {
+            important.add("atMs=${System.currentTimeMillis()}\n${entry.take(1200)}")
+            while (important.size > 8) important.removeAt(0)
+            val saved = JSONArray().also { array -> important.forEach(array::put) }
+            preferences.edit().putString("diagnostics_important", saved.toString()).apply()
         }
     }
 

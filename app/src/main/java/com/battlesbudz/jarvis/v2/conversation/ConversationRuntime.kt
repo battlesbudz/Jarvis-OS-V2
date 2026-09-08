@@ -78,6 +78,24 @@ internal fun MainActivity.runConversationInternal(
                     preparedVoice.discard()
                     resetNativeConversation()
                 }
+                // A final, explicit app command does not depend on the model emitting a tool call.
+                val directRequest = com.battlesbudz.jarvis.v2.actions.DirectAppCommand.parse(prompt)
+                if (directRequest != null) {
+                    preparedVoice?.discard()
+                    resetNativeConversation()
+                    val result = kotlinx.coroutines.withContext(Dispatchers.Main) {
+                        com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
+                            executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
+                                this@runConversationInternal,
+                                canLaunchDirectly = { lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) }
+                            )
+                        ).execute(directRequest)
+                    }
+                    diagnosticRecorder.recordImportant("Action\nuser=${prompt.take(500)}\nrequest=$directRequest\nsucceeded=${result.succeeded}\nresult=${result.message}")
+                    turnOrchestrator.recordResponse(prompt, result.message, turnPlan)
+                    mainHandler.post { onComplete(result.message) }
+                    return@launch
+                }
                 val referenceContext = turnPlan.lookupQuery?.let {
                     referenceGrounding.fetchIfRequested(it)?.context
                 }
@@ -193,7 +211,7 @@ internal fun MainActivity.runConversationInternal(
                     // such as "I don't have that in my knowledge base" from
                     // flashing into the transcript before the retry runs.
                     if (turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT &&
-                        (voiceAudio == null || actionIntentRouter.classifyActionIntent(prompt, history) == null)
+                        actionIntentRouter.classifyActionIntent(prompt, history) == null
                     ) {
                         mainHandler.post { onToken(safeText) }
                     }
@@ -302,9 +320,15 @@ internal fun MainActivity.runConversationInternal(
                     actionName = proposedCall.name
                     val request = com.battlesbudz.jarvis.v2.actions.NativeActionDecoder.decode(proposedCall)
                     if (request != null) {
-                        val result = com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
-                            executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(applicationContext)
-                        ).execute(request)
+                        val result = kotlinx.coroutines.withContext(Dispatchers.Main) {
+                            com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
+                                executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
+                                    this@runConversationInternal,
+                                    canLaunchDirectly = { lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) }
+                                )
+                            ).execute(request)
+                        }
+                        diagnosticRecorder.recordImportant("Action\nuser=${prompt.take(500)}\nrequest=$request\nsucceeded=${result.succeeded}\nresult=${result.message}")
                         actionResultMessage = result.message
                         actionResultForGemma = promptBuilder.buildToolResultContext(
                             userPrompt = prompt,
@@ -464,7 +488,9 @@ internal fun MainActivity.runConversationInternal(
                 // Android's typed result is authoritative. Gemma is used to
                 // explain it, but must never replace a verified success (or
                 // failure) with a stale apology or hallucinated outcome.
-                val finalResponse = actionResultMessage ?: if (repeatedFragment) {
+                val finalResponse = actionResultMessage ?: if (actionIntentRouter.classifyActionIntent(prompt, history) != null) {
+                    "I couldn't execute that phone action. Please ask again with the app name or exact setting."
+                } else if (repeatedFragment) {
                     "I lost the thread of the conversation. Please ask that again."
                 } else cleanedResponse.ifBlank {
                     if (actionName != null) {
@@ -475,7 +501,7 @@ internal fun MainActivity.runConversationInternal(
                 }
                 turnOrchestrator.recordResponse(prompt, finalResponse, turnPlan)
                 nativeConversationHasContext = nativeConversationContainsCurrentTurn
-                diagnosticRecorder.record(
+                diagnosticRecorder.recordImportant(
                     "Turn\n" +
                         "user=${prompt.take(1_000)}\n" +
                         "historyEntries=${history.size}\n" +
