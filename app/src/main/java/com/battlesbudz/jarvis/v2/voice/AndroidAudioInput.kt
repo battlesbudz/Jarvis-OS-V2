@@ -77,9 +77,10 @@ class AndroidAudioInput(
             error("The microphone could not be initialized.")
         }
         val aec = if (echoCancellation && android.media.audiofx.AcousticEchoCanceler.isAvailable()) {
-            runCatching { android.media.audiofx.AcousticEchoCanceler.create(created.audioSessionId)?.apply { enabled = true } }.getOrNull()
+            runCatching { android.media.audiofx.AcousticEchoCanceler.create(created.audioSessionId) }.getOrNull()
+                ?.also { runCatching { it.enabled = true } }
         } else null
-        log("capture_aec requested=$echoCancellation enabled=${aec?.enabled == true}")
+        log("capture_aec requested=$echoCancellation enabled=${runCatching { aec?.enabled == true }.getOrDefault(false)}")
         val callback = object : android.media.AudioManager.AudioRecordingCallback() {
             override fun onRecordingConfigChanged(configs: MutableList<android.media.AudioRecordingConfiguration>?) {
                 val config = created.activeRecordingConfiguration
@@ -87,8 +88,8 @@ class AndroidAudioInput(
                 log("capture_route silenced=${config?.isClientSilenced} source=${config?.clientAudioSource} routeType=${config?.audioDevice?.type} routeId=${config?.audioDevice?.id} sampleRate=${config?.clientFormat?.sampleRate}")
             }
         }
-        created.registerAudioRecordingCallback(java.util.concurrent.Executor { it.run() }, callback)
         try {
+            created.registerAudioRecordingCallback(java.util.concurrent.Executor { it.run() }, callback)
             MicrophoneHandoff.withRecorderLock {
                 if (!dictation) {
                     if (MicrophoneHandoff.shouldYield) throw MicrophoneBusyException()

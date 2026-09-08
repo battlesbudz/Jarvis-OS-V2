@@ -1,6 +1,6 @@
 package com.battlesbudz.jarvis.v2.voice
 
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
@@ -63,6 +63,28 @@ class VoiceTurnCoordinatorTest {
         assertEquals(id, session.currentCallId())
         assertFalse(store.calls.single().transcript.last().complete)
         coordinator.processTurn("Actually, what is my battery?") { emit -> emit("Battery is 50 percent") }
+        assertEquals(id, session.currentCallId())
+        assertEquals(4, session.currentTranscript().size)
+    }
+
+    @Test fun spokenInterruptionCancelsGenerationAndRetainsCallForCorrection() = runBlocking {
+        val store = MemoryStore()
+        val session = VoiceSessionController(store)
+        val coordinator = VoiceTurnCoordinator(session)
+        val id = session.beginCall().id
+        val generating = CompletableDeferred<Unit>()
+        val result = runInterruptibleReply(
+            reply = { coordinator.processTurn("Tell me a story") { emit ->
+                emit("Once upon a time")
+                generating.complete(Unit)
+                awaitCancellation()
+            } },
+            listen = { confirmed -> generating.await(); confirmed(); CapturedVoiceTurn("Open YouTube", byteArrayOf()) },
+            stopReply = {})
+        assertEquals(id, session.currentCallId())
+        assertEquals(VoiceSessionState.ACTIVELY_LISTENING, session.state.value)
+        assertFalse(session.currentTranscript().last().complete)
+        coordinator.processTurn((result as ReplyOutcome.Interrupted).correction.transcript) { emit -> emit("Opening YouTube") }
         assertEquals(id, session.currentCallId())
         assertEquals(4, session.currentTranscript().size)
     }
