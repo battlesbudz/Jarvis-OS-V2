@@ -1,4 +1,9 @@
 pluginManagement {
+    // Kotlin 2.3 requires R8 >= 8.13.19; override AGP 8.7's older bundled shrinker.
+    buildscript {
+        repositories { google(); mavenCentral() }
+        dependencies { classpath("com.android.tools:r8:8.13.19") }
+    }
     repositories {
         google()
         mavenCentral()
