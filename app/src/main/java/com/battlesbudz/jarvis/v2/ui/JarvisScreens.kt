@@ -800,6 +800,17 @@ private fun VoiceCallScreen(
         if (assistantSettingsMessage.isNotBlank()) {
             Text(assistantSettingsMessage, style = MaterialTheme.typography.bodySmall)
         }
+        val helperConnected by com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.keyboardHelperConnected.collectAsState()
+        Text(if (helperConnected) "Automatic keyboard microphone handoff is enabled."
+            else "Keyboard microphone handoff needs setup.", style = MaterialTheme.typography.bodyMedium)
+        Text("Pauses Jarvis while the keyboard is open, then resumes Hey Jarvis when you close it. Android requires accessibility window access; Jarvis checks window types only, without reading or saving typed text.",
+            style = MaterialTheme.typography.bodySmall)
+        var keyboardSetupError by remember { mutableStateOf("") }
+        TextButton(onClick = {
+            try { wakeContext.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            catch (_: Exception) { keyboardSetupError = "Open Android Settings → Accessibility → Installed apps → Jarvis keyboard microphone handoff." }
+        }) { Text(if (helperConnected) "Keyboard handoff settings" else "Enable keyboard microphone handoff") }
+        if (keyboardSetupError.isNotBlank()) Text(keyboardSetupError, style = MaterialTheme.typography.bodySmall)
         TextButton(onClick = {
             if (wakeTesting) onStopWakeTest()
             else if (wakeContext.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startWakeTest()

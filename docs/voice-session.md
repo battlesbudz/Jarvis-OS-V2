@@ -61,3 +61,25 @@ Repeat with the keyboard's own recognition provider. During a long reply tap Sto
 and give a correction without another wake word. End a conversation and wake again.
 Pause from the notification: verify the microphone indicator turns off once cleanup
 finishes, then resume. Check the folded screen and large text. EYE VUE is a separate PR.
+
+
+## Keyboard providers that refuse concurrent capture; fragmented hardware reads
+
+Enable Voice settings → Enable keyboard microphone handoff → Jarvis keyboard
+microphone handoff in Android Accessibility. This optional service checks interactive
+window types, never window roots, typed text or event text. Jarvis releases capture
+while any keyboard window is visible, including before the provider starts recording.
+Closing the keyboard resumes passive wake listening after a 750 ms stability interval;
+screen-off clears the keyboard hold. Android recording/silencing checks still apply.
+Manual notification Pause mic remains available without enabling the helper.
+
+AudioRecord nonblocking reads are assembled into complete 100 ms PCM chunks before
+entering the 64-entry queue (6.4 seconds at 16 kHz mono PCM16), preserving every byte
+across fragmented reads. A genuine overflow discards the incomplete command, saves
+an interrupted call, and retries passive listening after cleanup, at most twice per
+session without a successful turn. It never submits truncated audio to tools.
+
+Phone checks: open keyboard while Hey Jarvis is armed, verify Jarvis shows keyboard
+pause, dictate, close keyboard, then wake Jarvis. Repeat while a call is listening and
+after several app launches. Lock the screen with the keyboard open and verify wake
+listening returns. Disable the helper and verify manual pause still releases capture.

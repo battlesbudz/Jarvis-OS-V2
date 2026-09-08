@@ -4,6 +4,9 @@ package com.battlesbudz.jarvis.v2.voice
 object MicrophoneHandoff {
     private val requested = java.util.concurrent.atomic.AtomicBoolean(false)
     val dictationRequested: Boolean get() = requested.get()
+    @Volatile var keyboardVisible = false
+    val keyboardHelperConnected = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val shouldYield: Boolean get() = dictationRequested || keyboardVisible
     fun requestDictation(): Boolean = requested.compareAndSet(false, true)
     fun finishDictation() { requested.set(false) }
 }

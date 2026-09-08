@@ -85,6 +85,7 @@ class AndroidAudioInput(
             try {
                 withContext(Dispatchers.IO) {
                     val pcm = ByteArray(chunkSamples * 2)
+                    val assembler = PcmChunkAssembler(pcm.size)
                     var capturedBytes = 0
                     while (isActive) {
                         if (busy(created)) throw MicrophoneBusyException()
@@ -98,8 +99,8 @@ class AndroidAudioInput(
                                 squares += sample * sample
                             }
                             onLevel((kotlin.math.sqrt(squares / (count / 2).coerceAtLeast(1)) / 4000.0).toFloat().coerceIn(0f, 1f))
-                            check(emittedChunks.trySend(pcm.copyOf(count)).isSuccess) {
-                                "Microphone processing fell behind: audio queue is full."
+                            assembler.accept(pcm, count) { chunk ->
+                                if (!emittedChunks.trySend(chunk).isSuccess) throw AudioBacklogException()
                             }
                             capturedBytes += count
                             // Retain startup audio while allowing the hardware capture path to warm up.
@@ -126,7 +127,7 @@ class AndroidAudioInput(
     }
 
     private fun busy(record: AudioRecord?): Boolean {
-        if (!dictation && MicrophoneHandoff.dictationRequested) return true
+        if (!dictation && MicrophoneHandoff.shouldYield) return true
         val manager = audioManager ?: return false
         return MicrophonePolicy.shouldYield(
             manager.activeRecordingConfigurations.size, record != null,

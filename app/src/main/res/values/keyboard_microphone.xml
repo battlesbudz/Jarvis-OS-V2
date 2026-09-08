@@ -1,0 +1,4 @@
+<resources>
+    <string name="keyboard_microphone_label">Jarvis keyboard microphone handoff</string>
+    <string name="keyboard_microphone_description">Pauses Jarvis listening while a keyboard is visible so you can use keyboard dictation. Listening resumes after you close the keyboard. Android requires window access for this feature; Jarvis checks window types only and does not read, store, or send typed text or screen content.</string>
+</resources>

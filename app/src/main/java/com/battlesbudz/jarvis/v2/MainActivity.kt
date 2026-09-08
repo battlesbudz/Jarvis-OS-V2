@@ -135,6 +135,7 @@ class MainActivity : ComponentActivity() {
     private var activeVoiceCapture: AudioTurnCapture? = null
     private var voiceTurnJob: Job? = null
     private var voiceServiceStarted = false
+    private var audioRecoveryAttempts = 0
     private var voiceSessionArmed = false
         set(value) {
             field = value
@@ -258,6 +259,7 @@ class MainActivity : ComponentActivity() {
                 onVoiceTurn = { start, report, onTranscript, onFinished ->
                     com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
                     com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.report("Preparing microphone…")
+                    audioRecoveryAttempts = 0
                     voiceSessionArmed = start
                     sessionReport = report
                     runVoiceTurn(start, report, onTranscript, onFinished)
@@ -394,7 +396,12 @@ class MainActivity : ComponentActivity() {
                 val input = AndroidAudioInput(this,
                     audioManager = getSystemService(android.media.AudioManager::class.java),
                     onLevel = { com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.level.value = it },
-                    onWaiting = { waiting -> status(if (waiting) "Paused — microphone in use by another app" else "Preparing microphone…") })
+                    onWaiting = { waiting ->
+                        val keyboard = com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.keyboardVisible
+                        status(if (!waiting) "Preparing microphone…" else if (keyboard)
+                            "Paused — keyboard open. Close the keyboard to resume Hey Jarvis."
+                        else "Paused — microphone in use by another app")
+                    })
                 microphone = input
                 if (voiceSessionController.currentCallId() == null) {
                     val wakeDirectory = com.battlesbudz.jarvis.v2.voice.WakeWordModelStore(applicationContext).ensureReady(::status)
@@ -421,7 +428,7 @@ class MainActivity : ComponentActivity() {
                 microphoneWatcher = launch {
                     val manager = getSystemService(android.media.AudioManager::class.java)
                     while (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true) {
-                        if (!input.ownsRecorder && (com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.dictationRequested || com.battlesbudz.jarvis.v2.voice.MicrophonePolicy.shouldYield(
+                        if (!input.ownsRecorder && (com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.shouldYield || com.battlesbudz.jarvis.v2.voice.MicrophonePolicy.shouldYield(
                             manager.activeRecordingConfigurations.size, false, manager.isMicrophoneMute,
                             manager.mode == android.media.AudioManager.MODE_IN_CALL || manager.mode == android.media.AudioManager.MODE_IN_COMMUNICATION))) {
                             output.stopSpeaking()
@@ -555,9 +562,17 @@ class MainActivity : ComponentActivity() {
                 }
                 speechChunks.close()
                 speechJob?.join()
+                audioRecoveryAttempts = 0
                 finalMessage = "Voice Call turn complete. Heard: $transcript\nJarvis: ${response.text}"
+            } catch (backlog: com.battlesbudz.jarvis.v2.voice.AudioBacklogException) {
+                audioRecoveryAttempts++
+                diagnosticRecorder.recordImportant("Audio buffer recovery attempt=$audioRecoveryAttempts max=2; incomplete command discarded.")
+                runCatching { voiceSessionController.interrupt() }
+                finalMessage = if (audioRecoveryAttempts <= 2)
+                    com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " audio capture recovered; say Hey Jarvis again."
+                else "Voice Call turn failed: audio capture repeatedly fell behind. Restart the session."
             } catch (busy: com.battlesbudz.jarvis.v2.voice.MicrophoneBusyException) {
-                diagnosticRecorder.recordImportant("Microphone yielded; dictationPriority=${com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.dictationRequested}; partial turn discarded. Returning to passive mode when available.")
+                diagnosticRecorder.recordImportant("Microphone yielded; dictationPriority=${com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.dictationRequested}; keyboardVisible=${com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.keyboardVisible}; partial turn discarded. Returning to passive mode when available.")
                 runCatching { voiceSessionController.interrupt() }
                 finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " microphone yielded."
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
