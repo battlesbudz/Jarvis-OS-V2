@@ -803,7 +803,7 @@ private fun VoiceCallScreen(
         val helperConnected by com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.keyboardHelperConnected.collectAsState()
         Text(if (helperConnected) "Automatic keyboard microphone handoff is enabled."
             else "Keyboard microphone handoff needs setup.", style = MaterialTheme.typography.bodyMedium)
-        Text("Pauses Jarvis while the keyboard is open, then resumes Hey Jarvis when you close it. Android requires accessibility window access; Jarvis checks window types only, without reading or saving typed text.",
+        Text("Gives keyboard dictation microphone priority, then resumes Hey Jarvis when recording finishes—even if the keyboard stays open. Android requires accessibility window access; Jarvis checks window types and tap events, without reading or saving typed text.",
             style = MaterialTheme.typography.bodySmall)
         var keyboardSetupError by remember { mutableStateOf("") }
         TextButton(onClick = {

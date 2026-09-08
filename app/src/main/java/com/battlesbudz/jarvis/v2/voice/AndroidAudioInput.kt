@@ -71,11 +71,13 @@ class AndroidAudioInput(
             created.release()
             error("The microphone could not be initialized.")
         }
+        if (!dictation) MicrophoneHandoff.backgroundRecorders.incrementAndGet()
         try {
             created.startRecording()
             check(created.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "The microphone did not start recording." }
         } catch (error: Throwable) {
             created.release()
+            if (!dictation) MicrophoneHandoff.backgroundRecorders.decrementAndGet()
             throw error
         }
         val ready = CompletableDeferred<Unit>()
@@ -118,6 +120,7 @@ class AndroidAudioInput(
             } finally {
                 runCatching { created.stop() }
                 created.release()
+                if (!dictation) MicrophoneHandoff.backgroundRecorders.decrementAndGet()
                 if (recorder === created) { recorder = null; ownsRecorder = false }
                 onLevel(0f)
             }

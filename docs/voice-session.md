@@ -95,3 +95,22 @@ on initial session startup, or while waiting for another app to release the micr
 Both cues use the existing media volume, serialize playback and release on cancellation.
 Phone check with the screen off: Hey Jarvis → bright acknowledgement → conversation →
 goodbye (or 20 seconds without recognized speech) → lower return-to-wake cue.
+
+
+## Dictation-end rearm follow-up
+
+Keyboard visibility and microphone reservation are now separate states. The helper
+monitors Android recording callbacks plus a 250 ms poll while the Jarvis session is
+armed, subtracting Jarvis's own recorders. Once dictation has stopped for 750 ms, it
+releases the reservation even if the keyboard remains visible. A subsequent keyboard
+tap reserves another attempt. Short recording gaps and panel replacements are debounced.
+No text or node content is inspected. No polling continues after the Jarvis session stops.
+
+Latest-call diagnostics now include a bounded 12-event keyboard handoff trace, including
+visible, holding and external-recording transitions. This also works before any wake.
+Manual Pause remains manual; this fix does not override an explicit user pause.
+
+Phone acceptance: start Hey Jarvis, use dictation in another app, stop dictation but
+leave its keyboard on screen, and wait for the detector to rearm without opening Jarvis.
+Say Hey Jarvis, then test a second keyboard dictation on that same keyboard. If rearm
+fails, copy diagnostics so holding/recording state can distinguish it from a lifecycle issue.

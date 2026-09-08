@@ -402,7 +402,7 @@ class MainActivity : ComponentActivity() {
                     onWaiting = { waiting ->
                         val keyboard = com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.keyboardVisible
                         status(if (!waiting) "Preparing microphone…" else if (keyboard)
-                            "Paused — keyboard open. Close the keyboard to resume Hey Jarvis."
+                            "Paused — keyboard dictation has microphone priority."
                         else "Paused — microphone in use by another app")
                     })
                 microphone = input
@@ -576,6 +576,7 @@ class MainActivity : ComponentActivity() {
                     com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " audio capture recovered; say Hey Jarvis again."
                 else "Voice Call turn failed: audio capture repeatedly fell behind. Restart the session."
             } catch (busy: com.battlesbudz.jarvis.v2.voice.MicrophoneBusyException) {
+                returnToWakeCuePending.set(true)
                 diagnosticRecorder.recordImportant("Microphone yielded; dictationPriority=${com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.dictationRequested}; keyboardVisible=${com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.keyboardVisible}; partial turn discarded. Returning to passive mode when available.")
                 runCatching { voiceSessionController.interrupt() }
                 finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " microphone yielded."
@@ -925,6 +926,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startVoiceDiagnostics(label: String) {
+        com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.clearDiagnostics()
         asrComparisonStore.clearDiagnostics()
         ttsComparisonStore.clearDiagnostics()
         diagnosticRecorder.startSession(label)
@@ -940,7 +942,7 @@ class MainActivity : ComponentActivity() {
     private fun copyDiagnostics(transcript: List<ChatEntry>) {
         // The runtime ring contains the latest call's ASR, inference and playback events.
         // Comparison archives and full chat histories do not belong in a call failure report.
-        val diagnostics = "Jarvis OS V2 — latest Voice Call diagnostics\n\n${diagnosticRecorder.snapshot()}"
+        val diagnostics = "Jarvis OS V2 — latest Voice Call diagnostics\n\n${diagnosticRecorder.snapshot()}\n\n${com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.diagnostics()}"
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Jarvis diagnostics", diagnostics))
     }
