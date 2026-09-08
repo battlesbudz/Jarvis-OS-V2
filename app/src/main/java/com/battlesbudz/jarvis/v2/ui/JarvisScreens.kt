@@ -34,6 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -362,7 +363,7 @@ fun JarvisApp(
     onSelectTts: (com.battlesbudz.jarvis.v2.voice.TtsEngine) -> Boolean,
     onTtsBenchmark: (com.battlesbudz.jarvis.v2.voice.TtsEngine?, (String) -> Unit, () -> Unit) -> Unit,
     onStopTtsBenchmark: () -> Unit,
-    asrComparisonStore: com.battlesbudz.jarvis.v2.voice.AsrComparisonStore,
+    voicePlayback: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame>,
     voiceModelStore: com.battlesbudz.jarvis.v2.voice.KokoroModelStore,
     initialMessages: List<ChatEntry>,
     initialVoiceCalls: List<VoiceCallRecord>,
@@ -495,7 +496,7 @@ fun JarvisApp(
                         onSelectTts = onSelectTts,
                         onTtsBenchmark = onTtsBenchmark,
                         onStopTtsBenchmark = onStopTtsBenchmark,
-                        asrComparisonStore = asrComparisonStore,
+                        voicePlayback = voicePlayback,
                         onVoiceTurn = onVoiceTurn,
                         onEndVoiceCall = onEndVoiceCall,
                         onOpenVoiceCalls = {
@@ -562,7 +563,7 @@ private fun VoiceCallScreen(
     onSelectTts: (com.battlesbudz.jarvis.v2.voice.TtsEngine) -> Boolean,
     onTtsBenchmark: (com.battlesbudz.jarvis.v2.voice.TtsEngine?, (String) -> Unit, () -> Unit) -> Unit,
     onStopTtsBenchmark: () -> Unit,
-    asrComparisonStore: com.battlesbudz.jarvis.v2.voice.AsrComparisonStore,
+    voicePlayback: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame>,
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
     onEndVoiceCall: ((String) -> Unit) -> Unit,
     onOpenVoiceCalls: () -> Unit,
@@ -570,37 +571,19 @@ private fun VoiceCallScreen(
 ) {
     var ttsSettingsOpen by remember { mutableStateOf(false) }
     var selectedTts by remember { mutableStateOf(ttsComparisonStore.selectedEngine()) }
-    var asrSettingsOpen by remember { mutableStateOf(false) }
+    val playback by voicePlayback.collectAsState()
     var callStarted by remember { mutableStateOf(false) }
     var listening by remember { mutableStateOf(false) }
     var turnInFlight by remember { mutableStateOf(false) }
     var status by rememberSaveable { mutableStateOf("") }
     var turns by remember { mutableStateOf(resumedCall?.transcript.orEmpty().map { ChatEntry(it.role, it.text) }) }
     var provisionalUser by remember { mutableStateOf("") }
-    val transcriptScrollState = rememberScrollState()
-    val pulse = rememberInfiniteTransition(label = "voice waveform").animateFloat(
-        initialValue = 0.35f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "voice pulse"
-    )
     if (ttsSettingsOpen) TtsComparisonDialog(
         store = ttsComparisonStore, canChange = !callStarted && !turnInFlight,
         onSelect = { engine -> onSelectTts(engine).also { if (it) selectedTts = engine } },
         onBenchmark = onTtsBenchmark, onStop = onStopTtsBenchmark,
         onDismiss = { ttsSettingsOpen = false }
     )
-    if (asrSettingsOpen) AsrDiagnosticsDialog(
-        store = asrComparisonStore,
-        onDismiss = { asrSettingsOpen = false }
-    )
-    val waveformActiveColor = MaterialTheme.colorScheme.primary
-    val waveformIdleColor = MaterialTheme.colorScheme.outline
-
-    LaunchedEffect(turns.size, turns.lastOrNull()?.text?.length) {
-        transcriptScrollState.scrollTo(transcriptScrollState.maxValue)
-    }
-
     fun requestVoiceTurn(start: Boolean) {
         listening = false
         status = "Preparing microphone…"
@@ -698,75 +681,18 @@ private fun VoiceCallScreen(
             }
         }
         TextButton(onClick = { ttsSettingsOpen = true }) { Text("Voice: ${selectedTts.label}") }
-        TextButton(onClick = { asrSettingsOpen = true }) {
-            Text("Speech recognition: ${com.battlesbudz.jarvis.v2.voice.MoonshineModelInfo.label}")
+        val phase = when {
+            listening -> "Listening"
+            status.contains("speaking", true) && turnInFlight -> "Speaking"
+            turnInFlight -> "Thinking"
+            else -> "Ready"
         }
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 150.dp, max = 190.dp)
-                .padding(vertical = 22.dp)
-        ) {
-            val centerY = size.height / 2f
-            val barWidth = size.width / 32f
-            repeat(24) { index ->
-                val distance = kotlin.math.abs(index - 11.5f) / 11.5f
-                val height = (size.height * 0.12f + size.height * 0.55f * (1f - distance) * pulse.value)
-                drawRoundRect(
-                    color = if (listening) waveformActiveColor else waveformIdleColor,
-                    topLeft = androidx.compose.ui.geometry.Offset(index * barWidth + barWidth * .25f, centerY - height / 2f),
-                    size = androidx.compose.ui.geometry.Size(barWidth * .5f, height),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth, barWidth)
-                )
-            }
-        }
-        Surface(
-            color = if (listening) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceVariant,
-            shape = androidx.compose.foundation.shape.CircleShape,
-            modifier = Modifier.padding(bottom = 18.dp)
-        ) {
-            Text(
-                when {
-                    listening -> "Listening"
-                    status.contains("speaking", true) -> "Speaking"
-                    status.contains("responding", true) || status.contains("Processing", true) -> "Working"
-                    callStarted -> "Ready"
-                    else -> "Ready"
-                },
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(horizontal = 42.dp, vertical = 24.dp)
-            )
-        }
-        Text(
-            when {
-                listening -> "Speak naturally. Jarvis will detect when you finish."
-                callStarted -> "Your Voice Call is open. Start another turn or end the call."
-                else -> "Your Voice Calls stay on this phone."
-            },
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+        VoiceOrb(phase, if (callStarted) playback.level else 0f)
+        VoiceCaption(
+            if (listening) provisionalUser.trim().split(Regex("\\s+")).takeLast(32).joinToString(" ")
+            else if (callStarted) playback.caption else "",
+            if (listening) "You" else "Jarvis"
         )
-        if (turns.isNotEmpty() || provisionalUser.isNotBlank()) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f, fill = false)
-                    .heightIn(max = 230.dp)
-                    .verticalScroll(transcriptScrollState)
-                    .padding(top = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                (turns + if (provisionalUser.isNotBlank()) listOf(ChatEntry("You", provisionalUser)) else emptyList()).forEach { turn ->
-                    Text(
-                        "${turn.role}: ${turn.text.ifBlank { "…" }}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (turn.role == "You") MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
         Button(
             onClick = {
                 callStarted = true
@@ -797,13 +723,8 @@ private fun VoiceCallScreen(
                 Text("End Voice Call")
             }
         }
-        if (status.isNotBlank()) {
-            Text(
-                status.substringAfterLast("Voice Call turn complete. ").takeIf { it != status } ?: status,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
-            )
+        if (status.contains("failed", true) || status.contains("permission", true)) {
+            Text(status, style = MaterialTheme.typography.bodySmall)
         }
         TextButton(
             onClick = { onCopyDiagnostics(turns + if (provisionalUser.isNotBlank()) listOf(ChatEntry("You", provisionalUser)) else emptyList()) },

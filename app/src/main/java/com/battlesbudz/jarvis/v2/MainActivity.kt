@@ -130,6 +130,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var ttsComparisonStore: com.battlesbudz.jarvis.v2.voice.TtsComparisonStore
     private lateinit var ttsModels: com.battlesbudz.jarvis.v2.voice.TtsModelStore
     private lateinit var ttsBenchmarks: com.battlesbudz.jarvis.v2.voice.TtsBenchmarkController
+    private val voicePlayback = kotlinx.coroutines.flow.MutableStateFlow(com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame())
     private lateinit var asrComparisonStore: com.battlesbudz.jarvis.v2.voice.AsrComparisonStore
     private var activeVoiceCapture: AudioTurnCapture? = null
     private var voiceTurnJob: Job? = null
@@ -214,7 +215,7 @@ class MainActivity : ComponentActivity() {
                 },
                 onTtsBenchmark = { engine, status, finished -> ttsBenchmarks.start(engine, status, finished) },
                 onStopTtsBenchmark = { ttsBenchmarks.stop() },
-                asrComparisonStore = asrComparisonStore,
+                voicePlayback = voicePlayback,
                 voiceModelStore = kokoroModelStore,
                 initialMessages = restoreTranscript(),
                 initialVoiceCalls = voiceCallStore.list(),
@@ -310,6 +311,7 @@ class MainActivity : ComponentActivity() {
                     "Another model operation is still finishing. Please try again in a moment."
                 }
                 operationOwned = true
+                voicePlayback.value = com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame()
                 status("Preparing speech recognition…")
                 val asrDirectory = AsrModelStore(applicationContext).ensureReady(::status)
                 diagnosticRecorder.record("Voice ASR selected engine=${asrEngine.id} model=${asrEngine.modelVersion} turn=$asrTurnId")
@@ -330,6 +332,7 @@ class MainActivity : ComponentActivity() {
                 conversationCharacters = 0
                 val ttsDirectory = ttsModels.ensureReady(ttsEngine, ::status)
                 val output = SherpaKokoroVoiceOutput(ttsDirectory.path, engine = ttsEngine,
+                    onPlayback = { voicePlayback.value = it },
                     onMetrics = { ttsComparisonStore.add(ttsEngine, "voice-call", asrTurnId, it) },
                     log = { diagnosticRecorder.record("Voice TTS: $it") })
                 voiceOutput = output

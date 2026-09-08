@@ -18,6 +18,7 @@ class SherpaKokoroVoiceOutput(
     private val engine: TtsEngine = TtsEngine.KOKORO,
     private val normalSpeed: Boolean = false,
     private val fixedChunking: Boolean = false,
+    private val onPlayback: (VoicePlaybackFrame) -> Unit = {},
     private val onMetrics: (TtsSessionMetrics) -> Unit = {},
     private val speakerId: Int = engine.speaker,
     private val numThreads: Int = Runtime.getRuntime().availableProcessors().coerceIn(2, 4),
@@ -29,6 +30,7 @@ class SherpaKokoroVoiceOutput(
 
     private data class SynthesizedPhrase(
         val index: Int,
+        val text: String,
         val sampleRate: Int,
         val pcm: ShortArray,
         val startupWaitMs: Long,
@@ -49,6 +51,7 @@ class SherpaKokoroVoiceOutput(
         var firstPcmMs: Long? = null
         var inputChars = 0
         val textHash = java.security.MessageDigest.getInstance("SHA-256")
+        val captions = SpokenCaptionTimeline()
         var playbackMonitor: Job? = null
         var playbackConfirmed = false
         var completed = false
@@ -101,7 +104,7 @@ class SherpaKokoroVoiceOutput(
                     if (firstPcmMs == null) firstPcmMs = elapsedMs(started)
                     log("tts_first_audio index=$phraseIndex latencyMs=${elapsedMs(started)}")
                     val waitStart = System.nanoTime()
-                    audio.sendFromNative(SynthesizedPhrase(phraseIndex, rate, pcm,
+                    audio.sendFromNative(SynthesizedPhrase(phraseIndex, text, rate, pcm,
                         PlaybackBufferPolicy.startupWaitMs(elapsedMs(started), frames * 1000 / rate),
                         if (normalSpeed) 1f else PlaybackBufferPolicy.playbackSpeed(elapsedMs(started), frames * 1000 / rate)))
                     val queueWaitMs = elapsedMs(waitStart)
@@ -170,14 +173,14 @@ class SherpaKokoroVoiceOutput(
                         playbackMonitor = launch {
                             while (isActive && !stopped) {
                                 val head = unsignedHead(startedTrack)
-                                if (head > 0) {
+                                if (head > 0 && !playbackConfirmed) {
                                     playbackConfirmed = true
                                     log("audio_playback_confirmed playbackHead=$head routeType=${startedTrack.routedDevice?.type} " +
                                         "routeId=${startedTrack.routedDevice?.id}")
                                     onChunkStarted("audio")
-                                    break
                                 }
-                                delay(10)
+                                onPlayback(captions.at(head))
+                                delay(40)
                             }
                         }
                     }
@@ -189,6 +192,7 @@ class SherpaKokoroVoiceOutput(
                     val queued = (framesWritten.toLong() - unsignedHead(track)).coerceAtLeast(0)
                     log("audio_phrase_ready index=${phrase.index} pcmFrames=${phrase.pcm.size} " +
                         "queuedBeforeFrames=$queued underruns=${track.underrunCount}")
+                    captions.append(framesWritten.toLong(), phrase.sampleRate, phrase.pcm, phrase.text)
                     val start = System.nanoTime()
                     var offset = 0
                     var lastWriteProgress = System.nanoTime()
@@ -246,6 +250,7 @@ class SherpaKokoroVoiceOutput(
             audio.cancel()
             withContext(NonCancellable) { playbackMonitor?.cancelAndJoin() }
             val playedFrames = audioTrack?.let(::unsignedHead) ?: 0L
+            onPlayback(if (wasStopped) VoicePlaybackFrame() else captions.at(playedFrames).copy(level = 0f))
             val outputRoute = audioTrack?.routedDevice?.let { "type=${it.type} id=${it.id}" }
             finalUnderruns = audioTrack?.underrunCount ?: finalUnderruns
             audioTrack?.stopSafely()
