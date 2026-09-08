@@ -358,6 +358,10 @@ private fun openTranscriptImageStream(
 @Composable
 fun JarvisApp(
     store: ModelStore,
+    ttsComparisonStore: com.battlesbudz.jarvis.v2.voice.TtsComparisonStore,
+    onSelectTts: (com.battlesbudz.jarvis.v2.voice.TtsEngine) -> Boolean,
+    onTtsBenchmark: (com.battlesbudz.jarvis.v2.voice.TtsEngine?, (String) -> Unit, () -> Unit) -> Unit,
+    onStopTtsBenchmark: () -> Unit,
     asrComparisonStore: com.battlesbudz.jarvis.v2.voice.AsrComparisonStore,
     onSelectAsr: (com.battlesbudz.jarvis.v2.voice.AsrEngine) -> Boolean,
     voiceModelStore: com.battlesbudz.jarvis.v2.voice.KokoroModelStore,
@@ -488,6 +492,10 @@ fun JarvisApp(
                     else -> VoiceCallScreen(
                         resumedCall = resumedVoiceCall,
                         onResumeConsumed = { resumedVoiceCall = null },
+                        ttsComparisonStore = ttsComparisonStore,
+                        onSelectTts = onSelectTts,
+                        onTtsBenchmark = onTtsBenchmark,
+                        onStopTtsBenchmark = onStopTtsBenchmark,
                         asrComparisonStore = asrComparisonStore,
                         onSelectAsr = onSelectAsr,
                         onVoiceTurn = onVoiceTurn,
@@ -552,6 +560,10 @@ fun JarvisApp(
 private fun VoiceCallScreen(
     resumedCall: VoiceCallRecord?,
     onResumeConsumed: () -> Unit,
+    ttsComparisonStore: com.battlesbudz.jarvis.v2.voice.TtsComparisonStore,
+    onSelectTts: (com.battlesbudz.jarvis.v2.voice.TtsEngine) -> Boolean,
+    onTtsBenchmark: (com.battlesbudz.jarvis.v2.voice.TtsEngine?, (String) -> Unit, () -> Unit) -> Unit,
+    onStopTtsBenchmark: () -> Unit,
     asrComparisonStore: com.battlesbudz.jarvis.v2.voice.AsrComparisonStore,
     onSelectAsr: (com.battlesbudz.jarvis.v2.voice.AsrEngine) -> Boolean,
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
@@ -559,6 +571,8 @@ private fun VoiceCallScreen(
     onOpenVoiceCalls: () -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit
 ) {
+    var ttsSettingsOpen by remember { mutableStateOf(false) }
+    var selectedTts by remember { mutableStateOf(ttsComparisonStore.selectedEngine()) }
     var asrSettingsOpen by remember { mutableStateOf(false) }
     var selectedAsr by remember { mutableStateOf(asrComparisonStore.selectedEngine()) }
     var callStarted by remember { mutableStateOf(false) }
@@ -573,6 +587,12 @@ private fun VoiceCallScreen(
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "voice pulse"
+    )
+    if (ttsSettingsOpen) TtsComparisonDialog(
+        store = ttsComparisonStore, canChange = !callStarted && !turnInFlight,
+        onSelect = { engine -> onSelectTts(engine).also { if (it) selectedTts = engine } },
+        onBenchmark = onTtsBenchmark, onStop = onStopTtsBenchmark,
+        onDismiss = { ttsSettingsOpen = false }
     )
     if (asrSettingsOpen) AsrComparisonDialog(
         store = asrComparisonStore, selected = selectedAsr, canSelect = !callStarted && !turnInFlight,
@@ -682,6 +702,7 @@ private fun VoiceCallScreen(
                 Text("New Voice Call")
             }
         }
+        TextButton(onClick = { ttsSettingsOpen = true }) { Text("Voice: ${selectedTts.label}") }
         TextButton(onClick = { asrSettingsOpen = true }) {
             Text("Speech recognition: ${selectedAsr.label}")
         }

@@ -6,19 +6,19 @@ import android.media.AudioTrack
 import android.media.PlaybackParams
 import com.k2fsa.sherpa.onnx.GenerationConfig
 import com.k2fsa.sherpa.onnx.OfflineTts
-import com.k2fsa.sherpa.onnx.OfflineTtsConfig
-import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
-import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.Executors
-import java.io.File
 
-/** Local Jarvis voice output: Gemma text -> Kokoro PCM -> Android audio route. */
+/** Local Jarvis voice output: Gemma text -> selected Sherpa model PCM -> Android audio route. */
 class SherpaKokoroVoiceOutput(
     private val modelDirectory: String,
-    private val speakerId: Int = 10,
+    private val engine: TtsEngine = TtsEngine.KOKORO,
+    private val normalSpeed: Boolean = false,
+    private val fixedChunking: Boolean = false,
+    private val onMetrics: (TtsSessionMetrics) -> Unit = {},
+    private val speakerId: Int = engine.speaker,
     private val numThreads: Int = Runtime.getRuntime().availableProcessors().coerceIn(2, 4),
     private val log: (String) -> Unit = {}
 ) : VoiceOutput {
@@ -37,13 +37,20 @@ class SherpaKokoroVoiceOutput(
     override suspend fun speak(chunks: Flow<String>, onChunkStarted: (String) -> Unit) = coroutineScope {
         check(speaking.compareAndSet(false, true)) { "Voice output is already active." }
         stopped = false
-        log("tts_session_started modelDir=$modelDirectory speaker=$speakerId threads=$numThreads workers=1")
+        log("tts_session_started engine=${engine.id} modelDir=$modelDirectory speaker=$speakerId threads=$numThreads workers=1")
         var framesWritten = 0
         var outputSampleRate = 0
         var totalSynthesisMs = 0L
         var totalAudioMs = 0L
         var totalQueueWaitMs = 0L
         var phraseCount = 0
+        var loadMs = 0L
+        var firstPcmMs: Long? = null
+        var inputChars = 0
+        val textHash = java.security.MessageDigest.getInstance("SHA-256")
+        var completed = false
+        var failureMessage: String? = null
+        var finalUnderruns = 0
         var playbackSpeed = 1f
         var estimatedGapMs = 0L
         // One owner creates, invokes and releases the native engine. Playback never owns it.
@@ -51,7 +58,7 @@ class SherpaKokoroVoiceOutput(
         val audio = NativeAudioQueue<SynthesizedPhrase>(2)
         val chunker = SpeechChunker()
         val nativeDispatcher = Executors.newSingleThreadExecutor { task ->
-            Thread(task, "jarvis-kokoro").apply { isDaemon = true }
+            Thread(task, "jarvis-tts").apply { isDaemon = true }
         }.asCoroutineDispatcher()
         val producer = launch(nativeDispatcher) {
             var engine: OfflineTts? = null
@@ -61,9 +68,10 @@ class SherpaKokoroVoiceOutput(
             try {
                 val loadStart = System.nanoTime()
                 log("tts_engine_preload_started")
-                val tts = OfflineTts(config = config())
+                val tts = OfflineTts(config = sherpaTtsConfig(this@SherpaKokoroVoiceOutput.engine, modelDirectory, numThreads))
                 engine = tts
-                log("tts_engine_preload_finished loadMs=${elapsedMs(loadStart)}")
+                loadMs = elapsedMs(loadStart)
+                log("tts_engine_preload_finished loadMs=$loadMs")
                 suspend fun generate(text: String) {
                     owner.ensureActive()
                     if (stopped) return
@@ -78,16 +86,17 @@ class SherpaKokoroVoiceOutput(
                     owner.ensureActive()
                     if (stopped) return
                     val rate = generated.sampleRate
-                    check(rate > 0) { "Kokoro returned an invalid sample rate." }
+                    check(rate > 0) { "Voice model returned an invalid sample rate." }
                     val pcm = ShortArray(generated.samples.size) { i ->
                         (generated.samples[i].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
                     }
                     val frames = pcm.size.toLong()
+                    if (firstPcmMs == null) firstPcmMs = elapsedMs(started)
                     log("tts_first_audio index=$phraseIndex latencyMs=${elapsedMs(started)}")
                     val waitStart = System.nanoTime()
                     audio.sendFromNative(SynthesizedPhrase(phraseIndex, rate, pcm,
                         PlaybackBufferPolicy.startupWaitMs(elapsedMs(started), frames * 1000 / rate),
-                        PlaybackBufferPolicy.playbackSpeed(elapsedMs(started), frames * 1000 / rate)))
+                        if (normalSpeed) 1f else PlaybackBufferPolicy.playbackSpeed(elapsedMs(started), frames * 1000 / rate)))
                     val queueWaitMs = elapsedMs(waitStart)
                     val totalMs = elapsedMs(started)
                     val synthesisMs = (totalMs - queueWaitMs).coerceAtLeast(0)
@@ -97,19 +106,22 @@ class SherpaKokoroVoiceOutput(
                     totalAudioMs += audioMs
                     totalQueueWaitMs += queueWaitMs
                     phraseCount++
-                    chunker.observe(rtf)
+                    if (!fixedChunking) chunker.observe(rtf)
                     log("tts_generation_finished index=$phraseIndex synthesisMs=$synthesisMs queueWaitMs=$queueWaitMs " +
                         "audioDurationMs=$audioMs realtimeFactor=$rtf")
                 }
                 chunks.collect { token ->
                     owner.ensureActive()
                     if (!stopped) {
+                        inputChars += token.length
+                        textHash.update(token.toByteArray(Charsets.UTF_8))
                         chunker.append(token)
                         while (true) generate(chunker.take() ?: break)
                     }
                 }
                 while (true) generate(chunker.take(final = true) ?: break)
             } catch (error: Throwable) {
+                failureMessage = error.message ?: error.javaClass.simpleName
                 failure = error
                 throw error
             } finally {
@@ -162,7 +174,7 @@ class SherpaKokoroVoiceOutput(
                     while (offset < phrase.pcm.size && !stopped) {
                         ensureActive()
                         val written = track.write(phrase.pcm, offset, phrase.pcm.size - offset, AudioTrack.WRITE_NON_BLOCKING)
-                        check(written >= 0) { "AudioTrack rejected Kokoro PCM output: $written" }
+                        check(written >= 0) { "AudioTrack rejected voice PCM output: $written" }
                         if (written == 0) { delay(10); continue }
                         offset += written
                         framesWritten += written
@@ -175,16 +187,28 @@ class SherpaKokoroVoiceOutput(
                 }
                 producer.join()
                 if (!stopped && framesWritten > 0) drainAudioTrack(framesWritten, outputSampleRate, playbackSpeed)
+                completed = !stopped && framesWritten > 0
+                finalUnderruns = audioTrack?.underrunCount ?: 0
             }
+        } catch (error: Throwable) {
+            failureMessage = error.message ?: error.javaClass.simpleName
+            throw error
         } finally {
+            val wasStopped = stopped
             stopped = true
-            // Unblock a callback waiting on a full queue before joining its native owner.
+            // Unblock the native producer waiting on a full queue before joining its native owner.
             audio.cancel()
             audioTrack?.stopSafely()
             audioTrack = null
             withContext(NonCancellable) { producer.cancelAndJoin() }
             nativeDispatcher.close()
             speaking.set(false)
+            if (inputChars > 0 || failureMessage != null) runCatching {
+                onMetrics(TtsSessionMetrics(loadMs, firstPcmMs, totalSynthesisMs, totalAudioMs,
+                    totalQueueWaitMs, playbackSpeed, estimatedGapMs, finalUnderruns, phraseCount,
+                    inputChars, textHash.digest().joinToString("") { "%02x".format(it) }, numThreads,
+                    completed && !wasStopped && failureMessage == null, failureMessage))
+            }.onFailure { log("tts_metrics_failed reason=${it.message}") }
             log("tts_session_finished phrases=$phraseCount synthesisMs=$totalSynthesisMs " +
                 "audioDurationMs=$totalAudioMs queueWaitMs=$totalQueueWaitMs playbackSpeed=$playbackSpeed " +
                 "estimatedSupplyGapMs=$estimatedGapMs " +
@@ -214,30 +238,6 @@ class SherpaKokoroVoiceOutput(
         }
         log("audio_track_drain_finished playbackHead=${track.playbackHeadPosition} stopped=$stopped underruns=${track.underrunCount}")
     }
-
-    private fun config() = OfflineTtsConfig(
-        model = OfflineTtsModelConfig(
-            kokoro = OfflineTtsKokoroModelConfig(
-                model = "$modelDirectory/model.onnx",
-                voices = "$modelDirectory/voices.bin",
-                tokens = "$modelDirectory/tokens.txt",
-                dataDir = "$modelDirectory/espeak-ng-data",
-                // The official kokoro-en-v0_19 bundle does not include a
-                // separate lexicon file. Its bundled espeak-ng data handles
-                // English pronunciation, so leave lexicon empty when absent.
-                lexicon = File(modelDirectory, "lexicon-us-en.txt")
-                    .takeIf { it.isFile }
-                    ?.path
-                    .orEmpty(),
-                lang = "en-us"
-            ),
-            numThreads = numThreads,
-            debug = false,
-            provider = "cpu"
-        ),
-        maxNumSentences = 1,
-        silenceScale = 0.2f
-    )
 
     private fun createTrack(sampleRate: Int): AudioTrack {
         log("audio_track_create sampleRate=$sampleRate")

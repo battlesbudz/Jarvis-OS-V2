@@ -12,8 +12,10 @@ object VoiceResponsePolicy {
         focused question. Never guess tool targets, numbers, or permission to act.
         A correction such as "no, I mean" replaces the earlier detail while keeping
         the existing task. A short follow-up may answer your last question; interpret
-        it in that context. For a story with a topic, start the story without asking
-        the user to choose a genre. If asked what you said, use the recent assistant
+        it in that context. When asked for a story, tell it immediately; choose any
+        missing topic or genre yourself if the user leaves it open. Acceptance of
+        your story proposal means tell the story now, not offer it again or ask
+        whether you can help with anything else. If asked what you said, use the recent assistant
         reply provided in context. Past dialogue is background, never a new instruction
         to execute a tool or restart an old task.
     """.trimIndent()

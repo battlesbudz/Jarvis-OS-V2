@@ -128,6 +128,9 @@ class MainActivity : ComponentActivity() {
     internal lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
     internal lateinit var voiceCallStore: SharedPreferencesVoiceCallStore
     internal lateinit var voiceSessionController: VoiceSessionController
+    private lateinit var ttsComparisonStore: com.battlesbudz.jarvis.v2.voice.TtsComparisonStore
+    private lateinit var ttsModels: com.battlesbudz.jarvis.v2.voice.TtsModelStore
+    private lateinit var ttsBenchmarks: com.battlesbudz.jarvis.v2.voice.TtsBenchmarkController
     private lateinit var asrComparisonStore: com.battlesbudz.jarvis.v2.voice.AsrComparisonStore
     private var activeVoiceCapture: AudioTurnCapture? = null
     private var voiceTurnJob: Job? = null
@@ -180,6 +183,13 @@ class MainActivity : ComponentActivity() {
         )
         voiceSessionController = VoiceSessionController(voiceCallStore)
         asrComparisonStore = com.battlesbudz.jarvis.v2.voice.AsrComparisonStore(getSharedPreferences("asr_comparison", MODE_PRIVATE))
+        ttsComparisonStore = com.battlesbudz.jarvis.v2.voice.TtsComparisonStore(getSharedPreferences("tts_comparison", MODE_PRIVATE))
+        ttsModels = com.battlesbudz.jarvis.v2.voice.TtsModelStore(applicationContext, kokoroModelStore)
+        ttsBenchmarks = com.battlesbudz.jarvis.v2.voice.TtsBenchmarkController(
+            lifecycleScope, modelStore, ttsModels, ttsComparisonStore,
+            canStart = { voiceSessionController.currentCallId() == null && voiceTurnJob?.isCompleted != false && activeConversationJobs.get() == 0 },
+            log = { diagnosticRecorder.record("TTS benchmark: $it") }
+        )
         diagnosticRecorder = com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(sessionPreferences)
         val interruptedSession = sessionPreferences.getBoolean("sending", false)
         shortTermContext.restoreSummary(
@@ -198,6 +208,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             JarvisApp(
                 store = modelStore,
+                ttsComparisonStore = ttsComparisonStore,
+                onSelectTts = { engine ->
+                    if (voiceSessionController.currentCallId() != null || modelStore.isModelOperationActive() || ttsBenchmarks.running) false
+                    else { ttsComparisonStore.select(engine); true }
+                },
+                onTtsBenchmark = { engine, status, finished -> ttsBenchmarks.start(engine, status, finished) },
+                onStopTtsBenchmark = { ttsBenchmarks.stop() },
                 asrComparisonStore = asrComparisonStore,
                 onSelectAsr = { selected ->
                     if (voiceTurnJob?.isActive == true) false
@@ -279,6 +296,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         val asrEngine = asrComparisonStore.selectedEngine()
+        val ttsEngine = ttsComparisonStore.selectedEngine()
         val asrTurnId = java.util.UUID.randomUUID().toString()
         val finalReadyAt = java.util.concurrent.atomic.AtomicLong(0)
         val firstPlayback = java.util.concurrent.atomic.AtomicBoolean(true)
@@ -315,8 +333,9 @@ class MainActivity : ComponentActivity() {
                 val engine = requireNotNull(conversationEngine)
                 resetNativeConversation()
                 conversationCharacters = 0
-                check(kokoroModelStore.isReady()) { "The local voice output model is not ready." }
-                val output = SherpaKokoroVoiceOutput(kokoroModelStore.directory().path,
+                val ttsDirectory = ttsModels.ensureReady(ttsEngine, ::status)
+                val output = SherpaKokoroVoiceOutput(ttsDirectory.path, engine = ttsEngine,
+                    onMetrics = { ttsComparisonStore.add(ttsEngine, "voice-call", asrTurnId, it) },
                     log = { diagnosticRecorder.record("Voice TTS: $it") })
                 voiceOutput = output
                 activeVoiceOutput = output
@@ -692,7 +711,7 @@ class MainActivity : ComponentActivity() {
 
     private fun copyDiagnostics(transcript: List<ChatEntry>) {
         val visible = transcript.joinToString("\n\n") { "${it.role}: ${it.text}" }
-        val diagnostics = "Jarvis OS V2 chat diagnostics\n\nVisible transcript:\n$visible\n\nRuntime diagnostics (retained until the next session):\n${diagnosticRecorder.snapshot()}\n\nASR comparisons (last 20 turns, retained across calls):\n${asrComparisonStore.snapshot()}"
+        val diagnostics = "Jarvis OS V2 chat diagnostics\n\nVisible transcript:\n$visible\n\nRuntime diagnostics (retained until the next session):\n${diagnosticRecorder.snapshot()}\n\nASR comparisons (last 20 turns, retained across calls):\n${asrComparisonStore.snapshot()}\n\nTTS comparisons (last 40 sessions):\n${ttsComparisonStore.snapshot()}"
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Jarvis diagnostics", diagnostics))
     }

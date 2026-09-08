@@ -13,6 +13,10 @@ class ConversationPromptBuilder(
         history: List<ChatEntry>,
         seedContext: Boolean
     ): String {
+        val dialogue = DialogueContextPolicy.resolve(userPrompt, history.map { it.role to it.text })
+        val dialogueInstruction = if (dialogue.recall)
+            "Answer from the recent conversation. This is recall of dialogue, not a request for external facts. If the detail is missing, say so; do not invent it."
+        else dialogue.storyInstruction.orEmpty()
         val actionContext = actionResultContext?.let { "\n\n$it" }.orEmpty()
         val sessionContext = if (seedContext) {
             shortTermContext.promptContext(history.map { it.role to it.text })
@@ -41,6 +45,8 @@ class ConversationPromptBuilder(
             repetition or a long preamble.
             
             $sessionContext
+
+            $dialogueInstruction
 
             Current user message:
             $userPrompt

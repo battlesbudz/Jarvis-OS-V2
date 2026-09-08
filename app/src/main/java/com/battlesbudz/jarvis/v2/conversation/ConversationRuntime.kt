@@ -56,7 +56,7 @@ internal fun MainActivity.runConversationInternal(
                 var actionResultForGemma: String? = null
                 var actionResultMessage: String? = null
                 var actionName: String? = null
-                val turnPlan = turnOrchestrator.plan(prompt)
+                val turnPlan = turnOrchestrator.plan(prompt, history.map { it.role to it.text })
                 val acceptedPreparation = preparedVoice?.takeIf {
                     imageUri == null && turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT &&
                         it.matches(prompt) && !it.failed
