@@ -24,13 +24,17 @@ import kotlinx.coroutines.launch
 class AndroidAudioInput(
     private val scope: CoroutineScope,
     private val format: AudioFormat = AudioFormat(),
-    private val chunkSamples: Int = 1_600
+    private val chunkSamples: Int = 1_600,
+    private val audioManager: android.media.AudioManager? = null,
+    private val onWaiting: (Boolean) -> Unit = {}
 ) : AudioInput {
     override val sampleRateHz: Int = format.sampleRateHz
     override val channelCount: Int = format.channelCount
 
     private val emittedChunks = Channel<ByteArray>(64)
-    private var recorder: AudioRecord? = null
+    @Volatile private var recorder: AudioRecord? = null
+    @Volatile var ownsRecorder = false
+        private set
     private var captureJob: Job? = null
 
     override fun chunks(): Flow<ByteArray> = emittedChunks.receiveAsFlow()
@@ -40,6 +44,12 @@ class AndroidAudioInput(
         check(format.channelCount == 1 && format.bitsPerSample == 16) {
             "AndroidAudioInput currently requires PCM16 mono input."
         }
+        var waiting = false
+        while (busy(null)) {
+            if (!waiting) { onWaiting(true); waiting = true }
+            kotlinx.coroutines.delay(250)
+        }
+        if (waiting) onWaiting(false)
         val minBuffer = AudioRecord.getMinBufferSize(
             format.sampleRateHz,
             AndroidAudioFormat.CHANNEL_IN_MONO,
@@ -47,13 +57,14 @@ class AndroidAudioInput(
         )
         check(minBuffer > 0) { "The microphone could not be initialized." }
         val bufferSize = maxOf(minBuffer, format.sampleRateHz * 2)
-        val created = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
-            format.sampleRateHz,
-            AndroidAudioFormat.CHANNEL_IN_MONO,
-            AndroidAudioFormat.ENCODING_PCM_16BIT,
-            bufferSize
-        )
+        val builder = AudioRecord.Builder()
+            .setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
+            .setAudioFormat(AndroidAudioFormat.Builder().setSampleRate(format.sampleRateHz)
+                .setChannelMask(AndroidAudioFormat.CHANNEL_IN_MONO)
+                .setEncoding(AndroidAudioFormat.ENCODING_PCM_16BIT).build())
+            .setBufferSizeInBytes(bufferSize)
+        if (android.os.Build.VERSION.SDK_INT >= 30) builder.setPrivacySensitive(false)
+        val created = builder.build()
         if (created.state != AudioRecord.STATE_INITIALIZED) {
             created.release()
             error("The microphone could not be initialized.")
@@ -67,13 +78,17 @@ class AndroidAudioInput(
         }
         val ready = CompletableDeferred<Unit>()
         recorder = created
+        ownsRecorder = true
         captureJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 withContext(Dispatchers.IO) {
                     val pcm = ByteArray(chunkSamples * 2)
                     var capturedBytes = 0
                     while (isActive) {
-                        val count = created.read(pcm, 0, pcm.size)
+                        if (busy(created)) throw MicrophoneBusyException()
+                        val count = created.read(pcm, 0, pcm.size, AudioRecord.READ_NON_BLOCKING)
+                        if (busy(created)) throw MicrophoneBusyException()
+                        if (count == 0) { kotlinx.coroutines.delay(20); continue }
                         if (count > 0) {
                             check(emittedChunks.trySend(pcm.copyOf(count)).isSuccess) {
                                 "Microphone processing fell behind: audio queue is full."
@@ -94,11 +109,20 @@ class AndroidAudioInput(
             } finally {
                 runCatching { created.stop() }
                 created.release()
-                if (recorder === created) recorder = null
+                if (recorder === created) { recorder = null; ownsRecorder = false }
             }
         }
         try { withTimeout(5000) { ready.await() } }
         catch (error: Throwable) { stop(); throw error }
+    }
+
+    private fun busy(record: AudioRecord?): Boolean {
+        val manager = audioManager ?: return false
+        return MicrophonePolicy.shouldYield(
+            manager.activeRecordingConfigurations.size, record != null,
+            record?.activeRecordingConfiguration?.isClientSilenced == true,
+            manager.mode == android.media.AudioManager.MODE_IN_CALL ||
+                manager.mode == android.media.AudioManager.MODE_IN_COMMUNICATION || manager.isMicrophoneMute)
     }
 
     override suspend fun stop() {

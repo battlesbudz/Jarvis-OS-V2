@@ -40,6 +40,8 @@ class AudioTurnCapture(
     private var captureReadyMs = 0L
     private val turnCompleted = CompletableDeferred<Boolean>()
     private var stopped = false
+    @Volatile private var endRequested = false
+    fun finishNow() { endRequested = true }
     @Volatile var hasSpeech: Boolean = false
         private set
 
@@ -100,6 +102,7 @@ class AudioTurnCapture(
                     maxDecodeChunkMs = maxOf(maxDecodeChunkMs, chunkDecodeMs)
                     if (hasSpeech && partial != null) publishPartial(partial)
                     var reason = when {
+                        endRequested -> "explicit_stop"
                         hasSpeech && now - lastSpeechAt >= trailingSilenceMs -> "trailing_silence"
                         hasSpeech && synchronized(pcm) { pcm.size() >= MAX_TURN_BYTES } -> "max_turn_duration"
                         !hasSpeech && initialSilenceTimeoutMs != null && now - startedAt >= initialSilenceTimeoutMs -> "initial_silence"

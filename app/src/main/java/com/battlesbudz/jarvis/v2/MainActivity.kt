@@ -135,6 +135,11 @@ class MainActivity : ComponentActivity() {
     private var activeVoiceCapture: AudioTurnCapture? = null
     private var voiceTurnJob: Job? = null
     private var voiceServiceStarted = false
+    private var voiceSessionArmed = false
+    private var sessionReport: (String) -> Unit = {}
+    private var notificationPermissionAsked = false
+    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     private val voiceCallResumer by lazy {
         com.battlesbudz.jarvis.v2.voice.VoiceCallResumer(voiceSessionController)
     }
@@ -183,6 +188,11 @@ class MainActivity : ComponentActivity() {
             getSharedPreferences("voice_calls", MODE_PRIVATE)
         )
         voiceSessionController = VoiceSessionController(voiceCallStore)
+        lifecycleScope.launch {
+            com.battlesbudz.jarvis.v2.voice.VoiceCallService.stopRequested.collect { stop ->
+                if (stop && voiceSessionArmed) endVoiceCall(sessionReport)
+            }
+        }
         asrComparisonStore = com.battlesbudz.jarvis.v2.voice.AsrComparisonStore(getSharedPreferences("asr_comparison", MODE_PRIVATE))
         ttsComparisonStore = com.battlesbudz.jarvis.v2.voice.TtsComparisonStore(getSharedPreferences("tts_comparison", MODE_PRIVATE))
         ttsModels = com.battlesbudz.jarvis.v2.voice.TtsModelStore(applicationContext, kokoroModelStore)
@@ -228,6 +238,8 @@ class MainActivity : ComponentActivity() {
                     runDirectAudioToolSmokeTest(report, onFinished)
                 },
                 onVoiceTurn = { start, report, onTranscript, onFinished ->
+                    voiceSessionArmed = start
+                    sessionReport = report
                     runVoiceTurn(start, report, onTranscript, onFinished)
                 },
                 onEndVoiceCall = { report -> endVoiceCall(report) },
@@ -287,10 +299,10 @@ class MainActivity : ComponentActivity() {
             onFinished(message)
             return
         }
-        if (voiceSessionController.state.value == VoiceSessionState.PASSIVE_LISTENING) {
-            voiceSessionController.beginCall().also {
-                startVoiceDiagnostics("Voice Call ${it.id}")
-            }
+        if (android.os.Build.VERSION.SDK_INT >= 33 && !notificationPermissionAsked &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermissionAsked = true
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         if (!voiceServiceStarted) {
             try {
@@ -310,16 +322,21 @@ class MainActivity : ComponentActivity() {
         val asrTurnId = java.util.UUID.randomUUID().toString()
         val finalReadyAt = java.util.concurrent.atomic.AtomicLong(0)
         val firstPlayback = java.util.concurrent.atomic.AtomicBoolean(true)
-        val voiceHistory = voiceSessionController.conversationContext().map { ChatEntry(it.role, it.text) }
         voiceTurnJob = lifecycleScope.launch(Dispatchers.Default) {
             var operationOwned = false
             var preparation: VoicePreparation? = null
             var capture: AudioTurnCapture? = null
+            var microphone: AndroidAudioInput? = null
             var voiceOutput: SherpaKokoroVoiceOutput? = null
             val speechChunks = Channel<String>(Channel.UNLIMITED)
             var speechJob: Job? = null
+            var microphoneWatcher: Job? = null
+            var microphoneYielded = false
             var finalMessage = "Voice Call turn failed."
-            fun status(message: String) { mainHandler.post { report(message) } }
+            fun status(message: String) {
+                com.battlesbudz.jarvis.v2.voice.VoiceCallService.updateStatus(message)
+                mainHandler.post { report(message) }
+            }
             try {
                 check(activeConversationJobs.get() == 0 && modelStore.tryBeginModelOperation()) {
                     "Another model operation is still finishing. Please try again in a moment."
@@ -345,12 +362,42 @@ class MainActivity : ComponentActivity() {
                 resetNativeConversation()
                 conversationCharacters = 0
                 val ttsDirectory = ttsModels.ensureReady(ttsEngine, ::status)
+                val input = AndroidAudioInput(this,
+                    audioManager = getSystemService(android.media.AudioManager::class.java),
+                    onWaiting = { waiting -> status(if (waiting) "Paused — microphone in use by another app" else "Preparing microphone…") })
+                microphone = input
+                if (voiceSessionController.currentCallId() == null) {
+                    val wakeDirectory = com.battlesbudz.jarvis.v2.voice.WakeWordModelStore(applicationContext).ensureReady(::status)
+                    com.battlesbudz.jarvis.v2.voice.PassiveWakeListener(wakeDirectory).use { wake ->
+                        input.start()
+                        status("Waiting for Hey Jarvis — microphone active")
+                        wake.awaitWake(input)
+                    }
+                    voiceSessionController.beginCall().also { startVoiceDiagnostics("Voice Call ${it.id}") }
+                    diagnosticRecorder.recordImportant("Wake word detected: Hey Jarvis. ASR and call audio start now.")
+                    status("Hey Jarvis detected — starting call")
+                }
+                val voiceHistory = voiceSessionController.conversationContext().map { ChatEntry(it.role, it.text) }
                 val output = SherpaKokoroVoiceOutput(ttsDirectory.path, engine = ttsEngine,
                     onPlayback = { voicePlayback.value = it },
                     onMetrics = { ttsComparisonStore.add(ttsEngine, "voice-call", asrTurnId, it) },
                     log = { diagnosticRecorder.record("Voice TTS: $it") })
                 voiceOutput = output
                 activeVoiceOutput = output
+                val turnOwner = kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]!!
+                microphoneWatcher = launch {
+                    val manager = getSystemService(android.media.AudioManager::class.java)
+                    while (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true) {
+                        if (!input.ownsRecorder && com.battlesbudz.jarvis.v2.voice.MicrophonePolicy.shouldYield(
+                            manager.activeRecordingConfigurations.size, false, manager.isMicrophoneMute,
+                            manager.mode == android.media.AudioManager.MODE_IN_CALL || manager.mode == android.media.AudioManager.MODE_IN_COMMUNICATION)) {
+                            output.stopSpeaking()
+                            turnOwner.cancel(com.battlesbudz.jarvis.v2.voice.MicrophoneYieldCancellation())
+                            break
+                        }
+                        kotlinx.coroutines.delay(250)
+                    }
+                }
                 // Preload Kokoro while listening; this channel stays empty until final validation.
                 speechJob = launch(Dispatchers.Default) {
                     try {
@@ -376,7 +423,7 @@ class MainActivity : ComponentActivity() {
                 }, log = { diagnosticRecorder.record("Voice preparation: $it") })
                 preparation = speculative
                 val activeCapture = AudioTurnCapture(
-                    AndroidAudioInput(this), this,
+                    input, this,
                     createDetector = { SileroSpeechDetector.create(assets) },
                     log = { diagnosticRecorder.record("Voice input: $it") },
                     createTranscriber = {
@@ -464,8 +511,18 @@ class MainActivity : ComponentActivity() {
                 speechChunks.close()
                 speechJob?.join()
                 finalMessage = "Voice Call turn complete. Heard: $transcript\nJarvis: ${response.text}"
+            } catch (busy: com.battlesbudz.jarvis.v2.voice.MicrophoneBusyException) {
+                diagnosticRecorder.recordImportant("Microphone yielded; partial turn discarded. Returning to passive mode when available.")
+                runCatching { voiceSessionController.interrupt() }
+                finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " microphone yielded."
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                throw cancelled
+                if (cancelled is com.battlesbudz.jarvis.v2.voice.MicrophoneYieldCancellation ||
+                    cancelled.cause is com.battlesbudz.jarvis.v2.voice.MicrophoneYieldCancellation) {
+                    microphoneYielded = true
+                    diagnosticRecorder.recordImportant("Mic use by another app interrupted speech/reasoning; returning to passive mode.")
+                    runCatching { voiceSessionController.interrupt() }
+                    finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " microphone yielded."
+                } else throw cancelled
             } catch (error: Throwable) {
                 diagnosticRecorder.record("Voice turn failed: ${error.stackTraceToString().take(4000)}")
                 runCatching { voiceSessionController.interrupt() }
@@ -473,9 +530,12 @@ class MainActivity : ComponentActivity() {
             } finally {
                 val cancelled = kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive != true
                 withContext(kotlinx.coroutines.NonCancellable) {
+                    microphoneWatcher?.cancel()
+                    microphoneWatcher?.join()
                     if (cancelled) { conversationJob?.cancel(); conversationJob?.join() }
                     try {
                         runCatching { capture?.stop() }
+                        runCatching { microphone?.stop() }
                         preparation?.close()
                     } finally {
                         speechChunks.close()
@@ -488,13 +548,19 @@ class MainActivity : ComponentActivity() {
                         if (operationOwned) modelStore.endModelOperation()
                     }
                 }
-                if (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true) {
+                if (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true || microphoneYielded) {
                     // Re-arm only after this job (including all children) has actually finished.
                     kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.invokeOnCompletion {
                         mainHandler.post {
-                            if (voiceSessionController.currentCallId() == null) stopVoiceService()
                             report(finalMessage)
                             onFinished(finalMessage)
+                            if (voiceSessionArmed && !finalMessage.contains("turn failed", true)) {
+                                // Runtime owns re-arming, independent of Compose rendering or visibility.
+                                runVoiceTurn(true, report, onTranscript, onFinished)
+                            } else {
+                                voiceSessionArmed = false
+                                stopVoiceService()
+                            }
                         }
                     }
                 }
@@ -507,6 +573,7 @@ class MainActivity : ComponentActivity() {
         // the capture coroutine can survive the UI transition and the next
         // Voice Call cannot acquire the microphone.
         pendingVoiceTurn = null
+        voiceSessionArmed = false
         stopVoiceService()
         activeVoiceOutput?.stopSpeaking()
         voiceTurnJob?.cancel()
@@ -517,7 +584,7 @@ class MainActivity : ComponentActivity() {
                 voiceSessionController.end()
             }
         }.onFailure { report("Voice Call could not be saved: ${it.message ?: "unknown error"}") }
-            .onSuccess { report("Voice Call saved on this phone.") }
+            .onSuccess { report("Jarvis session stopped — microphone off.") }
     }
 
     private fun runDirectAudioSmokeTest(
@@ -757,6 +824,7 @@ class MainActivity : ComponentActivity() {
 
     
     override fun onDestroy() {
+        voiceSessionArmed = false
         stopVoiceService()
         activeVoiceOutput?.stopSpeaking()
         voiceTurnJob?.cancel()

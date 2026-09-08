@@ -58,7 +58,8 @@ class AndroidMobileActionExecutor(
                     resolution.app.activityName
                 )
                 if (!canLaunchDirectly()) {
-                    AppLaunchNotification.offer(context, launchIntent, resolution.app.label)
+                    com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.launch(context, launchIntent, resolution.app.label)
+                        ?: AppLaunchNotification.offer(context, launchIntent, resolution.app.label)
                 } else runCatching {
                     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(launchIntent)

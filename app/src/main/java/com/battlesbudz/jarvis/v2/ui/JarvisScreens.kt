@@ -592,6 +592,10 @@ private fun VoiceCallScreen(
             start,
             { update ->
                 status = update
+                if (update.startsWith("Waiting") || update.startsWith("Paused")) listening = false
+                if (update.startsWith("Jarvis session stopped")) {
+                    callStarted = false; listening = false; turnInFlight = false
+                }
                 if (update.startsWith("Processing your Voice Call") || update.startsWith("Preparing")) listening = false
                 if (update.startsWith("Voice Call is listening")) listening = true
             },
@@ -618,14 +622,11 @@ private fun VoiceCallScreen(
                 val failed = result.contains("could not start", ignoreCase = true) ||
                     result.contains("turn failed", ignoreCase = true) ||
                     result.contains("permission", ignoreCase = true)
-                if (result.startsWith(com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX) || failed) {
+                if (failed) {
                     callStarted = false
                 }
-                if (callStarted && !failed) {
-                    requestVoiceTurn(start = true)
-                } else {
-                    listening = false
-                }
+                listening = false
+                if (callStarted && !failed) turnInFlight = true
             }
         )
     }
@@ -681,7 +682,17 @@ private fun VoiceCallScreen(
             }
         }
         TextButton(onClick = { ttsSettingsOpen = true }) { Text("Voice: ${selectedTts.label}") }
+        val assistantContext = androidx.compose.ui.platform.LocalContext.current
+        TextButton(onClick = {
+            val roles = assistantContext.getSystemService(android.app.role.RoleManager::class.java)
+            val intent = if (roles.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT))
+                roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT)
+            else android.content.Intent(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS)
+            assistantContext.startActivity(intent)
+        }, enabled = !callStarted) { Text("Set Jarvis as default assistant") }
         val phase = when {
+            status.startsWith("Paused") -> "Mic paused"
+            status.startsWith("Waiting") -> "Hey Jarvis"
             listening -> "Listening"
             status.contains("speaking", true) && turnInFlight -> "Speaking"
             turnInFlight -> "Thinking"
@@ -701,10 +712,10 @@ private fun VoiceCallScreen(
             // Once a turn is armed, silence detection owns the turn boundary.
             // The separate End Voice Call control remains available for an
             // explicit stop.
-            enabled = !listening && !turnInFlight,
+            enabled = !callStarted && !listening && !turnInFlight,
             modifier = Modifier.fillMaxWidth().padding(top = 24.dp)
         ) {
-            Text(if (listening) "Listening automatically…" else "Start Voice Call")
+            Text(if (callStarted) "Jarvis session active" else "Start Jarvis session")
         }
         if (callStarted) {
             TextButton(
@@ -720,10 +731,10 @@ private fun VoiceCallScreen(
                 },
                 modifier = Modifier.padding(top = 4.dp)
             ) {
-                Text("End Voice Call")
+                Text("Stop Jarvis session")
             }
         }
-        if (status.contains("failed", true) || status.contains("permission", true)) {
+        if (status.startsWith("Waiting") || status.startsWith("Paused") || status.contains("failed", true) || status.contains("permission", true)) {
             Text(status, style = MaterialTheme.typography.bodySmall)
         }
         TextButton(

@@ -14,40 +14,67 @@ import com.battlesbudz.jarvis.v2.MainActivity
 /** Keeps a user-started call eligible for microphone and playback after pressing Home. */
 class VoiceCallService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
+    private var status = "Preparing Jarvis session — microphone not yet armed"
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
+        stopRequested.value = false
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(
             CHANNEL, "Voice Calls", NotificationManager.IMPORTANCE_LOW
         ))
-        val open = PendingIntent.getActivity(this, 0,
-            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val notification = Notification.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("Jarvis Voice Call")
-            .setContentText("Listening and speaking. Tap to return to the call.")
-            .setContentIntent(open)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .setOngoing(true)
-            .build()
-        startForeground(481, notification,
+        startForeground(481, notification(),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         wakeLock = getSystemService(PowerManager::class.java)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jarvis:voice-call")
             .apply { acquire() }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_NOT_STICKY
+    private fun notification(): Notification {
+        val open = PendingIntent.getActivity(this, 0,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val stop = PendingIntent.getService(this, 1,
+            Intent(this, VoiceCallService::class.java).setAction(STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        return Notification.Builder(this, CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle("Jarvis session")
+            .setContentText(status)
+            .setContentIntent(open)
+            .addAction(Notification.Action.Builder(null, "Stop session", stop).build())
+            .setCategory(Notification.CATEGORY_SERVICE).setOngoing(true).setOnlyAlertOnce(true).build()
+    }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == STOP) { stopRequested.value = true; stopSelf() }
+        return START_NOT_STICKY
+    }
     override fun onBind(intent: Intent?): IBinder? = null
-    override fun onTaskRemoved(rootIntent: Intent?) { stopSelf() }
+    override fun onTaskRemoved(rootIntent: Intent?) { stopRequested.value = true; stopSelf() }
     override fun onDestroy() {
+        if (instance === this) instance = null
+        stopRequested.value = true
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
 
-    companion object { private const val CHANNEL = "jarvis_voice_calls" }
+    companion object {
+        private const val CHANNEL = "jarvis_voice_calls"
+        private const val STOP = "com.battlesbudz.jarvis.v2.STOP_SESSION"
+        private var instance: VoiceCallService? = null
+        val stopRequested = kotlinx.coroutines.flow.MutableStateFlow(false)
+        fun updateStatus(message: String) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                instance?.let {
+                    if (it.status != message) {
+                        it.status = message
+                        it.getSystemService(NotificationManager::class.java).notify(481, it.notification())
+                    }
+                }
+            }
+        }
+    }
 }
