@@ -4,6 +4,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.PlaybackParams
+import android.os.Build
 import com.k2fsa.sherpa.onnx.GenerationConfig
 import com.k2fsa.sherpa.onnx.OfflineTts
 import kotlinx.coroutines.*
@@ -48,6 +49,8 @@ class SherpaKokoroVoiceOutput(
         var firstPcmMs: Long? = null
         var inputChars = 0
         val textHash = java.security.MessageDigest.getInstance("SHA-256")
+        var playbackMonitor: Job? = null
+        var playbackConfirmed = false
         var completed = false
         var failureMessage: String? = null
         var finalUnderruns = 0
@@ -90,6 +93,10 @@ class SherpaKokoroVoiceOutput(
                     val pcm = ShortArray(generated.samples.size) { i ->
                         (generated.samples[i].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
                     }
+                    val peak = generated.samples.maxOfOrNull { kotlin.math.abs(it) } ?: 0f
+                    val rms = kotlin.math.sqrt(generated.samples.sumOf { it.toDouble() * it } /
+                        generated.samples.size.coerceAtLeast(1))
+                    log("tts_pcm_level index=$phraseIndex rms=$rms peak=$peak frames=${pcm.size}")
                     val frames = pcm.size.toLong()
                     if (firstPcmMs == null) firstPcmMs = elapsedMs(started)
                     log("tts_first_audio index=$phraseIndex latencyMs=${elapsedMs(started)}")
@@ -147,7 +154,7 @@ class SherpaKokoroVoiceOutput(
                         first = false
                         if (stopped) break
                     }
-                    val track = audioTrack ?: createTrack(phrase.sampleRate).also {
+                    val track = audioTrack ?: createTrack(phrase.sampleRate, phrase.pcm.size).also {
                         audioTrack = it
                         // Stretch existing PCM instead of asking Kokoro to synthesize more samples.
                         // Unsupported device routes retain normal-speed playback.
@@ -159,23 +166,42 @@ class SherpaKokoroVoiceOutput(
                         playbackSpeed = it.playbackParams.speed
                         log("audio_playback_pace speed=$playbackSpeed pitch=1.0")
                         it.play()
+                        val startedTrack = it
+                        playbackMonitor = launch {
+                            while (isActive && !stopped) {
+                                val head = unsignedHead(startedTrack)
+                                if (head > 0) {
+                                    playbackConfirmed = true
+                                    log("audio_playback_confirmed playbackHead=$head routeType=${startedTrack.routedDevice?.type} " +
+                                        "routeId=${startedTrack.routedDevice?.id}")
+                                    onChunkStarted("audio")
+                                    break
+                                }
+                                delay(10)
+                            }
+                        }
                     }
                     if (lastWriteAt != 0L) {
                         val gap = (elapsedMs(lastWriteAt) - lastQueuedMs).coerceAtLeast(0)
                         estimatedGapMs += gap
                         if (gap > 50) log("audio_supply_gap index=${phrase.index} estimatedMs=$gap")
                     }
-                    onChunkStarted("audio")
                     val queued = (framesWritten.toLong() - unsignedHead(track)).coerceAtLeast(0)
                     log("audio_phrase_ready index=${phrase.index} pcmFrames=${phrase.pcm.size} " +
                         "queuedBeforeFrames=$queued underruns=${track.underrunCount}")
                     val start = System.nanoTime()
                     var offset = 0
+                    var lastWriteProgress = System.nanoTime()
                     while (offset < phrase.pcm.size && !stopped) {
                         ensureActive()
                         val written = track.write(phrase.pcm, offset, phrase.pcm.size - offset, AudioTrack.WRITE_NON_BLOCKING)
                         check(written >= 0) { "AudioTrack rejected voice PCM output: $written" }
-                        if (written == 0) { delay(10); continue }
+                        if (written == 0) {
+                            check(elapsedMs(lastWriteProgress) < 5000) { "AudioTrack stopped accepting speech PCM." }
+                            delay(10)
+                            continue
+                        }
+                        lastWriteProgress = System.nanoTime()
                         offset += written
                         framesWritten += written
                     }
@@ -186,8 +212,28 @@ class SherpaKokoroVoiceOutput(
                         "queuedAfterFrames=${(framesWritten.toLong() - unsignedHead(track)).coerceAtLeast(0)} underruns=${track.underrunCount}")
                 }
                 producer.join()
-                if (!stopped && framesWritten > 0) drainAudioTrack(framesWritten, outputSampleRate, playbackSpeed)
-                completed = !stopped && framesWritten > 0
+                if (!stopped && framesWritten > 0) {
+                    val track = requireNotNull(audioTrack)
+                    // Older Android versions cannot lower the start threshold. A finite
+                    // short stream must fill that threshold with silence to start at all.
+                    val threshold = if (Build.VERSION.SDK_INT >= 31) track.startThresholdInFrames else track.bufferSizeInFrames
+                    val padding = (threshold - framesWritten).coerceAtLeast(0)
+                    if (padding > 0 && unsignedHead(track) == 0L) {
+                        log("audio_short_clip_padding frames=$padding")
+                        val zeros = ShortArray(padding)
+                        var offset = 0
+                        val deadline = System.nanoTime() + 3_000_000_000L
+                        while (offset < zeros.size && !stopped) {
+                            ensureActive()
+                            check(System.nanoTime() < deadline) { "AudioTrack short-clip padding timed out." }
+                            val written = track.write(zeros, offset, zeros.size - offset, AudioTrack.WRITE_NON_BLOCKING)
+                            check(written >= 0) { "AudioTrack rejected short-clip padding: $written" }
+                            if (written == 0) delay(10) else offset += written
+                        }
+                    }
+                    completed = drainAudioTrack(framesWritten, outputSampleRate, playbackSpeed)
+                    if (!completed && !stopped) error("AudioTrack playback timed out before all speech was consumed.")
+                }
                 finalUnderruns = audioTrack?.underrunCount ?: 0
             }
         } catch (error: Throwable) {
@@ -198,6 +244,10 @@ class SherpaKokoroVoiceOutput(
             stopped = true
             // Unblock the native producer waiting on a full queue before joining its native owner.
             audio.cancel()
+            withContext(NonCancellable) { playbackMonitor?.cancelAndJoin() }
+            val playedFrames = audioTrack?.let(::unsignedHead) ?: 0L
+            val outputRoute = audioTrack?.routedDevice?.let { "type=${it.type} id=${it.id}" }
+            finalUnderruns = audioTrack?.underrunCount ?: finalUnderruns
             audioTrack?.stopSafely()
             audioTrack = null
             withContext(NonCancellable) { producer.cancelAndJoin() }
@@ -207,7 +257,8 @@ class SherpaKokoroVoiceOutput(
                 onMetrics(TtsSessionMetrics(loadMs, firstPcmMs, totalSynthesisMs, totalAudioMs,
                     totalQueueWaitMs, playbackSpeed, estimatedGapMs, finalUnderruns, phraseCount,
                     inputChars, textHash.digest().joinToString("") { "%02x".format(it) }, numThreads,
-                    completed && !wasStopped && failureMessage == null, failureMessage))
+                    completed && !wasStopped && failureMessage == null, failureMessage,
+                    playbackConfirmed, playedFrames, framesWritten.toLong(), outputRoute))
             }.onFailure { log("tts_metrics_failed reason=${it.message}") }
             log("tts_session_finished phrases=$phraseCount synthesisMs=$totalSynthesisMs " +
                 "audioDurationMs=$totalAudioMs queueWaitMs=$totalQueueWaitMs playbackSpeed=$playbackSpeed " +
@@ -227,19 +278,17 @@ class SherpaKokoroVoiceOutput(
     private fun elapsedMs(start: Long) = (System.nanoTime() - start) / 1_000_000
     private fun unsignedHead(track: AudioTrack) = track.playbackHeadPosition.toLong() and 0xffffffffL
 
-    private suspend fun drainAudioTrack(framesWritten: Int, sampleRate: Int, speed: Float) {
-        val track = audioTrack ?: return
-        val deadline = System.currentTimeMillis() +
-            (framesWritten * 1_000.0 / sampleRate / speed).toLong().coerceAtLeast(1_000L) + 2_000L
+    private suspend fun drainAudioTrack(framesWritten: Int, sampleRate: Int, speed: Float): Boolean {
+        val track = audioTrack ?: return false
         log("audio_track_drain_started frames=$framesWritten sampleRate=$sampleRate state=${track.state} underruns=${track.underrunCount}")
-        while (!stopped && System.currentTimeMillis() < deadline) {
-            if (unsignedHead(track) >= framesWritten.toLong()) break
-            delay(20L)
-        }
-        log("audio_track_drain_finished playbackHead=${track.playbackHeadPosition} stopped=$stopped underruns=${track.underrunCount}")
+        val drained = PlaybackDrain.await(framesWritten.toLong(), sampleRate, speed,
+            head = { unsignedHead(track) }, stopped = { stopped })
+        log("audio_track_drain_finished playbackHead=${unsignedHead(track)} targetFrames=$framesWritten " +
+            "drained=$drained stopped=$stopped underruns=${track.underrunCount}")
+        return drained
     }
 
-    private fun createTrack(sampleRate: Int): AudioTrack {
+    private fun createTrack(sampleRate: Int, firstPhraseFrames: Int): AudioTrack {
         log("audio_track_create sampleRate=$sampleRate")
         val minBuffer = AudioTrack.getMinBufferSize(
             sampleRate,
@@ -269,6 +318,13 @@ class SherpaKokoroVoiceOutput(
             .build().also { track ->
                 check(track.state == AudioTrack.STATE_INITIALIZED) {
                     "AudioTrack could not initialize for Kokoro output."
+                }
+                if (Build.VERSION.SDK_INT >= 31) {
+                    val requested = PlaybackDrain.startThreshold(sampleRate, firstPhraseFrames)
+                    val actual = track.setStartThresholdInFrames(requested)
+                    log("audio_start_threshold requestedFrames=$requested actualFrames=$actual capacityFrames=${track.bufferCapacityInFrames}")
+                } else {
+                    log("audio_start_threshold legacy=true capacityFrames=${track.bufferCapacityInFrames}")
                 }
                 track.setVolume(1.0f)
                 log("audio_track_ready state=${track.state} sampleRate=$sampleRate buffer=$bufferSize")

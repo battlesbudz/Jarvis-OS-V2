@@ -57,6 +57,19 @@ internal fun MainActivity.runConversationInternal(
                 var actionResultMessage: String? = null
                 var actionName: String? = null
                 val turnPlan = turnOrchestrator.plan(prompt, history.map { it.role to it.text })
+                val repeatReply = if (imageUri == null) com.battlesbudz.jarvis.v2.ai.LastReplyRecall.resolve(
+                    prompt, history.map { it.role to it.text }
+                ) else null
+                if (repeatReply != null) {
+                    // Speculation may have guessed an older reply. The saved visible
+                    // answer is authoritative; repeating it never reruns a phone tool.
+                    preparedVoice?.discard()
+                    resetNativeConversation()
+                    turnOrchestrator.recordResponse(prompt, repeatReply, turnPlan)
+                    diagnosticRecorder.record("Dialogue recall: source=latest_visible_reply chars=${repeatReply.length}")
+                    mainHandler.post { onComplete(repeatReply) }
+                    return@launch
+                }
                 val acceptedPreparation = preparedVoice?.takeIf {
                     imageUri == null && turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT &&
                         it.matches(prompt) && !it.failed

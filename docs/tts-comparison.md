@@ -67,3 +67,15 @@ Miro is an additional British English male voice from TigreGotico Lda / OpenVoic
 - Preserve the included README and license information. The pinned Sherpa bundle README states CC BY-NC-SA 4.0; the current upstream model card states CC BY-NC-ND 4.0. Both restrict commercial use. The app identifies the creator and non-commercial restriction when selected; commercial release needs permission from the rights holder. The model is downloaded unchanged, with no retraining or voice conversion.
 
 Validation: the exact pinned archive generated nonempty 22,050 Hz audio through Sherpa 1.13.7 on the host. Android CI covers compilation, unit tests, native packaging and signing. Phone acceptance is selecting Miro, running Test selected voice, copying diagnostics, and comparing pronunciation and long-response gaps against Alan and Kokoro.
+
+## Short-reply playback and exact recall
+
+AudioTrack's default streaming startup threshold equals its buffer capacity. The two-second buffer could therefore prevent shorter battery/action replies from ever starting. Android 12+ now uses a startup threshold of at most 100 ms, bounded by the first available phrase. The two-second capacity remains for scheduling headroom. Older Android uses end-of-stream silence only when necessary to reach its threshold. Silence padding is excluded from speech duration and synthesis metrics.
+
+Playback-start callbacks now require observed playback-head movement. Completion requires consumption of all speech frames; a drain timeout is an error, not a successful session. Nonblocking writes also have a no-progress timeout. Diagnostics retain `playback_confirmed`, `played_frames`, `speech_frames`, and `output_route` in the TTS comparison records. These indicate Android consumption, not a guarantee of audible sound at the physical speaker. Runtime phrase logs include PCM RMS and peak to distinguish very quiet/model audio from routing problems. Old records show these new fields as unavailable.
+
+Simple repeat requests such as “What did you say?” and “Sorry, can you say that one more time?” return the latest visible assistant entry, including verified tool outcomes. Any prepared draft is discarded before returning that answer. No tool is rerun. Compound requests and questions about specific earlier content remain normal model turns.
+
+Six focused tests cover short-clip startup thresholds, no-progress drain timeout, full consumption, cancellation, latest-tool-result recall, and compound-request exclusions. Kokoro's occasional garble remains unconfirmed: some reported calls use speed 1.0, so time stretching is not established as the cause. No speculative pitch or voice-generation changes are included.
+
+Android behavior reference: https://developer.android.com/reference/android/media/AudioTrack#getStartThresholdInFrames()

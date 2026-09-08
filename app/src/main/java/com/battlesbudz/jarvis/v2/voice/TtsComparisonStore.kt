@@ -9,7 +9,9 @@ data class TtsSessionMetrics(
     val loadMs: Long, val firstPcmMs: Long?, val synthesisMs: Long, val audioMs: Long,
     val queueWaitMs: Long, val playbackSpeed: Float, val supplyGapMs: Long,
     val underruns: Int, val phrases: Int, val textChars: Int, val textSha256: String,
-    val threads: Int, val completed: Boolean, val error: String?
+    val threads: Int, val completed: Boolean, val error: String?,
+    val playbackConfirmed: Boolean? = null, val playedFrames: Long? = null,
+    val speechFrames: Long? = null, val outputRoute: String? = null
 )
 
 /** Comparable raw synthesis measurements, separate from Gemma and ASR latency. */
@@ -31,6 +33,10 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
             .put("estimated_supply_gap_ms", metrics.supplyGapMs).put("underruns_including_drain", metrics.underruns)
             .put("phrases", metrics.phrases).put("text_chars", metrics.textChars).put("text_sha256", metrics.textSha256)
             .put("threads", metrics.threads).put("completed", metrics.completed).put("error", metrics.error ?: JSONObject.NULL)
+        item.put("playback_confirmed", metrics.playbackConfirmed ?: JSONObject.NULL)
+            .put("played_frames", metrics.playedFrames ?: JSONObject.NULL)
+            .put("speech_frames", metrics.speechFrames ?: JSONObject.NULL)
+            .put("output_route", metrics.outputRoute ?: JSONObject.NULL)
         val array = JSONArray().also { a -> (records() + item).takeLast(40).forEach(a::put) }
         preferences.edit().putString("results", array.toString()).apply()
     }
@@ -43,6 +49,7 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
             appendLine("TTS ${TtsEngine.diagnosticLabel(item.optString("engine"))} atMs=${item.optLong("atMs")}")
             for (key in listOf("model", "source", "sample", "completed", "load_ms", "first_phrase_synthesis_ms",
                 "synthesis_ms", "raw_audio_ms", "rtf", "playback_speed", "estimated_supply_gap_ms",
+                "playback_confirmed", "played_frames", "speech_frames", "output_route",
                 "queue_wait_ms", "underruns_including_drain", "phrases", "threads", "text_chars", "text_sha256", "error"))
                 appendLine("$key=${if (item.isNull(key)) "unavailable" else item.opt(key)}")
         }.trimEnd()
