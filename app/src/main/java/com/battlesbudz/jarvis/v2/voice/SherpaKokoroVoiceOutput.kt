@@ -40,6 +40,7 @@ class SherpaKokoroVoiceOutput(
     override suspend fun speak(chunks: Flow<String>, onChunkStarted: (String) -> Unit) = coroutineScope {
         check(speaking.compareAndSet(false, true)) { "Voice output is already active." }
         stopped = false
+        val speechScope = this
         log("tts_session_started engine=${engine.id} modelDir=$modelDirectory speaker=$speakerId threads=$numThreads workers=1")
         var framesWritten = 0
         var outputSampleRate = 0
@@ -170,7 +171,8 @@ class SherpaKokoroVoiceOutput(
                         log("audio_playback_pace speed=$playbackSpeed pitch=1.0")
                         it.play()
                         val startedTrack = it
-                        playbackMonitor = launch {
+                        // A sibling of the IO writer: its infinite loop must not block the writer returning.
+                        playbackMonitor = speechScope.launch {
                             while (isActive && !stopped) {
                                 val head = unsignedHead(startedTrack)
                                 if (head > 0 && !playbackConfirmed) {

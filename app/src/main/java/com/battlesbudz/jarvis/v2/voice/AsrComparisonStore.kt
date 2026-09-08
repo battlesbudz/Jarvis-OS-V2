@@ -7,6 +7,8 @@ import java.util.Locale
 
 /** Separate from the runtime event ring: comparisons survive playback, new calls and restarts. */
 class AsrComparisonStore(private val preferences: SharedPreferences) {
+    @Synchronized fun clearDiagnostics() { preferences.edit().remove("turns").apply() }
+
     @Synchronized fun records(): List<JSONObject> = runCatching {
         val array = JSONArray(preferences.getString("turns", "[]"))
         (0 until array.length()).map { array.getJSONObject(it) }.takeLast(20)

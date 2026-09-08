@@ -43,8 +43,7 @@ class DiagnosticRecorder(
 
     fun snapshot(): String {
         return synchronized(entries) {
-            preferences.getString("previous_process_exit", "").orEmpty() + "\n\n" +
-                "$sessionLabel\n\n" + entries.takeLast(20).joinToString("\n\n")
+            "$sessionLabel\n\n" + entries.takeLast(20).joinToString("\n\n")
                 .ifBlank { "No runtime events in this session yet." }
         }
     }
@@ -73,7 +72,7 @@ class DiagnosticRecorder(
 
     fun record(entry: String) {
         synchronized(entries) {
-            entries.add("atMs=${System.currentTimeMillis()}\n${entry.take(6_000)}")
+            entries.add("atMs=${System.currentTimeMillis()}\n${entry.take(1_200)}")
             while (entries.size > 20) entries.removeAt(0)
             val persisted = JSONArray().also { array ->
                 entries.takeLast(20).forEach(array::put)

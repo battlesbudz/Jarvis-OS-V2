@@ -16,6 +16,8 @@ data class TtsSessionMetrics(
 
 /** Comparable raw synthesis measurements, separate from Gemma and ASR latency. */
 class TtsComparisonStore(private val preferences: SharedPreferences) {
+    @Synchronized fun clearDiagnostics() { preferences.edit().remove("results").apply() }
+
     @Synchronized fun selectedEngine() = TtsEngine.fromId(preferences.getString("engine", null))
     @Synchronized fun select(engine: TtsEngine) { preferences.edit().putString("engine", engine.id).apply() }
     @Synchronized fun records(): List<JSONObject> = runCatching {

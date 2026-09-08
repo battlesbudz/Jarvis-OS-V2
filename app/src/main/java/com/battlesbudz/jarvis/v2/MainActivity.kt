@@ -134,6 +134,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var asrComparisonStore: com.battlesbudz.jarvis.v2.voice.AsrComparisonStore
     private var activeVoiceCapture: AudioTurnCapture? = null
     private var voiceTurnJob: Job? = null
+    private var voiceServiceStarted = false
     private val voiceCallResumer by lazy {
         com.battlesbudz.jarvis.v2.voice.VoiceCallResumer(voiceSessionController)
     }
@@ -243,7 +244,7 @@ class MainActivity : ComponentActivity() {
                             previousConversation?.join()
                         }
                         result.onSuccess {
-                            diagnosticRecorder.startSession("Voice Call ${it.id} (resumed)")
+                            startVoiceDiagnostics("Voice Call ${it.id} (resumed)")
                         }.onFailure {
                             diagnosticRecorder.record("Voice resume failed: ${it.stackTraceToString().take(4000)}")
                         }
@@ -288,7 +289,20 @@ class MainActivity : ComponentActivity() {
         }
         if (voiceSessionController.state.value == VoiceSessionState.PASSIVE_LISTENING) {
             voiceSessionController.beginCall().also {
-                diagnosticRecorder.startSession("Voice Call ${it.id}")
+                startVoiceDiagnostics("Voice Call ${it.id}")
+            }
+        }
+        if (!voiceServiceStarted) {
+            try {
+                startForegroundService(android.content.Intent(this, com.battlesbudz.jarvis.v2.voice.VoiceCallService::class.java))
+                voiceServiceStarted = true
+            } catch (error: Exception) {
+                runCatching { voiceSessionController.interrupt() }
+                val message = "Voice Call turn failed: background audio could not start: ${error.message}"
+                diagnosticRecorder.record(message)
+                report(message)
+                onFinished(message)
+                return
             }
         }
         val asrEngine = com.battlesbudz.jarvis.v2.voice.MoonshineModelInfo
@@ -475,7 +489,14 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 if (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true) {
-                    mainHandler.post { report(finalMessage); onFinished(finalMessage) }
+                    // Re-arm only after this job (including all children) has actually finished.
+                    kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.invokeOnCompletion {
+                        mainHandler.post {
+                            if (voiceSessionController.currentCallId() == null) stopVoiceService()
+                            report(finalMessage)
+                            onFinished(finalMessage)
+                        }
+                    }
                 }
             }
         }
@@ -486,6 +507,7 @@ class MainActivity : ComponentActivity() {
         // the capture coroutine can survive the UI transition and the next
         // Voice Call cannot acquire the microphone.
         pendingVoiceTurn = null
+        stopVoiceService()
         activeVoiceOutput?.stopSpeaking()
         voiceTurnJob?.cancel()
         conversationJob?.cancel()
@@ -704,9 +726,23 @@ class MainActivity : ComponentActivity() {
         sessionPreferences.edit().putString("transcript", array.toString()).apply()
     }
 
+    private fun startVoiceDiagnostics(label: String) {
+        asrComparisonStore.clearDiagnostics()
+        ttsComparisonStore.clearDiagnostics()
+        diagnosticRecorder.startSession(label)
+    }
+
+    private fun stopVoiceService() {
+        if (voiceServiceStarted) {
+            stopService(android.content.Intent(this, com.battlesbudz.jarvis.v2.voice.VoiceCallService::class.java))
+            voiceServiceStarted = false
+        }
+    }
+
     private fun copyDiagnostics(transcript: List<ChatEntry>) {
-        val visible = transcript.joinToString("\n\n") { "${it.role}: ${it.text}" }
-        val diagnostics = "Jarvis OS V2 chat diagnostics\n\nVisible transcript:\n$visible\n\nRuntime diagnostics (retained until the next session):\n${diagnosticRecorder.snapshot()}\n\nASR comparisons (last 20 turns, retained across calls):\n${asrComparisonStore.snapshot()}\n\nTTS comparisons (last 40 sessions):\n${ttsComparisonStore.snapshot()}"
+        // The runtime ring contains the latest call's ASR, inference and playback events.
+        // Comparison archives and full chat histories do not belong in a call failure report.
+        val diagnostics = "Jarvis OS V2 — latest Voice Call diagnostics\n\n${diagnosticRecorder.snapshot()}"
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Jarvis diagnostics", diagnostics))
     }
@@ -721,6 +757,7 @@ class MainActivity : ComponentActivity() {
 
     
     override fun onDestroy() {
+        stopVoiceService()
         activeVoiceOutput?.stopSpeaking()
         voiceTurnJob?.cancel()
         conversationJob?.cancel()
