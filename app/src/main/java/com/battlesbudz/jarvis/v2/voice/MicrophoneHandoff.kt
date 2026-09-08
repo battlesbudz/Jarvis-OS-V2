@@ -37,8 +37,12 @@ object MicrophoneHandoff {
         pendingRequest.also { pendingRequest = false }
     }
     fun requestInterruption(reason: String) = withRecorderLock {
-        pendingRequest = true
-        interrupted.value = true
+        // Standalone wake tests have no monitor to clear a persistent latch.
+        // Their local input still stops; dictationRequested itself holds dictation priority.
+        if (refresh != null) {
+            pendingRequest = true
+            interrupted.value = true
+        }
         // Stop hardware capture immediately. Its read job remains the sole release owner.
         // Do not wait for ASR/TTS teardown or a main-thread runtime callback.
         recorders.values.forEach { it.stop() }

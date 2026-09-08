@@ -89,4 +89,18 @@ class MicrophoneHandoffTest {
             MicrophoneHandoff.unregisterRecorder(recorder)
         }
     }
+    @Test fun standaloneCaptureDoesNotLeaveAnUnownedInterruptionLatch() {
+        val recorder = Any()
+        var stopped = false
+        MicrophoneHandoff.installMonitor(null)
+        try {
+            MicrophoneHandoff.registerRecorder(recorder, { !stopped }, { stopped = true })
+            assertTrue(MicrophoneHandoff.requestDictation())
+            assertTrue(stopped)
+            assertTrue(MicrophoneHandoff.shouldYield)
+            MicrophoneHandoff.finishDictation()
+            assertFalse(MicrophoneHandoff.shouldYield)
+            assertFalse(MicrophoneHandoff.consumeRequest())
+        } finally { MicrophoneHandoff.unregisterRecorder(recorder) }
+    }
 }
