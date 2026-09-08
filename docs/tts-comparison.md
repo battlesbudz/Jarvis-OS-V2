@@ -2,9 +2,9 @@
 
 ## User test
 
-End any call, then tap **Voice: …**. Select Kokoro original, Kokoro INT8, or Piper Lessac for the next call. **Test selected voice** reads a fixed short reply, paragraph and story. **Test all three** runs the same samples sequentially with each engine without changing the selected call voice. **Stop benchmark** cancels playback and retains completed results; native synthesis may take a moment to retire before controls become available again.
+End any call, then tap **Voice: …**. Select Kokoro original, Kokoro INT8, Piper Lessac (US), or Piper Alan (British) for the next call. **Test selected voice** reads a fixed short reply, paragraph and story. **Test all voices** runs the same samples sequentially with each engine without changing the selected call voice. **Stop benchmark** cancels playback and retains completed results; native synthesis may take a moment to retire before controls become available again.
 
-First use downloads INT8 Kokoro (~103 MB) or Piper (~67 MB), with a pinned SHA-256 and byte count. Extracted model lengths and essential phonemizer files are checked. Bundles install in separate directories; original Kokoro remains available. Downloads and extraction are cancellable for the alternatives. The original model retains its existing installer. All models operate locally after installation.
+First use downloads INT8 Kokoro (~103 MB) or either Piper voice (~67 MB each), with a pinned SHA-256 and byte count. Extracted model lengths and essential phonemizer files are checked. Bundles install in separate directories; original Kokoro remains available. Downloads and extraction are cancellable for the alternatives. The original model retains its existing installer. All models operate locally after installation.
 
 Each benchmark sample creates a fresh native engine. All engines use the same 2–4 thread limit, non-callback JNI generation, fixed phrase boundaries, and normal 1.0 playback speed. Model loading and queue waits are reported separately from synthesis. Downloads, Gemma generation and microphone recognition are excluded. The benchmark does not unload Gemma weights already resident in memory; it prevents competing model operations. These are in-app synthesis/playback measurements, not laboratory isolated hardware timings. Try repeated runs in similar temperature/power conditions and listen to pronunciation and voice quality.
 
@@ -33,3 +33,12 @@ References to a recent story's character name, explicit requests to repeat the p
 ## Validation
 
 Regression tests cover pending-story acceptance, repeated acceptance after an unhelpful response, negative/new-task controls, completed-story protection, story-name recall, explicit search and unrelated factual grounding. Comparison-store tests cover precision/model identity, persistence, retention, raw RTF and incomplete/error labels. Both exact model archives were extracted and generated nonempty audio through Sherpa 1.13.7 in a host smoke test. Host timings are not device benchmark results. Android CI compiles both variants, runs the full unit suite and checks native packaging/signing. Device acceptance: tell an open-ended story, ask its character's name, resume the history and ask again; run the TTS comparison and share diagnostics.
+
+## British voice and direct copying
+
+The benchmark dialog now has a persistent **Copy diagnostics** action beside Done. It copies the current stored results (including earlier runs) and the current status directly to the Android clipboard, with a copied confirmation. It remains available during a benchmark; running samples appear only once their session closes. No new call is required to export benchmark results.
+
+Piper Alan medium is an additional British English option, keeping Lessac and both Kokoro versions available. Alan uses the same VITS path and default medium-model inference configuration; it is a different voice/accent, not a guaranteed fidelity upgrade. Its model card says it was fine-tuned from Lessac medium. Model card: https://huggingface.co/rhasspy/piper-voices/blob/main/en/en_GB/alan/medium/MODEL_CARD
+
+Archive: https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-alan-medium.tar.bz2
+Archive bytes: 67220121; SHA-256: `a48d4017da0f77668b27bed63fe6e04dd64c6397e1fadad4f460efb0ef7c9012`; extracted ONNX bytes: 63201430. Model card and dataset attribution remain in the installed bundle. Existing saved selection and historical results keep their IDs. Test all voices includes all four choices; Test selected voice runs just the chosen one.

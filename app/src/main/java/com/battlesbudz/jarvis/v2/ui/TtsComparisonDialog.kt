@@ -6,6 +6,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.ui.unit.dp
 import com.battlesbudz.jarvis.v2.voice.*
 
@@ -16,6 +20,8 @@ internal fun TtsComparisonDialog(
     onBenchmark: (TtsEngine?, (String) -> Unit, () -> Unit) -> Unit,
     onStop: () -> Unit, onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
+    var copied by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(store.selectedEngine()) }
     var running by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
@@ -24,6 +30,7 @@ internal fun TtsComparisonDialog(
     fun run(engine: TtsEngine?) {
         if (running) return
         running = true
+        copied = false
         onBenchmark(engine, { status = it }) {
             running = false
             records = store.records().asReversed()
@@ -41,13 +48,13 @@ internal fun TtsComparisonDialog(
                         Text((if (selected == engine) "✓ " else "") + engine.label)
                     }
                 }
-                Text("Selected voice is used for the next call. First use downloads about 103 MB for INT8 Kokoro or 67 MB for Piper; both then work offline.")
+                Text("Selected voice is used for the next call. First use downloads about 103 MB for INT8 Kokoro or 67 MB per Piper voice. All voices then work offline.")
                 if (!canChange) Text("End your call before changing voices or benchmarking.")
                 HorizontalDivider()
                 Text("Fixed-text benchmark", style = MaterialTheme.typography.titleMedium)
                 Text("Each voice reads the same short reply, paragraph and story at normal speed. Gemma and the microphone stay idle. Downloads are excluded from timing. The full comparison can take several minutes.")
                 Button(onClick = { run(selected) }, enabled = canChange && !running) { Text("Test selected voice") }
-                OutlinedButton(onClick = { run(null) }, enabled = canChange && !running) { Text("Test all three") }
+                OutlinedButton(onClick = { run(null) }, enabled = canChange && !running) { Text("Test all voices") }
                 if (running) Button(onClick = onStop) { Text("Stop benchmark") }
                 if (status.isNotBlank()) Text(status)
                 TextButton(onClick = { records = store.records().asReversed(); index = 0 }) { Text("Refresh results") }
@@ -62,5 +69,13 @@ internal fun TtsComparisonDialog(
                 }
                 Text("Compare completed benchmark results with the same sample name. Lower RTF is faster; below 1 keeps up with normal speech. Call results include competition from other models. Listen for pronunciation and voice quality too. Copy diagnostics includes the last 40 results.", style = MaterialTheme.typography.bodySmall)
             }
+        }, dismissButton = {
+            TextButton(onClick = {
+                val report = "Jarvis OS V2 voice benchmark diagnostics\n" +
+                    "Selected voice: ${selected.label}\nStatus: $status\n\n" + store.snapshot()
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Jarvis voice benchmark diagnostics", report))
+                copied = true
+            }) { Text(if (copied) "Copied diagnostics" else "Copy diagnostics") }
         }, confirmButton = { TextButton(onClick = onDismiss, enabled = !running) { Text("Done") } })
 }

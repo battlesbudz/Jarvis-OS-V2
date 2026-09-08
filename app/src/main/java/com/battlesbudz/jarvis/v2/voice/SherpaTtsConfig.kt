@@ -5,7 +5,7 @@ import java.io.File
 
 internal fun sherpaTtsConfig(engine: TtsEngine, directory: String, threads: Int): OfflineTtsConfig {
     val model = OfflineTtsModelConfig(numThreads = threads, debug = false, provider = "cpu")
-    if (engine == TtsEngine.PIPER) {
+    if (engine.isPiper) {
         model.vits = OfflineTtsVitsModelConfig(
             model = "$directory/${engine.modelFile}", tokens = "$directory/tokens.txt",
             dataDir = "$directory/espeak-ng-data"
