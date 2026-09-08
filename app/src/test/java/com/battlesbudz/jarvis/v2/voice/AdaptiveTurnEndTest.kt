@@ -4,6 +4,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AdaptiveTurnEndTest {
+    @Test fun shortPunctuatedQuestionsCanFinishQuickly() {
+        for (text in listOf("Who are you?", "What’s your name?", "Are you okay?")) {
+            val policy = AdaptiveTurnEnd()
+            policy.update(text, 0)
+            assertEquals(text, 350, policy.decision(350).silenceMs.toInt())
+        }
+    }
+
     @Test fun completeQuestionWaitsForStableTextThenUsesShortSilence() {
         val policy = AdaptiveTurnEnd()
         policy.update("What is the current battery percentage?", 100)
@@ -22,7 +30,7 @@ class AdaptiveTurnEndTest {
 
     @Test fun hesitationAndUnfinishedQuestionGetTimeDespitePunctuation() {
         for (text in listOf("What is the?", "Can you tell me?", "Tell me about...",
-            "Set the volume to", "What is the battery percentage, um", "No, I mean", "Hold on")) {
+            "Set the volume to", "What is the battery percentage, um", "No, I mean", "Hold on", "Do you know why?")) {
             val policy = AdaptiveTurnEnd()
             policy.update(text, 0)
             assertEquals(text, 3000, policy.decision(1000).silenceMs.toInt())

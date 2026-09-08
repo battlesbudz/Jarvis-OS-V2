@@ -9,7 +9,8 @@ class AdaptiveTurnEnd {
     private var changedAtMs = 0L
 
     fun update(text: String, nowMs: Long) {
-        val normalized = text.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
+        val normalized = text.trim().lowercase(Locale.ROOT).replace('’', '\'')
+            .replace(Regex("\\s+"), " ")
         if (normalized != transcript) { transcript = normalized; changedAtMs = nowMs }
     }
 
@@ -23,7 +24,8 @@ class AdaptiveTurnEnd {
             return Decision(3000, "hesitation_or_unfinished")
         }
         // Punctuation is only a cue: ASR can add a question mark to an unfinished fragment.
-        val question = words.size >= 4 && words.first() in questionStarts
+        val question = words.first() in questionStarts &&
+            (words.size >= 4 || (words.size >= 3 && transcript.endsWith('?')))
         val shortReply = words.joinToString(" ") in replies
         val sentence = words.size >= 4 && transcript.lastOrNull() in listOf('.', '?', '!')
         val stable = (nowMs - changedAtMs).coerceAtLeast(0)
@@ -38,6 +40,7 @@ class AdaptiveTurnEnd {
 
     private companion object {
         val questionStarts = setOf("what", "where", "when", "why", "who", "whose", "which", "how",
+            "what's", "where's", "when's", "why's", "who's", "how's",
             "is", "are", "was", "were", "can", "could", "would", "should", "will", "do", "does", "did")
         val replies = setOf("yes", "no", "okay", "ok", "sure", "thanks", "thank you", "yes please",
             "no thanks", "goodbye", "goodbye jarvis", "stop listening", "stop listening jarvis")
@@ -45,6 +48,6 @@ class AdaptiveTurnEnd {
             "although", "while", "to", "from", "with", "without", "about", "of", "for", "at", "in", "on",
             "into", "than", "the", "a", "an", "my", "your", "our", "their", "his", "her", "its",
             "is", "are", "was", "were", "be", "been", "being", "can", "could", "would", "should", "will",
-            "do", "does", "did", "have", "has", "had", "what", "which", "how", "whether")
+            "do", "does", "did", "have", "has", "had", "what", "which", "how", "why", "where", "when", "whether")
     }
 }
