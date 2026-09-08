@@ -9,7 +9,11 @@ import com.k2fsa.sherpa.onnx.GenerationConfig
 import com.k2fsa.sherpa.onnx.OfflineTts
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.selects.select
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.Executors
 
 /** Local Jarvis voice output: Gemma text -> selected Sherpa model PCM -> Android audio route. */
@@ -18,6 +22,8 @@ class SherpaKokoroVoiceOutput(
     private val engine: TtsEngine = TtsEngine.KOKORO,
     private val normalSpeed: Boolean = false,
     private val fixedChunking: Boolean = false,
+    private val openingChars: Int = SpeechChunker.DEFAULT_OPENING_CHARS,
+    private val onReady: () -> Unit = {},
     private val onPlayback: (VoicePlaybackFrame) -> Unit = {},
     private val onMetrics: (TtsSessionMetrics) -> Unit = {},
     private val speakerId: Int = engine.speaker,
@@ -33,6 +39,18 @@ class SherpaKokoroVoiceOutput(
     @Volatile private var probePaused = false
     @Volatile private var writtenFrames = 0L
     private var lastAudibleAt = Long.MIN_VALUE / 2
+    private val preparedOpening = AtomicReference<PreparedSpeechOpening?>(null)
+    private val openingRequests = Channel<PreparedSpeechOpening>(Channel.CONFLATED,
+        onUndeliveredElement = { it.discard() })
+
+    /** Queues silent work on the SAME native owner used for live speech. */
+    fun prepareOpening(text: String): PreparedSpeechOpening? {
+        if (stopped || text.isBlank() || text.length > 240) return null
+        val request = PreparedSpeechOpening(text)
+        preparedOpening.getAndSet(request)?.discard()
+        if (!openingRequests.trySend(request).isSuccess) { request.discard(); return null }
+        return request
+    }
     val isPlayingAudio: Boolean get() = synchronized(playbackLock) {
         val now = System.nanoTime() / 1_000_000
         val audible = !stopped && !interrupted && !probePaused && audioTrack?.let {
@@ -84,6 +102,12 @@ class SherpaKokoroVoiceOutput(
         var phraseCount = 0
         var loadMs = 0L
         var firstPcmMs: Long? = null
+        var firstTextToPcmMs: Long? = null
+        var firstTextToPlaybackMs: Long? = null
+        val firstTextAt = AtomicLong()
+        val firstAudibleFrame = AtomicLong(-1)
+        var preparedSynthesisMs = 0L
+        var preparedOpeningReused = false
         var inputChars = 0
         val textHash = java.security.MessageDigest.getInstance("SHA-256")
         val captions = SpokenCaptionTimeline()
@@ -97,7 +121,17 @@ class SherpaKokoroVoiceOutput(
         // One owner creates, invokes and releases the native engine. Playback never owns it.
         // Bounded PCM backpressure prevents long answers from accumulating unlimited audio.
         val audio = NativeAudioQueue<SynthesizedPhrase>(2)
-        val chunker = SpeechChunker()
+        val chunker = SpeechChunker(openingChars)
+        val tokens = Channel<String>(64)
+        val collectTokens = launch {
+            try {
+                chunks.collect { token ->
+                    if (token.isNotBlank()) firstTextAt.compareAndSet(0, System.nanoTime())
+                    tokens.send(token)
+                }
+                tokens.close()
+            } catch (error: Throwable) { tokens.close(error); throw error }
+        }
         val nativeDispatcher = Executors.newSingleThreadExecutor { task ->
             Thread(task, "jarvis-tts").apply { isDaemon = true }
         }.asCoroutineDispatcher()
@@ -113,19 +147,17 @@ class SherpaKokoroVoiceOutput(
                 engine = tts
                 loadMs = elapsedMs(loadStart)
                 log("tts_engine_preload_finished loadMs=$loadMs")
-                suspend fun generate(text: String) {
+                onReady()
+                fun synthesize(text: String): SpeechAudio {
                     owner.ensureActive()
-                    if (stopped) return
-                    val phraseIndex = index++
                     val started = System.nanoTime()
-                    log("tts_generation_started index=$phraseIndex chars=${text.length} preview=${text.take(80)} api=generateWithConfig")
+                    log("tts_generation_started chars=${text.length} preview=${text.take(80)} api=generateWithConfig")
                     // Use the established non-callback JNI path. Kotlin lambda callback ABI
                     // changes can abort the process before Java can report an exception.
                     val generated = tts.generateWithConfig(
                         text, GenerationConfig(silenceScale = 0.2f, sid = speakerId)
                     )
                     owner.ensureActive()
-                    if (stopped) return
                     val rate = generated.sampleRate
                     check(rate > 0) { "Voice model returned an invalid sample rate." }
                     val pcm = ShortArray(generated.samples.size) { i ->
@@ -134,17 +166,32 @@ class SherpaKokoroVoiceOutput(
                     val peak = generated.samples.maxOfOrNull { kotlin.math.abs(it) } ?: 0f
                     val rms = kotlin.math.sqrt(generated.samples.sumOf { it.toDouble() * it } /
                         generated.samples.size.coerceAtLeast(1))
-                    log("tts_pcm_level index=$phraseIndex rms=$rms peak=$peak frames=${pcm.size}")
-                    val frames = pcm.size.toLong()
-                    if (firstPcmMs == null) firstPcmMs = elapsedMs(started)
-                    log("tts_first_audio index=$phraseIndex latencyMs=${elapsedMs(started)}")
+                    log("tts_pcm_level rms=$rms peak=$peak frames=${pcm.size}")
+                    return SpeechAudio(text, rate, pcm, elapsedMs(started))
+                }
+                fun generate(text: String) {
+                    owner.ensureActive()
+                    if (stopped) return
+                    val candidate = preparedOpening.getAndSet(null)
+                    val cached = if (index == 0) candidate?.takeFor(text) else null
+                    candidate?.discard()
+                    val result = cached ?: synthesize(text)
+                    if (stopped) return
+                    val phraseIndex = index++
+                    if (phraseIndex == 0) {
+                        preparedOpeningReused = cached != null
+                        firstPcmMs = result.synthesisMs
+                        firstTextToPcmMs = firstTextAt.get().takeIf { it != 0L }?.let(::elapsedMs)
+                        log("tts_opening_ready prepared=${cached != null} firstTextToPcmMs=$firstTextToPcmMs openingChars=$openingChars")
+                    }
+                    val rate = result.sampleRate
+                    val frames = result.pcm.size.toLong()
                     val waitStart = System.nanoTime()
-                    audio.sendFromNative(SynthesizedPhrase(phraseIndex, text, rate, pcm,
-                        PlaybackBufferPolicy.startupWaitMs(elapsedMs(started), frames * 1000 / rate),
-                        if (normalSpeed) 1f else PlaybackBufferPolicy.playbackSpeed(elapsedMs(started), frames * 1000 / rate)))
+                    audio.sendFromNative(SynthesizedPhrase(phraseIndex, text, rate, result.pcm,
+                        if (cached != null) 0 else PlaybackBufferPolicy.startupWaitMs(result.synthesisMs, frames * 1000 / rate),
+                        if (normalSpeed) 1f else PlaybackBufferPolicy.playbackSpeed(result.synthesisMs, frames * 1000 / rate)))
                     val queueWaitMs = elapsedMs(waitStart)
-                    val totalMs = elapsedMs(started)
-                    val synthesisMs = (totalMs - queueWaitMs).coerceAtLeast(0)
+                    val synthesisMs = result.synthesisMs
                     val audioMs = frames * 1000 / rate
                     val rtf = if (audioMs > 0) synthesisMs.toDouble() / audioMs else 0.0
                     totalSynthesisMs += synthesisMs
@@ -155,13 +202,37 @@ class SherpaKokoroVoiceOutput(
                     log("tts_generation_finished index=$phraseIndex synthesisMs=$synthesisMs queueWaitMs=$queueWaitMs " +
                         "audioDurationMs=$audioMs realtimeFactor=$rtf")
                 }
-                chunks.collect { token ->
+                var ended = false
+                while (!ended && !stopped) {
                     owner.ensureActive()
-                    if (!stopped) {
-                        inputChars += token.length
-                        textHash.update(token.toByteArray(Charsets.UTF_8))
-                        chunker.append(token)
-                        while (true) generate(chunker.take() ?: break)
+                    select<Unit> {
+                        // Prefer confirmed speech if both queues are ready.
+                        tokens.onReceiveCatching { received ->
+                            received.exceptionOrNull()?.let { throw it }
+                            val token = received.getOrNull()
+                            if (token == null) ended = true
+                            else {
+                                inputChars += token.length
+                                textHash.update(token.toByteArray(Charsets.UTF_8))
+                                chunker.append(token)
+                                while (true) generate(chunker.take() ?: break)
+                            }
+                        }
+                        openingRequests.onReceive { request ->
+                            if (index == 0 && !request.isDiscarded() && preparedOpening.get() === request) {
+                                log("tts_opening_preparation_started chars=${request.text.length}")
+                                try {
+                                    val result = synthesize(request.text)
+                                    preparedSynthesisMs += result.synthesisMs
+                                    request.complete(result)
+                                    log("tts_opening_preparation_finished synthesisMs=${result.synthesisMs} discarded=${request.isDiscarded()}")
+                                } catch (cancelled: CancellationException) { throw cancelled }
+                                catch (error: Exception) {
+                                    request.discard()
+                                    log("tts_opening_preparation_failed reason=${error.message}")
+                                }
+                            } else request.discard()
+                        }
                     }
                 }
                 while (true) generate(chunker.take(final = true) ?: break)
@@ -211,14 +282,16 @@ class SherpaKokoroVoiceOutput(
                         playbackMonitor = speechScope.launch {
                             while (isActive && !stopped) {
                                 val head = unsignedHead(startedTrack)
-                                if (head > 0 && !playbackConfirmed) {
+                                val audibleFrame = firstAudibleFrame.get()
+                                if (audibleFrame >= 0 && head > audibleFrame && !playbackConfirmed) {
                                     playbackConfirmed = true
+                                    firstTextToPlaybackMs = firstTextAt.get().takeIf { it != 0L }?.let(::elapsedMs)
                                     log("audio_playback_confirmed playbackHead=$head routeType=${startedTrack.routedDevice?.type} " +
                                         "routeId=${startedTrack.routedDevice?.id}")
                                     onChunkStarted("audio")
                                 }
                                 onPlayback(captions.at(head))
-                                delay(40)
+                                delay(if (playbackConfirmed) 40 else 10)
                             }
                         }
                     }
@@ -230,6 +303,10 @@ class SherpaKokoroVoiceOutput(
                     val queued = (framesWritten.toLong() - unsignedHead(track)).coerceAtLeast(0)
                     log("audio_phrase_ready index=${phrase.index} pcmFrames=${phrase.pcm.size} " +
                         "queuedBeforeFrames=$queued underruns=${track.underrunCount}")
+                    if (firstAudibleFrame.get() < 0) {
+                        val audible = phrase.pcm.indexOfFirst { kotlin.math.abs(it.toInt()) >= 64 }
+                        if (audible >= 0) firstAudibleFrame.set(framesWritten.toLong() + audible)
+                    }
                     captions.append(framesWritten.toLong(), phrase.sampleRate, phrase.pcm, phrase.text)
                     val start = System.nanoTime()
                     var offset = 0
@@ -291,6 +368,8 @@ class SherpaKokoroVoiceOutput(
             stopped = true
             // Unblock the native producer waiting on a full queue before joining its native owner.
             audio.cancel()
+            tokens.cancel()
+            preparedOpening.getAndSet(null)?.discard()
             withContext(NonCancellable) { playbackMonitor?.cancelAndJoin() }
             val playedFrames = audioTrack?.let(::unsignedHead) ?: 0L
             onPlayback(if (wasStopped) VoicePlaybackFrame() else captions.at(playedFrames).copy(level = 0f))
@@ -300,7 +379,8 @@ class SherpaKokoroVoiceOutput(
                 audioTrack?.stopSafely()
                 audioTrack = null
             }
-            withContext(NonCancellable) { producer.cancelAndJoin() }
+            withContext(NonCancellable) { collectTokens.cancelAndJoin(); producer.cancelAndJoin() }
+            openingRequests.cancel()
             nativeDispatcher.close()
             speaking.set(false)
             if (inputChars > 0 || failureMessage != null) runCatching {
@@ -308,7 +388,9 @@ class SherpaKokoroVoiceOutput(
                     totalQueueWaitMs, playbackSpeed, estimatedGapMs, finalUnderruns, phraseCount,
                     inputChars, textHash.digest().joinToString("") { "%02x".format(it) }, numThreads,
                     completed && !wasStopped && failureMessage == null, failureMessage,
-                    playbackConfirmed, playedFrames, framesWritten.toLong(), outputRoute))
+                    playbackConfirmed, playedFrames, framesWritten.toLong(), outputRoute,
+                    firstTextToPcmMs, firstTextToPlaybackMs, openingChars,
+                    preparedSynthesisMs, preparedOpeningReused))
             }.onFailure { log("tts_metrics_failed reason=${it.message}") }
             log("tts_session_finished phrases=$phraseCount synthesisMs=$totalSynthesisMs " +
                 "audioDurationMs=$totalAudioMs queueWaitMs=$totalQueueWaitMs playbackSpeed=$playbackSpeed " +

@@ -6,6 +6,83 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class VoicePreparationTest {
+    @Test fun finalPunctuationKeepsMatchingPreparationButNumericCorrectionsDoNot() = runBlocking<Unit> {
+        val started = CompletableDeferred<Unit>()
+        val preparation = VoicePreparation(this, generate = { _, _, emit ->
+            emit("The value is one point five.")
+            started.complete(Unit)
+            GenerationResult("The value is one point five.", 1, null)
+        }, coalesceMs = 0)
+        preparation.submit("what does 1.5 mean", byteArrayOf())
+        started.await()
+        val draft = preparation.seal("What does 1.5 mean?")!!
+        assertFalse(draft.matches("what does 15 mean?"))
+        assertEquals("The value is one point five.", draft.consume {}.text)
+        preparation.close()
+    }
+
+    @Test fun openingIsPreparedSilentlyAndAuthorizedOnlyWhenFinalRoutingConsumesDraft() = runBlocking<Unit> {
+        val ready = CompletableDeferred<PreparedSpeechOpening>()
+        val preparation = VoicePreparation(this, generate = { _, _, emit ->
+            emit("A short opening. ")
+            GenerationResult("A short opening.", 1, null)
+        }, coalesceMs = 0, prepareOpening = { text ->
+            PreparedSpeechOpening(text).also {
+                it.complete(SpeechAudio(text, 24000, shortArrayOf(200, 201), 30)); ready.complete(it)
+            }
+        })
+        preparation.submit("tell me a short story", byteArrayOf())
+        val opening = withTimeout(1000) { ready.await() }
+        val draft = preparation.seal("tell me a short story")!!
+        assertNull(opening.takeFor(opening.text))
+        draft.consume {}
+        assertNotNull(opening.takeFor(opening.text))
+        preparation.close()
+    }
+
+    @Test fun resumedSpeechInvalidatesAudioEvenBeforeAsrChangesItsWords() = runBlocking<Unit> {
+        val ready = CompletableDeferred<PreparedSpeechOpening>()
+        val preparation = VoicePreparation(this, generate = { _, _, emit ->
+            emit("A short opening. "); GenerationResult("A short opening.", 1, null)
+        }, coalesceMs = 0, prepareOpening = { text -> PreparedSpeechOpening(text).also { ready.complete(it) } })
+        preparation.submit("tell me a short story", byteArrayOf())
+        val opening = withTimeout(1000) { ready.await() }
+        preparation.speechResumed()
+        assertTrue(opening.isDiscarded())
+        assertNull(preparation.seal("tell me a short story"))
+        preparation.close()
+    }
+
+    @Test fun shortenedCorrectionInvalidatesOldWorkImmediately() = runBlocking<Unit> {
+        val ready = CompletableDeferred<Unit>()
+        val preparation = VoicePreparation(this, generate = { _, _, _ ->
+            ready.complete(Unit); GenerationResult("Old answer", 1, null)
+        }, coalesceMs = 0)
+        preparation.submit("tell a story about pirates", byteArrayOf())
+        withTimeout(1000) { ready.await() }
+        preparation.submit("no", byteArrayOf())
+        assertNull(preparation.seal("tell a story about pirates"))
+        preparation.close()
+    }
+
+    @Test fun proposedToolCallDiscardsPreparedOpeningAndRemainsDataUntilConfirmation() = runBlocking<Unit> {
+        val ready = CompletableDeferred<PreparedSpeechOpening>()
+        val generated = CompletableDeferred<Unit>()
+        val call = com.battlesbudz.jarvis.v2.ai.ToolCall("read_battery", "{}")
+        val preparation = VoicePreparation(this, generate = { _, _, emit ->
+            emit("Your battery is full. ")
+            generated.complete(Unit)
+            GenerationResult("", 1, null, toolCalls = listOf(call))
+        }, coalesceMs = 0, prepareOpening = { text -> PreparedSpeechOpening(text).also { ready.complete(it) } })
+        preparation.submit("what is my battery", byteArrayOf())
+        val opening = withTimeout(1000) { ready.await() }
+        generated.await(); yield()
+        assertTrue(opening.isDiscarded())
+        val draft = preparation.seal("what is my battery")!!
+        assertEquals(listOf(call), draft.consume {}.toolCalls)
+        preparation.close()
+    }
+
     @Test fun preparesSilentlyThenStreamsOnlyAfterMatchingFinalTranscript() = runBlocking<Unit> {
         val started = CompletableDeferred<Unit>()
         val finish = CompletableDeferred<Unit>()

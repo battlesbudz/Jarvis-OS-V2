@@ -10,5 +10,8 @@ data class AsrCaptureMetrics(
     val partialUpdates: Int,
     val finalizationMs: Long,
     val endpointReason: String,
-    val emptyCandidates: Int = 0
+    val emptyCandidates: Int = 0,
+    val endpointDetectionMs: Long? = null,
+    val targetSilenceMs: Long? = null,
+    val endpointCue: String? = null
 )

@@ -24,8 +24,10 @@ class LiteRtLmEngine(
     useGpu: Boolean,
     private val tools: List<OpenApiTool> = emptyList(),
     val visionEnabled: Boolean = false,
-    val audioEnabled: Boolean = false
+    val audioEnabled: Boolean = false,
+    private val speculativeDecoding: Boolean? = null
 ) : LocalModelEngine, Closeable {
+    private companion object { val initializationLock = Any() }
     private val engine = Engine(
         EngineConfig(
             modelPath = modelPath,
@@ -51,8 +53,17 @@ class LiteRtLmEngine(
             )
         }
 
+    @OptIn(ExperimentalApi::class)
     suspend fun initialize() {
-        engine.initialize()
+        // The SDK reads this process-global flag during initialize(), not in Engine's constructor.
+        // Serialize ALL adapter initializations and restore the default even on unsupported files.
+        synchronized(initializationLock) {
+            val previous = ExperimentalFlags.enableSpeculativeDecoding
+            try {
+                ExperimentalFlags.enableSpeculativeDecoding = speculativeDecoding
+                engine.initialize()
+            } finally { ExperimentalFlags.enableSpeculativeDecoding = previous }
+        }
         conversation = createConversation()
     }
 
@@ -192,8 +203,8 @@ class LiteRtLmEngine(
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {
-            conversation?.close()
-            engine.close()
+            try { conversation?.close(); conversation = null }
+            finally { if (engine.isInitialized()) engine.close() }
         }
     }
 }

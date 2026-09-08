@@ -149,6 +149,8 @@ class MainActivity : ComponentActivity() {
         get() = runtime.sessionReport
         set(value) { runtime.sessionReport = value }
     private lateinit var ttsBenchmarks: com.battlesbudz.jarvis.v2.voice.TtsBenchmarkController
+    private lateinit var gemmaBenchmarks: com.battlesbudz.jarvis.v2.ai.GemmaBenchmarkController
+    private lateinit var latencyBenchmarks: com.battlesbudz.jarvis.v2.voice.VoiceLatencyBenchmarkActions
     private var notificationPermissionAsked = false
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -199,6 +201,24 @@ class MainActivity : ComponentActivity() {
             canStart = { voiceSessionController.currentCallId() == null && voiceTurnJob?.isCompleted != false && activeConversationJobs.get() == 0 },
             log = { diagnosticRecorder.record("TTS benchmark: $it") }
         )
+        val gemmaResults = com.battlesbudz.jarvis.v2.ai.GemmaBenchmarkStore(
+            getSharedPreferences("gemma-acceleration-benchmarks", MODE_PRIVATE))
+        gemmaBenchmarks = com.battlesbudz.jarvis.v2.ai.GemmaBenchmarkController(
+            applicationContext, lifecycleScope, modelStore, gemmaResults,
+            canStart = { !voiceSessionArmed && voiceSessionController.currentCallId() == null &&
+                voiceTurnJob?.isCompleted != false && activeConversationJobs.get() == 0 && !ttsBenchmarks.running },
+            releaseIdleEngine = {
+                val previous = runtime.conversationEngine
+                runtime.conversationEngine = null
+                runtime.nativeConversationHasContext = false
+                runtime.conversationCharacters = 0
+                previous?.close()
+            }, log = { diagnosticRecorder.recordImportant(it) })
+        latencyBenchmarks = com.battlesbudz.jarvis.v2.voice.VoiceLatencyBenchmarkActions(
+            gemmaResults, gemmaBenchmarks::start,
+            compareOpenings = { engine, status, finished ->
+                ttsBenchmarks.start(engine, status, finished, compareOpenings = true)
+            }, stop = { ttsBenchmarks.stop(); gemmaBenchmarks.stop() })
         val interruptedSession = sessionPreferences.getBoolean("sending", false)
         if (!voiceSessionArmed) shortTermContext.restoreSummary(
             if (interruptedSession) null else {
@@ -215,6 +235,7 @@ class MainActivity : ComponentActivity() {
             JarvisApp(
                 store = modelStore,
                 ttsComparisonStore = ttsComparisonStore,
+                latencyBenchmarks = latencyBenchmarks,
                 onSelectTts = { engine ->
                     if (voiceSessionController.currentCallId() != null || modelStore.isModelOperationActive() || ttsBenchmarks.running) false
                     else { ttsComparisonStore.select(engine); true }

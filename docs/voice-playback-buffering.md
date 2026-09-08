@@ -23,12 +23,16 @@ unblocks the producer before release; native generation itself must return
 before its engine can be freed. AudioTrack writes remain nonblocking and
 cancellable, so already-playing audio stops without waiting for synthesis.
 
-Text chunking targets a short opening (70 characters), then 180 characters when
+Text chunking now targets a short opening (40 characters), then 180 characters when
 synthesis is faster than playback or 120 when slower. Punctuation and whitespace
 boundaries preserve words; final text is flushed. These are initial heuristics,
-not a phone benchmark. A startup grace period adapts from 0 to 1200 ms based on the first chunk's
+not a phone benchmark. A startup grace period adapts from 0 to 120 ms based on the first chunk's
 measured synthesis time versus audio duration, reserving 20% scheduling headroom.
 Completed short answers do not wait for the full period.
+An already prepared and authorized opening has no artificial startup wait.
+The same native owner can synthesize one bounded opening while listening. Its PCM is
+unavailable for playback until the final request passes routing, its draft is consumed,
+and the actual spoken opening matches exactly. Corrections discard it.
 The separate 120 ms artificial inter-phrase padding is removed. Voice speed is
 unchanged.
 
@@ -37,6 +41,12 @@ and PCM occupancy. The session summary retains aggregate synthesis/audio times
 even if per-phrase entries roll out of the diagnostics buffer. Queue waiting is
 excluded from synthesis realtime factor. Values below 1 mean synthesis is ahead
 of normal-speed playback; buffering cannot fix sustained values above 1.
+
+The response-speed benchmark compares 28/40/70-character openings twice, reversing
+the order on the second pass. It waits for model loading before feeding the same
+text in four-character fragments every 32 ms. This simulates streamed text; it is
+not a measurement of Gemma generation speed. First-text-to-PCM, first-text-to-playback,
+prepared synthesis cost, reuse, gaps, and playback confirmation are recorded separately.
 
 Validation: unit tests cover token-split decimals, first clauses, complete text
 preservation, final flushing, chunk adaptation, queue ordering and cancellation

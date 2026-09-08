@@ -23,6 +23,9 @@ class AsrComparisonStore(private val preferences: SharedPreferences) {
             .put("speech_detected_to_first_partial_ms", metrics.firstPartialAfterSpeechMs ?: JSONObject.NULL)
             .put("partial_updates", metrics.partialUpdates).put("finalization_ms", metrics.finalizationMs)
             .put("endpoint_reason", metrics.endpointReason).put("empty_candidates", metrics.emptyCandidates)
+            .put("endpoint_detection_ms", metrics.endpointDetectionMs ?: JSONObject.NULL)
+            .put("target_silence_ms", metrics.targetSilenceMs ?: JSONObject.NULL)
+            .put("endpoint_cue", metrics.endpointCue ?: JSONObject.NULL)
             .put("decode_realtime_factor", if (metrics.audioMs > 0)
                 (metrics.decodeMs + metrics.finalizationMs).toDouble() / metrics.audioMs else JSONObject.NULL)
         save((records() + entry).takeLast(20))
@@ -58,7 +61,8 @@ class AsrComparisonStore(private val preferences: SharedPreferences) {
             for (key in listOf("model_load_ms", "capture_ready_ms", "audio_fed_ms", "decode_ms",
                 "decode_realtime_factor", "max_decode_chunk_ms", "speech_detected_to_first_partial_ms",
                 "partial_updates", "empty_candidates", "finalization_ms", "endpoint_reason", "final_to_first_text_ms",
-                "final_to_playback_start_ms", "prepared")) {
+                "final_to_playback_start_ms", "speech_end_to_first_text_ms", "speech_end_to_playback_ms",
+                "endpoint_detection_ms", "target_silence_ms", "endpoint_cue", "prepared")) {
                 appendLine("$key=${if (entry.has(key) && !entry.isNull(key)) entry.get(key) else "unavailable"}")
             }
             val reference = entry.optString("reference")

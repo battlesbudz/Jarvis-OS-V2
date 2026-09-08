@@ -15,6 +15,7 @@ import com.battlesbudz.jarvis.v2.voice.*
 
 @Composable
 internal fun TtsComparisonDialog(
+    latencyBenchmarks: VoiceLatencyBenchmarkActions,
     store: TtsComparisonStore, canChange: Boolean,
     onSelect: (TtsEngine) -> Boolean,
     onBenchmark: (TtsEngine?, (String) -> Unit, () -> Unit) -> Unit,
@@ -27,6 +28,17 @@ internal fun TtsComparisonDialog(
     var status by remember { mutableStateOf("") }
     var records by remember { mutableStateOf(store.records().asReversed()) }
     var index by remember { mutableIntStateOf(0) }
+    var gemmaReport by remember { mutableStateOf(latencyBenchmarks.gemmaResults.snapshot()) }
+    fun runLatency(gemma: Boolean) {
+        if (running) return
+        running = true; copied = false
+        val finished: () -> Unit = {
+            running = false; records = store.records().asReversed(); index = 0
+            gemmaReport = latencyBenchmarks.gemmaResults.snapshot()
+        }
+        if (gemma) latencyBenchmarks.compareGemma({ status = it }, finished)
+        else latencyBenchmarks.compareOpenings(selected, { status = it }, finished)
+    }
     fun run(engine: TtsEngine?) {
         if (running) return
         running = true
@@ -38,7 +50,7 @@ internal fun TtsComparisonDialog(
         }
     }
     AlertDialog(onDismissRequest = { if (!running) onDismiss() },
-        title = { Text("Voice model comparison") },
+        title = { Text("Voice and response speed") },
         text = {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -56,7 +68,17 @@ internal fun TtsComparisonDialog(
                 Text("Each voice reads the same short reply, paragraph and story at normal speed. Gemma and the microphone stay idle. Downloads are excluded from timing. The full comparison can take several minutes.")
                 Button(onClick = { run(selected) }, enabled = canChange && !running) { Text("Test selected voice") }
                 OutlinedButton(onClick = { run(null) }, enabled = canChange && !running) { Text("Test all voices") }
-                if (running) Button(onClick = onStop) { Text("Stop benchmark") }
+                HorizontalDivider()
+                Text("Response speed", style = MaterialTheme.typography.titleMedium)
+                Text("Compare shorter voice openings using the same streamed text. Listen for smoothness as well as the first spoken word. Each length runs twice with the voice already loaded.")
+                OutlinedButton(onClick = { runLatency(false) }, enabled = canChange && !running) {
+                    Text("Compare opening lengths")
+                }
+                Text("Compare Gemma GPU acceleration off, on, then off again. Includes warm runs and simulated battery tools; this does not change your phone or the acceleration used in calls. A model without MTP support will report an error for that test.")
+                OutlinedButton(onClick = { runLatency(true) }, enabled = canChange && !running) {
+                    Text("Compare Gemma acceleration")
+                }
+                if (running) Button(onClick = { onStop(); latencyBenchmarks.stop() }) { Text("Stop benchmark") }
                 if (status.isNotBlank()) Text(status)
                 TextButton(onClick = { records = store.records().asReversed(); index = 0 }) { Text("Refresh results") }
                 val record = records.getOrNull(index)
@@ -69,11 +91,13 @@ internal fun TtsComparisonDialog(
                     Text(TtsComparisonStore.describe(record), style = MaterialTheme.typography.bodySmall)
                 }
                 Text("Compare completed benchmark results with the same sample name. Lower RTF is faster; below 1 keeps up with normal speech. Call results include competition from other models. Listen for pronunciation and voice quality too. Copy diagnostics includes the last 40 results.", style = MaterialTheme.typography.bodySmall)
+                Text(gemmaReport, style = MaterialTheme.typography.bodySmall)
             }
         }, dismissButton = {
             TextButton(onClick = {
                 val report = "Jarvis OS V2 voice benchmark diagnostics\n" +
-                    "Selected voice: ${selected.label}\nStatus: $status\n\n" + store.snapshot()
+                    "Selected voice: ${selected.label}\nStatus: $status\n\n" + store.snapshot() +
+                    "\n\nGemma acceleration\n" + latencyBenchmarks.gemmaResults.snapshot()
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("Jarvis voice benchmark diagnostics", report))
                 copied = true

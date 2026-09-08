@@ -16,6 +16,8 @@ class BargeInAudioInput(
 ) : AudioInput {
     override val sampleRateHz = input.sampleRateHz
     override val channelCount = input.channelCount
+    override val lastChunkCaptureTimeMs: Long? get() = input.lastChunkCaptureTimeMs
+    override val bufferedAudioMs: Long get() = input.bufferedAudioMs
     override suspend fun start() = input.start()
     override suspend fun stop() = input.stop()
     override fun chunks() = flow {

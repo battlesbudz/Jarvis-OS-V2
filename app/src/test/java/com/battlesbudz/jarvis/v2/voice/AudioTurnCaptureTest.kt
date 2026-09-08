@@ -13,6 +13,56 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioTurnCaptureTest {
+    @Test fun adaptiveQuestionEndsAfterShortStablePause() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, FakeTranscriber("What is the current volume?", "What is the current volume?"),
+            trailingSilenceMs = null)
+        fixture.capture.start()
+        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+        fixture.emit(100, 2000, speech = true)
+        fixture.emit(449, 0)
+        assertFalse(completion.isCompleted)
+        fixture.emit(450, 0)
+        assertTrue(withTimeout(1000) { completion.await() })
+        assertEquals("complete_and_stable", fixture.metrics.single().first.endpointCue)
+        assertEquals(350L, fixture.metrics.single().first.endpointDetectionMs)
+        fixture.capture.stop()
+    }
+
+    @Test fun adaptiveHesitationKeepsListeningAndAcousticContinuationInvalidatesDraft() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, FakeTranscriber("Can you tell me", "Can you tell me a story"),
+            trailingSilenceMs = null)
+        fixture.capture.start()
+        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+        fixture.emit(100, 2000, speech = true)
+        fixture.emit(1100, 0)
+        assertFalse(completion.isCompleted)
+        fixture.emit(1600, 2000, speech = true)
+        assertEquals(1, fixture.resumed)
+        fixture.emit(4599, 0)
+        assertFalse(completion.isCompleted)
+        fixture.emit(4600, 0)
+        assertTrue(withTimeout(1000) { completion.await() })
+        fixture.capture.stop()
+    }
+
+    @Test fun queuedMicrophoneAudioPreventsAcceptingAnOldPause() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, FakeTranscriber("What is the current volume?", "What is the current volume?"),
+            trailingSilenceMs = null)
+        fixture.capture.start()
+        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+        fixture.emit(100, 2000, speech = true)
+        fixture.bufferedMs = 200
+        fixture.emit(1000, 0)
+        assertFalse(completion.isCompleted)
+        fixture.bufferedMs = 0
+        fixture.emit(1100, 2000, speech = true)
+        fixture.emit(1449, 0)
+        assertFalse(completion.isCompleted)
+        fixture.emit(1450, 0)
+        assertTrue(withTimeout(1000) { completion.await() })
+        fixture.capture.stop()
+    }
+
     @Test
     fun microphoneStartsBeforeModelsAndBufferedOpeningAudioReachesAsr() = runBlocking<Unit> {
         val chunks = kotlinx.coroutines.channels.Channel<ByteArray>(4)
@@ -203,7 +253,7 @@ class AudioTurnCaptureTest {
         fixture.emit(1300, -1)
         assertTrue(fixture.capture.awaitTurnCompletion())
         assertEquals("story about astronauts", fixture.capture.finalTranscript)
-        assertEquals("story about astronauts", fixture.partials.last())
+        assertEquals(listOf("story about pirates"), fixture.partials)
         fixture.capture.stop()
         assertEquals(1, transcriber.finishes)
         assertEquals(0, transcriber.recoveries)
@@ -311,7 +361,7 @@ class AudioTurnCaptureTest {
         fixture.emit(1400, 0, samples = 1600)
         assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
         assertEquals("can you hear me now", fixture.capture.finalTranscript)
-        assertEquals(listOf("can you hear me now"), fixture.partials)
+        assertTrue(fixture.partials.isEmpty())
         assertEquals(1, transcriber.recoveries)
         assertEquals(9600, transcriber.recoveredPcm.size)
         assertEquals(111.toByte(), transcriber.recoveredPcm[0])
@@ -496,11 +546,13 @@ class AudioTurnCaptureTest {
 
     private class CaptureFixture(scope: CoroutineScope, transcriber: StreamingTranscriber? = null,
         factory: (() -> StreamingTranscriber)? = transcriber?.let { { it } },
-        trailingSilenceMs: Long = 1200L,
+        trailingSilenceMs: Long? = 1200L,
         allowAudioOnlyTurns: Boolean = false
     ) {
         var microphoneStarts = 0
         var microphoneStops = 0
+        var bufferedMs = 0L
+        var resumed = 0
         val partials = mutableListOf<String>()
         val recoveryStates = mutableListOf<Boolean>()
         val metrics = mutableListOf<Pair<AsrCaptureMetrics, String>>()
@@ -510,6 +562,7 @@ class AudioTurnCaptureTest {
         private val input = object : AudioInput {
             override val sampleRateHz = 16_000
             override val channelCount = 1
+            override val bufferedAudioMs: Long get() = bufferedMs
             override fun chunks() = chunks
             override suspend fun start() { microphoneStarts++ }
             override suspend fun stop() { microphoneStops++ }
@@ -518,7 +571,8 @@ class AudioTurnCaptureTest {
         val capture = AudioTurnCapture(input, scope, createDetector = { detector }, nowMs = { clock }, log = events::add,
             createTranscriber = factory, onPartialTranscript = { text, _ -> partials.add(text) },
             onMetrics = { stats, text -> metrics.add(stats to text) }, trailingSilenceMs = trailingSilenceMs,
-            onRecognitionRecovery = recoveryStates::add, allowAudioOnlyTurns = allowAudioOnlyTurns)
+            onRecognitionRecovery = recoveryStates::add, allowAudioOnlyTurns = allowAudioOnlyTurns,
+            onSpeechResumed = { resumed++ })
 
         suspend fun emit(atMs: Long, sample: Int, speech: Boolean = false, samples: Int = 1, probability: Float = if (speech) 0.95f else 0.01f) {
             clock = atMs

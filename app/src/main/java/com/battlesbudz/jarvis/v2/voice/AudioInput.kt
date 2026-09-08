@@ -6,6 +6,9 @@ import kotlinx.coroutines.flow.Flow
 interface AudioInput {
     val sampleRateHz: Int
     val channelCount: Int
+    /** Monotonic microphone-read time of the currently delivered chunk, when available. */
+    val lastChunkCaptureTimeMs: Long? get() = null
+    val bufferedAudioMs: Long get() = 0
 
     /** Emits short PCM16 mono chunks while the input is active. */
     fun chunks(): Flow<ByteArray>
@@ -19,4 +22,3 @@ data class AudioFormat(
     val channelCount: Int = 1,
     val bitsPerSample: Int = 16
 )
-

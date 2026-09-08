@@ -8,7 +8,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,16 +34,31 @@ class AndroidAudioInput(
     override val sampleRateHz: Int = format.sampleRateHz
     override val channelCount: Int = format.channelCount
 
-    private val emittedChunks = Channel<ByteArray>(64)
+    private data class CapturedChunk(val pcm: ByteArray, val atMs: Long)
+    private val queuedBytes = java.util.concurrent.atomic.AtomicLong()
+    private val emittedChunks = Channel<CapturedChunk>(64, onUndeliveredElement = {
+        queuedBytes.addAndGet(-it.pcm.size.toLong())
+    })
+    @Volatile override var lastChunkCaptureTimeMs: Long? = null
+        private set
+    override val bufferedAudioMs: Long get() = queuedBytes.get().coerceAtLeast(0) * 1000 / (sampleRateHz * 2)
     @Volatile private var recorder: AudioRecord? = null
     @Volatile var ownsRecorder = false
         private set
     private var captureJob: Job? = null
     private val priorityLost = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    fun discardBufferedAudio() { while (emittedChunks.tryReceive().isSuccess) { /* bounded queue */ } }
+    fun discardBufferedAudio() {
+        while (true) queuedBytes.addAndGet(-(emittedChunks.tryReceive().getOrNull() ?: break).pcm.size.toLong())
+    }
 
-    override fun chunks(): Flow<ByteArray> = emittedChunks.receiveAsFlow()
+    override fun chunks(): Flow<ByteArray> = kotlinx.coroutines.flow.flow {
+        for (chunk in emittedChunks) {
+            queuedBytes.addAndGet(-chunk.pcm.size.toLong())
+            lastChunkCaptureTimeMs = chunk.atMs
+            emit(chunk.pcm)
+        }
+    }
 
     override suspend fun start() {
         if (captureJob?.isActive == true) return
@@ -136,7 +150,11 @@ class AndroidAudioInput(
                             }
                             onLevel((kotlin.math.sqrt(squares / (count / 2).coerceAtLeast(1)) / 4000.0).toFloat().coerceIn(0f, 1f))
                             assembler.accept(pcm, count) { chunk ->
-                                if (!emittedChunks.trySend(chunk).isSuccess) throw AudioBacklogException()
+                                queuedBytes.addAndGet(chunk.size.toLong())
+                                if (!emittedChunks.trySend(CapturedChunk(chunk, System.nanoTime() / 1_000_000)).isSuccess) {
+                                    queuedBytes.addAndGet(-chunk.size.toLong())
+                                    throw AudioBacklogException()
+                                }
                             }
                             capturedBytes += count
                             // Retain startup audio while allowing the hardware capture path to warm up.

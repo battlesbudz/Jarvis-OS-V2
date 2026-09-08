@@ -10,7 +10,7 @@ import java.io.File
 class MoonshineStreamingTranscriber(private val directory: File) : StreamingTranscriber {
     private val lines = linkedMapOf<Long, String>()
     private var transcriber = Transcriber(listOf(
-        TranscriberOption("transcription_interval", "0.5"),
+        TranscriberOption("transcription_interval", "0.25"),
         TranscriberOption("identify_speakers", "false"),
         TranscriberOption("return_audio_data", "false")
     ))
@@ -34,7 +34,7 @@ class MoonshineStreamingTranscriber(private val directory: File) : StreamingTran
                 if (line != null) lines[line.id] = line.text.orEmpty()
             }
             transcriber.loadFromFiles(directory.path, JNI.MOONSHINE_MODEL_ARCH_SMALL_STREAMING)
-            transcriber.setUpdateInterval(0.5)
+            transcriber.setUpdateInterval(0.25)
             transcriber.start()
         } catch (error: Throwable) {
             close()

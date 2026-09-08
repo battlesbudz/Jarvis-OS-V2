@@ -156,6 +156,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         val ttsEngine = ttsComparisonStore.selectedEngine()
         val asrTurnId = java.util.UUID.randomUUID().toString()
         val finalReadyAt = java.util.concurrent.atomic.AtomicLong(0)
+        val speechEndedAt = java.util.concurrent.atomic.AtomicLong(0)
         val firstPlayback = java.util.concurrent.atomic.AtomicBoolean(true)
         voiceTurnJob = runtimeScope.launch(Dispatchers.Default) {
             var operationOwned = false
@@ -250,6 +251,11 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             if (firstPlayback.compareAndSet(true, false) && finalReadyAt.get() != 0L) {
                                 asrComparisonStore.update(asrTurnId, "final_to_playback_start_ms",
                                     (System.nanoTime() - finalReadyAt.get()) / 1_000_000)
+                                if (speechEndedAt.get() != 0L) {
+                                    val elapsed = System.nanoTime() / 1_000_000 - speechEndedAt.get()
+                                    asrComparisonStore.update(asrTurnId, "speech_end_to_playback_ms", elapsed)
+                                    diagnosticRecorder.recordImportant("Voice latency: speech_end_to_playback_ms=$elapsed turn=$asrTurnId")
+                                }
                             }
                             status("Jarvis is speaking…")
                         }
@@ -265,7 +271,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     val prompt = promptBuilder.buildGemmaPrompt(partial, null, voiceHistory, seedContext = true) + "\n" +
                         com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions
                     engine.generateAudio(prompt, audio, onToken)
-                }, log = { diagnosticRecorder.record("Voice preparation: $it") })
+                }, log = { diagnosticRecorder.record("Voice preparation: $it") },
+                    prepareOpening = output::prepareOpening, speechText = ::cleanSpeechText)
                 preparation = speculative
                 val activeCapture = AudioTurnCapture(
                     input, this,
@@ -284,7 +291,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     },
                     onMetrics = { metrics, text ->
                         asrComparisonStore.add(asrTurnId, metrics, text)
+                        capture?.lastSpeechAtMs?.let { speechEndedAt.set(it) }
                     },
+                    onSpeechResumed = speculative::speechResumed,
                     onPartialTranscript = { text, audio ->
                         speculative.submit(text, audio)
                         mainHandler.post {
@@ -358,6 +367,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                 if (text.isNotBlank() && firstFinalToken.compareAndSet(true, false)) {
                                     val elapsedMs = (System.nanoTime() - endpointAt) / 1_000_000
                                     asrComparisonStore.update(asrTurnId, "final_to_first_text_ms", elapsedMs)
+                                    if (speechEndedAt.get() != 0L) {
+                                        asrComparisonStore.update(asrTurnId, "speech_end_to_first_text_ms",
+                                            System.nanoTime() / 1_000_000 - speechEndedAt.get())
+                                    }
                                     diagnosticRecorder.record("Voice latency: endpoint_to_first_text_ms=$elapsedMs")
                                 }
                             }

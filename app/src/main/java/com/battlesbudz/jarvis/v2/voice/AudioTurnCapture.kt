@@ -23,9 +23,10 @@ class AudioTurnCapture(
     private val createTranscriber: (() -> StreamingTranscriber)? = null,
     private val onPartialTranscript: (String, ByteArray) -> Unit = { _, _ -> },
     private val onMetrics: (AsrCaptureMetrics, String) -> Unit = { _, _ -> },
-    private val trailingSilenceMs: Long = VoiceCallPolicy.TURN_SILENCE_MS,
+    private val trailingSilenceMs: Long? = null,
     private val onRecognitionRecovery: (Boolean) -> Unit = {},
-    private val allowAudioOnlyTurns: Boolean = false
+    private val allowAudioOnlyTurns: Boolean = false,
+    private val onSpeechResumed: () -> Unit = {}
 ) {
     private val pcm = ByteArrayOutputStream()
     private val preRoll = RollingAudioBuffer(AudioFormat(input.sampleRateHz), maxDurationMs = 1200)
@@ -43,6 +44,9 @@ class AudioTurnCapture(
     private var captureReadyMs = 0L
     private val turnCompleted = CompletableDeferred<Boolean>()
     private var stopped = false
+    private val turnEnd = AdaptiveTurnEnd()
+    @Volatile var lastSpeechAtMs: Long? = null
+        private set
     @Volatile private var endRequested = false
     fun finishNow() { endRequested = true }
     fun yieldMicrophone() { turnCompleted.completeExceptionally(MicrophoneBusyException()) }
@@ -69,6 +73,7 @@ class AudioTurnCapture(
         var lastSpeechAt = startedAt
         var lastLevelLogAt = startedAt
         log("capture_started vad=silero threshold=0.5 speechConfirmationMs=96 " +
+            "endpointing=${if (trailingSilenceMs == null) "adaptive" else "fixed"} " +
             "trailingSilenceMs=$trailingSilenceMs initialSilenceTimeoutMs=$initialSilenceTimeoutMs maxTurnMs=25000")
         captureReadyMs = nowMs() - captureRequestedAt
         collectionJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -80,6 +85,7 @@ class AudioTurnCapture(
                     val signal = Pcm16Signal.measure(chunk)
                     val decision = activeDetector.accept(chunk)
                     val now = nowMs()
+                    val audioAt = input.lastChunkCaptureTimeMs ?: now
                     synchronized(pcm) {
                         if (hasSpeech) {
                             val remaining = MAX_TURN_BYTES - pcm.size()
@@ -87,7 +93,8 @@ class AudioTurnCapture(
                         } else {
                             preRoll.append(chunk)
                         }
-                        if (decision.isSpeech) {
+                        if (decision.isSpeech || (hasSpeech && decision.probability >= 0.5f)) {
+                            if (hasSpeech && audioAt - lastSpeechAt >= 180) onSpeechResumed()
                             if (!hasSpeech) {
                                 firstSpeechAt = now
                                 pcm.write(preRoll.snapshot())
@@ -95,7 +102,8 @@ class AudioTurnCapture(
                                 log("speech_started vad=silero elapsedMs=${now - startedAt}")
                             }
                             hasSpeech = true
-                            lastSpeechAt = now
+                            lastSpeechAt = audioAt
+                            lastSpeechAtMs = audioAt
                         }
                     }
                     // ASR receives every frame from microphone startup. VAD controls
@@ -114,14 +122,18 @@ class AudioTurnCapture(
                             pcm.write(preRoll.snapshot())
                             preRoll.clear()
                             hasSpeech = true
-                            lastSpeechAt = now
+                            lastSpeechAt = audioAt
+                            lastSpeechAtMs = audioAt
                         }
                         log("speech_started source=asr_and_vad probability=${decision.probability} preRollMs=1200")
                     }
                     if (hasSpeech && partial != null) publishPartial(partial)
+                    val endpoint = trailingSilenceMs?.let { AdaptiveTurnEnd.Decision(it, "fixed") }
+                        ?: turnEnd.decision(now)
                     var reason = when {
                         endRequested -> "explicit_stop"
-                        hasSpeech && now - lastSpeechAt >= trailingSilenceMs -> "trailing_silence"
+                        hasSpeech && audioAt - lastSpeechAt >= endpoint.silenceMs &&
+                            input.bufferedAudioMs == 0L -> "trailing_silence"
                         hasSpeech && synchronized(pcm) { pcm.size() >= MAX_TURN_BYTES } -> "max_turn_duration"
                         !hasSpeech && initialSilenceTimeoutMs != null && now - lastSpeechAt >= initialSilenceTimeoutMs -> "initial_silence"
                         else -> null
@@ -158,6 +170,8 @@ class AudioTurnCapture(
                                 firstSpeechAt = null
                                 firstPartialAfterSpeechMs = null
                                 lastPartial = ""
+                                turnEnd.reset()
+                                onSpeechResumed()
                                 log("empty_speech_candidate ignored=true count=$emptyCandidates microphone=kept_open inactivitySince=last_detected_speech")
                                 if (initialSilenceTimeoutMs == null || nowMs() - lastSpeechAt < initialSilenceTimeoutMs) {
                                     decodeMs += nowMs() - finalizeStartedAt
@@ -179,15 +193,19 @@ class AudioTurnCapture(
                             if (finalTranscript.isBlank() && allowAudioOnlyTurns) {
                                 log("audio_only_turn speechDetected=true destination=gemma")
                             }
-                            publishPartial(finalTranscript, isFinal = true)
+                            // The owner seals against finalTranscript. Sending it as a new
+                            // partial would cancel a matching draft immediately before seal.
                             log("asr_final chars=${finalTranscript.length}")
                         }
                         onMetrics(AsrCaptureMetrics(modelLoadMs, captureReadyMs, audioBytes / 32,
                             decodeMs, maxDecodeChunkMs, firstPartialAfterSpeechMs, partialUpdates,
-                            nowMs() - finalizeStartedAt, reason, emptyCandidates), finalTranscript)
+                            nowMs() - finalizeStartedAt, reason, emptyCandidates,
+                            lastSpeechAtMs?.let { (finalizeStartedAt - it).coerceAtLeast(0) },
+                            endpoint.silenceMs, endpoint.cue), finalTranscript)
                         turnCompleted.complete(hasSpeech)
                         log("turn_endpoint reason=$reason elapsedMs=${now - startedAt} " +
-                            "silenceMs=${now - lastSpeechAt} speechDetected=$hasSpeech")
+                            "silenceMs=${audioAt - lastSpeechAt} endpointCue=${endpoint.cue} " +
+                            "targetSilenceMs=${endpoint.silenceMs} speechDetected=$hasSpeech")
                     } else if (now - lastLevelLogAt >= 1_000L) {
                         lastLevelLogAt = now
                         log("capture_level vad=silero rms=${signal.rms.toInt()} peak=${signal.peak} " +
@@ -235,12 +253,13 @@ class AudioTurnCapture(
         }
     }
 
-    private fun publishPartial(text: String, isFinal: Boolean = false) {
+    private fun publishPartial(text: String) {
         val partial = text.trim()
+        turnEnd.update(partial, nowMs())
         if (partial.isNotBlank() && partial != lastPartial) {
             lastPartial = partial
-            if (!isFinal) partialUpdates++
-            if (!isFinal && firstPartialAfterSpeechMs == null) {
+            partialUpdates++
+            if (firstPartialAfterSpeechMs == null) {
                 firstPartialAfterSpeechMs = firstSpeechAt?.let { (nowMs() - it).coerceAtLeast(0) }
             }
             log("asr_partial chars=${partial.length}")

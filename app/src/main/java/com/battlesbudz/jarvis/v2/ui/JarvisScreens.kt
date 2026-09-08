@@ -359,6 +359,7 @@ private fun openTranscriptImageStream(
 @Composable
 fun JarvisApp(
     store: ModelStore,
+    latencyBenchmarks: com.battlesbudz.jarvis.v2.voice.VoiceLatencyBenchmarkActions,
     ttsComparisonStore: com.battlesbudz.jarvis.v2.voice.TtsComparisonStore,
     onSelectTts: (com.battlesbudz.jarvis.v2.voice.TtsEngine) -> Boolean,
     onTtsBenchmark: (com.battlesbudz.jarvis.v2.voice.TtsEngine?, (String) -> Unit, () -> Unit) -> Unit,
@@ -492,6 +493,7 @@ fun JarvisApp(
                         }
                     )
                     else -> VoiceCallScreen(
+                        latencyBenchmarks = latencyBenchmarks,
                         resumedCall = resumedVoiceCall,
                         onResumeConsumed = { resumedVoiceCall = null },
                         ttsComparisonStore = ttsComparisonStore,
@@ -561,6 +563,7 @@ fun JarvisApp(
 
 @Composable
 private fun VoiceCallScreen(
+    latencyBenchmarks: com.battlesbudz.jarvis.v2.voice.VoiceLatencyBenchmarkActions,
     resumedCall: VoiceCallRecord?,
     onResumeConsumed: () -> Unit,
     ttsComparisonStore: com.battlesbudz.jarvis.v2.voice.TtsComparisonStore,
@@ -608,6 +611,7 @@ private fun VoiceCallScreen(
     var turns by remember { mutableStateOf(resumedCall?.transcript.orEmpty().map { ChatEntry(it.role, it.text) }) }
     var provisionalUser by remember { mutableStateOf("") }
     if (ttsSettingsOpen) TtsComparisonDialog(
+        latencyBenchmarks = latencyBenchmarks,
         store = ttsComparisonStore, canChange = !callStarted && !turnInFlight && !wakeTesting,
         onSelect = { engine -> onSelectTts(engine).also { if (it) selectedTts = engine } },
         onBenchmark = onTtsBenchmark, onStop = onStopTtsBenchmark,

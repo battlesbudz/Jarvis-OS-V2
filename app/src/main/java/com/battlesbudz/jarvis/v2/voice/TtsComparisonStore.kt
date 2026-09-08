@@ -11,7 +11,10 @@ data class TtsSessionMetrics(
     val underruns: Int, val phrases: Int, val textChars: Int, val textSha256: String,
     val threads: Int, val completed: Boolean, val error: String?,
     val playbackConfirmed: Boolean? = null, val playedFrames: Long? = null,
-    val speechFrames: Long? = null, val outputRoute: String? = null
+    val speechFrames: Long? = null, val outputRoute: String? = null,
+    val firstTextToPcmMs: Long? = null, val firstTextToPlaybackMs: Long? = null,
+    val openingChars: Int? = null, val preparedSynthesisMs: Long = 0,
+    val preparedOpeningReused: Boolean = false
 )
 
 /** Comparable raw synthesis measurements, separate from Gemma and ASR latency. */
@@ -39,6 +42,11 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
             .put("played_frames", metrics.playedFrames ?: JSONObject.NULL)
             .put("speech_frames", metrics.speechFrames ?: JSONObject.NULL)
             .put("output_route", metrics.outputRoute ?: JSONObject.NULL)
+            .put("first_text_to_pcm_ms", metrics.firstTextToPcmMs ?: JSONObject.NULL)
+            .put("first_text_to_playback_ms", metrics.firstTextToPlaybackMs ?: JSONObject.NULL)
+            .put("opening_target_chars", metrics.openingChars ?: JSONObject.NULL)
+            .put("prepared_synthesis_ms", metrics.preparedSynthesisMs)
+            .put("prepared_opening_reused", metrics.preparedOpeningReused)
         val array = JSONArray().also { a -> (records() + item).takeLast(40).forEach(a::put) }
         preferences.edit().putString("results", array.toString()).apply()
     }
@@ -52,6 +60,8 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
             for (key in listOf("model", "source", "sample", "completed", "load_ms", "first_phrase_synthesis_ms",
                 "synthesis_ms", "raw_audio_ms", "rtf", "playback_speed", "estimated_supply_gap_ms",
                 "playback_confirmed", "played_frames", "speech_frames", "output_route",
+                "first_text_to_pcm_ms", "first_text_to_playback_ms", "opening_target_chars",
+                "prepared_synthesis_ms", "prepared_opening_reused",
                 "queue_wait_ms", "underruns_including_drain", "phrases", "threads", "text_chars", "text_sha256", "error"))
                 appendLine("$key=${if (item.isNull(key)) "unavailable" else item.opt(key)}")
         }.trimEnd()

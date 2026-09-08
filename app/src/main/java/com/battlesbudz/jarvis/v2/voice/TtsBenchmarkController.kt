@@ -3,6 +3,7 @@ package com.battlesbudz.jarvis.v2.voice
 import com.battlesbudz.jarvis.v2.ai.ModelStore
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flow
 
 /** Runs one native owner at a time and holds the same model-operation gate as live voice calls. */
 class TtsBenchmarkController(
@@ -17,7 +18,8 @@ class TtsBenchmarkController(
     @Volatile private var output: SherpaKokoroVoiceOutput? = null
     val running: Boolean get() = job?.isCompleted == false
 
-    fun start(selected: TtsEngine?, status: (String) -> Unit, finished: () -> Unit) {
+    fun start(selected: TtsEngine?, status: (String) -> Unit, finished: () -> Unit,
+              compareOpenings: Boolean = false) {
         if (running || !canStart()) {
             status("End the call and wait for audio to finish before benchmarking.")
             finished()
@@ -33,6 +35,29 @@ class TtsBenchmarkController(
                 for (engine in selected?.let { listOf(it) } ?: TtsEngine.entries) {
                     ensureActive()
                     val directory = models.ensureReady(engine, ::report)
+                    if (compareOpenings) {
+                        // Reverse the second pass to expose warm-up/thermal order effects.
+                        for ((pass, sizes) in listOf(listOf(28, 40, 70), listOf(70, 40, 28)).withIndex()) {
+                            for (size in sizes) {
+                                ensureActive()
+                                report("${engine.label}: $size-character opening, pass ${pass + 1} of 2…")
+                                val ready = CompletableDeferred<Unit>()
+                                val speaker = SherpaKokoroVoiceOutput(directory.path, engine = engine,
+                                    normalSpeed = true, fixedChunking = true, openingChars = size,
+                                    onReady = { ready.complete(Unit) },
+                                    onMetrics = { results.add(engine, "opening-stream-v1", "opening-${size}-pass-${pass + 1}", it) },
+                                    log = log)
+                                output = speaker
+                                try {
+                                    speaker.speak(flow {
+                                        ready.await() // Report load separately from a warm voice response.
+                                        for (token in openingSample.chunked(4)) { emit(token); delay(32) }
+                                    }) {}
+                                } finally { output = null }
+                            }
+                        }
+                        continue
+                    }
                     for ((sample, text) in TtsBenchmarkSamples.all) {
                         ensureActive()
                         report("${engine.label}: ${sample.substringBefore('-')} sample…")
@@ -60,4 +85,9 @@ class TtsBenchmarkController(
     }
 
     fun stop() { output?.stopSpeaking(); job?.cancel() }
+
+    private companion object {
+        const val openingSample = "The garden gate is open, and a cool breeze is moving through the trees. " +
+            "Beyond the wall, the path leads toward a quiet pond."
+    }
 }
