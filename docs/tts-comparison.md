@@ -2,9 +2,9 @@
 
 ## User test
 
-End any call, then tap **Voice: …**. Select Kokoro original, Piper Lessac (US), Piper Alan (British), Piper Ryan High (US), or Piper Miro High (British) for the next call. **Test selected voice** reads a fixed short reply, paragraph and story. **Test all voices** runs the same samples sequentially with each engine without changing the selected call voice. **Stop benchmark** cancels playback and retains completed results; native synthesis may take a moment to retire before controls become available again.
+End any call, then tap **Voice: …**. Select Kokoro original or Piper Miro High (British) for the next call. **Test selected voice** reads a fixed short reply, paragraph and story. **Test all voices** runs the same samples sequentially with each engine without changing the selected call voice. **Stop benchmark** cancels playback and retains completed results; native synthesis may take a moment to retire before controls become available again.
 
-First use downloads Ryan High (~116 MB) or Lessac/Alan/Miro (~67 MB each), with a pinned SHA-256 and byte count. Extracted model lengths and essential phonemizer files are checked. Bundles install in separate directories; original Kokoro remains available. Downloads and extraction are cancellable for the alternatives. The original model retains its existing installer. All models operate locally after installation.
+First use downloads Miro (~67 MB), with a pinned SHA-256 and byte count. Extracted model lengths and essential phonemizer files are checked. Bundles install in separate directories; original Kokoro remains available. Downloads and extraction are cancellable for the alternatives. The original model retains its existing installer. All models operate locally after installation.
 
 Each benchmark sample creates a fresh native engine. All engines use the same 2–4 thread limit, non-callback JNI generation, fixed phrase boundaries, and normal 1.0 playback speed. Model loading and queue waits are reported separately from synthesis. Downloads, Gemma generation and microphone recognition are excluded. The benchmark does not unload Gemma weights already resident in memory; it prevents competing model operations. These are in-app synthesis/playback measurements, not laboratory isolated hardware timings. Try repeated runs in similar temperature/power conditions and listen to pronunciation and voice quality.
 
@@ -16,7 +16,7 @@ The last 40 TTS measurements survive calls and app restarts. **Copy diagnostics*
 
 Compare completed records with matching sample ID and text hash. RTF is synthesis time divided by raw audio duration; below one means synthesis kept up with normal speech. Slower playback never improves the reported RTF. Incomplete/error runs remain visible and must not be ranked as successful fast results. No model is automatically deleted or selected as a winner.
 
-## Models
+## Model evaluation history (retired options are no longer selectable)
 
 - Baseline: existing kokoro-en-v0_19, speaker 10.
 - Piper: https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2 — Lessac medium English, speaker 0, 67230653 archive bytes; SHA-256 `9e3febfacf0abf4270172d2958bcec246032b7e88efc2720840cc80c93de334e`.
@@ -40,7 +40,7 @@ The benchmark dialog now has a persistent **Copy diagnostics** action beside Don
 Piper Alan medium is an additional British English option, keeping Lessac and original Kokoro available. Alan uses the same VITS path and default medium-model inference configuration; it is a different voice/accent, not a guaranteed fidelity upgrade. Its model card says it was fine-tuned from Lessac medium. Model card: https://huggingface.co/rhasspy/piper-voices/blob/main/en/en_GB/alan/medium/MODEL_CARD
 
 Archive: https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-alan-medium.tar.bz2
-Archive bytes: 67220121; SHA-256: `a48d4017da0f77668b27bed63fe6e04dd64c6397e1fadad4f460efb0ef7c9012`; extracted ONNX bytes: 63201430. Model card and dataset attribution remain in the installed bundle. Existing saved selection and historical results keep their IDs. Test all voices includes all five choices; Test selected voice runs just the chosen one.
+Archive bytes: 67220121; SHA-256: `a48d4017da0f77668b27bed63fe6e04dd64c6397e1fadad4f460efb0ef7c9012`; extracted ONNX bytes: 63201430. Model card and dataset attribution remain in the installed bundle. Existing saved selection and historical results keep their IDs. Test all voices now includes only Kokoro original and Miro; Test selected voice runs just the chosen one.
 
 ## Ryan High and INT8 retirement
 
@@ -79,3 +79,7 @@ Simple repeat requests such as “What did you say?” and “Sorry, can you say
 Six focused tests cover short-clip startup thresholds, no-progress drain timeout, full consumption, cancellation, latest-tool-result recall, and compound-request exclusions. Kokoro's occasional garble remains unconfirmed: some reported calls use speed 1.0, so time stretching is not established as the cause. No speculative pitch or voice-generation changes are included.
 
 Android behavior reference: https://developer.android.com/reference/android/media/AudioTrack#getStartThresholdInFrames()
+
+## Final voice shortlist
+
+Only Kokoro original and Piper Miro High remain selectable or benchmarked. A current Kokoro or Miro preference is preserved; a retired Lessac, Alan, Ryan or INT8 preference falls back to Kokoro. Old benchmark records retain each original model's identity with a retired label. The next voice-model preparation deletes only the retired downloads and their installer staging/partial files, reclaiming storage without touching Kokoro, Miro, or saved transcripts/results. Earlier sections document the evaluation history, not additional available choices.

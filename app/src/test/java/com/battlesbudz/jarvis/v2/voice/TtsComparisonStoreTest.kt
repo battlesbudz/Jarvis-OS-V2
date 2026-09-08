@@ -9,16 +9,16 @@ class TtsComparisonStoreTest {
     @Test fun selectionsAndResultsSurviveRestartWithoutMixingModels() {
         val prefs = preferences()
         val store = TtsComparisonStore(prefs)
-        store.select(TtsEngine.PIPER)
+        store.select(TtsEngine.PIPER_MIRO)
         val metrics = TtsSessionMetrics(100, 200, 400, 2000, 20, 1f, 0, 1, 2, 50, "abc", 4, true, null)
-        store.add(TtsEngine.PIPER_RYAN, "benchmark-v1", "short-v1", metrics)
+        store.add(TtsEngine.KOKORO, "benchmark-v1", "short-v1", metrics)
         val restored = TtsComparisonStore(prefs)
-        assertEquals(TtsEngine.PIPER, restored.selectedEngine())
+        assertEquals(TtsEngine.PIPER_MIRO, restored.selectedEngine())
         val entry = restored.records().single()
-        assertEquals(TtsEngine.PIPER_RYAN.id, entry.getString("engine"))
+        assertEquals(TtsEngine.KOKORO.id, entry.getString("engine"))
         assertEquals(0.2, entry.getDouble("rtf"), 0.0001)
         assertTrue(entry.getBoolean("completed"))
-        repeat(45) { restored.add(TtsEngine.PIPER, "voice-call", "$it", metrics.copy(completed = false, error = "stopped")) }
+        repeat(45) { restored.add(TtsEngine.PIPER_MIRO, "voice-call", "$it", metrics.copy(completed = false, error = "stopped")) }
         assertEquals(40, restored.records().size)
         assertFalse(restored.records().last().getBoolean("completed"))
         assertTrue(restored.snapshot().contains("error=stopped"))
@@ -32,6 +32,13 @@ class TtsComparisonStoreTest {
         assertFalse(TtsEngine.entries.any { it.id == "kokoro_int8" })
         assertTrue(restored.snapshot().contains("TTS Kokoro INT8 (retired)"))
         assertTrue(restored.snapshot().contains("model=kokoro-int8-en-v0_19"))
+        for (id in listOf("piper", "piper_alan", "piper_ryan_high")) {
+            prefs.edit().putString("engine", id).apply()
+            assertEquals(TtsEngine.KOKORO, restored.selectedEngine())
+            assertTrue(TtsEngine.diagnosticLabel(id).endsWith("(retired)"))
+            assertFalse(TtsEngine.diagnosticLabel(id).startsWith("Kokoro"))
+        }
+        assertEquals(setOf(TtsEngine.KOKORO, TtsEngine.PIPER_MIRO), TtsEngine.entries.toSet())
         assertEquals("future_voice", TtsEngine.diagnosticLabel("future_voice"))
     }
 

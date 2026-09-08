@@ -19,8 +19,11 @@ class TtsModelStore(context: Context, private val original: KokoroModelStore) {
     suspend fun ensureReady(engine: TtsEngine, status: (String) -> Unit): File = withContext(Dispatchers.IO) {
         // Called under the model-operation gate, before any selected native engine loads.
         // Remove only the retired model's installer-owned files; keep saved measurements.
-        listOf("kokoro-int8-en-v0_19", "kokoro-int8-en-v0_19.staging", "kokoro-int8-en-v0_19.tar.bz2.part")
-            .forEach { File(root, it).deleteRecursively() }
+        listOf("kokoro-int8-en-v0_19", "vits-piper-en_US-lessac-medium",
+            "vits-piper-en_GB-alan-medium", "vits-piper-en_US-ryan-high").forEach { retired ->
+            listOf(retired, "$retired.staging", "$retired.tar.bz2.part")
+                .forEach { File(root, it).deleteRecursively() }
+        }
         if (engine == TtsEngine.KOKORO) return@withContext original.downloadOrReuse(onStatus = status).getOrThrow()
         val directory = File(root, engine.directory)
         val required = listOf(engine.modelFile, "tokens.txt", "espeak-ng-data")

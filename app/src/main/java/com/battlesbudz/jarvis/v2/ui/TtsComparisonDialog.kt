@@ -48,7 +48,7 @@ internal fun TtsComparisonDialog(
                         Text((if (selected == engine) "✓ " else "") + engine.label)
                     }
                 }
-                Text("Selected voice is used for the next call. First use downloads about 116 MB for Ryan High or 67 MB for Lessac, Alan or Miro. All voices then work offline.")
+                Text("Selected voice is used for the next call. Miro downloads about 67 MB on first use. All voices then work offline.")
                 if (selected == TtsEngine.PIPER_MIRO) Text("Miro by TigreGotico Lda / OpenVoiceOS. Non-commercial use only.", style = MaterialTheme.typography.bodySmall)
                 if (!canChange) Text("End your call before changing voices or benchmarking.")
                 HorizontalDivider()
