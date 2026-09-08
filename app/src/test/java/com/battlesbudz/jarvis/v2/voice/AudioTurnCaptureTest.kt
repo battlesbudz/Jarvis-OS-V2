@@ -206,6 +206,7 @@ class AudioTurnCaptureTest {
         assertEquals("story about astronauts", fixture.partials.last())
         fixture.capture.stop()
         assertEquals(1, transcriber.finishes)
+        assertEquals(0, transcriber.recoveries)
         assertEquals(1, transcriber.releases)
     }
 
@@ -217,6 +218,7 @@ class AudioTurnCaptureTest {
         fixture.emit(100, 2000, speech = true)
         fixture.capture.stop()
         assertEquals(0, transcriber.finishes)
+        assertEquals(0, transcriber.recoveries)
         assertEquals("", fixture.capture.finalTranscript)
         assertEquals(1, transcriber.releases)
     }
@@ -300,6 +302,46 @@ class AudioTurnCaptureTest {
     }
 
     @Test
+    fun emptyStreamRetriesCapturedSpeechBeforeDiscardingIt() = runBlocking<Unit> {
+        val transcriber = FakeTranscriber("", "", "can you hear me now")
+        val fixture = CaptureFixture(this, transcriber)
+        fixture.capture.start()
+        fixture.emit(100, 111, samples = 1600)
+        fixture.emit(200, 222, speech = true, samples = 1600)
+        fixture.emit(1400, 0, samples = 1600)
+        assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+        assertEquals("can you hear me now", fixture.capture.finalTranscript)
+        assertEquals(listOf("can you hear me now"), fixture.partials)
+        assertEquals(1, transcriber.recoveries)
+        assertEquals(9600, transcriber.recoveredPcm.size)
+        assertEquals(111.toByte(), transcriber.recoveredPcm[0])
+        assertEquals(222.toByte(), transcriber.recoveredPcm[3200])
+        assertEquals(0, fixture.metrics.single().first.emptyCandidates)
+        assertEquals(1, fixture.microphoneStarts)
+        assertEquals(listOf(true, false), fixture.recoveryStates)
+        fixture.capture.stop()
+    }
+
+    @Test
+    fun emptyBatchRetryKeepsListeningWithoutSubmittingNoise() = runBlocking<Unit> {
+        val first = FakeTranscriber("", "", "")
+        var created = 0
+        val fixture = CaptureFixture(this, factory = { if (created++ == 0) first else FakeTranscriber() })
+        fixture.capture.start()
+        fixture.emit(100, 1000, speech = true)
+        fixture.emit(1300, 0)
+        assertEquals(1, first.recoveries)
+        assertEquals(2, created)
+        assertFalse(fixture.capture.hasSpeech)
+        assertTrue(fixture.partials.isEmpty())
+        assertEquals(listOf(true, false), fixture.recoveryStates)
+        fixture.emit(2000, 2000, speech = true)
+        fixture.emit(3200, 0)
+        assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+        fixture.capture.stop()
+    }
+
+    @Test
     fun repeatedEmptyDetectionsDoNotRestartTwentySecondInactivityDeadline() = runBlocking<Unit> {
         val fixture = CaptureFixture(this, factory = { FakeTranscriber("", "") })
         fixture.capture.start()
@@ -336,18 +378,27 @@ class AudioTurnCaptureTest {
 
     private class FakeTranscriber(
         private val partial: String = "story about pirates",
-        private val final: String = "story about astronauts"
+        private val final: String = "story about astronauts",
+        private val recovered: String = ""
     ) : StreamingTranscriber {
         var accepts = 0
         val receivedSamples = mutableListOf<Int>()
         var finishes = 0
         var releases = 0
+        var recoveries = 0
+        var recoveredPcm = byteArrayOf()
         override fun accept(pcm: ByteArray): String {
             accepts++
             receivedSamples.add((pcm[0].toInt() and 255) or (pcm[1].toInt() shl 8))
             return partial
         }
         override fun finish(): String { finishes++; return final }
+        override fun recover(pcm: ByteArray): String {
+            assertEquals(1, finishes)
+            recoveries++
+            recoveredPcm = pcm.copyOf()
+            return recovered
+        }
         override fun close() { releases++ }
     }
 
@@ -369,6 +420,7 @@ class AudioTurnCaptureTest {
         var microphoneStarts = 0
         var microphoneStops = 0
         val partials = mutableListOf<String>()
+        val recoveryStates = mutableListOf<Boolean>()
         val metrics = mutableListOf<Pair<AsrCaptureMetrics, String>>()
         private var clock = 0L
         private val chunks = MutableSharedFlow<ByteArray>()
@@ -383,7 +435,8 @@ class AudioTurnCaptureTest {
         val detector = FakeDetector()
         val capture = AudioTurnCapture(input, scope, createDetector = { detector }, nowMs = { clock }, log = events::add,
             createTranscriber = factory, onPartialTranscript = { text, _ -> partials.add(text) },
-            onMetrics = { stats, text -> metrics.add(stats to text) }, trailingSilenceMs = trailingSilenceMs)
+            onMetrics = { stats, text -> metrics.add(stats to text) }, trailingSilenceMs = trailingSilenceMs,
+            onRecognitionRecovery = recoveryStates::add)
 
         suspend fun emit(atMs: Long, sample: Int, speech: Boolean = false, samples: Int = 1) {
             clock = atMs

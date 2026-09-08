@@ -4,4 +4,6 @@ package com.battlesbudz.jarvis.v2.voice
 interface StreamingTranscriber : AutoCloseable {
     fun accept(pcm: ByteArray): String
     fun finish(): String
+    /** One independent full-clip pass after an empty streaming result; PCM stays in memory. */
+    fun recover(pcm: ByteArray): String = ""
 }

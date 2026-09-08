@@ -475,7 +475,14 @@ class MainActivity : ComponentActivity() {
                 val activeCapture = AudioTurnCapture(
                     input, this,
                     createDetector = { SileroSpeechDetector.create(assets) },
-                    log = { diagnosticRecorder.record("Voice input: $it") },
+                    log = {
+                        if (it.startsWith("asr_recovery_") || it.startsWith("empty_speech_candidate")) {
+                            diagnosticRecorder.recordImportant("Voice input: $it")
+                        } else diagnosticRecorder.record("Voice input: $it")
+                    },
+                    onRecognitionRecovery = { recovering ->
+                        status(if (recovering) "Retrying speech recognition…" else "Voice Call is listening — speak now.")
+                    },
                     createTranscriber = {
                         com.battlesbudz.jarvis.v2.voice.MoonshineStreamingTranscriber(asrDirectory)
                     },

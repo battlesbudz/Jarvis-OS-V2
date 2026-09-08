@@ -23,7 +23,8 @@ class AudioTurnCapture(
     private val createTranscriber: (() -> StreamingTranscriber)? = null,
     private val onPartialTranscript: (String, ByteArray) -> Unit = { _, _ -> },
     private val onMetrics: (AsrCaptureMetrics, String) -> Unit = { _, _ -> },
-    private val trailingSilenceMs: Long = VoiceCallPolicy.TURN_SILENCE_MS
+    private val trailingSilenceMs: Long = VoiceCallPolicy.TURN_SILENCE_MS,
+    private val onRecognitionRecovery: (Boolean) -> Unit = {}
 ) {
     private val pcm = ByteArrayOutputStream()
     private val preRoll = RollingAudioBuffer(AudioFormat(input.sampleRateHz), maxDurationMs = 600)
@@ -112,6 +113,18 @@ class AudioTurnCapture(
                         val finalizeStartedAt = nowMs()
                         if (hasSpeech) {
                             finalTranscript = transcriber?.finish().orEmpty().trim()
+                            if (transcriber != null && finalTranscript.isBlank()) {
+                                val candidate = synchronized(pcm) { pcm.toByteArray() }
+                                val recoveryAt = nowMs()
+                                log("asr_recovery_started candidateAudioMs=${candidate.size / 32} reason=empty_stream")
+                                onRecognitionRecovery(true)
+                                try {
+                                    finalTranscript = transcriber?.recover(candidate).orEmpty().trim()
+                                    log("asr_recovery_finished chars=${finalTranscript.length} elapsedMs=${nowMs() - recoveryAt}")
+                                } finally {
+                                    onRecognitionRecovery(false)
+                                }
+                            }
                             if (transcriber != null && finalTranscript.isBlank()) {
                                 emptyCandidates++
                                 hasSpeech = false

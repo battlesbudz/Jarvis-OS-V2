@@ -69,6 +69,18 @@ class MoonshineStreamingTranscriber(directory: File) : StreamingTranscriber {
 
     private fun text() = lines.values.filter { it.isNotBlank() }.joinToString(" ").trim()
 
+    override fun recover(pcm: ByteArray): String {
+        check(!closed && finished)
+        val samples = FloatArray(pcm.size / 2) { index ->
+            val offset = index * 2
+            ((pcm[offset].toInt() and 255) or ((pcm[offset + 1].toInt() and 255) shl 8)).toShort() / 32768f
+        }
+        if (samples.isEmpty()) return ""
+        // Uses the SDK's separate batch stream, not the failed live stream or its event cache.
+        return transcriber.transcribeWithoutStreaming(samples, 16_000)?.lines.orEmpty()
+            .mapNotNull { it.text?.trim()?.takeIf(String::isNotEmpty) }.joinToString(" ")
+    }
+
     override fun close() {
         if (!closed) {
             closed = true
