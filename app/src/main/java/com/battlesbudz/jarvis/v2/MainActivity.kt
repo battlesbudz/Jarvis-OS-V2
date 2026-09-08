@@ -178,6 +178,7 @@ class MainActivity : ComponentActivity() {
         if (granted) {
             runVoiceTurn(pending.start, pending.report, pending.onTranscript, pending.onFinished)
         } else {
+            voiceSessionArmed = false
             pending.report("Microphone permission is required for Voice Calls.")
             pending.onFinished("Voice Call could not start because microphone permission was denied.")
         }
@@ -255,6 +256,8 @@ class MainActivity : ComponentActivity() {
                     runDirectAudioToolSmokeTest(report, onFinished)
                 },
                 onVoiceTurn = { start, report, onTranscript, onFinished ->
+                    com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
+                    com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.report("Preparing microphone…")
                     voiceSessionArmed = start
                     sessionReport = report
                     runVoiceTurn(start, report, onTranscript, onFinished)
@@ -330,6 +333,7 @@ class MainActivity : ComponentActivity() {
                 voiceServiceStarted = true
             } catch (error: Exception) {
                 runCatching { voiceSessionController.interrupt() }
+                voiceSessionArmed = false
                 val message = "Voice Call turn failed: background audio could not start: ${error.message}"
                 diagnosticRecorder.record(message)
                 report(message)
@@ -553,7 +557,7 @@ class MainActivity : ComponentActivity() {
                 speechJob?.join()
                 finalMessage = "Voice Call turn complete. Heard: $transcript\nJarvis: ${response.text}"
             } catch (busy: com.battlesbudz.jarvis.v2.voice.MicrophoneBusyException) {
-                diagnosticRecorder.recordImportant("Microphone yielded; partial turn discarded. Returning to passive mode when available.")
+                diagnosticRecorder.recordImportant("Microphone yielded; dictationPriority=${com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.dictationRequested}; partial turn discarded. Returning to passive mode when available.")
                 runCatching { voiceSessionController.interrupt() }
                 finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " microphone yielded."
             } catch (cancelled: kotlinx.coroutines.CancellationException) {

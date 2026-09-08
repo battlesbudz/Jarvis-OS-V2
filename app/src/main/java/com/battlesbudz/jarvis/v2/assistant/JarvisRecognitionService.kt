@@ -14,6 +14,7 @@ class JarvisRecognitionService : RecognitionService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val handler = Handler(Looper.getMainLooper())
     private var job: Job? = null
+    @Volatile private var stopRequested = false
     @Volatile private var capture: AudioTurnCapture? = null
     override fun onStartListening(intent: Intent?, callback: Callback) {
         val manager = getSystemService(android.media.AudioManager::class.java)
@@ -21,6 +22,7 @@ class JarvisRecognitionService : RecognitionService() {
             callback.error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
             return
         }
+        stopRequested = false
         job = scope.launch {
             var activeCapture: AudioTurnCapture? = null
             try {
@@ -36,6 +38,7 @@ class JarvisRecognitionService : RecognitionService() {
                         }
                     })
                 capture = activeCapture
+                if (stopRequested) activeCapture.finishNow()
                 withTimeout(10_000) { activeCapture.start() }
                 handler.post { callback.readyForSpeech(Bundle()) }
                 activeCapture.awaitTurnCompletion()
@@ -62,7 +65,7 @@ class JarvisRecognitionService : RecognitionService() {
             recognitionJob.invokeOnCompletion { MicrophoneHandoff.finishDictation() }
         }
     }
-    override fun onStopListening(callback: Callback) { capture?.finishNow() }
+    override fun onStopListening(callback: Callback) { stopRequested = true; capture?.finishNow() }
     override fun onCancel(callback: Callback) { job?.cancel() }
     override fun onDestroy() { scope.cancel(); super.onDestroy() }
 }
