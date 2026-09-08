@@ -801,8 +801,20 @@ private fun VoiceCallScreen(
             Text(assistantSettingsMessage, style = MaterialTheme.typography.bodySmall)
         }
         Text("Automatic microphone handoff", style = MaterialTheme.typography.bodyMedium)
-        Text("Jarvis pauses for another app’s recording and resumes the previous listening mode afterward. If a keyboard refuses microphone access, use Pause mic in the Jarvis notification, then Resume mic when finished.",
+        Text("Jarvis releases its microphone for other recordings and automatically resumes your call or wake listening afterward.",
             style = MaterialTheme.typography.bodySmall)
+        val helperConnected by com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.keyboardHelperConnected.collectAsState()
+        Text(if (helperConnected) "Keyboard microphone-button handoff is enabled."
+            else "Enable keyboard handoff to give dictation priority when you tap its microphone.",
+            style = MaterialTheme.typography.bodySmall)
+        Text("Checks only the tapped keyboard control’s label or ID. Ordinary typing and leaving a keyboard open do not pause Jarvis.",
+            style = MaterialTheme.typography.bodySmall)
+        var keyboardSetupError by remember { mutableStateOf("") }
+        TextButton(onClick = {
+            try { wakeContext.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            catch (_: Exception) { keyboardSetupError = "Open Android Settings → Accessibility → Installed apps → Jarvis keyboard microphone handoff." }
+        }) { Text(if (helperConnected) "Keyboard handoff settings" else "Enable keyboard microphone handoff") }
+        if (keyboardSetupError.isNotBlank()) Text(keyboardSetupError, style = MaterialTheme.typography.bodySmall)
         TextButton(onClick = {
             if (wakeTesting) onStopWakeTest()
             else if (wakeContext.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startWakeTest()

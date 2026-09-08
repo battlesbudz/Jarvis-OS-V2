@@ -39,6 +39,7 @@ class AndroidAudioInput(
     @Volatile var ownsRecorder = false
         private set
     private var captureJob: Job? = null
+    private val priorityLost = java.util.concurrent.atomic.AtomicBoolean(false)
 
     override fun chunks(): Flow<ByteArray> = emittedChunks.receiveAsFlow()
 
@@ -80,14 +81,27 @@ class AndroidAudioInput(
             }
         }
         created.registerAudioRecordingCallback(java.util.concurrent.Executor { it.run() }, callback)
-        if (!dictation) MicrophoneHandoff.backgroundRecorders.incrementAndGet()
         try {
-            created.startRecording()
-            check(created.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "The microphone did not start recording." }
+            MicrophoneHandoff.withRecorderLock {
+                if (!dictation) {
+                    if (MicrophoneHandoff.shouldYield) throw MicrophoneBusyException()
+                    MicrophoneHandoff.registerRecorder(created,
+                        recording = { created.recordingState == AudioRecord.RECORDSTATE_RECORDING },
+                        stop = {
+                            priorityLost.set(true)
+                            runCatching { created.stop() }
+                            log("capture_priority_stop session=${created.audioSessionId}")
+                        })
+                }
+                created.startRecording()
+                check(created.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "The microphone did not start recording." }
+            }
         } catch (error: Throwable) {
-            created.unregisterAudioRecordingCallback(callback)
-            created.release()
-            if (!dictation) { MicrophoneHandoff.backgroundRecorders.decrementAndGet(); MicrophoneHandoff.ownRecorderSilenced = false }
+            MicrophoneHandoff.withRecorderLock {
+                created.unregisterAudioRecordingCallback(callback)
+                created.release()
+                if (!dictation) MicrophoneHandoff.unregisterRecorder(created)
+            }
             throw error
         }
         log("capture_open source=VOICE_RECOGNITION routeType=${created.routedDevice?.type} routeId=${created.routedDevice?.id} session=${created.audioSessionId} silenced=${created.activeRecordingConfiguration?.isClientSilenced}")
@@ -129,10 +143,13 @@ class AndroidAudioInput(
                 ready.completeExceptionally(error)
                 emittedChunks.close(error)
             } finally {
-                runCatching { created.stop() }
-                created.unregisterAudioRecordingCallback(callback)
-                created.release()
-                if (!dictation) { MicrophoneHandoff.backgroundRecorders.decrementAndGet(); MicrophoneHandoff.ownRecorderSilenced = false }
+                MicrophoneHandoff.withRecorderLock {
+                    runCatching { created.stop() }
+                    created.unregisterAudioRecordingCallback(callback)
+                    created.release()
+                    if (!dictation) MicrophoneHandoff.unregisterRecorder(created)
+                }
+                log("capture_released session=${created.audioSessionId}")
                 if (recorder === created) { recorder = null; ownsRecorder = false }
                 onLevel(0f)
             }
@@ -141,21 +158,24 @@ class AndroidAudioInput(
         catch (error: Throwable) { stop(); throw error }
     }
 
-    private fun busy(record: AudioRecord?): Boolean {
-        if (!dictation && MicrophoneHandoff.shouldYield) return true
-        val manager = audioManager ?: return false
-        return MicrophonePolicy.shouldYield(
-            manager.activeRecordingConfigurations.size, record != null,
+    private fun busy(record: AudioRecord?): Boolean = MicrophoneHandoff.withRecorderLock {
+        if (!dictation && (priorityLost.get() || MicrophoneHandoff.shouldYield)) return@withRecorderLock true
+        val manager = audioManager ?: return@withRecorderLock false
+        val occupied = MicrophonePolicy.shouldYield(
+            manager.activeRecordingConfigurations.size,
+            record?.recordingState == AudioRecord.RECORDSTATE_RECORDING,
             record?.activeRecordingConfiguration?.isClientSilenced == true,
             manager.mode == android.media.AudioManager.MODE_IN_CALL ||
                 manager.mode == android.media.AudioManager.MODE_IN_COMMUNICATION || manager.isMicrophoneMute)
+        if (occupied && !dictation) MicrophoneHandoff.requestInterruption("capture_detected_contention")
+        occupied
     }
 
     override suspend fun stop() {
         val job = captureJob
         job?.cancel()
         // Unblock read(), then wait for its sole owner to release the recorder.
-        recorder?.let { runCatching { it.stop() } }
+        MicrophoneHandoff.withRecorderLock { recorder?.let { runCatching { it.stop() } } }
         job?.join()
         captureJob = null
         emittedChunks.cancel()

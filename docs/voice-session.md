@@ -1,5 +1,9 @@
 # Passive Jarvis sessions
 
+Current microphone ownership, background lifetime, and keyboard handoff behavior is
+documented in [voice microphone interruptions](voice-microphone-interruptions.md).
+That document supersedes the historical handoff and Activity-lifetime notes below.
+
 Start Jarvis session in the visible app and allow microphone/notification permissions. The APK bundles the hash-verified 52 KB microWakeWord Hey Jarvis v2 model; no wake model download is needed. Moonshine remains the call transcriber; the retired Zipformer ASR selector is not restored.
 
 The microphone feeds only the local keyword spotter while the UI/notification says “Waiting for Hey Jarvis”. No transcript, WAV, or Gemma request is created from passive audio. Say “Hey Jarvis”, wait for the short readiness beep and “Voice Call is listening — speak now”, then speak. The existing call pipeline uses Moonshine and in-memory WAV audio for Gemma, and speaks with the selected Kokoro/Miro voice. Goodbye or 20 seconds without recognized speech ends the saved call and returns to passive listening. Stop Jarvis session or the notification's Stop session action releases the microphone and stops the foreground service.
