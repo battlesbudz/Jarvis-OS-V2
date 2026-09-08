@@ -30,18 +30,35 @@ class SherpaKokoroVoiceOutput(
     private val playbackLock = Any()
     @Volatile private var interrupted = false
     private val playbackClock = PlaybackClock()
+    @Volatile private var probePaused = false
+    @Volatile private var writtenFrames = 0L
+    private var lastAudibleAt = Long.MIN_VALUE / 2
+    val isPlayingAudio: Boolean get() = synchronized(playbackLock) {
+        val now = System.nanoTime() / 1_000_000
+        val audible = !stopped && !interrupted && !probePaused && audioTrack?.let {
+            it.playState == AudioTrack.PLAYSTATE_PLAYING && unsignedHead(it) < writtenFrames
+        } == true
+        if (audible) lastAudibleAt = now
+        audible || now - lastAudibleAt < 350 // Speaker/reverberation tail after drain.
+    }
+    fun setProbePaused(value: Boolean) = synchronized(playbackLock) {
+        probePaused = value
+        applyPause()
+    }
+    private fun applyPause() {
+        val paused = interrupted || probePaused
+        playbackClock.setPaused(paused)
+        audioTrack?.let { if (paused) it.pause() else if (!stopped) it.play() }
+    }
 
     fun setInterrupted(value: Boolean) = synchronized(playbackLock) {
         if (interrupted == value) return@synchronized
         interrupted = value
-        playbackClock.setPaused(value)
-        audioTrack?.let { track ->
-            if (value) track.pause() else if (!stopped) track.play()
-        }
+        applyPause()
         log("audio_interruption paused=$value playbackHead=${audioTrack?.let(::unsignedHead) ?: 0}")
     }
     private suspend fun awaitPlaybackPermission() {
-        while (interrupted && !stopped) delay(25)
+        while ((interrupted || probePaused) && !stopped) delay(25)
         currentCoroutineContext().ensureActive()
     }
 
@@ -188,7 +205,7 @@ class SherpaKokoroVoiceOutput(
                         }.onFailure { error -> log("audio_pace_fallback reason=${error.message}") }
                         playbackSpeed = it.playbackParams.speed
                         log("audio_playback_pace speed=$playbackSpeed pitch=1.0")
-                        synchronized(playbackLock) { if (!interrupted && !stopped) it.play() }
+                        synchronized(playbackLock) { if (!interrupted && !probePaused && !stopped) it.play() }
                         val startedTrack = it
                         // A sibling of the IO writer: its infinite loop must not block the writer returning.
                         playbackMonitor = speechScope.launch {
@@ -231,6 +248,7 @@ class SherpaKokoroVoiceOutput(
                         lastWriteProgress = playbackClock.nowMs()
                         offset += written
                         framesWritten += written
+                        writtenFrames = framesWritten.toLong()
                     }
                     lastWriteAt = System.nanoTime()
                     lastQueuedMs = ((framesWritten.toLong() - unsignedHead(track)).coerceAtLeast(0) *

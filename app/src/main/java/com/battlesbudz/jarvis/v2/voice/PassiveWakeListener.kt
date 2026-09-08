@@ -45,7 +45,7 @@ class PassiveWakeListener(
             }
             if (windowFrames >= 16000 || found) {
                 val rms = kotlin.math.sqrt(squares / windowFrames.coerceAtLeast(1)).toInt()
-                log("wake_capture_level elapsedMs=${frames * 1000 / 16000} rmsPcm16=$rms peakPcm16=$peak maxScore=$maxScore ready=$readyReported")
+                log("wake_capture_level elapsedMs=${frames * 1000 / 16000} rmsPcm16=$rms peakPcm16=$peak maxScore=$maxScore ready=$readyReported ${detector.diagnostics}")
                 onLevel(rms, maxScore)
                 squares = 0.0; peak = 0; windowFrames = 0; maxScore = 0f
             }

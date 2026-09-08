@@ -28,6 +28,7 @@ class AndroidAudioInput(
     private val audioManager: android.media.AudioManager? = null,
     private val onWaiting: (Boolean) -> Unit = {},
     private val dictation: Boolean = false,
+    private val echoCancellation: Boolean = false,
     private val onLevel: (Float) -> Unit = {},
     private val log: (String) -> Unit = {}
 ) : AudioInput {
@@ -40,6 +41,8 @@ class AndroidAudioInput(
         private set
     private var captureJob: Job? = null
     private val priorityLost = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun discardBufferedAudio() { while (emittedChunks.tryReceive().isSuccess) { /* bounded queue */ } }
 
     override fun chunks(): Flow<ByteArray> = emittedChunks.receiveAsFlow()
 
@@ -73,6 +76,10 @@ class AndroidAudioInput(
             created.release()
             error("The microphone could not be initialized.")
         }
+        val aec = if (echoCancellation && android.media.audiofx.AcousticEchoCanceler.isAvailable()) {
+            runCatching { android.media.audiofx.AcousticEchoCanceler.create(created.audioSessionId)?.apply { enabled = true } }.getOrNull()
+        } else null
+        log("capture_aec requested=$echoCancellation enabled=${aec?.enabled == true}")
         val callback = object : android.media.AudioManager.AudioRecordingCallback() {
             override fun onRecordingConfigChanged(configs: MutableList<android.media.AudioRecordingConfiguration>?) {
                 val config = created.activeRecordingConfiguration
@@ -99,6 +106,7 @@ class AndroidAudioInput(
         } catch (error: Throwable) {
             MicrophoneHandoff.withRecorderLock {
                 created.unregisterAudioRecordingCallback(callback)
+                aec?.release()
                 created.release()
                 if (!dictation) MicrophoneHandoff.unregisterRecorder(created)
             }
@@ -146,6 +154,7 @@ class AndroidAudioInput(
                 MicrophoneHandoff.withRecorderLock {
                     runCatching { created.stop() }
                     created.unregisterAudioRecordingCallback(callback)
+                    aec?.release()
                     created.release()
                     if (!dictation) MicrophoneHandoff.unregisterRecorder(created)
                 }

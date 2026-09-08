@@ -158,12 +158,12 @@ class AudioTurnCaptureTest {
     }
 
     @Test
-    fun longIdleCaptureKeepsOnlySixHundredMsOfPreRoll() = runBlocking<Unit> {
+    fun longIdleCaptureKeepsOnlyTwelveHundredMsOfPreRoll() = runBlocking<Unit> {
         val fixture = CaptureFixture(this)
         fixture.capture.start(initialSilenceTimeoutMs = null)
         repeat(60) { fixture.emit((it + 1) * 1000L, 3000, samples = 16_000) }
         val wav = fixture.capture.stop()
-        assertEquals(44 + 19_200, wav.size)
+        assertEquals(44 + 38_400, wav.size)
         assertEquals(1, fixture.detector.releases)
         fixture.capture.stop()
         assertEquals(1, fixture.detector.releases)
@@ -393,6 +393,41 @@ class AudioTurnCaptureTest {
         assertEquals(1, fixture.microphoneStops)
     }
 
+    @Test fun shortUnconfirmedVadWithCredibleTextPreservesOpeningWord() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, FakeTranscriber("open", "open YouTube"))
+        fixture.capture.start()
+        fixture.emit(100, 1234, speech = false, probability = 0.8f, samples = 1024)
+        assertTrue(fixture.capture.hasSpeech)
+        fixture.emit(1400, 0)
+        assertTrue(fixture.capture.awaitTurnCompletion())
+        assertEquals("open YouTube", fixture.capture.finalTranscript)
+        assertTrue(fixture.events.any { "source=asr_and_vad" in it })
+        val wav = fixture.capture.stop()
+        assertEquals(1234.toByte(), wav[44])
+    }
+
+    @Test fun textWithoutSpeechEvidenceCannotPromoteNoiseToACommand() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, FakeTranscriber("open YouTube", "open YouTube"))
+        fixture.capture.start()
+        fixture.emit(100, 3000, speech = false, probability = 0.1f)
+        assertFalse(fixture.capture.hasSpeech)
+        fixture.capture.stop()
+    }
+
+    @Test fun fallbackRetainsWordsEarlierThanVadPreRoll() = runBlocking<Unit> {
+        val asr = FakeTranscriber("", "", "open YouTube")
+        val fixture = CaptureFixture(this, asr)
+        fixture.capture.start()
+        fixture.emit(100, 111, samples = 1600)
+        repeat(15) { fixture.emit(200 + it * 100L, 0, samples = 1600) }
+        fixture.emit(1800, 222, speech = true, samples = 1600)
+        fixture.emit(3100, 0, samples = 1600)
+        assertTrue(fixture.capture.awaitTurnCompletion())
+        assertEquals(111.toByte(), asr.recoveredPcm[0])
+        assertEquals("open YouTube", fixture.capture.finalTranscript)
+        fixture.capture.stop()
+    }
+
     private class FakeTranscriber(
         private val partial: String = "story about pirates",
         private val final: String = "story about astronauts",
@@ -455,9 +490,9 @@ class AudioTurnCaptureTest {
             onMetrics = { stats, text -> metrics.add(stats to text) }, trailingSilenceMs = trailingSilenceMs,
             onRecognitionRecovery = recoveryStates::add)
 
-        suspend fun emit(atMs: Long, sample: Int, speech: Boolean = false, samples: Int = 1) {
+        suspend fun emit(atMs: Long, sample: Int, speech: Boolean = false, samples: Int = 1, probability: Float = if (speech) 0.95f else 0.01f) {
             clock = atMs
-            detector.decision = SpeechDecision(speech, if (speech) 0.95f else 0.01f)
+            detector.decision = SpeechDecision(speech, probability)
             chunks.emit(ByteArray(samples * 2) { if (it % 2 == 0) sample.toByte() else (sample shr 8).toByte() })
             // Let the collector process the delivered chunk before assertions.
             kotlinx.coroutines.yield()

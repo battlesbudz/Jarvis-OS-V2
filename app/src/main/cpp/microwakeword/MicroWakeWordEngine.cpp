@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
+#include <sstream>
 
 #include "Logging.h"
 #include "flatbuffers/flatbuffers.h"
@@ -185,15 +186,23 @@ bool MicroWakeWordEngine::loadModel() {
 bool MicroWakeWordEngine::processAudio(const int16_t* samples, size_t numSamples) {
     if (!initialized_) throw std::runtime_error("microWakeWord is not initialized");
     chunkProbability_ = 0.0f;
+    samplesSeen_ += numSamples;
 
     auto features = frontend_.processSamples(samples, numSamples);
 
     for (auto& frame : features) {
+        ++featuresSeen_;
         // Convert float features to int8 using input quantization parameters
         int8_t quantizedFeatures[PREPROCESSOR_FEATURE_SIZE]{};
         for (size_t index = 0; index < PREPROCESSOR_FEATURE_SIZE && index < frame.size(); index++) {
+            if (!std::isfinite(frame[index])) throw std::runtime_error("Invalid wake frontend feature");
+            featureMin_ = std::min(featureMin_, frame[index]);
+            featureMax_ = std::max(featureMax_, frame[index]);
             float quantized = (frame[index] / inputScale_) + static_cast<float>(inputZeroPoint_);
-            int rounded = static_cast<int>(std::round(quantized));
+            if (!std::isfinite(quantized)) throw std::runtime_error("Invalid wake quantization");
+            ++quantizedFeatures_;
+            if (quantized < -128 || quantized > 127) ++saturatedFeatures_;
+            int rounded = static_cast<int>(std::round(std::max(-128.0f, std::min(127.0f, quantized))));
             quantizedFeatures[index] = static_cast<int8_t>(std::max(-128, std::min(127, rounded)));
         }
 
@@ -207,7 +216,7 @@ bool MicroWakeWordEngine::processAudio(const int16_t* samples, size_t numSamples
 
 bool MicroWakeWordEngine::processFeatureFrame(const int8_t* features) {
     TfLiteTensor* input = interpreter_->input(0);
-    if (input == nullptr) return false;
+    if (input == nullptr) throw std::runtime_error("Wake input tensor missing");
 
     // Place features at the current stride position in the input tensor
     // (matches ESPHome's stride-based accumulation)
@@ -230,10 +239,12 @@ bool MicroWakeWordEngine::processFeatureFrame(const int8_t* features) {
     // Read output probability (uint8)
     TfLiteTensor* output = interpreter_->output(0);
     if (output == nullptr) {
-        LOGE(LOG_TAG, "Model output tensor is null after inference, skipping");
-        return false;
+        throw std::runtime_error("Wake output tensor missing after inference");
     }
     uint8_t probability = output->data.uint8[0];
+    ++inferenceRuns_;
+    if (probability == 0) ++zeroOutputs_;
+    rawMax_ = std::max(rawMax_, probability);
 
     // Update sliding window
     ++lastNIndex_;
@@ -285,4 +296,14 @@ void MicroWakeWordEngine::reset() {
     resetDetectionState();
     currentStrideStep_ = 0;
     frontend_.reset();
+}
+
+std::string MicroWakeWordEngine::diagnostics() const {
+    std::ostringstream out;
+    out << "samples=" << samplesSeen_ << " features=" << featuresSeen_
+        << " inferences=" << inferenceRuns_ << " rawMax=" << static_cast<int>(rawMax_)
+        << " zeroOutputs=" << zeroOutputs_ << " featureMin=" << (featuresSeen_ ? featureMin_ : 0)
+        << " featureMax=" << (featuresSeen_ ? featureMax_ : 0)
+        << " saturated=" << saturatedFeatures_ << " quantized=" << quantizedFeatures_;
+    return out.str();
 }

@@ -132,6 +132,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         startVoiceDiagnostics("Jarvis session — awaiting wake word")
     }
     @Volatile private var latestStatus = "Preparing microphone…"
+    private val pendingVoiceCorrection = java.util.concurrent.atomic.AtomicReference<com.battlesbudz.jarvis.v2.voice.CapturedVoiceTurn?>(null)
     private val resumeCommandCue = java.util.concurrent.atomic.AtomicBoolean(false)
     fun onMicrophoneInterruption(interrupted: Boolean, reason: String) {
         activeVoiceOutput?.setInterrupted(interrupted)
@@ -292,29 +293,30 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 )
                 capture = activeCapture
                 activeVoiceCapture = activeCapture
-                activeCapture.start()
+                val correction = pendingVoiceCorrection.getAndSet(null)
+                if (correction == null) activeCapture.start()
                 voiceSessionController.setState(VoiceSessionState.ACTIVELY_LISTENING)
                 status("Voice Call is listening — speak now.")
-                if (wokeThisTurn || resumeCommandCue.getAndSet(false)) {
+                if (correction == null && (wokeThisTurn || resumeCommandCue.getAndSet(false))) {
                     com.battlesbudz.jarvis.v2.voice.VoiceCues.play(
                         com.battlesbudz.jarvis.v2.voice.VoiceCues.Cue.COMMAND_READY,
                         log = { diagnosticRecorder.recordImportant(it) })
                     diagnosticRecorder.recordImportant("Wake acknowledged; command microphone ready.")
                 }
-                activeCapture.awaitTurnCompletion()
+                if (correction == null) activeCapture.awaitTurnCompletion()
                 val endpointAt = System.nanoTime()
                 finalReadyAt.set(endpointAt)
                 val firstFinalToken = java.util.concurrent.atomic.AtomicBoolean(true)
-                val audioBytes = activeCapture.stop()
+                val audioBytes = correction?.wav ?: activeCapture.stop()
+                val transcript = correction?.transcript ?: activeCapture.finalTranscript
                 if (activeVoiceCapture === activeCapture) activeVoiceCapture = null
                 status("Processing your Voice Call turn locally…")
-                if (!activeCapture.hasSpeech || activeCapture.finalTranscript.isBlank()) {
+                if ((correction == null && !activeCapture.hasSpeech) || transcript.isBlank()) {
                     diagnosticRecorder.record("Voice call ended reason=inactivity timeoutMs=20000")
                     voiceSessionController.end()
                     finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " no recognized speech for 20 seconds."
                     return@launch
                 }
-                val transcript = activeCapture.finalTranscript
                 if (com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.isGoodbye(transcript)) {
                     speculative.close()
                     voiceSessionController.appendTranscript("You", transcript)
@@ -329,45 +331,70 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 if (draft == null) resetNativeConversation()
                 diagnosticRecorder.record("Voice ASR final\ntext=$transcript\naudioBytes=${audioBytes.size}\nprepared=${draft != null}")
                 mainHandler.post { onTranscript("You", transcript, true) }
-                val coordinator = VoiceTurnCoordinator(voiceSessionController)
-                val response = coordinator.processTurn(transcript) { onToken ->
-                    val completed = CompletableDeferred<String>()
-                    val streamed = StringBuilder()
-                    fun recordFirstText(text: String) {
-                        if (text.isNotBlank() && firstFinalToken.compareAndSet(true, false)) {
-                            val elapsedMs = (System.nanoTime() - endpointAt) / 1_000_000
-                            asrComparisonStore.update(asrTurnId, "final_to_first_text_ms", elapsedMs)
-                            diagnosticRecorder.record("Voice latency: endpoint_to_first_text_ms=$elapsedMs")
+                val outcome = com.battlesbudz.jarvis.v2.voice.runInterruptibleReply(
+                    reply = {
+                        val coordinator = VoiceTurnCoordinator(voiceSessionController)
+                        val response = coordinator.processTurn(transcript) { onToken ->
+                            val completed = CompletableDeferred<String>()
+                            val streamed = StringBuilder()
+                            fun recordFirstText(text: String) {
+                                if (text.isNotBlank() && firstFinalToken.compareAndSet(true, false)) {
+                                    val elapsedMs = (System.nanoTime() - endpointAt) / 1_000_000
+                                    asrComparisonStore.update(asrTurnId, "final_to_first_text_ms", elapsedMs)
+                                    diagnosticRecorder.record("Voice latency: endpoint_to_first_text_ms=$elapsedMs")
+                                }
+                            }
+                            runConversationInternal(
+                                prompt = transcript, history = voiceHistory, imageUri = null,
+                                preparedVoice = draft, voiceAudio = audioBytes,
+                                onToken = { token ->
+                                    recordFirstText(token)
+                                    onToken(token)
+                                    streamed.append(token)
+                                    mainHandler.post { onTranscript("Jarvis", token, false) }
+                                    speechChunks.trySend(cleanSpeechText(token))
+                                },
+                                onComplete = { text ->
+                                    // Guarded/tool replies may arrive only through completion, with no token callback.
+                                    recordFirstText(text)
+                                    if (streamed.isBlank() && text.isNotBlank()) speechChunks.trySend(cleanSpeechText(text))
+                                    completed.complete(text)
+                                }
+                            )
+                            val text = completed.await()
+                            conversationJob?.join()
+                            mainHandler.post { onTranscript("Jarvis", text, true) }
+                            com.battlesbudz.jarvis.v2.ai.GenerationResult(text, -1L, null)
                         }
+                        val last = voiceSessionController.currentTranscript().lastOrNull()
+                        if (last?.role != "Jarvis" || last.text != response.text) {
+                            voiceSessionController.appendTranscript("Jarvis", response.text, complete = true)
+                        }
+                        speechChunks.close()
+                        speechJob?.join()
+                        response
+                    },
+                    listen = { confirmed ->
+                        com.battlesbudz.jarvis.v2.voice.ReplyVoiceCapture(applicationContext) {
+                            diagnosticRecorder.recordImportant("Voice interruption: $it")
+                        }.listen(output, asrDirectory, confirmed)
+                    },
+                    stopReply = {
+                        output.stopSpeaking()
+                        speechJob?.cancel()
+                        conversationJob?.cancel(com.battlesbudz.jarvis.v2.voice.VoiceControlCancellation(
+                            com.battlesbudz.jarvis.v2.voice.VoiceControl.STOP_REPLY))
+                        diagnosticRecorder.recordImportant("Voice reply interrupted by speech; call retained, action not replayed.")
+                        status("Voice Call is listening — speak now.")
                     }
-                    runConversationInternal(
-                        prompt = transcript, history = voiceHistory, imageUri = null,
-                        preparedVoice = draft, voiceAudio = audioBytes,
-                        onToken = { token ->
-                            recordFirstText(token)
-                            onToken(token)
-                            streamed.append(token)
-                            mainHandler.post { onTranscript("Jarvis", token, false) }
-                            speechChunks.trySend(cleanSpeechText(token))
-                        },
-                        onComplete = { text ->
-                            // Guarded/tool replies may arrive only through completion, with no token callback.
-                            recordFirstText(text)
-                            if (streamed.isBlank() && text.isNotBlank()) speechChunks.trySend(cleanSpeechText(text))
-                            completed.complete(text)
-                        }
-                    )
-                    val text = completed.await()
+                )
+                if (outcome is com.battlesbudz.jarvis.v2.voice.ReplyOutcome.Interrupted) {
                     conversationJob?.join()
-                    mainHandler.post { onTranscript("Jarvis", text, true) }
-                    com.battlesbudz.jarvis.v2.ai.GenerationResult(text, -1L, null)
+                    if (outcome.correction.transcript.isNotBlank()) pendingVoiceCorrection.set(outcome.correction)
+                    finalMessage = "Voice reply interrupted; continuing the same call."
+                    return@launch
                 }
-                val last = voiceSessionController.currentTranscript().lastOrNull()
-                if (last?.role != "Jarvis" || last.text != response.text) {
-                    voiceSessionController.appendTranscript("Jarvis", response.text, complete = true)
-                }
-                speechChunks.close()
-                speechJob?.join()
+                val response = (outcome as com.battlesbudz.jarvis.v2.voice.ReplyOutcome.Finished<com.battlesbudz.jarvis.v2.ai.GenerationResult>).value
                 audioRecoveryAttempts = 0
                 finalMessage = "Voice Call turn complete. Heard: $transcript\nJarvis: ${response.text}"
             } catch (backlog: com.battlesbudz.jarvis.v2.voice.AudioBacklogException) {
@@ -465,6 +492,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         // Voice Call cannot acquire the microphone.
         diagnosticRecorder.recordImportant("Session stop requested by UI or foreground service.")
         returnToWakeCuePending.set(false)
+        pendingVoiceCorrection.set(null)
         voiceSessionArmed = false
         com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
         com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.report("Jarvis session stopped — microphone off.")

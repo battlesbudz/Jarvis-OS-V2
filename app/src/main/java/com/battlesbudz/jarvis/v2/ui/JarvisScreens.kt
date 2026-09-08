@@ -758,12 +758,13 @@ private fun VoiceCallScreen(
             Text(visibleStatus, style = MaterialTheme.typography.bodySmall)
         }
     }
+    var audioPathTesting by remember { mutableStateOf(false) }
     if (settingsOpen) androidx.compose.material3.AlertDialog(
         onDismissRequest = { settingsOpen = false },
         title = { Text("Voice settings") },
         confirmButton = { TextButton(onClick = { settingsOpen = false }) { Text("Done") } },
         text = { Column(Modifier.verticalScroll(rememberScrollState())) {
-            TextButton(onClick = { ttsSettingsOpen = true }, enabled = !wakeTesting) { Text("Voice: ${selectedTts.label}") }
+            TextButton(onClick = { ttsSettingsOpen = true }, enabled = !wakeTesting && !audioPathTesting) { Text("Voice: ${selectedTts.label}") }
         val assistantContext = androidx.compose.ui.platform.LocalContext.current
         var assistantSettingsMessage by remember { mutableStateOf(
             if (assistantContext.getSystemService(android.app.role.RoleManager::class.java)
@@ -800,6 +801,8 @@ private fun VoiceCallScreen(
         if (assistantSettingsMessage.isNotBlank()) {
             Text(assistantSettingsMessage, style = MaterialTheme.typography.bodySmall)
         }
+        AudioPathDiagnosticCard(enabled = !runtimeArmed && !wakeTesting && !turnInFlight,
+            onBusyChanged = { audioPathTesting = it })
         Text("Automatic microphone handoff", style = MaterialTheme.typography.bodyMedium)
         Text("Jarvis releases its microphone for other recordings and automatically resumes your call or wake listening afterward.",
             style = MaterialTheme.typography.bodySmall)
@@ -819,7 +822,7 @@ private fun VoiceCallScreen(
             if (wakeTesting) onStopWakeTest()
             else if (wakeContext.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startWakeTest()
             else wakePermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-        }, enabled = !callStarted && !turnInFlight) {
+        }, enabled = !callStarted && !turnInFlight && !audioPathTesting) {
             Text(if (wakeTesting) "Stop wake test" else "Test wake word")
         }
         if (wakeTestStatus.isNotBlank()) Text(wakeTestStatus, style = MaterialTheme.typography.bodySmall)

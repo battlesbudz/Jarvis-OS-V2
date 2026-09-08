@@ -27,7 +27,8 @@ class AudioTurnCapture(
     private val onRecognitionRecovery: (Boolean) -> Unit = {}
 ) {
     private val pcm = ByteArrayOutputStream()
-    private val preRoll = RollingAudioBuffer(AudioFormat(input.sampleRateHz), maxDurationMs = 600)
+    private val preRoll = RollingAudioBuffer(AudioFormat(input.sampleRateHz), maxDurationMs = 1200)
+    private val recoveryAudio = RollingAudioBuffer(AudioFormat(input.sampleRateHz), maxDurationMs = 25_000)
     private val lifecycle = Mutex()
     private var collectionJob: Job? = null
     private var detector: SpeechDetector? = null
@@ -74,6 +75,7 @@ class AudioTurnCapture(
                 input.chunks().collect { chunk ->
                     if (turnCompleted.isCompleted) return@collect
                     audioBytes += chunk.size
+                    recoveryAudio.append(chunk)
                     val signal = Pcm16Signal.measure(chunk)
                     val decision = activeDetector.accept(chunk)
                     val now = nowMs()
@@ -103,6 +105,18 @@ class AudioTurnCapture(
                     val chunkDecodeMs = nowMs() - decodeStartedAt
                     decodeMs += chunkDecodeMs
                     maxDecodeChunkMs = maxOf(maxDecodeChunkMs, chunkDecodeMs)
+                    // A short word can produce credible ASR text before Silero's three-frame
+                    // confirmation. Require BOTH text and the unchanged 0.5 speech threshold.
+                    if (!hasSpeech && !partial.isNullOrBlank() && decision.probability >= 0.5f) {
+                        synchronized(pcm) {
+                            firstSpeechAt = now
+                            pcm.write(preRoll.snapshot())
+                            preRoll.clear()
+                            hasSpeech = true
+                            lastSpeechAt = now
+                        }
+                        log("speech_started source=asr_and_vad probability=${decision.probability} preRollMs=1200")
+                    }
                     if (hasSpeech && partial != null) publishPartial(partial)
                     var reason = when {
                         endRequested -> "explicit_stop"
@@ -116,9 +130,9 @@ class AudioTurnCapture(
                         if (hasSpeech) {
                             finalTranscript = transcriber?.finish().orEmpty().trim()
                             if (transcriber != null && finalTranscript.isBlank()) {
-                                val candidate = synchronized(pcm) { pcm.toByteArray() }
+                                val candidate = recoveryAudio.snapshot()
                                 val recoveryAt = nowMs()
-                                log("asr_recovery_started candidateAudioMs=${candidate.size / 32} reason=empty_stream")
+                                log("asr_recovery_started candidateAudioMs=${candidate.size / 32} reason=empty_stream source=full_capture_window")
                                 onRecognitionRecovery(true)
                                 try {
                                     finalTranscript = transcriber?.recover(candidate).orEmpty().trim()
@@ -134,7 +148,7 @@ class AudioTurnCapture(
                                 // VAD frame. Replay the tail into the replacement recognizer.
                                 val tail = synchronized(pcm) {
                                     val recorded = pcm.toByteArray()
-                                    val retained = recorded.copyOfRange((recorded.size - 19_200).coerceAtLeast(0), recorded.size)
+                                    val retained = recorded.copyOfRange((recorded.size - 38_400).coerceAtLeast(0), recorded.size)
                                     pcm.reset()
                                     preRoll.clear()
                                     preRoll.append(retained)
@@ -153,6 +167,8 @@ class AudioTurnCapture(
                                     previous?.close()
                                     val reloadAt = nowMs()
                                     transcriber = createTranscriber?.invoke()
+                                    recoveryAudio.clear()
+                                    recoveryAudio.append(tail)
                                     if (tail.isNotEmpty()) transcriber?.accept(tail)
                                     modelLoadMs += nowMs() - reloadAt
                                     return@collect
@@ -205,6 +221,7 @@ class AudioTurnCapture(
                     try { transcriber?.close() } finally { detector?.close() }
                     transcriber = null
                     detector = null
+                    recoveryAudio.clear()
                     log("capture_stopped speechDetected=$hasSpeech")
                 }
             }

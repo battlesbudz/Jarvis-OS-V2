@@ -85,7 +85,12 @@ static jboolean nativeReady(JNIEnv*, jclass, jlong handle) {
     return handle && reinterpret_cast<MicroWakeWordEngine*>(handle)->ready();
 }
 
+static jstring nativeDiagnostics(JNIEnv* env, jclass, jlong handle) {
+    return env->NewStringUTF(handle ? reinterpret_cast<MicroWakeWordEngine*>(handle)->diagnostics().c_str() : "closed=true");
+}
+
 static const JNINativeMethod methods[] = {
+    {"nativeDiagnostics", "(J)Ljava/lang/String;", reinterpret_cast<void*>(nativeDiagnostics)},
     {"nativeProbability", "(J)F", reinterpret_cast<void*>(nativeProbability)},
     {"nativeReady", "(J)Z", reinterpret_cast<void*>(nativeReady)},
     {"nativeCreate", "(Ljava/nio/ByteBuffer;IIFI)J", reinterpret_cast<void*>(nativeCreate)},

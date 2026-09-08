@@ -69,6 +69,7 @@ class MicroWakeWord(
      * @param samples 16-bit PCM mono audio samples at 16 kHz
      * @return true if wake word was detected in this or recent frames
      */
+    val diagnostics: String get() = nativeDiagnostics(nativeHandle)
     val probability: Float get() = nativeProbability(nativeHandle)
     val ready: Boolean get() = nativeReady(nativeHandle)
 
@@ -137,6 +138,7 @@ class MicroWakeWord(
         @JvmStatic
         external fun nativeProcessAudio(handle: Long, samples: ShortArray): Boolean
 
+        @JvmStatic external fun nativeDiagnostics(handle: Long): String
         @JvmStatic external fun nativeProbability(handle: Long): Float
         @JvmStatic external fun nativeReady(handle: Long): Boolean
 

@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 #include <vector>
+#include <string>
 
 #include "MicroFrontendWrapper.h"
 #include "tensorflow/lite/micro/micro_interpreter.h"
@@ -62,6 +63,7 @@ public:
      * Reset all internal state (frontend, feature buffer, detection state).
      */
     void reset();
+    std::string diagnostics() const;
     float probability() const { return chunkProbability_; }
     bool ready() const { return ignoreWindows_ >= 0; }
 
@@ -103,6 +105,10 @@ private:
     int stride_ = 1;
     int currentStrideStep_ = 0;
 
+    uint64_t samplesSeen_ = 0, featuresSeen_ = 0, inferenceRuns_ = 0;
+    uint64_t zeroOutputs_ = 0, saturatedFeatures_ = 0, quantizedFeatures_ = 0;
+    uint8_t rawMax_ = 0;
+    float featureMin_ = 1.0e30f, featureMax_ = -1.0e30f;
     // Detection state (sliding window probability averaging)
     uint8_t probabilityCutoff_;  // quantized 0-255
     int slidingWindowSize_;
