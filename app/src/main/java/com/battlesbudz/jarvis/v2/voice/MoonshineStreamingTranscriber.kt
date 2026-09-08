@@ -7,9 +7,9 @@ import ai.moonshine.voice.TranscriptEvent
 import java.io.File
 
 /** Owns one utterance. Native calls are serialized by AudioTurnCapture's collector. */
-class MoonshineStreamingTranscriber(directory: File) : StreamingTranscriber {
+class MoonshineStreamingTranscriber(private val directory: File) : StreamingTranscriber {
     private val lines = linkedMapOf<Long, String>()
-    private val transcriber = Transcriber(listOf(
+    private var transcriber = Transcriber(listOf(
         TranscriberOption("transcription_interval", "0.5"),
         TranscriberOption("identify_speakers", "false"),
         TranscriberOption("return_audio_data", "false")
@@ -76,7 +76,18 @@ class MoonshineStreamingTranscriber(directory: File) : StreamingTranscriber {
             ((pcm[offset].toInt() and 255) or ((pcm[offset + 1].toInt() and 255) shl 8)).toShort() / 32768f
         }
         if (samples.isEmpty()) return ""
-        // Uses the SDK's separate batch stream, not the failed live stream or its event cache.
+        // The SDK batch API otherwise repeats the live stream's smoothed VAD gate.
+        // Jarvis already confirmed speech before calling recover(). Decode that
+        // bounded candidate without a second speech gate. Release the live model
+        // first so recovery does not keep two native ASR models resident.
+        transcriber.removeAllListeners()
+        transcriber.close()
+        transcriber = Transcriber(listOf(
+            TranscriberOption("vad_threshold", "0.0"),
+            TranscriberOption("identify_speakers", "false"),
+            TranscriberOption("return_audio_data", "false")
+        ))
+        transcriber.loadFromFiles(directory.path, JNI.MOONSHINE_MODEL_ARCH_SMALL_STREAMING)
         return transcriber.transcribeWithoutStreaming(samples, 16_000)?.lines.orEmpty()
             .mapNotNull { it.text?.trim()?.takeIf(String::isNotEmpty) }.joinToString(" ")
     }

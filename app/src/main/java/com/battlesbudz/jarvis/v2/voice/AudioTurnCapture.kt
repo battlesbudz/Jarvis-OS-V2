@@ -122,7 +122,7 @@ class AudioTurnCapture(
                         endRequested -> "explicit_stop"
                         hasSpeech && now - lastSpeechAt >= trailingSilenceMs -> "trailing_silence"
                         hasSpeech && synchronized(pcm) { pcm.size() >= MAX_TURN_BYTES } -> "max_turn_duration"
-                        !hasSpeech && initialSilenceTimeoutMs != null && now - startedAt >= initialSilenceTimeoutMs -> "initial_silence"
+                        !hasSpeech && initialSilenceTimeoutMs != null && now - lastSpeechAt >= initialSilenceTimeoutMs -> "initial_silence"
                         else -> null
                     }
                     if (reason != null && !turnCompleted.isCompleted) {
@@ -132,7 +132,7 @@ class AudioTurnCapture(
                             if (transcriber != null && finalTranscript.isBlank()) {
                                 val candidate = recoveryAudio.snapshot()
                                 val recoveryAt = nowMs()
-                                log("asr_recovery_started candidateAudioMs=${candidate.size / 32} reason=empty_stream source=full_capture_window")
+                                log("asr_recovery_started candidateAudioMs=${candidate.size / 32} reason=empty_stream source=full_capture_window nativeVad=bypassed")
                                 onRecognitionRecovery(true)
                                 try {
                                     finalTranscript = transcriber?.recover(candidate).orEmpty().trim()
@@ -157,8 +157,8 @@ class AudioTurnCapture(
                                 firstSpeechAt = null
                                 firstPartialAfterSpeechMs = null
                                 lastPartial = ""
-                                log("empty_speech_candidate ignored=true count=$emptyCandidates microphone=kept_open")
-                                if (initialSilenceTimeoutMs == null || nowMs() - startedAt < initialSilenceTimeoutMs) {
+                                log("empty_speech_candidate ignored=true count=$emptyCandidates microphone=kept_open inactivitySince=last_detected_speech")
+                                if (initialSilenceTimeoutMs == null || nowMs() - lastSpeechAt < initialSilenceTimeoutMs) {
                                     decodeMs += nowMs() - finalizeStartedAt
                                     // Finish seals an ASR stream, so replace only that stream/engine.
                                     // The microphone keeps buffering opening words during model reload.

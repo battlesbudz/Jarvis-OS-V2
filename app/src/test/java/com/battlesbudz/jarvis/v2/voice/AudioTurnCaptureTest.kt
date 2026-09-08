@@ -342,7 +342,7 @@ class AudioTurnCaptureTest {
     }
 
     @Test
-    fun repeatedEmptyDetectionsDoNotRestartTwentySecondInactivityDeadline() = runBlocking<Unit> {
+    fun detectedSpeechRestartsInactivityEvenWhenRecognitionIsEmpty() = runBlocking<Unit> {
         val fixture = CaptureFixture(this, factory = { FakeTranscriber("", "") })
         fixture.capture.start()
         val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
@@ -354,6 +354,10 @@ class AudioTurnCaptureTest {
         fixture.emit(19999, 0)
         assertFalse(completion.isCompleted)
         fixture.emit(20000, 0)
+        assertFalse(completion.isCompleted)
+        fixture.emit(31999, 0)
+        assertFalse(completion.isCompleted)
+        fixture.emit(32000, 0)
         assertFalse(withTimeout(1000) { completion.await() })
         assertEquals(3, fixture.metrics.single().first.emptyCandidates)
         assertEquals("initial_silence", fixture.metrics.single().first.endpointReason)
