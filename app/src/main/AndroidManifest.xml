@@ -30,12 +30,6 @@
             android:foregroundServiceType="dataSync"
             android:exported="false"
             tools:node="merge" />
-        <service android:name=".voice.KeyboardMicrophoneService" android:exported="true"
-            android:label="@string/keyboard_microphone_label"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
-            <meta-data android:name="android.accessibilityservice" android:resource="@xml/keyboard_microphone_service" />
-        </service>
         <service android:name=".voice.VoiceCallService" android:exported="false"
             android:foregroundServiceType="microphone|mediaPlayback" />
         <service android:name=".assistant.JarvisInteractionService" android:exported="true"

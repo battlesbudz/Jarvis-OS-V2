@@ -27,6 +27,23 @@ class SherpaKokoroVoiceOutput(
     @Volatile private var stopped = false
     @Volatile private var audioTrack: AudioTrack? = null
     private val speaking = AtomicBoolean(false)
+    private val playbackLock = Any()
+    @Volatile private var interrupted = false
+    private val playbackClock = PlaybackClock()
+
+    fun setInterrupted(value: Boolean) = synchronized(playbackLock) {
+        if (interrupted == value) return@synchronized
+        interrupted = value
+        playbackClock.setPaused(value)
+        audioTrack?.let { track ->
+            if (value) track.pause() else if (!stopped) track.play()
+        }
+        log("audio_interruption paused=$value playbackHead=${audioTrack?.let(::unsignedHead) ?: 0}")
+    }
+    private suspend fun awaitPlaybackPermission() {
+        while (interrupted && !stopped) delay(25)
+        currentCoroutineContext().ensureActive()
+    }
 
     private data class SynthesizedPhrase(
         val index: Int,
@@ -158,8 +175,10 @@ class SherpaKokoroVoiceOutput(
                         first = false
                         if (stopped) break
                     }
+                    awaitPlaybackPermission()
+                    if (stopped) break
                     val track = audioTrack ?: createTrack(phrase.sampleRate, phrase.pcm.size).also {
-                        audioTrack = it
+                        synchronized(playbackLock) { audioTrack = it }
                         // Stretch existing PCM instead of asking Kokoro to synthesize more samples.
                         // Unsupported device routes retain normal-speed playback.
                         runCatching {
@@ -169,7 +188,7 @@ class SherpaKokoroVoiceOutput(
                         }.onFailure { error -> log("audio_pace_fallback reason=${error.message}") }
                         playbackSpeed = it.playbackParams.speed
                         log("audio_playback_pace speed=$playbackSpeed pitch=1.0")
-                        it.play()
+                        synchronized(playbackLock) { if (!interrupted && !stopped) it.play() }
                         val startedTrack = it
                         // A sibling of the IO writer: its infinite loop must not block the writer returning.
                         playbackMonitor = speechScope.launch {
@@ -197,17 +216,19 @@ class SherpaKokoroVoiceOutput(
                     captions.append(framesWritten.toLong(), phrase.sampleRate, phrase.pcm, phrase.text)
                     val start = System.nanoTime()
                     var offset = 0
-                    var lastWriteProgress = System.nanoTime()
+                    var lastWriteProgress = playbackClock.nowMs()
                     while (offset < phrase.pcm.size && !stopped) {
                         ensureActive()
+                        awaitPlaybackPermission()
+                        if (stopped) break
                         val written = track.write(phrase.pcm, offset, phrase.pcm.size - offset, AudioTrack.WRITE_NON_BLOCKING)
                         check(written >= 0) { "AudioTrack rejected voice PCM output: $written" }
                         if (written == 0) {
-                            check(elapsedMs(lastWriteProgress) < 5000) { "AudioTrack stopped accepting speech PCM." }
+                            check(playbackClock.nowMs() - lastWriteProgress < 5000) { "AudioTrack stopped accepting speech PCM." }
                             delay(10)
                             continue
                         }
-                        lastWriteProgress = System.nanoTime()
+                        lastWriteProgress = playbackClock.nowMs()
                         offset += written
                         framesWritten += written
                     }
@@ -228,10 +249,12 @@ class SherpaKokoroVoiceOutput(
                         log("audio_short_clip_padding frames=$padding")
                         val zeros = ShortArray(padding)
                         var offset = 0
-                        val deadline = System.nanoTime() + 3_000_000_000L
+                        val deadline = playbackClock.nowMs() + 3000
                         while (offset < zeros.size && !stopped) {
                             ensureActive()
-                            check(System.nanoTime() < deadline) { "AudioTrack short-clip padding timed out." }
+                            awaitPlaybackPermission()
+                            if (stopped) break
+                            check(playbackClock.nowMs() < deadline) { "AudioTrack short-clip padding timed out." }
                             val written = track.write(zeros, offset, zeros.size - offset, AudioTrack.WRITE_NON_BLOCKING)
                             check(written >= 0) { "AudioTrack rejected short-clip padding: $written" }
                             if (written == 0) delay(10) else offset += written
@@ -255,8 +278,10 @@ class SherpaKokoroVoiceOutput(
             onPlayback(if (wasStopped) VoicePlaybackFrame() else captions.at(playedFrames).copy(level = 0f))
             val outputRoute = audioTrack?.routedDevice?.let { "type=${it.type} id=${it.id}" }
             finalUnderruns = audioTrack?.underrunCount ?: finalUnderruns
-            audioTrack?.stopSafely()
-            audioTrack = null
+            synchronized(playbackLock) {
+                audioTrack?.stopSafely()
+                audioTrack = null
+            }
             withContext(NonCancellable) { producer.cancelAndJoin() }
             nativeDispatcher.close()
             speaking.set(false)
@@ -277,7 +302,9 @@ class SherpaKokoroVoiceOutput(
     override fun stopSpeaking() {
         stopped = true
         // Never release an AudioTrack while its writer is using it.
-        audioTrack?.let { track -> runCatching { track.pause() }; runCatching { track.flush() } }
+        synchronized(playbackLock) {
+            audioTrack?.let { track -> runCatching { track.pause() }; runCatching { track.flush() } }
+        }
     }
 
     fun release() { stopSpeaking() }
@@ -289,7 +316,7 @@ class SherpaKokoroVoiceOutput(
         val track = audioTrack ?: return false
         log("audio_track_drain_started frames=$framesWritten sampleRate=$sampleRate state=${track.state} underruns=${track.underrunCount}")
         val drained = PlaybackDrain.await(framesWritten.toLong(), sampleRate, speed,
-            head = { unsignedHead(track) }, stopped = { stopped })
+            head = { unsignedHead(track) }, stopped = { stopped }, nowMs = playbackClock::nowMs)
         log("audio_track_drain_finished playbackHead=${unsignedHead(track)} targetFrames=$framesWritten " +
             "drained=$drained stopped=$stopped underruns=${track.underrunCount}")
         return drained

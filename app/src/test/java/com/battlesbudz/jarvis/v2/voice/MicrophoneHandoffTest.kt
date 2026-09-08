@@ -6,7 +6,7 @@ import org.junit.After
 import org.junit.Test
 
 class MicrophoneHandoffTest {
-    @After fun release() { MicrophoneHandoff.finishDictation(); MicrophoneHandoff.keyboardVisible = false; MicrophoneHandoff.keyboardHolding = false }
+    @After fun release() { MicrophoneHandoff.finishDictation(); MicrophoneHandoff.interrupted.value = false }
     @Test fun dictationHasExclusivePriorityUntilCleanupFinishes() {
         assertTrue(MicrophoneHandoff.requestDictation())
         assertTrue(MicrophoneHandoff.dictationRequested)
@@ -23,14 +23,13 @@ class MicrophoneHandoffTest {
         recognition.join()
         assertFalse(MicrophoneHandoff.dictationRequested)
     }
-    @Test fun keyboardReservesMicrophoneBeforeItRequestsRecording() {
-        MicrophoneHandoff.keyboardVisible = true; MicrophoneHandoff.keyboardHolding = true
+    @Test fun externalRecordingHoldsUntilMonitorConfirmsRelease() {
+        MicrophoneHandoff.interrupted.value = true
         assertTrue(MicrophoneHandoff.shouldYield)
         assertTrue(MicrophoneHandoff.requestDictation())
         MicrophoneHandoff.finishDictation()
         assertTrue(MicrophoneHandoff.shouldYield)
-        MicrophoneHandoff.keyboardVisible = false; MicrophoneHandoff.keyboardHolding = false
+        MicrophoneHandoff.interrupted.value = false
         assertFalse(MicrophoneHandoff.shouldYield)
     }
-
 }

@@ -10,7 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.InputStream
 
-internal fun MainActivity.runConversationInternal(
+internal fun JarvisRuntime.runConversationInternal(
         prompt: String,
         history: List<ChatEntry>,
         imageUri: Uri?,
@@ -27,7 +27,7 @@ internal fun MainActivity.runConversationInternal(
             onComplete("The previous response is still finishing. Please try again in a moment.")
             return
         }
-        conversationJob = lifecycleScope.launch(Dispatchers.Default) {
+        conversationJob = runtimeScope.launch(Dispatchers.Default) {
             try {
                 if (!modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
                     preparedVoice?.discard()
@@ -87,7 +87,7 @@ internal fun MainActivity.runConversationInternal(
                         com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
                             executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
                                 this@runConversationInternal,
-                                canLaunchDirectly = { lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) }
+                                canLaunchDirectly = { activityVisible }
                             )
                         ).execute(directRequest)
                     }
@@ -331,7 +331,7 @@ internal fun MainActivity.runConversationInternal(
                             com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
                                 executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
                                     this@runConversationInternal,
-                                    canLaunchDirectly = { lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) }
+                                    canLaunchDirectly = { activityVisible }
                                 )
                             ).execute(request)
                         }
@@ -584,7 +584,7 @@ internal fun MainActivity.runConversationInternal(
         conversationJob?.invokeOnCompletion { MainActivity.activeConversationJobs.decrementAndGet() }
     }
 
-private fun MainActivity.openVisionInputStream(uri: Uri): InputStream? {
+private fun JarvisRuntime.openVisionInputStream(uri: Uri): InputStream? {
     return runCatching { contentResolver.openInputStream(uri) }.getOrNull()
         ?: runCatching {
             contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream()

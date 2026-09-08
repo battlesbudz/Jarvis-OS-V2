@@ -106,50 +106,56 @@ class MainActivity : ComponentActivity() {
         internal const val INTERRUPTED_RESPONSE = "The previous response was interrupted. Please send that again."
     }
 
-    internal val mainHandler = Handler(Looper.getMainLooper())
-    private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    internal lateinit var modelStore: ModelStore
-    internal lateinit var kokoroModelStore: KokoroModelStore
-    internal var conversationEngine: LiteRtLmEngine? = null
-    internal var conversationJob: Job? = null
-    internal var conversationCharacters = 0
-    // The full transcript and rolling summary live in the app. This flag only
-    // describes whether the current native Conversation has received that
-    // app-managed context capsule.
-    internal var nativeConversationHasContext = false
-    internal val shortTermContext = ShortTermConversationContext()
-    internal val referenceGrounding = ReferenceGroundingClient()
-    internal val factualityVerifier = com.battlesbudz.jarvis.v2.ai.FactualityVerifier()
-    internal val turnOrchestrator = com.battlesbudz.jarvis.v2.ai.TurnOrchestrator(referenceGrounding)
-    internal val promptBuilder = com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder(shortTermContext)
-    internal val actionIntentRouter = com.battlesbudz.jarvis.v2.actions.ActionIntentRouter()
-    internal lateinit var sessionPreferences: android.content.SharedPreferences
-    internal lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
-    internal lateinit var voiceCallStore: SharedPreferencesVoiceCallStore
-    internal lateinit var voiceSessionController: VoiceSessionController
-    private lateinit var ttsComparisonStore: com.battlesbudz.jarvis.v2.voice.TtsComparisonStore
-    private lateinit var ttsModels: com.battlesbudz.jarvis.v2.voice.TtsModelStore
+    private val runtime get() = JarvisRuntime.get(applicationContext)
+    internal val mainHandler get() = runtime.mainHandler
+    internal val modelStore get() = runtime.modelStore
+    internal val kokoroModelStore get() = runtime.kokoroModelStore
+    internal val shortTermContext get() = runtime.shortTermContext
+    internal val referenceGrounding get() = runtime.referenceGrounding
+    internal val factualityVerifier get() = runtime.factualityVerifier
+    internal val turnOrchestrator get() = runtime.turnOrchestrator
+    internal val promptBuilder get() = runtime.promptBuilder
+    internal val actionIntentRouter get() = runtime.actionIntentRouter
+    internal val sessionPreferences get() = runtime.sessionPreferences
+    internal val diagnosticRecorder get() = runtime.diagnosticRecorder
+    internal val voiceCallStore get() = runtime.voiceCallStore
+    internal val voiceSessionController get() = runtime.voiceSessionController
+    internal val ttsComparisonStore get() = runtime.ttsComparisonStore
+    internal val ttsModels get() = runtime.ttsModels
+    internal val voicePlayback get() = runtime.voicePlayback
+    internal val asrComparisonStore get() = runtime.asrComparisonStore
+    internal val voiceTurnJob get() = runtime.voiceTurnJob
+    internal val activeVoiceCapture get() = runtime.activeVoiceCapture
+    internal val returnToWakeCuePending get() = runtime.returnToWakeCuePending
+    internal var conversationEngine: LiteRtLmEngine?
+        get() = runtime.conversationEngine
+        set(value) { runtime.conversationEngine = value }
+    internal var conversationJob: Job?
+        get() = runtime.conversationJob
+        set(value) { runtime.conversationJob = value }
+    internal var conversationCharacters: Int
+        get() = runtime.conversationCharacters
+        set(value) { runtime.conversationCharacters = value }
+    internal var nativeConversationHasContext: Boolean
+        get() = runtime.nativeConversationHasContext
+        set(value) { runtime.nativeConversationHasContext = value }
+    internal var voiceSessionArmed: Boolean
+        get() = runtime.voiceSessionArmed
+        set(value) { runtime.voiceSessionArmed = value }
+    internal var audioRecoveryAttempts: Int
+        get() = runtime.audioRecoveryAttempts
+        set(value) { runtime.audioRecoveryAttempts = value }
+    internal var sessionReport: (String) -> Unit
+        get() = runtime.sessionReport
+        set(value) { runtime.sessionReport = value }
     private lateinit var ttsBenchmarks: com.battlesbudz.jarvis.v2.voice.TtsBenchmarkController
-    private val voicePlayback = kotlinx.coroutines.flow.MutableStateFlow(com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame())
-    private lateinit var asrComparisonStore: com.battlesbudz.jarvis.v2.voice.AsrComparisonStore
-    private var activeVoiceCapture: AudioTurnCapture? = null
-    private var voiceTurnJob: Job? = null
-    private var voiceServiceStarted = false
-    private var audioRecoveryAttempts = 0
-    private val returnToWakeCuePending = java.util.concurrent.atomic.AtomicBoolean(false)
-    private var voiceSessionArmed = false
-        set(value) {
-            field = value
-            com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.armed.value = value
-        }
-    private var sessionReport: (String) -> Unit = {}
     private var notificationPermissionAsked = false
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     private val voiceCallResumer by lazy {
         com.battlesbudz.jarvis.v2.voice.VoiceCallResumer(voiceSessionController)
     }
-    private var activeVoiceOutput: SherpaKokoroVoiceOutput? = null
+    private val activeVoiceOutput get() = runtime.activeVoiceOutput
     private data class PendingVoiceTurn(
         val start: Boolean,
         val report: (String) -> Unit,
@@ -188,42 +194,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        modelStore = ModelStore(applicationContext)
-        kokoroModelStore = KokoroModelStore(applicationContext)
-        sessionPreferences = getSharedPreferences("chat_session", MODE_PRIVATE)
-        voiceCallStore = SharedPreferencesVoiceCallStore(
-            getSharedPreferences("voice_calls", MODE_PRIVATE)
-        )
-        voiceSessionController = VoiceSessionController(voiceCallStore)
-        lifecycleScope.launch {
-            com.battlesbudz.jarvis.v2.voice.VoiceCallService.stopRequested.collect { stop ->
-                if (stop && voiceSessionArmed) endVoiceCall(sessionReport)
-            }
-        }
-        lifecycleScope.launch {
-            for (control in com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.controls) {
-                if (!voiceSessionArmed) continue
-                val ui = com.battlesbudz.jarvis.v2.voice.VoiceSessionUi
-                if (control == com.battlesbudz.jarvis.v2.voice.VoiceControl.RESUME) {
-                    ui.paused.value = false
-                } else {
-                    if (control == com.battlesbudz.jarvis.v2.voice.VoiceControl.PAUSE) ui.paused.value = true
-                    activeVoiceOutput?.stopSpeaking()
-                    voiceTurnJob?.cancel(com.battlesbudz.jarvis.v2.voice.VoiceControlCancellation(control))
-                }
-            }
-        }
-        asrComparisonStore = com.battlesbudz.jarvis.v2.voice.AsrComparisonStore(getSharedPreferences("asr_comparison", MODE_PRIVATE))
-        ttsComparisonStore = com.battlesbudz.jarvis.v2.voice.TtsComparisonStore(getSharedPreferences("tts_comparison", MODE_PRIVATE))
-        ttsModels = com.battlesbudz.jarvis.v2.voice.TtsModelStore(applicationContext, kokoroModelStore)
         ttsBenchmarks = com.battlesbudz.jarvis.v2.voice.TtsBenchmarkController(
             lifecycleScope, modelStore, ttsModels, ttsComparisonStore,
             canStart = { voiceSessionController.currentCallId() == null && voiceTurnJob?.isCompleted != false && activeConversationJobs.get() == 0 },
             log = { diagnosticRecorder.record("TTS benchmark: $it") }
         )
-        diagnosticRecorder = com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(sessionPreferences)
         val interruptedSession = sessionPreferences.getBoolean("sending", false)
-        shortTermContext.restoreSummary(
+        if (!voiceSessionArmed) shortTermContext.restoreSummary(
             if (interruptedSession) null else {
                 savedInstanceState?.getString(SHORT_TERM_SUMMARY_KEY)
                     ?: sessionPreferences.getString(SHORT_TERM_SUMMARY_KEY, null)
@@ -234,8 +211,6 @@ class MainActivity : ComponentActivity() {
             // torn down. The visible transcript remains recoverable.
             sessionPreferences.edit().remove(SHORT_TERM_SUMMARY_KEY).apply()
         }
-        diagnosticRecorder.restore()
-        diagnosticRecorder.recordPreviousProcessExit(applicationContext)
         setContent {
             JarvisApp(
                 store = modelStore,
@@ -330,327 +305,13 @@ class MainActivity : ComponentActivity() {
             notificationPermissionAsked = true
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        if (!voiceServiceStarted) {
-            startVoiceDiagnostics("Jarvis session — awaiting wake word")
-            try {
-                startForegroundService(android.content.Intent(this, com.battlesbudz.jarvis.v2.voice.VoiceCallService::class.java))
-                voiceServiceStarted = true
-            } catch (error: Exception) {
-                runCatching { voiceSessionController.interrupt() }
-                voiceSessionArmed = false
-                val message = "Voice Call turn failed: background audio could not start: ${error.message}"
-                diagnosticRecorder.record(message)
-                report(message)
-                onFinished(message)
-                return
-            }
-        }
-        val asrEngine = com.battlesbudz.jarvis.v2.voice.MoonshineModelInfo
-        val ttsEngine = ttsComparisonStore.selectedEngine()
-        val asrTurnId = java.util.UUID.randomUUID().toString()
-        val finalReadyAt = java.util.concurrent.atomic.AtomicLong(0)
-        val firstPlayback = java.util.concurrent.atomic.AtomicBoolean(true)
-        voiceTurnJob = lifecycleScope.launch(Dispatchers.Default) {
-            var operationOwned = false
-            var preparation: VoicePreparation? = null
-            var capture: AudioTurnCapture? = null
-            var microphone: AndroidAudioInput? = null
-            var voiceOutput: SherpaKokoroVoiceOutput? = null
-            val speechChunks = Channel<String>(Channel.UNLIMITED)
-            var speechJob: Job? = null
-            var microphoneWatcher: Job? = null
-            var microphoneYielded = false
-            val hadActiveCall = voiceSessionController.currentCallId() != null
-            var wokeThisTurn = false
-            var finalMessage = "Voice Call turn failed."
-            fun status(message: String) {
-                com.battlesbudz.jarvis.v2.voice.VoiceCallService.updateStatus(message)
-                mainHandler.post { report(message) }
-            }
-            try {
-                while (com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value) {
-                    status("Paused — microphone off. Tap Resume microphone to listen again.")
-                    kotlinx.coroutines.delay(250)
-                }
-                check(activeConversationJobs.get() == 0 && modelStore.tryBeginModelOperation()) {
-                    "Another model operation is still finishing. Please try again in a moment."
-                }
-                operationOwned = true
-                voicePlayback.value = com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame()
-                status("Preparing speech recognition…")
-                val asrDirectory = AsrModelStore(applicationContext).ensureReady(::status)
-                diagnosticRecorder.record("Voice ASR selected engine=${asrEngine.id} model=${asrEngine.modelVersion} turn=$asrTurnId")
-                check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) { "The Gemma model failed integrity verification." }
-                if (conversationEngine?.audioEnabled != true) {
-                    conversationEngine?.close()
-                    conversationEngine = null
-                    val created = LiteRtLmEngine(
-                        ModelCatalog.gemma4E2b.id, modelStore.fileFor(ModelCatalog.gemma4E2b).path,
-                        cacheDir.path, useGpu = true,
-                        tools = MobileActionToolDefinitions.all(), audioEnabled = true
-                    )
-                    try { created.initialize() } catch (error: Throwable) { created.close(); throw error }
-                    conversationEngine = created
-                }
-                val engine = requireNotNull(conversationEngine)
-                resetNativeConversation()
-                conversationCharacters = 0
-                val ttsDirectory = ttsModels.ensureReady(ttsEngine, ::status)
-                val input = AndroidAudioInput(this,
-                    audioManager = getSystemService(android.media.AudioManager::class.java),
-                    onLevel = { com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.level.value = it },
-                    onWaiting = { waiting ->
-                        val keyboard = com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.keyboardVisible
-                        status(if (!waiting) "Preparing microphone…" else if (keyboard)
-                            "Paused — keyboard dictation has microphone priority."
-                        else "Paused — microphone in use by another app")
-                    })
-                microphone = input
-                if (voiceSessionController.currentCallId() == null) {
-                    val wakeDirectory = com.battlesbudz.jarvis.v2.voice.WakeWordModelStore(applicationContext).ensureReady(::status)
-                    com.battlesbudz.jarvis.v2.voice.PassiveWakeListener(wakeDirectory,
-                        log = { diagnosticRecorder.record("Voice wake: $it") },
-                        onReady = {
-                            status("Waiting for Hey Jarvis — microphone active")
-                            if (returnToWakeCuePending.getAndSet(false)) launch {
-                                com.battlesbudz.jarvis.v2.voice.VoiceCues.play(
-                                    com.battlesbudz.jarvis.v2.voice.VoiceCues.Cue.WAKE_LISTENING,
-                                    log = { diagnosticRecorder.recordImportant(it) })
-                            }
-                        }).use { wake ->
-                        input.start()
-                        status("Preparing wake detector — microphone warming up…")
-                        wake.awaitWake(input)
-                    }
-                    voiceSessionController.beginCall().also { startVoiceDiagnostics("Voice Call ${it.id}") }
-                    diagnosticRecorder.recordImportant("Wake word detected: Hey Jarvis. ASR and call audio start now.")
-                    wokeThisTurn = true
-                    status("Hey Jarvis detected — getting ready to listen…")
-                }
-                val voiceHistory = voiceSessionController.conversationContext().map { ChatEntry(it.role, it.text) }
-                val output = SherpaKokoroVoiceOutput(ttsDirectory.path, engine = ttsEngine,
-                    onPlayback = { voicePlayback.value = it },
-                    onMetrics = { ttsComparisonStore.add(ttsEngine, "voice-call", asrTurnId, it) },
-                    log = { diagnosticRecorder.record("Voice TTS: $it") })
-                voiceOutput = output
-                activeVoiceOutput = output
-                val turnOwner = kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]!!
-                microphoneWatcher = launch {
-                    val manager = getSystemService(android.media.AudioManager::class.java)
-                    while (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true) {
-                        if (!input.ownsRecorder && (com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.shouldYield || com.battlesbudz.jarvis.v2.voice.MicrophonePolicy.shouldYield(
-                            manager.activeRecordingConfigurations.size, false, manager.isMicrophoneMute,
-                            manager.mode == android.media.AudioManager.MODE_IN_CALL || manager.mode == android.media.AudioManager.MODE_IN_COMMUNICATION))) {
-                            output.stopSpeaking()
-                            turnOwner.cancel(com.battlesbudz.jarvis.v2.voice.MicrophoneYieldCancellation())
-                            break
-                        }
-                        kotlinx.coroutines.delay(250)
-                    }
-                }
-                // Preload Kokoro while listening; this channel stays empty until final validation.
-                speechJob = launch(Dispatchers.Default) {
-                    try {
-                        output.speak(speechChunks.receiveAsFlow()) {
-                            if (firstPlayback.compareAndSet(true, false) && finalReadyAt.get() != 0L) {
-                                asrComparisonStore.update(asrTurnId, "final_to_playback_start_ms",
-                                    (System.nanoTime() - finalReadyAt.get()) / 1_000_000)
-                            }
-                            status("Jarvis is speaking…")
-                        }
-                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-                    catch (error: Throwable) {
-                        diagnosticRecorder.record("Voice TTS failure: ${error.message}")
-                        status("Voice playback failed: ${error.message}")
-                    }
-                }
-                val speculative = VoicePreparation(this, generate = { partial, audio, onToken ->
-                    resetNativeConversation()
-                    conversationCharacters = 0
-                    val prompt = promptBuilder.buildGemmaPrompt(partial, null, voiceHistory, seedContext = true) + "\n" +
-                        com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions
-                    engine.generateAudio(prompt, audio, onToken)
-                }, log = { diagnosticRecorder.record("Voice preparation: $it") })
-                preparation = speculative
-                val activeCapture = AudioTurnCapture(
-                    input, this,
-                    createDetector = { SileroSpeechDetector.create(assets) },
-                    log = {
-                        if (it.startsWith("asr_recovery_") || it.startsWith("empty_speech_candidate")) {
-                            diagnosticRecorder.recordImportant("Voice input: $it")
-                        } else diagnosticRecorder.record("Voice input: $it")
-                    },
-                    onRecognitionRecovery = { recovering ->
-                        status(if (recovering) "Retrying speech recognition…" else "Voice Call is listening — speak now.")
-                    },
-                    createTranscriber = {
-                        com.battlesbudz.jarvis.v2.voice.MoonshineStreamingTranscriber(asrDirectory)
-                    },
-                    onMetrics = { metrics, text ->
-                        asrComparisonStore.add(asrTurnId, metrics, text)
-                    },
-                    onPartialTranscript = { text, audio ->
-                        speculative.submit(text, audio)
-                        mainHandler.post {
-                            if (activeVoiceCapture === capture) onTranscript("You", text, false)
-                        }
-                    }
-                )
-                capture = activeCapture
-                activeVoiceCapture = activeCapture
-                activeCapture.start()
-                status("Voice Call is listening — speak now.")
-                if (wokeThisTurn) {
-                    com.battlesbudz.jarvis.v2.voice.VoiceCues.play(
-                        com.battlesbudz.jarvis.v2.voice.VoiceCues.Cue.COMMAND_READY,
-                        log = { diagnosticRecorder.recordImportant(it) })
-                    diagnosticRecorder.recordImportant("Wake acknowledged; command microphone ready.")
-                }
-                activeCapture.awaitTurnCompletion()
-                val endpointAt = System.nanoTime()
-                finalReadyAt.set(endpointAt)
-                val firstFinalToken = java.util.concurrent.atomic.AtomicBoolean(true)
-                val audioBytes = activeCapture.stop()
-                if (activeVoiceCapture === activeCapture) activeVoiceCapture = null
-                status("Processing your Voice Call turn locally…")
-                if (!activeCapture.hasSpeech || activeCapture.finalTranscript.isBlank()) {
-                    diagnosticRecorder.record("Voice call ended reason=inactivity timeoutMs=20000")
-                    voiceSessionController.end()
-                    finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " no recognized speech for 20 seconds."
-                    return@launch
-                }
-                val transcript = activeCapture.finalTranscript
-                if (com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.isGoodbye(transcript)) {
-                    speculative.close()
-                    voiceSessionController.appendTranscript("You", transcript)
-                    voiceSessionController.end()
-                    mainHandler.post { onTranscript("You", transcript, true) }
-                    diagnosticRecorder.record("Voice call ended reason=spoken_goodbye")
-                    finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " goodbye."
-                    return@launch
-                }
-                val draft = speculative.seal(transcript)
-                asrComparisonStore.update(asrTurnId, "prepared", draft != null)
-                if (draft == null) resetNativeConversation()
-                diagnosticRecorder.record("Voice ASR final\ntext=$transcript\naudioBytes=${audioBytes.size}\nprepared=${draft != null}")
-                mainHandler.post { onTranscript("You", transcript, true) }
-                val coordinator = VoiceTurnCoordinator(voiceSessionController)
-                val response = coordinator.processTurn(transcript) { onToken ->
-                    val completed = CompletableDeferred<String>()
-                    val streamed = StringBuilder()
-                    fun recordFirstText(text: String) {
-                        if (text.isNotBlank() && firstFinalToken.compareAndSet(true, false)) {
-                            val elapsedMs = (System.nanoTime() - endpointAt) / 1_000_000
-                            asrComparisonStore.update(asrTurnId, "final_to_first_text_ms", elapsedMs)
-                            diagnosticRecorder.record("Voice latency: endpoint_to_first_text_ms=$elapsedMs")
-                        }
-                    }
-                    runConversationInternal(
-                        prompt = transcript, history = voiceHistory, imageUri = null,
-                        preparedVoice = draft, voiceAudio = audioBytes,
-                        onToken = { token ->
-                            recordFirstText(token)
-                            onToken(token)
-                            streamed.append(token)
-                            mainHandler.post { onTranscript("Jarvis", token, false) }
-                            speechChunks.trySend(cleanSpeechText(token))
-                        },
-                        onComplete = { text ->
-                            // Guarded/tool replies may arrive only through completion, with no token callback.
-                            recordFirstText(text)
-                            if (streamed.isBlank() && text.isNotBlank()) speechChunks.trySend(cleanSpeechText(text))
-                            completed.complete(text)
-                        }
-                    )
-                    val text = completed.await()
-                    conversationJob?.join()
-                    mainHandler.post { onTranscript("Jarvis", text, true) }
-                    com.battlesbudz.jarvis.v2.ai.GenerationResult(text, -1L, null)
-                }
-                val last = voiceSessionController.currentTranscript().lastOrNull()
-                if (last?.role != "Jarvis" || last.text != response.text) {
-                    voiceSessionController.appendTranscript("Jarvis", response.text, complete = true)
-                }
-                speechChunks.close()
-                speechJob?.join()
-                audioRecoveryAttempts = 0
-                finalMessage = "Voice Call turn complete. Heard: $transcript\nJarvis: ${response.text}"
-            } catch (backlog: com.battlesbudz.jarvis.v2.voice.AudioBacklogException) {
-                audioRecoveryAttempts++
-                diagnosticRecorder.recordImportant("Audio buffer recovery attempt=$audioRecoveryAttempts max=2; incomplete command discarded.")
-                runCatching { voiceSessionController.interrupt() }
-                finalMessage = if (audioRecoveryAttempts <= 2)
-                    com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " audio capture recovered; say Hey Jarvis again."
-                else "Voice Call turn failed: audio capture repeatedly fell behind. Restart the session."
-            } catch (busy: com.battlesbudz.jarvis.v2.voice.MicrophoneBusyException) {
-                returnToWakeCuePending.set(true)
-                diagnosticRecorder.recordImportant("Microphone yielded; dictationPriority=${com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.dictationRequested}; keyboardVisible=${com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.keyboardVisible}; partial turn discarded. Returning to passive mode when available.")
-                runCatching { voiceSessionController.interrupt() }
-                finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " microphone yielded."
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                if (cancelled is com.battlesbudz.jarvis.v2.voice.VoiceControlCancellation) {
-                    microphoneYielded = true // Use the same cleanup-before-rearm path.
-                    diagnosticRecorder.recordImportant("Voice control requested: ${cancelled.control}")
-                    if (cancelled.control != com.battlesbudz.jarvis.v2.voice.VoiceControl.STOP_REPLY) {
-                        runCatching { voiceSessionController.end() }
-                    }
-                    finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " user control."
-                } else if (cancelled is com.battlesbudz.jarvis.v2.voice.MicrophoneYieldCancellation ||
-                    cancelled.cause is com.battlesbudz.jarvis.v2.voice.MicrophoneYieldCancellation) {
-                    microphoneYielded = true
-                    diagnosticRecorder.recordImportant("Mic use by another app interrupted speech/reasoning; returning to passive mode.")
-                    runCatching { voiceSessionController.interrupt() }
-                    finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " microphone yielded."
-                } else {
-                    diagnosticRecorder.recordImportant("Voice capture cancelled: ${cancelled.message ?: cancelled.javaClass.simpleName}")
-                    throw cancelled
-                }
-            } catch (error: Throwable) {
-                diagnosticRecorder.record("Voice turn failed: ${error.stackTraceToString().take(4000)}")
-                runCatching { voiceSessionController.interrupt() }
-                finalMessage = "Voice Call turn failed: ${error.message ?: "unknown error"}"
-            } finally {
-                val cancelled = kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive != true
-                withContext(kotlinx.coroutines.NonCancellable) {
-                    microphoneWatcher?.cancel()
-                    microphoneWatcher?.join()
-                    if (cancelled) { conversationJob?.cancel(); conversationJob?.join() }
-                    try {
-                        runCatching { capture?.stop() }
-                        runCatching { microphone?.stop() }
-                        preparation?.close()
-                    } finally {
-                        speechChunks.close()
-                        runCatching { voiceOutput?.stopSpeaking() }
-                        speechJob?.cancel()
-                        speechJob?.join()
-                        runCatching { voiceOutput?.release() }
-                        if (activeVoiceOutput === voiceOutput) activeVoiceOutput = null
-                        if (activeVoiceCapture === capture) activeVoiceCapture = null
-                        if (operationOwned) modelStore.endModelOperation()
-                    }
-                }
-                if (voiceSessionArmed && (hadActiveCall || wokeThisTurn) && voiceSessionController.currentCallId() == null) {
-                    // Announce the actual return to a ready detector, not each ASR turn or an unavailable microphone.
-                    returnToWakeCuePending.set(true)
-                }
-                if (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true || microphoneYielded) {
-                    // Re-arm only after this job (including all children) has actually finished.
-                    kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.invokeOnCompletion {
-                        mainHandler.post {
-                            report(finalMessage)
-                            onFinished(finalMessage)
-                            if (voiceSessionArmed && !finalMessage.contains("turn failed", true)) {
-                                // Runtime owns re-arming, independent of Compose rendering or visibility.
-                                runVoiceTurn(true, report, onTranscript, onFinished)
-                            } else {
-                                voiceSessionArmed = false
-                                stopVoiceService()
-                            }
-                        }
-                    }
-                }
-            }
+        runtime.attachUi(report, onTranscript, onFinished)
+        runtime.arm()
+        try {
+            startForegroundService(android.content.Intent(this, com.battlesbudz.jarvis.v2.voice.VoiceCallService::class.java))
+        } catch (error: Exception) {
+            runtime.endVoiceCall(report)
+            onFinished("Voice Call turn failed: background audio could not start: ${error.message}")
         }
     }
 
@@ -704,26 +365,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun endVoiceCall(report: (String) -> Unit) {
-        // Ending a call must also release an armed microphone turn. Otherwise
-        // the capture coroutine can survive the UI transition and the next
-        // Voice Call cannot acquire the microphone.
-        diagnosticRecorder.recordImportant("Session stop requested by UI or foreground service.")
         pendingVoiceTurn = null
-        returnToWakeCuePending.set(false)
-        voiceSessionArmed = false
-        com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
-        com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.report("Jarvis session stopped — microphone off.")
-        stopVoiceService()
-        activeVoiceOutput?.stopSpeaking()
-        voiceTurnJob?.cancel()
-        conversationJob?.cancel()
-        activeVoiceCapture = null
-        runCatching {
-            if (voiceSessionController.state.value != VoiceSessionState.PASSIVE_LISTENING) {
-                voiceSessionController.end()
-            }
-        }.onFailure { report("Voice Call could not be saved: ${it.message ?: "unknown error"}") }
-            .onSuccess { report("Jarvis session stopped — microphone off.") }
+        runtime.endVoiceCall(report)
     }
 
     private fun runDirectAudioSmokeTest(
@@ -932,19 +575,7 @@ class MainActivity : ComponentActivity() {
         sessionPreferences.edit().putString("transcript", array.toString()).apply()
     }
 
-    private fun startVoiceDiagnostics(label: String) {
-        com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.clearDiagnostics()
-        asrComparisonStore.clearDiagnostics()
-        ttsComparisonStore.clearDiagnostics()
-        diagnosticRecorder.startSession(label)
-    }
-
-    private fun stopVoiceService() {
-        if (voiceServiceStarted) {
-            stopService(android.content.Intent(this, com.battlesbudz.jarvis.v2.voice.VoiceCallService::class.java))
-            voiceServiceStarted = false
-        }
-    }
+    private fun startVoiceDiagnostics(label: String) = runtime.startVoiceDiagnostics(label)
 
     private fun copyDiagnostics(transcript: List<ChatEntry>) {
         // The runtime ring contains the latest call's ASR, inference and playback events.
@@ -963,21 +594,18 @@ class MainActivity : ComponentActivity() {
     }
 
     
+    override fun onResume() {
+        super.onResume()
+        runtime.activityVisible = true
+    }
+    override fun onPause() {
+        runtime.activityVisible = false
+        super.onPause()
+    }
     override fun onDestroy() {
         wakeTestJob?.cancel()
-        if (voiceSessionArmed) diagnosticRecorder.recordImportant("Session stopped: activity destroyed changingConfiguration=$isChangingConfigurations finishing=$isFinishing")
-        voiceSessionArmed = false
-        stopVoiceService()
-        activeVoiceOutput?.stopSpeaking()
-        voiceTurnJob?.cancel()
-        conversationJob?.cancel()
-        val engine = conversationEngine
-        conversationEngine = null
-        cleanupScope.launch {
-            voiceTurnJob?.join()
-            conversationJob?.join()
-            engine?.close()
-        }
+        runtime.detachUi()
+        // Voice jobs and models belong to the service runtime, including during Activity recreation.
         super.onDestroy()
     }
 
@@ -1164,5 +792,5 @@ class MainActivity : ComponentActivity() {
         imageUri: Uri?,
         onToken: (String) -> Unit,
         onComplete: (String) -> Unit
-    ) = runConversationInternal(prompt, history, imageUri, onToken, onComplete)
+    ) = runtime.runConversationInternal(prompt, history, imageUri, onToken, onComplete)
 }

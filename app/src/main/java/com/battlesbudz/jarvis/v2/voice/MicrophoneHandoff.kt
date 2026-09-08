@@ -4,8 +4,6 @@ package com.battlesbudz.jarvis.v2.voice
 object MicrophoneHandoff {
     private val requested = java.util.concurrent.atomic.AtomicBoolean(false)
     val dictationRequested: Boolean get() = requested.get()
-    @Volatile var keyboardVisible = false
-    @Volatile var keyboardHolding = false
     val backgroundRecorders = java.util.concurrent.atomic.AtomicInteger(0)
     private val events = java.util.ArrayDeque<String>()
     @Synchronized fun record(message: String) {
@@ -14,9 +12,10 @@ object MicrophoneHandoff {
     }
     @Synchronized fun clearDiagnostics() { events.clear() }
     @Synchronized fun diagnostics(): String =
-        "Keyboard handoff: helper=${keyboardHelperConnected.value} visible=$keyboardVisible holding=$keyboardHolding dictation=$dictationRequested ownRecorders=${backgroundRecorders.get()}\n" + events.joinToString("\n")
-    val keyboardHelperConnected = kotlinx.coroutines.flow.MutableStateFlow(false)
-    val shouldYield: Boolean get() = dictationRequested || keyboardHolding
+        "Microphone handoff: interrupted=${interrupted.value} silenced=$ownRecorderSilenced dictation=$dictationRequested ownRecorders=${backgroundRecorders.get()}\n" + events.joinToString("\n")
+    val interrupted = kotlinx.coroutines.flow.MutableStateFlow(false)
+    @Volatile var ownRecorderSilenced = false
+    val shouldYield: Boolean get() = dictationRequested || interrupted.value
     fun requestDictation(): Boolean = requested.compareAndSet(false, true)
     fun finishDictation() { requested.set(false) }
 }

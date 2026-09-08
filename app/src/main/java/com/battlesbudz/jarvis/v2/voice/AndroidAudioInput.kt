@@ -28,7 +28,8 @@ class AndroidAudioInput(
     private val audioManager: android.media.AudioManager? = null,
     private val onWaiting: (Boolean) -> Unit = {},
     private val dictation: Boolean = false,
-    private val onLevel: (Float) -> Unit = {}
+    private val onLevel: (Float) -> Unit = {},
+    private val log: (String) -> Unit = {}
 ) : AudioInput {
     override val sampleRateHz: Int = format.sampleRateHz
     override val channelCount: Int = format.channelCount
@@ -71,15 +72,25 @@ class AndroidAudioInput(
             created.release()
             error("The microphone could not be initialized.")
         }
+        val callback = object : android.media.AudioManager.AudioRecordingCallback() {
+            override fun onRecordingConfigChanged(configs: MutableList<android.media.AudioRecordingConfiguration>?) {
+                val config = created.activeRecordingConfiguration
+                if (!dictation) MicrophoneHandoff.ownRecorderSilenced = config?.isClientSilenced == true
+                log("capture_route silenced=${config?.isClientSilenced} source=${config?.clientAudioSource} routeType=${config?.audioDevice?.type} routeId=${config?.audioDevice?.id} sampleRate=${config?.clientFormat?.sampleRate}")
+            }
+        }
+        created.registerAudioRecordingCallback(java.util.concurrent.Executor { it.run() }, callback)
         if (!dictation) MicrophoneHandoff.backgroundRecorders.incrementAndGet()
         try {
             created.startRecording()
             check(created.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "The microphone did not start recording." }
         } catch (error: Throwable) {
+            created.unregisterAudioRecordingCallback(callback)
             created.release()
-            if (!dictation) MicrophoneHandoff.backgroundRecorders.decrementAndGet()
+            if (!dictation) { MicrophoneHandoff.backgroundRecorders.decrementAndGet(); MicrophoneHandoff.ownRecorderSilenced = false }
             throw error
         }
+        log("capture_open source=VOICE_RECOGNITION routeType=${created.routedDevice?.type} routeId=${created.routedDevice?.id} session=${created.audioSessionId} silenced=${created.activeRecordingConfiguration?.isClientSilenced}")
         val ready = CompletableDeferred<Unit>()
         recorder = created
         ownsRecorder = true
@@ -119,8 +130,9 @@ class AndroidAudioInput(
                 emittedChunks.close(error)
             } finally {
                 runCatching { created.stop() }
+                created.unregisterAudioRecordingCallback(callback)
                 created.release()
-                if (!dictation) MicrophoneHandoff.backgroundRecorders.decrementAndGet()
+                if (!dictation) { MicrophoneHandoff.backgroundRecorders.decrementAndGet(); MicrophoneHandoff.ownRecorderSilenced = false }
                 if (recorder === created) { recorder = null; ownsRecorder = false }
                 onLevel(0f)
             }

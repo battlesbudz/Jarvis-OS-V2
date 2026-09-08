@@ -1,4 +1,0 @@
-<resources>
-    <string name="keyboard_microphone_label">Jarvis keyboard microphone handoff</string>
-    <string name="keyboard_microphone_description">Gives keyboard dictation microphone priority. Listening resumes after recording finishes, even while the keyboard remains visible. Android requires window access for this feature; Jarvis checks window types and tap events only and does not read, store, or send typed text or screen content.</string>
-</resources>

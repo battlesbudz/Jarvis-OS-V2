@@ -13,6 +13,8 @@ import com.battlesbudz.jarvis.v2.MainActivity
 
 /** Keeps a user-started call eligible for microphone and playback after pressing Home. */
 class VoiceCallService : Service() {
+    private var monitor: MicrophoneInterruptionMonitor? = null
+    private val runtime get() = com.battlesbudz.jarvis.v2.JarvisRuntime.get(applicationContext)
     private var wakeLock: PowerManager.WakeLock? = null
     private var status = "Preparing Jarvis session — microphone not yet armed"
 
@@ -29,6 +31,7 @@ class VoiceCallService : Service() {
         wakeLock = getSystemService(PowerManager::class.java)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jarvis:voice-call")
             .apply { acquire() }
+        monitor = MicrophoneInterruptionMonitor(applicationContext, runtime::onMicrophoneInterruption)
     }
 
     private fun notification(): Notification {
@@ -55,12 +58,16 @@ class VoiceCallService : Service() {
         if (intent?.action == TOGGLE_MIC) VoiceSessionUi.controls.trySend(
             if (VoiceSessionUi.paused.value) VoiceControl.RESUME else VoiceControl.PAUSE)
         if (intent?.action == STOP) { stopRequested.value = true; stopSelf() }
+        if (intent?.action == null) runtime.runVoiceTurn()
         return START_NOT_STICKY
     }
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onTaskRemoved(rootIntent: Intent?) { stopRequested.value = true; stopSelf() }
     override fun onDestroy() {
         if (instance === this) instance = null
+        runtime.onServiceStopped()
+        monitor?.close()
+        monitor = null
         stopRequested.value = true
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null

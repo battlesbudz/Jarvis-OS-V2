@@ -376,6 +376,23 @@ class AudioTurnCaptureTest {
         fixture.capture.stop()
     }
 
+    @Test
+    fun microphoneInterruptionEndsOnlyCaptureWithoutSubmittingPartialSpeech() = runBlocking<Unit> {
+        val transcriber = FakeTranscriber()
+        val fixture = CaptureFixture(this, transcriber)
+        fixture.capture.start()
+        fixture.emit(100, 2000, speech = true)
+        fixture.capture.yieldMicrophone()
+        val error = runCatching { fixture.capture.awaitTurnCompletion() }.exceptionOrNull()
+        assertTrue(error is MicrophoneBusyException)
+        fixture.capture.stop()
+        assertEquals(0, transcriber.finishes)
+        assertEquals(0, transcriber.recoveries)
+        assertEquals("", fixture.capture.finalTranscript)
+        assertTrue(fixture.metrics.isEmpty())
+        assertEquals(1, fixture.microphoneStops)
+    }
+
     private class FakeTranscriber(
         private val partial: String = "story about pirates",
         private val final: String = "story about astronauts",

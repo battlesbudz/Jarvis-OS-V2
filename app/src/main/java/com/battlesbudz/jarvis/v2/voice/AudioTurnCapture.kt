@@ -43,6 +43,7 @@ class AudioTurnCapture(
     private var stopped = false
     @Volatile private var endRequested = false
     fun finishNow() { endRequested = true }
+    fun yieldMicrophone() { turnCompleted.completeExceptionally(MicrophoneBusyException()) }
     @Volatile var hasSpeech: Boolean = false
         private set
 
@@ -98,6 +99,7 @@ class AudioTurnCapture(
                     // submission and endpointing, not whether initial words reach the recognizer.
                     val decodeStartedAt = nowMs()
                     val partial = transcriber?.accept(chunk)
+                    if (turnCompleted.isCompleted) return@collect
                     val chunkDecodeMs = nowMs() - decodeStartedAt
                     decodeMs += chunkDecodeMs
                     maxDecodeChunkMs = maxOf(maxDecodeChunkMs, chunkDecodeMs)
