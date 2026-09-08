@@ -3,5 +3,4 @@
     android:recognitionService="com.battlesbudz.jarvis.v2.assistant.JarvisRecognitionService"
     android:sessionService="com.battlesbudz.jarvis.v2.assistant.JarvisInteractionSessionService"
     android:supportsAssist="true"
-    android:supportsLaunchFromKeyguard="false"
     android:supportsLocalInteraction="true" />
