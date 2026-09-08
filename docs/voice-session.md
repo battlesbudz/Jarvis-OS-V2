@@ -114,3 +114,22 @@ Phone acceptance: start Hey Jarvis, use dictation in another app, stop dictation
 leave its keyboard on screen, and wait for the detector to rearm without opening Jarvis.
 Say Hey Jarvis, then test a second keyboard dictation on that same keyboard. If rearm
 fails, copy diagnostics so holding/recording state can distinguish it from a lifecycle issue.
+
+
+## Voice repetition guard
+
+General voice replies now pass a phrase gate before TTS, captions, or voice-call
+checkpoint publication. It rejects normalized echoes of the current user message,
+exact/near-duplicate sentences from the latest assistant reply, and sentences repeated
+within the current answer. Ordinary speech is released sentence by sentence; a detected
+repeat triggers at most one read-only rewrite with the latest question and dialogue.
+Rewrite tool calls are never executed. If no fresh answer survives, a short honest
+fallback is used. Prompt instructions also emphasize answering follow-up decisions
+rather than recapping the original idea. The old 32-character check could not catch
+the long emotion-feature replies reported in diagnostics.
+
+Verified phone-action result paths remain authoritative. Lexical matching does not
+promise to detect every paraphrase or prohibit reuse of necessary topic words/facts.
+The guard records suppression and rewrite diagnostics in the latest-call log.
+Acceptance: discuss an idea, ask whether to implement it now, then narrow the question;
+verify each reply answers the changed question without replaying the earlier paragraph.

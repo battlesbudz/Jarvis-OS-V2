@@ -57,7 +57,7 @@ internal fun MainActivity.runConversationInternal(
                 var actionResultMessage: String? = null
                 var actionName: String? = null
                 val turnPlan = turnOrchestrator.plan(prompt, history.map { it.role to it.text })
-                val repeatReply = if (imageUri == null) com.battlesbudz.jarvis.v2.ai.LastReplyRecall.resolve(
+                val repeatReply = if (imageUri == null && voiceAudio == null) com.battlesbudz.jarvis.v2.ai.LastReplyRecall.resolve(
                     prompt, history.map { it.role to it.text }
                 ) else null
                 if (repeatReply != null) {
@@ -205,6 +205,12 @@ internal fun MainActivity.runConversationInternal(
                     nativeConversationHasContext = false
                     conversationCharacters = 0
                 }
+                val voiceRepetitionGuard = if (voiceAudio != null &&
+                    actionIntentRouter.classifyActionIntent(prompt, history) == null) {
+                    com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard(
+                        prompt, history.lastOrNull { it.role == "Jarvis" }?.text,
+                        emit = { safe -> mainHandler.post { onToken(safe) } })
+                } else null
                 val streamFilter = AssistantStreamFilter { safeText ->
                     // Factual/reference turns are held until the final answer
                     // passes the knowledge-gap guard. This prevents a draft
@@ -213,7 +219,8 @@ internal fun MainActivity.runConversationInternal(
                     if (turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT &&
                         actionIntentRouter.classifyActionIntent(prompt, history) == null
                     ) {
-                        mainHandler.post { onToken(safeText) }
+                        if (voiceRepetitionGuard != null) voiceRepetitionGuard.accept(safeText)
+                        else mainHandler.post { onToken(safeText) }
                     }
                 }
                 var seedContext = !nativeConversationHasContext
@@ -470,6 +477,47 @@ internal fun MainActivity.runConversationInternal(
                 }
                 if (requiresReference && referenceGrounding.isInsufficientAnswer(cleanedResponse)) {
                     cleanedResponse = "I couldn't produce a verified answer from Wikipedia right now. Please try again."
+                }
+                if (voiceRepetitionGuard != null && actionResultMessage == null) {
+                    cleanedResponse = voiceRepetitionGuard.finish(cleanedResponse)
+                    if (voiceRepetitionGuard.suppressedSentences > 0) {
+                        diagnosticRecorder.recordImportant("Voice repetition blocked: sentences=${voiceRepetitionGuard.suppressedSentences}; rewriting latest answer once.")
+                        val beforeRepair = voiceRepetitionGuard.text.length
+                        resetNativeConversation()
+                        nativeConversationContainsCurrentTurn = false
+                        try {
+                            val repairPrompt = promptBuilder.buildGemmaPrompt(prompt, null, history, seedContext = true) +
+                                "\n" + referenceContext.orEmpty() + "\n" +
+                                com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions +
+                                "\nYour previous draft repeated the user or an earlier reply and was suppressed. " +
+                                "Give a NEW direct answer to the CURRENT question in one or two sentences. " +
+                                "Do not recap, apologize, quote earlier sentences, or call tools. " +
+                                "Resolve follow-ups using the dialogue above."
+                            // A read-only repair: generated tool calls are discarded, never executed.
+                            val repaired = engine.generate(prompt = repairPrompt, onToken = {})
+                            if (repaired.toolCalls.isEmpty() && !repaired.text.contains("start_function_call") &&
+                                !repaired.text.contains("tool_call>")) {
+                                voiceRepetitionGuard.accept(cleanAssistantText(repaired.text))
+                                voiceRepetitionGuard.finish()
+                            }
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                        catch (error: Exception) {
+                            diagnosticRecorder.record("Voice repetition repair failed: ${error.message}")
+                        } finally {
+                            resetNativeConversation()
+                            nativeConversationContainsCurrentTurn = false
+                        }
+                        if (voiceRepetitionGuard.text.length == beforeRepair) {
+                            for (fallback in listOf("I couldn't produce a fresh answer to that.",
+                                "I'm stuck on that question at the moment.", "I don't have a useful new answer yet.")) {
+                                voiceRepetitionGuard.accept(fallback)
+                                voiceRepetitionGuard.finish()
+                                if (voiceRepetitionGuard.text.length > beforeRepair) break
+                            }
+                        }
+                        cleanedResponse = voiceRepetitionGuard.text
+                        diagnosticRecorder.recordImportant("Voice repetition guard: suppressed=${voiceRepetitionGuard.suppressedSentences} acceptedChars=${cleanedResponse.length}")
+                    }
                 }
                 if (!rawControlOutput) {
                     // Count the exact prompt submitted to the native engine,
