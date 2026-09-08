@@ -683,16 +683,42 @@ private fun VoiceCallScreen(
         }
         TextButton(onClick = { ttsSettingsOpen = true }) { Text("Voice: ${selectedTts.label}") }
         val assistantContext = androidx.compose.ui.platform.LocalContext.current
-        TextButton(onClick = {
+        var assistantSettingsMessage by remember { mutableStateOf("") }
+        val assistantSettingsLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+        ) {
             val roles = assistantContext.getSystemService(android.app.role.RoleManager::class.java)
-            val intent = if (roles.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT))
-                roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT)
-            else android.content.Intent(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS)
-            assistantContext.startActivity(intent)
-        }, enabled = !callStarted) { Text("Set Jarvis as default assistant") }
+            assistantSettingsMessage = if (roles.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT))
+                "Jarvis is your default assistant."
+            else "Select Jarvis under Digital assistant app in Android Settings."
+        }
+        TextButton(onClick = {
+            val actions = listOf(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS,
+                android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+            var opened = false
+            for (action in actions) {
+                try {
+                    assistantSettingsLauncher.launch(android.content.Intent(action))
+                    opened = true
+                    break
+                } catch (_: android.content.ActivityNotFoundException) {
+                    // Some manufacturers expose only the default-apps screen.
+                } catch (_: SecurityException) {
+                    // Try the public default-apps fallback.
+                }
+            }
+            assistantSettingsMessage = if (opened)
+                "Choose Digital assistant app, then Jarvis."
+            else "Open Android Settings → Apps → Default apps → Digital assistant app → Jarvis."
+        }) { Text("Set Jarvis as default assistant") }
+        if (assistantSettingsMessage.isNotBlank()) {
+            Text(assistantSettingsMessage, style = MaterialTheme.typography.bodySmall)
+        }
         val phase = when {
             status.startsWith("Paused") -> "Mic paused"
             status.startsWith("Waiting") -> "Hey Jarvis"
+            status.startsWith("Preparing") || status.startsWith("Downloading") || status.startsWith("Verifying") -> "Preparing"
+            status.startsWith("Hey Jarvis detected") -> "Waking up"
             listening -> "Listening"
             status.contains("speaking", true) && turnInFlight -> "Speaking"
             turnInFlight -> "Thinking"
@@ -734,7 +760,7 @@ private fun VoiceCallScreen(
                 Text("Stop Jarvis session")
             }
         }
-        if (status.startsWith("Waiting") || status.startsWith("Paused") || status.contains("failed", true) || status.contains("permission", true)) {
+        if (status.isNotBlank() && !status.startsWith("Voice Call turn complete")) {
             Text(status, style = MaterialTheme.typography.bodySmall)
         }
         TextButton(

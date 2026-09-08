@@ -305,6 +305,7 @@ class MainActivity : ComponentActivity() {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         if (!voiceServiceStarted) {
+            startVoiceDiagnostics("Jarvis session — awaiting wake word")
             try {
                 startForegroundService(android.content.Intent(this, com.battlesbudz.jarvis.v2.voice.VoiceCallService::class.java))
                 voiceServiceStarted = true
@@ -332,6 +333,7 @@ class MainActivity : ComponentActivity() {
             var speechJob: Job? = null
             var microphoneWatcher: Job? = null
             var microphoneYielded = false
+            var wokeThisTurn = false
             var finalMessage = "Voice Call turn failed."
             fun status(message: String) {
                 com.battlesbudz.jarvis.v2.voice.VoiceCallService.updateStatus(message)
@@ -368,14 +370,16 @@ class MainActivity : ComponentActivity() {
                 microphone = input
                 if (voiceSessionController.currentCallId() == null) {
                     val wakeDirectory = com.battlesbudz.jarvis.v2.voice.WakeWordModelStore(applicationContext).ensureReady(::status)
-                    com.battlesbudz.jarvis.v2.voice.PassiveWakeListener(wakeDirectory).use { wake ->
+                    com.battlesbudz.jarvis.v2.voice.PassiveWakeListener(wakeDirectory,
+                        log = { diagnosticRecorder.record("Voice wake: $it") }).use { wake ->
                         input.start()
                         status("Waiting for Hey Jarvis — microphone active")
                         wake.awaitWake(input)
                     }
                     voiceSessionController.beginCall().also { startVoiceDiagnostics("Voice Call ${it.id}") }
                     diagnosticRecorder.recordImportant("Wake word detected: Hey Jarvis. ASR and call audio start now.")
-                    status("Hey Jarvis detected — starting call")
+                    wokeThisTurn = true
+                    status("Hey Jarvis detected — getting ready to listen…")
                 }
                 val voiceHistory = voiceSessionController.conversationContext().map { ChatEntry(it.role, it.text) }
                 val output = SherpaKokoroVoiceOutput(ttsDirectory.path, engine = ttsEngine,
@@ -442,7 +446,19 @@ class MainActivity : ComponentActivity() {
                 capture = activeCapture
                 activeVoiceCapture = activeCapture
                 activeCapture.start()
-                status("Voice Call is listening. Speak naturally; I’ll detect when you finish.")
+                status("Voice Call is listening — speak now.")
+                if (wokeThisTurn) {
+                    // A short cue confirms that capture is ready, including with the screen off.
+                    var cue: android.media.ToneGenerator? = null
+                    try {
+                        cue = android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 65)
+                        cue.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 100)
+                        kotlinx.coroutines.delay(130)
+                        diagnosticRecorder.recordImportant("Wake acknowledged; command microphone ready.")
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (error: Exception) { diagnosticRecorder.record("Wake cue unavailable: ${error.message}") }
+                    finally { cue?.release() }
+                }
                 activeCapture.awaitTurnCompletion()
                 val endpointAt = System.nanoTime()
                 finalReadyAt.set(endpointAt)
@@ -522,7 +538,10 @@ class MainActivity : ComponentActivity() {
                     diagnosticRecorder.recordImportant("Mic use by another app interrupted speech/reasoning; returning to passive mode.")
                     runCatching { voiceSessionController.interrupt() }
                     finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " microphone yielded."
-                } else throw cancelled
+                } else {
+                    diagnosticRecorder.recordImportant("Voice capture cancelled: ${cancelled.message ?: cancelled.javaClass.simpleName}")
+                    throw cancelled
+                }
             } catch (error: Throwable) {
                 diagnosticRecorder.record("Voice turn failed: ${error.stackTraceToString().take(4000)}")
                 runCatching { voiceSessionController.interrupt() }
@@ -572,6 +591,7 @@ class MainActivity : ComponentActivity() {
         // Ending a call must also release an armed microphone turn. Otherwise
         // the capture coroutine can survive the UI transition and the next
         // Voice Call cannot acquire the microphone.
+        diagnosticRecorder.recordImportant("Session stop requested by UI or foreground service.")
         pendingVoiceTurn = null
         voiceSessionArmed = false
         stopVoiceService()
@@ -824,6 +844,7 @@ class MainActivity : ComponentActivity() {
 
     
     override fun onDestroy() {
+        if (voiceSessionArmed) diagnosticRecorder.recordImportant("Session stopped: activity destroyed changingConfiguration=$isChangingConfigurations finishing=$isFinishing")
         voiceSessionArmed = false
         stopVoiceService()
         activeVoiceOutput?.stopSpeaking()
