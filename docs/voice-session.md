@@ -83,3 +83,15 @@ Phone checks: open keyboard while Hey Jarvis is armed, verify Jarvis shows keybo
 pause, dictate, close keyboard, then wake Jarvis. Repeat while a call is listening and
 after several app launches. Lock the screen with the keyboard open and verify wake
 listening returns. Disable the helper and verify manual pause still releases capture.
+
+
+## Audible listening modes
+
+Command capture readiness uses a louder two-pulse acknowledgement at cue gain 100
+(previously 65 with a brief beep). A distinct lower cue sounds once an ended call has
+returned to a ready wake detector: goodbye, inactivity, End conversation, or return
+after a microphone interruption. It does not sound after ordinary response turns,
+on initial session startup, or while waiting for another app to release the microphone.
+Both cues use the existing media volume, serialize playback and release on cancellation.
+Phone check with the screen off: Hey Jarvis → bright acknowledgement → conversation →
+goodbye (or 20 seconds without recognized speech) → lower return-to-wake cue.

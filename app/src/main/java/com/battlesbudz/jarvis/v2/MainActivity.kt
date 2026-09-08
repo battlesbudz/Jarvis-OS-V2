@@ -136,6 +136,7 @@ class MainActivity : ComponentActivity() {
     private var voiceTurnJob: Job? = null
     private var voiceServiceStarted = false
     private var audioRecoveryAttempts = 0
+    private val returnToWakeCuePending = java.util.concurrent.atomic.AtomicBoolean(false)
     private var voiceSessionArmed = false
         set(value) {
             field = value
@@ -260,6 +261,7 @@ class MainActivity : ComponentActivity() {
                     com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
                     com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.report("Preparing microphone…")
                     audioRecoveryAttempts = 0
+                    returnToWakeCuePending.set(false)
                     voiceSessionArmed = start
                     sessionReport = report
                     runVoiceTurn(start, report, onTranscript, onFinished)
@@ -358,6 +360,7 @@ class MainActivity : ComponentActivity() {
             var speechJob: Job? = null
             var microphoneWatcher: Job? = null
             var microphoneYielded = false
+            val hadActiveCall = voiceSessionController.currentCallId() != null
             var wokeThisTurn = false
             var finalMessage = "Voice Call turn failed."
             fun status(message: String) {
@@ -407,7 +410,14 @@ class MainActivity : ComponentActivity() {
                     val wakeDirectory = com.battlesbudz.jarvis.v2.voice.WakeWordModelStore(applicationContext).ensureReady(::status)
                     com.battlesbudz.jarvis.v2.voice.PassiveWakeListener(wakeDirectory,
                         log = { diagnosticRecorder.record("Voice wake: $it") },
-                        onReady = { status("Waiting for Hey Jarvis — microphone active") }).use { wake ->
+                        onReady = {
+                            status("Waiting for Hey Jarvis — microphone active")
+                            if (returnToWakeCuePending.getAndSet(false)) launch {
+                                com.battlesbudz.jarvis.v2.voice.VoiceCues.play(
+                                    com.battlesbudz.jarvis.v2.voice.VoiceCues.Cue.WAKE_LISTENING,
+                                    log = { diagnosticRecorder.recordImportant(it) })
+                            }
+                        }).use { wake ->
                         input.start()
                         status("Preparing wake detector — microphone warming up…")
                         wake.awaitWake(input)
@@ -484,16 +494,10 @@ class MainActivity : ComponentActivity() {
                 activeCapture.start()
                 status("Voice Call is listening — speak now.")
                 if (wokeThisTurn) {
-                    // A short cue confirms that capture is ready, including with the screen off.
-                    var cue: android.media.ToneGenerator? = null
-                    try {
-                        cue = android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 65)
-                        cue.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 100)
-                        kotlinx.coroutines.delay(130)
-                        diagnosticRecorder.recordImportant("Wake acknowledged; command microphone ready.")
-                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-                    catch (error: Exception) { diagnosticRecorder.record("Wake cue unavailable: ${error.message}") }
-                    finally { cue?.release() }
+                    com.battlesbudz.jarvis.v2.voice.VoiceCues.play(
+                        com.battlesbudz.jarvis.v2.voice.VoiceCues.Cue.COMMAND_READY,
+                        log = { diagnosticRecorder.recordImportant(it) })
+                    diagnosticRecorder.recordImportant("Wake acknowledged; command microphone ready.")
                 }
                 activeCapture.awaitTurnCompletion()
                 val endpointAt = System.nanoTime()
@@ -618,6 +622,10 @@ class MainActivity : ComponentActivity() {
                         if (operationOwned) modelStore.endModelOperation()
                     }
                 }
+                if (voiceSessionArmed && (hadActiveCall || wokeThisTurn) && voiceSessionController.currentCallId() == null) {
+                    // Announce the actual return to a ready detector, not each ASR turn or an unavailable microphone.
+                    returnToWakeCuePending.set(true)
+                }
                 if (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true || microphoneYielded) {
                     // Re-arm only after this job (including all children) has actually finished.
                     kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.invokeOnCompletion {
@@ -665,9 +673,9 @@ class MainActivity : ComponentActivity() {
                 if (detected) {
                     diagnosticRecorder.recordImportant("Wake test passed: Hey Jarvis matched without ASR or Gemma.")
                     status("Hey Jarvis detected! Wake test passed.")
-                    val cue = android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 65)
-                    try { cue.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 100); kotlinx.coroutines.delay(130) }
-                    finally { cue.release() }
+                    com.battlesbudz.jarvis.v2.voice.VoiceCues.play(
+                        com.battlesbudz.jarvis.v2.voice.VoiceCues.Cue.COMMAND_READY,
+                        log = { diagnosticRecorder.recordImportant(it) })
                 } else {
                     diagnosticRecorder.recordImportant("Wake test ended: no match in 30 seconds.")
                     status("No wake detected in 30 seconds. Copy diagnostics to share this test.")
@@ -693,6 +701,7 @@ class MainActivity : ComponentActivity() {
         // Voice Call cannot acquire the microphone.
         diagnosticRecorder.recordImportant("Session stop requested by UI or foreground service.")
         pendingVoiceTurn = null
+        returnToWakeCuePending.set(false)
         voiceSessionArmed = false
         com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
         com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.report("Jarvis session stopped — microphone off.")
