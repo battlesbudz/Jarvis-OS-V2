@@ -28,31 +28,34 @@ class BargeInAudioInput(
         var recognizer: StreamingTranscriber? = null
         var recognizedBytes = 0
         var delivered = false
+        var lastCandidateLog = Long.MIN_VALUE / 2
         try {
             input.chunks().collect { pcm ->
                 if (delivered) { emit(pcm); return@collect }
                 preRoll.append(pcm)
                 val decision = detector.accept(pcm)
                 val audible = playing()
-                // Quiet generation needs only acoustic confirmation. During playback,
-                // corroborate speech with stable words that are not Jarvis's own reply.
-                val transcript = if (audible) {
-                    val asr = recognizer ?: createTranscriber().also { recognizer = it }
-                    recognizedBytes += pcm.size
-                    asr.accept(pcm)
-                } else ""
+                // Recognition is required while preparing the reply as well as during
+                // playback. VAD alone previously let a rustle cancel unfinished synthesis.
+                val asr = recognizer ?: createTranscriber().also { recognizer = it }
+                recognizedBytes += pcm.size
+                val transcript = asr.accept(pcm)
                 val speech = decision.isSpeech || quietEvidence.accept(transcript, decision.probability, nowMs(), false)
                 if (gate.update(speech, audible, nowMs(), transcript, spokenText()) == BargeInGate.Action.CONFIRM) {
                     // Close the probe ASR before the turn's lazy ASR can load: never two models.
                     recognizer?.close(); recognizer = null
                     delivered = true
                     onConfirmed()
-                    log("barge_speech_confirmed method=${if (audible) "new_words" else "acoustic"} preRollMs=${preRoll.sizeBytes() / 32}")
+                    log("barge_speech_confirmed method=new_words phase=${if (audible) "playback" else "preparing"} preRollMs=${preRoll.sizeBytes() / 32}")
                     emit(preRoll.snapshot()); preRoll.clear()
                 } else if (recognizedBytes >= 16_000 * 2 * 10) {
                     recognizer?.close(); recognizer = null
                     recognizedBytes = 0; gate = BargeInGate(); quietEvidence.reset()
                     log("barge_echo_window_reset playback_uninterrupted=true")
+                }
+                if (!delivered && (speech || transcript.isNotBlank()) && nowMs() - lastCandidateLog >= 1000) {
+                    lastCandidateLog = nowMs()
+                    log("barge_candidate_rejected reason=${gate.reason} playing=$audible transcript=${transcript.takeLast(80)}")
                 }
             }
         } finally { recognizer?.close(); detector.close(); preRoll.clear() }

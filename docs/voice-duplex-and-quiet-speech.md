@@ -8,8 +8,13 @@ for a 700 ms echo probe and could repeat that after a one-second cooldown.
 ## Playback and interruption
 
 The pause-probe API is removed. Reply capture now uses AEC when Android supplies it,
-plus continuous Moonshine recognition. While Jarvis is audible, a candidate needs
-recent acoustic evidence and stable words differing from the recent spoken reply.
+plus continuous Moonshine recognition. Both while preparing and while playing a reply,
+a candidate needs recent acoustic evidence and recognized words stable for 300 ms.
+There is no acoustic-only cancellation shortcut. A conservative English prefix check
+requires a control, request, question, or correction; incidental phrases such as
+“It is” and “We should know” do not qualify. During playback the words must also
+differ from the recent spoken reply. These text rules can miss indirect interruptions;
+they are not a trained intent classifier.
 Known reply words and isolated recognition substitutions are rejected. A short stop
 command can confirm when it is not itself part of Jarvis's recent speech. This is
 conservative text-based echo rejection, not a claim of complete acoustic echo cancellation.
@@ -27,7 +32,8 @@ phone tests must check underruns and long-answer smoothness as well as barge-in 
 ## Quiet speech
 
 A bounded gain stage precedes VAD, ASR and retained Gemma audio. It targets PCM RMS 900,
-caps gain at 8x, preserves digital silence, and immediately reduces gain for loud peaks.
+caps gain at 8x for normal listening and 3x for interruption listening, preserves
+digital silence, and immediately reduces gain for loud peaks.
 It does not decide whether noise is speech. Moonshine's streaming VAD threshold is
 explicitly 0.3. Silero's strong speech confirmation remains 0.5 over three frames.
 Weak scores of at least 0.15 require a recent, stable transcript containing at least
@@ -51,7 +57,12 @@ reopen messages are less likely to erase the cause and the reply's interruption 
 2. Ask for a paragraph and remain silent: speech should continue without periodic probe pauses.
 3. Interrupt with “stop”, then with a different request such as “open YouTube”.
 4. Stop the session deliberately and verify it stays stopped; resume a saved call.
-5. Copy call diagnostics if any whisper, false interruption, unexpected stop or gap remains.
+5. Rustle clothing while Jarvis is preparing a reply and while it speaks: the reply
+   should continue. Then deliberately say “actually, open settings” in both phases.
+6. Copy call diagnostics if any whisper, false interruption, unexpected stop or gap remains.
+   `barge_candidate_rejected` records why words did not confirm an interruption.
+   The header includes the running APK version; each new call records its creating build
+   separately so a restored older call is distinguishable.
 
 Host tests exercise repeated echo rejection, fresh/changed interruption words,
 recognizer handoff without overlapping native owners, quiet amplification, loud-peak

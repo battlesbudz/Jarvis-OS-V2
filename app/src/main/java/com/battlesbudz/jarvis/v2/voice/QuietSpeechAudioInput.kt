@@ -3,8 +3,8 @@ package com.battlesbudz.jarvis.v2.voice
 import kotlinx.coroutines.flow.map
 
 /** Bounded level conditioning shared by VAD, ASR and the retained Gemma audio. */
-class QuietSpeechAudioInput(private val input: AudioInput, private val log: (String) -> Unit = {}) : AudioInput {
-    private val gain = QuietSpeechGain()
+class QuietSpeechAudioInput(private val input: AudioInput, private val log: (String) -> Unit = {}, maxGain: Double = 8.0) : AudioInput {
+    private val gain = QuietSpeechGain(maxGain)
     private var chunks = 0
     override val sampleRateHz get() = input.sampleRateHz
     override val channelCount get() = input.channelCount
@@ -20,7 +20,8 @@ class QuietSpeechAudioInput(private val input: AudioInput, private val log: (Str
 }
 
 /** Never gates speech by loudness or lowers Silero's probability threshold. */
-class QuietSpeechGain {
+class QuietSpeechGain(private val maxGain: Double = 8.0) {
+    init { require(maxGain in 1.0..8.0) }
     var currentGain = 1.0
         private set
     var inputRms = 0.0
@@ -37,7 +38,7 @@ class QuietSpeechGain {
         }
         inputRms = kotlin.math.sqrt(energy / (pcm.size / 2))
         // Leave digital silence alone; cap amplification and reserve headroom for sudden speech.
-        val target = if (inputRms < 8) 1.0 else (900.0 / inputRms).coerceIn(1.0, 8.0)
+        val target = if (inputRms < 8) 1.0 else (900.0 / inputRms).coerceIn(1.0, maxGain)
         currentGain = if (target < currentGain) target else currentGain + (target - currentGain) * 0.5
         currentGain = minOf(currentGain, if (peak == 0) 1.0 else (28000.0 / peak).coerceAtLeast(1.0))
         return ByteArray(pcm.size).also { result ->

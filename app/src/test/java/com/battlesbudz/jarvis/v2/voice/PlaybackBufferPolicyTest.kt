@@ -15,10 +15,21 @@ class PlaybackBufferPolicyTest {
         assertEquals(0L, PlaybackBufferPolicy.startupWaitMs(400, 2000))
     }
     @Test fun marginalSynthesisGetsSomeHeadroom() {
-        assertEquals(120L, PlaybackBufferPolicy.startupWaitMs(2000, 2000))
+        assertEquals(1200L, PlaybackBufferPolicy.startupWaitMs(2000, 2000))
     }
     @Test fun slowSynthesisCannotCauseAnUnboundedStartupWait() {
-        assertEquals(120L, PlaybackBufferPolicy.startupWaitMs(19200, 11100))
+        assertEquals(1200L, PlaybackBufferPolicy.startupWaitMs(19200, 11100))
         assertEquals(0L, PlaybackBufferPolicy.startupWaitMs(500, 0))
     }
+    @Test fun tinyOpeningGetsBoundedTimeForSecondPhrase() {
+        assertEquals(2000L, PlaybackBufferPolicy.startupWaitMs(500, 800))
+    }
+    @Test fun nextSynthesisFitsAvailableAudioInsteadOfJumpingToLongChunk() {
+        assertEquals(40, PlaybackBufferPolicy.nextChunkChars(800, 40, 700))
+        assertEquals(75, PlaybackBufferPolicy.nextChunkChars(2000, 100, 2000))
+        assertEquals(180, PlaybackBufferPolicy.nextChunkChars(10000, 100, 2000))
+        assertEquals(40, PlaybackBufferPolicy.nextChunkChars(-100, 100, 2000))
+        assertEquals(40, PlaybackBufferPolicy.nextChunkChars(500, 0, 0))
+    }
+
 }

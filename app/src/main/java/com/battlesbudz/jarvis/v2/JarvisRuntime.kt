@@ -99,7 +99,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         asrComparisonStore = com.battlesbudz.jarvis.v2.voice.AsrComparisonStore(getSharedPreferences("asr_comparison", MODE_PRIVATE))
         ttsComparisonStore = com.battlesbudz.jarvis.v2.voice.TtsComparisonStore(getSharedPreferences("tts_comparison", MODE_PRIVATE))
         ttsModels = com.battlesbudz.jarvis.v2.voice.TtsModelStore(applicationContext, kokoroModelStore)
-        diagnosticRecorder = com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(sessionPreferences)
+        val installedPackage = packageManager.getPackageInfo(packageName, 0)
+        diagnosticRecorder = com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(sessionPreferences,
+            "${installedPackage.versionName} (${installedPackage.longVersionCode})")
         diagnosticRecorder.restore()
         diagnosticRecorder.recordPreviousProcessExit(applicationContext)
         shortTermContext.restoreSummary(sessionPreferences.getString(MainActivity.SHORT_TERM_SUMMARY_KEY, null))
@@ -241,7 +243,11 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 val output = SherpaKokoroVoiceOutput(ttsDirectory.path, engine = ttsEngine,
                     onPlayback = { voicePlayback.value = it },
                     onMetrics = { ttsComparisonStore.add(ttsEngine, "voice-call", asrTurnId, it) },
-                    log = { diagnosticRecorder.record("Voice TTS: $it") })
+                    log = {
+                        if (it.startsWith("audio_underrun") || it.startsWith("audio_supply_gap") ||
+                            it.startsWith("audio_startup_buffer")) diagnosticRecorder.recordImportant("Voice TTS: $it")
+                        else diagnosticRecorder.record("Voice TTS: $it")
+                    })
                 voiceOutput = output
                 activeVoiceOutput = output
                 output.setInterrupted(com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.interrupted.value)
@@ -276,9 +282,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     prepareOpening = output::prepareOpening, speechText = ::cleanSpeechText)
                 preparation = speculative
                 val activeCapture = AudioTurnCapture(
-                    com.battlesbudz.jarvis.v2.voice.QuietSpeechAudioInput(input) {
+                    com.battlesbudz.jarvis.v2.voice.QuietSpeechAudioInput(input, log = {
                         diagnosticRecorder.record("Voice input: $it")
-                    }, this,
+                    }), this,
                     allowAudioOnlyTurns = true,
                     createDetector = { SileroSpeechDetector.create(assets) },
                     log = {

@@ -32,4 +32,12 @@ class QuietSpeechGainTest {
         assertEquals(-32768, value(output, 1))
         assertEquals(1.0, gain.currentGain, 0.001)
     }
+    @Test fun interruptionGainIsCappedIndependentlyFromNormalListening() {
+        val gain = QuietSpeechGain(maxGain = 3.0)
+        repeat(100) { gain.apply(pcm(80, -80)) }
+        assertTrue(gain.currentGain <= 3.0)
+        assertEquals(3.0, gain.currentGain, 0.01)
+        assertArrayEquals(pcm(30000, -32768), gain.apply(pcm(30000, -32768)))
+    }
+
 }

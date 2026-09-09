@@ -26,7 +26,7 @@ class BargeInAudioInputTest {
             override suspend fun start() {}
             override suspend fun stop() {}
             override fun chunks() = flow {
-                for (at in listOf(0L, 100L, 300L, 500L, 600L)) {
+                for (at in listOf(0L, 100L, 300L, 600L, 700L)) {
                     clock = at; emit(byteArrayOf((at / 100).toByte(), 0))
                 }
             }
@@ -47,7 +47,35 @@ class BargeInAudioInputTest {
         assertEquals(0, openModels)
         assertTrue(detectorClosed)
         assertEquals(2, delivered.size)
-        assertArrayEquals(byteArrayOf(0, 0, 1, 0, 3, 0, 5, 0), delivered[0])
-        assertArrayEquals(byteArrayOf(6, 0), delivered[1])
+        assertArrayEquals(byteArrayOf(0, 0, 1, 0, 3, 0, 6, 0), delivered[0])
+        assertArrayEquals(byteArrayOf(7, 0), delivered[1])
     }
+    @Test fun noiseDuringPreparationIsRecognizedButCannotCancelSynthesis() = runBlocking {
+        var clock = 0L
+        var accepted = 0
+        var closed = 0
+        val input = object : AudioInput {
+            override val sampleRateHz = 16000
+            override val channelCount = 1
+            override suspend fun start() {}
+            override suspend fun stop() {}
+            override fun chunks() = flow {
+                repeat(30) { clock = it * 100L; emit(byteArrayOf(1, 0)) }
+            }
+        }
+        val gated = BargeInAudioInput(input,
+            createDetector = { object : SpeechDetector {
+                override fun accept(pcm: ByteArray) = SpeechDecision(true, 0.99f)
+                override fun close() {}
+            } }, playing = { false }, createTranscriber = { object : StreamingTranscriber {
+                override fun accept(pcm: ByteArray): String { accepted++; return "" }
+                override fun finish() = ""
+                override fun close() { closed++ }
+            } }, spokenText = { "Battery is at 58 percent" },
+            onConfirmed = { fail("Noise cancelled unfinished reply") }, nowMs = { clock })
+        gated.chunks().collect { fail("Noise was forwarded as a new turn") }
+        assertEquals(30, accepted)
+        assertEquals(1, closed)
+    }
+
 }

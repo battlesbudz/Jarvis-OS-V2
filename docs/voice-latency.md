@@ -46,9 +46,12 @@ generate their own speech. Tool calls remain data until the existing final trans
 and tool guards approve execution. Speculative tool output discards its opening.
 
 The live opening target is 40 characters, down from 70. Later chunks retain natural
-boundaries and adaptive lengths. Startup headroom is capped at 120 ms, down from
-1200 ms; a reused opening adds no startup headroom. Sustained synthesis slower than
-playback can still cause gaps and needs phone measurements.
+boundaries and lengths capped by remaining produced audio and measured synthesis cost.
+Following reports of gaps, startup headroom is now bounded at 1200 ms, or 2000 ms
+for an opening under 1.2 seconds, including reused openings. A ready second phrase
+or producer completion releases it early. This prioritizes continuity over minimum
+first-playback latency. Sustained synthesis slower than playback can still cause gaps
+and needs phone measurements; see [playback buffering](voice-playback-buffering.md).
 
 ### Why the JNI callback stays disabled
 

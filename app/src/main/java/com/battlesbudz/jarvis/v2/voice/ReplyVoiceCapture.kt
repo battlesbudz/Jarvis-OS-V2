@@ -15,7 +15,7 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 audioManager = context.getSystemService(AudioManager::class.java),
                 echoCancellation = true, log = log)
             val confirmed = CompletableDeferred<Unit>()
-            val gated = BargeInAudioInput(QuietSpeechAudioInput(input, log),
+            val gated = BargeInAudioInput(QuietSpeechAudioInput(input, log, maxGain = 3.0),
                 createDetector = { SileroSpeechDetector.create(context.assets) },
                 playing = { output.isPlayingAudio }, spokenText = output::recentSpokenText,
                 createTranscriber = { MoonshineStreamingTranscriber(asrDirectory, updateIntervalSeconds = 0.5) },

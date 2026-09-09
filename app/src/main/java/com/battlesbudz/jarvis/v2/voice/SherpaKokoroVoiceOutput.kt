@@ -119,6 +119,7 @@ class SherpaKokoroVoiceOutput(
         // Bounded PCM backpressure prevents long answers from accumulating unlimited audio.
         val audio = NativeAudioQueue<SynthesizedPhrase>(2)
         val chunker = SpeechChunker(openingChars)
+        val startupReady = CompletableDeferred<Unit>()
         val tokens = Channel<String>(64)
         val collectTokens = launch {
             try {
@@ -136,6 +137,8 @@ class SherpaKokoroVoiceOutput(
             var engine: OfflineTts? = null
             var failure: Throwable? = null
             var index = 0
+            var previousChars = 0
+            var previousSynthesisMs = 0L
             val owner = currentCoroutineContext()
             try {
                 val loadStart = System.nanoTime()
@@ -185,8 +188,11 @@ class SherpaKokoroVoiceOutput(
                     val frames = result.pcm.size.toLong()
                     val waitStart = System.nanoTime()
                     audio.sendFromNative(SynthesizedPhrase(phraseIndex, text, rate, result.pcm,
-                        if (cached != null) 0 else PlaybackBufferPolicy.startupWaitMs(result.synthesisMs, frames * 1000 / rate),
+                        PlaybackBufferPolicy.startupWaitMs(result.synthesisMs, frames * 1000 / rate),
                         if (normalSpeed) 1f else PlaybackBufferPolicy.playbackSpeed(result.synthesisMs, frames * 1000 / rate)))
+                    if (phraseIndex == 1) startupReady.complete(Unit)
+                    previousChars = text.length
+                    previousSynthesisMs = result.synthesisMs
                     val queueWaitMs = elapsedMs(waitStart)
                     val synthesisMs = result.synthesisMs
                     val audioMs = frames * 1000 / rate
@@ -198,6 +204,17 @@ class SherpaKokoroVoiceOutput(
                     if (!fixedChunking) chunker.observe(rtf)
                     log("tts_generation_finished index=$phraseIndex synthesisMs=$synthesisMs queueWaitMs=$queueWaitMs " +
                         "audioDurationMs=$audioMs realtimeFactor=$rtf")
+                }
+                fun nextPhrase(final: Boolean = false): String? {
+                    if (fixedChunking || index == 0) return chunker.take(final)
+                    val playedMs = synchronized(playbackLock) {
+                        audioTrack?.let { unsignedHead(it) * 1000 / it.sampleRate } ?: 0L
+                    }
+                    val queuedMs = (totalAudioMs - playedMs).coerceAtLeast(0)
+                    val limit = PlaybackBufferPolicy.nextChunkChars(queuedMs, previousChars, previousSynthesisMs)
+                    return chunker.take(final, maxChars = limit)?.also {
+                        log("audio_chunk_budget queuedMs=$queuedMs maxChars=$limit selectedChars=${it.length}")
+                    }
                 }
                 var ended = false
                 while (!ended && !stopped) {
@@ -212,7 +229,7 @@ class SherpaKokoroVoiceOutput(
                                 inputChars += token.length
                                 textHash.update(token.toByteArray(Charsets.UTF_8))
                                 chunker.append(token)
-                                while (true) generate(chunker.take() ?: break)
+                                while (true) generate(nextPhrase() ?: break)
                             }
                         }
                         openingRequests.onReceive { request ->
@@ -232,13 +249,14 @@ class SherpaKokoroVoiceOutput(
                         }
                     }
                 }
-                while (true) generate(chunker.take(final = true) ?: break)
+                while (true) generate(nextPhrase(final = true) ?: break)
             } catch (error: Throwable) {
                 failureMessage = error.message ?: error.javaClass.simpleName
                 failure = error
                 throw error
             } finally {
                 // Release only after generate has returned, including when cancellation was requested.
+                startupReady.complete(Unit)
                 engine?.release()
                 audio.close(failure)
             }
@@ -255,7 +273,7 @@ class SherpaKokoroVoiceOutput(
                     if (first) {
                         // Small startup headroom; never hold a short, completed answer for this delay.
                         val start = System.nanoTime()
-                        if (phrase.startupWaitMs > 0) withTimeoutOrNull(phrase.startupWaitMs) { producer.join() }
+                        if (phrase.startupWaitMs > 0) withTimeoutOrNull(phrase.startupWaitMs) { startupReady.await() }
                         log("audio_startup_buffer targetMs=${phrase.startupWaitMs} waitMs=${elapsedMs(start)}")
                         first = false
                         if (stopped) break
@@ -277,8 +295,14 @@ class SherpaKokoroVoiceOutput(
                         val startedTrack = it
                         // A sibling of the IO writer: its infinite loop must not block the writer returning.
                         playbackMonitor = speechScope.launch {
+                            var previousUnderruns = startedTrack.underrunCount
                             while (isActive && !stopped) {
                                 val head = unsignedHead(startedTrack)
+                                val underruns = startedTrack.underrunCount
+                                if (underruns > previousUnderruns) {
+                                    log("audio_underrun count=$underruns queuedFrames=${(writtenFrames - head).coerceAtLeast(0)}")
+                                    previousUnderruns = underruns
+                                }
                                 val audibleFrame = firstAudibleFrame.get()
                                 if (audibleFrame >= 0 && head > audibleFrame && !playbackConfirmed) {
                                     playbackConfirmed = true

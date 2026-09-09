@@ -4,7 +4,8 @@ import android.content.SharedPreferences
 import org.json.JSONArray
 
 class DiagnosticRecorder(
-    private val preferences: SharedPreferences
+    private val preferences: SharedPreferences,
+    private val buildLabel: String = "unknown"
 ) {
     private val entries = mutableListOf<String>()
     private val important = mutableListOf<String>()
@@ -12,7 +13,7 @@ class DiagnosticRecorder(
 
     fun startSession(label: String) {
         synchronized(entries) {
-            sessionLabel = "$label startedAtMs=${System.currentTimeMillis()}"
+            sessionLabel = "$label recordedByBuild=$buildLabel startedAtMs=${System.currentTimeMillis()}"
             entries.clear()
             important.clear()
             preferences.edit().remove("diagnostics_important").putString("diagnostics_session", sessionLabel)
@@ -50,7 +51,7 @@ class DiagnosticRecorder(
 
     fun snapshot(): String {
         return synchronized(entries) {
-            "$sessionLabel\n\nCall actions and turns:\n${important.joinToString("\n\n")}\n\nRecent audio events:\n" + entries.takeLast(100).joinToString("\n\n")
+            "Running build: $buildLabel\n$sessionLabel\n\nCall actions and turns:\n${important.joinToString("\n\n")}\n\nRecent audio events:\n" + entries.takeLast(100).joinToString("\n\n")
                 .ifBlank { "No runtime events in this session yet." }
         }
     }

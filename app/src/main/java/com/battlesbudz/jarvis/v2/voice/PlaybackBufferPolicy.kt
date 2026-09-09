@@ -10,7 +10,17 @@ internal object PlaybackBufferPolicy {
 
     fun startupWaitMs(synthesisMs: Long, audioMs: Long): Long {
         if (audioMs <= 0) return 0
-        // Reserve 20% of playback time for scheduling variation. This is not a throughput fix.
-        return (synthesisMs - audioMs * 4 / 5).coerceIn(0, 120)
+        // A tiny acknowledgement cannot cover synthesis of a normal following phrase.
+        // End-of-stream or a ready second phrase releases this wait early.
+        if (audioMs < 1200) return 2000
+        return (synthesisMs * 3 / 2 - audioMs * 4 / 5).coerceIn(0, 1200)
+    }
+
+    /** Budget the next native call against PCM already produced but not yet played. */
+    fun nextChunkChars(queuedAudioMs: Long, previousChars: Int, previousSynthesisMs: Long): Int {
+        if (previousChars <= 0 || previousSynthesisMs <= 0) return SpeechChunker.DEFAULT_OPENING_CHARS
+        // Keep 25% of the available audio for scheduling/word-complexity variation.
+        val affordable = queuedAudioMs.coerceAtLeast(0).toDouble() * 0.75 * previousChars / previousSynthesisMs
+        return affordable.toInt().coerceIn(SpeechChunker.DEFAULT_OPENING_CHARS, 180)
     }
 }

@@ -52,4 +52,15 @@ class SpeechChunkerTest {
         chunks.append("Beyond the quiet harbor and its old lighthouse, the pirate captain watched the distant horizon")
         assertEquals("Beyond the quiet harbor and its old lighthouse,", chunks.take())
     }
+    @Test fun varyingAudioBudgetsPreserveAllWordsWhenFlushing() {
+        val text = "Here is a longer answer with several natural word boundaries that must survive shrinking audio budgets while the speaker is playing. It ends here."
+        val chunker = SpeechChunker()
+        chunker.append(text)
+        val chunks = mutableListOf<String>()
+        for (limit in listOf(180, 40, 70, 40, 40, 40)) {
+            chunker.take(final = true, maxChars = limit)?.let { chunks += it }
+        }
+        assertEquals(text, chunks.joinToString(" "))
+    }
+
 }

@@ -23,13 +23,15 @@ unblocks the producer before release; native generation itself must return
 before its engine can be freed. AudioTrack writes remain nonblocking and
 cancellable, so already-playing audio stops without waiting for synthesis.
 
-Text chunking now targets a short opening (40 characters), then 180 characters when
-synthesis is faster than playback or 120 when slower. Punctuation and whitespace
-boundaries preserve words; final text is flushed. These are initial heuristics,
-not a phone benchmark. A startup grace period adapts from 0 to 120 ms based on the first chunk's
-measured synthesis time versus audio duration, reserving 20% scheduling headroom.
-Completed short answers do not wait for the full period.
-An already prepared and authorized opening has no artificial startup wait.
+Text chunking targets a 40-character opening. Subsequent live chunks are capped
+between 40 and 180 characters using remaining produced PCM and the previous
+phrase's measured synthesis time per character, reserving 25% scheduling headroom.
+This avoids jumping from a tiny opening to a long synthesis call. Punctuation and
+whitespace boundaries preserve words; the benchmark retains its controlled chunk sizes.
+Startup headroom is bounded at 1200 ms, or 2000 ms for an opening under 1.2 seconds.
+A ready second phrase or producer completion releases it early. This deliberately
+trades some first-playback latency for continuity; cached openings use the same rule.
+Buffering cannot guarantee continuity when production is persistently too slow.
 The same native owner can synthesize one bounded opening while listening. Its PCM is
 unavailable for playback until the final request passes routing, its draft is consumed,
 and the actual spoken opening matches exactly. Corrections discard it.
@@ -37,7 +39,8 @@ The separate 120 ms artificial inter-phrase padding is removed. Voice speed is
 unchanged.
 
 Diagnostics separate `loadMs`, `synthesisMs`, `queueWaitMs`, callback latency,
-and PCM occupancy. The session summary retains aggregate synthesis/audio times
+and PCM occupancy. `audio_chunk_budget` records live text sizing, and
+`audio_underrun` records increases in AudioTrack underruns. The session summary retains aggregate synthesis/audio times
 even if per-phrase entries roll out of the diagnostics buffer. Queue waiting is
 excluded from synthesis realtime factor. Values below 1 mean synthesis is ahead
 of normal-speed playback; buffering cannot fix sustained values above 1.

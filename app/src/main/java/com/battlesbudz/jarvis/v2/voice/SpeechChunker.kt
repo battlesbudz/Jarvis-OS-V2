@@ -12,9 +12,10 @@ class SpeechChunker(private val openingChars: Int = DEFAULT_OPENING_CHARS) {
         if (realTimeFactor.isFinite() && realTimeFactor > 0) slow = realTimeFactor > 1.0
     }
 
-    fun take(final: Boolean = false): String? {
+    fun take(final: Boolean = false, maxChars: Int? = null): String? {
         if (buffer.isBlank()) { if (final) buffer.clear(); return null }
-        val target = if (first) openingChars else if (slow) 120 else 180
+        val normalTarget = if (first) openingChars else if (slow) 120 else 180
+        val target = maxChars?.let { minOf(normalTarget, it.coerceAtLeast(16)) } ?: normalTarget
         var boundary = -1
         for (i in buffer.indices) {
             val c = buffer[i]
@@ -37,7 +38,7 @@ class SpeechChunker(private val openingChars: Int = DEFAULT_OPENING_CHARS) {
         val result = buffer.substring(0, boundary).trim()
         buffer.delete(0, boundary)
         while (buffer.isNotEmpty() && buffer[0].isWhitespace()) buffer.deleteCharAt(0)
-        if (result.isEmpty()) return take(final)
+        if (result.isEmpty()) return take(final, maxChars)
         first = false
         return result
     }
