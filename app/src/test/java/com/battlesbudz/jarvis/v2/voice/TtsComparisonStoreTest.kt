@@ -6,6 +6,54 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TtsComparisonStoreTest {
+    @Test fun copyIsBoundToOneTextRunAndSurvivesNewRunsAndVoiceChanges() {
+        val store = TtsComparisonStore(preferences())
+        val profile = TtsBenchmarkProfile(playbackSpeed = 0.9f, openingChars = 60)
+        val metrics = TtsSessionMetrics(100, 200, 1100, 1000, 0, 0.9f, 0, 1, 1, 5, "abc", 4, true, null)
+        store.add(TtsEngine.KOKORO, "voice-profiles-v3", "short-v1", metrics,
+            TtsBenchmarkRun("suite-a", profile, 1, "First text.", 0, 0))
+        val displayed = store.records().single()
+        val original = TtsComparisonStore.diagnosticReport(displayed)
+        store.select(TtsEngine.PIPER_MIRO)
+        store.add(TtsEngine.PIPER_MIRO, "voice-profiles-v3", "story-v1", metrics,
+            TtsBenchmarkRun("suite-b", profile, 2, "Unrelated later text.", 0, 4))
+        assertEquals(original, TtsComparisonStore.diagnosticReport(displayed))
+        assertTrue(original.contains("suite_id=suite-a"))
+        assertTrue(original.contains("profile_id=${profile.id}"))
+        assertTrue(original.contains("input_text=First text."))
+        assertFalse(original.contains("Unrelated"))
+        assertFalse(original.contains("suite-b"))
+        assertEquals(0.99, displayed.getDouble("effective_rtf"), 0.0001)
+        assertTrue(displayed.getBoolean("playback_speed_applied"))
+        assertTrue(store.records().last().getBoolean("thermal_limited"))
+        assertNotEquals(displayed.getString("id"), store.records().last().getString("id"))
+    }
+
+    @Test fun fullComparisonIsNotEvictedByTheFortyCallHistoryLimit() {
+        val prefs = preferences()
+        val store = TtsComparisonStore(prefs)
+        val metrics = TtsSessionMetrics(100, 200, 400, 2000, 0, 1f, 0, 1, 1, 50, "abc", 4, true, null)
+        repeat(192) {
+            store.add(TtsEngine.KOKORO, "voice-profiles-v3", "short-v1", metrics,
+                TtsBenchmarkRun("complete-suite", TtsBenchmarkProfile(), 1, "Text $it", 0, 0))
+        }
+        repeat(45) { store.add(TtsEngine.PIPER_MIRO, "voice-call", "$it", metrics) }
+        val restored = TtsComparisonStore(prefs)
+        assertEquals(192, restored.records().count { it.optString("suite_id") == "complete-suite" })
+        assertEquals(40, restored.records().count { it.optString("source") == "voice-call" })
+    }
+
+    @Test fun unsupportedSlowPlaybackIsMarkedInsteadOfClaimingPointNineWorked() {
+        val store = TtsComparisonStore(preferences())
+        val metrics = TtsSessionMetrics(100, 200, 400, 2000, 0, 1f, 0, 1, 1, 50, "abc", 4, true, null)
+        store.add(TtsEngine.KOKORO, "voice-profiles-v3", "short-v1", metrics,
+            TtsBenchmarkRun("suite", TtsBenchmarkProfile(openingChars = null, playbackSpeed = 0.9f), 1, "Text", 0, 0))
+        val record = store.records().single()
+        assertFalse(record.getBoolean("playback_speed_applied"))
+        assertTrue(record.isNull("opening_target_chars"))
+        assertEquals("full-text-before-playback", record.getString("synthesis_mode"))
+    }
+
     @Test fun selectionsAndResultsSurviveRestartWithoutMixingModels() {
         val prefs = preferences()
         val store = TtsComparisonStore(prefs)

@@ -216,7 +216,8 @@ class MainActivity : ComponentActivity() {
         ttsBenchmarks = com.battlesbudz.jarvis.v2.voice.TtsBenchmarkController(
             lifecycleScope, modelStore, ttsModels, ttsComparisonStore,
             canStart = { voiceSessionController.currentCallId() == null && voiceTurnJob?.isCompleted != false && activeConversationJobs.get() == 0 },
-            log = { diagnosticRecorder.record("TTS benchmark: $it") }
+            log = { diagnosticRecorder.record("TTS benchmark: $it") },
+            thermalStatus = { getSystemService(android.os.PowerManager::class.java).currentThermalStatus }
         )
         val gemmaResults = com.battlesbudz.jarvis.v2.ai.GemmaBenchmarkStore(
             getSharedPreferences("gemma-acceleration-benchmarks", MODE_PRIVATE))
@@ -257,7 +258,7 @@ class MainActivity : ComponentActivity() {
                     if (voiceSessionController.currentCallId() != null || modelStore.isModelOperationActive() || ttsBenchmarks.running) false
                     else { ttsComparisonStore.select(engine); true }
                 },
-                onTtsBenchmark = { engine, status, finished -> ttsBenchmarks.start(engine, status, finished) },
+                onTtsBenchmark = { engine, profile, status, finished -> ttsBenchmarks.start(engine, status, finished, profile = profile) },
                 onStopTtsBenchmark = { ttsBenchmarks.stop() },
                 voicePlayback = voicePlayback,
                 voiceModelStore = kokoroModelStore,

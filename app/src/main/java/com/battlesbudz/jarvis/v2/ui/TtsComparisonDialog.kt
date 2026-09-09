@@ -18,34 +18,47 @@ internal fun TtsComparisonDialog(
     latencyBenchmarks: VoiceLatencyBenchmarkActions,
     store: TtsComparisonStore, canChange: Boolean,
     onSelect: (TtsEngine) -> Boolean,
-    onBenchmark: (TtsEngine?, (String) -> Unit, () -> Unit) -> Unit,
+    onBenchmark: (TtsEngine?, TtsBenchmarkProfile, (String) -> Unit, () -> Unit) -> Unit,
     onStop: () -> Unit, onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    var copied by remember { mutableStateOf(false) }
+    var copiedId by remember { mutableStateOf<String?>(null) }
+    var profile by remember { mutableStateOf(TtsBenchmarkProfile()) }
     var selected by remember { mutableStateOf(store.selectedEngine()) }
     var running by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
-    var records by remember { mutableStateOf(store.records().asReversed()) }
+    fun savedRuns() = store.records().filter { it.optString("source") != "voice-call" }.asReversed()
+    var records by remember { mutableStateOf(savedRuns()) }
     var index by remember { mutableIntStateOf(0) }
-    var gemmaReport by remember { mutableStateOf(latencyBenchmarks.gemmaResults.snapshot()) }
+    var gemmaRecords by remember { mutableStateOf(latencyBenchmarks.gemmaResults.records().asReversed()) }
+    var gemmaIndex by remember { mutableIntStateOf(0) }
+    fun copy(label: String, report: String) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText(label, report))
+    }
     fun runLatency(gemma: Boolean) {
         if (running) return
-        running = true; copied = false
+        val startedAt = System.currentTimeMillis()
+        running = true; copiedId = null
+        if (gemma) gemmaRecords = emptyList() else records = emptyList()
         val finished: () -> Unit = {
-            running = false; records = store.records().asReversed(); index = 0
-            gemmaReport = latencyBenchmarks.gemmaResults.snapshot()
+            running = false
+            if (gemma) {
+                gemmaRecords = latencyBenchmarks.gemmaResults.records().filter { it.optLong("at_ms") >= startedAt }.asReversed()
+                gemmaIndex = 0
+            } else { records = savedRuns().filter { it.optLong("atMs") >= startedAt }; index = 0 }
         }
         if (gemma) latencyBenchmarks.compareGemma({ status = it }, finished)
         else latencyBenchmarks.compareOpenings(selected, { status = it }, finished)
     }
     fun run(engine: TtsEngine?) {
         if (running) return
+        val startedAt = System.currentTimeMillis()
         running = true
-        copied = false
-        onBenchmark(engine, { status = it }) {
+        copiedId = null; records = emptyList()
+        onBenchmark(engine, profile, { status = it }) {
             running = false
-            records = store.records().asReversed()
+            records = savedRuns().filter { it.optLong("atMs") >= startedAt }
             index = 0
         }
     }
@@ -66,14 +79,33 @@ internal fun TtsComparisonDialog(
                 if (!canChange) Text("End your call before changing voices or benchmarking.")
                 HorizontalDivider()
                 Text("Fixed-text benchmark", style = MaterialTheme.typography.titleMedium)
-                Text("Each voice reads the same short reply, paragraph and story at normal speed. Gemma and the microphone stay idle. Downloads are excluded from timing. The full comparison can take several minutes.")
+                Text("Choose an individual test profile. Each test reads the same short reply, paragraph and story twice, reversing the order on pass two. Model load and downloads are timed separately; Gemma and the microphone stay idle.")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(2, 4).forEach { threads ->
+                        FilterChip(selected = profile.threads == threads, enabled = !running,
+                            onClick = { profile = profile.copy(threads = threads) }, label = { Text("$threads threads") })
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(1f, 0.9f).forEach { speed ->
+                        FilterChip(selected = profile.playbackSpeed == speed, enabled = !running,
+                            onClick = { profile = profile.copy(playbackSpeed = speed) }, label = { Text("${speed}×") })
+                    }
+                }
+                listOf<Int?>(40, 60, 90, null).forEach { opening ->
+                    FilterChip(selected = profile.openingChars == opening, enabled = !running,
+                        onClick = { profile = profile.copy(openingChars = opening) },
+                        label = { Text(opening?.let { "$it-character opening" } ?: "Synthesize full text before playback") })
+                }
+                Text("Profile: ${profile.label}")
+                Text("Opening sizes are targets at natural word/clause boundaries. Full text waits for the entire input and synthesizes it in one call. 0.9× slows playback without lowering pitch. All profiles start playback immediately when their first audio is ready, with no added startup buffer.", style = MaterialTheme.typography.bodySmall)
                 Button(onClick = { run(selected) }, enabled = canChange && !running) { Text("Test selected voice") }
-                OutlinedButton(onClick = { run(null) }, enabled = canChange && !running) { Text("Test all voices") }
+                OutlinedButton(onClick = { run(null) }, enabled = canChange && !running) { Text("Compare Kokoro and Miro · this profile") }
                 HorizontalDivider()
                 Text("Response speed", style = MaterialTheme.typography.titleMedium)
-                Text("Compare 2 and 4 CPU threads with 40- and 90-character openings using the same streamed text. Each setting runs twice in reverse order. Listen for smoothness and check synthesis speed; results do not change your current voice settings.")
+                Text("The full comparison tests Kokoro and Miro with all 16 profiles: 2/4 threads, 40/60/90-character openings or full text, and 1.0×/0.9× playback. That is 192 text runs including repeats and can take a long time. The test pauses to cool when heat would make the comparison unreliable. Stop preserves completed results. Test settings do not change live calls.")
                 OutlinedButton(onClick = { runLatency(false) }, enabled = canChange && !running) {
-                    Text("Compare voice speed")
+                    Text("Compare all profiles · Kokoro and Miro")
                 }
                 Text("Compare Gemma GPU acceleration off, on, then off again. Includes warm runs and simulated battery tools; this does not change your phone or the acceleration used in calls. A model without MTP support will report an error for that test.")
                 OutlinedButton(onClick = { runLatency(true) }, enabled = canChange && !running) {
@@ -81,7 +113,7 @@ internal fun TtsComparisonDialog(
                 }
                 if (running) Button(onClick = { onStop(); latencyBenchmarks.stop() }) { Text("Stop benchmark") }
                 if (status.isNotBlank()) Text(status)
-                TextButton(onClick = { records = store.records().asReversed(); index = 0 }) { Text("Refresh results") }
+                TextButton(onClick = { records = savedRuns(); index = 0; copiedId = null }, enabled = !running) { Text("Browse saved text runs") }
                 val record = records.getOrNull(index)
                 if (record != null) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -91,17 +123,32 @@ internal fun TtsComparisonDialog(
                     }
                     Text(TtsComparisonStore.describe(record), style = MaterialTheme.typography.bodySmall)
                 }
-                Text("Compare completed benchmark results with the same sample name. Lower RTF is faster; below 1 keeps up with normal speech. Call results include competition from other models. Listen for pronunciation and voice quality too. Copy diagnostics includes the last 40 results.", style = MaterialTheme.typography.bodySmall)
-                Text(gemmaReport, style = MaterialTheme.typography.bodySmall)
+                Text("Compare the same sample and pass. Prioritize completed, thermally clean runs with the requested speed applied: lowest estimated supply gaps first, then lowest first-text-to-playback time. Effective RTF accounts for playback speed; below 1 can keep up. Playback timing detects the first non-silent audio, not a word recognized by a microphone. Gap values are estimates; listen for unnatural pauses too. Copy exports only the displayed text run.", style = MaterialTheme.typography.bodySmall)
+                if (gemmaRecords.isNotEmpty()) {
+                    HorizontalDivider()
+                    Text("Gemma text run", style = MaterialTheme.typography.titleMedium)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        TextButton(onClick = { gemmaIndex-- }, enabled = gemmaIndex > 0) { Text("Newer") }
+                        Text("${gemmaIndex + 1}/${gemmaRecords.size}")
+                        TextButton(onClick = { gemmaIndex++ }, enabled = gemmaIndex < gemmaRecords.lastIndex) { Text("Older") }
+                    }
+                    gemmaRecords.getOrNull(gemmaIndex)?.let { gemma ->
+                        Text(gemma.toString(2), style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = { copy("Jarvis Gemma text-run diagnostics", gemma.toString(2)) }, enabled = !running) {
+                            Text("Copy this Gemma text run")
+                        }
+                    }
+                }
             }
         }, dismissButton = {
             TextButton(onClick = {
-                val report = "Jarvis OS V2 voice benchmark diagnostics\n" +
-                    "Selected voice: ${selected.label}\nStatus: $status\n\n" + store.snapshot() +
-                    "\n\nGemma acceleration\n" + latencyBenchmarks.gemmaResults.snapshot()
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("Jarvis voice benchmark diagnostics", report))
-                copied = true
-            }) { Text(if (copied) "Copied diagnostics" else "Copy diagnostics") }
+                records.getOrNull(index)?.let { record ->
+                    copy("Jarvis voice text-run diagnostics", TtsComparisonStore.diagnosticReport(record))
+                    copiedId = record.optString("id")
+                }
+            }, enabled = !running && records.getOrNull(index) != null) {
+                Text(if (copiedId != null && copiedId == records.getOrNull(index)?.optString("id"))
+                    "Copied this run" else "Copy this text run")
+            }
         }, confirmButton = { TextButton(onClick = onDismiss, enabled = !running) { Text("Done") } })
 }

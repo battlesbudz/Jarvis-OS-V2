@@ -1,6 +1,6 @@
 package com.battlesbudz.jarvis.v2.voice
 
-/** Versioned fixed inputs: all voices get identical text, chunk boundaries and normal playback. */
+/** Versioned fixed inputs: all profiles get identical text and simulated token delivery. */
 object TtsBenchmarkSamples {
     val all = linkedMapOf(
         "short-v1" to "The monkey in the story was named Kiko.",

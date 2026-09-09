@@ -1,7 +1,8 @@
 package com.battlesbudz.jarvis.v2.voice
 
 /** Preserve natural boundaries while allowing an early first clause from a token stream. */
-class SpeechChunker(private val openingChars: Int = DEFAULT_OPENING_CHARS) {
+class SpeechChunker(private val openingChars: Int = DEFAULT_OPENING_CHARS,
+                    private val fullText: Boolean = false) {
     private val buffer = StringBuilder()
     private var first = true
     private var slow = false
@@ -14,6 +15,10 @@ class SpeechChunker(private val openingChars: Int = DEFAULT_OPENING_CHARS) {
 
     fun take(final: Boolean = false, maxChars: Int? = null): String? {
         if (buffer.isBlank()) { if (final) buffer.clear(); return null }
+        if (fullText) {
+            if (!final) return null
+            return buffer.toString().trim().also { buffer.clear(); first = false }
+        }
         val normalTarget = if (first) openingChars else if (slow) 120 else 180
         val target = maxChars?.let { minOf(normalTarget, it.coerceAtLeast(16)) } ?: normalTarget
         var boundary = -1

@@ -24,6 +24,7 @@ class SherpaKokoroVoiceOutput(
     private val normalSpeed: Boolean = false,
     private val fixedChunking: Boolean = false,
     private val openingChars: Int = SpeechChunker.DEFAULT_OPENING_CHARS,
+    private val benchmarkProfile: TtsBenchmarkProfile? = null,
     private val acknowledgeDelays: Boolean = false,
     private val audioTrace: SpeechAudioTrace? = null,
     private val onReady: () -> Unit = {},
@@ -153,7 +154,7 @@ class SherpaKokoroVoiceOutput(
         // One owner creates, invokes and releases the native engine. Playback never owns it.
         // Bounded PCM backpressure prevents long answers from accumulating unlimited audio.
         val audio = NativeAudioQueue<SynthesizedPhrase>(2)
-        val chunker = SpeechChunker(openingChars)
+        val chunker = SpeechChunker(openingChars, fullText = benchmarkProfile?.fullText == true)
         val startupReady = CompletableDeferred<Unit>()
         val tokens = Channel<String>(64)
         val collectTokens = launch {
@@ -252,7 +253,7 @@ class SherpaKokoroVoiceOutput(
                     val candidate = preparedOpening.getAndSet(null)
                     val cached = if (index == 0) candidate?.takeFor(text) else null
                     candidate?.discard()
-                    if (pocket && cached == null) {
+                    if (pocket && cached == null && benchmarkProfile?.fullText != true) {
                         val phraseIndex = index++
                         val rate = tts.sampleRate()
                         check(rate > 0)
@@ -282,7 +283,8 @@ class SherpaKokoroVoiceOutput(
                                     // One copy of each callback, never also enqueue the returned full utterance.
                                     // Captions remain estimated; the text belongs to the first audio chunk.
                                     audio.sendFromNative(SynthesizedPhrase(phraseIndex,
-                                        if (callbackCount == 0) text else "", rate, pcm, 0, 1f))
+                                        if (callbackCount == 0) text else "", rate, pcm, 0,
+                                        benchmarkProfile?.playbackSpeed ?: 1f))
                                     queueWaitMs += elapsedMs(waitStart)
                                     frames += pcm.size
                                     callbackCount++
@@ -327,8 +329,8 @@ class SherpaKokoroVoiceOutput(
                     val frames = result.pcm.size.toLong()
                     val waitStart = System.nanoTime()
                     audio.sendFromNative(SynthesizedPhrase(phraseIndex, text, rate, result.pcm,
-                        if (pocket) 0 else PlaybackBufferPolicy.startupWaitMs(result.synthesisMs, frames * 1000 / rate),
-                        if (normalSpeed || pocket) 1f else PlaybackBufferPolicy.playbackSpeed(result.synthesisMs, frames * 1000 / rate)))
+                        if (pocket || benchmarkProfile != null) 0 else PlaybackBufferPolicy.startupWaitMs(result.synthesisMs, frames * 1000 / rate),
+                        benchmarkProfile?.playbackSpeed ?: if (normalSpeed || pocket) 1f else PlaybackBufferPolicy.playbackSpeed(result.synthesisMs, frames * 1000 / rate)))
                     if (phraseIndex == 1) startupReady.complete(Unit)
                     previousChars = text.length
                     previousSynthesisMs = result.synthesisMs
