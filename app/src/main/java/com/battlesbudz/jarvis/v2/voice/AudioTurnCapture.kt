@@ -26,9 +26,12 @@ class AudioTurnCapture(
     private val trailingSilenceMs: Long? = null,
     private val onRecognitionRecovery: (Boolean) -> Unit = {},
     private val allowAudioOnlyTurns: Boolean = false,
-    private val onSpeechResumed: () -> Unit = {}
+    private val onSpeechResumed: () -> Unit = {},
+    private val acceptCandidate: (ByteArray) -> Boolean = { true },
+    private val onAcceptedCandidate: (String) -> Unit = {}
 ) {
     private val pcm = ByteArrayOutputStream()
+    private val speakerPcm = ByteArrayOutputStream()
     private val preRoll = RollingAudioBuffer(AudioFormat(input.sampleRateHz), maxDurationMs = 1200)
     private val recoveryAudio = RollingAudioBuffer(AudioFormat(input.sampleRateHz), maxDurationMs = 25_000)
     private val lifecycle = Mutex()
@@ -87,6 +90,9 @@ class AudioTurnCapture(
                     val decision = activeDetector.accept(chunk)
                     val now = nowMs()
                     val audioAt = input.lastChunkCaptureTimeMs ?: now
+                    if (decision.isSpeech && speakerPcm.size() < MAX_TURN_BYTES) {
+                        speakerPcm.write(chunk, 0, minOf(chunk.size, MAX_TURN_BYTES - speakerPcm.size()))
+                    }
                     synchronized(pcm) {
                         if (hasSpeech) {
                             val remaining = MAX_TURN_BYTES - pcm.size()
@@ -147,6 +153,25 @@ class AudioTurnCapture(
                     }
                     if (reason != null && !turnCompleted.isCompleted) {
                         val finalizeStartedAt = nowMs()
+                        if (hasSpeech && !acceptCandidate(speakerPcm.toByteArray())) {
+                            log("speaker_candidate_rejected microphone=kept_open elapsedMs=${now - startedAt}")
+                            onSpeechResumed()
+                            hasSpeech = false
+                            finalTranscript = ""
+                            synchronized(pcm) { pcm.reset(); preRoll.clear() }
+                            speakerPcm.reset(); recoveryAudio.clear()
+                            firstSpeechAt = null; firstPartialAfterSpeechMs = null; lastPartial = ""
+                            quietEvidence.reset(); turnEnd.reset()
+                            transcriber?.close(); transcriber = null
+                            if (initialSilenceTimeoutMs != null && now - startedAt >= initialSilenceTimeoutMs) {
+                                turnCompleted.complete(false)
+                                return@collect
+                            }
+                            transcriber = createTranscriber?.invoke()
+                            lastSpeechAt = startedAt
+                            lastSpeechAtMs = null
+                            return@collect
+                        }
                         if (hasSpeech) {
                             finalTranscript = transcriber?.finish().orEmpty().trim()
                             if (transcriber != null && finalTranscript.isBlank() && !allowAudioOnlyTurns) {
@@ -178,6 +203,7 @@ class AudioTurnCapture(
                                 firstPartialAfterSpeechMs = null
                                 lastPartial = ""
                                 turnEnd.reset()
+                                speakerPcm.reset()
                                 quietEvidence.reset()
                                 onSpeechResumed()
                                 log("empty_speech_candidate ignored=true count=$emptyCandidates microphone=kept_open inactivitySince=last_detected_speech")
@@ -203,6 +229,7 @@ class AudioTurnCapture(
                             }
                             // The owner seals against finalTranscript. Sending it as a new
                             // partial would cancel a matching draft immediately before seal.
+                            onAcceptedCandidate(finalTranscript)
                             log("asr_final chars=${finalTranscript.length}")
                         }
                         onMetrics(AsrCaptureMetrics(modelLoadMs, captureReadyMs, audioBytes / 32,
@@ -252,6 +279,7 @@ class AudioTurnCapture(
                     transcriber = null
                     detector = null
                     recoveryAudio.clear()
+                    speakerPcm.reset()
                     log("capture_stopped speechDetected=$hasSpeech")
                 }
             }

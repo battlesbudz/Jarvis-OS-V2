@@ -14,9 +14,9 @@ class AsrComparisonStore(private val preferences: SharedPreferences) {
         (0 until array.length()).map { array.getJSONObject(it) }.takeLast(20)
     }.getOrDefault(emptyList())
 
-    @Synchronized fun add(id: String, metrics: AsrCaptureMetrics, transcript: String) {
+    @Synchronized fun add(id: String, metrics: AsrCaptureMetrics, transcript: String, engine: AsrEngine = AsrEngine.MOONSHINE) {
         val entry = JSONObject().put("id", id).put("atMs", System.currentTimeMillis())
-            .put("engine", MoonshineModelInfo.id).put("model", MoonshineModelInfo.modelVersion)
+            .put("engine", engine.id).put("model", engine.modelVersion)
             .put("transcript", transcript.take(4000)).put("model_load_ms", metrics.modelLoadMs)
             .put("capture_ready_ms", metrics.captureReadyMs).put("audio_fed_ms", metrics.audioMs)
             .put("decode_ms", metrics.decodeMs).put("max_decode_chunk_ms", metrics.maxDecodeChunkMs)

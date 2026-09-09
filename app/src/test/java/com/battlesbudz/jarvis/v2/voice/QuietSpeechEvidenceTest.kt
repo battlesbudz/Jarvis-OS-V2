@@ -7,7 +7,8 @@ class QuietSpeechEvidenceTest {
     @Test fun weakWhisperNeedsStableWords() {
         val evidence = QuietSpeechEvidence()
         assertFalse(evidence.accept("what time", 0.23f, 0, false))
-        assertTrue(evidence.accept("what time", 0.23f, 200, false))
+        assertFalse(evidence.accept("what time", 0.23f, 200, false))
+        assertTrue(evidence.accept("what time", 0.23f, 350, false))
     }
     @Test fun noiseAndBlankTranscriptDoNotBecomeSpeech() {
         val evidence = QuietSpeechEvidence()
@@ -27,7 +28,8 @@ class QuietSpeechEvidenceTest {
         evidence.accept("what time", 0.23f, 0, false)
         assertFalse(evidence.accept("what time", 0.23f, 2000, false))
     }
-    @Test fun strongVadKeepsShortWordPath() {
-        assertTrue(QuietSpeechEvidence().accept("yes", 0.8f, 0, false))
+    @Test fun singleProbabilitySpikeCannotBypassFrameConfirmation() {
+        assertFalse(QuietSpeechEvidence().accept("yes", 0.8f, 0, false))
+        assertTrue(QuietSpeechEvidence().accept("yes", 0.8f, 0, true))
     }
 }

@@ -447,15 +447,16 @@ class AudioTurnCaptureTest {
         assertEquals(1, fixture.microphoneStops)
     }
 
-    @Test fun shortUnconfirmedVadWithCredibleTextPreservesOpeningWord() = runBlocking<Unit> {
+    @Test fun isolatedVadWithTextWaitsForConfirmationAndPreservesOpeningWord() = runBlocking<Unit> {
         val fixture = CaptureFixture(this, FakeTranscriber("open", "open YouTube"))
         fixture.capture.start()
         fixture.emit(100, 1234, speech = false, probability = 0.8f, samples = 1024)
+        assertFalse(fixture.capture.hasSpeech)
+        fixture.emit(200, 1234, speech = true, samples = 512)
         assertTrue(fixture.capture.hasSpeech)
-        fixture.emit(1400, 0)
+        fixture.emit(1500, 0)
         assertTrue(fixture.capture.awaitTurnCompletion())
         assertEquals("open YouTube", fixture.capture.finalTranscript)
-        assertTrue(fixture.events.any { "source=asr_and_vad" in it })
         val wav = fixture.capture.stop()
         assertEquals(1234.toByte(), wav[44])
     }
@@ -507,6 +508,25 @@ class AudioTurnCaptureTest {
         fixture.capture.stop()
     }
 
+    @Test fun rejectedSpeakerDoesNotFinishAsrAndMicrophoneAcceptsNextSpeaker() = runBlocking<Unit> {
+        var accept = false
+        val asr = FakeTranscriber()
+        val fixture = CaptureFixture(this, asr, acceptCandidate = { accept })
+        fixture.capture.start()
+        fixture.emit(100, 2000, speech = true)
+        fixture.emit(1400, 0)
+        assertFalse(fixture.capture.hasSpeech)
+        assertEquals(0, asr.finishes)
+        assertEquals(0, fixture.microphoneStops)
+        assertTrue(fixture.events.any { "speaker_candidate_rejected" in it })
+        accept = true
+        fixture.emit(1500, 2000, speech = true)
+        fixture.emit(2800, 0)
+        assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+        assertEquals(1, asr.finishes)
+        fixture.capture.stop()
+    }
+
     private class FakeTranscriber(
         private val partial: String = "story about pirates",
         private val final: String = "story about astronauts",
@@ -547,7 +567,8 @@ class AudioTurnCaptureTest {
     private class CaptureFixture(scope: CoroutineScope, transcriber: StreamingTranscriber? = null,
         factory: (() -> StreamingTranscriber)? = transcriber?.let { { it } },
         trailingSilenceMs: Long? = 1200L,
-        allowAudioOnlyTurns: Boolean = false
+        allowAudioOnlyTurns: Boolean = false,
+        acceptCandidate: (ByteArray) -> Boolean = { true }
     ) {
         var microphoneStarts = 0
         var microphoneStops = 0
@@ -572,7 +593,7 @@ class AudioTurnCaptureTest {
             createTranscriber = factory, onPartialTranscript = { text, _ -> partials.add(text) },
             onMetrics = { stats, text -> metrics.add(stats to text) }, trailingSilenceMs = trailingSilenceMs,
             onRecognitionRecovery = recoveryStates::add, allowAudioOnlyTurns = allowAudioOnlyTurns,
-            onSpeechResumed = { resumed++ })
+            onSpeechResumed = { resumed++ }, acceptCandidate = acceptCandidate)
 
         suspend fun emit(atMs: Long, sample: Int, speech: Boolean = false, samples: Int = 1, probability: Float = if (speech) 0.95f else 0.01f) {
             clock = atMs

@@ -608,6 +608,7 @@ private fun VoiceCallScreen(
     androidx.compose.runtime.DisposableEffect(Unit) {
         onDispose { onStopWakeTest() }
     }
+    var inputTesting by remember { mutableStateOf(false) }
     var ttsSettingsOpen by remember { mutableStateOf(false) }
     var selectedTts by remember { mutableStateOf(ttsComparisonStore.selectedEngine()) }
     val playback by voicePlayback.collectAsState()
@@ -724,7 +725,7 @@ private fun VoiceCallScreen(
         )
         if (!runtimeArmed) Button(
             onClick = { callStarted = true; requestVoiceTurn(start = true) },
-            enabled = !turnInFlight && !wakeTesting,
+            enabled = !turnInFlight && !wakeTesting && !inputTesting,
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
         ) { Text("Start Jarvis session") }
         if (runtimeArmed) {
@@ -775,8 +776,9 @@ private fun VoiceCallScreen(
         title = { Text("Voice settings") },
         confirmButton = { TextButton(onClick = { settingsOpen = false }) { Text("Done") } },
         text = { Column(Modifier.verticalScroll(rememberScrollState())) {
-            TextButton(onClick = { ttsSettingsOpen = true }, enabled = !wakeTesting && !audioPathTesting) { Text("Voice: ${selectedTts.label}") }
+            TextButton(onClick = { ttsSettingsOpen = true }, enabled = !wakeTesting && !audioPathTesting && !inputTesting) { Text("Voice: ${selectedTts.label}") }
         val assistantContext = androidx.compose.ui.platform.LocalContext.current
+        VoiceInputSettings(enabled = !runtimeArmed && !callStarted && !turnInFlight && !wakeTesting && !audioPathTesting, onBusy = { inputTesting = it })
         var assistantSettingsMessage by remember { mutableStateOf(
             if (assistantContext.getSystemService(android.app.role.RoleManager::class.java)
                 .isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT)) "Jarvis is your default assistant."
@@ -812,7 +814,7 @@ private fun VoiceCallScreen(
         if (assistantSettingsMessage.isNotBlank()) {
             Text(assistantSettingsMessage, style = MaterialTheme.typography.bodySmall)
         }
-        AudioPathDiagnosticCard(enabled = !runtimeArmed && !wakeTesting && !turnInFlight,
+        AudioPathDiagnosticCard(enabled = !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting,
             onBusyChanged = { audioPathTesting = it })
         Text("Automatic microphone handoff", style = MaterialTheme.typography.bodyMedium)
         Text("Jarvis releases its microphone for other recordings and automatically resumes your call or wake listening afterward.",
@@ -833,7 +835,7 @@ private fun VoiceCallScreen(
             if (wakeTesting) onStopWakeTest()
             else if (wakeContext.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startWakeTest()
             else wakePermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-        }, enabled = !callStarted && !turnInFlight && !audioPathTesting) {
+        }, enabled = !callStarted && !turnInFlight && !audioPathTesting && !inputTesting) {
             Text(if (wakeTesting) "Stop wake test" else "Test wake word")
         }
         if (wakeTestStatus.isNotBlank()) Text(wakeTestStatus, style = MaterialTheme.typography.bodySmall)
