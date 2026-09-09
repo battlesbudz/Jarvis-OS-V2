@@ -117,7 +117,7 @@ class AudioTurnCapture(
                     // submission and endpointing, not whether initial words reach the recognizer.
                     val decodeStartedAt = nowMs()
                     transcriber?.observeSpeech(hasSpeech && decision.probability >= 0.15f)
-                    val partial = transcriber?.accept(chunk)
+                    val partial = transcriber?.accept(chunk)?.let { if (TranscriptContent.isSoundOnly(it)) "" else TranscriptContent.speech(it) }
                     if (turnCompleted.isCompleted) return@collect
                     val chunkDecodeMs = nowMs() - decodeStartedAt
                     decodeMs += chunkDecodeMs
@@ -176,20 +176,23 @@ class AudioTurnCapture(
                             return@collect
                         }
                         if (hasSpeech) {
-                            finalTranscript = transcriber?.finish().orEmpty().trim()
-                            if (transcriber != null && finalTranscript.isBlank() && !allowAudioOnlyTurns) {
+                            val rawFinal = transcriber?.finish().orEmpty().trim()
+                            val nonverbal = TranscriptContent.isSoundOnly(rawFinal)
+                            finalTranscript = if (nonverbal) "" else TranscriptContent.speech(rawFinal)
+                            if (nonverbal) log("nonverbal_candidate ignored=true destination=none microphone=kept_open")
+                            if (transcriber != null && finalTranscript.isBlank() && !allowAudioOnlyTurns && !nonverbal) {
                                 val candidate = recoveryAudio.snapshot()
                                 val recoveryAt = nowMs()
                                 log("asr_recovery_started candidateAudioMs=${candidate.size / 32} reason=empty_stream source=full_capture_window nativeVad=bypassed")
                                 onRecognitionRecovery(true)
                                 try {
-                                    finalTranscript = transcriber?.recover(candidate).orEmpty().trim()
+                                    finalTranscript = TranscriptContent.speech(transcriber?.recover(candidate).orEmpty())
                                     log("asr_recovery_finished chars=${finalTranscript.length} elapsedMs=${nowMs() - recoveryAt}")
                                 } finally {
                                     onRecognitionRecovery(false)
                                 }
                             }
-                            if (transcriber != null && finalTranscript.isBlank() && !allowAudioOnlyTurns) {
+                            if (transcriber != null && finalTranscript.isBlank() && (!allowAudioOnlyTurns || nonverbal)) {
                                 emptyCandidates++
                                 hasSpeech = false
                                 // A new word may be starting in the final, not-yet-confirmed
@@ -210,7 +213,7 @@ class AudioTurnCapture(
                                 quietEvidence.reset()
                                 onSpeechResumed()
                                 log("empty_speech_candidate ignored=true count=$emptyCandidates microphone=kept_open inactivitySince=last_detected_speech")
-                                if (initialSilenceTimeoutMs == null || nowMs() - lastSpeechAt < initialSilenceTimeoutMs) {
+                                if (initialSilenceTimeoutMs == null || nowMs() - (if (nonverbal) startedAt else lastSpeechAt) < initialSilenceTimeoutMs) {
                                     decodeMs += nowMs() - finalizeStartedAt
                                     // Finish seals an ASR stream, so replace only that stream/engine.
                                     // The microphone keeps buffering opening words during model reload.
@@ -227,12 +230,12 @@ class AudioTurnCapture(
                                 }
                                 reason = "initial_silence"
                             }
-                            if (finalTranscript.isBlank() && allowAudioOnlyTurns) {
+                            if (hasSpeech && finalTranscript.isBlank() && allowAudioOnlyTurns) {
                                 log("audio_only_turn speechDetected=true destination=gemma")
                             }
                             // The owner seals against finalTranscript. Sending it as a new
                             // partial would cancel a matching draft immediately before seal.
-                            onAcceptedCandidate(finalTranscript)
+                            if (hasSpeech) onAcceptedCandidate(finalTranscript)
                             log("asr_final chars=${finalTranscript.length}")
                         }
                         onMetrics(AsrCaptureMetrics(modelLoadMs, captureReadyMs, audioBytes / 32,

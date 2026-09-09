@@ -24,7 +24,7 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 }, log = log)
             val capture = AudioTurnCapture(gated, this,
                 createDetector = { SileroSpeechDetector.create(context.assets) },
-                createTranscriber = { LazyStreamingTranscriber { asrEngine.create(asrDirectory) } }, log = log,
+                createTranscriber = { LazyStreamingTranscriber { asrEngine.create(asrDirectory, log = log) } }, log = log,
                 allowAudioOnlyTurns = true, acceptCandidate = acceptCandidate,
                 onPartialTranscript = { text, _ -> onPartialTranscript(text) })
             try {

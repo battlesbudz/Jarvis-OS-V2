@@ -43,6 +43,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CompletableDeferred
@@ -246,6 +247,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     wokeThisTurn = true
                     status("Hey Jarvis detected — getting ready to listen…")
                 }
+                val expectedCallId = voiceSessionController.currentCallId()
+                    ?: throw kotlinx.coroutines.CancellationException("voice_call_ended_during_preparation")
                 val voiceHistory = voiceSessionController.conversationContext().map { ChatEntry(it.role, it.text) }
                 diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId engine=${ttsEngine.id} " +
                     "callProfile=${callProfile?.id ?: "adaptive-default"}")
@@ -332,7 +335,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     onAcceptedCandidate = preference::accepted,
                     createDetector = { SileroSpeechDetector.create(assets) },
                     log = {
-                        if (it.startsWith("asr_recovery_") || it.startsWith("empty_speech_candidate")) {
+                        if (it.startsWith("asr_recovery_") || it.startsWith("empty_speech_candidate") || it.startsWith("nonverbal_candidate")) {
                             diagnosticRecorder.recordImportant("Voice input: $it")
                         } else diagnosticRecorder.record("Voice input: $it")
                     },
@@ -362,7 +365,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 activeVoiceCapture = activeCapture
                 val correction = pendingVoiceCorrection.getAndSet(null)
                 if (correction == null) activeCapture.start()
-                voiceSessionController.setState(VoiceSessionState.ACTIVELY_LISTENING)
+                kotlin.coroutines.coroutineContext.ensureActive()
+                if (!voiceSessionController.setStateIfCurrent(expectedCallId, VoiceSessionState.ACTIVELY_LISTENING)) {
+                    throw kotlinx.coroutines.CancellationException("voice_call_ended_during_capture_start")
+                }
                 status("Voice Call is listening — speak now.")
                 if (correction == null && (wokeThisTurn || resumeCommandCue.getAndSet(false))) {
                     com.battlesbudz.jarvis.v2.voice.VoiceCues.play(
@@ -375,6 +381,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 finalReadyAt.set(endpointAt)
                 val firstFinalToken = java.util.concurrent.atomic.AtomicBoolean(true)
                 val audioBytes = correction?.wav ?: activeCapture.stop()
+                kotlin.coroutines.coroutineContext.ensureActive()
+                if (voiceSessionController.currentCallId() != expectedCallId) {
+                    throw kotlinx.coroutines.CancellationException("voice_call_changed_during_recognition")
+                }
                 val asrTranscript = correction?.transcript ?: activeCapture.finalTranscript
                 if (activeVoiceCapture === activeCapture) activeVoiceCapture = null
                 status("Processing your Voice Call turn locally…")
@@ -383,6 +393,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     voiceSessionController.end()
                     finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " no recognized speech for 20 seconds."
                     return@launch
+                }
+                // Final ASR text belongs on screen immediately, before speculative work is joined.
+                if (asrTranscript.isNotBlank()) mainHandler.post {
+                    if (voiceSessionController.currentCallId() == expectedCallId) onTranscript("You", asrTranscript, true)
                 }
                 diagnosticRecorder.recordSummary("Voice recognition turn=$asrTurnId path=${if (correction == null) "normal" else "after_keyword"} " +
                     "engine=${asrEngine.id} asrChars=${asrTranscript.length} gemmaTranscriptionFallback=${asrTranscript.isBlank()}")
@@ -397,7 +411,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 diagnosticRecorder.recordSummary("Voice pipeline turn=$asrTurnId stage=preparation_sealed " +
                     "workMs=${(System.nanoTime() - sealStarted) / 1_000_000} " +
                     "sinceEndpointMs=${(System.nanoTime() - endpointAt) / 1_000_000}")
-                val transcript = com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.resolve(
+                val resolvedTranscript = com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.resolve(
                     asrTranscript, audioBytes
                 ) { audio ->
                     status("Listening to your recorded speech with Gemma…")
@@ -410,6 +424,13 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         if (heard.toolCalls.isEmpty()) heard.text else ""
                     } finally { resetNativeConversation() }
                 }
+                if (com.battlesbudz.jarvis.v2.voice.TranscriptContent.isSoundOnly(resolvedTranscript)) {
+                    speculative.close()
+                    diagnosticRecorder.recordImportant("Voice input: nonverbal_candidate ignored=true source=audio_fallback destination=none")
+                    finalMessage = "Voice Call is listening — speak now."
+                    return@launch
+                }
+                val transcript = com.battlesbudz.jarvis.v2.voice.TranscriptContent.speech(resolvedTranscript)
                 if (asrTranscript.isBlank()) {
                     diagnosticRecorder.recordImportant("Voice audio fallback finished: chars=${transcript.length} source=gemma")
                 }
@@ -417,7 +438,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     speculative.close()
                     voiceSessionController.appendTranscript("You", transcript)
                     voiceSessionController.end()
-                    mainHandler.post { onTranscript("You", transcript, true) }
+                    if (transcript != asrTranscript) mainHandler.post { onTranscript("You", transcript, true) }
                     diagnosticRecorder.record("Voice call ended reason=spoken_goodbye")
                     finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " goodbye."
                     return@launch
@@ -425,7 +446,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 asrComparisonStore.update(asrTurnId, "prepared", draft != null)
                 if (draft == null) resetNativeConversation()
                 diagnosticRecorder.record("Voice ASR final\ntext=$transcript\naudioBytes=${audioBytes.size}\nprepared=${draft != null}")
-                mainHandler.post { onTranscript("You", transcript, true) }
+                if (transcript != asrTranscript) mainHandler.post {
+                    if (voiceSessionController.currentCallId() == expectedCallId) onTranscript("You", transcript, true)
+                }
                 output.acknowledgeConfirmedTurn()
                 diagnosticRecorder.recordSummary("Voice pipeline turn=$asrTurnId stage=reply_dispatch " +
                     "sinceEndpointMs=${(System.nanoTime() - endpointAt) / 1_000_000}")

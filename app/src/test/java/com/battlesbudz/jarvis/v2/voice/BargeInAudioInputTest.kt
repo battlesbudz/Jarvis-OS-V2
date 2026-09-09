@@ -7,6 +7,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BargeInAudioInputTest {
+    @Test fun lazyInterruptionRecognizerKeepsWhispersShortSilenceTarget() {
+        var loaded = false
+        var observed = false
+        val lazy = LazyStreamingTranscriber {
+            loaded = true
+            object : StreamingTranscriber {
+                override val noTextSilenceMs = 900L
+                override fun observeSpeech(speech: Boolean) { observed = speech }
+                override fun accept(pcm: ByteArray) = ""
+                override fun finish() = ""
+                override fun close() = Unit
+            }
+        }
+        assertEquals(900L, lazy.noTextSilenceMs)
+        assertFalse(loaded)
+        lazy.observeSpeech(true)
+        assertTrue(loaded && observed)
+        assertEquals(900L, lazy.noTextSilenceMs)
+        lazy.close()
+    }
+
     @Test fun echoIsDiscardedAndRecognizerReleasesBeforeFinalTurnOwnerStarts() = runBlocking {
         var clock = 0L
         var openModels = 0

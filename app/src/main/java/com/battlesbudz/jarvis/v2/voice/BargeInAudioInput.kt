@@ -39,7 +39,8 @@ class BargeInAudioInput(
                 // playback. VAD alone previously let a rustle cancel unfinished synthesis.
                 val asr = recognizer ?: createTranscriber().also { recognizer = it }
                 recognizedBytes += pcm.size
-                val transcript = asr.accept(pcm)
+                asr.observeSpeech(decision.isSpeech)
+                val transcript = TranscriptContent.speech(asr.accept(pcm))
                 val speech = decision.isSpeech || quietEvidence.accept(transcript, decision.probability, nowMs(), false)
                 if (gate.update(speech, audible, nowMs(), transcript, spokenText()) == BargeInGate.Action.CONFIRM) {
                     // Close the probe ASR before the turn's lazy ASR can load: never two models.

@@ -13,6 +13,41 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioTurnCaptureTest {
+    @Test fun soundCaptionsCannotExtendTheInitialListeningDeadline() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, factory = { FakeTranscriber("[music]", "[music]") }, allowAudioOnlyTurns = true)
+        fixture.capture.start()
+        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+        fixture.emit(100, 2000, speech = true)
+        fixture.emit(1300, 0)
+        assertFalse(completion.isCompleted)
+        fixture.emit(19500, 2000, speech = true)
+        fixture.emit(20700, 0)
+        assertFalse(withTimeout(1000) { completion.await() })
+        assertEquals("", fixture.capture.finalTranscript)
+        fixture.capture.stop()
+    }
+
+    @Test fun soundCaptionKeepsListeningEvenWhenAudioFallbackIsAllowed() = runBlocking<Unit> {
+        val noise = FakeTranscriber("(crying)", "(crying).")
+        val owner = FakeTranscriber("Can you hear me?", "Can you hear me?")
+        var loads = 0
+        val fixture = CaptureFixture(this, factory = { if (loads++ == 0) noise else owner }, allowAudioOnlyTurns = true)
+        fixture.capture.start()
+        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+        fixture.emit(100, 2000, speech = true)
+        fixture.emit(1300, 0)
+        assertFalse(completion.isCompleted)
+        assertEquals(0, noise.recoveries)
+        assertTrue(fixture.partials.none { it.contains("crying") })
+        assertTrue(fixture.events.any { it.startsWith("nonverbal_candidate") })
+        fixture.emit(1500, 2000, speech = true)
+        fixture.emit(2700, 0)
+        assertTrue(withTimeout(1000) { completion.await() })
+        assertEquals("Can you hear me?", fixture.capture.finalTranscript)
+        assertEquals(1, fixture.microphoneStarts)
+        fixture.capture.stop()
+    }
+
     @Test fun whisperWithoutStableWordsDoesNotWaitThreeSeconds() = runBlocking<Unit> {
         val transcriber = object : StreamingTranscriber {
             override val noTextSilenceMs = 900L

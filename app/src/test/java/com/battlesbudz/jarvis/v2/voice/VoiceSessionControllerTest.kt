@@ -6,6 +6,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VoiceSessionControllerTest {
+    @Test fun lateModelLoadCannotReviveAnEndedOrReplacementCall() {
+        val controller = VoiceSessionController(MemoryStore())
+        val first = controller.beginCall()
+        assertTrue(controller.setStateIfCurrent(first.id, VoiceSessionState.ACTIVELY_LISTENING))
+        controller.end()
+        assertFalse(controller.setStateIfCurrent(first.id, VoiceSessionState.ACTIVELY_LISTENING))
+        assertEquals(VoiceSessionState.PASSIVE_LISTENING, controller.state.value)
+        val second = controller.beginCall()
+        assertFalse(controller.setStateIfCurrent(first.id, VoiceSessionState.ACTIVELY_LISTENING))
+        assertEquals(second.id, controller.currentCallId())
+    }
+
     @Test
     fun immediateNewCallCanRecallPreviousReplyWithoutResumingTask() {
         val store = MemoryStore()

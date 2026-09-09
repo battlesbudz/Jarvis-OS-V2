@@ -19,7 +19,7 @@ class VoiceSessionController(
     private var activeCall: VoiceCallRecord? = null
     private var recentCallContext: List<TranscriptEntry> = emptyList()
 
-    fun beginCall(): VoiceCallRecord {
+    @Synchronized fun beginCall(): VoiceCallRecord {
         check(activeCall == null) { "A Voice Call is already active." }
         val now = nowMs()
         recentCallContext = store.list().filter { call ->
@@ -59,7 +59,7 @@ class VoiceSessionController(
         checkpoint()
     }
 
-    fun currentCallId(): String? = activeCall?.id
+    @Synchronized fun currentCallId(): String? = activeCall?.id
 
     fun currentTranscript(): List<TranscriptEntry> = activeCall?.transcript.orEmpty()
 
@@ -68,7 +68,7 @@ class VoiceSessionController(
         (recentCallContext + currentTranscript()).takeLast(8)
 
     /** Starts a new linked session with the prior call's transcript as context. */
-    fun resumeCall(call: VoiceCallRecord): VoiceCallRecord {
+    @Synchronized fun resumeCall(call: VoiceCallRecord): VoiceCallRecord {
         check(activeCall == null) { "A Voice Call is already active." }
         recentCallContext = emptyList()
         return VoiceCallRecord(
@@ -83,6 +83,14 @@ class VoiceSessionController(
         }
     }
 
+    /** An asynchronous model load may finish after Stop or after another call starts. */
+    @Synchronized fun setStateIfCurrent(callId: String, state: VoiceSessionState): Boolean {
+        if (activeCall?.id != callId) return false
+        _state.value = state
+        checkpoint()
+        return true
+    }
+
     fun setState(state: VoiceSessionState) {
         requireActiveCall()
         _state.value = state
@@ -94,7 +102,7 @@ class VoiceSessionController(
         checkpoint()
     }
 
-    fun interrupt(): VoiceCallRecord {
+    @Synchronized fun interrupt(): VoiceCallRecord {
         val call = requireActiveCall()
         _state.value = VoiceSessionState.INTERRUPTED
         activeCall = call.copy(taskStatus = call.taskStatus?.let {
@@ -104,7 +112,7 @@ class VoiceSessionController(
         return endInternal()
     }
 
-    fun end(title: String? = null): VoiceCallRecord {
+    @Synchronized fun end(title: String? = null): VoiceCallRecord {
         requireActiveCall()
         return endInternal(title)
     }
