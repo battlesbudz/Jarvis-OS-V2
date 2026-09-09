@@ -2,10 +2,11 @@ package com.battlesbudz.jarvis.v2.voice
 import org.junit.Assert.*
 import org.junit.Test
 class PocketTextStreamTest {
-    @Test fun textAlreadyReadyIsConditionedTogetherWithoutRegeneratingThePrefix() {
+    @Test fun readyParagraphReleasesOneSentencePerSubmissionWithoutLosingText() {
         val stream = PocketTextStream()
         stream.append("The first sentence. The second sentence. A partial")
-        assertEquals("The first sentence. The second sentence.", stream.take())
+        assertEquals("The first sentence.", stream.take())
+        assertEquals("The second sentence.", stream.take())
         stream.append(" tail")
         assertNull(stream.take())
         assertEquals("A partial tail", stream.take(final = true))

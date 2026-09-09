@@ -2,7 +2,9 @@ package com.battlesbudz.jarvis.v2.voice
 
 /** Native audio frames control PCM delivery; text length never sets live Pocket chunk sizes. */
 internal object PocketSpeechPolicy {
-    const val VERSION = "streaming-voice-state-v3"
+    const val VERSION = "streaming-voice-state-v4"
+    fun sessionId(answer: String, index: Int, reset: Boolean) = if (reset) "$answer/segment-$index" else answer
+    fun input(text: String, leadingPeriod: Boolean) = if (leadingPeriod) ". $text" else text
     const val SEED = 42
     fun extra(filler: Boolean = false, session: String? = null): Map<String, String> = mapOf(
         "temperature" to "0.7", "seed" to SEED.toString(),

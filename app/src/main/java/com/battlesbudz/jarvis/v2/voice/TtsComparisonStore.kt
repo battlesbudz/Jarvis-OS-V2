@@ -25,8 +25,8 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
     @Synchronized fun select(engine: TtsEngine) { preferences.edit().putString("engine", engine.id).apply() }
     @Synchronized fun callProfile(engine: TtsEngine): TtsBenchmarkProfile? {
         val id = preferences.getString("call_profile_${engine.id}", null) ?: return null
-        return (TtsBenchmarkProfile.all + TtsBenchmarkProfile.nativeProfiles).firstOrNull {
-            it.id == id && (!it.nativeStreaming || engine == TtsEngine.POCKET_PAUL)
+        return TtsBenchmarkProfile.selectableProfiles.firstOrNull {
+            (it.id == id || it.legacyId == id) && (!it.nativeStreaming || engine == TtsEngine.POCKET_PAUL)
         }
     }
     @Synchronized fun setCallProfile(engine: TtsEngine, profile: TtsBenchmarkProfile?) {
@@ -61,13 +61,15 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
             .put("prepared_synthesis_ms", metrics.preparedSynthesisMs)
             .put("prepared_opening_reused", metrics.preparedOpeningReused)
         if (run != null) {
-            item.put("suite_id", run.suiteId).put("profile_id", run.profile.id).put("pass", run.pass)
+            item.put("audio_file", run.audioFile ?: JSONObject.NULL)
+                .put("paul_stability", run.profile.stabilityLabel)
+                .put("suite_id", run.suiteId).put("profile_id", run.profile.id).put("pass", run.pass)
                 .put("input_text", run.text).put("input_delivery", "4 characters every 32 ms after model ready")
                 .put("synthesis_mode", when { run.profile.nativeStreaming -> "native-audio-stream-natural-sentences"; run.profile.fullText -> "full-text-before-playback"; else -> "streamed-phrases" })
                 .put("requested_playback_speed", run.profile.playbackSpeed.toDouble())
                 .put("playback_speed_applied", kotlin.math.abs(metrics.playbackSpeed - run.profile.playbackSpeed) < 0.001f)
                 .put("opening_target_chars", run.profile.openingChars ?: JSONObject.NULL)
-                .put("startup_buffer_target_ms", 0)
+                .put("startup_buffer_target_ms", if (engine == TtsEngine.POCKET_PAUL && run.profile.nativeStreaming) run.profile.bufferMs else 0)
                 .put("thermal_status_start", run.thermalStart).put("thermal_status_end", run.thermalEnd)
                 .put("thermal_limited", run.thermalStart >= 3 || run.thermalEnd >= 3)
                 .put("effective_rtf", if (metrics.audioMs > 0)
@@ -91,7 +93,7 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
 
         fun describe(item: JSONObject) = buildString {
             appendLine("TTS ${TtsEngine.diagnosticLabel(item.optString("engine"))} atMs=${item.optLong("atMs")}")
-            for (key in listOf("id", "suite_id", "profile_id", "pass", "model", "source", "sample", "input_text",
+            for (key in listOf("id", "suite_id", "profile_id", "paul_stability", "audio_file", "pass", "model", "source", "sample", "input_text",
                 "input_delivery", "synthesis_mode", "requested_playback_speed", "playback_speed_applied",
                 "startup_buffer_target_ms", "thermal_status_start", "thermal_status_end", "thermal_limited",
                 "effective_rtf", "estimated_playback_audio_ms", "completed", "load_ms", "first_phrase_synthesis_ms",

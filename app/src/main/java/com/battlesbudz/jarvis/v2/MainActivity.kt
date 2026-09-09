@@ -218,7 +218,8 @@ class MainActivity : ComponentActivity() {
             lifecycleScope, modelStore, ttsModels, ttsComparisonStore,
             canStart = { voiceSessionController.currentCallId() == null && voiceTurnJob?.isCompleted != false && activeConversationJobs.get() == 0 },
             log = { diagnosticRecorder.record("TTS benchmark: $it") },
-            thermalStatus = { getSystemService(android.os.PowerManager::class.java).currentThermalStatus }
+            thermalStatus = { getSystemService(android.os.PowerManager::class.java).currentThermalStatus },
+            traceDirectory = java.io.File(cacheDir, "voice-benchmarks")
         )
         val gemmaResults = com.battlesbudz.jarvis.v2.ai.GemmaBenchmarkStore(
             getSharedPreferences("gemma-acceleration-benchmarks", MODE_PRIVATE))

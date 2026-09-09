@@ -95,14 +95,36 @@ internal fun TtsComparisonDialog(
                 }
                 listOf<Int?>(40, 60, 90, null).forEach { opening ->
                     FilterChip(selected = !profile.nativeStreaming && profile.openingChars == opening, enabled = !running,
-                        onClick = { profile = profile.copy(openingChars = opening, nativeStreaming = false) },
+                        onClick = { profile = profile.copy(openingChars = opening, nativeStreaming = false, resetDecoder = true, leadingPeriod = true, bufferMs = 200) },
                         label = { Text(opening?.let { "$it-character opening" } ?: "Synthesize full text before playback") })
                 }
                 FilterChip(selected = profile.nativeStreaming, enabled = !running,
                     onClick = { profile = profile.copy(openingChars = null, nativeStreaming = true) },
                     label = { Text("Paul · native audio streaming (live call behavior)") })
+                if (selected == TtsEngine.POCKET_PAUL && profile.nativeStreaming) {
+                    Text("Paul stability", style = MaterialTheme.typography.titleMedium)
+                    listOf(true, false).forEach { reset ->
+                        FilterChip(selected = profile.resetDecoder == reset, enabled = !running,
+                            onClick = { profile = profile.copy(resetDecoder = reset) },
+                            label = { Text(if (reset) "Fresh decoder per sentence" else "Continuous decoder · previous mode") })
+                    }
+                    FilterChip(selected = profile.leadingPeriod, enabled = !running,
+                        onClick = { profile = profile.copy(leadingPeriod = !profile.leadingPeriod) },
+                        label = { Text("Leading period for Paul’s opening") })
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(0, 200, 400).forEach { buffer ->
+                            FilterChip(selected = profile.bufferMs == buffer, enabled = !running,
+                                onClick = { profile = profile.copy(bufferMs = buffer) }, label = { Text("${buffer}ms") })
+                        }
+                    }
+                    Text("Both modes stream audio within each sentence. The fresh mode resets decoder and sampling state together. Calls can add up to 400ms of extra cushion after underruns; benchmarks keep the selected cushion fixed. Zero disables the cushion. The leading period is an experimental pronunciation aid.", style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(onClick = { run(null) }, enabled = canChange && !running) {
+                        Text("Compare Paul state modes · same text")
+                    }
+                }
                 Text("Profile: ${profile.label}")
                 Text("Voice calls: ${appliedProfile?.label ?: "Original adaptive defaults"}")
+                if (selected == TtsEngine.POCKET_PAUL) Text(appliedProfile?.stabilityLabel ?: "Default: fresh decoder per sentence · leading period · adaptive 200ms cushion")
                 Button(onClick = {
                     store.setCallProfile(selected, profile)
                     appliedProfile = profile
@@ -115,7 +137,7 @@ internal fun TtsComparisonDialog(
                     appliedProfile = null
                     status = "Original call defaults restored for ${selected.label}."
                 }, enabled = canChange && !running && appliedProfile != null) { Text("Restore call defaults") }
-                Text("Opening sizes are targets at natural word/clause boundaries. Full text waits for the entire input and synthesizes it in one call. 0.9× slows playback without lowering pitch. Paul’s native profile streams decoded audio as generation proceeds and reuses the voice prompt and keeps one audio decoder session. Full text is a buffered baseline. No profile adds a startup wait.", style = MaterialTheme.typography.bodySmall)
+                Text("Opening sizes are targets at natural word/clause boundaries. Full text waits for the entire input and synthesizes it in one call. 0.9× slows playback without lowering pitch. Paul’s native profile streams decoded audio as generation proceeds and uses the selected decoder state mode. Full text is a buffered baseline. Kokoro profiles add no startup wait; Paul native profiles use the selected cushion.", style = MaterialTheme.typography.bodySmall)
                 Button(onClick = { run(selected) }, enabled = canChange && !running && (!profile.nativeStreaming || selected == TtsEngine.POCKET_PAUL)) { Text("Test selected voice") }
                 OutlinedButton(onClick = { run(null) }, enabled = canChange && !running && !profile.nativeStreaming) { Text("Compare all voices · this profile") }
                 HorizontalDivider()
@@ -139,6 +161,7 @@ internal fun TtsComparisonDialog(
                         TextButton(onClick = { index++ }, enabled = index < records.lastIndex) { Text("Older") }
                     }
                     Text(TtsComparisonStore.describe(record), style = MaterialTheme.typography.bodySmall)
+                    BenchmarkAudioExport(record, enabled = !running)
                 }
                 Text("Compare the same sample and pass. Prioritize completed, thermally clean runs with the requested speed applied: lowest estimated supply gaps first, then lowest first-text-to-playback time. Effective RTF accounts for playback speed; below 1 can keep up. Playback timing detects the first non-silent audio, not a word recognized by a microphone. Gap values are estimates; listen for unnatural pauses too. Copy exports only the displayed text run.", style = MaterialTheme.typography.bodySmall)
                 if (gemmaRecords.isNotEmpty()) {

@@ -25,6 +25,7 @@ class SherpaKokoroVoiceOutput(
     private val fixedChunking: Boolean = false,
     private val openingChars: Int = SpeechChunker.DEFAULT_OPENING_CHARS,
     private val benchmarkProfile: TtsBenchmarkProfile? = null,
+    private val benchmarkRun: Boolean = false,
     private val acknowledgeDelays: Boolean = false,
     private val playbackVolume: () -> String = { "unavailable" },
     private val audioTrace: SpeechAudioTrace? = null,
@@ -54,13 +55,15 @@ class SherpaKokoroVoiceOutput(
     private val neutralFiller = FillerPhrases.INITIAL
     private val fillerDiskCache = FillerAudioCache(java.io.File(modelDirectory, "filler-cache-v2"))
     private val acknowledgementRequests = Channel<String>(Channel.CONFLATED)
-    private fun fillerCacheKey(text: String) = "${engine.version}:$modelDirectory:$speakerId:$text"
+    private fun fillerCacheKey(text: String) = "${engine.version}:$modelDirectory:$speakerId:$text" +
+        if (engine == TtsEngine.POCKET_PAUL) ":period=${benchmarkProfile?.leadingPeriod ?: true}" else ""
     fun acknowledgeConfirmedTurn() {
         if (!acknowledgeDelays) return
         acknowledgement.request(neutralFiller)
         acknowledgementRequests.trySend(FillerPhrases.FOLLOWUP)
     }
     private companion object {
+        val paulBuffer = PaulPlaybackBuffer()
         val acknowledgementCache = java.util.concurrent.ConcurrentHashMap<String, SpeechAudio>()
     }
 
@@ -152,6 +155,8 @@ class SherpaKokoroVoiceOutput(
         var completed = false
         var failureMessage: String? = null
         var finalUnderruns = 0
+        val streamingUnderruns = AtomicLong(0)
+        val draining = AtomicBoolean(false)
         var playbackSpeed = 1f
         var estimatedGapMs = 0L
         // One owner creates, invokes and releases the native engine. Playback never owns it.
@@ -160,6 +165,10 @@ class SherpaKokoroVoiceOutput(
         val pocketSentences = engine == TtsEngine.POCKET_PAUL && (benchmarkProfile?.nativeStreaming == true || !fixedChunking && benchmarkProfile == null)
         val pocketText = if (pocketSentences) PocketTextStream() else null
         val chunker = SpeechChunker(openingChars, fullText = benchmarkProfile?.fullText == true)
+        val paulReset = benchmarkProfile?.resetDecoder ?: true
+        val paulPeriod = benchmarkProfile?.leadingPeriod ?: true
+        val paulBaseBuffer = if (pocketSentences) benchmarkProfile?.bufferMs ?: 200 else 0
+        val paulBufferMs = if (benchmarkRun) paulBaseBuffer else paulBuffer.target(paulBaseBuffer)
         val nativeSession = java.util.UUID.randomUUID().toString()
         val streamDiagnostics = if (engine == TtsEngine.POCKET_PAUL)
             PocketStreamDiagnostics(nativeSession, log) else null
@@ -205,8 +214,9 @@ class SherpaKokoroVoiceOutput(
                 if (pocket && benchmarkProfile?.fullText == true) log("pocket_voice_policy version=${PocketSpeechPolicy.VERSION} pcmDelivery=buffered_full_text nativeContext=isolated_baseline")
                 else if (pocket) log("pocket_voice_policy version=${PocketSpeechPolicy.VERSION} " +
                     "seed=${PocketSpeechPolicy.SEED} temperature=0.7 steps=5 naturalSentenceInput=$pocketSentences " +
-                    "referenceSha256=${PocketVoiceSpec.PAUL_SHA256} nativeContext=cached_voice_prompt decoderContext=continuous_per_answer " +
-                    "pcmDelivery=interleaved_latent_decode firstAudioFrames=3 audioFramesPerChunk=5 session=$nativeSession")
+                    "referenceSha256=${PocketVoiceSpec.PAUL_SHA256} nativeContext=cached_voice_prompt decoderContext=${if (paulReset) "fresh_per_submission" else "continuous_per_answer"} " +
+                    "pcmDelivery=interleaved_latent_decode firstAudioFrames=3 audioFramesPerChunk=5 session=$nativeSession " +
+                    "leadingPeriod=$paulPeriod startupCushionMs=$paulBufferMs textBoundary=${if (pocketSentences) "single_sentence" else "benchmark_char_target"}")
                 onReady()
                 fun synthesize(text: String): SpeechAudio {
                     owner.ensureActive()
@@ -215,7 +225,7 @@ class SherpaKokoroVoiceOutput(
                     // Use the established non-callback JNI path. Kotlin lambda callback ABI
                     // changes can abort the process before Java can report an exception.
                     val generated = tts.generateWithConfig(
-                        text, if (pocket && text in listOf(neutralFiller, FillerPhrases.FOLLOWUP))
+                        if (pocket) PocketSpeechPolicy.input(text, paulPeriod) else text, if (pocket && text in listOf(neutralFiller, FillerPhrases.FOLLOWUP))
                             generation.copy(extra = PocketSpeechPolicy.extra(filler = true))
                         else if (pocket) generation.copy(extra = PocketSpeechPolicy.extra()) else generation
                     )
@@ -275,7 +285,8 @@ class SherpaKokoroVoiceOutput(
                         var callbackCount = 0
                         var frames = 0L
                         var queueWaitMs = 0L
-                        streamDiagnostics?.begin(phraseIndex, text, rate)
+                        val segmentSession = PocketSpeechPolicy.sessionId(nativeSession, phraseIndex, paulReset)
+                        streamDiagnostics?.begin(phraseIndex, text, rate, segmentSession, paulReset)
                         log("tts_generation_started chars=${text.length} preview=${text.take(80)} api=generateWithConfigAndCallback voice=Paul")
                         val callback = SherpaPcmCallback { samples ->
                             owner.ensureActive()
@@ -298,7 +309,7 @@ class SherpaKokoroVoiceOutput(
                                     // One copy of each callback, never also enqueue the returned full utterance.
                                     // Captions remain estimated; the text belongs to the first audio chunk.
                                     audio.sendFromNative(SynthesizedPhrase(phraseIndex,
-                                        if (callbackCount == 0) text else "", rate, pcm, 0,
+                                        if (callbackCount == 0) text else "", rate, pcm, if (phraseIndex == 0 && callbackCount == 0) paulBufferMs.toLong() else 0,
                                         benchmarkProfile?.playbackSpeed ?: 1f, captionGroup = phraseIndex))
                                     queueWaitMs += elapsedMs(waitStart)
                                     streamDiagnostics?.chunk(phraseIndex, pcm)
@@ -310,7 +321,9 @@ class SherpaKokoroVoiceOutput(
                                 1
                             }
                         }
-                        val generated = tts.generateWithConfigAndCallback(text, generation, callback)
+                        val generated = tts.generateWithConfigAndCallback(
+                            PocketSpeechPolicy.input(text, paulPeriod),
+                            generation.copy(extra = PocketSpeechPolicy.extra(session = segmentSession)), callback)
                         callback.failure?.let { throw it }
                         owner.ensureActive()
                         if (stopped) return
@@ -479,6 +492,7 @@ class SherpaKokoroVoiceOutput(
                                 val underruns = startedTrack.underrunCount
                                 if (underruns > previousUnderruns) {
                                     log("audio_underrun count=$underruns queuedFrames=${(writtenFrames - head).coerceAtLeast(0)}")
+                                    if (!draining.get()) streamingUnderruns.addAndGet((underruns - previousUnderruns).toLong())
                                     previousUnderruns = underruns
                                 }
                                 val audibleFrame = firstAudibleFrame.get()
@@ -559,6 +573,7 @@ class SherpaKokoroVoiceOutput(
                             if (written == 0) delay(10) else offset += written
                         }
                     }
+                    draining.set(true)
                     completed = drainAudioTrack(framesWritten, outputSampleRate, playbackSpeed)
                     if (!completed && !stopped) error("AudioTrack playback timed out before all speech was consumed.")
                 }
@@ -589,6 +604,8 @@ class SherpaKokoroVoiceOutput(
                 audioTrack = null
             }
             withContext(NonCancellable) { collectTokens.cancelAndJoin(); producer.cancelAndJoin() }
+            if (engine == TtsEngine.POCKET_PAUL && !benchmarkRun && completed && !wasStopped && paulBaseBuffer > 0)
+                paulBuffer.observe(streamingUnderruns.get() > 0 || estimatedGapMs > 50)
             streamDiagnostics?.summary(finalUnderruns, estimatedGapMs,
                 completed && !wasStopped && failureMessage == null)
             acknowledgementRequests.cancel()

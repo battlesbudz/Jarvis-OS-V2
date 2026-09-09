@@ -2,7 +2,8 @@ package com.battlesbudz.jarvis.v2.voice
 
 /** Text conditioning for a continuous Pocket session, independent of PCM chunk sizes.
  * Hold incomplete sentences so token boundaries, decimals and abbreviations don't restart prosody.
- * Native generation reuses the voice prompt and carries decoder state between boundaries.
+ * Release one complete sentence per submission, never an accumulated paragraph.
+ * Like upstream, a single unusually long sentence is kept intact rather than cut by character count.
  */
 internal class PocketTextStream {
     private val pending = StringBuilder()
@@ -11,7 +12,7 @@ internal class PocketTextStream {
         if (pending.isBlank()) { if (final) pending.clear(); return null }
         var boundary = -1
         for (i in pending.indices) {
-            if (pending[i] == '\n') { boundary = i + 1; continue }
+            if (pending[i] == '\n') { boundary = i + 1; break }
             if (pending[i] !in ".!?") continue
             var end = i + 1
             while (end < pending.length && pending[end] in "\"'’”)!?") end++
@@ -20,8 +21,9 @@ internal class PocketTextStream {
             val word = pending.substring(0, i).takeLastWhile { !it.isWhitespace() }.lowercase()
             if (pending[i] == '.' && (word in ABBREVIATIONS || word.length == 1 && word[0].isLetter())) continue
             boundary = end
+            break
         }
-        if (final) boundary = pending.length
+        if (final && boundary < 0) boundary = pending.length
         if (boundary < 0) return null
         val text = pending.substring(0, boundary).trim()
         pending.delete(0, boundary)

@@ -15,7 +15,7 @@ internal class PocketStreamDiagnostics(private val session: String, private val 
     private val texts = mutableSetOf<String>()
     private var repeatedTextCalls = 0
 
-    fun begin(index: Int, text: String, rate: Int) {
+    fun begin(index: Int, text: String, rate: Int, nativeSession: String = session, resetDecoder: Boolean = false) {
         val hash = MessageDigest.getInstance("SHA-256").digest(text.toByteArray())
             .joinToString("") { "%02x".format(it) }
         val repeated = !texts.add(hash)
@@ -26,7 +26,7 @@ internal class PocketStreamDiagnostics(private val session: String, private val 
             "textSha256=$hash repeatedText=$repeated chars=${text.length} " +
             "startFrame=$frames sampleRate=$rate pcmTimeMs=${frames * 1000 / rate} " +
             "stateEvidence=native_source_contract lm=copy_voice_prompt_each_call " +
-            "decoderAndRng=retain_for_session nativeResetObserved=unavailable")
+            "nativeSession=$nativeSession decoderAndRng=${if (resetDecoder) "reset_per_submission" else "retain_for_session"} nativeResetObserved=unavailable")
     }
 
     fun chunk(index: Int, pcm: ShortArray) {
