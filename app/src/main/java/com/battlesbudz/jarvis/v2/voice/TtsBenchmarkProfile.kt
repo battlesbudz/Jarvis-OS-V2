@@ -21,7 +21,7 @@ data class TtsBenchmarkProfile(
     val fullText: Boolean get() = openingChars == null && !nativeStreaming
     val legacyId: String get() = "threads-$threads-${if (nativeStreaming) "native-stream" else openingChars?.let { "opening-$it" } ?: "full-text"}-speed-${if (playbackSpeed == 1f) "1.0" else "0.9"}"
     val id: String get() = legacyId + if (nativeStreaming) "-reset-$resetDecoder-period-$leadingPeriod-buffer-$bufferMs" else ""
-    val label: String get() = "$threads threads · ${if (nativeStreaming) "native audio stream" else openingChars?.let { "$it characters" } ?: "full text"} · ${if (playbackSpeed == 1f) "1.0" else "0.9"}×"
+    val label: String get() = "$threads threads · ${if (nativeStreaming) "native audio stream" else openingChars?.let { "$it characters" } ?: "full text"} · ${if (playbackSpeed == 1f) "1.0" else "0.9"}×" + if (nativeStreaming) " · $stabilityLabel" else ""
 
     val stabilityLabel: String get() = "${if (resetDecoder) "Fresh decoder per sentence" else "Continuous decoder"} · period ${if (leadingPeriod) "on" else "off"} · ${bufferMs}ms cushion"
 
