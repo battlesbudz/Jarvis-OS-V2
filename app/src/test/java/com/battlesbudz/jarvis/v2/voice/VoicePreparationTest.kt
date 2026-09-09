@@ -58,6 +58,19 @@ class VoicePreparationTest {
         preparation.close()
     }
 
+
+    @Test fun punctuationUpdateRetainsRunningDraftUntilConfirmation() = runBlocking<Unit> {
+        val started = CompletableDeferred<Unit>(); var calls = 0
+        val preparation = VoicePreparation(this, generate = { _, _, _ ->
+            calls++; started.complete(Unit); awaitCancellation()
+        }, coalesceMs = 0)
+        preparation.submit("tell me a story", byteArrayOf())
+        withTimeout(1000) { started.await() }
+        preparation.submit("Tell me a story?", byteArrayOf())
+        val draft = preparation.seal("Tell me a story?")
+        assertNotNull(draft); assertFalse(draft!!.failed); assertEquals(1, calls)
+        preparation.close()
+    }
     @Test fun resumedSpeechInvalidatesAudioEvenBeforeAsrChangesItsWords() = runBlocking<Unit> {
         val ready = CompletableDeferred<PreparedSpeechOpening>()
         val preparation = VoicePreparation(this, generate = { _, _, emit ->

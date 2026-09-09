@@ -79,4 +79,24 @@ class VoiceRepetitionGuardTest {
         assertFalse(guard.needsRepair)
         assertEquals(1, guard.suppressedSentences)
     }
+    @Test fun decimalDoesNotHoldSubsequentSentencesUntilGenerationEnds() {
+        val published = mutableListOf<String>()
+        val guard = VoiceRepetitionGuard("How long?", null, published::add)
+        guard.accept("It takes 2.")
+        assertTrue(published.isEmpty())
+        guard.accept("5 seconds. Then continue. More is still generating")
+        assertEquals(listOf("It takes 2.5 seconds.", " Then continue."), published)
+    }
+    @Test fun checkedSentenceIsImmediatelyAvailableToEverySpeechChunker() {
+        val phrase = "The old lighthouse was empty."
+        for (sentence in listOf(false, true)) {
+            val chunks = SpeechChunker(sentenceMode = sentence)
+            val guard = VoiceRepetitionGuard("Tell a story", null) {
+                chunks.append(VoiceRepetitionGuard.speechReady(it))
+            }
+            guard.accept(phrase)
+            assertEquals(phrase, chunks.take())
+        }
+    }
+
 }

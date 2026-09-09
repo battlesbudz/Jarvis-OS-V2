@@ -355,7 +355,17 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 }
                 diagnosticRecorder.recordSummary("Voice recognition turn=$asrTurnId path=${if (correction == null) "normal" else "after_keyword"} " +
                     "moonshineChars=${asrTranscript.length} gemmaTranscriptionFallback=${asrTranscript.isBlank()}")
+                // The turn is already confirmed. Play cached PCM while obsolete speculative
+                // work is joined/reset; it needs neither Gemma nor tool execution permission.
+                if (asrTranscript.isNotBlank() &&
+                    !com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.isGoodbye(asrTranscript)) {
+                    output.acknowledgeConfirmedTurn()
+                }
+                val sealStarted = System.nanoTime()
                 val draft = speculative.seal(asrTranscript)
+                diagnosticRecorder.recordSummary("Voice pipeline turn=$asrTurnId stage=preparation_sealed " +
+                    "workMs=${(System.nanoTime() - sealStarted) / 1_000_000} " +
+                    "sinceEndpointMs=${(System.nanoTime() - endpointAt) / 1_000_000}")
                 val transcript = com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.resolve(
                     asrTranscript, audioBytes
                 ) { audio ->
@@ -386,6 +396,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 diagnosticRecorder.record("Voice ASR final\ntext=$transcript\naudioBytes=${audioBytes.size}\nprepared=${draft != null}")
                 mainHandler.post { onTranscript("You", transcript, true) }
                 output.acknowledgeConfirmedTurn()
+                diagnosticRecorder.recordSummary("Voice pipeline turn=$asrTurnId stage=reply_dispatch " +
+                    "sinceEndpointMs=${(System.nanoTime() - endpointAt) / 1_000_000}")
                 val outcome = com.battlesbudz.jarvis.v2.voice.runInterruptibleReply(
                     reply = {
                         val coordinator = VoiceTurnCoordinator(voiceSessionController)

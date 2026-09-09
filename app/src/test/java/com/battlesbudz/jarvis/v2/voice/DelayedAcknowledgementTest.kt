@@ -64,4 +64,18 @@ class DelayedAcknowledgementTest {
         cue.start(this) { fail("No audio should be played") }; cue.request()
         withTimeout(500) { cue.answerReady() }; cue.close()
     }
+    @Test fun readyAnswerCancelsFollowupButFinishesInitialCue() = runBlocking {
+        val cue = DelayedAcknowledgement(); val followupStarted = CompletableDeferred<Unit>()
+        var initialFinished = false; var followupReleased = false
+        cue.prepare(audio); cue.prepare(audio.copy(text = FillerPhrases.FOLLOWUP))
+        cue.start(this, repeatGapMs = 1) {
+            if (it.text == FillerPhrases.INITIAL) initialFinished = true
+            else try { followupStarted.complete(Unit); awaitCancellation() }
+            finally { followupReleased = true }
+        }
+        cue.request(); withTimeout(1000) { followupStarted.await() }
+        withTimeout(500) { cue.answerReady() }
+        assertTrue(initialFinished); assertTrue(followupReleased); cue.close()
+    }
+
 }

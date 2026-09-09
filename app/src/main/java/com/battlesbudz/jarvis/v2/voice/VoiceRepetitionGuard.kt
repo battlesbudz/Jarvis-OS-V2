@@ -20,16 +20,17 @@ class VoiceRepetitionGuard(user: String, previousReply: String?, private val emi
         received = true
         pending.append(chunk)
         while (true) {
-            val end = pending.indexOfAny(charArrayOf('.', '!', '?', '\n'))
-            if (end < 0) break
-            // Keep decimal numbers intact when the following digit is already available.
-            if (pending[end] == '.' && end > 0 && pending[end - 1].isDigit()) {
-                if (end == pending.lastIndex) break
-                if (pending[end + 1].isDigit()) {
-                    // Decimal-containing phrases are checked at finish, preserving their factual value.
-                    break
+            var end = -1
+            for (i in pending.indices) {
+                if (pending[i] !in ".!?\n") continue
+                if (pending[i] == '.' && i > 0 && pending[i - 1].isDigit()) {
+                    if (i == pending.lastIndex) break // Wait for a split decimal's next digit.
+                    if (pending[i + 1].isDigit()) continue
                 }
+                end = i
+                break
             }
+            if (end < 0) break
             val sentence = pending.substring(0, end + 1)
             pending.delete(0, end + 1)
             publish(sentence)
@@ -52,6 +53,9 @@ class VoiceRepetitionGuard(user: String, previousReply: String?, private val emi
         emit(output)
     }
     companion object {
+        /** A checked phrase is complete; make its boundary visible to the speech chunker now. */
+        fun speechReady(phrase: String): String = phrase.trim() + " "
+
         private fun words(text: String): List<String> = Regex("[\\p{L}\\p{N}]+")
             .findAll(text.lowercase(Locale.ROOT)).map { it.value }.toList()
         private fun grams(words: List<String>, size: Int) = words.windowed(size).map { it.joinToString(" ") }.toSet()

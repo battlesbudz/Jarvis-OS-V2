@@ -1,6 +1,7 @@
 package com.battlesbudz.jarvis.v2.voice
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.selects.select
 
 /** Every confirmed turn gets an opening cue; bounded silent intervals until answer PCM arrives. */
 internal class DelayedAcknowledgement(private val log: (String) -> Unit = {}) {
@@ -36,7 +37,20 @@ internal class DelayedAcknowledgement(private val log: (String) -> Unit = {}) {
                 val audio = if (next.isCompleted) next.await() ?: initial else initial
                 if (answerReady.isCompleted) break
                 log("acknowledgement_wait_filler silenceTargetMs=$repeatGapMs text=${audio.text}")
-                play(audio)
+                // Follow-up filler must not reserve the speaker after real answer PCM is ready.
+                coroutineScope {
+                    val followup = launch { play(audio) }
+                    try {
+                        select<Unit> {
+                            answerReady.onAwait {
+                                log("acknowledgement_followup_yielded reason=answer_pcm_ready")
+                            }
+                            followup.onJoin { }
+                        }
+                    } finally {
+                        withContext(NonCancellable) { followup.cancelAndJoin() }
+                    }
+                }
             }
         }
     }
@@ -44,7 +58,7 @@ internal class DelayedAcknowledgement(private val log: (String) -> Unit = {}) {
         if (job == null) return // Benchmarks do not enable fillers.
         request(initialText) // Also covers a confirmed turn's early error/direct-completion response.
         answerReady.complete(Unit)
-        job?.join() // Let an already-playing short word finish before answer playback.
+        job?.join() // Preserve the required initial cue; follow-up playback yields immediately.
     }
     suspend fun close() { job?.cancelAndJoin() }
 }

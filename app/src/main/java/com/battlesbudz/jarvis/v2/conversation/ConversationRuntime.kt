@@ -214,7 +214,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     actionIntentRouter.classifyActionIntent(prompt, history) == null) {
                     com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard(
                         prompt, history.lastOrNull { it.role == "Jarvis" }?.text,
-                        emit = { safe -> mainHandler.post { onToken(safe) } })
+                        emit = { safe -> mainHandler.post { onToken(com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard.speechReady(safe)) } })
                 } else null
                 val streamFilter = AssistantStreamFilter { safeText ->
                     // Factual/reference turns are held until the final answer
@@ -293,14 +293,25 @@ internal fun JarvisRuntime.runConversationInternal(
                             "decodeTokensPerSecondEstimated=${result.decodeTokensPerSecond ?: -1.0}"
                     )
                 }
+                val voiceGenerationStarted = System.nanoTime()
+                var rawVoiceTokenSeen = false
+                val acceptVoiceToken: (String) -> Unit = { token ->
+                    if (!rawVoiceTokenSeen && token.isNotBlank()) {
+                        rawVoiceTokenSeen = true
+                        diagnosticRecorder.recordSummary("Voice generation: first_raw_token_ms=" +
+                            ((System.nanoTime() - voiceGenerationStarted) / 1_000_000) +
+                            " source=" + if (acceptedPreparation != null) "prepared" else "live")
+                    }
+                    streamFilter.accept(token)
+                }
                 var generated = if (acceptedPreparation != null) {
                     diagnosticRecorder.record("Voice preparation: consuming_validated_draft")
-                    acceptedPreparation.consume(streamFilter::accept)
+                    acceptedPreparation.consume(acceptVoiceToken)
                 } else if (voiceAudio != null) {
                     engine.generateAudio(
                         prompt = submittedPrompt + "\n" + com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions,
                         audioBytes = voiceAudio,
-                        onToken = streamFilter::accept
+                        onToken = acceptVoiceToken
                     )
                 } else if (imageBytes != null) {
                     engine.generate(

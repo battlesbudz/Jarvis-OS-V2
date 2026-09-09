@@ -53,6 +53,12 @@ class VoicePreparation(
 
     fun submit(text: String, audio: ByteArray) {
         if (!sealed) {
+            // Match the same normalization used at final confirmation. A punctuation-only
+            // update must not cancel a useful native draft; resumed speech still invalidates it.
+            if (draftRevision == revision.get() && draft?.let { !it.failed && it.matches(text) } == true) {
+                log("preparation_retained reason=same_request")
+                return
+            }
             val current = revision.incrementAndGet()
             draft?.invalidate()
             val candidate = text.takeIf { it.trim().split(Regex("\\s+")).size >= 3 }
