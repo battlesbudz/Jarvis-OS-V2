@@ -20,4 +20,4 @@ The monitor is cancelled/joined before AudioTrack is released.
 Validation: playback-clock tests cover unreached phrases, a stalled clock, and
 bounded context. Android CI covers debug/release tests and builds. Device testing
 should include short battery replies, long stories, ending mid-speech, and both
-Kokoro and Miro; Bluetooth adds route latency not measured acoustically here.
+Kokoro and Pocket Paul; Bluetooth adds route latency not measured acoustically here.

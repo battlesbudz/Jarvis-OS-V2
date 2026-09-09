@@ -1,7 +1,7 @@
 # Voice latency on the existing stack
 
 The stack remains Moonshine Small Streaming, Gemma 4 E2B, and the selected
-Kokoro/Miro voice. No model weights or runtime dependency versions change.
+Kokoro/Pocket Paul voice. No model weights or runtime dependency versions change.
 
 ## Adaptive turn ending
 

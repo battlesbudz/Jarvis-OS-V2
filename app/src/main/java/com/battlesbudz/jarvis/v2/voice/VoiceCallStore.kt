@@ -42,6 +42,7 @@ class SharedPreferencesVoiceCallStore(
                                 put("text", entry.text)
                                 put("timestampMs", entry.timestampMs)
                                 put("complete", entry.complete)
+                                entry.latency?.let { put("latency", it.json()) }
                             })
                         }
                     })
@@ -70,7 +71,8 @@ class SharedPreferencesVoiceCallStore(
                                     role = entry.optString("role"),
                                     text = entry.optString("text"),
                                     timestampMs = entry.optLong("timestampMs"),
-                                    complete = entry.optBoolean("complete", true)
+                                    complete = entry.optBoolean("complete", true),
+                                    latency = com.battlesbudz.jarvis.v2.diagnostics.TurnLatency.read(entry.optJSONObject("latency"))
                                 )
                             }
                         }

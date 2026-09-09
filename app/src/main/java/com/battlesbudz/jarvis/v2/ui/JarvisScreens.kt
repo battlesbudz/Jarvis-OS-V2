@@ -86,7 +86,7 @@ private const val MAX_SAVED_DRAFT_CHARS = 16_000
 
 @Composable
 fun JarvisChat(
-    onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit,
+    onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit, (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit) -> Unit,
     onRunDirectAudioTest: ((String) -> Unit, (String) -> Unit) -> Unit,
     onRunDirectAudioToolTest: ((String) -> Unit, (String) -> Unit) -> Unit,
     onVoiceTurn: (Boolean, (String) -> Unit, (String) -> Unit) -> Unit,
@@ -191,6 +191,7 @@ fun JarvisChat(
                                 )
                             }
                         }
+                        if (message.role == "Jarvis") message.latency?.let { TurnLatencyFooter(it) }
                     }
                 }
             }
@@ -327,13 +328,16 @@ fun JarvisChat(
                     messages.dropLast(2),
                     { token ->
                         messages = messages.dropLast(1) +
-                            ChatEntry("Jarvis", messages.lastOrNull()?.text.orEmpty() + token)
+                            messages.last().copy(text = messages.last().text + token)
                     },
                     { result ->
-                        messages = messages.dropLast(1) + ChatEntry("Jarvis", result)
+                        messages = messages.dropLast(1) + messages.last().copy(text = result)
                         onMessagesChanged(messages)
                         onSendingChanged(false)
                         isSending = false
+                    },
+                    { latency ->
+                        messages = messages.dropLast(1) + messages.last().copy(latency = latency)
                     }
                 )
             },
@@ -384,7 +388,7 @@ fun JarvisApp(
     onExportSpeechAudio: () -> Unit,
     onMessagesChanged: (List<ChatEntry>) -> Unit,
     onSendingChanged: (Boolean) -> Unit,
-    onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit
+    onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit, (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit) -> Unit
 ) {
     val gemmaReady = store.isUsable()
     var modelsReady by remember { mutableStateOf(store.isUsable() && voiceModelStore.isReady()) }
@@ -929,6 +933,7 @@ private fun VoiceCallDetailScreen(
                     color = if (entry.role == "You") MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (entry.role == "Jarvis") entry.latency?.let { TurnLatencyFooter(it) }
             }
             call.taskStatus?.let { task ->
                 Text("Task status: ${task.state}", style = MaterialTheme.typography.labelLarge)

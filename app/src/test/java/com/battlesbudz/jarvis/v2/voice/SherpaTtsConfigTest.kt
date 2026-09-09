@@ -19,10 +19,7 @@ class SherpaTtsConfigTest {
     }
     @Test fun existingVoicesKeepTheirOwnModelFamilies() {
         val kokoro = sherpaTtsConfig(TtsEngine.KOKORO, "/models/kokoro", 4)
-        val miro = sherpaTtsConfig(TtsEngine.PIPER_MIRO, "/models/miro", 2)
         assertTrue(kokoro.model.kokoro.model.isNotEmpty())
-        assertTrue(miro.model.vits.model.isNotEmpty())
         assertTrue(kokoro.model.pocket.lmMain.isEmpty())
-        assertTrue(miro.model.pocket.lmMain.isEmpty())
     }
 }

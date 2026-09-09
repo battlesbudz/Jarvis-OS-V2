@@ -34,15 +34,27 @@ class VoiceSessionController(
         }
     }
 
-    fun appendTranscript(role: String, text: String, complete: Boolean = true) {
+    fun appendTranscript(role: String, text: String, complete: Boolean = true,
+                         latency: com.battlesbudz.jarvis.v2.diagnostics.TurnLatency? = null) {
         val call = requireActiveCall()
         val entries = call.transcript.toMutableList()
         val previous = entries.lastOrNull()
         if (previous?.role == role && !previous.complete) {
-            entries[entries.lastIndex] = previous.copy(text = text, complete = complete, timestampMs = nowMs())
+            entries[entries.lastIndex] = previous.copy(text = text, complete = complete, timestampMs = nowMs(), latency = latency ?: previous.latency)
         } else {
-            entries += TranscriptEntry(role, text, nowMs(), complete)
+            entries += TranscriptEntry(role, text, nowMs(), complete, latency)
         }
+        activeCall = call.copy(transcript = entries)
+        checkpoint()
+    }
+
+    /** Late speech metrics can update only the reply carrying this measurement ID. */
+    fun updateReplyLatency(latency: com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) {
+        val call = activeCall ?: return
+        val index = call.transcript.indexOfFirst { it.role == "Jarvis" && it.latency?.id == latency.id }
+        if (index < 0) return
+        val entries = call.transcript.toMutableList()
+        entries[index] = entries[index].copy(latency = latency)
         activeCall = call.copy(transcript = entries)
         checkpoint()
     }

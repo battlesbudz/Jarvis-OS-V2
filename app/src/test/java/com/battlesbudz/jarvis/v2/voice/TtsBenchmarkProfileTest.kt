@@ -15,6 +15,15 @@ class TtsBenchmarkProfileTest {
         assertEquals(TtsEngine.entries.toList(), TtsBenchmarkProfile.comparisonEngines)
     }
 
+    @Test fun nativeAudioProfilesAreDistinctFromTheBufferedBaseline() {
+        val native = TtsBenchmarkProfile.nativeProfiles
+        assertEquals(4, native.size)
+        assertTrue(native.all { it.nativeStreaming && !it.fullText && it.openingChars == null })
+        assertEquals(20, (TtsBenchmarkProfile.all + native).map { it.id }.toSet().size)
+        assertEquals(216, TtsBenchmarkProfile.comparisonRunCount)
+        assertTrue(TtsBenchmarkProfile.historyLimit >= 576)
+    }
+
     @Test fun fullTextWaitsForEndAndKeepsAllSentencesInOneSynthesisRequest() {
         for (text in TtsBenchmarkSamples.all.values) {
             val chunker = SpeechChunker(fullText = true)

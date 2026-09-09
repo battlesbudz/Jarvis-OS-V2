@@ -3,8 +3,8 @@
 Open **Voice and response speed** and select a profile: 2 or 4 threads,
 1.0× or 0.9× playback, and a 40-, 60-, or 90-character opening or full-text
 synthesis. **Compare all voices · this profile** runs the same short reply,
-paragraph, and story through Kokoro, Miro, and Pocket Paul, twice. The all-profiles button runs
-all 16 combinations (288 text runs). Individual voice tests use the same inputs.
+paragraph, and story through Kokoro and Pocket Paul, twice. The all-profiles button runs
+all 16 common combinations plus Paul’s 4 native streaming profiles (216 text runs). Individual voice tests use the same inputs.
 
 Each input delivers four characters every 32 ms after the model reports ready.
 Loading and downloads are outside the text-to-audio timer; the first synthesis
@@ -44,3 +44,8 @@ Phone acceptance checks: compare 4-thread 60-character profiles at both speeds;
 listen for unchanged pitch and slower cadence at 0.9×; run full-text on the story
 and verify one phrase; stop during synthesis and restart; copy an older
 result after changing voice/profile and confirm its original IDs/settings remain.
+
+Paul also has four native audio streaming profiles (2/4 threads × 1.0/0.9 speed).
+They use natural sentence input and reuse the cached voice prompt and preserve decoder/sampling state across the answer, matching
+live calls. The full-text profile remains a buffered baseline. Miro is retired; its
+stored results retain their old voice label and installed files are removed on preparation.

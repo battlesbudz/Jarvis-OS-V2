@@ -45,5 +45,7 @@ if __name__ == '__main__':
     with zipfile.ZipFile(sys.argv[1]) as apk:
         assert any(has_callback(apk.read(n)) for n in apk.namelist()
                    if n.startswith('classes') and n.endswith('.dex')), 'Pocket callback JNI signature missing after packaging'
+        native = apk.read('lib/arm64-v8a/libsherpa-onnx-jni.so')
+        assert b'jarvis_session' in native and b'first_chunk_size' in native, 'Unpatched Pocket runtime packaged'
         assert 'assets/licenses/pocket-tts-paul-NOTICE.txt' in apk.namelist()
-    print('Pocket callback boxed float-array ABI and attribution verified in APK.')
+    print('Pocket streaming runtime, boxed callback ABI and attribution verified in APK.')

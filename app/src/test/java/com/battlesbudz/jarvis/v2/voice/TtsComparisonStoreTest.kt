@@ -6,6 +6,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TtsComparisonStoreTest {
+    @Test fun miroSelectionRetiresWithoutRelabelingItsMeasurements() {
+        assertEquals(TtsEngine.KOKORO, TtsEngine.fromId("piper_miro_high"))
+        assertEquals("Piper Miro High (British) (retired)", TtsEngine.diagnosticLabel("piper_miro_high"))
+        assertFalse(TtsEngine.entries.any { it.id == "piper_miro_high" })
+    }
+
     @Test fun copyIsBoundToOneTextRunAndSurvivesNewRunsAndVoiceChanges() {
         val store = TtsComparisonStore(preferences())
         val profile = TtsBenchmarkProfile(playbackSpeed = 0.9f, openingChars = 60)
@@ -14,8 +20,8 @@ class TtsComparisonStoreTest {
             TtsBenchmarkRun("suite-a", profile, 1, "First text.", 0, 0))
         val displayed = store.records().single()
         val original = TtsComparisonStore.diagnosticReport(displayed)
-        store.select(TtsEngine.PIPER_MIRO)
-        store.add(TtsEngine.PIPER_MIRO, "voice-profiles-v3", "story-v1", metrics,
+        store.select(TtsEngine.POCKET_PAUL)
+        store.add(TtsEngine.POCKET_PAUL, "voice-profiles-v3", "story-v1", metrics,
             TtsBenchmarkRun("suite-b", profile, 2, "Unrelated later text.", 0, 4))
         assertEquals(original, TtsComparisonStore.diagnosticReport(displayed))
         assertTrue(original.contains("suite_id=suite-a"))
@@ -37,7 +43,7 @@ class TtsComparisonStoreTest {
             store.add(TtsEngine.KOKORO, "voice-profiles-v3", "short-v1", metrics,
                 TtsBenchmarkRun("complete-suite", TtsBenchmarkProfile(), 1, "Text $it", 0, 0))
         }
-        repeat(45) { store.add(TtsEngine.PIPER_MIRO, "voice-call", "$it", metrics) }
+        repeat(45) { store.add(TtsEngine.POCKET_PAUL, "voice-call", "$it", metrics) }
         val restored = TtsComparisonStore(prefs)
         assertEquals(TtsBenchmarkProfile.comparisonRunCount, restored.records().count { it.optString("suite_id") == "complete-suite" })
         assertEquals(40, restored.records().count { it.optString("source") == "voice-call" })
@@ -57,16 +63,16 @@ class TtsComparisonStoreTest {
     @Test fun selectionsAndResultsSurviveRestartWithoutMixingModels() {
         val prefs = preferences()
         val store = TtsComparisonStore(prefs)
-        store.select(TtsEngine.PIPER_MIRO)
+        store.select(TtsEngine.POCKET_PAUL)
         val metrics = TtsSessionMetrics(100, 200, 400, 2000, 20, 1f, 0, 1, 2, 50, "abc", 4, true, null)
         store.add(TtsEngine.KOKORO, "benchmark-v1", "short-v1", metrics)
         val restored = TtsComparisonStore(prefs)
-        assertEquals(TtsEngine.PIPER_MIRO, restored.selectedEngine())
+        assertEquals(TtsEngine.POCKET_PAUL, restored.selectedEngine())
         val entry = restored.records().single()
         assertEquals(TtsEngine.KOKORO.id, entry.getString("engine"))
         assertEquals(0.2, entry.getDouble("rtf"), 0.0001)
         assertTrue(entry.getBoolean("completed"))
-        repeat(45) { restored.add(TtsEngine.PIPER_MIRO, "voice-call", "$it", metrics.copy(completed = false, error = "stopped")) }
+        repeat(45) { restored.add(TtsEngine.POCKET_PAUL, "voice-call", "$it", metrics.copy(completed = false, error = "stopped")) }
         assertEquals(40, restored.records().size)
         assertFalse(restored.records().last().getBoolean("completed"))
         assertTrue(restored.snapshot().contains("error=stopped"))
@@ -86,7 +92,7 @@ class TtsComparisonStoreTest {
             assertTrue(TtsEngine.diagnosticLabel(id).endsWith("(retired)"))
             assertFalse(TtsEngine.diagnosticLabel(id).startsWith("Kokoro"))
         }
-        assertEquals(setOf(TtsEngine.KOKORO, TtsEngine.PIPER_MIRO, TtsEngine.POCKET_PAUL), TtsEngine.entries.toSet())
+        assertEquals(setOf(TtsEngine.KOKORO, TtsEngine.POCKET_PAUL), TtsEngine.entries.toSet())
         assertEquals("future_voice", TtsEngine.diagnosticLabel("future_voice"))
     }
 
@@ -94,7 +100,6 @@ class TtsComparisonStoreTest {
         val prefs = preferences()
         TtsComparisonStore(prefs).select(TtsEngine.POCKET_PAUL)
         assertEquals(TtsEngine.POCKET_PAUL, TtsComparisonStore(prefs).selectedEngine())
-        assertFalse(TtsEngine.POCKET_PAUL.isPiper)
         assertTrue(TtsEngine.POCKET_PAUL.version.contains("Paul-p259"))
     }
 

@@ -24,6 +24,15 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Install speech runtime NDK
+        run: sdkmanager "ndk;27.2.12479018"
+
+      - name: Cache patched speech runtime
+        uses: actions/cache@v4
+        with:
+          path: app/build/sherpa-native
+          key: sherpa-arm64-137-${{ runner.os }}-${{ hashFiles('scripts/build_sherpa.py', 'native/sherpa/pocket-streaming.patch') }}
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -74,6 +83,15 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Install speech runtime NDK
+        run: sdkmanager "ndk;27.2.12479018"
+
+      - name: Cache patched speech runtime
+        uses: actions/cache@v4
+        with:
+          path: app/build/sherpa-native
+          key: sherpa-arm64-137-${{ runner.os }}-${{ hashFiles('scripts/build_sherpa.py', 'native/sherpa/pocket-streaming.patch') }}
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

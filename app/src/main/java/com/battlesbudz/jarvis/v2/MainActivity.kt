@@ -90,7 +90,8 @@ internal const val MAX_IMAGE_BYTES = 12 * 1024 * 1024
 data class ChatEntry(
     val role: String,
     val text: String,
-    val imageUri: String? = null
+    val imageUri: String? = null,
+    val latency: com.battlesbudz.jarvis.v2.diagnostics.TurnLatency? = null
 )
 
 class MainActivity : ComponentActivity() {
@@ -315,8 +316,8 @@ class MainActivity : ComponentActivity() {
                 onExportSpeechAudio = { exportSpeechAudio() },
                 onMessagesChanged = { persistTranscript(it) },
                 onSendingChanged = { sessionPreferences.edit().putBoolean("sending", it).apply() },
-                onSend = { prompt, imageUri, history, onToken, onComplete ->
-                    runConversation(prompt, history, imageUri, onToken, onComplete)
+                onSend = { prompt, imageUri, history, onToken, onComplete, onLatency ->
+                    runConversation(prompt, history, imageUri, onToken, onComplete, onLatency)
                 }
             )
         }
@@ -597,7 +598,7 @@ class MainActivity : ComponentActivity() {
                 val role = item.optString("role")
                 val text = item.optString("text")
                 val imageUri = item.optString("imageUri").takeIf { it.isNotBlank() }
-                if (role.isBlank() || text.isBlank()) null else ChatEntry(role, text, imageUri)
+                if (role.isBlank() || text.isBlank()) null else ChatEntry(role, text, imageUri, com.battlesbudz.jarvis.v2.diagnostics.TurnLatency.read(item.optJSONObject("latency")))
             }
         }.getOrDefault(emptyList())
     }
@@ -609,7 +610,7 @@ class MainActivity : ComponentActivity() {
                 JSONObject()
                     .put("role", entry.role)
                     .put("text", entry.text)
-                    .apply { entry.imageUri?.let { put("imageUri", it) } }
+                    .apply { entry.imageUri?.let { put("imageUri", it) }; entry.latency?.let { put("latency", it.json()) } }
             )
         }
         sessionPreferences.edit().putString("transcript", array.toString()).apply()
@@ -850,6 +851,7 @@ class MainActivity : ComponentActivity() {
         history: List<ChatEntry>,
         imageUri: Uri?,
         onToken: (String) -> Unit,
-        onComplete: (String) -> Unit
-    ) = runtime.runConversationInternal(prompt, history, imageUri, onToken, onComplete)
+        onComplete: (String) -> Unit,
+        onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit
+    ) = runtime.runConversationInternal(prompt, history, imageUri, onToken, onComplete, onLatency = onLatency)
 }

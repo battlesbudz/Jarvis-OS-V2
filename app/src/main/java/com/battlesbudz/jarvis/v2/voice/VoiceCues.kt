@@ -26,13 +26,15 @@ object VoiceCues {
         finally { tone?.release() }
     }
     internal suspend fun playAcknowledgement(audio: SpeechAudio, stopped: () -> Boolean,
-                                    paused: () -> Boolean, log: (String) -> Unit) {
+                                    paused: () -> Boolean, log: (String) -> Unit, mediaVolume: String = "unavailable") {
         var track: android.media.AudioTrack? = null
         try {
             if (stopped() || paused()) return
+            val firstSpeechFrame = FillerPcm.firstSpeechFrame(audio.pcm)
+            check(firstSpeechFrame >= 0) { "Cached acknowledgement contains silence." }
             track = android.media.AudioTrack.Builder()
                 .setAudioAttributes(android.media.AudioAttributes.Builder()
-                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANT)
+                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
                     .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
                 .setAudioFormat(android.media.AudioFormat.Builder().setSampleRate(audio.sampleRate)
                     .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO)
@@ -41,15 +43,19 @@ object VoiceCues {
                 .setBufferSizeInBytes(audio.pcm.size * 2).build()
             check(track.write(audio.pcm, 0, audio.pcm.size) == audio.pcm.size)
             if (stopped() || paused()) return
+            track.setVolume(1f)
             track.play()
-            log("acknowledgement_playback_started text=${audio.text} separateFromAnswer=true")
+            log("acknowledgement_playback_started text=${audio.text} separateFromAnswer=true " +
+                "usage=media volume=$mediaVolume rms=${FillerPcm.rms(audio.pcm)} firstSpeechFrame=$firstSpeechFrame")
             val started = System.nanoTime()
             var confirmed = false
             while (!stopped() && !paused() && track.playbackHeadPosition.toLong() < audio.pcm.size &&
                 (System.nanoTime() - started) / 1_000_000 < 4000) {
-                if (!confirmed && track.playbackHeadPosition > 0) {
+                if (!confirmed && track.playbackHeadPosition > firstSpeechFrame) {
                     confirmed = true
-                    log("acknowledgement_playback_confirmed playbackHead=${track.playbackHeadPosition} separateFromAnswer=true")
+                    log("acknowledgement_speech_frames_rendered playbackHead=${track.playbackHeadPosition} " +
+                        "routeType=${track.routedDevice?.type} routeId=${track.routedDevice?.id} " +
+                        "usage=media separateFromAnswer=true acousticAudibility=not_measured")
                 }
                 delay(15)
             }

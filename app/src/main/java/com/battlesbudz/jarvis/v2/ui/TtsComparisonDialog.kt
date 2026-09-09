@@ -73,9 +73,8 @@ internal fun TtsComparisonDialog(
                         Text((if (selected == engine) "✓ " else "") + engine.label)
                     }
                 }
-                Text("Selected voice is used for the next call. Miro downloads about 67 MB; Pocket Paul about 99 MB on first use. All voices then work offline.")
-                if (selected == TtsEngine.POCKET_PAUL) Text("Paul: Kyutai / VCTK p259 (CC BY 4.0). The first use also prepares his voice and cached opening; later calls reuse the opening.", style = MaterialTheme.typography.bodySmall)
-                if (selected == TtsEngine.PIPER_MIRO) Text("Miro by TigreGotico Lda / OpenVoiceOS. Non-commercial use only.", style = MaterialTheme.typography.bodySmall)
+                Text("Selected voice is used for the next call. Pocket Paul downloads about 99 MB on first use. All voices then work offline.")
+                if (selected == TtsEngine.POCKET_PAUL) Text("Paul: Kyutai / VCTK p259 (CC BY 4.0). The first use also prepares short acknowledgements; later calls reuse those clips.", style = MaterialTheme.typography.bodySmall)
                 if (!canChange) Text("End your call before changing voices or benchmarking.")
                 HorizontalDivider()
                 Text("Fixed-text benchmark", style = MaterialTheme.typography.titleMedium)
@@ -93,17 +92,20 @@ internal fun TtsComparisonDialog(
                     }
                 }
                 listOf<Int?>(40, 60, 90, null).forEach { opening ->
-                    FilterChip(selected = profile.openingChars == opening, enabled = !running,
-                        onClick = { profile = profile.copy(openingChars = opening) },
+                    FilterChip(selected = !profile.nativeStreaming && profile.openingChars == opening, enabled = !running,
+                        onClick = { profile = profile.copy(openingChars = opening, nativeStreaming = false) },
                         label = { Text(opening?.let { "$it-character opening" } ?: "Synthesize full text before playback") })
                 }
+                FilterChip(selected = profile.nativeStreaming, enabled = !running,
+                    onClick = { profile = profile.copy(openingChars = null, nativeStreaming = true) },
+                    label = { Text("Paul · native audio streaming (live call behavior)") })
                 Text("Profile: ${profile.label}")
-                Text("Opening sizes are targets at natural word/clause boundaries. Full text waits for the entire input and synthesizes it in one call. 0.9× slows playback without lowering pitch. All profiles start playback immediately when their first audio is ready, with no added startup buffer.", style = MaterialTheme.typography.bodySmall)
-                Button(onClick = { run(selected) }, enabled = canChange && !running) { Text("Test selected voice") }
-                OutlinedButton(onClick = { run(null) }, enabled = canChange && !running) { Text("Compare all voices · this profile") }
+                Text("Opening sizes are targets at natural word/clause boundaries. Full text waits for the entire input and synthesizes it in one call. 0.9× slows playback without lowering pitch. Paul’s native profile streams decoded audio as generation proceeds and reuses the voice prompt and keeps one audio decoder session. Full text is a buffered baseline. No profile adds a startup wait.", style = MaterialTheme.typography.bodySmall)
+                Button(onClick = { run(selected) }, enabled = canChange && !running && (!profile.nativeStreaming || selected == TtsEngine.POCKET_PAUL)) { Text("Test selected voice") }
+                OutlinedButton(onClick = { run(null) }, enabled = canChange && !running && !profile.nativeStreaming) { Text("Compare all voices · this profile") }
                 HorizontalDivider()
                 Text("Response speed", style = MaterialTheme.typography.titleMedium)
-                Text("The full comparison tests Kokoro, Miro and Pocket Paul with all 16 profiles: 2/4 threads, 40/60/90-character openings or full text, and 1.0×/0.9× playback. That is ${TtsBenchmarkProfile.comparisonRunCount} text runs including repeats and can take a long time. Heat status is recorded but never pauses or stops a test. Stop preserves completed results. Test settings do not change live calls.")
+                Text("The full comparison tests Kokoro and Pocket Paul with all 16 profiles: 2/4 threads, 40/60/90-character openings or full text, and 1.0×/0.9× playback. It also includes Paul’s 4 native streaming profiles. That is ${TtsBenchmarkProfile.comparisonRunCount} text runs including repeats and can take a long time. Heat status is recorded but never pauses or stops a test. Stop preserves completed results. Test settings do not change live calls.")
                 OutlinedButton(onClick = { runLatency(false) }, enabled = canChange && !running) {
                     Text("Compare all profiles · all voices")
                 }

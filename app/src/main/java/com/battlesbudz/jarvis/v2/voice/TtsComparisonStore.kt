@@ -53,7 +53,7 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
         if (run != null) {
             item.put("suite_id", run.suiteId).put("profile_id", run.profile.id).put("pass", run.pass)
                 .put("input_text", run.text).put("input_delivery", "4 characters every 32 ms after model ready")
-                .put("synthesis_mode", if (run.profile.fullText) "full-text-before-playback" else "streamed-phrases")
+                .put("synthesis_mode", when { run.profile.nativeStreaming -> "native-audio-stream-natural-sentences"; run.profile.fullText -> "full-text-before-playback"; else -> "streamed-phrases" })
                 .put("requested_playback_speed", run.profile.playbackSpeed.toDouble())
                 .put("playback_speed_applied", kotlin.math.abs(metrics.playbackSpeed - run.profile.playbackSpeed) < 0.001f)
                 .put("opening_target_chars", run.profile.openingChars ?: JSONObject.NULL)

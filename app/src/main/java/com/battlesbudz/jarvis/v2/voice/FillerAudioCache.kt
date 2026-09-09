@@ -11,14 +11,14 @@ internal class FillerAudioCache(private val directory: File) {
         DataInputStream(file(key).inputStream().buffered()).use {
             require(it.readInt() == 0x4a465231)
             val rate = it.readInt(); val count = it.readInt()
-            require(rate in 8000..48000 && count in 1..rate * 8)
+            require(rate in 8000..48000 && count in 1..rate * 4)
             val pcm = ShortArray(count) { _ -> it.readShort() }
             require(it.read() == -1)
-            SpeechAudio(text, rate, pcm, 0)
+            FillerPcm.prepare(SpeechAudio(text, rate, pcm, 0))
         }
     }.getOrNull()
     fun write(key: String, audio: SpeechAudio) {
-        require(audio.sampleRate in 8000..48000 && audio.pcm.size in 1..audio.sampleRate * 8)
+        require(audio.sampleRate in 8000..48000 && audio.pcm.size in 1..audio.sampleRate * 4)
         check(directory.isDirectory || directory.mkdirs())
         val target = file(key); val tmp = File(directory, target.name + ".tmp")
         DataOutputStream(tmp.outputStream().buffered()).use { out ->

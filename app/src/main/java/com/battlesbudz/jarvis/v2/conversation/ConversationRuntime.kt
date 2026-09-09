@@ -17,14 +17,32 @@ internal fun JarvisRuntime.runConversationInternal(
         onToken: (String) -> Unit,
         onComplete: (String) -> Unit,
         preparedVoice: com.battlesbudz.jarvis.v2.voice.PreparedVoiceDraft? = null,
-        voiceAudio: ByteArray? = null
+        voiceAudio: ByteArray? = null,
+        onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit = {}
     ) {
+        val latencyStarted = System.nanoTime()
+        val latencyId = java.util.UUID.randomUUID().toString()
+        var loadMs = 0L
+        var lookupMs = 0L
+        val inferencePasses = mutableListOf<com.battlesbudz.jarvis.v2.diagnostics.InferenceTiming>()
+        var firstVisibleMs: Long? = null
+        fun elapsed() = (System.nanoTime() - latencyStarted) / 1_000_000
+        fun deliverToken(text: String) {
+            if (firstVisibleMs == null && text.isNotBlank()) firstVisibleMs = elapsed()
+            onToken(text)
+        }
+        fun finish(text: String) {
+            if (firstVisibleMs == null && text.isNotBlank()) firstVisibleMs = elapsed()
+            onLatency(com.battlesbudz.jarvis.v2.diagnostics.TurnLatency(latencyId, elapsed(),
+                firstVisibleMs, loadMs, lookupMs, inferencePasses.toList()))
+            onComplete(text)
+        }
         if (voiceAudio == null && modelStore.isModelOperationActive()) {
-            onComplete("A voice or model operation is still active. Please finish it first.")
+            finish("A voice or model operation is still active. Please finish it first.")
             return
         }
         if (!MainActivity.activeConversationJobs.compareAndSet(0, 1)) {
-            onComplete("The previous response is still finishing. Please try again in a moment.")
+            finish("The previous response is still finishing. Please try again in a moment.")
             return
         }
         conversationJob = runtimeScope.launch(Dispatchers.Default) {
@@ -45,7 +63,7 @@ internal fun JarvisRuntime.runConversationInternal(
                             "reason=single user message exceeds safe mobile budget"
                     )
                     mainHandler.post {
-                        onComplete(
+                        finish(
                             "That request is too large for the local model's safe mobile budget. " +
                                 "Please send it in smaller parts."
                         )
@@ -68,7 +86,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     resetNativeConversation()
                     turnOrchestrator.recordResponse(prompt, repeatReply, turnPlan)
                     diagnosticRecorder.record("Dialogue recall: source=latest_visible_reply chars=${repeatReply.length}")
-                    mainHandler.post { onComplete(repeatReply) }
+                    mainHandler.post { finish(repeatReply) }
                     return@launch
                 }
                 val acceptedPreparation = preparedVoice?.takeIf {
@@ -94,7 +112,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     }
                     diagnosticRecorder.recordImportant("Action\nuser=${prompt.take(500)}\nrequest=$directRequest\nsucceeded=${result.succeeded}\nresult=${result.message}")
                     turnOrchestrator.recordResponse(prompt, result.message, turnPlan)
-                    mainHandler.post { onComplete(result.message) }
+                    mainHandler.post { finish(result.message) }
                     return@launch
                 }
                 val lookupStarted = System.nanoTime()
@@ -104,6 +122,8 @@ internal fun JarvisRuntime.runConversationInternal(
                 }
                 if (turnPlan.lookupQuery != null) diagnosticRecorder.recordSummary(
                     "Voice lookup durationMs=${(System.nanoTime() - lookupStarted) / 1_000_000} success=${!referenceContext.isNullOrBlank()}")
+
+                lookupMs += if (turnPlan.lookupQuery != null) (System.nanoTime() - lookupStarted) / 1_000_000 else 0L
 
                 // Automatic factual routing owns the lookup decision. If the
                 // reference service is unavailable, do not let the local model
@@ -118,7 +138,7 @@ internal fun JarvisRuntime.runConversationInternal(
                             "lookupQuery=${turnPlan.lookupQuery?.take(1_000)}"
                     )
                     mainHandler.post {
-                        onComplete("I tried to verify that with Wikipedia, but it was unavailable right now.")
+                        finish("I tried to verify that with Wikipedia, but it was unavailable right now.")
                     }
                     return@launch
                 }
@@ -133,7 +153,7 @@ internal fun JarvisRuntime.runConversationInternal(
                             "reason=reference source returned no evidence"
                     )
                     mainHandler.post {
-                        onComplete(
+                        finish(
                             "I couldn't reach Wikipedia right now. Please check your connection and try again."
                         )
                     }
@@ -196,6 +216,8 @@ internal fun JarvisRuntime.runConversationInternal(
                 // Keep the expensive model/GPU engine alive. The replaceable
                 // Conversation is reset only when the bounded context needs
                 // to be compacted or an isolated retry is required.
+                val loadingStarted = System.nanoTime()
+                val engineWasLoaded = conversationEngine != null
                 val engine = conversationEngine ?: LiteRtLmEngine(
                     ModelCatalog.gemma4E2b.id,
                     modelStore.fileFor(ModelCatalog.gemma4E2b).path,
@@ -210,11 +232,12 @@ internal fun JarvisRuntime.runConversationInternal(
                     nativeConversationHasContext = false
                     conversationCharacters = 0
                 }
+                if (!engineWasLoaded) loadMs += (System.nanoTime() - loadingStarted) / 1_000_000
                 val voiceRepetitionGuard = if (voiceAudio != null &&
                     actionIntentRouter.classifyActionIntent(prompt, history) == null) {
                     com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard(
                         prompt, history.lastOrNull { it.role == "Jarvis" }?.text,
-                        emit = { safe -> mainHandler.post { onToken(com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard.speechReady(safe)) } })
+                        emit = { safe -> mainHandler.post { deliverToken(com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard.speechReady(safe)) } })
                 } else null
                 val streamFilter = AssistantStreamFilter { safeText ->
                     // Factual/reference turns are held until the final answer
@@ -225,7 +248,7 @@ internal fun JarvisRuntime.runConversationInternal(
                         actionIntentRouter.classifyActionIntent(prompt, history) == null
                     ) {
                         if (voiceRepetitionGuard != null) voiceRepetitionGuard.accept(safeText)
-                        else mainHandler.post { onToken(safeText) }
+                        else mainHandler.post { deliverToken(safeText) }
                     }
                 }
                 var seedContext = !nativeConversationHasContext
@@ -282,6 +305,8 @@ internal fun JarvisRuntime.runConversationInternal(
                     } ?: error("The selected image could not be read.")
                 }
                 fun recordInference(label: String, result: com.battlesbudz.jarvis.v2.ai.GenerationResult) {
+                    inferencePasses += com.battlesbudz.jarvis.v2.diagnostics.InferenceTiming.from(
+                        label, result, prepared = label == "answer" && acceptedPreparation != null)
                     diagnosticRecorder.recordSummary(
                         "Inference\n" +
                             "stage=$label\n" +
@@ -364,6 +389,7 @@ internal fun JarvisRuntime.runConversationInternal(
                             actionResultForGemma!!,
                             streamFilter::accept
                         )
+                        recordInference("tool response", generated)
                     }
                 }
                 // A rejected tool call can sometimes contain no answer text at all.
@@ -390,6 +416,7 @@ internal fun JarvisRuntime.runConversationInternal(
                             onToken = streamFilter::accept
                         )
                     }
+                    recordInference("invalid tool retry", generated)
                 }
                 val localAnswer = cleanAssistantText(generated.text)
                 val isFactualQuestion =
@@ -408,6 +435,7 @@ internal fun JarvisRuntime.runConversationInternal(
                         prompt = factualityVerifier.buildPrompt(prompt, localAnswer),
                         onToken = {}
                     )
+                    recordInference("factuality check", verdict)
                     verifierRequestsLookup = factualityVerifier.requestsLookup(verdict.text)
                     // The verifier is an isolated internal pass. Do not leave
                     // its prompt in the user conversation.
@@ -420,7 +448,9 @@ internal fun JarvisRuntime.runConversationInternal(
                             verifierRequestsLookup)
                 if (shouldUseAutomaticFallback) {
                     val fallbackQuery = turnOrchestrator.automaticFallbackQuery(prompt)
+                    val fallbackStarted = System.nanoTime()
                     val fallbackContext = referenceGrounding.fetchIfRequested(fallbackQuery)?.context
+                    lookupMs += (System.nanoTime() - fallbackStarted) / 1_000_000
                     if (!fallbackContext.isNullOrBlank()) {
                         resetNativeConversation()
                         val fallbackPrompt = promptBuilder.buildGemmaPrompt(
@@ -441,6 +471,7 @@ internal fun JarvisRuntime.runConversationInternal(
                                 onToken = streamFilter::accept
                             )
                         }
+                        recordInference("reference fallback", generated)
                         nativeConversationContainsCurrentTurn = true
                     }
                 }
@@ -460,7 +491,9 @@ internal fun JarvisRuntime.runConversationInternal(
                     // person/entity question. Re-query the reference APIs once
                     // and regenerate from the fresh evidence before replying.
                     val retryQuery = turnPlan.lookupQuery ?: prompt
+                    val retryLookupStarted = System.nanoTime()
                     val retryContext = referenceGrounding.fetchIfRequested(retryQuery)?.context
+                    lookupMs += (System.nanoTime() - retryLookupStarted) / 1_000_000
                     if (!retryContext.isNullOrBlank()) {
                         diagnosticRecorder.record(
                             "Reference retry after knowledge-gap draft\n" +
@@ -488,6 +521,7 @@ internal fun JarvisRuntime.runConversationInternal(
                             )
                         }
                         nativeConversationContainsCurrentTurn = true
+                        recordInference("reference retry", generated)
                         cleanedResponse = cleanAssistantText(generated.text)
                     }
                 }
@@ -512,6 +546,7 @@ internal fun JarvisRuntime.runConversationInternal(
                                 "Resolve follow-ups using the dialogue above."
                             // A read-only repair: generated tool calls are discarded, never executed.
                             val repaired = engine.generate(prompt = repairPrompt, onToken = {})
+                            recordInference("repetition repair", repaired)
                             if (repaired.toolCalls.isEmpty() && !repaired.text.contains("start_function_call") &&
                                 !repaired.text.contains("tool_call>")) {
                                 voiceRepetitionGuard.accept(cleanAssistantText(repaired.text))
@@ -579,7 +614,7 @@ internal fun JarvisRuntime.runConversationInternal(
                         "repeatedFragment=$repeatedFragment\n" +
                         "conversationCharacters=$conversationCharacters"
                 )
-                mainHandler.post { onComplete(finalResponse) }
+                mainHandler.post { finish(finalResponse) }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
@@ -596,7 +631,7 @@ internal fun JarvisRuntime.runConversationInternal(
                         "imageAttached=${imageUri != null}\n" +
                         "error=${error.stackTraceToString().take(4_000)}"
                 )
-                mainHandler.post { onComplete("I could not load the local model: ${error.message ?: "unknown error"}") }
+                mainHandler.post { finish("I could not load the local model: ${error.message ?: "unknown error"}") }
             }
         }
         conversationJob?.invokeOnCompletion { MainActivity.activeConversationJobs.decrementAndGet() }

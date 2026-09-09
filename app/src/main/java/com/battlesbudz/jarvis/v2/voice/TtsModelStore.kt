@@ -20,22 +20,16 @@ class TtsModelStore(context: Context, private val original: KokoroModelStore) {
         // Called under the model-operation gate, before any selected native engine loads.
         // Remove only the retired model's installer-owned files; keep saved measurements.
         listOf("kokoro-int8-en-v0_19", "vits-piper-en_US-lessac-medium",
-            "vits-piper-en_GB-alan-medium", "vits-piper-en_US-ryan-high").forEach { retired ->
+            "vits-piper-en_GB-alan-medium", "vits-piper-en_US-ryan-high",
+            "vits-piper-en_GB-miro-high").forEach { retired ->
             listOf(retired, "$retired.staging", "$retired.tar.bz2.part")
                 .forEach { File(root, it).deleteRecursively() }
         }
         if (engine == TtsEngine.KOKORO) return@withContext original.downloadOrReuse(onStatus = status).getOrThrow()
         val directory = File(root, engine.directory)
-        val pocket = engine == TtsEngine.POCKET_PAUL
-        val verification = engine.archiveSha256 + if (pocket) ":${PocketVoiceSpec.PAUL_SHA256}" else ""
-        val required = listOf(engine.modelFile, "tokens.txt", "espeak-ng-data")
-        fun ready(dir: File): Boolean {
-            if (pocket) return PocketVoiceSpec.files.all { (name, bytes) -> File(dir, name).length() == bytes } &&
-                File(dir, PocketVoiceSpec.PAUL_FILE).length() == PocketVoiceSpec.PAUL_BYTES
-            return File(dir, engine.modelFile).length() == engine.modelBytes && required.all { File(dir, it).let { f ->
-            if (it == "espeak-ng-data") f.isDirectory && File(f, "phontab").length() > 0 else f.isFile && f.length() > 0
-        } }
-        }
+        val verification = engine.archiveSha256 + ":${PocketVoiceSpec.PAUL_SHA256}"
+        fun ready(dir: File) = PocketVoiceSpec.files.all { (name, bytes) -> File(dir, name).length() == bytes } &&
+            File(dir, PocketVoiceSpec.PAUL_FILE).length() == PocketVoiceSpec.PAUL_BYTES
         if (ready(directory) && File(directory, ".verified").takeIf { it.isFile }?.readText() == verification)
             return@withContext directory
         root.mkdirs()
@@ -89,7 +83,7 @@ class TtsModelStore(context: Context, private val original: KokoroModelStore) {
                     }
                     val relative = entry.name.removePrefix(engine.directory + "/")
                     // Demo speakers are not Paul's voice and are never installed or used.
-                    if (pocket && (relative == "test_wavs" || relative.startsWith("test_wavs/"))) continue
+                    if (relative == "test_wavs" || relative.startsWith("test_wavs/")) continue
                     val target = File(staging, relative)
                     check(target.canonicalPath.startsWith(staging.canonicalPath + File.separator)) { "Unsafe voice archive path." }
                     if (entry.isDirectory) target.mkdirs()
@@ -103,17 +97,15 @@ class TtsModelStore(context: Context, private val original: KokoroModelStore) {
                                 val count = tar.read(buffer)
                                 if (count < 0) break
                                 unpacked += count
-                                check(unpacked <= (if (pocket) 250_000_000 else 200_000_000)) { "Voice archive expanded beyond its budget." }
+                                check(unpacked <= 250_000_000) { "Voice archive expanded beyond its budget." }
                                 output.write(buffer, 0, count)
                             }
                         }
                     }
                 }
             }
-            if (pocket) {
-                status("Downloading Paul’s voice reference…")
-                downloadPaul(File(staging, PocketVoiceSpec.PAUL_FILE))
-            }
+            status("Downloading Paul’s voice reference…")
+            downloadPaul(File(staging, PocketVoiceSpec.PAUL_FILE))
             check(ready(staging)) { "The voice archive is incomplete." }
             File(staging, ".verified").writeText(verification)
             directory.deleteRecursively()

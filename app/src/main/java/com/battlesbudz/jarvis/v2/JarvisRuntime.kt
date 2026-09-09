@@ -158,6 +158,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         val asrEngine = com.battlesbudz.jarvis.v2.voice.MoonshineModelInfo
         val ttsEngine = ttsComparisonStore.selectedEngine()
         val asrTurnId = java.util.UUID.randomUUID().toString()
+        val replyLatency = java.util.concurrent.atomic.AtomicReference<com.battlesbudz.jarvis.v2.diagnostics.TurnLatency?>(null)
+        val replyTtsMetrics = java.util.concurrent.atomic.AtomicReference<com.battlesbudz.jarvis.v2.voice.TtsSessionMetrics?>(null)
+        val speechEndToReplyMs = java.util.concurrent.atomic.AtomicLong(-1)
         val finalReadyAt = java.util.concurrent.atomic.AtomicLong(0)
         val speechEndedAt = java.util.concurrent.atomic.AtomicLong(0)
         val firstPlayback = java.util.concurrent.atomic.AtomicBoolean(true)
@@ -243,11 +246,17 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 val voiceHistory = voiceSessionController.conversationContext().map { ChatEntry(it.role, it.text) }
                 val output = SherpaKokoroVoiceOutput(ttsDirectory.path, engine = ttsEngine,
                     acknowledgeDelays = true,
+                    playbackVolume = {
+                        val manager = getSystemService(android.media.AudioManager::class.java)
+                        val stream = android.media.AudioManager.STREAM_MUSIC
+                        "${manager.getStreamVolume(stream)}/${manager.getStreamMaxVolume(stream)} muted=${manager.isStreamMute(stream)}"
+                    },
                     audioTrace = com.battlesbudz.jarvis.v2.voice.SpeechAudioTrace(
                         java.io.File(cacheDir, "latest-jarvis-speech.wav"), asrTurnId,
                         log = { diagnosticRecorder.recordImportant(it) }),
                     onPlayback = { voicePlayback.value = it },
                     onMetrics = {
+                        replyTtsMetrics.set(it)
                         ttsComparisonStore.add(ttsEngine, "voice-call", asrTurnId, it)
                         diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId loadMs=${it.loadMs} " +
                             "firstTextToPcmMs=${it.firstTextToPcmMs} firstTextToPlaybackMs=${it.firstTextToPlaybackMs} " +
@@ -272,6 +281,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                     (System.nanoTime() - finalReadyAt.get()) / 1_000_000)
                                 if (speechEndedAt.get() != 0L) {
                                     val elapsed = System.nanoTime() / 1_000_000 - speechEndedAt.get()
+                                    speechEndToReplyMs.set(elapsed)
                                     asrComparisonStore.update(asrTurnId, "speech_end_to_playback_ms", elapsed)
                                     diagnosticRecorder.recordImportant("Voice latency: speech_end_to_playback_ms=$elapsed turn=$asrTurnId")
                                 }
@@ -418,6 +428,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             runConversationInternal(
                                 prompt = transcript, history = voiceHistory, imageUri = null,
                                 preparedVoice = draft, voiceAudio = audioBytes,
+                                onLatency = { replyLatency.set(it) },
                                 onToken = { token ->
                                     recordFirstText(token)
                                     onToken(token)
@@ -439,10 +450,18 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         }
                         val last = voiceSessionController.currentTranscript().lastOrNull()
                         if (last?.role != "Jarvis" || last.text != response.text) {
-                            voiceSessionController.appendTranscript("Jarvis", response.text, complete = true)
+                            voiceSessionController.appendTranscript("Jarvis", response.text, complete = true, latency = replyLatency.get())
                         }
                         speechChunks.close()
                         speechJob?.join()
+                        replyLatency.get()?.let { latency ->
+                            val metrics = replyTtsMetrics.get()
+                            voiceSessionController.updateReplyLatency(latency.copy(voice = ttsEngine.label,
+                                speechEndToReplyMs = speechEndToReplyMs.get().takeIf { it >= 0 },
+                                textToPcmMs = metrics?.firstTextToPcmMs,
+                                textToPlaybackMs = metrics?.firstTextToPlaybackMs,
+                                supplyGapMs = metrics?.supplyGapMs))
+                        }
                         response
                     },
                     listen = { confirmed ->

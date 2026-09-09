@@ -1,6 +1,6 @@
 # Pocket TTS — Paul
 
-Pocket is an optional voice in Voice Call → Voice settings → Voice. Select **Pocket TTS — Paul**, then start a Voice Call or run the voice comparison. Kokoro remains the default and existing Miro selections are preserved. Custom voice creation is not part of this change.
+Pocket is an optional voice in Voice Call → Voice settings → Voice. Select **Pocket TTS — Paul**, then start a Voice Call or run the voice comparison. Kokoro remains the default and retired Miro selections fall back to Kokoro. Custom voice creation is not part of this change.
 
 ## Download and identity
 
@@ -8,26 +8,93 @@ The first use downloads approximately 99 MB (98,336,520-byte INT8 archive plus 7
 
 Model: `sherpa-onnx-pocket-tts-int8-2026-01-26`, seven ONNX/token files. Paul is the official Kyutai label for `vctk/p259_023_enhanced.wav`, speaker p259, pinned at revision `a0de156151266cf8eb27ac8f27312f7aff2ef7b8`. His 32 kHz recording is loaded once per TTS session and resampled by Sherpa. Native reference embedding caching is limited to one voice. See `PocketVoiceSpec.kt` for manifests and checksums.
 
-## Playback
+## Live playback
 
-Sherpa 1.13.7 already contains Pocket. Default configuration is CPU, two threads, five generation steps, temperature 0.7, fixed seed 42, decoder chunks of 15 latent frames, reference limit 15 seconds. Benchmark thread overrides remain available. Live and speculative speech now share sentence boundaries (up to 240 characters), ignoring the Kokoro queue-driven 40–180 character phrase budget. A matching native min/max sentence length prevents extra native splits inside that bounded request. Explicit fixed-chunk benchmarks retain their requested chunking. The packaged native implementation generates a sentence's latents before decoding in chunks; this is not a claim of 200 ms startup on Android.
+Paul uses one native audio session per answer. Text arrives at natural sentence
+boundaries, with no 40/60/90/240-character release rule. Already available sentences
+are conditioned together, so a backlog is not regenerated as many tiny requests.
+The voice-conditioned prompt is cached; Mimi decoder state and the sampling sequence
+continue between text units. Each answer
+has a unique session ID; stopping or ending a call discards that state. Fillers are
+isolated and cannot reset or contaminate the answer. Detached prepared Paul openings
+are disabled because splicing those clips would lose the continuing acoustic state.
+Gemma text preparation is retained.
 
-Confirmed answer audio uses `generateWithConfigAndCallback` through a concrete, kept Java callback with JNI descriptor `([F)Ljava/lang/Integer;`. Exceptions are retained and thrown only after native returns. Each callback is enqueued once through the bounded PCM queue; the full returned utterance is checked but never played a second time. Cancellation unblocks the queue before joining/releasing the sole native owner. Pocket uses normal playback speed and no artificial startup buffer. Its silence scale is 1 so the returned and callback PCM agree. Existing Kokoro/Miro generation stays on the non-callback path.
+The pinned Sherpa 1.13.7 native callback path originally generated all of a sentence's
+latents before decoding any PCM. `native/sherpa/pocket-streaming.patch` adds an opt-in
+path that decodes during latent generation. The first callback carries 3 latent frames
+(240 ms PCM), then up to 5 frames per callback; these are audio frames, not characters.
+The CPU uses 2 threads, 5 flow steps, temperature 0.7 and seed 42 at the start of an
+answer. Continuing the random sequence avoids reseeding every phrase. The text LM
+restores the same cached voice prompt for each new text unit, following upstream's
+`copy_state=True` default. Carrying a completed text/EOS state into the next sentence
+was tested and rejected because it truncated later speech. No synthesized prefix is
+replayed or regenerated. Android performance and perceived prosody still need phone
+listening tests.
 
-Prepared openings and cached fillers use full-utterance generation. Pocket's initial cue is **“Um, one second.”**: isolated “Um.” produced a pathological 40-second clip in native testing. Filler generation is capped at 50 latent frames (four seconds), with the same seed and sampling policy as replies, and oversized PCM is rejected before caching or playing. A cache failure unblocks the answer. A fresh installation still needs model/reference loading and first filler generation before a cache exists; no sub-three-second cold-start guarantee is made. Existing interruption keywords, live input transcription and speech PCM export remain available.
+The callback uses a kept Java `invoke(float[]) -> Integer` method. PCM is copied once
+into the bounded playback queue; the returned full utterance is checked and never
+played again. Callback cancellation unblocks the native owner before release. Android
+uses normal playback speed for live Paul calls and no artificial startup wait.
 
-Caption timing is estimated, not word-aligned: for incremental Pocket audio, phrase text is attached to its first PCM chunk. Diagnostics add first-callback latency, chunk/frame counts, PCM peak and completed synthesis timing excluding queue wait. The exported WAV contains accepted synthesized PCM; Android time stretching, speaker acoustics and playback gaps are not embedded.
+## Acknowledgements and diagnostics
 
-## Verification
+Both acknowledgements and answers use Android's media speech attributes and the user's
+media volume. Fresh short filler clips have silent padding trimmed and quiet speech
+boosted within a bounded gain; silent, corrupt or overlong clips are rejected. The v2
+cache and new policy ID invalidate earlier clips. “Um, one second.” remains the initial
+cue; isolated “Um.” was unreliable with this model. Cold installation still requires
+model loading and the initial filler synthesis.
 
-Test the exact archive and Paul reference with `scripts/check_pocket_tts.py MODEL_DIR PAUL_WAV` after installing `sherpa-onnx==1.13.7`, numpy and soundfile. This synthesizes fillers and a sentence, checks finite PCM and callback/full-output agreement, and tests cancellation. Host timing does not establish Fold 6 performance. Unit tests check voice selection/configuration, the callback ABI and exception containment, and acknowledgement ordering. APK packaging checks validate that the kept callback method survives release shrinking.
+`acknowledgement_speech_frames_rendered` means Android's playback head passed non-silent
+PCM. It reports route, media usage and PCM level; it is not a microphone measurement of
+what the user heard. Reply latency excludes fillers. Each reply's footer separates
+Gemma TTFT, subsequent model passes, text readiness, TTS and playback. See
+[per-reply latency](per-reply-latency.md).
 
-Sources and attribution: [Pocket TTS](https://github.com/kyutai-labs/pocket-tts), [Sherpa model package](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models), [ONNX conversion](https://huggingface.co/KevinAHM/pocket-tts-onnx), [Paul reference](https://huggingface.co/kyutai/tts-voices/blob/main/vctk/p259_023_enhanced.wav). CC BY 4.0 license and detailed attribution are bundled in `assets/licenses/pocket-tts-*`. The downloaded archive's stale non-commercial README conflicts with its shipped license/current upstream card; both original archive files are preserved, rather than silently relabeling them.
+## Benchmarks
 
-## Build-607 consistency follow-up
+The same fixed texts and input pacing are used for both remaining voices. Explicit
+character-opening profiles are experiments; they never change Paul's live policy.
+Full-text-before-playback remains a deliberately buffered baseline. The four **Paul
+native audio streaming** profiles (2/4 threads × 1.0/0.9 playback) exercise the live
+natural-sentence/continuous-state path. Each copied diagnostic belongs to one immutable
+text run, with suite, profile, voice, pass and text hash. Heat is recorded and never
+pauses a requested benchmark.
 
-Reported call: `9484572c-a2cf-4cf3-bb16-5f88127d3fff`, 33 synthesis calls, 70.285 s synthesis / 126.480 s PCM (RTF 0.556), 53.658 s queue wait and no estimated supply gap. Queue wait is producer backpressure, not a user-facing audio gap. First answer PCM arrived 1.964 s after first text; playback at 2.572 s included waiting for an already-playing filler. The 30-second exported tail is finite 24 kHz mono PCM with peak 0.91272 and no clipped samples. It is not a microphone recording of the phone speaker.
+## Building and verification
 
-The correct Paul reference was present, but build 607 used unseeded answer synthesis while fillers used seed 42. Each short text request restarted native acoustic state. Local changes remove avoidable clause splits and make sampling reproducible, with a new cache/profile identity (`sentence-seed42-v2`) so stale fillers cannot mask changes. Tests verify repeated identical text produces identical native PCM, callback/full-output equality, cancellation and matching speculative/live sentence boundaries.
+Install Android NDK 27.2.12479018, then build normally with Gradle. `buildSherpa` downloads
+checksum-pinned Sherpa source and matching ORT, applies the checked patch, and compiles
+JNI. The official AAR supplies Kotlin classes only; its older buffered JNI is never
+packaged. Kokoro, Silero and other Sherpa users retain their existing implementation.
+CI caches this native build and checks the APK for both the callback ABI and patched
+streaming markers, including after release shrinking. Sources/models are not swapped.
 
-This is a consistency correction, not proof that different sentences now sound identical to the human reference. The bundled native backend still initializes acoustic state per sentence. Longer opening units can increase first-answer latency; the cached filler policy remains in place. Phone listening/latency validation is pending. No model substitution or precision change is included. Publication was subsequently authorized; the benchmark-profile changes on audio-pr2 are preserved.
+The host check uses the actual pinned model and Paul reference. It compares first PCM
+with the original callback path; checks finite PCM, exact callback/return equality,
+decoder/sampling continuation versus a fresh session, deterministic new answers, filler isolation,
+early cancellation/recovery, and a multi-sentence story. To reproduce:
+
+```sh
+python3 scripts/build_sherpa.py --output /tmp/pocket-host
+/tmp/pocket-host/cmake/bin/jarvis-pocket-stream-check MODEL_DIR PAUL_WAV
+```
+
+Host timing does not establish phone latency. The logs that motivated this change had
+critical thermal status and large Gemma/retry delays in addition to TTS delay. A
+0.25-second Gemma TTFT is not promised by changing speech streaming.
+
+Sources and attribution: [Pocket TTS](https://github.com/kyutai-labs/pocket-tts),
+[Sherpa 1.13.7](https://github.com/k2-fsa/sherpa-onnx/tree/v1.13.7),
+[ONNX conversion](https://huggingface.co/KevinAHM/pocket-tts-onnx),
+[Paul reference](https://huggingface.co/kyutai/tts-voices/blob/main/vctk/p259_023_enhanced.wav).
+The native source retains its Apache-2.0 notices. Paul/model CC BY 4.0 notices are
+bundled in `assets/licenses/pocket-tts-*`; downloaded license files are preserved.
+
+Host verification for this patch passed with the pinned INT8 model and Paul reference.
+The full 519-character story delivered its first 5,760 PCM frames in 189 ms, then
+streamed 28.8 seconds of audio across 73 callbacks; generation took 12.01 seconds.
+These are warm Linux host measurements, without Android playback or Gemma. The tests
+also passed callback equality, non-truncation bounds, continuation/isolation and
+cancellation recovery. Android CI separately verifies compilation and APK packaging.

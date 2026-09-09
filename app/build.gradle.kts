@@ -8,6 +8,26 @@ plugins {
 // Both SDKs ship libonnxruntime.so but require different versioned C symbols.
 // Namespace Moonshine's matching runtime instead of picking/replacing a library.
 val moonshineSdk by configurations.creating { isTransitive = false }
+val sherpaSdk by configurations.creating { isTransitive = false }
+val sherpaDir = layout.buildDirectory.dir("sherpa-sdk")
+val sherpaNativeDir = layout.buildDirectory.dir("sherpa-native")
+val extractSherpa by tasks.registering(Exec::class) {
+    inputs.files(sherpaSdk)
+    inputs.file(rootProject.file("scripts/prepare_sherpa_sdk.py"))
+    outputs.dir(sherpaDir)
+    doFirst {
+        commandLine("python3", rootProject.file("scripts/prepare_sherpa_sdk.py"),
+            sherpaSdk.singleFile, sherpaDir.get().asFile)
+    }
+}
+val buildSherpa by tasks.registering(Exec::class) {
+    inputs.files(rootProject.file("scripts/build_sherpa.py"), rootProject.file("native/sherpa/pocket-streaming.patch"))
+    outputs.dir(sherpaNativeDir.map { it.dir("jni") })
+    doFirst {
+        commandLine("python3", rootProject.file("scripts/build_sherpa.py"), "--output", sherpaNativeDir.get().asFile,
+            "--android-ndk", File(android.sdkDirectory, "ndk/27.2.12479018"))
+    }
+}
 val moonshineDir = layout.buildDirectory.dir("moonshine-sdk")
 val extractMoonshine by tasks.registering(Exec::class) {
     inputs.files(moonshineSdk)
@@ -18,8 +38,9 @@ val extractMoonshine by tasks.registering(Exec::class) {
             moonshineSdk.singleFile, moonshineDir.get().asFile)
     }
 }
-tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(extractMoonshine) }
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(extractMoonshine, extractSherpa, buildSherpa) }
 android {
+    sourceSets.getByName("main").jniLibs.srcDir(sherpaNativeDir.map { it.dir("jni") })
     namespace = "com.battlesbudz.jarvis.v2"
     compileSdk = 35
     ndkVersion = "27.2.12479018"
@@ -85,7 +106,8 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.12.0")
-    implementation("com.github.k2-fsa.sherpa-onnx:sherpa-onnx:v1.13.7")
+    sherpaSdk("com.github.k2-fsa.sherpa-onnx:sherpa-onnx:v1.13.7@aar")
+    implementation(files(sherpaDir.map { it.file("classes.jar") }).builtBy(extractSherpa))
     implementation("org.apache.commons:commons-compress:1.27.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

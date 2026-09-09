@@ -4,6 +4,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SpokenCaptionTimelineTest {
+    @Test fun tinyNativePcmBlocksDoNotRevealTheWholeSentenceImmediately() {
+        val captions = SpokenCaptionTimeline()
+        val text = "Here is a longer spoken sentence that should appear gradually during playback."
+        captions.append(0, 24000, ShortArray(5760) { 4000 }, text, group = 0)
+        captions.append(5760, 24000, ShortArray(9600) { 4000 }, "", group = 0)
+        assertFalse(captions.at(2400).caption.contains("playback."))
+        assertTrue(captions.at(8000).level > 0f)
+        captions.complete(0, 96000)
+        assertEquals(text, captions.at(96000).caption)
+    }
+
     @Test fun waitsForPlaybackAndDoesNotRevealQueuedAnswer() {
         val t = SpokenCaptionTimeline()
         t.append(0, 1000, ShortArray(4000) { 1000 }, "One two three four five six seven eight")

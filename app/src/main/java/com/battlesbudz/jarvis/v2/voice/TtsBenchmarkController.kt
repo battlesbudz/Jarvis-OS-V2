@@ -37,12 +37,14 @@ class TtsBenchmarkController(
                 val engines = if (compareOpenings || selected == null) TtsBenchmarkProfile.comparisonEngines
                     else listOf(selected)
                 val directories = engines.associateWith { models.ensureReady(it, ::report) }
-                val profiles = if (compareOpenings) TtsBenchmarkProfile.all else listOf(profile)
+                val profiles = if (compareOpenings) TtsBenchmarkProfile.all + TtsBenchmarkProfile.nativeProfiles else listOf(profile)
                 val cases = profiles.flatMap { setting ->
                     TtsBenchmarkSamples.all.flatMap { (sample, text) ->
-                        engines.map { engine -> Case(engine, setting, sample, text) }
+                        engines.filter { !setting.nativeStreaming || it == TtsEngine.POCKET_PAUL }
+                            .map { engine -> Case(engine, setting, sample, text) }
                     }
                 }
+                check(cases.isNotEmpty()) { "Native audio streaming profiles are available for Paul." }
                 // Interleave voices for each identical input; reverse ALL cases on pass two.
                 val passes = listOf(cases, cases.reversed())
                 var done = 0
@@ -59,7 +61,7 @@ class TtsBenchmarkController(
                         numThreads = setting.threads, benchmarkProfile = setting,
                         onReady = { ready.complete(Unit) },
                         onMetrics = { metrics ->
-                            results.add(engine, "voice-profiles-v3", sample, metrics,
+                            results.add(engine, "voice-profiles-v4", sample, metrics,
                                 TtsBenchmarkRun(suiteId, setting, pass + 1, text, startThermal, thermalStatus()))
                         }, log = log)
                     output = speaker

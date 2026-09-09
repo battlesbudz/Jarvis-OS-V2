@@ -32,6 +32,7 @@ data class TranscriptEntry(
     val role: String,
     val text: String,
     val timestampMs: Long = System.currentTimeMillis(),
-    val complete: Boolean = true
+    val complete: Boolean = true,
+    val latency: com.battlesbudz.jarvis.v2.diagnostics.TurnLatency? = null
 )
 

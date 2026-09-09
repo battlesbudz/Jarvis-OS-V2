@@ -6,7 +6,7 @@ class FillerAudioCacheTest {
     @Test fun survivesNewCacheInstanceAndKeepsVoicesSeparate() {
         val dir = Files.createTempDirectory("fillers").toFile()
         try {
-            val audio = SpeechAudio("Um.",24000,shortArrayOf(-12,0,32767),123)
+            val audio = SpeechAudio("Um.",24000,ShortArray(4800) { if (it % 2 == 0) 6000 else -6000 },123)
             FillerAudioCache(dir).write("voice10:Um",audio)
             val restored = FillerAudioCache(dir).read("voice10:Um","Um.")!!
             assertArrayEquals(audio.pcm,restored.pcm); assertEquals(24000,restored.sampleRate)
