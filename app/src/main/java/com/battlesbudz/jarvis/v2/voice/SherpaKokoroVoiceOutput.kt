@@ -161,6 +161,8 @@ class SherpaKokoroVoiceOutput(
         val pocketText = if (pocketSentences) PocketTextStream() else null
         val chunker = SpeechChunker(openingChars, fullText = benchmarkProfile?.fullText == true)
         val nativeSession = java.util.UUID.randomUUID().toString()
+        val streamDiagnostics = if (engine == TtsEngine.POCKET_PAUL)
+            PocketStreamDiagnostics(nativeSession, log) else null
         val startupReady = CompletableDeferred<Unit>()
         val tokens = Channel<String>(64)
         val collectTokens = launch {
@@ -273,6 +275,7 @@ class SherpaKokoroVoiceOutput(
                         var callbackCount = 0
                         var frames = 0L
                         var queueWaitMs = 0L
+                        streamDiagnostics?.begin(phraseIndex, text, rate)
                         log("tts_generation_started chars=${text.length} preview=${text.take(80)} api=generateWithConfigAndCallback voice=Paul")
                         val callback = SherpaPcmCallback { samples ->
                             owner.ensureActive()
@@ -298,6 +301,7 @@ class SherpaKokoroVoiceOutput(
                                         if (callbackCount == 0) text else "", rate, pcm, 0,
                                         benchmarkProfile?.playbackSpeed ?: 1f, captionGroup = phraseIndex))
                                     queueWaitMs += elapsedMs(waitStart)
+                                    streamDiagnostics?.chunk(phraseIndex, pcm)
                                     frames += pcm.size
                                     callbackCount++
                                     log("tts_pcm_chunk index=$phraseIndex chunk=$callbackCount frames=${pcm.size} " +
@@ -314,6 +318,7 @@ class SherpaKokoroVoiceOutput(
                             "Pocket callback PCM did not match the generated utterance."
                         }
                         captions.complete(phraseIndex, frames)
+                        streamDiagnostics?.finish(phraseIndex)
                         val synthesisMs = (elapsedMs(started) - queueWaitMs).coerceAtLeast(0)
                         val audioMs = frames * 1000 / rate
                         totalSynthesisMs += synthesisMs
@@ -584,6 +589,8 @@ class SherpaKokoroVoiceOutput(
                 audioTrack = null
             }
             withContext(NonCancellable) { collectTokens.cancelAndJoin(); producer.cancelAndJoin() }
+            streamDiagnostics?.summary(finalUnderruns, estimatedGapMs,
+                completed && !wasStopped && failureMessage == null)
             acknowledgementRequests.cancel()
             openingRequests.cancel()
             nativeDispatcher.close()

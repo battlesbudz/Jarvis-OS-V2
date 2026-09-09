@@ -264,7 +264,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             "underruns=${it.underruns}")
                     },
                     log = {
-                        if (it.startsWith("acknowledgement_") || it.startsWith("pocket_voice_policy")) diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId: $it")
+                        if (it.startsWith("acknowledgement_") || it.startsWith("pocket_voice_policy") ||
+                            it.startsWith("pocket_stream_trace") || it.startsWith("audio_underrun") ||
+                            it.startsWith("audio_supply_gap")) diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId: $it")
                         if (it.startsWith("audio_underrun") || it.startsWith("audio_supply_gap") ||
                             it.startsWith("audio_startup_buffer")) diagnosticRecorder.recordImportant("Voice TTS: $it")
                         else diagnosticRecorder.record("Voice TTS: $it")
