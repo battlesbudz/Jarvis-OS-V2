@@ -25,7 +25,7 @@ jobs:
           java-version: '17'
 
       - name: Install speech runtime NDK
-        run: sdkmanager "ndk;27.2.12479018"
+        run: '"${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018"'
 
       - name: Cache patched speech runtime
         uses: actions/cache@v4
@@ -85,7 +85,7 @@ jobs:
           java-version: '17'
 
       - name: Install speech runtime NDK
-        run: sdkmanager "ndk;27.2.12479018"
+        run: '"${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018"'
 
       - name: Cache patched speech runtime
         uses: actions/cache@v4
