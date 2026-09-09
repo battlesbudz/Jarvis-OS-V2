@@ -44,6 +44,48 @@ Existing strengths to preserve include native PCM callback delivery, bounded aud
 
 Historical documentation contains superseded experiments. In particular, `pocket-tts-paul.md` describes continuous decoder state and no startup wait, while the audited defaults differ. `voice-duplex-and-quiet-speech.md` already marks its continuous-ASR experiment as superseded. Do not use either experiment as proof of current behavior or simply restore it: the previous continuous-ASR approach exceeded the phone's processing budget.
 
+## Context for future sessions — lessons from the Apple local-agent resources
+
+Reviewed 2026-09-09 from the user's supplied links. These are architectural references and proposed experiments, not delivered Jarvis features or Fold 6 benchmarks. The video itself was not supplied or reviewed. Keep the phase status and evidence log authoritative; recheck branch head before implementing.
+
+### What the resources establish
+
+| Resource | Verified scope | How to use it here |
+| --- | --- | --- |
+| [Core AI](https://developer.apple.com/documentation/coreai) | Apple's runtime targets Apple silicon, with CPU/GPU/Neural Engine execution, specialization, caching, and profiling. | Borrow the separation of model preparation, loading, and inference measurements. Its runtime and `.aimodel` artifacts are not drop-in Android dependencies. |
+| [Official Core AI Models](https://github.com/apple/coreai-models) | Apple-maintained export recipes, Python primitives, and Swift utilities; the reviewed integration requirements are iOS/macOS 27+ and Xcode 27+. | Study reproducible export and runtime contracts. An open model's original weights may have an Android-compatible path; that does not make its Apple export portable. |
+| [Community Core AI Model Zoo](https://github.com/john-rocky/coreai-model-zoo) | Community conversions with recipes and model-specific source-parity evidence; verification strength and tested hardware vary by model. | Require the exact recipe, preprocessing, artifact, runtime patch, and device behind each result. Apply this method to Paul's upstream-versus-patched comparisons in Phase 6A. |
+| [SpeechAnalyzer API](https://developer.apple.com/documentation/speech/speechanalyzer) and [Apple's explanation](https://developer.apple.com/videos/play/wwdc2025/277/) | Asynchronous audio input and result delivery; optional volatile results revise earlier text for an audio range before finalization. | Adapt the audio-range/revision contract to our Kotlin pipeline. This is a design reference, not a way to install Apple's recognizer on the Fold 6. |
+| [Foundation Models](https://developer.apple.com/documentation/foundationmodels) | Sessions, structured output, and tools; current APIs also support multiple model providers. | Use session/context ownership as a reference. This framework is not itself a speech recognizer or TTS engine, and choosing it does not automatically guarantee local inference. Apple's system model is not an Android replacement for Gemma. |
+| [Kokoro-82M Core AI model card](https://huggingface.co/mlboydaisuke/Kokoro-82M-CoreAI) | Non-autoregressive synthesis; its streaming wrapper returns a chunk per sentence. The card reports approximately 0.75 seconds per utterance on M4 Max using CPU execution. | This is an Apple conversion, not evidence of continuous text ingestion or a speed/quality improvement on our phone. It does not establish a fix for Paul. |
+
+### Terminology future changes must preserve
+
+“Streaming” must identify the layer: microphone PCM input, revisable ASR text, LLM token output, incremental PCM within one TTS submission, or playback of completed sentence chunks. Record both TTS submission count and PCM callback count. Neither callback delivery nor smooth playback proves that generation state persists across sentences.
+
+ASR finalization is also distinct from conversational turn completion: finalizing one recognized audio range does not authorize answering while the user continues speaking. Keep generated text, rendered audio, and confirmed/intelligible spoken output distinct.
+
+### Concrete experiments and acceptance evidence
+
+| Work | Phase | Experiment and gate |
+| --- | --- | --- |
+| Prompt visible recognition | 0, 5 | Represent provisional and committed text with audio start/end positions and revision IDs. Replace revised ranges instead of appending duplicates; show provisional text promptly without a synchronous checkpoint. Measure capture-to-first-visible-text separately from decoder output and finalization. Test revisions, resumed speech, and stale results after Stop. |
+| Independent capture and recognition | 1, 5 | Keep timestamped capture independent of heavy decoding and result/UI work with bounded queues and serialized native model access. Measure backlog, retained first words, and finalization wait under concurrent TTS; asynchronous scheduling alone is not proof that an offline recognizer has become natively streaming. |
+| Safe early preparation | 4, 5 | Let stable, meaningful provisional text support bounded preparation; reconcile the final utterance before any tool dispatch. Test corrected names and changed action targets. Preserve Gemma audio fallback for real speech while rejecting sound-only hallucinated requests. |
+| Model conversion parity | 6A | Compare the same text/reference/settings through upstream and patched paths; retain artifact hashes, export recipe, phonemization, state policy, sample rate, and actual source/converted audio metrics plus listening results. A numerical match is useful evidence, not a substitute for intelligibility. |
+| Warm inference and realistic performance | 0, 1, 6B | Separate model load/specialization from warm inference; repeat with ASR, Gemma, and Paul sharing the phone. Record thermal status, route, memory, and first intelligible answer timing. Desktop or isolated TTS results cannot select a live-call default alone. |
+
+These experiments refine the existing phases; they do not add an Apple dependency or require switching models. Retain Paul as the preferred speaker, Kokoro as a comparison, and the measured Moonshine/Whisper choice. Evaluate candidate Android acceleration/export changes separately only when profiling identifies a relevant bottleneck.
+
+### What remains unproven
+
+- The resources do not demonstrate owner-only voice recognition or reliable suppression of TV/radio speech in Jarvis. Evaluate speaker preference, false accepts, missed user speech, and echo handling separately; early background audio must not be treated as proof of the owner's identity.
+- A natural demo does not establish interruption correctness, microphone handoff, long-call stability, or history consistent with delivered speech.
+- The Core AI Kokoro card does not prove Apple's port is better than our Kokoro path, and its sentence chunks do not explain every Paul tonal change.
+- “Free/open-source models” in a video description does not establish that every framework, model, or export shares the same license or platform support. Check the specific component before adopting it.
+
+Resume work by reading the current phase/evidence tables, checking the selected phone profile and build, and choosing the earliest unmet measurement or correctness gate. Preserve existing implementation evidence and record rejected experiments with their reason so a future session does not restore a known regression.
+
 ## Intended architecture
 
 Use small, independently testable owners. The following names describe proposed responsibilities; reuse suitable existing abstractions rather than creating duplicate layers.
