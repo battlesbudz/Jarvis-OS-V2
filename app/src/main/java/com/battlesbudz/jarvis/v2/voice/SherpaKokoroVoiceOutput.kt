@@ -67,7 +67,7 @@ class SherpaKokoroVoiceOutput(
     /** Queues silent work on the SAME native owner used for live speech. */
     fun prepareOpening(text: String): PreparedSpeechOpening? {
         // A detached pre-generated Paul opening would lose the continuing native state.
-        if (engine == TtsEngine.POCKET_PAUL || stopped || text.isBlank() || text.length > 240) return null
+        if (benchmarkProfile != null || engine == TtsEngine.POCKET_PAUL || stopped || text.isBlank() || text.length > 240) return null
         val request = PreparedSpeechOpening(text)
         preparedOpening.getAndSet(request)?.discard()
         if (!openingRequests.trySend(request).isSuccess) { request.discard(); return null }

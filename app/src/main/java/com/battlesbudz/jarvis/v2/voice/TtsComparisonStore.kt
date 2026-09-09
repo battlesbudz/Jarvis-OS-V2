@@ -23,6 +23,16 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
 
     @Synchronized fun selectedEngine() = TtsEngine.fromId(preferences.getString("engine", null))
     @Synchronized fun select(engine: TtsEngine) { preferences.edit().putString("engine", engine.id).apply() }
+    @Synchronized fun callProfile(engine: TtsEngine): TtsBenchmarkProfile? {
+        val id = preferences.getString("call_profile_${engine.id}", null) ?: return null
+        return (TtsBenchmarkProfile.all + TtsBenchmarkProfile.nativeProfiles).firstOrNull {
+            it.id == id && (!it.nativeStreaming || engine == TtsEngine.POCKET_PAUL)
+        }
+    }
+    @Synchronized fun setCallProfile(engine: TtsEngine, profile: TtsBenchmarkProfile?) {
+        require(profile?.nativeStreaming != true || engine == TtsEngine.POCKET_PAUL)
+        preferences.edit().putString("call_profile_${engine.id}", profile?.id).apply()
+    }
     private fun read(key: String, limit: Int): List<JSONObject> = runCatching {
         val array = JSONArray(preferences.getString(key, "[]"))
         (0 until array.length()).map { array.getJSONObject(it) }.takeLast(limit)

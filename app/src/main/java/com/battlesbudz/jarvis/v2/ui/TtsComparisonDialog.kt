@@ -23,8 +23,10 @@ internal fun TtsComparisonDialog(
 ) {
     val context = LocalContext.current
     var copiedId by remember { mutableStateOf<String?>(null) }
-    var profile by remember { mutableStateOf(TtsBenchmarkProfile()) }
     var selected by remember { mutableStateOf(store.selectedEngine()) }
+    var appliedProfile by remember(selected) { mutableStateOf(store.callProfile(selected)) }
+    var profile by remember(selected) { mutableStateOf(appliedProfile ?: if (selected == TtsEngine.POCKET_PAUL)
+        TtsBenchmarkProfile(threads = 2, openingChars = null, nativeStreaming = true) else TtsBenchmarkProfile()) }
     var running by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
     fun savedRuns() = store.records().filter { it.optString("source") != "voice-call" }.asReversed()
@@ -77,8 +79,8 @@ internal fun TtsComparisonDialog(
                 if (selected == TtsEngine.POCKET_PAUL) Text("Paul: Kyutai / VCTK p259 (CC BY 4.0). The first use also prepares short acknowledgements; later calls reuse those clips.", style = MaterialTheme.typography.bodySmall)
                 if (!canChange) Text("End your call before changing voices or benchmarking.")
                 HorizontalDivider()
-                Text("Fixed-text benchmark", style = MaterialTheme.typography.titleMedium)
-                Text("Choose an individual test profile. Each test reads the same short reply, paragraph and story twice, reversing the order on pass two. Model load and downloads are timed separately; Gemma and the microphone stay idle.")
+                Text("Speech tuning", style = MaterialTheme.typography.titleMedium)
+                Text("Try a profile in a benchmark, or apply it to your next voice call. Settings are saved separately for each voice. Benchmarks read the same samples twice with Gemma and the microphone idle.")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(2, 4).forEach { threads ->
                         FilterChip(selected = profile.threads == threads, enabled = !running,
@@ -100,12 +102,25 @@ internal fun TtsComparisonDialog(
                     onClick = { profile = profile.copy(openingChars = null, nativeStreaming = true) },
                     label = { Text("Paul · native audio streaming (live call behavior)") })
                 Text("Profile: ${profile.label}")
+                Text("Voice calls: ${appliedProfile?.label ?: "Original adaptive defaults"}")
+                Button(onClick = {
+                    store.setCallProfile(selected, profile)
+                    appliedProfile = profile
+                    status = "Saved for ${selected.label}. Applies to your next call."
+                }, enabled = canChange && !running && (!profile.nativeStreaming || selected == TtsEngine.POCKET_PAUL)) {
+                    Text("Apply to voice calls")
+                }
+                TextButton(onClick = {
+                    store.setCallProfile(selected, null)
+                    appliedProfile = null
+                    status = "Original call defaults restored for ${selected.label}."
+                }, enabled = canChange && !running && appliedProfile != null) { Text("Restore call defaults") }
                 Text("Opening sizes are targets at natural word/clause boundaries. Full text waits for the entire input and synthesizes it in one call. 0.9× slows playback without lowering pitch. Paul’s native profile streams decoded audio as generation proceeds and reuses the voice prompt and keeps one audio decoder session. Full text is a buffered baseline. No profile adds a startup wait.", style = MaterialTheme.typography.bodySmall)
                 Button(onClick = { run(selected) }, enabled = canChange && !running && (!profile.nativeStreaming || selected == TtsEngine.POCKET_PAUL)) { Text("Test selected voice") }
                 OutlinedButton(onClick = { run(null) }, enabled = canChange && !running && !profile.nativeStreaming) { Text("Compare all voices · this profile") }
                 HorizontalDivider()
                 Text("Response speed", style = MaterialTheme.typography.titleMedium)
-                Text("The full comparison tests Kokoro and Pocket Paul with all 16 profiles: 2/4 threads, 40/60/90-character openings or full text, and 1.0×/0.9× playback. It also includes Paul’s 4 native streaming profiles. That is ${TtsBenchmarkProfile.comparisonRunCount} text runs including repeats and can take a long time. Heat status is recorded but never pauses or stops a test. Stop preserves completed results. Test settings do not change live calls.")
+                Text("The full comparison tests Kokoro and Pocket Paul with all 16 profiles: 2/4 threads, 40/60/90-character openings or full text, and 1.0×/0.9× playback. It also includes Paul’s 4 native streaming profiles. That is ${TtsBenchmarkProfile.comparisonRunCount} text runs including repeats and can take a long time. Heat status is recorded but never pauses or stops a test. Stop preserves completed results. Running a comparison keeps your applied call profile.")
                 OutlinedButton(onClick = { runLatency(false) }, enabled = canChange && !running) {
                     Text("Compare all profiles · all voices")
                 }

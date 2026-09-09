@@ -1,6 +1,6 @@
 package com.battlesbudz.jarvis.v2.voice
 
-/** Explicit, reproducible test settings; never applied to live calls. */
+/** Reproducible speech settings; live calls use them only after the user applies a profile. */
 data class TtsBenchmarkProfile(
     val threads: Int = 4,
     val openingChars: Int? = 40,

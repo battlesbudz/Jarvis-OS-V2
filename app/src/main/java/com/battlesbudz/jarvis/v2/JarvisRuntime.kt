@@ -157,6 +157,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         fun onFinished(message: String) { finishedListener(message) }
         val asrEngine = com.battlesbudz.jarvis.v2.voice.MoonshineModelInfo
         val ttsEngine = ttsComparisonStore.selectedEngine()
+        val callProfile = ttsComparisonStore.callProfile(ttsEngine)
         val asrTurnId = java.util.UUID.randomUUID().toString()
         val replyLatency = java.util.concurrent.atomic.AtomicReference<com.battlesbudz.jarvis.v2.diagnostics.TurnLatency?>(null)
         val replyTtsMetrics = java.util.concurrent.atomic.AtomicReference<com.battlesbudz.jarvis.v2.voice.TtsSessionMetrics?>(null)
@@ -244,7 +245,14 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     status("Hey Jarvis detected — getting ready to listen…")
                 }
                 val voiceHistory = voiceSessionController.conversationContext().map { ChatEntry(it.role, it.text) }
+                diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId engine=${ttsEngine.id} " +
+                    "callProfile=${callProfile?.id ?: "adaptive-default"}")
                 val output = SherpaKokoroVoiceOutput(ttsDirectory.path, engine = ttsEngine,
+                    normalSpeed = callProfile != null, fixedChunking = callProfile != null,
+                    openingChars = callProfile?.openingChars ?: com.battlesbudz.jarvis.v2.voice.SpeechChunker.DEFAULT_OPENING_CHARS,
+                    benchmarkProfile = callProfile,
+                    numThreads = callProfile?.threads ?: if (ttsEngine == com.battlesbudz.jarvis.v2.voice.TtsEngine.POCKET_PAUL)
+                        2 else Runtime.getRuntime().availableProcessors().coerceIn(2, 4),
                     acknowledgeDelays = true,
                     playbackVolume = {
                         val manager = getSystemService(android.media.AudioManager::class.java)

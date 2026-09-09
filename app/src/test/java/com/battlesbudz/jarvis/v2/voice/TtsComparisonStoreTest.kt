@@ -6,6 +6,41 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TtsComparisonStoreTest {
+    @Test fun appliedCallProfilesPersistPerVoiceAndResetIndependently() {
+        val prefs = preferences()
+        val store = TtsComparisonStore(prefs)
+        assertNull(store.callProfile(TtsEngine.KOKORO))
+        assertNull(store.callProfile(TtsEngine.POCKET_PAUL))
+        val kokoro = TtsBenchmarkProfile(2, 90, 0.9f)
+        val paul = TtsBenchmarkProfile(4, null, 1f, nativeStreaming = true)
+        store.setCallProfile(TtsEngine.KOKORO, kokoro)
+        store.setCallProfile(TtsEngine.POCKET_PAUL, paul)
+        val restored = TtsComparisonStore(prefs)
+        assertEquals(kokoro, restored.callProfile(TtsEngine.KOKORO))
+        assertEquals(paul, restored.callProfile(TtsEngine.POCKET_PAUL))
+        restored.setCallProfile(TtsEngine.KOKORO, null)
+        assertNull(store.callProfile(TtsEngine.KOKORO))
+        assertEquals(paul, store.callProfile(TtsEngine.POCKET_PAUL))
+    }
+
+    @Test fun everyApplicableProfileRoundTripsAndUnknownSettingsFallBackToDefaults() {
+        val prefs = preferences()
+        val store = TtsComparisonStore(prefs)
+        for (engine in TtsEngine.entries) {
+            for (profile in TtsBenchmarkProfile.all + TtsBenchmarkProfile.nativeProfiles) {
+                if (profile.nativeStreaming && engine != TtsEngine.POCKET_PAUL) continue
+                store.setCallProfile(engine, profile)
+                assertEquals(profile, TtsComparisonStore(prefs).callProfile(engine))
+            }
+            prefs.edit().putString("call_profile_${engine.id}", "unknown-profile").apply()
+            assertNull(store.callProfile(engine))
+        }
+    }
+
+    @Test(expected = IllegalArgumentException::class) fun rejectsPaulsNativeProfileForKokoro() {
+        TtsComparisonStore(preferences()).setCallProfile(TtsEngine.KOKORO, TtsBenchmarkProfile.nativeProfiles.first())
+    }
+
     @Test fun miroSelectionRetiresWithoutRelabelingItsMeasurements() {
         assertEquals(TtsEngine.KOKORO, TtsEngine.fromId("piper_miro_high"))
         assertEquals("Piper Miro High (British) (retired)", TtsEngine.diagnosticLabel("piper_miro_high"))
