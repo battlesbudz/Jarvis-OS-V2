@@ -45,4 +45,13 @@ class DialogueContextPolicyTest {
         assertEquals(TurnKind.NORMAL_CHAT, router.plan("Make me a story about people on the moon. Your choice.").kind)
         assertNotNull(DialogueContextPolicy.resolve("I would like you to tell me a story of your choice.", emptyList()).storyInstruction)
     }
+    @Test fun build604CharacterFollowupUsesDialogueInsteadOfWikipedia() {
+        val question = "Okay, so... Who was the person you were talking about?"
+        val router = TurnOrchestrator(ReferenceGroundingClient())
+        assertEquals(TurnKind.NORMAL_CHAT, router.plan(question, history).kind)
+        assertNull(router.plan(question, history).lookupQuery)
+        assertFalse(DialogueContextPolicy.resolve(question, emptyList()).recall)
+        assertEquals(TurnKind.EXPLICIT_LOOKUP,
+            router.plan("Search Wikipedia for the person you were talking about", history).kind)
+    }
 }

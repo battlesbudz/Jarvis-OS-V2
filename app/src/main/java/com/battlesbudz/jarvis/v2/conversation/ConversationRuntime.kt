@@ -57,6 +57,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 var actionResultMessage: String? = null
                 var actionName: String? = null
                 val turnPlan = turnOrchestrator.plan(prompt, history.map { it.role to it.text })
+                if (voiceAudio != null && turnPlan.lookupQuery == null) activeVoiceOutput?.acknowledgeConfirmedTurn()
                 val repeatReply = if (imageUri == null && voiceAudio == null) com.battlesbudz.jarvis.v2.ai.LastReplyRecall.resolve(
                     prompt, history.map { it.role to it.text }
                 ) else null
@@ -96,9 +97,13 @@ internal fun JarvisRuntime.runConversationInternal(
                     mainHandler.post { onComplete(result.message) }
                     return@launch
                 }
+                val lookupStarted = System.nanoTime()
                 val referenceContext = turnPlan.lookupQuery?.let {
+                    if (voiceAudio != null) activeVoiceOutput?.acknowledgeConfirmedTurn(checking = true)
                     referenceGrounding.fetchIfRequested(it)?.context
                 }
+                if (turnPlan.lookupQuery != null) diagnosticRecorder.recordSummary(
+                    "Voice lookup durationMs=${(System.nanoTime() - lookupStarted) / 1_000_000} success=${!referenceContext.isNullOrBlank()}")
 
                 // Automatic factual routing owns the lookup decision. If the
                 // reference service is unavailable, do not let the local model
@@ -277,7 +282,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     } ?: error("The selected image could not be read.")
                 }
                 fun recordInference(label: String, result: com.battlesbudz.jarvis.v2.ai.GenerationResult) {
-                    diagnosticRecorder.record(
+                    diagnosticRecorder.recordSummary(
                         "Inference\n" +
                             "stage=$label\n" +
                             "promptChars=${submittedPrompt.length}\n" +

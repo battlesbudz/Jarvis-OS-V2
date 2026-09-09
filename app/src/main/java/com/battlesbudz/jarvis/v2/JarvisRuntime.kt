@@ -247,8 +247,15 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         java.io.File(cacheDir, "latest-jarvis-speech.wav"), asrTurnId,
                         log = { diagnosticRecorder.recordImportant(it) }),
                     onPlayback = { voicePlayback.value = it },
-                    onMetrics = { ttsComparisonStore.add(ttsEngine, "voice-call", asrTurnId, it) },
+                    onMetrics = {
+                        ttsComparisonStore.add(ttsEngine, "voice-call", asrTurnId, it)
+                        diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId loadMs=${it.loadMs} " +
+                            "firstTextToPcmMs=${it.firstTextToPcmMs} firstTextToPlaybackMs=${it.firstTextToPlaybackMs} " +
+                            "synthesisMs=${it.synthesisMs} audioMs=${it.audioMs} threads=${it.threads} " +
+                            "underruns=${it.underruns}")
+                    },
                     log = {
+                        if (it.startsWith("acknowledgement_")) diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId: $it")
                         if (it.startsWith("audio_underrun") || it.startsWith("audio_supply_gap") ||
                             it.startsWith("audio_startup_buffer")) diagnosticRecorder.recordImportant("Voice TTS: $it")
                         else diagnosticRecorder.record("Voice TTS: $it")
@@ -306,7 +313,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     onMetrics = { metrics, text ->
                         asrComparisonStore.add(asrTurnId, metrics, text)
                         capture?.lastSpeechAtMs?.let { speechEndedAt.set(it) }
-                        diagnosticRecorder.recordImportant("Voice input summary: turn=$asrTurnId " +
+                        diagnosticRecorder.recordSummary("Voice input summary: turn=$asrTurnId " +
                             "reason=${metrics.endpointReason} speech=${capture?.hasSpeech} chars=${text.length} " +
                             "partials=${metrics.partialUpdates} firstPartialMs=${metrics.firstPartialAfterSpeechMs} " +
                             "endpointMs=${metrics.endpointDetectionMs}")
@@ -345,6 +352,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " no recognized speech for 20 seconds."
                     return@launch
                 }
+                diagnosticRecorder.recordSummary("Voice recognition turn=$asrTurnId path=${if (correction == null) "normal" else "after_keyword"} " +
+                    "moonshineChars=${asrTranscript.length} gemmaTranscriptionFallback=${asrTranscript.isBlank()}")
                 val draft = speculative.seal(asrTranscript)
                 val transcript = com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.resolve(
                     asrTranscript, audioBytes
@@ -375,7 +384,6 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 if (draft == null) resetNativeConversation()
                 diagnosticRecorder.record("Voice ASR final\ntext=$transcript\naudioBytes=${audioBytes.size}\nprepared=${draft != null}")
                 mainHandler.post { onTranscript("You", transcript, true) }
-                output.acknowledgeConfirmedTurn()
                 val outcome = com.battlesbudz.jarvis.v2.voice.runInterruptibleReply(
                     reply = {
                         val coordinator = VoiceTurnCoordinator(voiceSessionController)
@@ -390,7 +398,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                         asrComparisonStore.update(asrTurnId, "speech_end_to_first_text_ms",
                                             System.nanoTime() / 1_000_000 - speechEndedAt.get())
                                     }
-                                    diagnosticRecorder.record("Voice latency: endpoint_to_first_text_ms=$elapsedMs")
+                                    diagnosticRecorder.recordSummary("Voice latency: endpoint_to_first_text_ms=$elapsedMs turn=$asrTurnId")
                                 }
                             }
                             runConversationInternal(
@@ -426,7 +434,11 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     listen = { confirmed ->
                         com.battlesbudz.jarvis.v2.voice.ReplyVoiceCapture(applicationContext) {
                             diagnosticRecorder.recordImportant("Voice interruption: $it")
-                        }.listen(output, asrDirectory, confirmed)
+                        }.listen(output, asrDirectory, confirmed, onPartialTranscript = { text ->
+                            mainHandler.post {
+                                if (activeVoiceOutput === output && voiceSessionArmed) onTranscript("You", text, false)
+                            }
+                        })
                     },
                     stopReply = {
                         output.stopSpeaking()

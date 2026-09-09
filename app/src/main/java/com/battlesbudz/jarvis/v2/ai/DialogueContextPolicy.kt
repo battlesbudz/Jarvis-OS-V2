@@ -15,6 +15,7 @@ object DialogueContextPolicy {
         val assistant = recent.filter { it.first.equals("Jarvis", true) || it.first.equals("assistant", true) }
         val stories = assistant.filter { isStory(it.second) }
         val explicitRecall = Regex("\\b(?:what did (?:you|i) (?:say|ask|tell)|what (?:were|was) (?:we|i|you) (?:discussing|saying|asking)|repeat (?:that|your (?:last )?(?:answer|reply))|remind me what you said)\\b").containsMatchIn(text)
+        val dialogueReference = Regex("\\b(?:who|what) (?:is|was|were) (?:the |that )?(?:person|character|name|thing) (?:you|we) (?:were |was |are |just )?(?:talking about|discussing|mentioned)\\b").containsMatchIn(text)
         val storyReference = Regex("\\b(?:in (?:the|your|that) (?:story|tale)|that character)\\b").containsMatchIn(text)
         val nameQuestion = Regex("\\b(?:name|named|called)\\b").containsMatchIn(text) &&
             Regex("^(?:what|who|remind)\\b").containsMatchIn(text)
@@ -24,7 +25,7 @@ object DialogueContextPolicy {
             val words = normalized(story).split(' ').toSet()
             subjects.any { it in words } || Regex("\\b(his|her|their|its)\\b").containsMatchIn(text)
         }
-        if (assistant.isNotEmpty() && (explicitRecall || storyReference || anchoredName)) return Resolution(recall = true)
+        if (assistant.isNotEmpty() && (explicitRecall || dialogueReference || storyReference || anchoredName)) return Resolution(recall = true)
 
         if (storyRequest.containsMatchIn(text) && !negative.containsMatchIn(text)) {
             return Resolution(storyInstruction = "Tell the requested story now. Choose any unspecified details yourself. Begin the narrative; do not offer a premise or ask for approval.")

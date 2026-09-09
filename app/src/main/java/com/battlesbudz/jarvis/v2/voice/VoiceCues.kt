@@ -42,7 +42,7 @@ object VoiceCues {
             check(track.write(audio.pcm, 0, audio.pcm.size) == audio.pcm.size)
             if (stopped() || paused()) return
             track.play()
-            log("acknowledgement_playback_started text=One moment. separateFromAnswer=true")
+            log("acknowledgement_playback_started text=${audio.text} separateFromAnswer=true")
             val started = System.nanoTime()
             var confirmed = false
             while (!stopped() && !paused() && track.playbackHeadPosition.toLong() < audio.pcm.size &&

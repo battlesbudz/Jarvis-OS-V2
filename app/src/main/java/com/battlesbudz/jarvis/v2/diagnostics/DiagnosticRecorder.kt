@@ -9,6 +9,7 @@ class DiagnosticRecorder(
 ) {
     private val entries = mutableListOf<String>()
     private val important = mutableListOf<String>()
+    private val summaries = mutableListOf<String>()
     private var sessionLabel = "Previous app runtime (may include earlier calls or chat)"
 
     fun startSession(label: String) {
@@ -16,7 +17,8 @@ class DiagnosticRecorder(
             sessionLabel = "$label recordedByBuild=$buildLabel startedAtMs=${System.currentTimeMillis()}"
             entries.clear()
             important.clear()
-            preferences.edit().remove("diagnostics_important").putString("diagnostics_session", sessionLabel)
+            summaries.clear()
+            preferences.edit().remove("diagnostics_summaries").remove("diagnostics_important").putString("diagnostics_session", sessionLabel)
                 .putString("diagnostics", "[]").apply()
         }
     }
@@ -46,12 +48,19 @@ class DiagnosticRecorder(
                 (0 until saved.length()).map { saved.getString(it).take(1200) }.takeLast(64)
             }.getOrDefault(emptyList()).forEach(important::add)
         }
+        synchronized(entries) {
+            summaries.clear()
+            runCatching {
+                val saved = JSONArray(preferences.getString("diagnostics_summaries", "[]"))
+                (0 until saved.length()).map { saved.getString(it).take(1200) }.takeLast(48)
+            }.getOrDefault(emptyList()).forEach(summaries::add)
+        }
         return restored
     }
 
     fun snapshot(): String {
         return synchronized(entries) {
-            "Running build: $buildLabel\n$sessionLabel\n\nCall actions and turns:\n${important.joinToString("\n\n")}\n\nRecent audio events:\n" + entries.takeLast(100).joinToString("\n\n")
+            "Running build: $buildLabel\n$sessionLabel\n\nTiming and recognition summaries:\n${summaries.joinToString("\n\n")}\n\nCall actions and turns:\n${important.joinToString("\n\n")}\n\nRecent audio events:\n" + entries.takeLast(100).joinToString("\n\n")
                 .ifBlank { "No runtime events in this session yet." }
         }
     }
@@ -75,6 +84,15 @@ class DiagnosticRecorder(
                     "atMs=${exit.timestamp} reason=$reason status=${exit.status} " +
                     "pssKb=${exit.pss} rssKb=${exit.rss} description=${exit.description?.take(1000)}")
                 .apply()
+        }
+    }
+
+    fun recordSummary(entry: String) {
+        synchronized(entries) {
+            summaries.add("atMs=${System.currentTimeMillis()}\n${entry.take(1200)}")
+            while (summaries.size > 48) summaries.removeAt(0)
+            val saved = JSONArray().also { array -> summaries.forEach(array::put) }
+            preferences.edit().putString("diagnostics_summaries", saved.toString()).apply()
         }
     }
 

@@ -35,4 +35,24 @@ class DelayedAcknowledgementTest {
         }
         cue.request(); started.await(); cue.close(); assertTrue(stopped)
     }
+    @Test fun slowModelLoadDoesNotExpireCue() = runBlocking {
+        val cue = DelayedAcknowledgement(); val heard = CompletableDeferred<String>()
+        cue.start(this, 0) { heard.complete(it.text) }; cue.request()
+        delay(1600); cue.prepare(audio)
+        assertEquals("One moment.", withTimeout(500) { heard.await() }); cue.close()
+    }
+    @Test fun selectedFillerUsesMatchingAudioAndOnlyOnce() = runBlocking {
+        val cue = DelayedAcknowledgement(); val heard = CompletableDeferred<String>()
+        cue.prepare(audio); cue.start(this, 0) { heard.complete(it.text) }
+        cue.request(FillerPhrases.CHECKING); yield(); assertFalse(heard.isCompleted)
+        cue.prepare(audio.copy(text = FillerPhrases.CHECKING))
+        assertEquals(FillerPhrases.CHECKING, heard.await()); cue.request("Other"); cue.close()
+    }
+    @Test fun neutralFillersVaryWithoutLookupClaims() {
+        val phrases = (1..3).map { FillerPhrases.nextNeutral() }
+        assertEquals(3, phrases.toSet().size)
+        assertTrue(phrases.any { it.startsWith("Uh,") })
+        assertTrue(phrases.any { it.startsWith("Um,") })
+        assertFalse(phrases.any { it.contains("check", true) })
+    }
 }

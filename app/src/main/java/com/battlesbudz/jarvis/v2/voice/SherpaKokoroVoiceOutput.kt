@@ -47,8 +47,19 @@ class SherpaKokoroVoiceOutput(
         onUndeliveredElement = { it.discard() })
 
     private val stoppedPlaybackHead = AtomicLong()
-    private val acknowledgement = DelayedAcknowledgement()
-    fun acknowledgeConfirmedTurn() { if (acknowledgeDelays) acknowledgement.request() }
+    private val acknowledgement = DelayedAcknowledgement(log)
+    private val neutralFiller = if (acknowledgeDelays) FillerPhrases.nextNeutral() else "One moment."
+    @Volatile private var requestedFiller: String? = null
+    private val acknowledgementRequests = Channel<String>(Channel.CONFLATED)
+    private fun fillerCacheKey(text: String) = "${engine.id}:$modelDirectory:$speakerId:$text"
+    fun acknowledgeConfirmedTurn(checking: Boolean = false) {
+        if (!acknowledgeDelays) return
+        val text = if (checking) FillerPhrases.CHECKING else neutralFiller
+        requestedFiller = text
+        acknowledgementCache[fillerCacheKey(text)]?.let { acknowledgement.prepare(it) }
+            ?: acknowledgementRequests.trySend(text)
+        acknowledgement.request(text)
+    }
     private companion object {
         val acknowledgementCache = java.util.concurrent.ConcurrentHashMap<String, SpeechAudio>()
     }
@@ -100,6 +111,13 @@ class SherpaKokoroVoiceOutput(
         stopped = false
         stoppedPlaybackHead.set(0)
         val speechScope = this
+        if (acknowledgeDelays) {
+            // Cached PCM needs no native model reload before it can be played.
+            acknowledgementCache[fillerCacheKey(neutralFiller)]?.let {
+                acknowledgement.prepare(it)
+                log("acknowledgement_cache_hit beforeModelLoad=true")
+            }
+        }
         if (acknowledgeDelays) acknowledgement.start(this) { audio ->
             VoiceCues.playAcknowledgement(audio, { stopped }, { interrupted }, log)
         }
@@ -187,19 +205,22 @@ class SherpaKokoroVoiceOutput(
                         "leadingSilenceMs=${leading * 1000L / rate} trailingSilenceMs=${trailing * 1000L / rate}")
                     return SpeechAudio(text, rate, pcm, elapsedMs(started))
                 }
-                if (acknowledgeDelays) try {
-                    val key = "${this@SherpaKokoroVoiceOutput.engine.id}:$modelDirectory:$speakerId"
-                    val cached = acknowledgementCache[key] ?: run {
-                        log("acknowledgement_cache_preparing text=One moment.")
-                        synthesize("One moment.")
-                    }.also {
-                        if (acknowledgementCache.size >= 4) acknowledgementCache.clear()
-                        acknowledgementCache[key] = it
-                        log("acknowledgement_cache_ready synthesisMs=${it.synthesisMs}")
-                    }
-                    acknowledgement.prepare(cached)
-                } catch (cancelled: CancellationException) { throw cancelled }
-                catch (error: Exception) { log("acknowledgement_cache_unavailable reason=${error.message}") }
+                fun prepareAcknowledgement(text: String) {
+                    try {
+                        val key = fillerCacheKey(text)
+                        val cached = acknowledgementCache[key] ?: run {
+                            log("acknowledgement_cache_preparing text=$text")
+                            synthesize(text)
+                        }.also {
+                            if (acknowledgementCache.size >= 12) acknowledgementCache.clear()
+                            acknowledgementCache[key] = it
+                            log("acknowledgement_cache_ready text=$text synthesisMs=${it.synthesisMs}")
+                        }
+                        acknowledgement.prepare(cached)
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (error: Exception) { log("acknowledgement_cache_unavailable reason=${error.message}") }
+                }
+                if (acknowledgeDelays) prepareAcknowledgement(requestedFiller ?: neutralFiller)
                 fun generate(text: String) {
                     owner.ensureActive()
                     if (stopped) return
@@ -262,6 +283,9 @@ class SherpaKokoroVoiceOutput(
                                 chunker.append(token)
                                 while (true) generate(nextPhrase() ?: break)
                             }
+                        }
+                        acknowledgementRequests.onReceive { text ->
+                            if (index == 0 && acknowledgeDelays) prepareAcknowledgement(text)
                         }
                         openingRequests.onReceive { request ->
                             if (index == 0 && !request.isDiscarded() && preparedOpening.get() === request) {
@@ -444,6 +468,7 @@ class SherpaKokoroVoiceOutput(
                 audioTrack = null
             }
             withContext(NonCancellable) { collectTokens.cancelAndJoin(); producer.cancelAndJoin() }
+            acknowledgementRequests.cancel()
             openingRequests.cancel()
             nativeDispatcher.close()
             speaking.set(false)
