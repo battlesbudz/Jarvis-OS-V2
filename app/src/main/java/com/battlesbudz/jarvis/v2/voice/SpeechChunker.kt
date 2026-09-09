@@ -2,7 +2,7 @@ package com.battlesbudz.jarvis.v2.voice
 
 /** Preserve natural boundaries while allowing an early first clause from a token stream. */
 class SpeechChunker(private val openingChars: Int = DEFAULT_OPENING_CHARS,
-                    private val fullText: Boolean = false) {
+                    private val fullText: Boolean = false, private val sentenceMode: Boolean = false) {
     private val buffer = StringBuilder()
     private var first = true
     private var slow = false
@@ -19,6 +19,7 @@ class SpeechChunker(private val openingChars: Int = DEFAULT_OPENING_CHARS,
             if (!final) return null
             return buffer.toString().trim().also { buffer.clear(); first = false }
         }
+        if (sentenceMode) return takeSentence(final)
         val normalTarget = if (first) openingChars else if (slow) 120 else 180
         val target = maxChars?.let { minOf(normalTarget, it.coerceAtLeast(16)) } ?: normalTarget
         var boundary = -1
@@ -59,5 +60,36 @@ class SpeechChunker(private val openingChars: Int = DEFAULT_OPENING_CHARS,
         return result
     }
 
-    companion object { const val DEFAULT_OPENING_CHARS = 40 }
+    /** Pocket restarts acoustic generation per request: do not manufacture short clauses. */
+    private fun takeSentence(final: Boolean): String? {
+        val limit = SENTENCE_LIMIT
+        var boundary = -1
+        for (i in 0 until minOf(buffer.length, limit)) {
+            if (buffer[i] == '\n') { boundary = i + 1; break }
+            if (buffer[i] !in ".!?") continue
+            var end = i + 1
+            while (end < buffer.length && buffer[end] in "\"'’”)!?") end++
+            if (end == buffer.length && !final) continue
+            if (end < buffer.length && !buffer[end].isWhitespace()) continue
+            val word = buffer.substring(0, i).takeLastWhile { !it.isWhitespace() }.lowercase()
+            if (buffer[i] == '.' && (word in setOf("mr", "mrs", "ms", "dr", "prof", "st", "e.g", "i.e") ||
+                word.length == 1 && word[0].isLetter())) continue
+            boundary = end
+            break
+        }
+        if (boundary < 0 && buffer.length >= limit) {
+            // Bound latency and native work for run-on text; never silently discard a suffix.
+            boundary = (limit - 1 downTo limit / 2).firstOrNull { buffer[it].isWhitespace() } ?: limit
+        }
+        if (boundary < 0) { if (!final) return null; boundary = buffer.length }
+        val result = buffer.substring(0, boundary).trim()
+        buffer.delete(0, boundary)
+        while (buffer.isNotEmpty() && buffer[0].isWhitespace()) buffer.deleteCharAt(0)
+        return result.takeIf { it.isNotEmpty() } ?: take(final)
+    }
+
+    companion object {
+        const val DEFAULT_OPENING_CHARS = 40
+        const val SENTENCE_LIMIT = 240
+    }
 }

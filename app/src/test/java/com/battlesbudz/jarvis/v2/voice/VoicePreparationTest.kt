@@ -40,6 +40,24 @@ class VoicePreparationTest {
         preparation.close()
     }
 
+    @Test fun pocketPreparationUsesSameWholeSentenceAsLivePlayback() = runBlocking<Unit> {
+        val sentence = "Instead, she became the city's quiet guardian, the keeper of its inner landscape."
+        val ready = CompletableDeferred<PreparedSpeechOpening>()
+        val preparation = VoicePreparation(this, generate = { _, _, emit ->
+            emit("Instead, she became the city's quiet guardian, ")
+            assertFalse(ready.isCompleted)
+            emit("the keeper of its inner landscape. Next")
+            GenerationResult(sentence, 1, null)
+        }, coalesceMs = 0, sentenceOpenings = true, prepareOpening = { text ->
+            PreparedSpeechOpening(text).also { ready.complete(it) }
+        })
+        preparation.submit("tell me a story", byteArrayOf())
+        val opening = withTimeout(1000) { ready.await() }
+        val live = SpeechChunker(sentenceMode = true).apply { append("$sentence Next") }
+        assertEquals(live.take(), opening.text)
+        preparation.close()
+    }
+
     @Test fun resumedSpeechInvalidatesAudioEvenBeforeAsrChangesItsWords() = runBlocking<Unit> {
         val ready = CompletableDeferred<PreparedSpeechOpening>()
         val preparation = VoicePreparation(this, generate = { _, _, emit ->

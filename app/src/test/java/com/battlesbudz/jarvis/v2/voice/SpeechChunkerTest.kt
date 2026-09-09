@@ -70,4 +70,32 @@ class SpeechChunkerTest {
         assertEquals("Next sentence.", chunker.take(final = true))
     }
 
+    @Test fun pocketKeepsSentenceAcrossCommaAndTinyAudioBudget() {
+        val c = SpeechChunker(sentenceMode = true)
+        c.append("Instead, she became the city's quiet guardian, ")
+        assertNull(c.take(maxChars = 40))
+        c.append("the keeper of its inner landscape. Next")
+        assertEquals("Instead, she became the city's quiet guardian, the keeper of its inner landscape.", c.take(maxChars = 40))
+        assertEquals("Next", c.take(final = true))
+    }
+    @Test fun pocketPreservesQuotedEndsDecimalsAndAbbreviations() {
+        val c = SpeechChunker(sentenceMode = true)
+        c.append("Dr. Smith said, \"It costs 3.")
+        assertNull(c.take())
+        c.append("50 dollars.\" Next")
+        assertEquals("Dr. Smith said, \"It costs 3.50 dollars.\"", c.take())
+        assertEquals("Next", c.take(final = true))
+    }
+    @Test fun pocketRunOnInputStaysBoundedAndLosesNoText() {
+        val text = (1..150).joinToString(" ") { "word$it" }
+        val c = SpeechChunker(sentenceMode = true); val result = mutableListOf<String>()
+        for (ch in text) {
+            c.append(ch.toString())
+            while (true) result += c.take() ?: break
+        }
+        while (true) result += c.take(final = true) ?: break
+        assertEquals(text, result.joinToString(" "))
+        assertTrue(result.all { it.length <= SpeechChunker.SENTENCE_LIMIT })
+    }
+
 }

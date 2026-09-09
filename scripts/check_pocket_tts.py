@@ -27,7 +27,8 @@ gen.reference_audio = reference
 gen.reference_sample_rate = rate
 gen.silence_scale = 1.0
 gen.num_steps = 5
-base_extra = {'temperature': '0.7', 'chunk_size': '15', 'max_reference_audio_len': '15'}
+base_extra = {'temperature': '0.7', 'chunk_size': '15', 'max_reference_audio_len': '15', 'seed': '42',
+              'min_char_in_sentence': '240', 'max_char_in_sentence': '240'}
 for text in ['Um, one second.', 'One second.',
              'Hello, I am Jarvis. This is the Paul voice speaking locally on your device.']:
     gen.extra = dict(base_extra, **({'max_frames': '50', 'seed': '42'} if len(text) < 20 else {}))
@@ -44,6 +45,8 @@ for text in ['Um, one second.', 'One second.',
     np.testing.assert_array_equal(np.concatenate(chunks), pcm)
     if len(text) < 20:
         assert len(pcm) <= audio.sample_rate * 4
+    repeated = tts.generate(text, gen)
+    np.testing.assert_array_equal(np.asarray(repeated.samples), pcm)
     print(f'{len(chunks)} chunks, {len(pcm)/audio.sample_rate:.2f}s audio, no duplicate/missing PCM', flush=True)
 
 gen.extra = base_extra
@@ -53,4 +56,4 @@ def cancel(samples, *unused):
     return 0
 tts.generate('This is a cancellation test with enough words for several chunks of audio.', gen, callback=cancel)
 assert len(calls) == 1, f'Native ignored callback cancellation: {calls}'
-print('Paul native synthesis, filler budget, PCM continuity and callback cancellation passed.')
+print('Paul native synthesis, repeatable PCM, filler budget, PCM continuity and callback cancellation passed.')

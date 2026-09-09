@@ -16,7 +16,8 @@ class VoicePreparation(
     private val log: (String) -> Unit = {},
     private val coalesceMs: Long = 300,
     private val prepareOpening: (String) -> PreparedSpeechOpening? = { null },
-    private val speechText: (String) -> String = { it }
+    private val speechText: (String) -> String = { it },
+    private val sentenceOpenings: Boolean = false
 ) {
     private data class Hypothesis(val revision: Long, val text: String?, val audio: ByteArray)
     private val updates = Channel<Hypothesis>(Channel.CONFLATED)
@@ -39,7 +40,7 @@ class VoicePreparation(
                 if (!sealed && text != null && latest.revision == revision.get()) {
                     log("preparation_started chars=${text.length} revision=${latest.revision}")
                     draftRevision = latest.revision
-                    val created = PreparedVoiceDraft(scope, text, log, prepareOpening, speechText) { onToken ->
+                    val created = PreparedVoiceDraft(scope, text, log, prepareOpening, speechText, sentenceOpenings) { onToken ->
                         generate(text, latest.audio, onToken)
                     }
                     draft = created
@@ -102,6 +103,7 @@ class PreparedVoiceDraft internal constructor(
     private val log: (String) -> Unit,
     private val prepareOpening: (String) -> PreparedSpeechOpening? = { null },
     private val speechText: (String) -> String = { it },
+    private val sentenceOpenings: Boolean = false,
     generate: suspend ((String) -> Unit) -> GenerationResult
 ) {
     private val chunks = Channel<String>(Channel.UNLIMITED)
@@ -113,7 +115,7 @@ class PreparedVoiceDraft internal constructor(
         private set
     private val job = scope.launch {
         var bufferedCharacters = 0
-        val openingChunker = SpeechChunker()
+        val openingChunker = SpeechChunker(sentenceMode = sentenceOpenings)
         var openingRequested = false
         fun requestOpening(text: String) {
             if (failed || openingRequested) return

@@ -17,7 +17,8 @@ enum class TtsEngine(
         PIPER_MIRO -> 63511174L
         POCKET_PAUL -> 76341079L
     }
-    val version: String get() = "$directory / speaker=${if (this == POCKET_PAUL) "Paul-p259" else speaker} / sherpa-1.13.7"
+    val version: String get() = "$directory / speaker=${if (this == POCKET_PAUL) "Paul-p259" else speaker} / sherpa-1.13.7" +
+        if (this == POCKET_PAUL) " / ${PocketSpeechPolicy.VERSION}" else ""
     val archiveUrl: String get() = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/$directory.tar.bz2"
     companion object {
         // Historical diagnostics retain retired IDs rather than being relabeled as the fallback.

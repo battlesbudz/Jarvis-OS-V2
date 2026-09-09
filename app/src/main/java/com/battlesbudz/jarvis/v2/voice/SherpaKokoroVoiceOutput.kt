@@ -154,7 +154,9 @@ class SherpaKokoroVoiceOutput(
         // One owner creates, invokes and releases the native engine. Playback never owns it.
         // Bounded PCM backpressure prevents long answers from accumulating unlimited audio.
         val audio = NativeAudioQueue<SynthesizedPhrase>(2)
-        val chunker = SpeechChunker(openingChars, fullText = benchmarkProfile?.fullText == true)
+        val pocketSentences = engine == TtsEngine.POCKET_PAUL && !fixedChunking && benchmarkProfile == null
+        val chunker = SpeechChunker(openingChars, fullText = benchmarkProfile?.fullText == true,
+            sentenceMode = pocketSentences)
         val startupReady = CompletableDeferred<Unit>()
         val tokens = Channel<String>(64)
         val collectTokens = launch {
@@ -192,8 +194,11 @@ class SherpaKokoroVoiceOutput(
                     log("tts_voice_reference voice=Paul speaker=p259 frames=${reference.samples.size} sampleRate=${reference.sampleRate}")
                     GenerationConfig(silenceScale = 1f, referenceAudio = reference.samples,
                         referenceSampleRate = reference.sampleRate, numSteps = 5,
-                        extra = mapOf("temperature" to "0.7", "chunk_size" to "15", "max_reference_audio_len" to "15"))
+                        extra = PocketSpeechPolicy.extra())
                 } else GenerationConfig(silenceScale = 0.2f, sid = speakerId)
+                if (pocket) log("pocket_voice_policy version=${PocketSpeechPolicy.VERSION} " +
+                    "seed=${PocketSpeechPolicy.SEED} temperature=0.7 steps=5 sentenceMode=$pocketSentences " +
+                    "referenceSha256=${PocketVoiceSpec.PAUL_SHA256} nativeContext=reset_per_sentence pcmDelivery=incremental")
                 onReady()
                 fun synthesize(text: String): SpeechAudio {
                     owner.ensureActive()
@@ -203,7 +208,7 @@ class SherpaKokoroVoiceOutput(
                     // changes can abort the process before Java can report an exception.
                     val generated = tts.generateWithConfig(
                         text, if (pocket && text in listOf(neutralFiller, FillerPhrases.FOLLOWUP))
-                            generation.copy(extra = generation.extra.orEmpty() + mapOf("max_frames" to "50", "seed" to "42"))
+                            generation.copy(extra = PocketSpeechPolicy.extra(filler = true))
                         else generation
                     )
                     owner.ensureActive()
@@ -347,7 +352,7 @@ class SherpaKokoroVoiceOutput(
                         "audioDurationMs=$audioMs realtimeFactor=$rtf")
                 }
                 fun nextPhrase(final: Boolean = false): String? {
-                    if (fixedChunking || index == 0) return chunker.take(final)
+                    if (pocketSentences || fixedChunking || index == 0) return chunker.take(final)
                     val playedMs = synchronized(playbackLock) {
                         audioTrack?.let { unsignedHead(it) * 1000 / it.sampleRate } ?: 0L
                     }
