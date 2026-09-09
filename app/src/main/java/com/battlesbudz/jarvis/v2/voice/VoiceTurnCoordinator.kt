@@ -3,7 +3,8 @@ package com.battlesbudz.jarvis.v2.voice
 /**
  * Bridges one audio turn to the local Jarvis model without owning the model
  * runtime itself. The callback is expected to emit model output chunks in
- * order; each chunk is checkpointed immediately.
+ * order. Chunks update session memory immediately; the store may coalesce partial
+ * checkpoints, while completed replies are saved at the boundary.
  */
 class VoiceTurnCoordinator(
     private val session: VoiceSessionController

@@ -224,7 +224,7 @@ For each completed phase, append: phase, commit, APK build/link, device/route, t
 
 ### 2026-09-09 — Phase 0, first implementation increment
 
-Implementation: the code commit introducing this entry, based on `933760a`; validation links will be appended after the Android build. Rollback code baseline: `933760a`.
+Implementation: [`5c67941`](https://github.com/battlesbudz/Jarvis-OS-V2/commit/5c67941ce22e2239b296e1fa5ae05f757d3aca0d), based on `933760a`. Android validation: [build 625](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/34412236930): debug and release unit tests/assembly passed, along with native keyword validation, native packaging checks, callback ABI checks, release signature verification, and APK publication. [Signed APK](https://github.com/battlesbudz/Jarvis-OS-V2/releases/download/audio-pr2-pr6-build.625/app-release.apk) / [release details](https://github.com/battlesbudz/Jarvis-OS-V2/releases/tag/audio-pr2-pr6-build.625). Rollback code baseline: `933760a`.
 
 | Item | Implementation and evidence |
 | --- | --- |
@@ -242,6 +242,19 @@ Limitations and next work:
 - Timeline events are operational timestamps. Recognition finalization is not reference speech end; playback-stop request is not physical silence. Missing events remain unavailable, and first reply audio excludes acknowledgement/filler. Queue depth, acoustic/render-stop confirmation, model-load counts, and the remaining Phase 0 metrics still need implementation.
 - Generated-versus-heard history, microphone ownership, and interruption policy are unchanged by this increment. Phases 1–7 remain pending.
 - Complete the remaining Phase 0 instrumentation and collect the defined phone baseline before marking the phase complete. Then proceed to call-scoped microphone/model ownership and playback-aware history.
+
+#### Phone smoke checks for this increment — not yet run
+
+Use the same selected ASR, Gemma, Paul settings, and audio route for both builds. Keep raw audio export optional; **Copy diagnostics** supplies the new summaries without a desktop or ADB.
+
+| ID | Action | Check and retain |
+| --- | --- | --- |
+| P0-SAVE | Ask a short question, let the answer finish, end the call, reopen it from Voice Calls. | Final transcript is present once; capture the checkpoint counters and available `Voice pipeline` stage offsets from Copy diagnostics. |
+| P0-INTERRUPT | Interrupt a longer spoken answer with the currently supported stop command, then end and reopen the call. | Latest partial text is retained according to current history behavior; canceled timers must not replace the final saved record. This does not validate playback-aware history yet. |
+| P0-HANDOFF | During an active call, start and finish a Messenger voice recording, return to Jarvis, then end the call. | Microphone handoff remains responsive; the saved call includes the latest text; note any checkpoint failure diagnostic. |
+| P0-RESTART | After normally ending a call, close and reopen Jarvis. Separately try an abrupt process termination during a partial answer. | Completed history survives normal restart; record actual partial loss after abrupt termination instead of assuming a 500 ms bound. |
+
+For each case record build number, phone/OS, route, selected models, pass/fail, and copied diagnostics. These smoke checks do not replace the 30-turn baseline or the full acceptance matrix.
 
 Open evidence-dependent decisions:
 
