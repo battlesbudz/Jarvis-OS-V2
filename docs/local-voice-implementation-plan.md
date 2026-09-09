@@ -68,19 +68,24 @@ Each phase is a reviewable change set on the existing branch. Check a phase comp
 | Phase | Deliverable | Depends on | Status |
 | --- | --- | --- | --- |
 | 0 | Baseline measurements and efficient checkpoints | Audited head verified | In progress — checkpointing and initial timeline implemented; device baseline pending |
+| 6A | Early Paul source-audio and submission comparisons | 0 — comparable TTS baseline and required export fields | Pending |
 | 1 | Call-scoped microphone and model ownership | 0 | Pending |
 | 2 | Playback-aware history and cancellation | 1 | Pending |
 | 3 | Natural interruptions and seamless follow-up capture | 1, 2 | Pending |
 | 4 | Local turn completion and long-utterance segmentation | 1, 3 | Pending |
 | 5 | Measured ASR policy and bounded speculative work | 0, 1, 4 | Pending |
-| 6 | Stable Paul synthesis and tuned audio supply | 0, 1, 2, 5 | Pending |
-| 7 | Integrated phone acceptance and documentation reconciliation | 0–6 | Pending |
+| 6B | Integrated Paul synthesis and tuned audio supply | 6A, 0, 1, 2, 5 | Pending |
+| 7 | Integrated phone acceptance and documentation reconciliation | 0–5, 6A, 6B | Pending |
+
+Phase 6A runs early once its Phase 0 measurement prerequisites are available; it does not wait for natural interruptions, a new turn detector, or long-utterance support. Preserve the correctness dependencies among Phases 1–5. Repeat Paul tuning under concurrent recognition in Phase 6B before selecting integrated defaults.
 
 ### Phase 0 — Establish comparable measurements
 
 Extend existing `AsrCaptureMetrics`, `TtsSessionMetrics`, `TurnLatency`, comparison stores, and in-app copy/export. Reuse existing clocks and IDs rather than adding a parallel metrics system.
 
 - Record audio sample position/capture time, VAD speech end, provisional and committed ASR, endpoint decision, finalization completion, speculation seal, first usable reply text, first generated PCM, first non-silent rendered reply PCM, interruption candidate/confirmation, playback stop, and microphone readiness.
+- In annotated listening cases, also record the first intelligible substantive answer word. Keep this distinct from first PCM and first non-silent playback: breathing, filler, or garble must not count as a successful meaningful response. Mark intelligibility timing unavailable when it has not been assessed.
+- Associate generated-silence intervals and speech-active level measurements with PCM sample ranges and submission boundaries. Report generated pauses separately from playback starvation; report level differences separately from perceived speaker/timbre changes. Retain the measurement windows and method so phonetic-content differences are visible.
 - Record stage intervals on a monotonic clock. Show overlaps; do not sum concurrent durations as if they were serial.
 - Count model loads, recognizer resets, discarded/accepted drafts, cancellation wait, input backlog, output queued duration, underruns, and unexpected mic reopen events.
 - Separate acknowledgement audio from substantive answer audio. Android playback-head progress is a rendering proxy; report route and volume, and do not label it an acoustic measurement at the listener's ear.
@@ -156,12 +161,34 @@ Primary files: `voice/AsrEngine.kt`, `voice/AsyncWhisperSession.kt`, `voice/Whis
 
 Acceptance: controlled speculation on/off comparisons show useful latency benefit without worsened recognition or audio starvation. Test a changing action target, blank ASR with real speech, sound-only audio, failed native cancellation, and thermal slowdown. Finalization cannot wait indefinitely for an obsolete draft. Verify correct call memory after any native conversation reset.
 
-### Phase 6 — Stabilize Paul and reduce meaningful-answer delay
+### Phase 6A — Isolate Paul's opening and source-audio inconsistencies early
+
+Use the short-opening evidence below as an investigation baseline, not a quality pass. Run these comparisons after the relevant Phase 0 exports are available, independently of the wider conversation redesign.
+
+1. Generate the exact same complete text as one submission and as the current two submissions. Make all text available upfront in both cases so text-arrival pacing does not confound the submission comparison.
+2. Keep the two submissions and all other settings identical; change only reset-per-submission versus supported continuous acoustic state. Record actual native behavior and distinguish cached voice conditioning, LM state, decoder state, and RNG state. Do not carry completed text/EOS state forward without engine support.
+3. Compare upstream behavior against the patched native callback implementation using the same compatible pinned model, reference, and generation settings. Verify complete PCM coverage, callback/returned-PCM parity where applicable, text coverage, and cancellation. Host parity is not a phone performance result.
+4. Repeat candidate profiles under normal and thermally limited conditions, recording repetitions and separating those distributions. Then restore the original paced-text feed to measure realistic text-wait costs.
+
+Hold reference, seed, temperature, flow steps, playback speed, and startup headroom fixed within each comparison. Begin with the uploaded profile's speed 1.0 and 200 ms headroom; this is an experimental baseline, not a new production default. A short run without underruns does not establish sustained-call reliability.
+
+Required cases: standalone “I understand.”; the exact three-sentence short-opening-v2 text below with its current first-two-sentence grouping; a longer paragraph with early and late sentence comparisons; the bundled “Ummm” alone; and the opening followed by an actual answer. The TTS-only answer export excludes fillers, so it cannot validate the interjection.
+
+For each case:
+
+- Align suspected pauses and level changes with words and submission boundaries. Listen for intelligibility, omitted words, unintended pauses, and speaker identity changes; automated PCM checks alone cannot decide these.
+- Preserve the grouped-opening regression protection until shorter submissions demonstrate complete spoken output. The earlier build 621 trace produced only 240 ms for “I understand.”; punctuation or a complete text sentence is not proof of usable speech.
+- Do not automatically trim generated pauses or normalize each PCM chunk to conceal a suspected defect. Establish whether the pause is appropriate and whether level changes reproducibly follow state boundaries before selecting a correction.
+- Do not increase buffers or alter normal speech speed to address silence already embedded in source PCM. Keep supply problems and synthesis problems separately attributed.
+
+Acceptance: a documented comparison identifies which factors reproduce or improve the failure, includes listening/text-coverage evidence and known limitations, and preserves a rollback profile. Unresolved cause remains explicitly unknown. This milestone does not certify live ASR latency, the bundled opening, or long-call performance without their respective tests.
+
+### Phase 6B — Stabilize Paul under integrated load and reduce meaningful-answer delay
 
 - Keep the bundled opening and substantive answer timings separate. The opening must never overlap answer playback or contaminate answer decoder state.
-- Run a controlled parity matrix with the pinned model and Paul reference: upstream behavior, patched native callbacks, reset per submission, and continuous acoustic state. Keep text, seed, temperature, flow steps, reference, and input pacing fixed when testing state behavior. Verify callback/returned-PCM equality, complete text coverage, and cancellation.
+- Carry forward Phase 6A's measured state policy and repeat the winning comparisons with concurrent recognition and sustained-call load. Recheck PCM/text coverage and cancellation after model-ownership or scheduling changes; do not assume the isolated winner remains best under contention.
 - Do not equate stable speaker identity with preserving every decoder state. Keep the state policy that passes acoustic and non-truncation checks; update both code and documentation to describe it accurately.
-- Reduce text wait by requesting concise natural opening sentences and testing release of short complete openings. Do not split Paul input by arbitrary character counts or claim word-by-word text ingestion from PCM callback streaming. Any clause-level change requires the same listening checks as sentence-level synthesis.
+- Reduce text wait by requesting concise natural opening sentences and testing release of short complete openings only after Phase 6A's intelligibility and non-truncation gates pass. Preserve first-two-sentence grouping when a shorter opening fails; do not trade missing words or garble for an earlier PCM timestamp. Do not split Paul input by arbitrary character counts or claim word-by-word text ingestion from PCM callback streaming. Any clause-level change requires the same listening checks as sentence-level synthesis.
 - Tune startup headroom using measured supply. Distinguish AudioTrack capacity from the actual playback start threshold. Never infer a fixed two-second startup delay from a two-second-capacity buffer.
 - Keep bounded PCM backpressure and one native owner. If synthesis remains slower than playback, reduce competing optional work; increasing the initial buffer only postpones sustained starvation. Keep normal speech speed unless an explicit comparison setting is selected.
 - Evaluate newer Pocket exports only as a separate compatibility/quality experiment. A new upstream release is not automatically interchangeable with the pinned ONNX files or custom patch.
@@ -186,7 +213,7 @@ These are initial engineering goals for short, warm, local, non-tool turns on th
 
 | Measurement | Initial goal or gate |
 | --- | --- |
-| Last reference speech to first non-silent substantive reply | Aim for p50 at or below 1.5 seconds and p95 at or below 2.5 seconds in the defined warm subset; report endpoint, ASR, model, and TTS contributions. |
+| Last reference speech to first intelligible substantive answer word | Aim for p50 at or below 1.5 seconds and p95 at or below 2.5 seconds in annotated listening cases in the defined warm subset; report endpoint, ASR, model, and TTS contributions. Retain first PCM/non-silent rendering as separate operational metrics; do not substitute them when intelligibility is unassessed. |
 | Confirmed interruption to playback pause/flush | Aim for p95 at or below 150 ms at the app/rendering layer; report Bluetooth/route tail separately. |
 | User interruption onset to rendering stop | Aim for p95 at or below 700 ms for clear corrections; separately report confirmation delay and false interruptions. |
 | Missing opening words / premature endpointing | No failures in the deterministic transition fixtures; list every phone-case failure rather than averaging it away. |
@@ -255,6 +282,24 @@ Use the same selected ASR, Gemma, Paul settings, and audio route for both builds
 | P0-RESTART | After normally ending a call, close and reopen Jarvis. Separately try an abrupt process termination during a partial answer. | Completed history survives normal restart; record actual partial loss after abrupt termination instead of assuming a 500 ms bound. |
 
 For each case record build number, phone/OS, route, selected models, pass/fail, and copied diagnostics. These smoke checks do not replace the 30-turn baseline or the full acceptance matrix.
+
+### 2026-09-09 — Paul short-opening-v2 review and plan amendment
+
+Source: user-supplied `jarvis-voice-short-opening-v2-758e3eda-20e9-4b9c-a30d-2937fbdbf4ea.zip`; run `d0a7e071-00e7-438e-a4b8-7bb9c833d355-12`. This is one exported TTS benchmark pass, not a live ASR/Gemma comparison. The export identifies `streaming-voice-state-v5` but does not identify an exact APK build or commit; do not assign it to build 625 or another build by inference. Audio is not added to the repository by this documentation change.
+
+Input: “I understand. I can keep up with what you are saying and process your requests. I am ready when you are.”
+
+| Evidence | Observation and limit |
+| --- | --- |
+| Profile | Paul, pinned `sherpa-onnx-pocket-tts-int8-2026-01-26`; two threads, speed 1.0, reset true, leading period false, buffer 200 ms. Pass 2; simulated text feed of four characters every 32 ms after model readiness. |
+| Conditions | Thermal status 4 at start/end, `thermal_limited=true`. Keep separate from normal-condition latency baselines. |
+| Startup and throughput | Model load 1,803 ms; first text to PCM 1,257 ms; first text to playback 1,757 ms; synthesis 4,657 ms for 6,400 ms source audio (RTF approximately 0.728). These are benchmark timings, not last-user-word-to-answer latency. |
+| Delivery | Two text submissions, 18 PCM callbacks, no repeated text calls, zero underruns and zero reported supply gaps. The first submission groups the first two sentences; the second starts at frame 124,800 (5.2 seconds at 24 kHz). Delivery callbacks are not independent text regenerations. |
+| Generated pause | Approximately 0.89–1.86 seconds is near-silent using 10 ms RMS windows below 0.001 of full scale. This approximately 0.97-second interval exists inside source PCM and inside the first submission, before the 5.2-second reset. Listening/word alignment is still needed to determine whether the pause is inappropriate. |
+| Level variation | RMS over 1.9–4.9 seconds is approximately -22.63 dBFS; over 5.2–6.2 seconds approximately -15.49 dBFS, a roughly 7.1 dB difference. Different phonetic content confounds the comparison; this is not proof of changed speaker identity. No clipped PCM16 samples were found. |
+| Scope | Source PCM excludes filler, playback gaps, time stretching, and microphone recording. This review used numerical inspection, not verified listening. Neither “Ummm” quality nor perceived tonal consistency is established. |
+
+Decision: split Phase 6 into early isolation (6A) and integrated validation (6B), add intelligible-word timing and source-pause/level attribution, and retain short-opening regression checks. Warm-model reuse and ASR finalization work remain necessary for live latency, but cannot explain a pause embedded in a TTS-only export. No synthesis default or completed-phase status changes solely from this evidence.
 
 Open evidence-dependent decisions:
 
