@@ -6,6 +6,7 @@ import android.media.AudioTrack
 import android.media.PlaybackParams
 import android.os.Build
 import com.k2fsa.sherpa.onnx.GenerationConfig
+import com.k2fsa.sherpa.onnx.WaveReader
 import com.k2fsa.sherpa.onnx.OfflineTts
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
@@ -29,7 +30,7 @@ class SherpaKokoroVoiceOutput(
     private val onPlayback: (VoicePlaybackFrame) -> Unit = {},
     private val onMetrics: (TtsSessionMetrics) -> Unit = {},
     private val speakerId: Int = engine.speaker,
-    private val numThreads: Int = Runtime.getRuntime().availableProcessors().coerceIn(2, 4),
+    private val numThreads: Int = if (engine == TtsEngine.POCKET_PAUL) 2 else Runtime.getRuntime().availableProcessors().coerceIn(2, 4),
     private val log: (String) -> Unit = {}
 ) : VoiceOutput {
     @Volatile private var stopped = false
@@ -48,7 +49,7 @@ class SherpaKokoroVoiceOutput(
 
     private val stoppedPlaybackHead = AtomicLong()
     private val acknowledgement = DelayedAcknowledgement(log)
-    private val neutralFiller = FillerPhrases.INITIAL
+    private val neutralFiller = if (engine == TtsEngine.POCKET_PAUL) "Um, one second." else FillerPhrases.INITIAL
     private val fillerDiskCache = FillerAudioCache(java.io.File(modelDirectory, "filler-cache-v1"))
     private val acknowledgementRequests = Channel<String>(Channel.CONFLATED)
     private fun fillerCacheKey(text: String) = "${engine.version}:$modelDirectory:$speakerId:$text"
@@ -181,6 +182,17 @@ class SherpaKokoroVoiceOutput(
                 engine = tts
                 loadMs = elapsedMs(loadStart)
                 log("tts_engine_preload_finished loadMs=$loadMs")
+                val pocket = this@SherpaKokoroVoiceOutput.engine == TtsEngine.POCKET_PAUL
+                val generation = if (pocket) {
+                    val reference = WaveReader.readWave("$modelDirectory/${PocketVoiceSpec.PAUL_FILE}")
+                    check(reference.sampleRate > 0 && reference.samples.isNotEmpty() && reference.samples.all { it.isFinite() }) {
+                        "Paul's reference audio could not be loaded."
+                    }
+                    log("tts_voice_reference voice=Paul speaker=p259 frames=${reference.samples.size} sampleRate=${reference.sampleRate}")
+                    GenerationConfig(silenceScale = 1f, referenceAudio = reference.samples,
+                        referenceSampleRate = reference.sampleRate, numSteps = 5,
+                        extra = mapOf("temperature" to "0.7", "chunk_size" to "15", "max_reference_audio_len" to "15"))
+                } else GenerationConfig(silenceScale = 0.2f, sid = speakerId)
                 onReady()
                 fun synthesize(text: String): SpeechAudio {
                     owner.ensureActive()
@@ -189,7 +201,9 @@ class SherpaKokoroVoiceOutput(
                     // Use the established non-callback JNI path. Kotlin lambda callback ABI
                     // changes can abort the process before Java can report an exception.
                     val generated = tts.generateWithConfig(
-                        text, GenerationConfig(silenceScale = 0.2f, sid = speakerId)
+                        text, if (pocket && text in listOf(neutralFiller, FillerPhrases.FOLLOWUP))
+                            generation.copy(extra = generation.extra.orEmpty() + mapOf("max_frames" to "50", "seed" to "42"))
+                        else generation
                     )
                     owner.ensureActive()
                     val rate = generated.sampleRate
@@ -215,6 +229,9 @@ class SherpaKokoroVoiceOutput(
                             log("acknowledgement_cache_preparing text=$text")
                             synthesize(text)
                         }.also {
+                            check(it.sampleRate > 0 && it.pcm.size in 1..it.sampleRate * 4) {
+                                "Generated filler exceeded its four-second duration budget."
+                            }
                             if (acknowledgementCache.size >= 12) acknowledgementCache.clear()
                             acknowledgementCache[key] = it
                             log("acknowledgement_cache_ready text=$text synthesisMs=${it.synthesisMs}")
@@ -235,6 +252,68 @@ class SherpaKokoroVoiceOutput(
                     val candidate = preparedOpening.getAndSet(null)
                     val cached = if (index == 0) candidate?.takeFor(text) else null
                     candidate?.discard()
+                    if (pocket && cached == null) {
+                        val phraseIndex = index++
+                        val rate = tts.sampleRate()
+                        check(rate > 0)
+                        val started = System.nanoTime()
+                        var callbackCount = 0
+                        var frames = 0L
+                        var queueWaitMs = 0L
+                        log("tts_generation_started chars=${text.length} preview=${text.take(80)} api=generateWithConfigAndCallback voice=Paul")
+                        val callback = SherpaPcmCallback { samples ->
+                            owner.ensureActive()
+                            if (stopped) 0 else {
+                                if (samples.isNotEmpty()) {
+                                    check(samples.all { it.isFinite() }) { "Pocket returned non-finite PCM." }
+                                    if (callbackCount == 0) {
+                                        val latency = elapsedMs(started)
+                                        log("tts_first_callback index=$phraseIndex latencyMs=$latency")
+                                        if (phraseIndex == 0) {
+                                            firstPcmMs = latency
+                                            firstTextToPcmMs = firstTextAt.get().takeIf { it != 0L }?.let(::elapsedMs)
+                                            log("tts_opening_ready prepared=false firstTextToPcmMs=$firstTextToPcmMs openingChars=$openingChars")
+                                        }
+                                    }
+                                    val pcm = ShortArray(samples.size) { i ->
+                                        (samples[i].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
+                                    }
+                                    val waitStart = System.nanoTime()
+                                    // One copy of each callback, never also enqueue the returned full utterance.
+                                    // Captions remain estimated; the text belongs to the first audio chunk.
+                                    audio.sendFromNative(SynthesizedPhrase(phraseIndex,
+                                        if (callbackCount == 0) text else "", rate, pcm, 0, 1f))
+                                    queueWaitMs += elapsedMs(waitStart)
+                                    frames += pcm.size
+                                    callbackCount++
+                                    log("tts_pcm_chunk index=$phraseIndex chunk=$callbackCount frames=${pcm.size} " +
+                                        "peak=${samples.maxOf { kotlin.math.abs(it) }} nonFinite=0")
+                                }
+                                1
+                            }
+                        }
+                        val generated = tts.generateWithConfigAndCallback(text, generation, callback)
+                        callback.failure?.let { throw it }
+                        owner.ensureActive()
+                        if (stopped) return
+                        check(frames > 0 && frames == generated.samples.size.toLong() && generated.sampleRate == rate) {
+                            "Pocket callback PCM did not match the generated utterance."
+                        }
+                        val synthesisMs = (elapsedMs(started) - queueWaitMs).coerceAtLeast(0)
+                        val audioMs = frames * 1000 / rate
+                        totalSynthesisMs += synthesisMs
+                        totalAudioMs += audioMs
+                        totalQueueWaitMs += queueWaitMs
+                        phraseCount++
+                        previousChars = text.length
+                        previousSynthesisMs = synthesisMs
+                        startupReady.complete(Unit)
+                        val rtf = if (audioMs > 0) synthesisMs.toDouble() / audioMs else 0.0
+                        if (!fixedChunking) chunker.observe(rtf)
+                        log("tts_generation_finished index=$phraseIndex synthesisMs=$synthesisMs queueWaitMs=$queueWaitMs " +
+                            "audioDurationMs=$audioMs realtimeFactor=$rtf callbacks=$callbackCount")
+                        return
+                    }
                     val result = cached ?: synthesize(text)
                     if (stopped) return
                     val phraseIndex = index++
@@ -248,8 +327,8 @@ class SherpaKokoroVoiceOutput(
                     val frames = result.pcm.size.toLong()
                     val waitStart = System.nanoTime()
                     audio.sendFromNative(SynthesizedPhrase(phraseIndex, text, rate, result.pcm,
-                        PlaybackBufferPolicy.startupWaitMs(result.synthesisMs, frames * 1000 / rate),
-                        if (normalSpeed) 1f else PlaybackBufferPolicy.playbackSpeed(result.synthesisMs, frames * 1000 / rate)))
+                        if (pocket) 0 else PlaybackBufferPolicy.startupWaitMs(result.synthesisMs, frames * 1000 / rate),
+                        if (normalSpeed || pocket) 1f else PlaybackBufferPolicy.playbackSpeed(result.synthesisMs, frames * 1000 / rate)))
                     if (phraseIndex == 1) startupReady.complete(Unit)
                     previousChars = text.length
                     previousSynthesisMs = result.synthesisMs
@@ -336,7 +415,7 @@ class SherpaKokoroVoiceOutput(
                     if (first) {
                         // Small startup headroom; never hold a short, completed answer for this delay.
                         val start = System.nanoTime()
-                        acknowledgement.answerReady()
+                        acknowledgement.answerReady(neutralFiller)
                         val remainingHeadroom = (phrase.startupWaitMs - elapsedMs(start)).coerceAtLeast(0)
                         if (remainingHeadroom > 0) withTimeoutOrNull(remainingHeadroom) { startupReady.await() }
                         log("audio_startup_buffer targetMs=${phrase.startupWaitMs} waitMs=${elapsedMs(start)}")

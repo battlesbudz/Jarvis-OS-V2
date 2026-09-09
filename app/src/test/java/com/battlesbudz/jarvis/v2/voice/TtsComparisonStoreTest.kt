@@ -38,8 +38,16 @@ class TtsComparisonStoreTest {
             assertTrue(TtsEngine.diagnosticLabel(id).endsWith("(retired)"))
             assertFalse(TtsEngine.diagnosticLabel(id).startsWith("Kokoro"))
         }
-        assertEquals(setOf(TtsEngine.KOKORO, TtsEngine.PIPER_MIRO), TtsEngine.entries.toSet())
+        assertEquals(setOf(TtsEngine.KOKORO, TtsEngine.PIPER_MIRO, TtsEngine.POCKET_PAUL), TtsEngine.entries.toSet())
         assertEquals("future_voice", TtsEngine.diagnosticLabel("future_voice"))
+    }
+
+    @Test fun paulSelectionSurvivesRestartAndIsNotPiper() {
+        val prefs = preferences()
+        TtsComparisonStore(prefs).select(TtsEngine.POCKET_PAUL)
+        assertEquals(TtsEngine.POCKET_PAUL, TtsComparisonStore(prefs).selectedEngine())
+        assertFalse(TtsEngine.POCKET_PAUL.isPiper)
+        assertTrue(TtsEngine.POCKET_PAUL.version.contains("Paul-p259"))
     }
 
     private fun preferences(): SharedPreferences {

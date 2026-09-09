@@ -41,6 +41,9 @@ jobs:
       - name: Verify ASR native packaging
         run: python3 scripts/check_asr_apk.py app/build/outputs/apk/debug/app-debug.apk
 
+      - name: Verify Pocket callback ABI in APK
+        run: python3 scripts/check_tts_callback.py app/build/outputs/apk/debug/app-debug.apk
+
       - name: Stage debug APK
         run: |
           mkdir -p artifact
@@ -102,6 +105,9 @@ jobs:
 
       - name: Verify ASR native packaging
         run: python3 scripts/check_asr_apk.py app/build/outputs/apk/release/app-release.apk
+
+      - name: Verify Pocket callback ABI in APK
+        run: python3 scripts/check_tts_callback.py app/build/outputs/apk/release/app-release.apk
 
       - name: Verify signed release APK
         run: |

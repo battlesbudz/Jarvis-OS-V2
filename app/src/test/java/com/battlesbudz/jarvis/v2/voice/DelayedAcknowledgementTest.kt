@@ -52,6 +52,13 @@ class DelayedAcknowledgementTest {
         }
         cue.request(); started.await(); cue.close(); assertTrue(stopped)
     }
+    @Test fun voiceSpecificOpeningAlsoWorksForEarlyDirectAnswers() = runBlocking {
+        val cue = DelayedAcknowledgement(); val text = "Um, one second."
+        val spoken = mutableListOf<String>()
+        cue.prepare(audio.copy(text = text)); cue.start(this) { spoken += it.text }
+        withTimeout(500) { cue.answerReady(text) }
+        assertEquals(listOf(text), spoken); cue.close()
+    }
     @Test fun cacheFailureDoesNotDeadlockAnswer() = runBlocking {
         val cue = DelayedAcknowledgement(); cue.preparationFailed(FillerPhrases.INITIAL)
         cue.start(this) { fail("No audio should be played") }; cue.request()

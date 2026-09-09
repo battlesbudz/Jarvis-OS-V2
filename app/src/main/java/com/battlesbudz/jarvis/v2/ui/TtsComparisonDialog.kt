@@ -60,7 +60,8 @@ internal fun TtsComparisonDialog(
                         Text((if (selected == engine) "✓ " else "") + engine.label)
                     }
                 }
-                Text("Selected voice is used for the next call. Miro downloads about 67 MB on first use. All voices then work offline.")
+                Text("Selected voice is used for the next call. Miro downloads about 67 MB; Pocket Paul about 99 MB on first use. All voices then work offline.")
+                if (selected == TtsEngine.POCKET_PAUL) Text("Paul: Kyutai / VCTK p259 (CC BY 4.0). The first use also prepares his voice and cached opening; later calls reuse the opening.", style = MaterialTheme.typography.bodySmall)
                 if (selected == TtsEngine.PIPER_MIRO) Text("Miro by TigreGotico Lda / OpenVoiceOS. Non-commercial use only.", style = MaterialTheme.typography.bodySmall)
                 if (!canChange) Text("End your call before changing voices or benchmarking.")
                 HorizontalDivider()

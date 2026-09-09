@@ -26,11 +26,17 @@ class TtsModelStore(context: Context, private val original: KokoroModelStore) {
         }
         if (engine == TtsEngine.KOKORO) return@withContext original.downloadOrReuse(onStatus = status).getOrThrow()
         val directory = File(root, engine.directory)
+        val pocket = engine == TtsEngine.POCKET_PAUL
+        val verification = engine.archiveSha256 + if (pocket) ":${PocketVoiceSpec.PAUL_SHA256}" else ""
         val required = listOf(engine.modelFile, "tokens.txt", "espeak-ng-data")
-        fun ready(dir: File) = File(dir, engine.modelFile).length() == engine.modelBytes && required.all { File(dir, it).let { f ->
+        fun ready(dir: File): Boolean {
+            if (pocket) return PocketVoiceSpec.files.all { (name, bytes) -> File(dir, name).length() == bytes } &&
+                File(dir, PocketVoiceSpec.PAUL_FILE).length() == PocketVoiceSpec.PAUL_BYTES
+            return File(dir, engine.modelFile).length() == engine.modelBytes && required.all { File(dir, it).let { f ->
             if (it == "espeak-ng-data") f.isDirectory && File(f, "phontab").length() > 0 else f.isFile && f.length() > 0
         } }
-        if (ready(directory) && File(directory, ".verified").takeIf { it.isFile }?.readText() == engine.archiveSha256)
+        }
+        if (ready(directory) && File(directory, ".verified").takeIf { it.isFile }?.readText() == verification)
             return@withContext directory
         root.mkdirs()
         val archive = File(root, "${engine.directory}.tar.bz2.part")
@@ -81,7 +87,10 @@ class TtsModelStore(context: Context, private val original: KokoroModelStore) {
                     check(entry.name.startsWith(engine.directory + "/") && !entry.isSymbolicLink && !entry.isLink) {
                         "Voice archive contained an unexpected entry."
                     }
-                    val target = File(staging, entry.name.removePrefix(engine.directory + "/"))
+                    val relative = entry.name.removePrefix(engine.directory + "/")
+                    // Demo speakers are not Paul's voice and are never installed or used.
+                    if (pocket && (relative == "test_wavs" || relative.startsWith("test_wavs/"))) continue
+                    val target = File(staging, relative)
                     check(target.canonicalPath.startsWith(staging.canonicalPath + File.separator)) { "Unsafe voice archive path." }
                     if (entry.isDirectory) target.mkdirs()
                     else {
@@ -94,18 +103,45 @@ class TtsModelStore(context: Context, private val original: KokoroModelStore) {
                                 val count = tar.read(buffer)
                                 if (count < 0) break
                                 unpacked += count
-                                check(unpacked <= 200_000_000) { "Voice archive expanded beyond its budget." }
+                                check(unpacked <= (if (pocket) 250_000_000 else 200_000_000)) { "Voice archive expanded beyond its budget." }
                                 output.write(buffer, 0, count)
                             }
                         }
                     }
                 }
             }
+            if (pocket) {
+                status("Downloading Paul’s voice reference…")
+                downloadPaul(File(staging, PocketVoiceSpec.PAUL_FILE))
+            }
             check(ready(staging)) { "The voice archive is incomplete." }
-            File(staging, ".verified").writeText(engine.archiveSha256)
+            File(staging, ".verified").writeText(verification)
             directory.deleteRecursively()
             check(staging.renameTo(directory)) { "Could not finish installing the voice model." }
             directory
         } finally { archive.delete(); staging.deleteRecursively() }
+    }
+    private suspend fun downloadPaul(target: File) {
+        val connection = (URL(PocketVoiceSpec.PAUL_URL).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 30_000; readTimeout = 30_000; instanceFollowRedirects = true
+        }
+        try {
+            check(connection.responseCode in 200..299) { "Paul reference download failed: HTTP ${connection.responseCode}" }
+            val hash = MessageDigest.getInstance("SHA-256"); var count = 0L
+            connection.inputStream.use { input -> target.outputStream().use { output ->
+                val buffer = ByteArray(32 * 1024)
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    val n = input.read(buffer); if (n < 0) break
+                    count += n; check(count <= PocketVoiceSpec.PAUL_BYTES) { "Paul reference exceeds expected size" }
+                    hash.update(buffer, 0, n); output.write(buffer, 0, n)
+                }
+                output.fd.sync()
+            } }
+            check(count == PocketVoiceSpec.PAUL_BYTES &&
+                hash.digest().joinToString("") { "%02x".format(it) } == PocketVoiceSpec.PAUL_SHA256) {
+                "Paul voice reference checksum did not match. Please retry."
+            }
+        } finally { connection.disconnect() }
     }
 }

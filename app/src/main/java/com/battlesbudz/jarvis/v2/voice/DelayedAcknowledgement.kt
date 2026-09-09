@@ -40,9 +40,9 @@ internal class DelayedAcknowledgement(private val log: (String) -> Unit = {}) {
             }
         }
     }
-    suspend fun answerReady() {
+    suspend fun answerReady(initialText: String = FillerPhrases.INITIAL) {
         if (job == null) return // Benchmarks do not enable fillers.
-        request() // Also covers a confirmed turn's early error/direct-completion response.
+        request(initialText) // Also covers a confirmed turn's early error/direct-completion response.
         answerReady.complete(Unit)
         job?.join() // Let an already-playing short word finish before answer playback.
     }
