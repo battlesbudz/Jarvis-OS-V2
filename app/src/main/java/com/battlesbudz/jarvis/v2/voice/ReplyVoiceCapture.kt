@@ -8,19 +8,20 @@ import kotlinx.coroutines.*
 /** Local speech capture alongside generation/playback, with the ordinary mic-priority contract. */
 class ReplyVoiceCapture(private val context: Context, private val log: (String) -> Unit) {
     suspend fun listen(output: SherpaKokoroVoiceOutput, asrDirectory: File,
-                       onConfirmed: () -> Unit): CapturedVoiceTurn = supervisorScope {
-        while (true) {
+                       onConfirmed: () -> Unit): CapturedVoiceTurn = recoverReplyListener(log) {
+        supervisorScope {
             MicrophoneInterruptionMonitor.awaitAvailable()
             val input = AndroidAudioInput(this,
                 audioManager = context.getSystemService(AudioManager::class.java),
-                echoCancellation = true, log = log)
+                echoCancellation = true, noiseSuppression = true, log = log)
             val confirmed = CompletableDeferred<Unit>()
-            val gated = BargeInAudioInput(QuietSpeechAudioInput(input, log, maxGain = 3.0),
-                createDetector = { SileroSpeechDetector.create(context.assets) },
-                playing = { output.isPlayingAudio }, spokenText = output::recentSpokenText,
-                createTranscriber = { PacedStreamingTranscriber(
-                    MoonshineStreamingTranscriber(asrDirectory, updateIntervalSeconds = 0.5), log) },
-                onConfirmed = { confirmed.complete(Unit); onConfirmed() }, log = log)
+            val gated = KeywordBargeInAudioInput(input,
+                createDetector = { MicroInterruptionKeywords(context.assets) },
+                onConfirmed = { _ ->
+                    output.stopSpeaking()
+                    confirmed.complete(Unit)
+                    onConfirmed()
+                }, log = log)
             val capture = AudioTurnCapture(gated, this,
                 createDetector = { SileroSpeechDetector.create(context.assets) },
                 createTranscriber = { LazyStreamingTranscriber { MoonshineStreamingTranscriber(asrDirectory) } }, log = log,
@@ -38,18 +39,18 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 return@supervisorScope CapturedVoiceTurn(capture.finalTranscript, capture.stop())
             } catch (busy: MicrophoneBusyException) {
                 log("barge_listener_yielded external_microphone=true")
+                throw busy
             } catch (timeout: TimeoutCancellationException) {
                 log("barge_correction_timeout")
                 return@supervisorScope CapturedVoiceTurn("", byteArrayOf())
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
-                log("barge_listener_failed reason=${error.message}")
-                // A listener failure must not cancel a valid reply or execute an empty correction.
-                capture.stop()
-                awaitCancellation()
+                if (confirmed.isCompleted) {
+                    // Never replay an incomplete correction after a capture failure.
+                    return@supervisorScope CapturedVoiceTurn("", byteArrayOf())
+                }
+                throw error
             } finally { capture.stop() }
         }
-        @Suppress("UNREACHABLE_CODE")
-        error("unreachable")
     }
 }

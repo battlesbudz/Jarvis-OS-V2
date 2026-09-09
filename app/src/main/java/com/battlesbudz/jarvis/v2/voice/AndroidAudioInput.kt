@@ -28,6 +28,7 @@ class AndroidAudioInput(
     private val onWaiting: (Boolean) -> Unit = {},
     private val dictation: Boolean = false,
     private val echoCancellation: Boolean = false,
+    private val noiseSuppression: Boolean = false,
     private val onLevel: (Float) -> Unit = {},
     private val log: (String) -> Unit = {}
 ) : AudioInput {
@@ -95,6 +96,11 @@ class AndroidAudioInput(
                 ?.also { runCatching { it.enabled = true } }
         } else null
         log("capture_aec requested=$echoCancellation enabled=${runCatching { aec?.enabled == true }.getOrDefault(false)}")
+        val suppressor = if (noiseSuppression && android.media.audiofx.NoiseSuppressor.isAvailable()) {
+            runCatching { android.media.audiofx.NoiseSuppressor.create(created.audioSessionId) }.getOrNull()
+                ?.also { runCatching { it.enabled = true } }
+        } else null
+        log("capture_noise_suppression requested=$noiseSuppression enabled=${runCatching { suppressor?.enabled == true }.getOrDefault(false)}")
         val callback = object : android.media.AudioManager.AudioRecordingCallback() {
             override fun onRecordingConfigChanged(configs: MutableList<android.media.AudioRecordingConfiguration>?) {
                 val config = created.activeRecordingConfiguration
@@ -122,6 +128,7 @@ class AndroidAudioInput(
             MicrophoneHandoff.withRecorderLock {
                 created.unregisterAudioRecordingCallback(callback)
                 aec?.release()
+                suppressor?.release()
                 created.release()
                 if (!dictation) MicrophoneHandoff.unregisterRecorder(created)
             }
@@ -174,6 +181,7 @@ class AndroidAudioInput(
                     runCatching { created.stop() }
                     created.unregisterAudioRecordingCallback(callback)
                     aec?.release()
+                suppressor?.release()
                     created.release()
                     if (!dictation) MicrophoneHandoff.unregisterRecorder(created)
                 }

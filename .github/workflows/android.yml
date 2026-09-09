@@ -29,6 +29,12 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      - name: Verify interruption keyword models in native engine
+        run: |
+          cmake -S app/src/main/cpp/microwakeword -B /tmp/keyword-native -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/keyword-native --parallel 2
+          python3 scripts/check_keyword_models.py /tmp/keyword-native/microwakeword_test
+
       - name: Run unit tests and assemble APK
         run: gradle --no-daemon testDebugUnitTest assembleDebug
 

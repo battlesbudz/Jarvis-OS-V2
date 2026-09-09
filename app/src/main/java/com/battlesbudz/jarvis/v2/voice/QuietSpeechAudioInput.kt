@@ -3,7 +3,7 @@ package com.battlesbudz.jarvis.v2.voice
 import kotlinx.coroutines.flow.map
 
 /** Bounded level conditioning shared by VAD, ASR and the retained Gemma audio. */
-class QuietSpeechAudioInput(private val input: AudioInput, private val log: (String) -> Unit = {}, maxGain: Double = 8.0) : AudioInput {
+class QuietSpeechAudioInput(private val input: AudioInput, private val log: (String) -> Unit = {}, maxGain: Double = 3.0) : AudioInput {
     private val gain = QuietSpeechGain(maxGain)
     private var chunks = 0
     override val sampleRateHz get() = input.sampleRateHz
@@ -14,15 +14,18 @@ class QuietSpeechAudioInput(private val input: AudioInput, private val log: (Str
     override suspend fun stop() = input.stop()
     override fun chunks() = input.chunks().map { pcm ->
         gain.apply(pcm).also {
-            if (++chunks % 10 == 0) log("quiet_speech_gain gain=${gain.currentGain} inputRms=${gain.inputRms}")
+            if (++chunks % 10 == 0) log("quiet_speech_gain gain=${gain.currentGain} inputRms=${gain.inputRms} noiseFloorRms=${gain.noiseFloorRms}")
         }
     }
 }
 
 /** Never gates speech by loudness or lowers Silero's probability threshold. */
-class QuietSpeechGain(private val maxGain: Double = 8.0) {
+class QuietSpeechGain(private val maxGain: Double = 3.0) {
     init { require(maxGain in 1.0..8.0) }
     var currentGain = 1.0
+        private set
+    private val levels = ArrayDeque<Double>()
+    var noiseFloorRms = 0.0
         private set
     var inputRms = 0.0
         private set
@@ -38,7 +41,13 @@ class QuietSpeechGain(private val maxGain: Double = 8.0) {
         }
         inputRms = kotlin.math.sqrt(energy / (pcm.size / 2))
         // Leave digital silence alone; cap amplification and reserve headroom for sudden speech.
-        val target = if (inputRms < 8) 1.0 else (900.0 / inputRms).coerceIn(1.0, maxGain)
+        levels.addLast(inputRms)
+        if (levels.size > 30) levels.removeFirst()
+        noiseFloorRms = levels.sorted()[(levels.size - 1) / 5].coerceAtLeast(8.0)
+        // Never amplify a steady room floor. This estimates noise, not speaker identity,
+        // and leaves the original samples available even when gain is withheld.
+        val target = if (inputRms < noiseFloorRms * 1.6) 1.0
+            else (900.0 / inputRms).coerceIn(1.0, maxGain)
         currentGain = if (target < currentGain) target else currentGain + (target - currentGain) * 0.5
         currentGain = minOf(currentGain, if (peak == 0) 1.0 else (28000.0 / peak).coerceAtLeast(1.0))
         return ByteArray(pcm.size).also { result ->

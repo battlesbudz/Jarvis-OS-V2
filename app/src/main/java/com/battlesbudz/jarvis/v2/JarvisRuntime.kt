@@ -211,6 +211,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 conversationCharacters = 0
                 val ttsDirectory = ttsModels.ensureReady(ttsEngine, ::status)
                 val input = AndroidAudioInput(this,
+                    noiseSuppression = true,
                     log = { diagnosticRecorder.recordImportant("Microphone: $it") },
                     audioManager = getSystemService(android.media.AudioManager::class.java),
                     onLevel = { com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.level.value = it },

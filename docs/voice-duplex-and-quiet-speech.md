@@ -1,5 +1,8 @@
 # Continuous reply listening and quiet speech
 
+**Current behavior:** keyword interruption supersedes the continuous-ASR experiment
+below. See [keyword interruption](voice-keyword-interruption.md).
+
 This change follows Fold 6 reports of low-level speech missing recognition and replies
 repeatedly stopping despite queued PCM and no supply gaps. Those logs support, but do
 not alone prove, false interruption probes. The old code explicitly paused playback
