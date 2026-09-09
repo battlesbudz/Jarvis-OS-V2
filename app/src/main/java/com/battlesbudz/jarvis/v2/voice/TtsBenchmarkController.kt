@@ -75,6 +75,9 @@ class TtsBenchmarkController(
             } catch (cancelled: CancellationException) {
                 message = "Benchmark stopped. Completed samples remain saved."
                 throw cancelled
+            } catch (error: LinkageError) {
+                message = "Benchmark failed: voice runtime could not load. Install an updated APK."
+                log("$message ${error.message}")
             } catch (error: Exception) {
                 message = "Benchmark failed: ${error.message ?: "unknown error"}"
                 log(message)

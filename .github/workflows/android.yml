@@ -48,7 +48,9 @@ jobs:
         run: gradle --no-daemon testDebugUnitTest assembleDebug
 
       - name: Verify ASR native packaging
-        run: python3 scripts/check_asr_apk.py app/build/outputs/apk/debug/app-debug.apk
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_native_dependencies.py'
+          python3 scripts/check_asr_apk.py app/build/outputs/apk/debug/app-debug.apk
 
       - name: Verify Pocket callback ABI in APK
         run: python3 scripts/check_tts_callback.py app/build/outputs/apk/debug/app-debug.apk
@@ -204,4 +206,3 @@ jobs:
           prerelease: true
           generate_release_notes: false
           files: dist/app-debug.apk
-

@@ -87,6 +87,13 @@ def build(output, ndk=None):
         native.mkdir(parents=True, exist_ok=True)
         shutil.copy2(next(cmake_dir.rglob('libsherpa-onnx-jni.so')), native)
         shutil.copy2(lib / 'libonnxruntime.so', native)
+        # This standalone CMake build uses c++_shared; Gradle does not discover
+        # its STL dependency when consuming the result through jniLibs.
+        runtimes = list((ndk / 'toolchains/llvm/prebuilt').glob(
+            '*/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so'))
+        if len(runtimes) != 1:
+            raise RuntimeError(f'Expected one ARM64 C++ runtime in {ndk}, found {len(runtimes)}')
+        shutil.copy2(runtimes[0], native)
     print(f'Patched Sherpa ready: {output}', flush=True)
 
 
