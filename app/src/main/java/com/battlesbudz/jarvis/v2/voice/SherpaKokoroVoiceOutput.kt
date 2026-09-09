@@ -51,7 +51,7 @@ class SherpaKokoroVoiceOutput(
 
     private val stoppedPlaybackHead = AtomicLong()
     private val acknowledgement = DelayedAcknowledgement(log)
-    private val neutralFiller = if (engine == TtsEngine.POCKET_PAUL) "Um, one second." else FillerPhrases.INITIAL
+    private val neutralFiller = FillerPhrases.INITIAL
     private val fillerDiskCache = FillerAudioCache(java.io.File(modelDirectory, "filler-cache-v2"))
     private val acknowledgementRequests = Channel<String>(Channel.CONFLATED)
     private fun fillerCacheKey(text: String) = "${engine.version}:$modelDirectory:$speakerId:$text"

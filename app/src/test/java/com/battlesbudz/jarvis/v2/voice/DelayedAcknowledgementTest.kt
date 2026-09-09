@@ -12,7 +12,7 @@ class DelayedAcknowledgementTest {
     @Test fun evenFastAnswerWaitsForInitialUm() = runBlocking {
         val cue = DelayedAcknowledgement(); val spoken = mutableListOf<String>()
         cue.prepare(audio); cue.start(this) { spoken += it.text }; cue.request()
-        cue.answerReady(); assertEquals(listOf("Um."), spoken); cue.close()
+        cue.answerReady(); assertEquals(listOf("Ummm..."), spoken); cue.close()
     }
     @Test fun slowCacheDoesNotExpireAndAnswerCannotSkipInitial() = runBlocking {
         val cue = DelayedAcknowledgement(); var calls = 0
@@ -30,12 +30,12 @@ class DelayedAcknowledgementTest {
             if (spoken.size == 2) second.complete(Unit)
         }
         cue.request(); withTimeout(500) { second.await() }; cue.answerReady()
-        delay(60); assertEquals(listOf("Um.", "One second."), spoken); cue.close()
+        delay(60); assertEquals(listOf("Ummm...", "One second."), spoken); cue.close()
     }
     @Test fun fallbackUsesAvailableCachedAudioWhenFollowupMissing() = runBlocking {
         val cue = DelayedAcknowledgement(); val second = CompletableDeferred<Unit>(); var calls = 0
         cue.prepare(audio); cue.start(this, repeatGapMs = 25) {
-            assertEquals("Um.", it.text); calls++; if (calls == 2) second.complete(Unit)
+            assertEquals("Ummm...", it.text); calls++; if (calls == 2) second.complete(Unit)
         }
         cue.request(); withTimeout(500) { second.await() }; cue.answerReady(); cue.close()
     }
