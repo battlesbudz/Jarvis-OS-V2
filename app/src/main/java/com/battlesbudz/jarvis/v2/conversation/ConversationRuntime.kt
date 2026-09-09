@@ -233,6 +233,12 @@ internal fun JarvisRuntime.runConversationInternal(
                     conversationCharacters = 0
                 }
                 if (!engineWasLoaded) loadMs += (System.nanoTime() - loadingStarted) / 1_000_000
+                val allowTools = actionIntentRouter.classifyActionIntent(prompt, history) != null
+                if (acceptedPreparation == null && engine.setToolsEnabled(allowTools)) {
+                    nativeConversationHasContext = false
+                    conversationCharacters = 0
+                }
+                diagnosticRecorder.record("Generation tool policy allowed=$allowTools source=current_action_intent")
                 val voiceRepetitionGuard = if (voiceAudio != null &&
                     actionIntentRouter.classifyActionIntent(prompt, history) == null) {
                     com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard(
@@ -400,6 +406,8 @@ internal fun JarvisRuntime.runConversationInternal(
                     cleanAssistantText(generated.text).isBlank()
                 ) {
                     resetNativeConversation()
+                    engine.setToolsEnabled(false)
+                    diagnosticRecorder.recordSummary("Rejected tool name=${candidateCall.name} reason=does_not_match_current_intent retryToolsEnabled=false")
                     val retryPrompt = submittedPrompt + """
                         
                         The previous output contained an invalid tool call. Answer the user's current message directly as normal text. Do not call a tool.

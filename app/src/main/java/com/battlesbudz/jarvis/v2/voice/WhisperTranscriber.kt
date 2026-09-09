@@ -3,9 +3,8 @@ package com.battlesbudz.jarvis.v2.voice
 import com.k2fsa.sherpa.onnx.*
 import java.io.File
 
-/** Endpoint decoding: Whisper base is not a native streaming recognizer. No repeated full-window
- * decoding on the microphone thread. VAD bounds the retained input and Gemma still handles blanks. */
-class WhisperTranscriber(directory: File) : StreamingTranscriber {
+/** Optional background window decoding: Whisper base is not a native streaming recognizer. Decoding never runs on the live microphone thread. VAD bounds the retained input and Gemma still handles blanks. */
+class WhisperTranscriber(directory: File, live: Boolean = true, log: (String) -> Unit = {}) : StreamingTranscriber {
     private val audio = RollingAudioBuffer(AudioFormat(16_000), maxDurationMs = 25_000)
     private val recognizer = OfflineRecognizer(config = OfflineRecognizerConfig(
         modelConfig = OfflineModelConfig(whisper = OfflineWhisperModelConfig(
@@ -13,9 +12,12 @@ class WhisperTranscriber(directory: File) : StreamingTranscriber {
             decoder = File(directory, "base.en-decoder.int8.onnx").path),
             tokens = File(directory, "base.en-tokens.txt").path, modelType = "whisper", numThreads = 2)))
     private var closed = false
-    override fun accept(pcm: ByteArray): String { check(!closed); audio.append(pcm); return "" }
-    override fun finish(): String = decode(audio.snapshot())
-    override fun recover(pcm: ByteArray): String = decode(pcm)
+    private val streaming = if (live) AsyncWhisperSession(::decode, { recognizer.release() }, log) else null
+    override val noTextSilenceMs: Long get() = 900
+    override fun observeSpeech(speech: Boolean) { streaming?.observeSpeech(speech) }
+    override fun accept(pcm: ByteArray): String { check(!closed); if (streaming != null) return streaming.accept(pcm); audio.append(pcm); return "" }
+    override fun finish(): String = streaming?.finish() ?: decode(audio.snapshot())
+    override fun recover(pcm: ByteArray): String = streaming?.recover(pcm) ?: decode(pcm)
     private fun decode(pcm: ByteArray): String {
         check(!closed)
         if (pcm.isEmpty()) return ""
@@ -26,7 +28,7 @@ class WhisperTranscriber(directory: File) : StreamingTranscriber {
             recognizer.getResult(stream).text.trim()
         } finally { stream.release() }
     }
-    override fun close() { if (!closed) { closed = true; audio.clear(); recognizer.release() } }
+    override fun close() { if (!closed) { if (streaming != null) streaming.close() else recognizer.release(); closed = true; audio.clear() } }
 }
 
 internal fun pcmFloats(pcm: ByteArray): FloatArray = FloatArray(pcm.size / 2) { i ->

@@ -256,6 +256,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     numThreads = callProfile?.threads ?: if (ttsEngine == com.battlesbudz.jarvis.v2.voice.TtsEngine.POCKET_PAUL)
                         2 else Runtime.getRuntime().availableProcessors().coerceIn(2, 4),
                     acknowledgeDelays = true,
+                    openingPcm = if (ttsEngine == com.battlesbudz.jarvis.v2.voice.TtsEngine.POCKET_PAUL)
+                        com.battlesbudz.jarvis.v2.voice.PaulOpeningAudio.load(assets) else null,
                     playbackVolume = {
                         val manager = getSystemService(android.media.AudioManager::class.java)
                         val stream = android.media.AudioManager.STREAM_MUSIC
@@ -309,6 +311,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 val speculative = VoicePreparation(this, generate = { partial, audio, onToken ->
                     resetNativeConversation()
                     conversationCharacters = 0
+                    engine.setToolsEnabled(actionIntentRouter.classifyActionIntent(partial, voiceHistory) != null)
                     val prompt = promptBuilder.buildGemmaPrompt(partial, null, voiceHistory, seedContext = true) + "\n" +
                         com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions
                     engine.generateAudio(prompt, audio, onToken)
@@ -337,7 +340,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         status(if (recovering) "Retrying speech recognition…" else "Voice Call is listening — speak now.")
                     },
                     createTranscriber = {
-                        asrEngine.create(asrDirectory)
+                        asrEngine.create(asrDirectory, log = { diagnosticRecorder.recordSummary("Voice input: $it") })
                     },
                     onMetrics = { metrics, text ->
                         asrComparisonStore.add(asrTurnId, metrics, text, asrEngine)

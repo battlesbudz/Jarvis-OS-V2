@@ -41,8 +41,16 @@ class LiteRtLmEngine(
     private var conversation: com.google.ai.edge.litertlm.Conversation? = null
     private val closed = AtomicBoolean(false)
 
+    private var toolsEnabled = true
+    suspend fun setToolsEnabled(enabled: Boolean): Boolean {
+        if (toolsEnabled == enabled) return false
+        toolsEnabled = enabled
+        resetConversation()
+        return true
+    }
+
     private fun createConversation() =
-        if (tools.isEmpty()) {
+        if (tools.isEmpty() || !toolsEnabled) {
             engine.createConversation()
         } else {
             engine.createConversation(

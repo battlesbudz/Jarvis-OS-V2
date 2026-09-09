@@ -116,6 +116,7 @@ class AudioTurnCapture(
                     // ASR receives every frame from microphone startup. VAD controls
                     // submission and endpointing, not whether initial words reach the recognizer.
                     val decodeStartedAt = nowMs()
+                    transcriber?.observeSpeech(hasSpeech && decision.probability >= 0.15f)
                     val partial = transcriber?.accept(chunk)
                     if (turnCompleted.isCompleted) return@collect
                     val chunkDecodeMs = nowMs() - decodeStartedAt
@@ -142,7 +143,9 @@ class AudioTurnCapture(
                     }
                     if (hasSpeech && partial != null) publishPartial(partial)
                     val endpoint = trailingSilenceMs?.let { AdaptiveTurnEnd.Decision(it, "fixed") }
-                        ?: turnEnd.decision(now)
+                        ?: turnEnd.decision(now).let { decision ->
+                            if (decision.cue == "no_transcript") decision.copy(silenceMs = transcriber?.noTextSilenceMs ?: decision.silenceMs) else decision
+                        }
                     var reason = when {
                         endRequested -> "explicit_stop"
                         hasSpeech && audioAt - lastSpeechAt >= endpoint.silenceMs &&

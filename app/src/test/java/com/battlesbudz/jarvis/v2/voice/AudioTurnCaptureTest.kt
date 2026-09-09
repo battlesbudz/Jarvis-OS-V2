@@ -13,6 +13,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioTurnCaptureTest {
+    @Test fun whisperWithoutStableWordsDoesNotWaitThreeSeconds() = runBlocking<Unit> {
+        val transcriber = object : StreamingTranscriber {
+            override val noTextSilenceMs = 900L
+            override fun accept(pcm: ByteArray) = ""
+            override fun finish() = "Can you hear me?"
+            override fun close() = Unit
+        }
+        val fixture = CaptureFixture(this, transcriber, trailingSilenceMs = null)
+        fixture.capture.start()
+        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+        fixture.emit(100, 2000, speech = true)
+        fixture.emit(999, 0)
+        assertFalse(completion.isCompleted)
+        fixture.emit(1000, 0)
+        assertTrue(withTimeout(1000) { completion.await() })
+        assertEquals(900L, fixture.metrics.single().first.endpointDetectionMs)
+        fixture.capture.stop()
+    }
     @Test fun adaptiveQuestionEndsAfterShortStablePause() = runBlocking<Unit> {
         val fixture = CaptureFixture(this, FakeTranscriber("What is the current volume?", "What is the current volume?"),
             trailingSilenceMs = null)

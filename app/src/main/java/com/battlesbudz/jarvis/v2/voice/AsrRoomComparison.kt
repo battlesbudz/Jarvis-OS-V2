@@ -37,7 +37,7 @@ object AsrRoomComparison {
             for (engine in AsrEngine.entries) {
                 ensureActive(); status("Testing ${engine.label} on the recording…")
                 val loadAt = System.nanoTime()
-                val recognizer = engine.create(directories.getValue(engine))
+                val recognizer = engine.create(directories.getValue(engine), live = false)
                 val loadMs = (System.nanoTime() - loadAt) / 1_000_000
                 try {
                     val decodeAt = System.nanoTime()

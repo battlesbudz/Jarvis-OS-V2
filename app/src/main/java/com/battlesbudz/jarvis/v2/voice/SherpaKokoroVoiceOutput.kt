@@ -27,6 +27,7 @@ class SherpaKokoroVoiceOutput(
     private val benchmarkProfile: TtsBenchmarkProfile? = null,
     private val benchmarkRun: Boolean = false,
     private val acknowledgeDelays: Boolean = false,
+    private val openingPcm: ShortArray? = null,
     private val playbackVolume: () -> String = { "unavailable" },
     private val audioTrace: SpeechAudioTrace? = null,
     private val onReady: () -> Unit = {},
@@ -53,10 +54,10 @@ class SherpaKokoroVoiceOutput(
     private val stoppedPlaybackHead = AtomicLong()
     private val acknowledgement = DelayedAcknowledgement(log)
     private val neutralFiller = FillerPhrases.INITIAL
-    private val fillerDiskCache = FillerAudioCache(java.io.File(modelDirectory, "filler-cache-v2"))
+    private val fillerDiskCache = FillerAudioCache(java.io.File(modelDirectory, "filler-cache-v3"))
     private val acknowledgementRequests = Channel<String>(Channel.CONFLATED)
-    private fun fillerCacheKey(text: String) = "${engine.version}:$modelDirectory:$speakerId:$text" +
-        if (engine == TtsEngine.POCKET_PAUL) ":period=${benchmarkProfile?.leadingPeriod ?: true}" else ""
+    private fun fillerCacheKey(text: String) = "opening-v5:${engine.version}:$modelDirectory:$speakerId:$text" +
+        if (engine == TtsEngine.POCKET_PAUL) ":period=${benchmarkProfile?.leadingPeriod ?: false}" else ""
     fun acknowledgeConfirmedTurn() {
         if (!acknowledgeDelays) return
         acknowledgement.request(neutralFiller)
@@ -121,10 +122,11 @@ class SherpaKokoroVoiceOutput(
             withContext(Dispatchers.IO) {
                 for (text in listOf(neutralFiller, FillerPhrases.FOLLOWUP)) {
                     val key = fillerCacheKey(text)
-                    (acknowledgementCache[key] ?: fillerDiskCache.read(key, text))?.let {
+                    (if (text == neutralFiller && openingPcm != null) SpeechAudio(text, 24000, openingPcm, 0)
+                    else acknowledgementCache[key] ?: fillerDiskCache.read(key, text))?.let {
                         acknowledgementCache[key] = it
                         acknowledgement.prepare(it)
-                        log("acknowledgement_cache_hit beforeModelLoad=true text=$text")
+                        log("acknowledgement_cache_hit beforeModelLoad=true text=$text source=${if (text == neutralFiller && openingPcm != null) "bundled_paul_umm_v1" else "generated_cache"}")
                     }
                 }
             }
@@ -166,7 +168,7 @@ class SherpaKokoroVoiceOutput(
         val pocketText = if (pocketSentences) PocketTextStream() else null
         val chunker = SpeechChunker(openingChars, fullText = benchmarkProfile?.fullText == true)
         val paulReset = benchmarkProfile?.resetDecoder ?: true
-        val paulPeriod = benchmarkProfile?.leadingPeriod ?: true
+        val paulPeriod = benchmarkProfile?.leadingPeriod ?: false
         val paulBaseBuffer = if (pocketSentences) benchmarkProfile?.bufferMs ?: 200 else 0
         val paulBufferMs = if (benchmarkRun) paulBaseBuffer else paulBuffer.target(paulBaseBuffer)
         val nativeSession = java.util.UUID.randomUUID().toString()
@@ -216,7 +218,7 @@ class SherpaKokoroVoiceOutput(
                     "seed=${PocketSpeechPolicy.SEED} temperature=0.7 steps=5 naturalSentenceInput=$pocketSentences " +
                     "referenceSha256=${PocketVoiceSpec.PAUL_SHA256} nativeContext=cached_voice_prompt decoderContext=${if (paulReset) "fresh_per_submission" else "continuous_per_answer"} " +
                     "pcmDelivery=interleaved_latent_decode firstAudioFrames=3 audioFramesPerChunk=5 session=$nativeSession " +
-                    "leadingPeriod=$paulPeriod startupCushionMs=$paulBufferMs textBoundary=${if (pocketSentences) "single_sentence" else "benchmark_char_target"}")
+                    "leadingPeriod=$paulPeriod startupCushionMs=$paulBufferMs textBoundary=${if (pocketSentences) "sentence_group" else "benchmark_char_target"}")
                 onReady()
                 fun synthesize(text: String): SpeechAudio {
                     owner.ensureActive()

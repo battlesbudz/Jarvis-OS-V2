@@ -66,6 +66,8 @@ class BargeInAudioInput(
 class LazyStreamingTranscriber(private val create: () -> StreamingTranscriber) : StreamingTranscriber {
     private var delegate: StreamingTranscriber? = null
     private fun active() = delegate ?: create().also { delegate = it }
+    override val noTextSilenceMs: Long get() = delegate?.noTextSilenceMs ?: 900
+    override fun observeSpeech(speech: Boolean) { if (speech) active().observeSpeech(true) else delegate?.observeSpeech(false) }
     override fun accept(pcm: ByteArray) = active().accept(pcm)
     override fun finish() = delegate?.finish().orEmpty()
     override fun recover(pcm: ByteArray) = active().recover(pcm)

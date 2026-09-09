@@ -12,6 +12,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.ui.unit.dp
 import com.battlesbudz.jarvis.v2.voice.*
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun TtsComparisonDialog(
@@ -22,6 +23,7 @@ internal fun TtsComparisonDialog(
     onStop: () -> Unit, onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var copiedId by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf(store.selectedEngine()) }
     var appliedProfile by remember(selected) { mutableStateOf(store.callProfile(selected)) }
@@ -76,7 +78,20 @@ internal fun TtsComparisonDialog(
                     }
                 }
                 Text("Selected voice is used for the next call. Pocket Paul downloads about 99 MB on first use. All voices then work offline.")
-                if (selected == TtsEngine.POCKET_PAUL) Text("Paul: Kyutai / VCTK p259 (CC BY 4.0). The first use also prepares short acknowledgements; later calls reuse those clips.", style = MaterialTheme.typography.bodySmall)
+                if (selected == TtsEngine.POCKET_PAUL) Text("Paul: Kyutai / VCTK p259 (CC BY 4.0). The opening ummm is bundled; follow-up acknowledgements are prepared once and cached.", style = MaterialTheme.typography.bodySmall)
+                if (selected == TtsEngine.POCKET_PAUL) OutlinedButton(enabled = canChange && !running,
+                    onClick = {
+                        running = true
+                        scope.launch {
+                            try {
+                                VoiceCues.playAcknowledgement(SpeechAudio(FillerPhrases.INITIAL, 24000,
+                                    PaulOpeningAudio.load(context.assets), 0), { false }, { false }, {})
+                                status = "Opening preview finished. Calls use this same clip."
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                            catch (error: Exception) { status = error.message ?: "Preview failed." }
+                            finally { running = false }
+                        }
+                    }) { Text("Preview Paul’s opening ummm") }
                 if (!canChange) Text("End your call before changing voices or benchmarking.")
                 HorizontalDivider()
                 Text("Speech tuning", style = MaterialTheme.typography.titleMedium)
@@ -119,12 +134,12 @@ internal fun TtsComparisonDialog(
                     }
                     Text("Both modes stream audio within each sentence. The fresh mode resets decoder and sampling state together. Calls can add up to 400ms of extra cushion after underruns; benchmarks keep the selected cushion fixed. Zero disables the cushion. The leading period is an experimental pronunciation aid.", style = MaterialTheme.typography.bodySmall)
                     OutlinedButton(onClick = { run(null) }, enabled = canChange && !running) {
-                        Text("Compare Paul state modes · same text")
+                        Text("Compare Paul period on/off · same text")
                     }
                 }
                 Text("Profile: ${profile.label}")
                 Text("Voice calls: ${appliedProfile?.label ?: "Original adaptive defaults"}")
-                if (selected == TtsEngine.POCKET_PAUL) Text(appliedProfile?.stabilityLabel ?: "Default: fresh decoder per sentence · leading period · adaptive 200ms cushion")
+                if (selected == TtsEngine.POCKET_PAUL) Text(appliedProfile?.stabilityLabel ?: "Default: fresh decoder per sentence group · no leading period · adaptive 200ms cushion")
                 Button(onClick = {
                     store.setCallProfile(selected, profile)
                     appliedProfile = profile

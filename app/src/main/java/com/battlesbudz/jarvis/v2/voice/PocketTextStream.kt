@@ -1,11 +1,11 @@
 package com.battlesbudz.jarvis.v2.voice
 
-/** Text conditioning for a continuous Pocket session, independent of PCM chunk sizes.
+/** Text conditioning for a Pocket answer, independent of PCM chunk sizes.
  * Hold incomplete sentences so token boundaries, decimals and abbreviations don't restart prosody.
- * Release one complete sentence per submission, never an accumulated paragraph.
+ * Release one complete sentence per submission, joining very short sentences to their neighbor.
  * Like upstream, a single unusually long sentence is kept intact rather than cut by character count.
  */
-internal class PocketTextStream {
+internal class PocketTextStream(private val combineShort: Boolean = true) {
     private val pending = StringBuilder()
     fun append(text: String) { pending.append(text) }
     fun take(final: Boolean = false): String? {
@@ -21,6 +21,8 @@ internal class PocketTextStream {
             val word = pending.substring(0, i).takeLastWhile { !it.isWhitespace() }.lowercase()
             if (pending[i] == '.' && (word in ABBREVIATIONS || word.length == 1 && word[0].isLetter())) continue
             boundary = end
+            val prefixWords = pending.substring(0, end).trim().split(Regex("\\s+")).size
+            if (combineShort && prefixWords < 4 && (!final || end < pending.length)) { boundary = -1; continue }
             break
         }
         if (final && boundary < 0) boundary = pending.length

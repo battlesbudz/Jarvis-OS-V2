@@ -47,7 +47,7 @@ internal fun VoiceInputSettings(enabled: Boolean, onBusy: (Boolean) -> Unit) {
                 }
             }) { Text("Use ${engine.label}") }
         }
-        Text("Moonshine shows words while you speak. Whisper base.en transcribes after you finish. Both run on this phone.", style = MaterialTheme.typography.bodySmall)
+        Text("Moonshine shows words while you speak. Whisper base.en updates stable words in the background and confirms them when you finish. Both run on this phone.", style = MaterialTheme.typography.bodySmall)
         Text("Speaker preference learns automatically from consistent speech after separate activations. Short or uncertain samples stay permissive while it learns.", style = MaterialTheme.typography.bodySmall)
         TextButton(enabled = enabled && !busy, onClick = { permission.launch(android.Manifest.permission.RECORD_AUDIO) }) { Text("Compare both on one 8-second recording") }
         TextButton(enabled = enabled && !busy, onClick = {

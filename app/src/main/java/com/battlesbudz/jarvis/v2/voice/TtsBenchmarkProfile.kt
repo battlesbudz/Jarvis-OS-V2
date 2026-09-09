@@ -7,7 +7,7 @@ data class TtsBenchmarkProfile(
     val playbackSpeed: Float = 1f,
     val nativeStreaming: Boolean = false,
     val resetDecoder: Boolean = true,
-    val leadingPeriod: Boolean = true,
+    val leadingPeriod: Boolean = !nativeStreaming,
     val bufferMs: Int = 200
 ) {
     init {
@@ -23,7 +23,7 @@ data class TtsBenchmarkProfile(
     val id: String get() = legacyId + if (nativeStreaming) "-reset-$resetDecoder-period-$leadingPeriod-buffer-$bufferMs" else ""
     val label: String get() = "$threads threads · ${if (nativeStreaming) "native audio stream" else openingChars?.let { "$it characters" } ?: "full text"} · ${if (playbackSpeed == 1f) "1.0" else "0.9"}×" + if (nativeStreaming) " · $stabilityLabel" else ""
 
-    val stabilityLabel: String get() = "${if (resetDecoder) "Fresh decoder per sentence" else "Continuous decoder"} · period ${if (leadingPeriod) "on" else "off"} · ${bufferMs}ms cushion"
+    val stabilityLabel: String get() = "${if (resetDecoder) "Fresh decoder per sentence group" else "Continuous decoder"} · period ${if (leadingPeriod) "on" else "off"} · ${bufferMs}ms cushion"
 
     companion object {
         val all: List<TtsBenchmarkProfile> = listOf(2, 4).flatMap { threads ->

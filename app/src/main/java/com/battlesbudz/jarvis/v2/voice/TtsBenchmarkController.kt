@@ -40,7 +40,7 @@ class TtsBenchmarkController(
                     else listOf(selected)
                 val directories = engines.associateWith { models.ensureReady(it, ::report) }
                 val profiles = if (compareOpenings) TtsBenchmarkProfile.all + TtsBenchmarkProfile.nativeProfiles else if (comparePaul)
-                    listOf(profile.copy(resetDecoder = true), profile.copy(resetDecoder = false)) else listOf(profile)
+                    listOf(profile.copy(leadingPeriod = false), profile.copy(leadingPeriod = true)) else listOf(profile)
                 val cases = profiles.flatMap { setting ->
                     TtsBenchmarkSamples.all.flatMap { (sample, text) ->
                         engines.filter { !setting.nativeStreaming || it == TtsEngine.POCKET_PAUL }
