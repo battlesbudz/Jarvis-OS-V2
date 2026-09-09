@@ -23,7 +23,7 @@ internal fun VoiceInputSettings(enabled: Boolean, onBusy: (Boolean) -> Unit) {
         task = scope.launch {
             try { message = AsrRoomComparison.run(context) { value -> scope.launch { message = value } } }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { message = error.message ?: "Voice input test failed" }
+            catch (error: Throwable) { message = error.message ?: "Voice input test failed" }
             finally { busy = false }
         }
     }
@@ -42,7 +42,7 @@ internal fun VoiceInputSettings(enabled: Boolean, onBusy: (Boolean) -> Unit) {
                         AsrEngine.select(context, engine); selected = engine
                         message = "${engine.label} will handle your next voice call."
                     } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (error: Exception) { message = error.message ?: "Download failed" }
+                    catch (error: Throwable) { message = error.message ?: "Download failed" }
                     finally { busy = false }
                 }
             }) { Text("Use ${engine.label}") }
@@ -54,6 +54,12 @@ internal fun VoiceInputSettings(enabled: Boolean, onBusy: (Boolean) -> Unit) {
             context.getSharedPreferences("speaker_preference_v1", Context.MODE_PRIVATE).edit().clear().apply()
             message = "Learned voice preference cleared. It will learn again after your next activations."
         }) { Text("Reset learned voice preference") }
+        TextButton(enabled = !busy, onClick = {
+            val results = AsrComparisonStore(context.getSharedPreferences("asr_comparison", Context.MODE_PRIVATE)).snapshot()
+            context.getSystemService(android.content.ClipboardManager::class.java)
+                .setPrimaryClip(android.content.ClipData.newPlainText("Jarvis speech recognition comparison", results))
+            message = "Recognition results copied, including engine, transcript and timing."
+        }) { Text("Copy recognition results") }
         if (busy) TextButton(onClick = { task?.cancel(); message = "Stopped." }) { Text("Cancel") }
         if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
     }

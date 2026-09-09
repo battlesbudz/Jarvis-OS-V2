@@ -43,13 +43,24 @@ object AsrRoomComparison {
                     val decodeAt = System.nanoTime()
                     // Feed both the identical waveform in the same 100 ms chunks.
                     var offset = 0
-                    while (offset < pcm.size) { ensureActive(); val end = minOf(offset + 3200, pcm.size); recognizer.accept(pcm.copyOfRange(offset, end)); offset = end }
+                    var maxChunkMs = 0L
+                    var partials = 0
+                    var previous = ""
+                    while (offset < pcm.size) {
+                        ensureActive()
+                        val end = minOf(offset + 3200, pcm.size)
+                        val began = System.nanoTime()
+                        val partial = recognizer.accept(pcm.copyOfRange(offset, end))
+                        maxChunkMs = maxOf(maxChunkMs, (System.nanoTime() - began) / 1_000_000)
+                        if (partial.isNotBlank() && partial != previous) { partials++; previous = partial }
+                        offset = end
+                    }
                     val finishAt = System.nanoTime()
                     val text = recognizer.finish()
                     val finishMs = (System.nanoTime() - finishAt) / 1_000_000
                     val decodeMs = (finishAt - decodeAt) / 1_000_000
                     val id = "$sampleId-${engine.id}"
-                    store.add(id, AsrCaptureMetrics(loadMs, 0, pcm.size / 32L, decodeMs, 0, null, 0, finishMs, "same_recording_test"), text, engine)
+                    store.add(id, AsrCaptureMetrics(loadMs, 0, pcm.size / 32L, decodeMs, maxChunkMs, null, partials, finishMs, "same_recording_test"), text, engine)
                     result.append("\n${engine.label}: ${text.ifBlank { "[no words]" }}\nDecode: ${decodeMs + finishMs} ms; load: $loadMs ms\n")
                 } finally { recognizer.close() }
             }
