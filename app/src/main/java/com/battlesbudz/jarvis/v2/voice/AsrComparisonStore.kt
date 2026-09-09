@@ -65,6 +65,9 @@ class AsrComparisonStore(private val preferences: SharedPreferences) {
                 "endpoint_detection_ms", "target_silence_ms", "endpoint_cue", "prepared")) {
                 appendLine("$key=${if (entry.has(key) && !entry.isNull(key)) entry.get(key) else "unavailable"}")
             }
+            entry.optJSONObject("pipeline_stage_ms")?.let {
+                appendLine("pipeline_stage_ms=$it (monotonic offsets from turn start; missing events unavailable; filler excluded)")
+            }
             val reference = entry.optString("reference")
             val score = WordErrorRate.score(reference, entry.optString("transcript"))
             if (score == null) append("word_error_rate=unscored (reference required)")

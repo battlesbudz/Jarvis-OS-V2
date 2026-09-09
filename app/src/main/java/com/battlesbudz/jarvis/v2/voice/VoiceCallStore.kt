@@ -7,6 +7,8 @@ import org.json.JSONObject
 interface VoiceCallStore {
     fun list(): List<VoiceCallRecord>
     fun save(call: VoiceCallRecord)
+    /** Transient text may be coalesced; accepted turns and lifecycle boundaries use save(). */
+    fun saveProgress(call: VoiceCallRecord) = save(call)
     fun delete(callId: String)
 }
 /** Local app-private storage. No export, upload, or raw-audio persistence. */

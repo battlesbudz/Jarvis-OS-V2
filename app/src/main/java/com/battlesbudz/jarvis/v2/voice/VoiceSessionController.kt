@@ -34,7 +34,7 @@ class VoiceSessionController(
         }
     }
 
-    fun appendTranscript(role: String, text: String, complete: Boolean = true,
+    @Synchronized fun appendTranscript(role: String, text: String, complete: Boolean = true,
                          latency: com.battlesbudz.jarvis.v2.diagnostics.TurnLatency? = null) {
         val call = requireActiveCall()
         val entries = call.transcript.toMutableList()
@@ -45,11 +45,11 @@ class VoiceSessionController(
             entries += TranscriptEntry(role, text, nowMs(), complete, latency)
         }
         activeCall = call.copy(transcript = entries)
-        checkpoint()
+        if (complete) checkpoint() else store.saveProgress(requireActiveCall())
     }
 
     /** Late speech metrics can update only the reply carrying this measurement ID. */
-    fun updateReplyLatency(latency: com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) {
+    @Synchronized fun updateReplyLatency(latency: com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) {
         val call = activeCall ?: return
         val index = call.transcript.indexOfFirst { it.role == "Jarvis" && it.latency?.id == latency.id }
         if (index < 0) return
@@ -61,10 +61,10 @@ class VoiceSessionController(
 
     @Synchronized fun currentCallId(): String? = activeCall?.id
 
-    fun currentTranscript(): List<TranscriptEntry> = activeCall?.transcript.orEmpty()
+    @Synchronized fun currentTranscript(): List<TranscriptEntry> = activeCall?.transcript.orEmpty()
 
     /** Background dialogue only: never imports task state or appends old entries to the new call. */
-    fun conversationContext(): List<TranscriptEntry> =
+    @Synchronized fun conversationContext(): List<TranscriptEntry> =
         (recentCallContext + currentTranscript()).takeLast(8)
 
     /** Starts a new linked session with the prior call's transcript as context. */
@@ -86,18 +86,20 @@ class VoiceSessionController(
     /** An asynchronous model load may finish after Stop or after another call starts. */
     @Synchronized fun setStateIfCurrent(callId: String, state: VoiceSessionState): Boolean {
         if (activeCall?.id != callId) return false
+        if (_state.value == state) return true
         _state.value = state
         checkpoint()
         return true
     }
 
-    fun setState(state: VoiceSessionState) {
+    @Synchronized fun setState(state: VoiceSessionState) {
         requireActiveCall()
+        if (_state.value == state) return
         _state.value = state
         checkpoint()
     }
 
-    fun updateTask(status: VoiceTaskStatus) {
+    @Synchronized fun updateTask(status: VoiceTaskStatus) {
         activeCall = requireActiveCall().copy(taskStatus = status)
         checkpoint()
     }
@@ -129,6 +131,9 @@ class VoiceSessionController(
     private fun checkpoint() {
         activeCall?.let(store::save)
     }
+
+    /** Preserve the latest partial at Pause, external handoff, and turn cleanup. */
+    @Synchronized fun flushCheckpoint() = checkpoint()
 
     private fun requireActiveCall(): VoiceCallRecord =
         requireNotNull(activeCall) { "No active Voice Call." }

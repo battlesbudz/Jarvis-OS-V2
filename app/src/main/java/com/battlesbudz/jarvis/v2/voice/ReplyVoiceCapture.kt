@@ -8,7 +8,7 @@ import kotlinx.coroutines.*
 /** Local speech capture alongside generation/playback, with the ordinary mic-priority contract. */
 class ReplyVoiceCapture(private val context: Context, private val log: (String) -> Unit) {
     suspend fun listen(output: SherpaKokoroVoiceOutput, asrDirectory: File,
-                       onConfirmed: () -> Unit, asrEngine: AsrEngine = AsrEngine.MOONSHINE, acceptCandidate: (ByteArray) -> Boolean = { true }, onPartialTranscript: (String) -> Unit = {}): CapturedVoiceTurn = recoverReplyListener(log) {
+                       onConfirmed: () -> Unit, asrEngine: AsrEngine = AsrEngine.MOONSHINE, acceptCandidate: (ByteArray) -> Boolean = { true }, onPartialTranscript: (String) -> Unit = {}, trace: VoiceTurnTrace? = null): CapturedVoiceTurn = recoverReplyListener(log) {
         supervisorScope {
             MicrophoneInterruptionMonitor.awaitAvailable()
             val input = AndroidAudioInput(this,
@@ -18,6 +18,8 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
             val gated = KeywordBargeInAudioInput(input,
                 createDetector = { MicroInterruptionKeywords(context.assets) },
                 onConfirmed = { _ ->
+                    trace?.mark(VoiceTurnTrace.Stage.INTERRUPTION_CONFIRMED)
+                    trace?.mark(VoiceTurnTrace.Stage.PLAYBACK_STOP_REQUESTED)
                     output.stopSpeaking()
                     confirmed.complete(Unit)
                     onConfirmed()

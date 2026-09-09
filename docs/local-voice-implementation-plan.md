@@ -1,6 +1,6 @@
 # Local voice implementation plan
 
-Status: proposed implementation; no application changes are delivered by this document.
+Status: implementation started on `audio-pr2`. Phase 0 checkpointing and initial turn timelines are implemented; baseline measurements and phone acceptance remain pending.
 
 Prepared: 2026-09-09. Repository: `battlesbudz/Jarvis-OS-V2`. Working branch: `audio-pr2`, existing [PR #6](https://github.com/battlesbudz/Jarvis-OS-V2/pull/6).
 
@@ -67,7 +67,7 @@ Each phase is a reviewable change set on the existing branch. Check a phase comp
 
 | Phase | Deliverable | Depends on | Status |
 | --- | --- | --- | --- |
-| 0 | Baseline measurements and efficient checkpoints | Audited head verified | Pending |
+| 0 | Baseline measurements and efficient checkpoints | Audited head verified | In progress — checkpointing and initial timeline implemented; device baseline pending |
 | 1 | Call-scoped microphone and model ownership | 0 | Pending |
 | 2 | Playback-aware history and cancellation | 1 | Pending |
 | 3 | Natural interruptions and seamless follow-up capture | 1, 2 | Pending |
@@ -221,6 +221,27 @@ Raw microphone audio remains bounded in memory for normal use. Benchmark recordi
 ## Evidence and decisions log
 
 For each completed phase, append: phase, commit, APK build/link, device/route, test case IDs, sample count, metrics before/after, acoustic observations, known failures, chosen default, and rollback commit. Keep absolute timing results tied to their build and conditions.
+
+### 2026-09-09 — Phase 0, first implementation increment
+
+Implementation: the code commit introducing this entry, based on `933760a`; validation links will be appended after the Android build. Rollback code baseline: `933760a`.
+
+| Item | Implementation and evidence |
+| --- | --- |
+| Partial transcript checkpoints | `CoalescingVoiceCallStore` coalesces transient updates over a nominal 500 ms window on one background writer. Controller memory still updates immediately. Identical state updates no longer save again. |
+| Boundary ordering | Completed transcript updates, call endings, and cleanup flushes submit the latest snapshot immediately. Revision checks reject stale queued writes and prevent deleted calls from being recreated by a pending timer. Microphone handoff schedules its flush on IO so persistence does not block the main callback. |
+| Persistence observability | Runtime summaries expose cumulative progress updates, coalesced updates, writes, write duration, and failures. A failed background save remains available for a later progress/boundary retry; it does not spin. |
+| Initial turn timeline | `VoiceTurnTrace` uses the existing turn ID and monotonic offsets for capture readiness/release, recognition finalization, preparation seal, audio fallback, reply dispatch/text/audio, confirmed interruption, stop request, and cleanup completion. Existing ASR comparison export includes available stages; diagnostic summaries also cover turns without comparison entries. |
+| Focused automated validation | 25 Kotlin/JUnit tests passed, covering new checkpoint/trace tests and existing controller, coordinator, and latency tests. Includes burst coalescing, final-save ordering, stale timers, deletion, in-flight writes, failure retry, lifecycle flush, and late callbacks. This standalone run does not compile the full Android runtime; Android CI is a separate gate. |
+| Independent review | Fixed wrapper property typing and moved handoff persistence off the main callback. Review found no further substantive stale-write or lock-order issues. |
+| Phone validation | Pending. No latency improvement, acoustic stop time, cold/warm baseline, or route behavior is claimed from unit tests. |
+
+Limitations and next work:
+
+- The existing SharedPreferences backend still serializes the full saved-call collection per actual checkpoint. Its `apply()` submits disk persistence asynchronously: immediate checkpoints are not an fsync guarantee. Abrupt termination can lose the latest partial window plus scheduler/storage delay; 500 ms is a scheduling target, not a proven crash-loss bound.
+- Timeline events are operational timestamps. Recognition finalization is not reference speech end; playback-stop request is not physical silence. Missing events remain unavailable, and first reply audio excludes acknowledgement/filler. Queue depth, acoustic/render-stop confirmation, model-load counts, and the remaining Phase 0 metrics still need implementation.
+- Generated-versus-heard history, microphone ownership, and interruption policy are unchanged by this increment. Phases 1–7 remain pending.
+- Complete the remaining Phase 0 instrumentation and collect the defined phone baseline before marking the phase complete. Then proceed to call-scoped microphone/model ownership and playback-aware history.
 
 Open evidence-dependent decisions:
 
