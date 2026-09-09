@@ -1,5 +1,11 @@
 # Pocket TTS — Paul
 
+> Historical implementation notes: the continuous-state, zero-startup-wait and generated initial filler descriptions below are superseded. Current call defaults use fresh decoder/sampling state per sentence group, adaptive headroom starting at 200 ms, and the bundled Ummm opening. Saved diagnostic profiles can override call settings. See the [implementation plan](local-voice-implementation-plan.md) for current decisions and evidence.
+
+## Current source-audio comparison
+
+**Compare Paul source audio · 14 runs** in Voice and response speed diagnostics compares fixed one/grouped submissions and fresh/retained synthesis state using upfront text, at two threads, speed 1.0 and 200 ms headroom. It leaves saved call profiles intact. Export each run’s audio + diagnostics for source pause/level ranges, planned submissions, thermal status, build and artifact identity. First intelligible word timing remains unavailable until listening is assessed. See the Phase 6A evidence entry in the implementation plan for cases, method and outstanding validation.
+
 Pocket is an optional voice in Voice Call → Voice settings → Voice. Select **Pocket TTS — Paul**, then start a Voice Call or run the voice comparison. Kokoro remains the default and retired Miro selections fall back to Kokoro. Custom voice creation is not part of this change.
 
 ## Download and identity

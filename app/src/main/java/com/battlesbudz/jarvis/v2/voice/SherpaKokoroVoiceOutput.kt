@@ -291,6 +291,7 @@ class SherpaKokoroVoiceOutput(
                         val rate = tts.sampleRate()
                         check(rate > 0)
                         val started = System.nanoTime()
+                        val parity = if (benchmarkRun) CallbackPcmParity() else null
                         var callbackCount = 0
                         var frames = 0L
                         var queueWaitMs = 0L
@@ -314,6 +315,7 @@ class SherpaKokoroVoiceOutput(
                                     val pcm = ShortArray(samples.size) { i ->
                                         (samples[i].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
                                     }
+                                    parity?.append(samples)
                                     val waitStart = System.nanoTime()
                                     // One copy of each callback, never also enqueue the returned full utterance.
                                     // Captions remain estimated; the text belongs to the first audio chunk.
@@ -338,6 +340,12 @@ class SherpaKokoroVoiceOutput(
                         if (stopped) return
                         check(frames > 0 && frames == generated.samples.size.toLong() && generated.sampleRate == rate) {
                             "Pocket callback PCM did not match the generated utterance."
+                        }
+                        parity?.finish(generated.samples)?.let { result ->
+                            log("pocket_stream_trace event=pcm_parity session=$nativeSession index=$phraseIndex " +
+                                "matches=${result.matches} frames=${result.frames} method=sha256_float32_le " +
+                                "callbackSha256=${result.callbackHash} returnedSha256=${result.returnedHash}")
+                            check(result.matches) { "Pocket callback samples differ from returned audio." }
                         }
                         captions.complete(phraseIndex, frames)
                         streamDiagnostics?.finish(phraseIndex)
