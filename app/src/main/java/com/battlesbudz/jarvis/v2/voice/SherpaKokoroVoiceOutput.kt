@@ -23,6 +23,8 @@ class SherpaKokoroVoiceOutput(
     private val normalSpeed: Boolean = false,
     private val fixedChunking: Boolean = false,
     private val openingChars: Int = SpeechChunker.DEFAULT_OPENING_CHARS,
+    private val acknowledgeDelays: Boolean = false,
+    private val audioTrace: SpeechAudioTrace? = null,
     private val onReady: () -> Unit = {},
     private val onPlayback: (VoicePlaybackFrame) -> Unit = {},
     private val onMetrics: (TtsSessionMetrics) -> Unit = {},
@@ -43,6 +45,13 @@ class SherpaKokoroVoiceOutput(
     private val preparedOpening = AtomicReference<PreparedSpeechOpening?>(null)
     private val openingRequests = Channel<PreparedSpeechOpening>(Channel.CONFLATED,
         onUndeliveredElement = { it.discard() })
+
+    private val stoppedPlaybackHead = AtomicLong()
+    private val acknowledgement = DelayedAcknowledgement()
+    fun acknowledgeConfirmedTurn() { if (acknowledgeDelays) acknowledgement.request() }
+    private companion object {
+        val acknowledgementCache = java.util.concurrent.ConcurrentHashMap<String, SpeechAudio>()
+    }
 
     /** Queues silent work on the SAME native owner used for live speech. */
     fun prepareOpening(text: String): PreparedSpeechOpening? {
@@ -89,7 +98,11 @@ class SherpaKokoroVoiceOutput(
     override suspend fun speak(chunks: Flow<String>, onChunkStarted: (String) -> Unit) = coroutineScope {
         check(speaking.compareAndSet(false, true)) { "Voice output is already active." }
         stopped = false
+        stoppedPlaybackHead.set(0)
         val speechScope = this
+        if (acknowledgeDelays) acknowledgement.start(this) { audio ->
+            VoiceCues.playAcknowledgement(audio, { stopped }, { interrupted }, log)
+        }
         log("tts_session_started engine=${engine.id} modelDir=$modelDirectory speaker=$speakerId threads=$numThreads workers=1")
         var framesWritten = 0
         var outputSampleRate = 0
@@ -166,9 +179,27 @@ class SherpaKokoroVoiceOutput(
                     val peak = generated.samples.maxOfOrNull { kotlin.math.abs(it) } ?: 0f
                     val rms = kotlin.math.sqrt(generated.samples.sumOf { it.toDouble() * it } /
                         generated.samples.size.coerceAtLeast(1))
-                    log("tts_pcm_level rms=$rms peak=$peak frames=${pcm.size}")
+                    val nonFinite = generated.samples.count { !it.isFinite() }
+                    val clipped = generated.samples.count { kotlin.math.abs(it) >= 1f }
+                    val leading = pcm.indexOfFirst { kotlin.math.abs(it.toInt()) >= 64 }.let { if (it < 0) pcm.size else it }
+                    val trailing = pcm.indexOfLast { kotlin.math.abs(it.toInt()) >= 64 }.let { pcm.size - it - 1 }
+                    log("tts_pcm_level rms=$rms peak=$peak frames=${pcm.size} nonFinite=$nonFinite clipped=$clipped " +
+                        "leadingSilenceMs=${leading * 1000L / rate} trailingSilenceMs=${trailing * 1000L / rate}")
                     return SpeechAudio(text, rate, pcm, elapsedMs(started))
                 }
+                if (acknowledgeDelays) try {
+                    val key = "${this@SherpaKokoroVoiceOutput.engine.id}:$modelDirectory:$speakerId"
+                    val cached = acknowledgementCache[key] ?: run {
+                        log("acknowledgement_cache_preparing text=One moment.")
+                        synthesize("One moment.")
+                    }.also {
+                        if (acknowledgementCache.size >= 4) acknowledgementCache.clear()
+                        acknowledgementCache[key] = it
+                        log("acknowledgement_cache_ready synthesisMs=${it.synthesisMs}")
+                    }
+                    acknowledgement.prepare(cached)
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) { log("acknowledgement_cache_unavailable reason=${error.message}") }
                 fun generate(text: String) {
                     owner.ensureActive()
                     if (stopped) return
@@ -273,7 +304,9 @@ class SherpaKokoroVoiceOutput(
                     if (first) {
                         // Small startup headroom; never hold a short, completed answer for this delay.
                         val start = System.nanoTime()
-                        if (phrase.startupWaitMs > 0) withTimeoutOrNull(phrase.startupWaitMs) { startupReady.await() }
+                        acknowledgement.answerReady()
+                        val remainingHeadroom = (phrase.startupWaitMs - elapsedMs(start)).coerceAtLeast(0)
+                        if (remainingHeadroom > 0) withTimeoutOrNull(remainingHeadroom) { startupReady.await() }
                         log("audio_startup_buffer targetMs=${phrase.startupWaitMs} waitMs=${elapsedMs(start)}")
                         first = false
                         if (stopped) break
@@ -348,6 +381,7 @@ class SherpaKokoroVoiceOutput(
                             continue
                         }
                         lastWriteProgress = playbackClock.nowMs()
+                        audioTrace?.append(phrase.pcm, offset, written, phrase.sampleRate)
                         offset += written
                         framesWritten += written
                         writtenFrames = framesWritten.toLong()
@@ -392,11 +426,16 @@ class SherpaKokoroVoiceOutput(
             val wasStopped = stopped
             stopped = true
             // Unblock the native producer waiting on a full queue before joining its native owner.
+            withContext(NonCancellable) { acknowledgement.close() }
             audio.cancel()
             tokens.cancel()
             preparedOpening.getAndSet(null)?.discard()
             withContext(NonCancellable) { playbackMonitor?.cancelAndJoin() }
-            val playedFrames = audioTrack?.let(::unsignedHead) ?: 0L
+            val playedFrames = maxOf(audioTrack?.let(::unsignedHead) ?: 0L, stoppedPlaybackHead.get())
+            withContext(NonCancellable + Dispatchers.IO) {
+                runCatching { audioTrace?.finish(playedFrames) }
+                    .onFailure { log("speech_audio_trace_failed reason=${it.message}") }
+            }
             onPlayback(if (wasStopped) VoicePlaybackFrame() else captions.at(playedFrames).copy(level = 0f))
             val outputRoute = audioTrack?.routedDevice?.let { "type=${it.type} id=${it.id}" }
             finalUnderruns = audioTrack?.underrunCount ?: finalUnderruns
@@ -428,7 +467,11 @@ class SherpaKokoroVoiceOutput(
         stopped = true
         // Never release an AudioTrack while its writer is using it.
         synchronized(playbackLock) {
-            audioTrack?.let { track -> runCatching { track.pause() }; runCatching { track.flush() } }
+            audioTrack?.let { track ->
+                runCatching { track.pause() }
+                runCatching { stoppedPlaybackHead.accumulateAndGet(unsignedHead(track)) { previous, current -> maxOf(previous, current) } }
+                runCatching { track.flush() }
+            }
         }
     }
 

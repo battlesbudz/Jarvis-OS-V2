@@ -71,4 +71,12 @@ class VoiceRepetitionGuardTest {
         assertEquals(2, guard.suppressedSentences)
     }
 
+    @Test fun repairOnlyWhenRepetitionLeavesNothingToSay() {
+        val guard = VoiceRepetitionGuard("What now?", "Let's go.") {}
+        guard.finish("Let's go.")
+        assertTrue(guard.needsRepair)
+        guard.accept("We can start with the microphone."); guard.finish()
+        assertFalse(guard.needsRepair)
+        assertEquals(1, guard.suppressedSentences)
+    }
 }

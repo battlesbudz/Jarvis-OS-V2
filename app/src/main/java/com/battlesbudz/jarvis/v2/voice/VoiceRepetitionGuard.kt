@@ -13,6 +13,7 @@ class VoiceRepetitionGuard(user: String, previousReply: String?, private val emi
     var suppressedSentences = 0
         private set
     val text: String get() = accepted.toString()
+    val needsRepair: Boolean get() = suppressedSentences > 0 && text.isBlank()
 
     fun accept(chunk: String) {
         if (chunk.isEmpty()) return

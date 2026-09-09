@@ -152,6 +152,23 @@ class MainActivity : ComponentActivity() {
     private lateinit var gemmaBenchmarks: com.battlesbudz.jarvis.v2.ai.GemmaBenchmarkController
     private lateinit var latencyBenchmarks: com.battlesbudz.jarvis.v2.voice.VoiceLatencyBenchmarkActions
     private var notificationPermissionAsked = false
+    private var pendingSpeechAudio: ByteArray? = null
+    private val speechAudioExport = registerForActivityResult(ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
+        val bytes = pendingSpeechAudio
+        pendingSpeechAudio = null
+        if (uri != null && bytes != null) lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val stream = contentResolver.openOutputStream(uri) ?: error("Could not open destination")
+                    stream.use { it.write(bytes) }
+                }
+                android.widget.Toast.makeText(this@MainActivity, "Reply audio saved", android.widget.Toast.LENGTH_SHORT).show()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                android.widget.Toast.makeText(this@MainActivity, "Could not save reply audio: ${error.message}", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     private val voiceCallResumer by lazy {
@@ -294,6 +311,7 @@ class MainActivity : ComponentActivity() {
                 },
                 onImportModel = { uri, spec, report -> importModel(uri, spec, report) },
                 onCopyDiagnostics = { transcript -> copyDiagnostics(transcript) },
+                onExportSpeechAudio = { exportSpeechAudio() },
                 onMessagesChanged = { persistTranscript(it) },
                 onSendingChanged = { sessionPreferences.edit().putBoolean("sending", it).apply() },
                 onSend = { prompt, imageUri, history, onToken, onComplete ->
@@ -597,6 +615,25 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startVoiceDiagnostics(label: String) = runtime.startVoiceDiagnostics(label)
+
+    private fun exportSpeechAudio() {
+        lifecycleScope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    java.io.File(cacheDir, "latest-jarvis-speech.wav").takeIf { it.isFile }?.readBytes()
+                }
+                if (bytes == null) {
+                    android.widget.Toast.makeText(this@MainActivity, "No completed reply audio yet", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    pendingSpeechAudio = bytes // Snapshot before the chooser; later turns may replace the cache.
+                    speechAudioExport.launch("jarvis-speech-${System.currentTimeMillis()}.wav")
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                android.widget.Toast.makeText(this@MainActivity, "Could not read reply audio: ${error.message}", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     private fun copyDiagnostics(transcript: List<ChatEntry>) {
         // The runtime ring contains the latest call's ASR, inference and playback events.

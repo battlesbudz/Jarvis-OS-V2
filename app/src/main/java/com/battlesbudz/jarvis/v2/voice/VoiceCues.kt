@@ -25,4 +25,38 @@ object VoiceCues {
         catch (error: Exception) { log("Voice cue unavailable: $cue ${error.message}") }
         finally { tone?.release() }
     }
+    internal suspend fun playAcknowledgement(audio: SpeechAudio, stopped: () -> Boolean,
+                                    paused: () -> Boolean, log: (String) -> Unit) {
+        var track: android.media.AudioTrack? = null
+        try {
+            if (stopped() || paused()) return
+            track = android.media.AudioTrack.Builder()
+                .setAudioAttributes(android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANT)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                .setAudioFormat(android.media.AudioFormat.Builder().setSampleRate(audio.sampleRate)
+                    .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO)
+                    .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT).build())
+                .setTransferMode(android.media.AudioTrack.MODE_STATIC)
+                .setBufferSizeInBytes(audio.pcm.size * 2).build()
+            check(track.write(audio.pcm, 0, audio.pcm.size) == audio.pcm.size)
+            if (stopped() || paused()) return
+            track.play()
+            log("acknowledgement_playback_started text=One moment. separateFromAnswer=true")
+            val started = System.nanoTime()
+            var confirmed = false
+            while (!stopped() && !paused() && track.playbackHeadPosition.toLong() < audio.pcm.size &&
+                (System.nanoTime() - started) / 1_000_000 < 4000) {
+                if (!confirmed && track.playbackHeadPosition > 0) {
+                    confirmed = true
+                    log("acknowledgement_playback_confirmed playbackHead=${track.playbackHeadPosition} separateFromAnswer=true")
+                }
+                delay(15)
+            }
+            log("acknowledgement_playback_finished frames=${track.playbackHeadPosition}")
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { log("acknowledgement_unavailable reason=${error.message}") }
+        finally { track?.let { runCatching { it.pause() }; it.release() } }
+    }
+
 }

@@ -381,6 +381,7 @@ fun JarvisApp(
     onDownloadGemma: ((Long, Long) -> Unit, (String) -> Unit, (String) -> Unit) -> Unit,
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
+    onExportSpeechAudio: () -> Unit,
     onMessagesChanged: (List<ChatEntry>) -> Unit,
     onSendingChanged: (Boolean) -> Unit,
     onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit) -> Unit
@@ -509,7 +510,8 @@ fun JarvisApp(
                             voiceCalls = onRefreshVoiceCalls()
                             showingVoiceCalls = true
                         },
-                        onCopyDiagnostics = onCopyDiagnostics
+                        onCopyDiagnostics = onCopyDiagnostics,
+                        onExportSpeechAudio = onExportSpeechAudio
                     )
                 }
             } else {
@@ -576,7 +578,8 @@ private fun VoiceCallScreen(
     onStopWakeTest: () -> Unit,
     onEndVoiceCall: ((String) -> Unit) -> Unit,
     onOpenVoiceCalls: () -> Unit,
-    onCopyDiagnostics: (List<ChatEntry>) -> Unit
+    onCopyDiagnostics: (List<ChatEntry>) -> Unit,
+    onExportSpeechAudio: () -> Unit
 ) {
     val runtime = com.battlesbudz.jarvis.v2.voice.VoiceSessionUi
     val runtimePhase by runtime.phase.collectAsState()
@@ -836,6 +839,7 @@ private fun VoiceCallScreen(
         ) {
             Text("Copy diagnostics")
         }
+        TextButton(onClick = onExportSpeechAudio) { Text("Save latest reply audio") }
         } }
     )
 }

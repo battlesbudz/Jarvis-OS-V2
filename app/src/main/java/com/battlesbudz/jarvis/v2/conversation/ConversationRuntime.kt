@@ -480,8 +480,9 @@ internal fun JarvisRuntime.runConversationInternal(
                 }
                 if (voiceRepetitionGuard != null && actionResultMessage == null) {
                     cleanedResponse = voiceRepetitionGuard.finish(cleanedResponse)
-                    if (voiceRepetitionGuard.suppressedSentences > 0) {
+                    if (voiceRepetitionGuard.needsRepair) {
                         diagnosticRecorder.recordImportant("Voice repetition blocked: sentences=${voiceRepetitionGuard.suppressedSentences}; rewriting latest answer once.")
+                        val repairStarted = System.nanoTime()
                         val beforeRepair = voiceRepetitionGuard.text.length
                         resetNativeConversation()
                         nativeConversationContainsCurrentTurn = false
@@ -516,7 +517,8 @@ internal fun JarvisRuntime.runConversationInternal(
                             }
                         }
                         cleanedResponse = voiceRepetitionGuard.text
-                        diagnosticRecorder.recordImportant("Voice repetition guard: suppressed=${voiceRepetitionGuard.suppressedSentences} acceptedChars=${cleanedResponse.length}")
+                        diagnosticRecorder.recordImportant("Voice repetition guard: suppressed=${voiceRepetitionGuard.suppressedSentences} " +
+                            "acceptedChars=${cleanedResponse.length} repairMs=${(System.nanoTime() - repairStarted) / 1_000_000}")
                     }
                 }
                 if (!rawControlOutput) {
