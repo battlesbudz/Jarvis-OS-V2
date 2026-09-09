@@ -26,7 +26,9 @@ cancellable, so already-playing audio stops without waiting for synthesis.
 Text chunking targets a 40-character opening. Subsequent live chunks are capped
 between 40 and 180 characters using remaining produced PCM and the previous
 phrase's measured synthesis time per character, reserving 25% scheduling headroom.
-This avoids jumping from a tiny opening to a long synthesis call. Punctuation and
+This avoids jumping from a tiny opening to a long synthesis call. At forced word
+boundaries the chunker waits for a small lookahead and includes a nearby sentence
+ending, avoiding an isolated tail such as "price." that pays another native-call cost. Punctuation and
 whitespace boundaries preserve words; the benchmark retains its controlled chunk sizes.
 Startup headroom is bounded at 1200 ms, or 2000 ms for an opening under 1.2 seconds.
 A ready second phrase or producer completion releases it early. This deliberately

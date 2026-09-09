@@ -65,4 +65,26 @@ class BargeInGateTest {
         repeat(10) { assertEquals(BargeInGate.Action.WAIT,
             gate.update(true, true, it * 100L, "The garden grate is open", "The garden gate is open")) }
     }
+    @Test fun requestInsideEchoSurvivesMoreStoryWordsAndPlaybackGaps() {
+        val spoken = "He wasn't just a keeper of the light. He was a keeper of a silence that had a terrible price."
+        for (playing in listOf(true, false)) {
+            val gate = BargeInGate()
+            val early = "He wasn't just a keeper of the light. Can you open up Facebook?"
+            val later = early + " He was a keeper of a silence that had a terror."
+            assertEquals(BargeInGate.Action.WAIT, gate.update(true, playing, 0, early, spoken))
+            assertEquals(BargeInGate.Action.CONFIRM, gate.update(true, playing, 300, later, spoken))
+        }
+    }
+    @Test fun echoedQuestionCannotInterruptEvenDuringAnUnderrun() {
+        val text = "Can you open up Facebook?"
+        val gate = BargeInGate()
+        repeat(20) { assertEquals(BargeInGate.Action.WAIT, gate.update(true, false, it * 100L, text, text)) }
+    }
+    @Test fun growingRequestDoesNotRestartStablePrefix() {
+        val gate = BargeInGate()
+        gate.update(true, true, 0, "Can you open up", "The old lighthouse keeper")
+        assertEquals(BargeInGate.Action.CONFIRM,
+            gate.update(true, true, 300, "Can you open up Facebook?", "The old lighthouse keeper"))
+    }
+
 }

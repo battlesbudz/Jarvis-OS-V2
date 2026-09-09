@@ -29,7 +29,18 @@ class SpeechChunker(private val openingChars: Int = DEFAULT_OPENING_CHARS) {
                 boundary = i + 1
                 break
             }
-            if (i >= target && c.isWhitespace()) { boundary = i; break }
+            if (i >= target && c.isWhitespace()) {
+                // Keep a short sentence tail with this phrase instead of synthesizing
+                // an orphan such as "price." in a separate expensive native call.
+                if (!final && buffer.length < i + 16) return null
+                val end = (i + 24).coerceAtMost(buffer.length)
+                val tailEnd = (i + 1 until end).firstOrNull { at ->
+                    buffer[at] in ".!?" && (at + 1 == buffer.length && final ||
+                        at + 1 < buffer.length && buffer[at + 1].isWhitespace())
+                }
+                boundary = tailEnd?.let { it + 1 } ?: i
+                break
+            }
         }
         if (boundary < 0) {
             if (!final) return null

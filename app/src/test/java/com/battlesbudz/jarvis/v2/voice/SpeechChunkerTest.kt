@@ -63,4 +63,11 @@ class SpeechChunkerTest {
         assertEquals(text, chunks.joinToString(" "))
     }
 
+    @Test fun shortSentenceTailIsNotAnOrphanNativeCall() {
+        val chunker = SpeechChunker()
+        chunker.append("He was a keeper of a silence that had a terrible price. Next sentence.")
+        assertEquals("He was a keeper of a silence that had a terrible price.", chunker.take(maxChars = 40))
+        assertEquals("Next sentence.", chunker.take(final = true))
+    }
+
 }

@@ -21,7 +21,7 @@ class BargeInAudioInput(
     override suspend fun start() = input.start()
     override suspend fun stop() = input.stop()
     override fun chunks() = flow {
-        val preRoll = RollingAudioBuffer(AudioFormat(sampleRateHz), maxDurationMs = 3000)
+        val preRoll = RollingAudioBuffer(AudioFormat(sampleRateHz), maxDurationMs = 6000)
         var gate = BargeInGate()
         val detector = createDetector()
         val quietEvidence = QuietSpeechEvidence()
@@ -46,7 +46,7 @@ class BargeInAudioInput(
                     recognizer?.close(); recognizer = null
                     delivered = true
                     onConfirmed()
-                    log("barge_speech_confirmed method=new_words phase=${if (audible) "playback" else "preparing"} preRollMs=${preRoll.sizeBytes() / 32}")
+                    log("barge_speech_confirmed method=new_words phase=${if (audible) "playback" else "preparing"} preRollMs=${preRoll.sizeBytes() / 32} request=${gate.requestText.take(100)}")
                     emit(preRoll.snapshot()); preRoll.clear()
                 } else if (recognizedBytes >= 16_000 * 2 * 10) {
                     recognizer?.close(); recognizer = null

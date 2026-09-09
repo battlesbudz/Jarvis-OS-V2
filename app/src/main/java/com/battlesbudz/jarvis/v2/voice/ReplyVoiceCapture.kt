@@ -18,7 +18,8 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
             val gated = BargeInAudioInput(QuietSpeechAudioInput(input, log, maxGain = 3.0),
                 createDetector = { SileroSpeechDetector.create(context.assets) },
                 playing = { output.isPlayingAudio }, spokenText = output::recentSpokenText,
-                createTranscriber = { MoonshineStreamingTranscriber(asrDirectory, updateIntervalSeconds = 0.5) },
+                createTranscriber = { PacedStreamingTranscriber(
+                    MoonshineStreamingTranscriber(asrDirectory, updateIntervalSeconds = 0.5), log) },
                 onConfirmed = { confirmed.complete(Unit); onConfirmed() }, log = log)
             val capture = AudioTurnCapture(gated, this,
                 createDetector = { SileroSpeechDetector.create(context.assets) },

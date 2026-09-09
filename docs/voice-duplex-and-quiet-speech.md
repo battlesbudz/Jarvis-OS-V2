@@ -13,7 +13,11 @@ a candidate needs recent acoustic evidence and recognized words stable for 300 m
 There is no acoustic-only cancellation shortcut. A conservative English prefix check
 requires a control, request, question, or correction; incidental phrases such as
 “It is” and “We should know” do not qualify. During playback the words must also
-differ from the recent spoken reply. These text rules can miss indirect interruptions;
+differ from the recent spoken reply. The gate inspects clauses throughout the bounded
+mixed transcript, removing contiguous echoed phrases before looking for a request.
+It keeps that reference during playback underruns and preserves the stability timer
+when a request grows or more echo is appended. This fixes the reported Facebook
+request being hidden by the trailing story words. These text rules can miss indirect interruptions;
 they are not a trained intent classifier.
 Known reply words and isolated recognition substitutions are rejected. A short stop
 command can confirm when it is not itself part of Jarvis's recent speech. This is
@@ -21,10 +25,16 @@ conservative text-based echo rejection, not a claim of complete acoustic echo ca
 Repeating Jarvis's exact words may not interrupt it; device testing must check this
 tradeoff and real interruption accuracy. The explicit stop control remains available.
 
-A probe recognizer uses 500 ms transcription updates to limit CPU contention. It
-resets after ten seconds of audio to bound context. It closes before the lazily
+A probe recognizer collects at least 500 ms of audio per pass. After a costly pass,
+a wall-clock recovery interval (its measured cost, bounded to 250–1500 ms) leaves
+CPU time for synthesis instead of immediately decoding queued microphone backlog.
+All PCM is retained in order, with an eight-second bound; exceeding it reports a
+listener failure rather than silently dropping speech or cancelling the valid reply.
+`barge_asr_budget` records audio duration, work time and recovery time. This can add
+interruption latency and requires on-device comparison; it is not a throughput claim.
+The recognizer resets after ten seconds of audio to bound context. It closes before the lazily
 loaded correction recognizer starts, so only one Moonshine model is resident in this
-listener. Three seconds of in-memory pre-roll retain the user's onset during recognition.
+listener. Six seconds of in-memory pre-roll retain the user's onset during recognition.
 No speculative recognition executes tools. Native ownership and the existing confirmed
 turn/tool guards remain in place. Extra recognition CPU can affect synthesis throughput;
 phone tests must check underruns and long-answer smoothness as well as barge-in accuracy.
