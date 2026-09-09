@@ -28,7 +28,7 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
         (0 until array.length()).map { array.getJSONObject(it) }.takeLast(limit)
     }.getOrDefault(emptyList())
     @Synchronized fun records(): List<JSONObject> =
-        (read("results", 40) + read("benchmark_results", 384)).sortedBy { it.optLong("atMs") }
+        (read("results", 40) + read("benchmark_results", TtsBenchmarkProfile.historyLimit)).sortedBy { it.optLong("atMs") }
 
     @Synchronized fun add(engine: TtsEngine, source: String, sample: String, metrics: TtsSessionMetrics,
                           run: TtsBenchmarkRun? = null) {
@@ -65,9 +65,9 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
                 .put("estimated_playback_audio_ms", if (metrics.playbackSpeed > 0)
                     (metrics.audioMs / metrics.playbackSpeed).toLong() else JSONObject.NULL)
         }
-        // A complete two-voice matrix contains 192 records. Calls cannot evict that suite.
+        // Keep two complete all-voice matrices. Calls cannot evict benchmark results.
         val key = if (run == null) "results" else "benchmark_results"
-        val limit = if (run == null) 40 else 384
+        val limit = if (run == null) 40 else TtsBenchmarkProfile.historyLimit
         val array = JSONArray().also { a -> (read(key, limit) + item).takeLast(limit).forEach(a::put) }
         preferences.edit().putString(key, array.toString()).apply()
     }

@@ -21,7 +21,9 @@ data class TtsBenchmarkProfile(
                 listOf(1f, 0.9f).map { speed -> TtsBenchmarkProfile(threads, opening, speed) }
             }
         }
-        val comparisonEngines = listOf(TtsEngine.KOKORO, TtsEngine.PIPER_MIRO)
+        val comparisonEngines: List<TtsEngine> = TtsEngine.entries.toList()
+        val comparisonRunCount: Int get() = all.size * TtsBenchmarkSamples.all.size * comparisonEngines.size * 2
+        val historyLimit: Int get() = comparisonRunCount * 2
     }
 }
 

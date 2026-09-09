@@ -12,7 +12,7 @@ class TtsBenchmarkProfileTest {
                 it.threads == threads && it.openingChars == opening
             }.map { it.playbackSpeed }.toSet())
         }
-        assertEquals(listOf(TtsEngine.KOKORO, TtsEngine.PIPER_MIRO), TtsBenchmarkProfile.comparisonEngines)
+        assertEquals(TtsEngine.entries.toList(), TtsBenchmarkProfile.comparisonEngines)
     }
 
     @Test fun fullTextWaitsForEndAndKeepsAllSentencesInOneSynthesisRequest() {

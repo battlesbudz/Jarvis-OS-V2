@@ -33,13 +33,13 @@ class TtsComparisonStoreTest {
         val prefs = preferences()
         val store = TtsComparisonStore(prefs)
         val metrics = TtsSessionMetrics(100, 200, 400, 2000, 0, 1f, 0, 1, 1, 50, "abc", 4, true, null)
-        repeat(192) {
+        repeat(TtsBenchmarkProfile.comparisonRunCount) {
             store.add(TtsEngine.KOKORO, "voice-profiles-v3", "short-v1", metrics,
                 TtsBenchmarkRun("complete-suite", TtsBenchmarkProfile(), 1, "Text $it", 0, 0))
         }
         repeat(45) { store.add(TtsEngine.PIPER_MIRO, "voice-call", "$it", metrics) }
         val restored = TtsComparisonStore(prefs)
-        assertEquals(192, restored.records().count { it.optString("suite_id") == "complete-suite" })
+        assertEquals(TtsBenchmarkProfile.comparisonRunCount, restored.records().count { it.optString("suite_id") == "complete-suite" })
         assertEquals(40, restored.records().count { it.optString("source") == "voice-call" })
     }
 

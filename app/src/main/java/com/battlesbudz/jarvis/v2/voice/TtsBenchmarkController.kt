@@ -48,14 +48,7 @@ class TtsBenchmarkController(
                 var done = 0
                 for ((pass, settings) in passes.withIndex()) for (case in settings) {
                     ensureActive()
-                    val coolDeadline = System.nanoTime() + 180_000_000_000L
-                    while (thermalStatus() >= 3) {
-                        check(System.nanoTime() < coolDeadline) {
-                            "Phone is still too hot for a fair comparison. Let it cool, then restart the test."
-                        }
-                        report("Cooling before test ${done + 1}/${cases.size * 2}. Stop is available; no test timer is running.")
-                        delay(5_000)
-                    }
+                    // Thermal status is diagnostic only; never pause or reject a requested test.
                     val startThermal = thermalStatus()
                     val (engine, setting, sample, text) = case
                     report("${++done}/${cases.size * 2}: ${engine.label}, ${setting.label}, $sample, pass ${pass + 1}…")

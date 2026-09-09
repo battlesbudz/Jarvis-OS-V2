@@ -100,12 +100,12 @@ internal fun TtsComparisonDialog(
                 Text("Profile: ${profile.label}")
                 Text("Opening sizes are targets at natural word/clause boundaries. Full text waits for the entire input and synthesizes it in one call. 0.9× slows playback without lowering pitch. All profiles start playback immediately when their first audio is ready, with no added startup buffer.", style = MaterialTheme.typography.bodySmall)
                 Button(onClick = { run(selected) }, enabled = canChange && !running) { Text("Test selected voice") }
-                OutlinedButton(onClick = { run(null) }, enabled = canChange && !running) { Text("Compare Kokoro and Miro · this profile") }
+                OutlinedButton(onClick = { run(null) }, enabled = canChange && !running) { Text("Compare all voices · this profile") }
                 HorizontalDivider()
                 Text("Response speed", style = MaterialTheme.typography.titleMedium)
-                Text("The full comparison tests Kokoro and Miro with all 16 profiles: 2/4 threads, 40/60/90-character openings or full text, and 1.0×/0.9× playback. That is 192 text runs including repeats and can take a long time. The test pauses to cool when heat would make the comparison unreliable. Stop preserves completed results. Test settings do not change live calls.")
+                Text("The full comparison tests Kokoro, Miro and Pocket Paul with all 16 profiles: 2/4 threads, 40/60/90-character openings or full text, and 1.0×/0.9× playback. That is ${TtsBenchmarkProfile.comparisonRunCount} text runs including repeats and can take a long time. Heat status is recorded but never pauses or stops a test. Stop preserves completed results. Test settings do not change live calls.")
                 OutlinedButton(onClick = { runLatency(false) }, enabled = canChange && !running) {
-                    Text("Compare all profiles · Kokoro and Miro")
+                    Text("Compare all profiles · all voices")
                 }
                 Text("Compare Gemma GPU acceleration off, on, then off again. Includes warm runs and simulated battery tools; this does not change your phone or the acceleration used in calls. A model without MTP support will report an error for that test.")
                 OutlinedButton(onClick = { runLatency(true) }, enabled = canChange && !running) {
