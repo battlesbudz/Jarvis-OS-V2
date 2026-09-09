@@ -6,6 +6,26 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TtsComparisonStoreTest {
+    @Test fun isolatedRunExportsItsOwnDeliveryAndProvenanceWithoutChangingCallProfile() {
+        val store = TtsComparisonStore(preferences())
+        val profile = TtsBenchmarkProfile(2, null, 1f, nativeStreaming = true)
+        store.setCallProfile(TtsEngine.POCKET_PAUL, profile)
+        val metrics = TtsSessionMetrics(10, 20, 50, 80, 0, 1f, 0, 0, 2, 3, "hash", 2, true, null)
+        store.add(TtsEngine.POCKET_PAUL, "paul-isolation-v1", "case", metrics,
+            TtsBenchmarkRun("suite", profile.copy(resetDecoder = false), 1, "A. B.", 0, 4,
+                inputDelivery = "all text upfront after model ready", submissions = listOf("A.", "B."),
+                provenance = mapOf("versionCode" to "123", "ciSourceCommit" to "commit")))
+        val saved = store.records().single()
+        assertEquals("all text upfront after model ready", saved.getString("input_delivery"))
+        assertEquals(2, saved.getJSONArray("planned_submissions").length())
+        assertEquals("123", saved.getJSONObject("provenance").getString("versionCode"))
+        assertTrue(saved.isNull("first_intelligible_word_ms"))
+        assertEquals("not_assessed", saved.getString("intelligibility_assessment"))
+        assertTrue(saved.getBoolean("thermal_limited"))
+        assertEquals(profile, store.callProfile(TtsEngine.POCKET_PAUL))
+        assertTrue(TtsComparisonStore.describe(saved).contains("first_intelligible_word_ms=unavailable"))
+    }
+
     @Test fun appliedCallProfilesPersistPerVoiceAndResetIndependently() {
         val prefs = preferences()
         val store = TtsComparisonStore(prefs)

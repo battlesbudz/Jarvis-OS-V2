@@ -64,8 +64,12 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
             item.put("audio_file", run.audioFile ?: JSONObject.NULL)
                 .put("paul_stability", run.profile.stabilityLabel)
                 .put("suite_id", run.suiteId).put("profile_id", run.profile.id).put("pass", run.pass)
-                .put("input_text", run.text).put("input_delivery", "4 characters every 32 ms after model ready")
-                .put("synthesis_mode", when { run.profile.nativeStreaming -> "native-audio-stream-natural-sentences"; run.profile.fullText -> "full-text-before-playback"; else -> "streamed-phrases" })
+                .put("input_text", run.text).put("input_delivery", run.inputDelivery)
+                .put("planned_submissions", run.submissions?.let { JSONArray(it) } ?: JSONObject.NULL)
+                .put("provenance", JSONObject(run.provenance))
+                .put("first_intelligible_word_ms", JSONObject.NULL)
+                .put("intelligibility_assessment", "not_assessed")
+                .put("synthesis_mode", when { run.submissions != null -> "native-audio-stream-fixed-submissions"; run.profile.nativeStreaming -> "native-audio-stream-natural-sentences"; run.profile.fullText -> "full-text-before-playback"; else -> "streamed-phrases" })
                 .put("requested_playback_speed", run.profile.playbackSpeed.toDouble())
                 .put("playback_speed_applied", kotlin.math.abs(metrics.playbackSpeed - run.profile.playbackSpeed) < 0.001f)
                 .put("opening_target_chars", run.profile.openingChars ?: JSONObject.NULL)
@@ -94,7 +98,7 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
         fun describe(item: JSONObject) = buildString {
             appendLine("TTS ${TtsEngine.diagnosticLabel(item.optString("engine"))} atMs=${item.optLong("atMs")}")
             for (key in listOf("id", "suite_id", "profile_id", "paul_stability", "audio_file", "pass", "model", "source", "sample", "input_text",
-                "input_delivery", "synthesis_mode", "requested_playback_speed", "playback_speed_applied",
+                "input_delivery", "planned_submissions", "provenance", "first_intelligible_word_ms", "intelligibility_assessment", "synthesis_mode", "requested_playback_speed", "playback_speed_applied",
                 "startup_buffer_target_ms", "thermal_status_start", "thermal_status_end", "thermal_limited",
                 "effective_rtf", "estimated_playback_audio_ms", "completed", "load_ms", "first_phrase_synthesis_ms",
                 "synthesis_ms", "raw_audio_ms", "rtf", "playback_speed", "estimated_supply_gap_ms",

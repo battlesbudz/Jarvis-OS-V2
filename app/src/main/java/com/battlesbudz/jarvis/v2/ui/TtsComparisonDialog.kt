@@ -55,16 +55,18 @@ internal fun TtsComparisonDialog(
         if (gemma) latencyBenchmarks.compareGemma({ status = it }, finished)
         else latencyBenchmarks.compareOpenings(selected, { status = it }, finished)
     }
-    fun run(engine: TtsEngine?) {
+    fun run(engine: TtsEngine?, isolation: Boolean = false) {
         if (running) return
         val startedAt = System.currentTimeMillis()
         running = true
         copiedId = null; records = emptyList()
-        onBenchmark(engine, profile, { status = it }) {
+        val finished: () -> Unit = {
             running = false
             records = savedRuns().filter { it.optLong("atMs") >= startedAt }
             index = 0
         }
+        if (isolation) latencyBenchmarks.comparePaulIsolation({ status = it }, finished)
+        else onBenchmark(engine, profile, { status = it }, finished)
     }
     AlertDialog(onDismissRequest = { if (!running) onDismiss() },
         title = { Text("Voice and response speed") },
@@ -136,6 +138,12 @@ internal fun TtsComparisonDialog(
                     OutlinedButton(onClick = { run(null) }, enabled = canChange && !running) {
                         Text("Compare Paul period on/off · same text")
                     }
+                }
+                if (selected == TtsEngine.POCKET_PAUL) {
+                    OutlinedButton(onClick = { run(TtsEngine.POCKET_PAUL, isolation = true) }, enabled = canChange && !running) {
+                        Text("Compare Paul source audio · 14 runs")
+                    }
+                    Text("Compares a short opening and paragraph as one or grouped submissions, then compares fresh versus retained synthesis state (decoder, RNG and chunk startup together). Includes ‘I understand.’ alone. Fixed 2 threads, 1.0× speed and 200ms cushion; text is ready upfront. Each case runs twice in reversed order. Exports include source pauses and levels. Listen for missing words and voice changes; this test leaves your call settings intact.", style = MaterialTheme.typography.bodySmall)
                 }
                 Text("Profile: ${profile.label}")
                 Text("Voice calls: ${appliedProfile?.label ?: "Original adaptive defaults"}")

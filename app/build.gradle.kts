@@ -70,6 +70,8 @@ android {
         externalNativeBuild { cmake { arguments += "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON" } }
         versionCode = buildVersionCode
         versionName = buildVersionName
+        val sourceCommit = System.getenv("GITHUB_SHA")?.takeIf { it.matches(Regex("[0-9a-fA-F]{40}")) } ?: "unavailable"
+        buildConfigField("String", "SOURCE_COMMIT", "\"$sourceCommit\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
@@ -91,7 +93,7 @@ android {
     }
     sourceSets.getByName("main").jniLibs.srcDir(moonshineDir.map { it.dir("jni") })
     packaging.jniLibs.excludes += setOf("**/libsherpa-onnx-c-api.so", "**/libsherpa-onnx-cxx-api.so")
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
 }
 dependencies {
     moonshineSdk("ai.moonshine:moonshine-voice:0.1.5@aar")

@@ -26,6 +26,7 @@ class SherpaKokoroVoiceOutput(
     private val openingChars: Int = SpeechChunker.DEFAULT_OPENING_CHARS,
     private val benchmarkProfile: TtsBenchmarkProfile? = null,
     private val benchmarkRun: Boolean = false,
+    private val benchmarkSubmissions: List<String>? = null,
     private val acknowledgeDelays: Boolean = false,
     private val openingPcm: ShortArray? = null,
     private val playbackVolume: () -> String = { "unavailable" },
@@ -37,6 +38,11 @@ class SherpaKokoroVoiceOutput(
     private val numThreads: Int = if (engine == TtsEngine.POCKET_PAUL) 2 else Runtime.getRuntime().availableProcessors().coerceIn(2, 4),
     private val log: (String) -> Unit = {}
 ) : VoiceOutput {
+    init {
+        require(benchmarkSubmissions == null || (benchmarkRun && engine == TtsEngine.POCKET_PAUL &&
+            benchmarkProfile?.nativeStreaming == true && benchmarkSubmissions.isNotEmpty() &&
+            benchmarkSubmissions.all { it.isNotBlank() }))
+    }
     @Volatile private var stopped = false
     @Volatile private var audioTrack: AudioTrack? = null
     private val speaking = AtomicBoolean(false)
@@ -166,6 +172,7 @@ class SherpaKokoroVoiceOutput(
         val audio = NativeAudioQueue<SynthesizedPhrase>(2)
         val pocketSentences = engine == TtsEngine.POCKET_PAUL && (benchmarkProfile?.nativeStreaming == true || !fixedChunking && benchmarkProfile == null)
         val pocketText = if (pocketSentences) PocketTextStream() else null
+        val isolationText = if (benchmarkSubmissions != null) StringBuilder() else null
         val chunker = SpeechChunker(openingChars, fullText = benchmarkProfile?.fullText == true)
         val paulReset = benchmarkProfile?.resetDecoder ?: true
         val paulPeriod = benchmarkProfile?.leadingPeriod ?: false
@@ -173,7 +180,7 @@ class SherpaKokoroVoiceOutput(
         val paulBufferMs = if (benchmarkRun) paulBaseBuffer else paulBuffer.target(paulBaseBuffer)
         val nativeSession = java.util.UUID.randomUUID().toString()
         val streamDiagnostics = if (engine == TtsEngine.POCKET_PAUL)
-            PocketStreamDiagnostics(nativeSession, log) else null
+            PocketStreamDiagnostics(nativeSession, log, analyzeSource = benchmarkRun) else null
         val startupReady = CompletableDeferred<Unit>()
         val tokens = Channel<String>(64)
         val collectTokens = launch {
@@ -403,7 +410,9 @@ class SherpaKokoroVoiceOutput(
                             else {
                                 inputChars += token.length
                                 textHash.update(token.toByteArray(Charsets.UTF_8))
-                                if (pocketText != null) {
+                                if (isolationText != null) {
+                                    isolationText.append(token)
+                                } else if (pocketText != null) {
                                     pocketText.append(token)
                                     // While native PCM was playing, Gemma may have completed more
                                     // text. Condition all ready sentences together; don't restart
@@ -440,7 +449,12 @@ class SherpaKokoroVoiceOutput(
                         }
                     }
                 }
-                while (true) generate(nextPhrase(final = true) ?: break)
+                if (benchmarkSubmissions != null && !stopped) {
+                    check(isolationText.toString() == benchmarkSubmissions.joinToString(" ")) {
+                        "Diagnostic submissions must cover the exact input text."
+                    }
+                    benchmarkSubmissions.forEach { generate(it) }
+                } else while (true) generate(nextPhrase(final = true) ?: break)
             } catch (error: Throwable) {
                 failureMessage = error.message ?: error.javaClass.simpleName
                 failure = error

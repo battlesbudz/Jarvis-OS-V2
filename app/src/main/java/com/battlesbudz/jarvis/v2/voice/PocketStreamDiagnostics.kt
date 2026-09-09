@@ -4,7 +4,9 @@ import java.security.MessageDigest
 import kotlin.math.abs
 
 /** Observes delivered PCM only. Boundary measurements are clues, not a voice-quality verdict. */
-internal class PocketStreamDiagnostics(private val session: String, private val log: (String) -> Unit) {
+internal class PocketStreamDiagnostics(private val session: String, private val log: (String) -> Unit,
+                                       private val analyzeSource: Boolean = false) {
+    private var source: SourcePcmAnalysis? = null
     private var calls = 0
     private var chunks = 0
     private var frames = 0L
@@ -16,6 +18,10 @@ internal class PocketStreamDiagnostics(private val session: String, private val 
     private var repeatedTextCalls = 0
 
     fun begin(index: Int, text: String, rate: Int, nativeSession: String = session, resetDecoder: Boolean = false) {
+        source?.finish(false)
+        source = if (analyzeSource) SourcePcmAnalysis(rate, frames) { event ->
+            log("pocket_source_pcm session=$session index=$index $event")
+        } else null
         val hash = MessageDigest.getInstance("SHA-256").digest(text.toByteArray())
             .joinToString("") { "%02x".format(it) }
         val repeated = !texts.add(hash)
@@ -31,6 +37,7 @@ internal class PocketStreamDiagnostics(private val session: String, private val 
 
     fun chunk(index: Int, pcm: ShortArray) {
         if (pcm.isEmpty()) return
+        source?.append(pcm)
         val jump = previousSample?.let { abs(pcm.first().toInt() - it.toInt()) } ?: 0
         if (callChunks == 0) {
             maxAcrossJump = maxOf(maxAcrossJump, jump)
@@ -44,11 +51,13 @@ internal class PocketStreamDiagnostics(private val session: String, private val 
     }
 
     fun finish(index: Int) {
+        source?.finish(true); source = null
         log("pocket_stream_trace event=call_end session=$session index=$index " +
             "callbacks=$callChunks endFrame=$frames")
     }
 
     fun summary(underruns: Int, gapMs: Long, completed: Boolean) {
+        source?.finish(false); source = null
         log("pocket_stream_trace event=summary session=$session submissions=$calls callbacks=$chunks " +
             "frames=$frames repeatedTextCalls=$repeatedTextCalls " +
             "maxWithinCallJoinDeltaPcm16=$maxWithinJump maxAcrossCallJoinDeltaPcm16=$maxAcrossJump " +

@@ -52,5 +52,8 @@ data class TtsBenchmarkRun(
     val text: String,
     val thermalStart: Int,
     val thermalEnd: Int,
-    val audioFile: String? = null
+    val audioFile: String? = null,
+    val inputDelivery: String = "4 characters every 32 ms after model ready",
+    val submissions: List<String>? = null,
+    val provenance: Map<String, String> = emptyMap()
 )

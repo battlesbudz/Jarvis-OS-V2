@@ -219,7 +219,11 @@ class MainActivity : ComponentActivity() {
             canStart = { voiceSessionController.currentCallId() == null && voiceTurnJob?.isCompleted != false && activeConversationJobs.get() == 0 },
             log = { diagnosticRecorder.record("TTS benchmark: $it") },
             thermalStatus = { getSystemService(android.os.PowerManager::class.java).currentThermalStatus },
-            traceDirectory = java.io.File(cacheDir, "voice-benchmarks")
+            traceDirectory = java.io.File(cacheDir, "voice-benchmarks"),
+            buildProvenance = mapOf("versionName" to BuildConfig.VERSION_NAME,
+                "versionCode" to BuildConfig.VERSION_CODE.toString(), "ciSourceCommit" to BuildConfig.SOURCE_COMMIT,
+                "device" to "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
+                "androidSdk" to android.os.Build.VERSION.SDK_INT.toString())
         )
         val gemmaResults = com.battlesbudz.jarvis.v2.ai.GemmaBenchmarkStore(
             getSharedPreferences("gemma-acceleration-benchmarks", MODE_PRIVATE))
@@ -238,6 +242,8 @@ class MainActivity : ComponentActivity() {
             gemmaResults, gemmaBenchmarks::start,
             compareOpenings = { engine, status, finished ->
                 ttsBenchmarks.start(engine, status, finished, compareOpenings = true)
+            }, comparePaulIsolation = { status, finished ->
+                ttsBenchmarks.start(com.battlesbudz.jarvis.v2.voice.TtsEngine.POCKET_PAUL, status, finished, paulIsolation = true)
             }, stop = { ttsBenchmarks.stop(); gemmaBenchmarks.stop() })
         val interruptedSession = sessionPreferences.getBoolean("sending", false)
         if (!voiceSessionArmed) shortTermContext.restoreSummary(

@@ -1,6 +1,6 @@
 # Local voice implementation plan
 
-Status: implementation started on `audio-pr2`. Phase 0 checkpointing and initial turn timelines are implemented; baseline measurements and phone acceptance remain pending.
+Status: implementation started on `audio-pr2`. Phase 0 checkpointing and initial turn timelines are implemented. Source-PCM measurements and the early Paul isolation runner are now implemented; baseline measurements and phone acceptance remain pending.
 
 Prepared: 2026-09-09. Repository: `battlesbudz/Jarvis-OS-V2`. Working branch: `audio-pr2`, existing [PR #6](https://github.com/battlesbudz/Jarvis-OS-V2/pull/6).
 
@@ -110,7 +110,7 @@ Each phase is a reviewable change set on the existing branch. Check a phase comp
 | Phase | Deliverable | Depends on | Status |
 | --- | --- | --- | --- |
 | 0 | Baseline measurements and efficient checkpoints | Audited head verified | In progress — checkpointing and initial timeline implemented; device baseline pending |
-| 6A | Early Paul source-audio and submission comparisons | 0 — comparable TTS baseline and required export fields | Pending |
+| 6A | Early Paul source-audio and submission comparisons | 0 — comparable TTS baseline and required export fields | In progress — fixed-submission runner and source exports implemented; phone comparisons and listening pending |
 | 1 | Call-scoped microphone and model ownership | 0 | Pending |
 | 2 | Playback-aware history and cancellation | 1 | Pending |
 | 3 | Natural interruptions and seamless follow-up capture | 1, 2 | Pending |
@@ -342,6 +342,26 @@ Input: “I understand. I can keep up with what you are saying and process your 
 | Scope | Source PCM excludes filler, playback gaps, time stretching, and microphone recording. This review used numerical inspection, not verified listening. Neither “Ummm” quality nor perceived tonal consistency is established. |
 
 Decision: split Phase 6 into early isolation (6A) and integrated validation (6B), add intelligible-word timing and source-pause/level attribution, and retain short-opening regression checks. Warm-model reuse and ASR finalization work remain necessary for live latency, but cannot explain a pause embedded in a TTS-only export. No synthesis default or completed-phase status changes solely from this evidence.
+
+### 2026-09-09 — Phase 0 source measurements and Phase 6A comparison runner
+
+Based on the updated plan at `0d8c195`. Implementation commit: the commit introducing this entry; build evidence will be appended after Android CI. Rollback application baseline: [build 625](https://github.com/battlesbudz/Jarvis-OS-V2/releases/tag/audio-pr2-pr6-build.625). No production voice policy or saved selection changes in this increment.
+
+| Work | Delivered behavior |
+| --- | --- |
+| Controlled submissions | **Compare Paul source audio · 14 runs** in existing Voice and response speed diagnostics runs seven cases twice, reversing order on pass two. Standalone “I understand.”, the exact short-opening-v2 text, and the existing paragraph are covered. Compare one versus two fixed submissions with reset, then the identical two submissions with retained state. All text is supplied upfront after model readiness through the same native callback path; exact text coverage is checked before dispatch. |
+| Fixed settings | Two threads, speed 1.0, 200 ms startup cushion, no leading period; pinned Paul reference, seed 42, temperature 0.7, five flow steps, and current native chunk settings. The state comparison changes decoder, RNG, and chunk-startup state together; it cannot identify decoder-only causality. Live first-two-sentence grouping remains protected. |
+| Source-PCM attribution | Benchmark-only `pocket_source_pcm` events report per-submission source frame ranges, near-silence intervals, active-window RMS dBFS, and PCM16 rail counts. Windows continue across callback boundaries and restart at submission boundaries. Analysis uses floor(sampleRate / 100) samples per window (240 at 24 kHz), PCM16 divided by 32768, RMS below 0.001 for near-silence, and includes the last partial window. Speech-active windows are an energy proxy, not verified speech. |
+| Bounded measurements | Only accumulators are retained; at most 128 near-silence intervals are emitted per submission, with omitted count and complete totals. PCM16 rail counts include both ±32767 and -32768; these are saturation proxies, not proof of float-domain clipping. Interrupted submissions are marked incomplete. Source measurements describe accepted callback PCM; the WAV remains bounded to 180 seconds and trimmed to playback-head progress. Match its exported start/end frames before aligning audio and measurements. |
+| Reproducible exports | Existing per-run ZIP includes source analysis in its boundary log and immutable result metadata with planned submissions, input delivery, build version/code, CI checkout commit, device/Android SDK, actual model/reference/vocabulary hashes, generation settings, and native policy provenance. CI checkout SHA may be the PR merge commit; local builds report it unavailable. Hashes are collected once before timed runs, with cancellation checks. This pre-reads model files, so the suite is not a cold-filesystem benchmark; each case still creates a fresh native instance. |
+| Honest quality fields | First intelligible word timing remains unavailable and intelligibility is explicitly not assessed. PCM energy, source silence, callback delivery, and non-silent playback are not automatically promoted to speech quality or word coverage. |
+| Validation | 31 focused Kotlin/JUnit tests passed, covering source-window invariance, source offsets, truncated reports, saturation rails, unavailable intelligibility, paired-text consistency, immutable run metadata/profile isolation, artifact hashing and cancellation. Independent review completed; Android build pending. Reviewer corrections: count symmetric PCM16 rails and describe the actual combined synthesis-state reset. |
+
+Phone procedure: end the active call, select Paul in **Voice and response speed**, tap **Compare Paul source audio · 14 runs**, and use **Export this run’s audio + diagnostics** for the relevant cases. The comparison does not apply its experimental settings to calls. Stop remains available and completed records remain saved. Fourteen recordings fit within the existing 24-run cache; older recordings can expire after further benchmarks.
+
+Compare `opening-one-reset` against `opening-grouped-reset`, then `opening-grouped-reset` against `opening-grouped-retained`, with matching pass and thermal conditions. Repeat the paragraph pairs and listen to `standalone-reset` for missing words. Record whether each word is intelligible, suspected pause locations, and perceived voice changes; numerical levels alone are not a verdict. Keep thermally limited results separate. The existing paced profile test restores text-arrival pacing for follow-up comparisons; its natural grouping must be read from its trace rather than assumed identical to fixed groups.
+
+Still pending: phone listening/text-coverage results, normal versus thermally limited comparisons, first intelligible answer annotations, upstream-versus-patched parity, bundled Ummm and opening-plus-answer evidence, and integrated ASR/Gemma load. No root cause or winning state policy is selected by this implementation. Phase 6A and Phase 0 remain open; broader Phase 0 metrics and Phases 1–5/6B/7 remain on the roadmap.
 
 Open evidence-dependent decisions:
 
