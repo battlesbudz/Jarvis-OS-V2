@@ -99,7 +99,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 }
                 val lookupStarted = System.nanoTime()
                 val referenceContext = turnPlan.lookupQuery?.let {
-                    if (voiceAudio != null) activeVoiceOutput?.acknowledgeConfirmedTurn(checking = true)
+                    if (voiceAudio != null) activeVoiceOutput?.acknowledgeConfirmedTurn()
                     referenceGrounding.fetchIfRequested(it)?.context
                 }
                 if (turnPlan.lookupQuery != null) diagnosticRecorder.recordSummary(

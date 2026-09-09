@@ -384,6 +384,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 if (draft == null) resetNativeConversation()
                 diagnosticRecorder.record("Voice ASR final\ntext=$transcript\naudioBytes=${audioBytes.size}\nprepared=${draft != null}")
                 mainHandler.post { onTranscript("You", transcript, true) }
+                output.acknowledgeConfirmedTurn()
                 val outcome = com.battlesbudz.jarvis.v2.voice.runInterruptibleReply(
                     reply = {
                         val coordinator = VoiceTurnCoordinator(voiceSessionController)

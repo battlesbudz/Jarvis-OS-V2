@@ -48,17 +48,14 @@ class SherpaKokoroVoiceOutput(
 
     private val stoppedPlaybackHead = AtomicLong()
     private val acknowledgement = DelayedAcknowledgement(log)
-    private val neutralFiller = if (acknowledgeDelays) FillerPhrases.nextNeutral() else "One moment."
-    @Volatile private var requestedFiller: String? = null
+    private val neutralFiller = FillerPhrases.INITIAL
+    private val fillerDiskCache = FillerAudioCache(java.io.File(modelDirectory, "filler-cache-v1"))
     private val acknowledgementRequests = Channel<String>(Channel.CONFLATED)
-    private fun fillerCacheKey(text: String) = "${engine.id}:$modelDirectory:$speakerId:$text"
-    fun acknowledgeConfirmedTurn(checking: Boolean = false) {
+    private fun fillerCacheKey(text: String) = "${engine.version}:$modelDirectory:$speakerId:$text"
+    fun acknowledgeConfirmedTurn() {
         if (!acknowledgeDelays) return
-        val text = if (checking) FillerPhrases.CHECKING else neutralFiller
-        requestedFiller = text
-        acknowledgementCache[fillerCacheKey(text)]?.let { acknowledgement.prepare(it) }
-            ?: acknowledgementRequests.trySend(text)
-        acknowledgement.request(text)
+        acknowledgement.request(neutralFiller)
+        acknowledgementRequests.trySend(FillerPhrases.FOLLOWUP)
     }
     private companion object {
         val acknowledgementCache = java.util.concurrent.ConcurrentHashMap<String, SpeechAudio>()
@@ -113,9 +110,15 @@ class SherpaKokoroVoiceOutput(
         val speechScope = this
         if (acknowledgeDelays) {
             // Cached PCM needs no native model reload before it can be played.
-            acknowledgementCache[fillerCacheKey(neutralFiller)]?.let {
-                acknowledgement.prepare(it)
-                log("acknowledgement_cache_hit beforeModelLoad=true")
+            withContext(Dispatchers.IO) {
+                for (text in listOf(neutralFiller, FillerPhrases.FOLLOWUP)) {
+                    val key = fillerCacheKey(text)
+                    (acknowledgementCache[key] ?: fillerDiskCache.read(key, text))?.let {
+                        acknowledgementCache[key] = it
+                        acknowledgement.prepare(it)
+                        log("acknowledgement_cache_hit beforeModelLoad=true text=$text")
+                    }
+                }
             }
         }
         if (acknowledgeDelays) acknowledgement.start(this) { audio ->
@@ -217,10 +220,15 @@ class SherpaKokoroVoiceOutput(
                             log("acknowledgement_cache_ready text=$text synthesisMs=${it.synthesisMs}")
                         }
                         acknowledgement.prepare(cached)
+                        runCatching { fillerDiskCache.write(key, cached) }
+                            .onFailure { log("acknowledgement_cache_persist_failed reason=${it.message}") }
                     } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (error: Exception) { log("acknowledgement_cache_unavailable reason=${error.message}") }
+                    catch (error: Exception) {
+                        acknowledgement.preparationFailed(text)
+                        log("acknowledgement_cache_unavailable reason=${error.message}")
+                    }
                 }
-                if (acknowledgeDelays) prepareAcknowledgement(requestedFiller ?: neutralFiller)
+                if (acknowledgeDelays) prepareAcknowledgement(neutralFiller)
                 fun generate(text: String) {
                     owner.ensureActive()
                     if (stopped) return

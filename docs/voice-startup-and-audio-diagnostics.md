@@ -4,15 +4,29 @@ Build 602 call `252373d8-89cf-4e91-928a-0a99ddab78eb` took 19,748 ms from endpoi
 
 This change builds on 603, which replaces full background ASR during replies with the bundled Hey Jarvis and stop keyword models. The supplied 602 logs do not test those changes.
 
-## Acknowledgment
+## Acknowledgment (always-initial policy)
 
-Voice calls prepare one neutral filler clip (`Uh, one moment.`, `Um, let me think.`, or `One moment.`) using the selected voice and the existing single native TTS owner while listening. Up to twelve engine/model/speaker/phrase combinations are cached in memory for the lifetime of the process. First use has a synthesis cost; there is no extra native model or concurrent synthesis worker.
+Every confirmed, accepted voice turn now starts with `Um.` in the selected voice, including fast answers. The previous skip-on-fast-answer behavior and rotating initial phrases were superseded by the user's always-initial preference. The cue begins as soon as its cached PCM is available; there is no intentional 700 ms grace period. It is requested immediately after confirmation, before answer routing/inference work.
 
-Only a confirmed, accepted user turn requests the cue. After a 700 ms grace period it may play once, provided the answer PCM has not arrived. Build 604 incorrectly expired the cue after 1,500 ms of cache waiting, even though native model loading could take 3,702 ms on a correction turn. Cached PCM is now made available before native model loading, and a cache miss waits until preparation finishes, the answer wins, or the turn is cancelled. This is not a guaranteed 700 ms audible response on a cold start. A fast answer cancels the pending cue. An already-playing cue finishes before answer playback, and its remaining playback time counts toward the answer's startup headroom. Cancellation and microphone handoff stop the cue. The cue is not conversation history and cannot execute a tool. Neutral phrases rotate; `Checking that.` is requested only immediately before an actual reference lookup. Each phrase is cached independently. Only the selected neutral phrase is prewarmed on a listening turn; the full library is not synthesized before answering. An already-confirmed lookup can prepare its selected phrase instead. Logs identify request, cache wait/hit, skipped cue, and actual cue playback.
+While waiting for answer PCM, the controller waits 2,500 ms after cue playback finishes, then plays cached `One second.`. If that clip is not available yet, it reuses the initial clip. This cycle ends when the first answer PCM arrives. An already-playing cue finishes before answer playback; no overlap is allowed. The remaining cue time counts toward startup headroom. These are neutral waiting phrases, not claims of ongoing searches or successful actions. This is a startup-wait policy, not filler injection into gaps in a story already being played.
 
-Acknowledgment logs are separate from answer text, PCM, and playback latency. Existing answer metrics do not count the cue as an answer. A neutral cue signals that processing continues; it does not claim that a lookup or action succeeded.
+Both clips are cached in memory and on disk by model version, directory, speaker and text. They load before the native TTS model. Only the initial clip must be synthesized on a cold cache; follow-up preparation uses the existing native owner, below ready answer text in priority. Cache failures are logged and release the answer rather than deadlocking it. No extra native model or synthesis worker is created. The first-ever preparation, OS scheduling, muted/unavailable output, and intentional microphone handoff mean this is a 2.5-second scheduling target, not a hard three-second acoustic guarantee. Cancellation stops cues and there is no cue before turn confirmation.
 
-The repetition guard still checks sentences before speaking them. It now requests a repair only when filtering leaves no answer, avoiding extra generation after usable novel text. Entirely repeated answers still require repair; `repairMs` measures that cost. This does not promise sub-500 ms model responses or fix Kokoro's sustained synthesis throughput.
+Acknowledgment logs are separate from answer text, PCM, and playback latency. Existing answer metrics do not count a cue as an answer. Fillers are not conversation history and cannot execute tools. The WAV export below remains answer-only.
+
+The repetition guard still checks sentences before speaking. It requests repair only when filtering leaves no answer. Entirely repeated answers still require repair; `repairMs` measures that cost. Fillers do not change Gemma decode speed or Kokoro's sustained synthesis throughput.
+
+## Synthesis speed comparison
+
+`Compare voice speed` tests the currently selected engine with 2 and 4 CPU threads and 40- and 90-character openings, twice with reversed order. All cases use the same streamed text, normal playback speed, and a loaded model. Results preserve thread count, synthesis time, first PCM/playback timing, and real-time factor. The test does not change live settings or automatically choose a voice. Measure on the actual Fold 6; published desktop throughput is not a phone result.
+
+Candidates for a separate measured model comparison:
+
+- Kokoro INT8 variants: https://k2-fsa.github.io/sherpa/onnx/tts/pretrained_models/kokoro.html . Quantization is an option, not evidence of a speed or quality win on this device.
+- Pocket TTS: https://github.com/kyutai-labs/pocket-tts . The authors report streaming and about 200 ms first-chunk latency, with about 6x real-time on an M4 MacBook Air CPU. These are not Fold 6 benchmarks.
+- Kitten TTS: https://github.com/KittenML/KittenTTS . CPU-oriented ONNX models range from 15M to 80M parameters; voice preference and native-runtime compatibility still require evaluation.
+
+No replacement model is installed or selected by this change. Target sustained synthesis comfortably below one second per second of speech, with acceptable first-audio delay and the user's voice-quality preference.
 
 ## Save latest reply audio
 

@@ -70,9 +70,9 @@ internal fun TtsComparisonDialog(
                 OutlinedButton(onClick = { run(null) }, enabled = canChange && !running) { Text("Test all voices") }
                 HorizontalDivider()
                 Text("Response speed", style = MaterialTheme.typography.titleMedium)
-                Text("Compare shorter voice openings using the same streamed text. Listen for smoothness as well as the first spoken word. Each length runs twice with the voice already loaded.")
+                Text("Compare 2 and 4 CPU threads with 40- and 90-character openings using the same streamed text. Each setting runs twice in reverse order. Listen for smoothness and check synthesis speed; results do not change your current voice settings.")
                 OutlinedButton(onClick = { runLatency(false) }, enabled = canChange && !running) {
-                    Text("Compare opening lengths")
+                    Text("Compare voice speed")
                 }
                 Text("Compare Gemma GPU acceleration off, on, then off again. Includes warm runs and simulated battery tools; this does not change your phone or the acceleration used in calls. A model without MTP support will report an error for that test.")
                 OutlinedButton(onClick = { runLatency(true) }, enabled = canChange && !running) {

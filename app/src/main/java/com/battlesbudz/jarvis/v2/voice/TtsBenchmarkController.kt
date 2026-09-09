@@ -37,15 +37,16 @@ class TtsBenchmarkController(
                     val directory = models.ensureReady(engine, ::report)
                     if (compareOpenings) {
                         // Reverse the second pass to expose warm-up/thermal order effects.
-                        for ((pass, sizes) in listOf(listOf(28, 40, 70), listOf(70, 40, 28)).withIndex()) {
-                            for (size in sizes) {
+                        val configurations = listOf(2 to 40, 4 to 40, 2 to 90, 4 to 90)
+                        for ((pass, settings) in listOf(configurations, configurations.reversed()).withIndex()) {
+                            for ((threads, size) in settings) {
                                 ensureActive()
-                                report("${engine.label}: $size-character opening, pass ${pass + 1} of 2…")
+                                report("${engine.label}: $threads threads, $size-character opening, pass ${pass + 1} of 2…")
                                 val ready = CompletableDeferred<Unit>()
                                 val speaker = SherpaKokoroVoiceOutput(directory.path, engine = engine,
-                                    normalSpeed = true, fixedChunking = true, openingChars = size,
+                                    normalSpeed = true, fixedChunking = true, openingChars = size, numThreads = threads,
                                     onReady = { ready.complete(Unit) },
-                                    onMetrics = { results.add(engine, "opening-stream-v1", "opening-${size}-pass-${pass + 1}", it) },
+                                    onMetrics = { results.add(engine, "voice-speed-v2", "threads-${threads}-opening-${size}-pass-${pass + 1}", it) },
                                     log = log)
                                 output = speaker
                                 try {
