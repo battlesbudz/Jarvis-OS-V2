@@ -19,9 +19,11 @@ class ShortTermConversationContext(
             ?.trim()
             ?.take(900)
             ?.takeIf { it.isNotBlank() }
-            ?.takeUnless { anchor -> compact && history.takeLast(recentEntryLimit).any {
+            // Only the first recent entry is guaranteed to survive the final
+            // context cap alongside a maximum-size summary.
+            ?.takeUnless { anchor -> compact && history.takeLast(recentEntryLimit).firstOrNull()?.let {
                 it.first == "You" && it.second.trim().take(300) == anchor
-            } }
+            } == true }
         val recent = history.takeLast(recentEntryLimit)
             .joinToString("\n") { (role, text) ->
                 val limit = if (role == "You") 300 else 450

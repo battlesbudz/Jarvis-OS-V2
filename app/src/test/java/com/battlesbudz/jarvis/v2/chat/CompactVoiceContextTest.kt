@@ -19,6 +19,15 @@ class CompactVoiceContextTest {
         assertTrue(compact.contains("Important old detail."))
     }
 
+    @Test fun duplicateBeyondContextCapDoesNotRemoveVisibleAnchor() {
+        val context = ShortTermConversationContext().apply { updateSummary("s".repeat(2_000)) }
+        val history = listOf("You" to "Original dog topic.") +
+            (1..7).map { "Jarvis" to "x".repeat(450) } + ("You" to "Original dog topic.")
+        val compact = context.promptContext(history, compact = true)
+        assertTrue(compact.contains("Earlier topic:\nYou: Original dog topic."))
+        assertEquals(3_000, compact.length)
+    }
+
     @Test fun oldAnchorOutsideRecentWindowAndSummaryArePreserved() {
         val context = ShortTermConversationContext().apply { updateSummary("Persistent summary detail.") }
         val history = listOf("You" to "Original dog topic.") + (1..10).map { "You" to "Recent request $it." }
