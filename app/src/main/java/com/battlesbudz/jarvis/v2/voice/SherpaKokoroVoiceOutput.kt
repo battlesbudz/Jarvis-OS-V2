@@ -490,8 +490,10 @@ class SherpaKokoroVoiceOutput(
             } finally {
                 // Release only after generate has returned, including when cancellation was requested.
                 startupReady.complete(Unit)
-                engine?.release()
+                // No more PCM can arrive. Publish completion before potentially slow native
+                // cleanup, so cleanup is never mistaken for a gap needing another cue.
                 audio.close(failure)
+                engine?.release()
             }
         }
         try {
