@@ -17,6 +17,9 @@ class BoundedInterruptionRecognizer(
     private val result = AtomicReference<Result?>()
     @Volatile var unavailable: Boolean = false
         private set
+    @Volatile var retryableFailure: Boolean = false
+        private set
+    private class PlaybackPressure : Exception()
     private var job: Job? = null
     private var closed = false
     val busy: Boolean get() = job?.isCompleted == false
@@ -26,15 +29,17 @@ class BoundedInterruptionRecognizer(
         require(pcm.size in 2..128_000 && pcm.size % 2 == 0)
         val owned = pcm.copyOf()
         result.set(null)
+        retryableFailure = false
         job = scope.launch(dispatcher) {
             val started = nowMs()
             var asr: StreamingTranscriber? = null
             fun checkBudget() {
                 ensureActive()
-                check(hasBudget()) { "playback_budget" }
+                if (!hasBudget()) throw PlaybackPressure()
                 check(nowMs() - started <= budgetMs) { "decode_budget" }
             }
             try {
+                checkBudget()
                 asr = create()
                 checkBudget()
                 asr.observeSpeech(true)
@@ -55,6 +60,10 @@ class BoundedInterruptionRecognizer(
                 result.set(Result(revision, text, audioAtMs, workMs))
                 log("barge_probe_result revision=$revision audioMs=${owned.size / 32} workMs=$workMs chars=${text.length}")
             } catch (cancelled: CancellationException) { throw cancelled }
+            catch (pressure: PlaybackPressure) {
+                retryableFailure = true
+                log("barge_probe_deferred reason=playback_budget retryable=true fallback=keyword")
+            }
             catch (error: Exception) {
                 unavailable = true
                 log("barge_natural_unavailable reason=${error.message} fallback=keyword")

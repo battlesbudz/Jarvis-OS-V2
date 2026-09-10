@@ -77,4 +77,19 @@ class CallModelSlotTest {
         slot.close()
         assertFalse(slot.canReuse("moonshine", 8))
     }
+    @Test fun commandReservesAllReplyProbesWithoutExceedingSdkBound() {
+        var loads = 0
+        val slot = CallModelSlot<Any>({})
+        repeat(7) { slot.acquire("moonshine", 8) { loads++; Any() }.finish() }
+        val command = slot.acquire("moonshine", 8, requiredUses = 5) { loads++; Any() }
+        assertFalse(command.reused); command.finish()
+        repeat(4) {
+            assertTrue(slot.canReuse("moonshine", 8))
+            slot.acquire("moonshine", 8) { error("Probe must remain warm") }.finish()
+        }
+        assertEquals(2, loads)
+        repeat(3) { slot.acquire("moonshine", 8) { error("Still within bound") }.finish() }
+        assertFalse(slot.canReuse("moonshine", 8))
+        slot.close()
+    }
 }

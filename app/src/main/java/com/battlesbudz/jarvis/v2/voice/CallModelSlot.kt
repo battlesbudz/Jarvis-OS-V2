@@ -21,11 +21,11 @@ class CallModelSlot<T : Any>(private val release: (T) -> Unit, private val log: 
     @Synchronized fun canReuse(requestKey: String, maxUses: Int): Boolean =
         !closed && !borrowed && resource != null && key == requestKey && uses < maxUses
 
-    @Synchronized fun acquire(requestKey: String, maxUses: Int = Int.MAX_VALUE, create: () -> T): Lease {
+    @Synchronized fun acquire(requestKey: String, maxUses: Int = Int.MAX_VALUE, requiredUses: Int = 1, create: () -> T): Lease {
         check(!closed && !borrowed) { "Call model is closed or already in use." }
-        require(maxUses > 0)
-        if (resource != null && (key != requestKey || uses >= maxUses)) {
-            log("model_rotation reason=${if (key != requestKey) "configuration_changed" else "bounded_sdk_cache"} uses=$uses")
+        require(maxUses > 0 && requiredUses in 1..maxUses)
+        if (resource != null && (key != requestKey || uses > maxUses - requiredUses)) {
+            log("model_rotation reason=${if (key != requestKey) "configuration_changed" else if (uses >= maxUses) "bounded_sdk_cache" else "reserved_reply_capacity"} uses=$uses")
             discard()
         }
         val reused = resource != null

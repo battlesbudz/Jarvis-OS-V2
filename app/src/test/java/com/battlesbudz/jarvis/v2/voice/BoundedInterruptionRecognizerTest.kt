@@ -76,12 +76,19 @@ class BoundedInterruptionRecognizerTest {
         var calls = 0
         val worker = BoundedInterruptionRecognizer(this, {
             object : StreamingTranscriber {
-                override fun accept(pcm: ByteArray): String { calls++; budget = false; return "stop" }
-                override fun finish(): String = error("Playback needs priority")
+                override fun accept(pcm: ByteArray): String { calls++; if (calls == 1) budget = false; return "stop" }
+                override fun finish(): String { check(budget); return "Actually open settings" }
                 override fun close() {}
             }
         }, dispatcher = Dispatchers.Unconfined, hasBudget = { budget })
         worker.submit(1, ByteArray(32000), 0)
-        assertEquals(1, calls); assertTrue(worker.unavailable); assertNull(worker.poll()); worker.close()
+        assertEquals(1, calls); assertFalse(worker.unavailable); assertTrue(worker.retryableFailure)
+        assertNull(worker.poll())
+        budget = true
+        assertTrue(worker.submit(2, ByteArray(32000), 0))
+        assertEquals(5, calls)
+        assertEquals("Actually open settings", worker.poll()!!.text)
+        assertFalse(worker.retryableFailure)
+        worker.close()
     }
 }

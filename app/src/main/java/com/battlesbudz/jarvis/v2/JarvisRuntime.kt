@@ -539,7 +539,16 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                     diagnosticRecorder.recordSummary("Voice latency: endpoint_to_first_text_ms=$elapsedMs turn=$asrTurnId")
                                 }
                             }
-                            runConversationInternal(
+                            val interruptionTest = com.battlesbudz.jarvis.v2.voice.VoiceInterruptionTest.requested(transcript)
+                            if (interruptionTest) {
+                                speculative.close()
+                                val passage = com.battlesbudz.jarvis.v2.voice.VoiceInterruptionTest.passage
+                                diagnosticRecorder.recordImportant("Voice interruption test: started source=local_passage normal_call_pipeline=true")
+                                recordFirstText(passage)
+                                onToken(passage)
+                                speechChunks.trySend(passage)
+                                completed.complete(passage)
+                            } else runConversationInternal(
                                 prompt = transcript, history = voiceHistory, imageUri = null,
                                 preparedVoice = draft, voiceAudio = audioBytes,
                                 onLatency = { replyLatency.set(it) },
@@ -562,7 +571,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                 }
                             )
                             val text = completed.await()
-                            conversationJob?.join()
+                            if (!interruptionTest) conversationJob?.join()
                             mainHandler.post { onTranscript("Jarvis", text, true) }
                             com.battlesbudz.jarvis.v2.ai.GenerationResult(text, -1L, null)
                         }

@@ -16,7 +16,8 @@ class NaturalBargeInAudioInputTest {
                      speech: Boolean = true, budget: Boolean = true, keywordAt: Int = -1,
                      failing: Boolean = false, chunks: Int = 30,
                      dispatcher: CoroutineDispatcher = Dispatchers.Unconfined, beforeFrame: (Int) -> Unit = {},
-                     acceptAction: () -> Unit = {}, onConfirmation: (Boolean) -> Unit = {}): NaturalBargeInAudioInput {
+                     acceptAction: () -> Unit = {}, speechNow: () -> Boolean = { speech },
+                     budgetNow: () -> Boolean = { budget }, onConfirmation: (Boolean) -> Unit = {}): NaturalBargeInAudioInput {
         val input = object : AudioInput {
             override val sampleRateHz = 16000
             override val channelCount = 1
@@ -36,7 +37,7 @@ class NaturalBargeInAudioInputTest {
                 override fun close() {}
             } },
             createVad = { object : SpeechDetector {
-                override fun accept(pcm: ByteArray) = SpeechDecision(speech, if (speech) 0.99f else 0f)
+                override fun accept(pcm: ByteArray) = SpeechDecision(speechNow(), if (speechNow()) 0.99f else 0f)
                 override fun close() {}
             } },
             createTranscriber = {
@@ -46,7 +47,7 @@ class NaturalBargeInAudioInputTest {
                     override fun finish() = text
                     override fun close() { closedModels++ }
                 }
-            }, playing = { true }, reference = { reference }, hasPlaybackBudget = { budget },
+            }, playing = { true }, reference = { reference }, hasPlaybackBudget = budgetNow,
             onConfirmed = { natural, _ ->
                 if (natural) assertEquals(models, closedModels)
                 onConfirmation(natural)
@@ -122,5 +123,44 @@ class NaturalBargeInAudioInputTest {
             assertEquals(models, closedModels)
             assertEquals(13, delivered.first()[0].toInt())
         } finally { release.countDown() }
+    }
+    @Test fun completedResultIsConsumedDuringSilenceWithoutAnotherCandidate() = runBlocking {
+        val pending = java.util.ArrayDeque<Runnable>()
+        val dispatcher = object : CoroutineDispatcher() {
+            override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) { pending.add(block) }
+        }
+        var voiced = true
+        gate(chunks = 23, dispatcher = dispatcher, speechNow = { voiced }, beforeFrame = { index ->
+            if (index == 10) voiced = false
+            if (index == 19) while (pending.isNotEmpty()) pending.removeFirst().run()
+            if (index == 20) assertTrue(logs.any { it.contains("barge_probe_discarded reason=stale") })
+        }).chunks().toList()
+        assertEquals(0, confirmed)
+        assertEquals(1, models)
+    }
+    @Test fun temporaryPlaybackPressureRecoversForLaterSpeechInSameReply() = runBlocking {
+        var budget = true
+        var first = true
+        val delivered = gate(chunks = 40, budgetNow = { budget }, acceptAction = {
+            if (first) { first = false; budget = false }
+        }, beforeFrame = { index -> if (index == 15) budget = true }).chunks().toList()
+        assertEquals(1, confirmed)
+        assertEquals(2, models)
+        assertEquals(models, closedModels)
+        assertTrue(delivered.isNotEmpty())
+        assertTrue(logs.any { it.contains("barge_probe_deferred") })
+        assertFalse(logs.any { it.contains("barge_natural_unavailable") })
+    }
+    @Test fun delayedCredibleResultSettlesBeforeSubmittingMoreAudio() = runBlocking {
+        val pending = java.util.ArrayDeque<Runnable>()
+        val dispatcher = object : CoroutineDispatcher() {
+            override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) { pending.add(block) }
+        }
+        val delivered = gate(chunks = 23, dispatcher = dispatcher, beforeFrame = { index ->
+            if (index == 15) while (pending.isNotEmpty()) pending.removeFirst().run()
+        }).chunks().toList()
+        assertEquals(1, confirmed)
+        assertEquals(1, models)
+        assertEquals(23 * 3200, delivered.sumOf { it.size })
     }
 }

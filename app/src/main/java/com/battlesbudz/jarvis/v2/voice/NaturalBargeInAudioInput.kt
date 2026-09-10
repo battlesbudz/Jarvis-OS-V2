@@ -17,6 +17,7 @@ class NaturalBargeInAudioInput(
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 },
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : AudioInput {
+    companion object { const val MAX_PROBES = 4 }
     init { require(input.sampleRateHz == 16_000 && input.channelCount == 1) }
     override val sampleRateHz get() = input.sampleRateHz
     override val channelCount get() = input.channelCount
@@ -86,9 +87,20 @@ class NaturalBargeInAudioInput(
                         log("barge_keyword_confirmed keyword=$hit")
                         return@collect // Consume the trigger, as on the existing keyword path.
                     }
+                    worker.poll()?.let { result ->
+                        if (result.revision == revision && now - result.audioAtMs <= 1000) {
+                            hypothesis = result
+                            log("barge_natural_ready scope=candidate revision=$revision resultAgeMs=${now - result.audioAtMs}")
+                        }
+                        else log("barge_probe_discarded reason=stale revision=${result.revision}")
+                    }
                     if (worker.unavailable) disable("recognizer_budget_or_failure")
                     if (input.bufferedAudioMs > 600 || now - at > 800) disable("capture_backlog")
                     if (disabled) return@collect
+                    if (submitted && !worker.busy && worker.retryableFailure) {
+                        reset(); cooldownUntil = now + 500
+                        log("barge_candidate_deferred reason=playback_budget retryAfterMs=500")
+                    }
                     val speech = try { vad?.accept(pcm)?.isSpeech == true } catch (error: Exception) {
                         disable("vad_${error.javaClass.simpleName}"); false
                     }
@@ -105,22 +117,6 @@ class NaturalBargeInAudioInput(
                         log("barge_candidate_rejected reason=window_limit playback_uninterrupted=true")
                         return@collect
                     }
-                    if ((!submitted || (hypothesis != null && candidateProbes < 2 && candidate.sizeBytes() >= submittedBytes + 16_000)) &&
-                        candidate.sizeBytes() >= 32_000 && hasPlaybackBudget()) {
-                        if (probes >= 4) { disable("reply_probe_limit"); return@collect }
-                        if (worker.submit(revision, candidate.snapshot(), at)) {
-                            submitted = true; submittedBytes = candidate.sizeBytes(); candidateProbes++; probes++
-                            hypothesis = null; gate = BargeInGate()
-                            log("barge_probe_started revision=$revision preRollMs=${candidate.sizeBytes() / 32} attempt=$probes")
-                        }
-                    }
-                    worker.poll()?.let { result ->
-                        if (result.revision == revision && now - result.audioAtMs <= 1000) {
-                            hypothesis = result
-                            log("barge_natural_ready scope=candidate revision=$revision resultAgeMs=${now - result.audioAtMs}")
-                        }
-                        else log("barge_probe_discarded reason=stale revision=${result.revision}")
-                    }
                     val heard = hypothesis
                     if (heard != null && now - heard.audioAtMs <= 1300 && now - lastSpeechAt <= 1000 &&
                         gate.update(now - lastSpeechAt <= 600, playing(), now, heard.text, reference()) == BargeInGate.Action.CONFIRM) {
@@ -133,6 +129,16 @@ class NaturalBargeInAudioInput(
                         candidate.clear(); onset.clear()
                     } else if ((heard != null && now - heard.audioAtMs > 1300) || at - lastSpeechAt > 800) {
                         reset(); cooldownUntil = now + 500
+                    }
+                    if (delivered || !active) return@collect
+                    if ((!submitted || (hypothesis != null && gate.reason != "words_settling" && candidateProbes < 2 && candidate.sizeBytes() >= submittedBytes + 16_000)) &&
+                        candidate.sizeBytes() >= 32_000 && hasPlaybackBudget()) {
+                        if (probes >= MAX_PROBES) { disable("reply_probe_limit"); return@collect }
+                        if (worker.submit(revision, candidate.snapshot(), at)) {
+                            submitted = true; submittedBytes = candidate.sizeBytes(); candidateProbes++; probes++
+                            hypothesis = null; gate = BargeInGate()
+                            log("barge_probe_started revision=$revision preRollMs=${candidate.sizeBytes() / 32} attempt=$probes")
+                        }
                     }
                 }
             } finally {

@@ -7,7 +7,7 @@ import ai.moonshine.voice.TranscriptEvent
 import java.io.File
 
 /** Owns one utterance. Native calls are serialized by AudioTurnCapture's collector. */
-class MoonshineStreamingTranscriber(private val directory: File, private val updateIntervalSeconds: Double = DEFAULT_INTERVAL, modelSession: VoiceModelSession? = null) : StreamingTranscriber {
+class MoonshineStreamingTranscriber(private val directory: File, private val updateIntervalSeconds: Double = DEFAULT_INTERVAL, modelSession: VoiceModelSession? = null, reserveReplyProbes: Boolean = true) : StreamingTranscriber {
     private val lines = linkedMapOf<Long, String>()
     private fun createLoaded(): Transcriber {
         val created = Transcriber(listOf(
@@ -23,8 +23,10 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
         } catch (error: Throwable) { created.close(); throw error }
     }
     // SDK 0.1.5 retains a private completed-line map. Rotate after eight streams
-    // to bound that bookkeeping without reloading on every ordinary turn.
-    private val lease = modelSession?.moonshine?.acquire("${directory.path}:$updateIntervalSeconds", MAX_STREAMS, ::createLoaded)
+    // to bound that bookkeeping. Commands rotate early when necessary to reserve
+    // all bounded reply probes; optional probes themselves never rotate or load.
+    private val lease = modelSession?.moonshine?.acquire("${directory.path}:$updateIntervalSeconds", MAX_STREAMS,
+        requiredUses = if (reserveReplyProbes) 1 + NaturalBargeInAudioInput.MAX_PROBES else 1, create = ::createLoaded)
     private var leased = lease != null
     private var transcriber = lease?.value ?: createLoaded()
     private var streamHandle = -1

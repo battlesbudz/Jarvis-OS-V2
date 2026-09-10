@@ -30,7 +30,7 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                     createVad = { SileroSpeechDetector.create(context.assets) },
                     createTranscriber = {
                         check(MoonshineStreamingTranscriber.canReuseForProbe(asrDirectory, modelSession)) { "probe_model_not_warm" }
-                        asrEngine.create(asrDirectory, log = log, modelSession = modelSession)
+                        MoonshineStreamingTranscriber(asrDirectory, modelSession = modelSession, reserveReplyProbes = false)
                     },
                     playing = { output.isPlayingAudio }, reference = { output.recentSpokenText() },
                     hasPlaybackBudget = output::hasInterruptionBudget,
