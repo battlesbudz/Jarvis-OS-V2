@@ -95,6 +95,13 @@ class SherpaKokoroVoiceOutput(
         if (audible) lastAudibleAt = now
         gapCuePlaying.get() || audible || now - lastAudibleAt < 350 // Speaker/reverberation tail after drain.
     }
+    /** Optional interruption ASR yields when answer audio cannot cover its work budget. */
+    fun hasInterruptionBudget(): Boolean = synchronized(playbackLock) {
+        if (stopped || interrupted || gapCuePlaying.get()) return@synchronized false
+        val track = audioTrack ?: return@synchronized true
+        val queued = (writtenFrames - unsignedHead(track)).coerceAtLeast(0)
+        queued * 1000 / track.sampleRate >= 900
+    }
     private fun applyPause() {
         val paused = interrupted
         playbackClock.setPaused(paused)

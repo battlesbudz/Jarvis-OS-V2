@@ -64,4 +64,17 @@ class CallModelSlotTest {
             assertEquals(0, releases); lease.finish(); assertEquals(1, releases)
         } finally { unblock.countDown(); executor.shutdownNow() }
     }
+    @Test fun optionalProbeCannotForceColdLoadRotationOrCompetingBorrow() {
+        val slot = CallModelSlot<Any>({})
+        assertFalse(slot.canReuse("moonshine", 2))
+        val first = slot.acquire("moonshine", 2) { Any() }
+        assertFalse(slot.canReuse("moonshine", 2))
+        first.finish()
+        assertTrue(slot.canReuse("moonshine", 2))
+        assertFalse(slot.canReuse("other", 2))
+        slot.acquire("moonshine", 2) { error("Must reuse") }.finish()
+        assertFalse(slot.canReuse("moonshine", 2))
+        slot.close()
+        assertFalse(slot.canReuse("moonshine", 8))
+    }
 }

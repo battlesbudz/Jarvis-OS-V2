@@ -16,15 +16,31 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 audioManager = context.getSystemService(AudioManager::class.java),
                 echoCancellation = true, noiseSuppression = true, log = log)
             val confirmed = CompletableDeferred<Unit>()
-            val gated = KeywordBargeInAudioInput(input,
+            var naturalReference: String? = null
+            fun confirm() {
+                trace?.mark(VoiceTurnTrace.Stage.INTERRUPTION_CONFIRMED)
+                trace?.mark(VoiceTurnTrace.Stage.PLAYBACK_STOP_REQUESTED)
+                output.stopSpeaking()
+                confirmed.complete(Unit)
+                onConfirmed()
+            }
+            val gated: AudioInput = if (asrEngine == AsrEngine.MOONSHINE) {
+                NaturalBargeInAudioInput(input,
+                    createKeyword = { MicroInterruptionKeywords(context.assets) },
+                    createVad = { SileroSpeechDetector.create(context.assets) },
+                    createTranscriber = {
+                        check(MoonshineStreamingTranscriber.canReuseForProbe(asrDirectory, modelSession)) { "probe_model_not_warm" }
+                        asrEngine.create(asrDirectory, log = log, modelSession = modelSession)
+                    },
+                    playing = { output.isPlayingAudio }, reference = { output.recentSpokenText() },
+                    hasPlaybackBudget = output::hasInterruptionBudget,
+                    onConfirmed = { natural, evidence ->
+                        if (natural) naturalReference = evidence
+                        confirm()
+                    }, log = log)
+            } else KeywordBargeInAudioInput(input,
                 createDetector = { MicroInterruptionKeywords(context.assets) },
-                onConfirmed = { _ ->
-                    trace?.mark(VoiceTurnTrace.Stage.INTERRUPTION_CONFIRMED)
-                    trace?.mark(VoiceTurnTrace.Stage.PLAYBACK_STOP_REQUESTED)
-                    output.stopSpeaking()
-                    confirmed.complete(Unit)
-                    onConfirmed()
-                }, log = log)
+                onConfirmed = { confirm() }, log = log)
             val capture = AudioTurnCapture(gated, this,
                 createDetector = { SileroSpeechDetector.create(context.assets) },
                 createTranscriber = { LazyStreamingTranscriber { asrEngine.create(asrDirectory, log = log, modelSession = modelSession) } }, log = log,
@@ -40,7 +56,19 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                     completion.onAwait { error("Interruption capture ended without confirmed speech") }
                 }
                 withTimeout(30_000) { completion.await() }
-                return@supervisorScope CapturedVoiceTurn(capture.finalTranscript, capture.stop())
+                val wav = capture.stop()
+                val finalText = capture.finalTranscript
+                val echo = naturalReference
+                if (echo != null) {
+                    // Recheck the final recognition: provisional words never authorize actions.
+                    val checked = NaturalCorrectionText.resolve(finalText, echo)
+                    if (checked == null) {
+                        log("barge_correction_discarded reason=final_request_not_confirmed")
+                        return@supervisorScope CapturedVoiceTurn("", byteArrayOf())
+                    }
+                    return@supervisorScope CapturedVoiceTurn(checked, wav)
+                }
+                return@supervisorScope CapturedVoiceTurn(finalText, wav)
             } catch (busy: MicrophoneBusyException) {
                 log("barge_listener_yielded external_microphone=true")
                 throw busy

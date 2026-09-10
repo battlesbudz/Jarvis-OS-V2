@@ -7,7 +7,7 @@ import ai.moonshine.voice.TranscriptEvent
 import java.io.File
 
 /** Owns one utterance. Native calls are serialized by AudioTurnCapture's collector. */
-class MoonshineStreamingTranscriber(private val directory: File, private val updateIntervalSeconds: Double = 0.25, modelSession: VoiceModelSession? = null) : StreamingTranscriber {
+class MoonshineStreamingTranscriber(private val directory: File, private val updateIntervalSeconds: Double = DEFAULT_INTERVAL, modelSession: VoiceModelSession? = null) : StreamingTranscriber {
     private val lines = linkedMapOf<Long, String>()
     private fun createLoaded(): Transcriber {
         val created = Transcriber(listOf(
@@ -24,7 +24,7 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
     }
     // SDK 0.1.5 retains a private completed-line map. Rotate after eight streams
     // to bound that bookkeeping without reloading on every ordinary turn.
-    private val lease = modelSession?.moonshine?.acquire("${directory.path}:$updateIntervalSeconds", 8, ::createLoaded)
+    private val lease = modelSession?.moonshine?.acquire("${directory.path}:$updateIntervalSeconds", MAX_STREAMS, ::createLoaded)
     private var leased = lease != null
     private var transcriber = lease?.value ?: createLoaded()
     private var streamHandle = -1
@@ -122,5 +122,11 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
                 if (leased) { lease!!.finish(healthy); leased = false } else transcriber.close()
             }
         }
+    }
+    companion object {
+        private const val DEFAULT_INTERVAL = 0.25
+        private const val MAX_STREAMS = 8
+        fun canReuseForProbe(directory: File, session: VoiceModelSession?): Boolean =
+            session?.moonshine?.canReuse("${directory.path}:$DEFAULT_INTERVAL", MAX_STREAMS) == true
     }
 }

@@ -17,6 +17,10 @@ class CallModelSlot<T : Any>(private val release: (T) -> Unit, private val log: 
             if (!healthy || closed) discard()
         }
     }
+    /** Optional work may borrow warm weights, but must not force a load or rotation. */
+    @Synchronized fun canReuse(requestKey: String, maxUses: Int): Boolean =
+        !closed && !borrowed && resource != null && key == requestKey && uses < maxUses
+
     @Synchronized fun acquire(requestKey: String, maxUses: Int = Int.MAX_VALUE, create: () -> T): Lease {
         check(!closed && !borrowed) { "Call model is closed or already in use." }
         require(maxUses > 0)
