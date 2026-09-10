@@ -8,47 +8,37 @@ import kotlinx.coroutines.*
 /** Local speech capture alongside generation/playback, with the ordinary mic-priority contract. */
 class ReplyVoiceCapture(private val context: Context, private val log: (String) -> Unit) {
     suspend fun listen(output: SherpaKokoroVoiceOutput, asrDirectory: File,
-                       onConfirmed: () -> Unit, asrEngine: AsrEngine = AsrEngine.MOONSHINE, acceptCandidate: (ByteArray) -> Boolean = { true }, onPartialTranscript: (String) -> Unit = {}, trace: VoiceTurnTrace? = null,
-                       inputFactory: (suspend () -> AudioInput)? = null, modelSession: VoiceModelSession? = null): CapturedVoiceTurn = recoverReplyListener(log) {
+                       onConfirmed: () -> Unit, onPartialTranscript: (String) -> Unit = {}): CapturedVoiceTurn = recoverReplyListener(log) {
         supervisorScope {
             MicrophoneInterruptionMonitor.awaitAvailable()
-            val input = inputFactory?.invoke() ?: AndroidAudioInput(this,
+            val input = AndroidAudioInput(this,
                 audioManager = context.getSystemService(AudioManager::class.java),
                 echoCancellation = true, noiseSuppression = true, log = log)
             val confirmed = CompletableDeferred<Unit>()
-            var naturalReference: String? = null
-            fun confirm() {
-                trace?.mark(VoiceTurnTrace.Stage.INTERRUPTION_CONFIRMED)
-                trace?.mark(VoiceTurnTrace.Stage.PLAYBACK_STOP_REQUESTED)
-                output.stopSpeaking()
-                confirmed.complete(Unit)
-                onConfirmed()
-            }
-            val gated: AudioInput = if (asrEngine == AsrEngine.MOONSHINE) {
-                NaturalBargeInAudioInput(input,
-                    createKeyword = { MicroInterruptionKeywords(context.assets) },
-                    createVad = { SileroSpeechDetector.create(context.assets) },
-                    createTranscriber = {
-                        check(MoonshineStreamingTranscriber.canReuseForProbe(asrDirectory, modelSession)) { "probe_model_not_warm" }
-                        MoonshineStreamingTranscriber(asrDirectory, modelSession = modelSession, reserveReplyProbes = false)
-                    },
-                    playing = { output.isPlayingAudio }, reference = { output.recentSpokenText() },
-                    hasPlaybackBudget = output::hasInterruptionBudget,
-                    onConfirmed = { natural, evidence ->
-                        if (natural) naturalReference = evidence
-                        confirm()
-                    }, log = log)
-            } else KeywordBargeInAudioInput(input,
-                createDetector = { MicroInterruptionKeywords(context.assets) },
-                onConfirmed = { confirm() }, log = log)
+            // Keep both interruption paths live on the same capture: micro-wake words
+            // provide an immediate explicit stop, while Moonshine recognizes ordinary
+            // speech. The previous keyword-only wrapper made natural barge-in impossible.
+            val gated = BargeInAudioInput(input,
+                createDetector = { SileroSpeechDetector.create(context.assets) },
+                playing = { output.isPlayingAudio },
+                createTranscriber = { PacedStreamingTranscriber(
+                    MoonshineStreamingTranscriber(asrDirectory), log) },
+                spokenText = output::recentSpokenText,
+                onConfirmed = {
+                    output.stopSpeaking()
+                    confirmed.complete(Unit)
+                    onConfirmed()
+                },
+                log = log,
+                createKeywordDetector = { MicroInterruptionKeywords(context.assets) })
             val capture = AudioTurnCapture(gated, this,
                 createDetector = { SileroSpeechDetector.create(context.assets) },
-                createTranscriber = { LazyStreamingTranscriber { asrEngine.create(asrDirectory, log = log, modelSession = modelSession) } }, log = log,
-                allowAudioOnlyTurns = true, acceptCandidate = acceptCandidate,
+                createTranscriber = { LazyStreamingTranscriber { MoonshineStreamingTranscriber(asrDirectory) } }, log = log,
+                allowAudioOnlyTurns = true,
                 onPartialTranscript = { text, _ -> onPartialTranscript(text) })
             try {
                 capture.start(initialSilenceTimeoutMs = null)
-                log("barge_capture_ready keywordReadiness=reported_separately naturalSpeechReady=false")
+                log("barge_listener_ready")
                 // Observe capture failures while waiting for speech, too.
                 val completion = async { capture.awaitTurnCompletion() }
                 kotlinx.coroutines.selects.select<Unit> {
@@ -56,19 +46,7 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                     completion.onAwait { error("Interruption capture ended without confirmed speech") }
                 }
                 withTimeout(30_000) { completion.await() }
-                val wav = capture.stop()
-                val finalText = capture.finalTranscript
-                val echo = naturalReference
-                if (echo != null) {
-                    // Recheck the final recognition: provisional words never authorize actions.
-                    val checked = NaturalCorrectionText.resolve(finalText, echo)
-                    if (checked == null) {
-                        log("barge_correction_discarded reason=final_request_not_confirmed")
-                        return@supervisorScope CapturedVoiceTurn("", byteArrayOf())
-                    }
-                    return@supervisorScope CapturedVoiceTurn(checked, wav)
-                }
-                return@supervisorScope CapturedVoiceTurn(finalText, wav)
+                return@supervisorScope CapturedVoiceTurn(capture.finalTranscript, capture.stop())
             } catch (busy: MicrophoneBusyException) {
                 log("barge_listener_yielded external_microphone=true")
                 throw busy
