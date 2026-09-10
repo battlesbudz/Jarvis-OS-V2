@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -14,6 +15,7 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 
 /** Captures one speech turn, with bounded idle pre-roll and no raw audio on disk. */
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class AudioTurnCapture(
     private val input: AudioInput,
     private val scope: CoroutineScope,
@@ -82,7 +84,7 @@ class AudioTurnCapture(
         captureReadyMs = nowMs() - captureRequestedAt
         collectionJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
-                input.chunks().collect { chunk ->
+                input.chunks().transformWhile { emit(it); !turnCompleted.isCompleted }.collect { chunk ->
                     if (turnCompleted.isCompleted) return@collect
                     audioBytes += chunk.size
                     recoveryAudio.append(chunk)

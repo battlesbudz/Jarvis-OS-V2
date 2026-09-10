@@ -141,6 +141,8 @@ Acceptance: fixtures prove ordered checkpoint updates, final flushes, backwards-
 
 ### Phase 1 — Keep capture and models alive for the active call
 
+Status: implemented; Android build validation and phone acceptance pending (2026-09-10). See the call-ownership implementation entry below. Phase 2 remains next after validation.
+
 - Extract active-call audio ownership from the per-turn path in `JarvisRuntime`. Convert `AudioTurnCapture` into an utterance consumer that can finalize without stopping the call microphone.
 - Reuse the same audio session through endpoint finalization, speculative sealing, acknowledgement, Gemma fallback, reply generation, playback, and follow-up listening. Preserve bounded onset audio at every transition.
 - Keep recognition and TTS weights warm within a bounded call session. Give each engine one native owner and cancellation-safe release. Separate fresh utterance state from resident weights; do not carry a completed TTS text/EOS state into the next utterance without engine support.
@@ -501,3 +503,18 @@ Publication dates below identify recent research. Continuously updated documenta
 | [Pocket TTS](https://github.com/kyutai-labs/pocket-tts) | Current upstream documentation reviewed 9 September 2026 | CPU synthesis, streaming output, and retaining model/voice state. |
 | [LiveKit turn handling](https://docs.livekit.io/agents/build/turns/) | Current production documentation reviewed 9 September 2026 | Turn completion, interruption handling, and backchannels as behavioral references. No LiveKit/telecom dependency is required. |
 
+
+
+### 2026-09-10 — Phase 1: call-owned capture and resident models
+
+Implemented:
+
+- `VoiceAudioSession` owns one hardware reader across ordinary command/reply handoffs. Recognition finalization detaches its consumer without releasing the recorder. Raw PCM stays in a bounded six-second in-memory ring. Handoffs replay only unconsumed frames; after completed answer playback, the next command can replay the post-playback tail even if the keyword listener consumed it during cleanup. A buffer overflow rejects the incomplete command instead of silently executing a clipped transcript. Gain processing receives copies and cannot modify the retained raw audio.
+- `AudioTurnCapture` stops consuming immediately when its endpoint completes. The new `capture_consumer_released` timeline stage describes the returned utterance consumer; historical `capture_released` records remain readable. Actual hardware release continues to use `Microphone: capture_released` diagnostics. Borrow/return logs explicitly report `recorderRetained`.
+- `VoiceModelSession` and `CallModelSlot` retain selected ASR and TTS weights with an exclusive native lease. Pocket/Kokoro synthesis uses one call-owned executor; each answer retains fresh utterance/segment state and existing Paul conditioning/reset policy. Diagnostics and benchmarks retain isolated engine instances. Configuration changes, inference failures and cancelled TTS invalidate resident resources; call end releases them after borrowers finish.
+- Moonshine 0.1.5 reuses loaded weights with a fresh explicit `createStream` / `startStream` / `stopStream` / `freeStream` lifecycle and fresh application transcript state per utterance. The pinned [Maven SDK source archive](https://repo.maven.apache.org/maven2/ai/moonshine/moonshine-voice/0.1.5/moonshine-voice-0.1.5-sources.jar) confirms those APIs, but retains a private completed-line map across streams. The pool therefore rotates the recognizer after eight leases, logged as `bounded_sdk_cache`; blank-result recovery also replaces it. This is a bounded reuse policy, not a claim of indefinite SDK cache reset. Whisper retains its recognizer while creating fresh per-utterance workers and decode streams, joining pending native work before returning its lease.
+- Pause keeps the current conversation and releases the microphone. Stop and external microphone interruption explicitly close the hardware session; existing availability gating restores listening after handoff. AEC remains requested throughout the retained session, including command listening. Native model release waits for active calls to finish; capture release runs independently so a slow native cleanup need not retain the microphone.
+
+Validation so far: 49 Kotlin/JUnit tests pass, including existing turn capture coverage and 13 ownership tests. New cases cover finalization without hardware release, ordered handoff, post-playback onset replay, immutable retained PCM, overflow rejection, external-close cause propagation, competing-reader rejection, cancellation, exclusive model reuse, bounded/configuration rotation, failed construction and Stop during a blocking load with exactly-once release. Full Android debug/release validation is pending publication.
+
+Phone acceptance remains required: sustained multi-turn calls with `reused=true` after warmup; logged Moonshine rotation without lost onset; speech during sealing and immediately after answer playback; Pause/Resume, Stop during load, external microphone handoff and supported route changes. Check sustained memory and AEC acoustically on each route. This phase retains the keyword interruption gate; ordinary keyword-free interruptions and playback-aware conversation history remain Phases 3 and 2 respectively. Six seconds bounds transition buffering; it does not promise arbitrary speech retention throughout a long answer or make native inference instantly cancellable. No latency reduction has yet been measured on the phone for this change.

@@ -38,6 +38,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -116,6 +117,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 if (control == com.battlesbudz.jarvis.v2.voice.VoiceControl.RESUME) ui.paused.value = false
                 else {
                     if (control == com.battlesbudz.jarvis.v2.voice.VoiceControl.PAUSE) ui.paused.value = true
+                    if (control == com.battlesbudz.jarvis.v2.voice.VoiceControl.PAUSE ||
+                        control == com.battlesbudz.jarvis.v2.voice.VoiceControl.END_CONVERSATION) {
+                        runtimeScope.launch { closeCallMicrophone() }
+                    }
                     activeVoiceOutput?.stopSpeaking()
                     voiceTurnJob?.cancel(com.battlesbudz.jarvis.v2.voice.VoiceControlCancellation(control))
                 }
@@ -138,12 +143,38 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         voiceSessionArmed = true
         startVoiceDiagnostics("Jarvis session — awaiting wake word")
     }
+    private val callAudioLock = kotlinx.coroutines.sync.Mutex()
+    private var callAudio: com.battlesbudz.jarvis.v2.voice.VoiceAudioSession? = null
+    private var callModels: com.battlesbudz.jarvis.v2.voice.VoiceModelSession? = null
+    private var callModelsKey: String? = null
+    private val followupAudioAfterMs = java.util.concurrent.atomic.AtomicLong(0)
+    private suspend fun borrowCallMicrophone(label: String, replayAfterMs: Long? = null): com.battlesbudz.jarvis.v2.voice.AudioInput =
+        callAudioLock.withLock {
+            val reused = callAudio?.usable == true
+            if (!reused) {
+                callAudio?.close()
+                followupAudioAfterMs.set(0)
+                callAudio = com.battlesbudz.jarvis.v2.voice.VoiceAudioSession(
+                    AndroidAudioInput(runtimeScope, echoCancellation = true, noiseSuppression = true,
+                        audioManager = getSystemService(android.media.AudioManager::class.java),
+                        onLevel = { com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.level.value = it },
+                        log = { diagnosticRecorder.recordImportant("Microphone: $it") }), runtimeScope,
+                    log = { diagnosticRecorder.recordImportant("Voice capture ownership: $it") })
+            }
+            requireNotNull(callAudio).borrow(label, if (reused) replayAfterMs else null)
+        }
+    private suspend fun closeCallMicrophone(reason: Throwable? = null) = callAudioLock.withLock {
+        callAudio?.close(reason); callAudio = null; followupAudioAfterMs.set(0)
+    }
     @Volatile private var latestStatus = "Preparing microphone…"
     private val pendingVoiceCorrection = java.util.concurrent.atomic.AtomicReference<com.battlesbudz.jarvis.v2.voice.CapturedVoiceTurn?>(null)
     private val resumeCommandCue = java.util.concurrent.atomic.AtomicBoolean(false)
     fun onMicrophoneInterruption(interrupted: Boolean, reason: String) {
         activeVoiceOutput?.setInterrupted(interrupted)
-        if (interrupted) activeVoiceCapture?.yieldMicrophone()
+        if (interrupted) {
+            activeVoiceCapture?.yieldMicrophone()
+            runtimeScope.launch { closeCallMicrophone(com.battlesbudz.jarvis.v2.voice.MicrophoneBusyException()) }
+        }
         if (interrupted) runtimeScope.launch(Dispatchers.IO) {
             runCatching { voiceSessionController.flushCheckpoint() }
                 .onFailure { diagnosticRecorder.recordImportant("Voice checkpoint handoff flush failed: ${it.javaClass.simpleName}") }
@@ -179,7 +210,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             var preparation: VoicePreparation? = null
             var capture: AudioTurnCapture? = null
             var speakerGuard: com.battlesbudz.jarvis.v2.voice.SpeakerPreferenceGuard? = null
-            var microphone: AndroidAudioInput? = null
+            var microphone: com.battlesbudz.jarvis.v2.voice.AudioInput? = null
+            var expectedResourceCall: String? = null
+            var preserveCaptureOnCancellation = false
             var voiceOutput: SherpaKokoroVoiceOutput? = null
             val speechChunks = Channel<String>(Channel.UNLIMITED)
             var speechJob: Job? = null
@@ -225,14 +258,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 resetNativeConversation()
                 conversationCharacters = 0
                 val ttsDirectory = ttsModels.ensureReady(ttsEngine, ::status)
-                val input = AndroidAudioInput(this,
-                    noiseSuppression = true,
-                    log = { diagnosticRecorder.recordImportant("Microphone: $it") },
-                    audioManager = getSystemService(android.media.AudioManager::class.java),
-                    onLevel = { com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.level.value = it },
-                    onWaiting = { waiting ->
-                        status(if (!waiting) "Preparing microphone…" else "Paused — microphone in use by another app")
-                    })
+                val input = borrowCallMicrophone("command", followupAudioAfterMs.getAndSet(0).takeIf { it > 0 })
                 microphone = input
                 if (voiceSessionController.currentCallId() == null) {
                     val wakeDirectory = com.battlesbudz.jarvis.v2.voice.WakeWordModelStore(applicationContext).ensureReady(::status)
@@ -257,10 +283,22 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 }
                 val expectedCallId = voiceSessionController.currentCallId()
                     ?: throw kotlinx.coroutines.CancellationException("voice_call_ended_during_preparation")
+                expectedResourceCall = expectedCallId
+                val resourceKey = "$expectedCallId:${asrEngine.id}:${ttsEngine.id}"
+                if (callModelsKey != resourceKey) {
+                    callModels?.close()
+                    callModels = com.battlesbudz.jarvis.v2.voice.VoiceModelSession {
+                        diagnosticRecorder.recordImportant("Voice model ownership: $it")
+                    }
+                    callModelsKey = resourceKey
+                }
+                val models = requireNotNull(callModels)
                 val voiceHistory = voiceSessionController.conversationContext().map { ChatEntry(it.role, it.text) }
                 diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId engine=${ttsEngine.id} " +
                     "callProfile=${callProfile?.id ?: "adaptive-default"}")
                 val output = SherpaKokoroVoiceOutput(ttsDirectory.path, engine = ttsEngine,
+                    modelSession = models,
+                    onPlaybackEnded = { followupAudioAfterMs.set(System.nanoTime() / 1_000_000) },
                     normalSpeed = callProfile != null, fixedChunking = callProfile != null,
                     openingChars = callProfile?.openingChars ?: com.battlesbudz.jarvis.v2.voice.SpeechChunker.DEFAULT_OPENING_CHARS,
                     benchmarkProfile = callProfile,
@@ -351,7 +389,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         status(if (recovering) "Retrying speech recognition…" else "Voice Call is listening — speak now.")
                     },
                     createTranscriber = {
-                        asrEngine.create(asrDirectory, log = { diagnosticRecorder.recordSummary("Voice input: $it") })
+                        asrEngine.create(asrDirectory, log = { diagnosticRecorder.recordSummary("Voice input: $it") }, modelSession = models)
                     },
                     onMetrics = { metrics, text ->
                         asrComparisonStore.add(asrTurnId, metrics, text, asrEngine)
@@ -391,7 +429,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 finalReadyAt.set(endpointAt)
                 val firstFinalToken = java.util.concurrent.atomic.AtomicBoolean(true)
                 val audioBytes = correction?.wav ?: activeCapture.stop()
-                if (correction == null) turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.CAPTURE_RELEASED)
+                if (correction == null) turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.CAPTURE_CONSUMER_RELEASED)
                 kotlin.coroutines.coroutineContext.ensureActive()
                 if (voiceSessionController.currentCallId() != expectedCallId) {
                     throw kotlinx.coroutines.CancellationException("voice_call_changed_during_recognition")
@@ -536,7 +574,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         com.battlesbudz.jarvis.v2.voice.ReplyVoiceCapture(applicationContext) {
                             diagnosticRecorder.recordImportant("Voice interruption: $it")
                         }.listen(output, asrDirectory, confirmed,
-                            asrEngine = asrEngine, acceptCandidate = preference::accept, trace = turnTrace, onPartialTranscript = { text ->
+                            asrEngine = asrEngine, acceptCandidate = preference::accept, trace = turnTrace,
+                            inputFactory = { borrowCallMicrophone("reply") }, modelSession = models, onPartialTranscript = { text ->
                             mainHandler.post {
                                 if (activeVoiceOutput === output && voiceSessionArmed) onTranscript("You", text, false)
                             }
@@ -578,7 +617,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 if (cancelled is com.battlesbudz.jarvis.v2.voice.VoiceControlCancellation) {
                     microphoneYielded = true // Use the same cleanup-before-rearm path.
                     diagnosticRecorder.recordImportant("Voice control requested: ${cancelled.control}")
-                    if (cancelled.control != com.battlesbudz.jarvis.v2.voice.VoiceControl.STOP_REPLY) {
+                    preserveCaptureOnCancellation = cancelled.control == com.battlesbudz.jarvis.v2.voice.VoiceControl.STOP_REPLY
+                    if (cancelled.control == com.battlesbudz.jarvis.v2.voice.VoiceControl.END_CONVERSATION) {
                         runCatching { voiceSessionController.end() }
                     }
                     finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " user control."
@@ -619,7 +659,18 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         runCatching { voiceOutput?.release() }
                         if (activeVoiceOutput === voiceOutput) activeVoiceOutput = null
                         if (activeVoiceCapture === capture) activeVoiceCapture = null
-                        if (operationOwned) modelStore.endModelOperation()
+                        val callEnded = !voiceSessionArmed || voiceSessionController.currentCallId() == null ||
+                            (expectedResourceCall != null && voiceSessionController.currentCallId() != expectedResourceCall) ||
+                            finalMessage.contains("turn failed", true)
+                        try {
+                            if (callEnded || com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value ||
+                                cancelled && !preserveCaptureOnCancellation) closeCallMicrophone()
+                            if (callEnded) {
+                                val resident = callModels
+                                callModels = null; callModelsKey = null
+                                resident?.close()
+                            }
+                        } finally { if (operationOwned) modelStore.endModelOperation() }
                     }
                 }
                 turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.TURN_FINISHED)
@@ -682,6 +733,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
         com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.report("Jarvis session stopped — microphone off.")
         stopVoiceService()
+        runtimeScope.launch { closeCallMicrophone() }
         activeVoiceOutput?.stopSpeaking()
         voiceTurnJob?.cancel()
         conversationJob?.cancel()

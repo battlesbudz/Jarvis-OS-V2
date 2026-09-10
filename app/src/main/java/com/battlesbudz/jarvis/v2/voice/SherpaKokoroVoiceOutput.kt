@@ -26,6 +26,8 @@ class SherpaKokoroVoiceOutput(
     private val openingChars: Int = SpeechChunker.DEFAULT_OPENING_CHARS,
     private val benchmarkProfile: TtsBenchmarkProfile? = null,
     private val benchmarkRun: Boolean = false,
+    private val modelSession: VoiceModelSession? = null,
+    private val onPlaybackEnded: () -> Unit = {},
     private val benchmarkSubmissions: List<String>? = null,
     private val acknowledgeDelays: Boolean = false,
     private val openingPcm: ShortArray? = null,
@@ -195,11 +197,12 @@ class SherpaKokoroVoiceOutput(
                 tokens.close()
             } catch (error: Throwable) { tokens.close(error); throw error }
         }
-        val nativeDispatcher = Executors.newSingleThreadExecutor { task ->
+        val nativeDispatcher = modelSession?.ttsDispatcher ?: Executors.newSingleThreadExecutor { task ->
             Thread(task, "jarvis-tts").apply { isDaemon = true }
         }.asCoroutineDispatcher()
         val producer = launch(nativeDispatcher) {
             var engine: OfflineTts? = null
+            var engineLease: CallModelSlot<OfflineTts>.Lease? = null
             var failure: Throwable? = null
             var index = 0
             var previousChars = 0
@@ -208,10 +211,15 @@ class SherpaKokoroVoiceOutput(
             try {
                 val loadStart = System.nanoTime()
                 log("tts_engine_preload_started")
-                val tts = OfflineTts(config = sherpaTtsConfig(this@SherpaKokoroVoiceOutput.engine, modelDirectory, numThreads))
+                val modelKey = "${this@SherpaKokoroVoiceOutput.engine.id}:$modelDirectory:$numThreads"
+                engineLease = modelSession?.tts?.acquire(modelKey) {
+                    OfflineTts(config = sherpaTtsConfig(this@SherpaKokoroVoiceOutput.engine, modelDirectory, numThreads))
+                }
+                val tts = engineLease?.value ?: OfflineTts(config =
+                    sherpaTtsConfig(this@SherpaKokoroVoiceOutput.engine, modelDirectory, numThreads))
                 engine = tts
                 loadMs = elapsedMs(loadStart)
-                log("tts_engine_preload_finished loadMs=$loadMs")
+                log("tts_engine_preload_finished loadMs=$loadMs reused=${engineLease?.reused == true}")
                 val pocket = this@SherpaKokoroVoiceOutput.engine == TtsEngine.POCKET_PAUL
                 val generation = if (pocket) {
                     val reference = WaveReader.readWave("$modelDirectory/${PocketVoiceSpec.PAUL_FILE}")
@@ -493,7 +501,8 @@ class SherpaKokoroVoiceOutput(
                 // No more PCM can arrive. Publish completion before potentially slow native
                 // cleanup, so cleanup is never mistaken for a gap needing another cue.
                 audio.close(failure)
-                engine?.release()
+                if (engineLease != null) engineLease?.finish(healthy = failure == null && !stopped)
+                else engine?.release()
             }
         }
         try {
@@ -647,6 +656,7 @@ class SherpaKokoroVoiceOutput(
                     }
                     draining.set(true)
                     completed = drainAudioTrack(framesWritten, outputSampleRate, playbackSpeed)
+                    if (completed) onPlaybackEnded()
                     if (!completed && !stopped) error("AudioTrack playback timed out before all speech was consumed.")
                 }
                 finalUnderruns = audioTrack?.underrunCount ?: 0
@@ -682,7 +692,7 @@ class SherpaKokoroVoiceOutput(
                 completed && !wasStopped && failureMessage == null)
             acknowledgementRequests.cancel()
             openingRequests.cancel()
-            nativeDispatcher.close()
+            if (modelSession == null) nativeDispatcher.close()
             speaking.set(false)
             if (inputChars > 0 || failureMessage != null) runCatching {
                 onMetrics(TtsSessionMetrics(loadMs, firstPcmMs, totalSynthesisMs, totalAudioMs,

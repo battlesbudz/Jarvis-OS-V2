@@ -3,7 +3,7 @@ package com.battlesbudz.jarvis.v2.voice
 /** One bounded monotonic timeline per turn. Missing events remain unknown, never zero. */
 class VoiceTurnTrace(val turnId: String, private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 }) {
     enum class Stage {
-        TURN_STARTED, MICROPHONE_READY, RECOGNITION_FINALIZED, CAPTURE_RELEASED,
+        TURN_STARTED, MICROPHONE_READY, RECOGNITION_FINALIZED, CAPTURE_RELEASED, CAPTURE_CONSUMER_RELEASED,
         PREPARATION_SEALED, AUDIO_FALLBACK_STARTED, AUDIO_FALLBACK_FINISHED,
         REPLY_DISPATCHED, FIRST_REPLY_TEXT, FIRST_REPLY_AUDIO,
         INTERRUPTION_CONFIRMED, PLAYBACK_STOP_REQUESTED, TURN_FINISHED

@@ -7,9 +7,9 @@ enum class AsrEngine(val id: String, val label: String, val modelVersion: String
     MOONSHINE(MoonshineModelInfo.id, "Moonshine", MoonshineModelInfo.modelVersion),
     WHISPER("whisper_base_en", "Whisper base.en", "base.en-int8 / sherpa-1.13.7");
 
-    fun create(directory: File, live: Boolean = true, log: (String) -> Unit = {}): StreamingTranscriber = when (this) {
-        MOONSHINE -> MoonshineStreamingTranscriber(directory)
-        WHISPER -> WhisperTranscriber(directory, live, log)
+    fun create(directory: File, live: Boolean = true, log: (String) -> Unit = {}, modelSession: VoiceModelSession? = null): StreamingTranscriber = when (this) {
+        MOONSHINE -> MoonshineStreamingTranscriber(directory, modelSession = modelSession)
+        WHISPER -> WhisperTranscriber(directory, live, log, modelSession)
     }
     suspend fun prepare(context: Context, status: (String) -> Unit): File = when (this) {
         MOONSHINE -> AsrModelStore(context).ensureReady(status)

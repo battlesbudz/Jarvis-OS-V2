@@ -7,14 +7,30 @@ import ai.moonshine.voice.TranscriptEvent
 import java.io.File
 
 /** Owns one utterance. Native calls are serialized by AudioTurnCapture's collector. */
-class MoonshineStreamingTranscriber(private val directory: File, private val updateIntervalSeconds: Double = 0.25) : StreamingTranscriber {
+class MoonshineStreamingTranscriber(private val directory: File, private val updateIntervalSeconds: Double = 0.25, modelSession: VoiceModelSession? = null) : StreamingTranscriber {
     private val lines = linkedMapOf<Long, String>()
-    private var transcriber = Transcriber(listOf(
-        TranscriberOption("transcription_interval", updateIntervalSeconds.toString()),
-        TranscriberOption("vad_threshold", "0.3"),
-        TranscriberOption("identify_speakers", "false"),
-        TranscriberOption("return_audio_data", "false")
-    ))
+    private fun createLoaded(): Transcriber {
+        val created = Transcriber(listOf(
+            TranscriberOption("transcription_interval", updateIntervalSeconds.toString()),
+            TranscriberOption("vad_threshold", "0.3"),
+            TranscriberOption("identify_speakers", "false"),
+            TranscriberOption("return_audio_data", "false")
+        ))
+        try {
+            created.loadFromFiles(directory.path, JNI.MOONSHINE_MODEL_ARCH_SMALL_STREAMING)
+            created.setUpdateInterval(updateIntervalSeconds)
+            return created
+        } catch (error: Throwable) { created.close(); throw error }
+    }
+    // SDK 0.1.5 retains a private completed-line map. Rotate after eight streams
+    // to bound that bookkeeping without reloading on every ordinary turn.
+    private val lease = modelSession?.moonshine?.acquire("${directory.path}:$updateIntervalSeconds", 8, ::createLoaded)
+    private var leased = lease != null
+    private var transcriber = lease?.value ?: createLoaded()
+    private var streamHandle = -1
+    private var healthy = true
+    private inline fun <T> native(block: () -> T): T = try { block() }
+        catch (error: Throwable) { healthy = false; throw error }
     private var lowByte: Int? = null
     private var closed = false
     private var finished = false
@@ -34,10 +50,11 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
                 // Replace by ID, preserving earlier lines and avoiding duplicate event text.
                 if (line != null) lines[line.id] = line.text.orEmpty()
             }
-            transcriber.loadFromFiles(directory.path, JNI.MOONSHINE_MODEL_ARCH_SMALL_STREAMING)
-            transcriber.setUpdateInterval(updateIntervalSeconds)
-            transcriber.start()
+            streamHandle = transcriber.createStream()
+            check(streamHandle >= 0) { "Moonshine could not create an utterance stream." }
+            transcriber.startStream(streamHandle)
         } catch (error: Throwable) {
+            healthy = false
             close()
             throw error
         }
@@ -55,14 +72,14 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
                 lowByte = null
             }
         }
-        if (samples.isNotEmpty()) transcriber.addAudio(samples, 16_000)
+        if (samples.isNotEmpty()) native { transcriber.addAudioToStream(streamHandle, samples, 16_000) }
         return text()
     }
 
     override fun finish(): String {
         check(!closed)
         if (!finished) {
-            transcriber.stop() // Forced final update includes the last, incomplete native line.
+            native { transcriber.stopStream(streamHandle) } // Forced final update includes the last, incomplete native line.
             finished = true
         }
         return text()
@@ -82,7 +99,8 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
         // bounded candidate without a second speech gate. Release the live model
         // first so recovery does not keep two native ASR models resident.
         transcriber.removeAllListeners()
-        transcriber.close()
+        transcriber.freeStream(streamHandle); streamHandle = -1
+        if (leased) { lease!!.finish(healthy = false); leased = false } else transcriber.close()
         transcriber = Transcriber(listOf(
             TranscriberOption("vad_threshold", "0.0"),
             TranscriberOption("identify_speakers", "false"),
@@ -96,8 +114,13 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
     override fun close() {
         if (!closed) {
             closed = true
-            transcriber.removeAllListeners()
-            transcriber.close()
+            try {
+                transcriber.removeAllListeners()
+                if (streamHandle >= 0) native { transcriber.freeStream(streamHandle) }
+            } finally {
+                streamHandle = -1
+                if (leased) { lease!!.finish(healthy); leased = false } else transcriber.close()
+            }
         }
     }
 }
