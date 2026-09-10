@@ -19,12 +19,24 @@ class GemmaBenchmarkController(
     private val results: GemmaBenchmarkStore,
     private val canStart: () -> Boolean,
     private val releaseIdleEngine: () -> Unit,
-    private val log: (String) -> Unit
+    private val log: (String) -> Unit,
+    private val latencySample: () -> GemmaLatencySample? = { null }
 ) {
     private var job: Job? = null
     val running: Boolean get() = job?.isCompleted == false
 
-    fun start(status: (String) -> Unit, finished: () -> Unit) {
+    fun start(status: (String) -> Unit, finished: () -> Unit) = startInternal(status, finished, null)
+
+    fun startLatency(status: (String) -> Unit, finished: () -> Unit) {
+        val sample = latencySample()
+        if (sample == null) {
+            status("Complete a spoken turn, end the call, then try again. The sample stays only in app memory.")
+            finished(); return
+        }
+        startInternal(status, finished, sample)
+    }
+
+    private fun startInternal(status: (String) -> Unit, finished: () -> Unit, sample: GemmaLatencySample?) {
         if (running || !canStart()) {
             status("End the call and wait for other work to finish before benchmarking.")
             finished(); return
@@ -38,6 +50,8 @@ class GemmaBenchmarkController(
                 .put("run_id", runId).put("at_ms", System.currentTimeMillis())
                 .put("device", Build.MODEL).put("android_sdk", Build.VERSION.SDK_INT)
                 .put("runtime", "LiteRT-LM 0.12.0").put("backend", "GPU")
+                .put("version_name", com.battlesbudz.jarvis.v2.BuildConfig.VERSION_NAME)
+                .put("source_commit", com.battlesbudz.jarvis.v2.BuildConfig.SOURCE_COMMIT)
                 .put("model_sha256", ModelCatalog.gemma4E2b.expectedSha256)
                 .put("mode", mode).put("sample", sample).put("repeat", repeat)
                 .put("thermal_status", context.getSystemService(PowerManager::class.java).currentThermalStatus)
@@ -47,6 +61,11 @@ class GemmaBenchmarkController(
                 check(models.verifyIntegrity(ModelCatalog.gemma4E2b)) { "Import the verified Gemma model first." }
                 // Avoid keeping a second multi-gigabyte Gemma instance resident during the test.
                 releaseIdleEngine()
+                if (sample != null) {
+                    GemmaLatencyComparison.run(context, models, sample, results, ::report, ::record)
+                    message = "Voice latency comparison finished. Inspect each result for errors; three passes are preliminary, not a p95 guarantee."
+                    return@launch
+                }
                 for ((block, enabled) in listOf(false, true, false).withIndex()) {
                     ensureActive()
                     val mode = if (enabled) "MTP_ON" else if (block == 0) "MTP_OFF" else "MTP_OFF_RECHECK"
@@ -116,7 +135,11 @@ class GemmaBenchmarkController(
                 }
             } catch (cancelled: CancellationException) {
                 message = "Gemma benchmark stopped. Completed measurements remain saved."; throw cancelled
-            } catch (error: Exception) { message = "Gemma benchmark failed: ${error.message}" }
+            } catch (error: Exception) {
+                message = "Gemma benchmark failed: ${error.message}"
+                if (sample != null) results.add(record("VOICE_LATENCY", "initialization_or_warmup_error", 0)
+                    .put("error", error.message ?: error.javaClass.simpleName))
+            }
             finally {
                 if (owned) models.endModelOperation()
                 withContext(NonCancellable + Dispatchers.Main) { status(message); finished() }

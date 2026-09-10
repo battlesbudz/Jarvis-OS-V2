@@ -135,19 +135,25 @@ class LiteRtLmEngine(
         val output = StringBuilder()
         val toolCalls = mutableListOf<ToolCall>()
         var streamEvents = 0
+        val firstCallbackAt = java.util.concurrent.atomic.AtomicLong()
+        var nativeSubmitMs: Long? = null
 
         val responses = Channel<Message>(Channel.UNLIMITED)
         val terminal = CompletableDeferred<Unit>()
         try {
             try {
             activeConversation.sendMessageAsync(message, object : MessageCallback {
-                override fun onMessage(message: Message) { responses.trySend(message) }
+                override fun onMessage(message: Message) {
+                    firstCallbackAt.compareAndSet(0L, System.nanoTime())
+                    responses.trySend(message)
+                }
                 override fun onDone() { terminal.complete(Unit); responses.close() }
                 override fun onError(throwable: Throwable) {
                     terminal.complete(Unit)
                     responses.close(throwable)
                 }
             })
+            nativeSubmitMs = (System.nanoTime() - startedAt) / 1_000_000
             } catch (error: Throwable) {
                 terminal.complete(Unit)
                 throw error
@@ -199,7 +205,9 @@ class LiteRtLmEngine(
             outputTokens = estimatedTokens,
             totalGenerationTimeMs = totalMs,
             streamEvents = streamEvents,
-            toolCalls = toolCalls
+            toolCalls = toolCalls,
+            nativeSubmitMs = nativeSubmitMs,
+            firstCallbackMs = firstCallbackAt.get().takeIf { it != 0L }?.let { (it - startedAt) / 1_000_000 }
         )
     }
 

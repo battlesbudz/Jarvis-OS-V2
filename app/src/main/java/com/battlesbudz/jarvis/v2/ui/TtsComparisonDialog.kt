@@ -40,7 +40,7 @@ internal fun TtsComparisonDialog(
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText(label, report))
     }
-    fun runLatency(gemma: Boolean) {
+    fun runLatency(gemma: Boolean, inputs: Boolean = false) {
         if (running) return
         val startedAt = System.currentTimeMillis()
         running = true; copiedId = null
@@ -52,7 +52,8 @@ internal fun TtsComparisonDialog(
                 gemmaIndex = 0
             } else { records = savedRuns().filter { it.optLong("atMs") >= startedAt }; index = 0 }
         }
-        if (gemma) latencyBenchmarks.compareGemma({ status = it }, finished)
+        if (inputs) latencyBenchmarks.compareGemmaLatency({ status = it }, finished)
+        else if (gemma) latencyBenchmarks.compareGemma({ status = it }, finished)
         else latencyBenchmarks.compareOpenings(selected, { status = it }, finished)
     }
     fun run(engine: TtsEngine?, isolation: Boolean = false) {
@@ -172,6 +173,10 @@ internal fun TtsComparisonDialog(
                 Text("Compare Gemma GPU acceleration off, on, then off again. Includes warm runs and simulated battery tools; this does not change your phone or the acceleration used in calls. A model without MTP support will report an error for that test.")
                 OutlinedButton(onClick = { runLatency(true) }, enabled = canChange && !running) {
                     Text("Compare Gemma acceleration")
+                }
+                Text("Compare Gemma with the last spoken request: short text, conversation text, and the same conversation plus audio. Runs three passes with speech engines idle. The last recording is kept only in app memory; results save generated text and timings, not audio. Complete a turn and end the call first. This does not change live input routing.")
+                OutlinedButton(onClick = { runLatency(true, inputs = true) }, enabled = canChange && !running) {
+                    Text("Compare Gemma text vs audio")
                 }
                 if (running) Button(onClick = { onStop(); latencyBenchmarks.stop() }) { Text("Stop benchmark") }
                 if (status.isNotBlank()) Text(status)

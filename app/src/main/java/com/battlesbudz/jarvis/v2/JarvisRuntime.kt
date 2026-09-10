@@ -61,6 +61,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     internal var conversationEngine: LiteRtLmEngine? = null
     internal var conversationJob: Job? = null
     internal var conversationCharacters = 0
+    @Volatile internal var latestLatencySample: com.battlesbudz.jarvis.v2.ai.GemmaLatencySample? = null
     // The full transcript and rolling summary live in the app. This flag only
     // describes whether the current native Conversation has received that
     // app-managed context capsule.
@@ -460,6 +461,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " goodbye."
                     return@launch
                 }
+                latestLatencySample = com.battlesbudz.jarvis.v2.ai.GemmaLatencySample.capture(
+                    transcript, promptBuilder.buildGemmaPrompt(transcript, null, voiceHistory, seedContext = true) +
+                        "\n" + com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions,
+                    audioBytes, asrTurnId, System.currentTimeMillis())
                 asrComparisonStore.update(asrTurnId, "prepared", draft != null)
                 if (draft == null) resetNativeConversation()
                 diagnosticRecorder.record("Voice ASR final\ntext=$transcript\naudioBytes=${audioBytes.size}\nprepared=${draft != null}")
@@ -692,6 +697,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     }
 
     internal fun startVoiceDiagnostics(label: String) {
+        latestLatencySample = null
         com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.clearDiagnostics()
         asrComparisonStore.clearDiagnostics()
         ttsComparisonStore.clearDiagnostics()

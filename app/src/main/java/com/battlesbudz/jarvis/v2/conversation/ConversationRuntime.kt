@@ -318,6 +318,7 @@ internal fun JarvisRuntime.runConversationInternal(
                             "stage=$label\n" +
                             "promptChars=${submittedPrompt.length}\n" +
                             "timeToFirstTokenMs=${result.timeToFirstTokenMs}\n" +
+                            "nativeSubmitMs=${result.nativeSubmitMs} firstCallbackMs=${result.firstCallbackMs}\n" +
                             "totalGenerationTimeMs=${result.totalGenerationTimeMs}\n" +
                             "outputTokensEstimated=${result.outputTokens ?: -1}\n" +
                             "streamEvents=${result.streamEvents}\n" +
@@ -335,6 +336,11 @@ internal fun JarvisRuntime.runConversationInternal(
                     }
                     streamFilter.accept(token)
                 }
+                diagnosticRecorder.recordSummary("Inference input: mode=" +
+                    (if (acceptedPreparation != null) "prepared_audio_text" else if (voiceAudio != null) "audio_text"
+                        else if (imageBytes != null) "image_text" else "text") +
+                    " audioBytes=${voiceAudio?.size ?: 0} promptChars=${submittedPrompt.length}" +
+                    " nativeAudioEncodeMs=unavailable queueMs=unavailable")
                 var generated = if (acceptedPreparation != null) {
                     diagnosticRecorder.record("Voice preparation: consuming_validated_draft")
                     acceptedPreparation.consume(acceptVoiceToken)

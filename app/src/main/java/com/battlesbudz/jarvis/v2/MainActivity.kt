@@ -237,9 +237,10 @@ class MainActivity : ComponentActivity() {
                 runtime.nativeConversationHasContext = false
                 runtime.conversationCharacters = 0
                 previous?.close()
-            }, log = { diagnosticRecorder.recordImportant(it) })
+            }, log = { diagnosticRecorder.recordImportant(it) },
+            latencySample = { runtime.latestLatencySample })
         latencyBenchmarks = com.battlesbudz.jarvis.v2.voice.VoiceLatencyBenchmarkActions(
-            gemmaResults, gemmaBenchmarks::start,
+            gemmaResults, gemmaBenchmarks::startLatency, gemmaBenchmarks::start,
             compareOpenings = { engine, status, finished ->
                 ttsBenchmarks.start(engine, status, finished, compareOpenings = true)
             }, comparePaulIsolation = { status, finished ->

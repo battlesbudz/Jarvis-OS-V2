@@ -18,7 +18,11 @@ data class GenerationResult(
     val outputTokens: Int? = null,
     val totalGenerationTimeMs: Long = -1L,
     val streamEvents: Int = 0,
-    val toolCalls: List<ToolCall> = emptyList()
+    val toolCalls: List<ToolCall> = emptyList(),
+    /** Wall time inside the SDK submission call, not a measured audio encoder stage. */
+    val nativeSubmitMs: Long? = null,
+    /** First native message callback of any kind, including tool/control output. */
+    val firstCallbackMs: Long? = null
 )
 
 
