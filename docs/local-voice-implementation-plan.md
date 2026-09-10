@@ -15,7 +15,7 @@ The reference is current production voice-agent practice, with emphasis on local
 Core constraints:
 
 - Keep the core conversation, recognition, speech, and turn decisions on the phone. Telecom, SIP, phone numbers, and hosted call-center infrastructure are outside scope.
-- Retain Gemma's audio understanding alongside ASR. A blank ASR result must not automatically discard confirmed intelligible speech. Sound-only input must not become an invented request.
+- Retain Gemma's audio understanding alongside ASR. A blank ASR result must not automatically discard confirmed intelligible speech. Sound-only input must not become an invented request. The 2026-09-10 text-first decision below permits selective audio verification; tandem capability does not require processing every recording twice.
 - Keep Paul as the preferred voice for this tuning effort. Retain Kokoro as the existing comparison/fallback option. Model selection changes require measured evidence; this document does not switch the saved selection.
 - Preserve wake activation, spoken goodbye/stop-listening controls, explicit Stop and Pause, background operation, saved calls, and microphone priority for other apps.
 - Gap cues are optional, varied feedback about actual processing. They may recur during a genuine wait; there is no once-per-turn cap. A ready response preempts every cue, including the initial Ummm. Never delay a fast answer to insert filler (user correction, 2026-09-10).
@@ -405,6 +405,34 @@ Source-confirmed causes and next experiments (not yet implemented):
 5. **Track response correctness separately from speed.** The reply “What changed in the latest follow-up?” closely echoes wording in `VoiceResponsePolicy`; this suggests instruction leakage, not proven acoustic corruption. The claimed “Help us location” is unsupported by any action result. Evaluate prompt simplification and conversational acknowledgements against repeat/replay, correction, story, and ambiguous-transcript cases. Do not interpret this call's ASR transcript as verified intended user speech.
 
 Acceptance still pending: repeat the preferred profile under cooler and sustained conditions, compare the same questions before/after the current build, and record speech-end-to-first-intelligible-answer, streamed repair latency, mid-answer gaps, voice consistency, and response relevance. No speedup figure is claimed from source inspection alone.
+
+### 2026-09-10 — Subsecond Gemma target and spoken tool progress
+
+Status: approved direction added to the plan; not implemented or benchmarked by this documentation update. Supplements Phases 0, 1, 5, and 6B. Preserve the current Paul comparison baseline. The user's earlier approximately 0.53-second Gemma first-token benchmark is a reference to reproduce, not proof that the complete voice workload already meets that latency.
+
+**Target:** under 1,000 ms from a ready text request to Gemma's first nonempty answer token in a warm, ordinary conversational turn. Record queue wait and native generation TTFT separately, and report median/p95 with prompt size, audio duration, model/runtime identity, thermal state, and concurrent workloads. Tool progress or filler does not count as the first answer token. Continue measuring speech-end-to-first-intelligible-answer independently: recognition, sentence commitment, synthesis, quiet PCM, and playback can add latency after inference begins. Cold starts and long-context/tool turns must be reported separately rather than hidden in the target.
+
+Implementation sequence:
+
+1. Reproduce the earlier text-only benchmark inside Jarvis with matched model/backend/settings and a warm engine. Confirm the benchmark provenance before comparing numbers.
+2. Add costs incrementally: representative conversation history, audio input, active ASR/TTS/interruption listeners, then speculative revisions. Attribute time to request queueing, context preparation/reset, audio processing where observable, first token, checked sentence, first PCM, and first speech. Do not label the whole five seconds as text decoding or infer unsupported native substage timings.
+3. Make reliable ASR text the normal fast input to response generation. Use Gemma audio understanding selectively for blank, unstable, ambiguous, or conflicting recognition and speech/sound requests requiring audio. Establish evidence-based uncertainty signals; do not assume Moonshine provides calibrated confidence. Retain the recording until the turn is resolved. This explicitly permits a text-first path while preserving the required Gemma/ASR tandem and empty-transcript fallback.
+4. Reduce cancelled drafts, repeated audio/history processing, and unnecessary conversation resets. Keep expensive model state warm under a single safe native owner; reuse context only where the pinned runtime supports it. Do not create two concurrent Gemma instances by default. If verification changes the request, invalidate stale drafts and queued speech; never dispatch a device action from an unvalidated speculative transcript. Already delivered speech cannot be silently retracted.
+5. Benchmark against build 630/633 with matched questions, ordinary context, cooler starts and sustained calls. Record observed gains and accuracy regressions before marking the target achieved.
+
+**Natural tool progress is a required part of the voice design.** Tool execution should run asynchronously while short, grounded progress text is delivered to the same speech pipeline. This can overlap lookup I/O with speech without requiring two Gemma engines. Do not assume the pinned Gemma API continues decoding after a structured tool call: finish that generation at its supported boundary, dispatch the tool, emit progress from actual runtime events, and resume grounded answer generation when results arrive. Optional model-written wording must be bounded, read-only, and must not delay the lookup or the final answer; concise event-based wording is the dependable baseline.
+
+| Runtime evidence | Permitted speech | Release condition |
+| --- | --- | --- |
+| A lookup is selected and about to be dispatched | “Let me check that.” | A genuine wait exists; omit if the answer is already ready. |
+| Wikipedia lookup actually starts | “I'm checking Wikipedia now.” | Matching tool-start event for the current request. Never say this for a local-only lookup. |
+| A local knowledge-base lookup actually starts | “I'm checking my saved information.” | Matching local lookup-start event. Do not imply network activity. |
+| A result is received and usable | “It looks like…” followed by supported findings | Relevant result is available and the spoken claim is grounded in it; do not invent findings while waiting. |
+| Lookup fails or finds nothing useful | A concise truthful failure/no-result explanation | Actual failure/no-result event; no false completion claim. |
+
+All examples are optional wording, not an obligatory script. Coalesce redundant events, vary wording during genuine waits, and allow recurring useful updates rather than a once-per-turn cap. A ready answer takes priority over pending progress and can cancel current cue playback. Use one serialized speech queue so progress and answer audio never overlap or duplicate. Bind every event, tool result, and speech item to the turn/request revision; Stop, interruption, or a corrected request must cancel or discard obsolete work. Record spoken progress separately from delivered answer content and confirmed tool outcomes so it does not pollute answer memory or latency measurements. Existing final-intent/action authorization rules remain authoritative; routine progress must not introduce extra user confirmation prompts.
+
+Acceptance cases: instant result (no unnecessary preamble), slow local lookup, slow Wikipedia lookup, multiple tool steps, timeout/failure, result arriving during progress speech, Stop and correction during lookup, and stale results after a new turn. Verify natural continuity, truthful source/action wording, no premature factual claims, no progress/answer overlap, and no duplicate tool execution. Preserve phone-only diagnostics and the offline conversational path; Wikipedia remains an explicitly network-dependent tool.
 
 Open evidence-dependent decisions:
 
