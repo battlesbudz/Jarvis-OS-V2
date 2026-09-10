@@ -19,8 +19,15 @@ class MicrophoneHandoffTest {
         assertTrue(MicrophoneHandoff.requestDictation())
         val owner = Job().apply { cancel() }
         val recognition = CoroutineScope(owner).launch { error("Must never run") }
-        recognition.invokeOnCompletion { MicrophoneHandoff.finishDictation() }
+        val cleanupFinished = CompletableDeferred<Unit>()
+        recognition.invokeOnCompletion {
+            MicrophoneHandoff.finishDictation()
+            cleanupFinished.complete(Unit)
+        }
         recognition.join()
+        // A completed Job can be observed before another thread's completion
+        // handler returns. Assert the cleanup contract after that handler, too.
+        withTimeout(1000) { cleanupFinished.await() }
         assertFalse(MicrophoneHandoff.dictationRequested)
     }
     @Test fun externalRecordingHoldsUntilMonitorConfirmsRelease() {
