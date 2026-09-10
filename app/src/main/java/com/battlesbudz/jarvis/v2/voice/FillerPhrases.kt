@@ -5,4 +5,5 @@ internal object FillerPhrases {
     // Ask for a lingering hum; this text also invalidates the old clipped filler cache.
     const val INITIAL = "Ummm..."
     const val FOLLOWUP = "One second."
+    val VARIATIONS = listOf(FOLLOWUP, "One moment please.", "Just a second.")
 }

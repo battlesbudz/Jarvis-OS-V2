@@ -539,7 +539,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 if (voiceRepetitionGuard != null && actionResultMessage == null) {
                     cleanedResponse = voiceRepetitionGuard.finish(cleanedResponse)
                     if (voiceRepetitionGuard.needsRepair) {
-                        diagnosticRecorder.recordImportant("Voice repetition blocked: sentences=${voiceRepetitionGuard.suppressedSentences}; rewriting latest answer once.")
+                        diagnosticRecorder.recordImportant("Voice repetition blocked: sentences=${voiceRepetitionGuard.suppressedSentences}; streaming one bounded read-only repair.")
                         val repairStarted = System.nanoTime()
                         val beforeRepair = voiceRepetitionGuard.text.length
                         resetNativeConversation()
@@ -552,14 +552,14 @@ internal fun JarvisRuntime.runConversationInternal(
                                 "Give a NEW direct answer to the CURRENT question in one or two sentences. " +
                                 "Do not recap, apologize, quote earlier sentences, or call tools. " +
                                 "Resolve follow-ups using the dialogue above."
-                            // A read-only repair: generated tool calls are discarded, never executed.
-                            val repaired = engine.generate(prompt = repairPrompt, onToken = {})
-                            recordInference("repetition repair", repaired)
-                            if (repaired.toolCalls.isEmpty() && !repaired.text.contains("start_function_call") &&
-                                !repaired.text.contains("tool_call>")) {
-                                voiceRepetitionGuard.accept(cleanAssistantText(repaired.text))
-                                voiceRepetitionGuard.finish()
+                            // Disable native tool production as well as keeping repair outside dispatch.
+                            engine.setToolsEnabled(false)
+                            val repair = com.battlesbudz.jarvis.v2.voice.VoiceRepetitionRepair.run(voiceRepetitionGuard) { emit ->
+                                engine.generate(prompt = repairPrompt, onToken = emit)
                             }
+                            repair.generation?.let { recordInference("repetition repair", it) }
+                            diagnosticRecorder.recordImportant("Voice repetition repair ended reason=${repair.reason} " +
+                                "budgetMs=10000 nativeCancellationWaitSeparate=true")
                         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                         catch (error: Exception) {
                             diagnosticRecorder.record("Voice repetition repair failed: ${error.message}")

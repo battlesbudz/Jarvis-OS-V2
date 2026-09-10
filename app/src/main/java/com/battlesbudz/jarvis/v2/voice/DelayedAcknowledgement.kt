@@ -3,62 +3,68 @@ package com.battlesbudz.jarvis.v2.voice
 import kotlinx.coroutines.*
 import kotlinx.coroutines.selects.select
 
-/** Every confirmed turn gets an opening cue; bounded silent intervals until answer PCM arrives. */
+/** Gap-only cached cues. Answer PCM cancels cache waits and any active cue, including the opening. */
 internal class DelayedAcknowledgement(private val log: (String) -> Unit = {}) {
+    enum class Stage(val cue: String?) {
+        PROCESSING(null), RECOGNIZING("Listening to your recording."),
+        GENERATING("Thinking."), SYNTHESIZING("Preparing the audio.")
+    }
     private val requested = CompletableDeferred<String>()
     private val lock = Any()
-    private val prepared = mutableMapOf<String, CompletableDeferred<SpeechAudio?>>()
-    private fun preparation(text: String) = synchronized(lock) { prepared.getOrPut(text) { CompletableDeferred() } }
+    private val prepared = mutableMapOf<String, SpeechAudio>()
     private val answerReady = CompletableDeferred<Unit>()
+    @Volatile private var stage = Stage.PROCESSING
     private var job: Job? = null
+    fun updateStage(value: Stage) { stage = value }
     fun request(text: String = FillerPhrases.INITIAL) {
-        if (requested.complete(text)) log("acknowledgement_requested text=$text policy=always_initial")
+        if (requested.complete(text)) log("acknowledgement_requested text=$text policy=gap_only")
     }
-    fun prepare(audio: SpeechAudio) { preparation(audio.text).complete(audio) }
-    fun preparationFailed(text: String) { preparation(text).complete(null) }
-    fun start(scope: CoroutineScope, delayMs: Long = 0, repeatGapMs: Long = 2500,
-              play: suspend (SpeechAudio) -> Unit) {
-        require(repeatGapMs > 0)
+    fun prepare(audio: SpeechAudio) { synchronized(lock) { prepared[audio.text] = audio } }
+    fun preparationFailed(text: String) { log("acknowledgement_cache_failed text=$text answer_unblocked=true") }
+    fun start(scope: CoroutineScope, delayMs: Long = 700, repeatGapMs: Long = 3500,
+              requestPreparation: (String) -> Unit = {}, play: suspend (SpeechAudio) -> Unit) {
+        require(delayMs >= 0 && repeatGapMs > 0)
         job = scope.launch {
-            val text = requested.await()
-            delay(delayMs)
-            val pending = preparation(text)
-            if (!pending.isCompleted) log("acknowledgement_waiting_for_cache")
-            val initial = pending.await()
-            if (initial == null) {
-                log("acknowledgement_skipped reason=cache_failed answer_unblocked=true")
-                return@launch
-            }
-            play(initial) // Intentionally precedes even a fast answer, per the selected voice policy.
+            val initial = select<String?> {
+                answerReady.onAwait { null }
+                requested.onAwait { it }
+            } ?: return@launch
+            if (waitForAnswer(delayMs)) return@launch
+            var turn = 0
+            var last: String? = null
             while (!answerReady.isCompleted) {
-                val answered = withTimeoutOrNull(repeatGapMs) { answerReady.await(); true } == true
-                if (answered || answerReady.isCompleted) break
-                val next = preparation(FillerPhrases.FOLLOWUP)
-                val audio = if (next.isCompleted) next.await() ?: initial else initial
-                if (answerReady.isCompleted) break
-                log("acknowledgement_wait_filler silenceTargetMs=$repeatGapMs text=${audio.text}")
-                // Follow-up filler must not reserve the speaker after real answer PCM is ready.
-                coroutineScope {
-                    val followup = launch { play(audio) }
-                    try {
-                        select<Unit> {
-                            answerReady.onAwait {
-                                log("acknowledgement_followup_yielded reason=answer_pcm_ready")
-                            }
-                            followup.onJoin { }
-                        }
-                    } finally {
-                        withContext(NonCancellable) { followup.cancelAndJoin() }
+                val observed = stage
+                val preferred = if (turn == 0) observed.cue ?: initial
+                    else FillerPhrases.VARIATIONS[(turn - 1) % FillerPhrases.VARIATIONS.size]
+                if (synchronized(lock) { preferred !in prepared }) requestPreparation(preferred)
+                val audio = synchronized(lock) {
+                    val candidates = listOf(preferred, observed.cue, initial) + FillerPhrases.VARIATIONS
+                    candidates.filterNotNull().distinct().firstNotNullOfOrNull {
+                        if (it != last) prepared[it] else null
                     }
                 }
+                if (audio != null && !answerReady.isCompleted) {
+                    log("acknowledgement_wait_filler stage=$observed gapMs=${if (turn == 0) delayMs else repeatGapMs} text=${audio.text}")
+                    coroutineScope {
+                        val cue = launch { play(audio) }
+                        try {
+                            select<Unit> { answerReady.onAwait { }; cue.onJoin { } }
+                        } finally {
+                            withContext(NonCancellable) { cue.cancelAndJoin() }
+                        }
+                    }
+                    last = audio.text
+                }
+                turn++
+                if (waitForAnswer(repeatGapMs)) break
             }
         }
     }
-    suspend fun answerReady(initialText: String = FillerPhrases.INITIAL) {
-        if (job == null) return // Benchmarks do not enable fillers.
-        request(initialText) // Also covers a confirmed turn's early error/direct-completion response.
+    private suspend fun waitForAnswer(ms: Long): Boolean = answerReady.isCompleted ||
+        withTimeoutOrNull(ms.coerceAtLeast(1)) { answerReady.await(); true } == true
+    suspend fun answerReady() {
         answerReady.complete(Unit)
-        job?.join() // Preserve the required initial cue; follow-up playback yields immediately.
+        job?.cancelAndJoin() // No obligatory um, native-cache wait, or audible tail before the answer.
     }
     suspend fun close() { job?.cancelAndJoin() }
 }

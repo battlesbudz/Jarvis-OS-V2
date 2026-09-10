@@ -427,6 +427,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     asrTranscript, audioBytes
                 ) { audio ->
                     turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.AUDIO_FALLBACK_STARTED)
+                    output.updateWaitStage(com.battlesbudz.jarvis.v2.voice.DelayedAcknowledgement.Stage.RECOGNIZING)
                     status("Listening to your recorded speech with Gemma…")
                     diagnosticRecorder.recordImportant("Voice audio fallback: ${asrEngine.label} empty; Gemma receiving ${audio.size} bytes")
                     resetNativeConversation()
@@ -470,6 +471,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     "sinceEndpointMs=${(System.nanoTime() - endpointAt) / 1_000_000}")
                 val outcome = com.battlesbudz.jarvis.v2.voice.runInterruptibleReply(
                     reply = {
+                        output.updateWaitStage(com.battlesbudz.jarvis.v2.voice.DelayedAcknowledgement.Stage.GENERATING)
                         turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.REPLY_DISPATCHED)
                         val coordinator = VoiceTurnCoordinator(voiceSessionController)
                         val response = coordinator.processTurn(transcript) { onToken ->
@@ -477,6 +479,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             val streamed = StringBuilder()
                             fun recordFirstText(text: String) {
                                 if (text.isNotBlank() && firstFinalToken.compareAndSet(true, false)) {
+                                    output.updateWaitStage(com.battlesbudz.jarvis.v2.voice.DelayedAcknowledgement.Stage.SYNTHESIZING)
                                     turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.FIRST_REPLY_TEXT)
                                     val elapsedMs = (System.nanoTime() - endpointAt) / 1_000_000
                                     asrComparisonStore.update(asrTurnId, "final_to_first_text_ms", elapsedMs)

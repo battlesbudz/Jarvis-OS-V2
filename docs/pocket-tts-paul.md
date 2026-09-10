@@ -1,6 +1,6 @@
 # Pocket TTS — Paul
 
-> Historical implementation notes: the continuous-state, zero-startup-wait and generated initial filler descriptions below are superseded. Current call defaults use fresh decoder/sampling state per sentence group, adaptive headroom starting at 200 ms, and the bundled Ummm opening. Saved diagnostic profiles can override call settings. See the [implementation plan](local-voice-implementation-plan.md) for current decisions and evidence.
+> Historical implementation notes: the continuous-state, zero-startup-wait and generated initial filler descriptions below are superseded. Current call defaults use fresh decoder/sampling state per sentence group, adaptive headroom starting at 200 ms, and a bundled Ummm clip available for gaps. Gap cues are optional; ready answer audio preempts even an active initial cue. Saved diagnostic profiles can override call settings. See the [implementation plan](local-voice-implementation-plan.md) for current decisions and evidence.
 
 ## Current source-audio comparison
 

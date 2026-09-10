@@ -12,6 +12,9 @@ class VoiceRepetitionGuard(user: String, previousReply: String?, private val emi
     private var received = false
     var suppressedSentences = 0
         private set
+    var acceptedSentences = 0
+        private set
+    fun discardPending() { pending.clear() }
     val text: String get() = accepted.toString()
     val needsRepair: Boolean get() = suppressedSentences > 0 && text.isBlank()
 
@@ -49,6 +52,7 @@ class VoiceRepetitionGuard(user: String, previousReply: String?, private val emi
         if (references.any { duplicates(phrase, it) }) { suppressedSentences++; return }
         val output = (if (accepted.isEmpty()) "" else " ") + phrase
         accepted.append(output)
+        acceptedSentences++
         references += phrase
         emit(output)
     }

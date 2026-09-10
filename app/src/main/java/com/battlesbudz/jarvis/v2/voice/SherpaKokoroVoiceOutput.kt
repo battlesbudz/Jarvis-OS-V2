@@ -64,10 +64,10 @@ class SherpaKokoroVoiceOutput(
     private val acknowledgementRequests = Channel<String>(Channel.CONFLATED)
     private fun fillerCacheKey(text: String) = "opening-v5:${engine.version}:$modelDirectory:$speakerId:$text" +
         if (engine == TtsEngine.POCKET_PAUL) ":period=${benchmarkProfile?.leadingPeriod ?: false}" else ""
+    internal fun updateWaitStage(stage: DelayedAcknowledgement.Stage) { acknowledgement.updateStage(stage) }
     fun acknowledgeConfirmedTurn() {
         if (!acknowledgeDelays) return
         acknowledgement.request(neutralFiller)
-        acknowledgementRequests.trySend(FillerPhrases.FOLLOWUP)
     }
     private companion object {
         val paulBuffer = PaulPlaybackBuffer()
@@ -108,6 +108,7 @@ class SherpaKokoroVoiceOutput(
         currentCoroutineContext().ensureActive()
     }
 
+    private class FillerSuperseded : RuntimeException()
     private data class SynthesizedPhrase(
         val index: Int,
         val text: String,
@@ -126,7 +127,7 @@ class SherpaKokoroVoiceOutput(
         if (acknowledgeDelays) {
             // Cached PCM needs no native model reload before it can be played.
             withContext(Dispatchers.IO) {
-                for (text in listOf(neutralFiller, FillerPhrases.FOLLOWUP)) {
+                for (text in (listOf(neutralFiller) + FillerPhrases.VARIATIONS + DelayedAcknowledgement.Stage.entries.mapNotNull { it.cue })) {
                     val key = fillerCacheKey(text)
                     (if (text == neutralFiller && openingPcm != null) SpeechAudio(text, 24000, openingPcm, 0)
                     else acknowledgementCache[key] ?: fillerDiskCache.read(key, text))?.let {
@@ -137,7 +138,7 @@ class SherpaKokoroVoiceOutput(
                 }
             }
         }
-        if (acknowledgeDelays) acknowledgement.start(this) { audio ->
+        if (acknowledgeDelays) acknowledgement.start(this, requestPreparation = { acknowledgementRequests.trySend(it) }) { audio ->
             VoiceCues.playAcknowledgement(audio, { stopped }, { interrupted }, log, playbackVolume())
         }
         log("tts_session_started engine=${engine.id} modelDir=$modelDirectory speaker=$speakerId threads=$numThreads workers=1")
@@ -227,17 +228,25 @@ class SherpaKokoroVoiceOutput(
                     "pcmDelivery=interleaved_latent_decode firstAudioFrames=3 audioFramesPerChunk=5 session=$nativeSession " +
                     "leadingPeriod=$paulPeriod startupCushionMs=$paulBufferMs textBoundary=${if (pocketSentences) "sentence_group" else "benchmark_char_target"}")
                 onReady()
-                fun synthesize(text: String): SpeechAudio {
+                fun synthesize(text: String, optionalFiller: Boolean = false): SpeechAudio {
                     owner.ensureActive()
                     val started = System.nanoTime()
                     log("tts_generation_started chars=${text.length} preview=${text.take(80)} api=generateWithConfig")
-                    // Use the established non-callback JNI path. Kotlin lambda callback ABI
-                    // changes can abort the process before Java can report an exception.
-                    val generated = tts.generateWithConfig(
-                        if (pocket) PocketSpeechPolicy.input(text, paulPeriod) else text, if (pocket && text in listOf(neutralFiller, FillerPhrases.FOLLOWUP))
-                            generation.copy(extra = PocketSpeechPolicy.extra(filler = true))
+                    val input = if (pocket) PocketSpeechPolicy.input(text, paulPeriod) else text
+                    val config = if (pocket && optionalFiller) generation.copy(extra =
+                        PocketSpeechPolicy.extra(filler = true) + mapOf("jarvis_session" to "$nativeSession/filler/${java.util.UUID.randomUUID()}"))
                         else if (pocket) generation.copy(extra = PocketSpeechPolicy.extra()) else generation
-                    )
+                    val generated = if (optionalFiller) {
+                        // Stable Java callback; no PCM is played or cached until this preparation completes.
+                        val callback = SherpaPcmCallback {
+                            if (stopped || !owner.isActive || firstTextAt.get() != 0L) 0 else 1
+                        }
+                        val result = tts.generateWithConfigAndCallback(input, config, callback)
+                        callback.failure?.let { throw it }
+                        owner.ensureActive()
+                        if (stopped || firstTextAt.get() != 0L) throw FillerSuperseded()
+                        result
+                    } else tts.generateWithConfig(input, config)
                     owner.ensureActive()
                     val rate = generated.sampleRate
                     check(rate > 0) { "Voice model returned an invalid sample rate." }
@@ -261,7 +270,7 @@ class SherpaKokoroVoiceOutput(
                         val key = fillerCacheKey(text)
                         val cached = acknowledgementCache[key] ?: run {
                             log("acknowledgement_cache_preparing text=$text")
-                            FillerPcm.prepare(synthesize(text))
+                            FillerPcm.prepare(synthesize(text, optionalFiller = true))
                         }.also {
                             check(it.sampleRate > 0 && it.pcm.size in 1..it.sampleRate * 4) {
                                 "Generated filler exceeded its four-second duration budget."
@@ -273,13 +282,15 @@ class SherpaKokoroVoiceOutput(
                         acknowledgement.prepare(cached)
                         runCatching { fillerDiskCache.write(key, cached) }
                             .onFailure { log("acknowledgement_cache_persist_failed reason=${it.message}") }
+                    } catch (_: FillerSuperseded) {
+                        log("acknowledgement_preparation_yielded reason=answer_text_ready partial_not_cached=true")
                     } catch (cancelled: CancellationException) { throw cancelled }
                     catch (error: Exception) {
                         acknowledgement.preparationFailed(text)
                         log("acknowledgement_cache_unavailable reason=${error.message}")
                     }
                 }
-                if (acknowledgeDelays) prepareAcknowledgement(neutralFiller)
+                // Optional filler synthesis is queued only during a gap, after cached audio is loaded.
                 fun generate(text: String) {
                     owner.ensureActive()
                     if (stopped) return
@@ -438,7 +449,8 @@ class SherpaKokoroVoiceOutput(
                             }
                         }
                         acknowledgementRequests.onReceive { text ->
-                            if (index == 0 && acknowledgeDelays) prepareAcknowledgement(text)
+                            // Native owns one stream, not a session map: never replace an active answer with filler.
+                            if (index == 0 && acknowledgeDelays && firstTextAt.get() == 0L) prepareAcknowledgement(text)
                         }
                         openingRequests.onReceive { request ->
                             if (index == 0 && !request.isDiscarded() && preparedOpening.get() === request) {
@@ -486,7 +498,7 @@ class SherpaKokoroVoiceOutput(
                     if (first) {
                         // Small startup headroom; never hold a short, completed answer for this delay.
                         val start = System.nanoTime()
-                        acknowledgement.answerReady(neutralFiller)
+                        acknowledgement.answerReady()
                         val remainingHeadroom = (phrase.startupWaitMs - elapsedMs(start)).coerceAtLeast(0)
                         if (remainingHeadroom > 0) withTimeoutOrNull(remainingHeadroom) { startupReady.await() }
                         log("audio_startup_buffer targetMs=${phrase.startupWaitMs} waitMs=${elapsedMs(start)}")
