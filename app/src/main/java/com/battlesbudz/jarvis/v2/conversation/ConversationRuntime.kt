@@ -20,6 +20,10 @@ internal fun JarvisRuntime.runConversationInternal(
         voiceAudio: ByteArray? = null,
         onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit = {}
     ) {
+        fun buildTurnPrompt(userPrompt: String, actionResultContext: String?,
+                            history: List<ChatEntry>, seedContext: Boolean): String =
+            promptBuilder.buildGemmaPrompt(userPrompt, actionResultContext, history, seedContext,
+                voice = voiceAudio != null)
         val latencyStarted = System.nanoTime()
         val latencyId = java.util.UUID.randomUUID().toString()
         var loadMs = 0L
@@ -168,13 +172,13 @@ internal fun JarvisRuntime.runConversationInternal(
                 // Compact before the native conversation approaches its
                 // practical limit. Keep the transcript in the app and reset
                 // only the bounded native conversation.
-                val existingPromptSize = promptBuilder.buildGemmaPrompt(
+                val existingPromptSize = buildTurnPrompt(
                     prompt,
                     actionResultForGemma,
                     history,
                     seedContext = false
                 ).length
-                val freshPromptSize = promptBuilder.buildGemmaPrompt(
+                val freshPromptSize = buildTurnPrompt(
                     prompt,
                     actionResultForGemma,
                     history,
@@ -258,7 +262,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     }
                 }
                 var seedContext = !nativeConversationHasContext
-                var submittedPrompt = promptBuilder.buildGemmaPrompt(
+                var submittedPrompt = buildTurnPrompt(
                     prompt,
                     actionResultForGemma,
                     if (seedContext) promptHistory else emptyList(),
@@ -276,7 +280,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     // Wikipedia evidence. Retry the fresh session without
                     // seeded history before rejecting the user turn.
                     seedContext = false
-                    submittedPrompt = promptBuilder.buildGemmaPrompt(
+                    submittedPrompt = buildTurnPrompt(
                         prompt,
                         actionResultForGemma,
                         emptyList(),
@@ -346,7 +350,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     acceptedPreparation.consume(acceptVoiceToken)
                 } else if (voiceAudio != null) {
                     engine.generateAudio(
-                        prompt = submittedPrompt + "\n" + com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions,
+                        prompt = submittedPrompt,
                         audioBytes = voiceAudio,
                         onToken = acceptVoiceToken
                     )
@@ -467,7 +471,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     lookupMs += (System.nanoTime() - fallbackStarted) / 1_000_000
                     if (!fallbackContext.isNullOrBlank()) {
                         resetNativeConversation()
-                        val fallbackPrompt = promptBuilder.buildGemmaPrompt(
+                        val fallbackPrompt = buildTurnPrompt(
                             prompt,
                             null,
                             promptHistory,
@@ -515,7 +519,7 @@ internal fun JarvisRuntime.runConversationInternal(
                                 "lookupQuery=${retryQuery.take(1_000)}"
                         )
                         resetNativeConversation()
-                        val retryPrompt = promptBuilder.buildGemmaPrompt(
+                        val retryPrompt = buildTurnPrompt(
                             prompt,
                             null,
                             promptHistory,
@@ -551,9 +555,8 @@ internal fun JarvisRuntime.runConversationInternal(
                         resetNativeConversation()
                         nativeConversationContainsCurrentTurn = false
                         try {
-                            val repairPrompt = promptBuilder.buildGemmaPrompt(prompt, null, history, seedContext = true) +
+                            val repairPrompt = buildTurnPrompt(prompt, null, history, seedContext = true) +
                                 "\n" + referenceContext.orEmpty() + "\n" +
-                                com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions +
                                 "\nYour previous draft repeated the user or an earlier reply and was suppressed. " +
                                 "Give a NEW direct answer to the CURRENT question in one or two sentences. " +
                                 "Do not recap, apologize, quote earlier sentences, or call tools. " +

@@ -324,8 +324,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     resetNativeConversation()
                     conversationCharacters = 0
                     engine.setToolsEnabled(actionIntentRouter.classifyActionIntent(partial, voiceHistory) != null)
-                    val prompt = promptBuilder.buildGemmaPrompt(partial, null, voiceHistory, seedContext = true) + "\n" +
-                        com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions
+                    val prompt = promptBuilder.buildGemmaPrompt(partial, null, voiceHistory, seedContext = true, voice = true)
                     engine.generateAudio(prompt, audio, onToken)
                 }, log = { diagnosticRecorder.record("Voice preparation: $it") },
                     prepareOpening = output::prepareOpening, speechText = ::cleanSpeechText,
@@ -462,8 +461,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     return@launch
                 }
                 latestLatencySample = com.battlesbudz.jarvis.v2.ai.GemmaLatencySample.capture(
-                    transcript, promptBuilder.buildGemmaPrompt(transcript, null, voiceHistory, seedContext = true) +
-                        "\n" + com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions,
+                    transcript, promptBuilder.buildGemmaPrompt(transcript, null, voiceHistory, seedContext = true, voice = true),
                     audioBytes, asrTurnId, System.currentTimeMillis())
                 asrComparisonStore.update(asrTurnId, "prepared", draft != null)
                 if (draft == null) resetNativeConversation()

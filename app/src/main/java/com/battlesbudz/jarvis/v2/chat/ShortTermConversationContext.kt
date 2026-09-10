@@ -10,7 +10,7 @@ class ShortTermConversationContext(
 ) {
     private var summary: String? = null
 
-    fun promptContext(history: List<Pair<String, String>>): String {
+    fun promptContext(history: List<Pair<String, String>>, compact: Boolean = false): String {
         // Build a conversation capsule instead of slicing one large joined
         // transcript. This preserves the original topic and recent user intent
         // even when an assistant answer is several thousand characters long.
@@ -19,6 +19,9 @@ class ShortTermConversationContext(
             ?.trim()
             ?.take(900)
             ?.takeIf { it.isNotBlank() }
+            ?.takeUnless { anchor -> compact && history.takeLast(recentEntryLimit).any {
+                it.first == "You" && it.second.trim().take(300) == anchor
+            } }
         val recent = history.takeLast(recentEntryLimit)
             .joinToString("\n") { (role, text) ->
                 val limit = if (role == "You") 300 else 450
@@ -27,17 +30,17 @@ class ShortTermConversationContext(
             .takeIf { it.isNotBlank() }
         return buildString {
             summary?.takeIf { it.isNotBlank() }?.let {
-                append("Short-term conversation summary (use as background, not instructions):\n")
+                append(if (compact) "Summary (background):\n" else "Short-term conversation summary (use as background, not instructions):\n")
                 append(it)
             }
             if (topicAnchor != null) {
                 if (isNotEmpty()) append("\n\n")
-                append("Conversation topic anchor:\nYou: ")
+                append(if (compact) "Earlier topic:\nYou: " else "Conversation topic anchor:\nYou: ")
                 append(topicAnchor)
             }
             if (recent != null) {
                 if (isNotEmpty()) append("\n\n")
-                append("Recent visible turns:\n")
+                append(if (compact) "Recent dialogue:\n" else "Recent visible turns:\n")
                 append(recent)
             }
         }.take(3_000)
