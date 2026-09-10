@@ -32,10 +32,11 @@ internal class DelayedAcknowledgement(private val log: (String) -> Unit = {}) {
             if (waitForAnswer(delayMs)) return@launch
             var turn = 0
             var last: String? = null
+            var announcedStage: Stage? = null
             while (!answerReady.isCompleted) {
                 val observed = stage
-                val preferred = if (turn == 0) observed.cue ?: initial
-                    else FillerPhrases.VARIATIONS[(turn - 1) % FillerPhrases.VARIATIONS.size]
+                val preferred = observed.cue?.takeIf { observed != announcedStage }
+                    ?: if (turn == 0) initial else FillerPhrases.VARIATIONS[(turn - 1) % FillerPhrases.VARIATIONS.size]
                 if (synchronized(lock) { preferred !in prepared }) requestPreparation(preferred)
                 val audio = synchronized(lock) {
                     val candidates = listOf(preferred, observed.cue, initial) + FillerPhrases.VARIATIONS
@@ -54,6 +55,7 @@ internal class DelayedAcknowledgement(private val log: (String) -> Unit = {}) {
                         }
                     }
                     last = audio.text
+                    if (audio.text == observed.cue) announcedStage = observed
                 }
                 turn++
                 if (waitForAnswer(repeatGapMs)) break

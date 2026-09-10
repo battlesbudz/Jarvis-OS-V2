@@ -53,6 +53,22 @@ class DelayedAcknowledgementTest {
         cue.request(); withTimeout(500) { ready.await() }; cue.answerReady()
         assertEquals(listOf("Thinking.", "Preparing the audio."), spoken); cue.close()
     }
+    @Test fun aNewStageRequestsItsMissingCueBeforeAnotherGenericVariation() = runBlocking {
+        val cue = DelayedAcknowledgement(); val spoken = mutableListOf<String>(); val ready = CompletableDeferred<Unit>()
+        val requested = mutableListOf<String>()
+        cue.prepare(audio)
+        cue.start(this, delayMs = 1, repeatGapMs = 5, requestPreparation = {
+            requested += it; cue.prepare(audio.copy(text = it))
+        }) {
+            spoken += it.text
+            if (spoken.size == 1) cue.updateStage(DelayedAcknowledgement.Stage.GENERATING)
+            else ready.complete(Unit)
+        }
+        cue.request(); withTimeout(500) { ready.await() }; cue.answerReady()
+        assertEquals(listOf(FillerPhrases.INITIAL, "Thinking."), spoken)
+        assertEquals(listOf("Thinking."), requested); cue.close()
+    }
+
     @Test fun stopCancelsActiveCue() = runBlocking {
         val cue = DelayedAcknowledgement(); val started = CompletableDeferred<Unit>(); var released = false
         cue.prepare(audio); cue.start(this, delayMs = 1) {
