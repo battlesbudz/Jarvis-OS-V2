@@ -102,7 +102,11 @@ class VoiceAudioSessionTest {
         val error = IllegalStateException("external microphone")
         session.close(error)
         try { input.chunks().first(); fail("Expected microphone failure") }
-        catch (actual: IllegalStateException) { assertSame(error, actual) }
+        catch (actual: IllegalStateException) {
+            // Coroutine stack-trace recovery can copy the exception in debug/test builds.
+            assertEquals(error.javaClass, actual.javaClass)
+            assertEquals(error.message, actual.message)
+        }
         assertFalse(session.usable); assertEquals(1, source.stops)
         val replacementSource = Source(); val replacement = VoiceAudioSession(replacementSource, this)
         try {
