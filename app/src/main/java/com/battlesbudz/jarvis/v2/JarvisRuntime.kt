@@ -214,6 +214,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             var expectedResourceCall: String? = null
             var preserveCaptureOnCancellation = false
             var voiceOutput: SherpaKokoroVoiceOutput? = null
+            val finalSpeechDelivery = java.util.concurrent.atomic.AtomicReference<com.battlesbudz.jarvis.v2.voice.SpeechDelivery?>(null)
             val speechChunks = Channel<String>(Channel.UNLIMITED)
             var speechJob: Job? = null
             var microphoneYielded = false
@@ -298,6 +299,13 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     "callProfile=${callProfile?.id ?: "adaptive-default"}")
                 val output = SherpaKokoroVoiceOutput(ttsDirectory.path, engine = ttsEngine,
                     modelSession = models,
+                    deliveryLedger = com.battlesbudz.jarvis.v2.voice.SpeechDeliveryLedger(asrTurnId) { delivery ->
+                        finalSpeechDelivery.set(delivery)
+                        voiceSessionController.updateDelivery(expectedCallId, delivery)
+                        diagnosticRecorder.recordImportant("Voice delivery turn=$asrTurnId state=${delivery.state} " +
+                            "completedChars=${delivery.deliveredText.length} partialSpan=${delivery.partialSpanIndex} " +
+                            "playedFrames=${delivery.playedFrames} precision=segment_frames")
+                    },
                     onPlaybackEnded = { followupAudioAfterMs.set(System.nanoTime() / 1_000_000) },
                     normalSpeed = callProfile != null, fixedChunking = callProfile != null,
                     openingChars = callProfile?.openingChars ?: com.battlesbudz.jarvis.v2.voice.SpeechChunker.DEFAULT_OPENING_CHARS,
@@ -515,7 +523,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         output.updateWaitStage(com.battlesbudz.jarvis.v2.voice.DelayedAcknowledgement.Stage.GENERATING)
                         turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.REPLY_DISPATCHED)
                         val coordinator = VoiceTurnCoordinator(voiceSessionController)
-                        val response = coordinator.processTurn(transcript) { onToken ->
+                        val response = coordinator.processTurn(transcript, replyId = asrTurnId) { onToken ->
                             val completed = CompletableDeferred<String>()
                             val streamed = StringBuilder()
                             fun recordFirstText(text: String) {
@@ -535,6 +543,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                 prompt = transcript, history = voiceHistory, imageUri = null,
                                 preparedVoice = draft, voiceAudio = audioBytes,
                                 onLatency = { replyLatency.set(it) },
+                                onActionResult = { name, message, succeeded ->
+                                    voiceSessionController.recordReplyAction(expectedCallId, asrTurnId,
+                                        com.battlesbudz.jarvis.v2.voice.VoiceActionOutcome(name, message, succeeded))
+                                },
                                 onToken = { token ->
                                     recordFirstText(token)
                                     onToken(token)
@@ -554,10 +566,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             mainHandler.post { onTranscript("Jarvis", text, true) }
                             com.battlesbudz.jarvis.v2.ai.GenerationResult(text, -1L, null)
                         }
-                        val last = voiceSessionController.currentTranscript().lastOrNull()
-                        if (last?.role != "Jarvis" || last.text != response.text) {
-                            voiceSessionController.appendTranscript("Jarvis", response.text, complete = true, latency = replyLatency.get())
-                        }
+                        voiceSessionController.updateReplyText(expectedCallId, asrTurnId, response.text,
+                            finished = true, latency = replyLatency.get())
                         speechChunks.close()
                         speechJob?.join()
                         replyLatency.get()?.let { latency ->
@@ -661,6 +671,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         runCatching { voiceSessionController.flushCheckpoint() }
                             .onFailure { diagnosticRecorder.recordImportant("Voice checkpoint flush failed: ${it.javaClass.simpleName}") }
                         runCatching { voiceOutput?.release() }
+                        finalSpeechDelivery.get()?.let { turnOrchestrator.reconcileVoiceDelivery(it.deliveredText) }
                         if (activeVoiceOutput === voiceOutput) activeVoiceOutput = null
                         if (activeVoiceCapture === capture) activeVoiceCapture = null
                         val callEnded = !voiceSessionArmed || voiceSessionController.currentCallId() == null ||

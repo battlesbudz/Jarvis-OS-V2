@@ -45,6 +45,13 @@ class SharedPreferencesVoiceCallStore(
                                 put("timestampMs", entry.timestampMs)
                                 put("complete", entry.complete)
                                 entry.latency?.let { put("latency", it.json()) }
+                                entry.replyId?.let { put("replyId", it) }
+                                entry.delivery?.let { put("delivery", it.json()) }
+                                put("generationComplete", entry.generationComplete)
+                                if (entry.actions.isNotEmpty()) put("actions", JSONArray().also { actions ->
+                                    entry.actions.forEach { action -> actions.put(JSONObject().put("name", action.name)
+                                        .put("message", action.message).put("succeeded", action.succeeded)) }
+                                })
                             })
                         }
                     })
@@ -74,7 +81,13 @@ class SharedPreferencesVoiceCallStore(
                                     text = entry.optString("text"),
                                     timestampMs = entry.optLong("timestampMs"),
                                     complete = entry.optBoolean("complete", true),
-                                    latency = com.battlesbudz.jarvis.v2.diagnostics.TurnLatency.read(entry.optJSONObject("latency"))
+                                    latency = com.battlesbudz.jarvis.v2.diagnostics.TurnLatency.read(entry.optJSONObject("latency")),
+                                    replyId = entry.optString("replyId").takeIf { it.isNotBlank() },
+                                    delivery = readSpeechDelivery(entry.optJSONObject("delivery"), entry.optString("replyId").takeIf { it.isNotBlank() }),
+                                    generationComplete = entry.optBoolean("generationComplete", entry.optBoolean("complete", true)),
+                                    actions = entry.optJSONArray("actions")?.let { actions -> (0 until actions.length()).mapNotNull { i ->
+                                        actions.optJSONObject(i)?.let { VoiceActionOutcome(it.optString("name"), it.optString("message"), it.optBoolean("succeeded")) }
+                                    } }.orEmpty()
                                 )
                             }
                         }

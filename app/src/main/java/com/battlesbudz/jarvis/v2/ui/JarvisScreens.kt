@@ -930,12 +930,25 @@ private fun VoiceCallDetailScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             call.transcript.forEach { entry ->
+                val label = if (entry.role == "Jarvis" && entry.delivery != null &&
+                    entry.delivery.state != com.battlesbudz.jarvis.v2.voice.SpeechDeliveryState.COMPLETED) "Jarvis (generated)" else entry.role
                 Text(
-                    "${entry.role}: ${entry.text}",
+                    "$label: ${entry.text}",
                     color = if (entry.role == "You") MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (entry.role == "Jarvis") entry.latency?.let { TurnLatencyFooter(it) }
+                if (entry.role == "Jarvis") {
+                    entry.delivery?.let { delivery ->
+                        if (delivery.state != com.battlesbudz.jarvis.v2.voice.SpeechDeliveryState.COMPLETED) {
+                            Text("Playback ${delivery.state.name.lowercase()}. Completed spoken text: " +
+                                delivery.deliveredText.ifBlank { "None" } +
+                                if (delivery.partialSpanIndex != null) " · Last segment partly played." else "",
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    entry.actions.forEach { action -> Text("Action result: ${action.message}", style = MaterialTheme.typography.bodySmall) }
+                    entry.latency?.let { TurnLatencyFooter(it) }
+                }
             }
             call.taskStatus?.let { task ->
                 Text("Task status: ${task.state}", style = MaterialTheme.typography.labelLarge)

@@ -110,6 +110,14 @@ class TurnOrchestrator(
         }
     }
 
+    /** An offer that was generated but never spoken cannot arm a later "yes". */
+    fun reconcileVoiceDelivery(spoken: String) {
+        val normalized = spoken.lowercase()
+        pendingLookupSubject = if (spoken.isNotBlank() && (grounding.isInsufficientAnswer(spoken) ||
+            normalized.contains("would you like me to search wikipedia") ||
+            normalized.contains("would you like me to search wikidata"))) activeSubject ?: activeSubjectQuestion else null
+    }
+
     fun pendingSubjectForDiagnostics(): String? = pendingLookupSubject
 
     private fun extractNamedEntity(prompt: String): String? {

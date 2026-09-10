@@ -18,7 +18,8 @@ internal fun JarvisRuntime.runConversationInternal(
         onComplete: (String) -> Unit,
         preparedVoice: com.battlesbudz.jarvis.v2.voice.PreparedVoiceDraft? = null,
         voiceAudio: ByteArray? = null,
-        onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit = {}
+        onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit = {},
+        onActionResult: (String, String, Boolean) -> Unit = { _, _, _ -> }
     ) {
         fun buildTurnPrompt(userPrompt: String, actionResultContext: String?,
                             history: List<ChatEntry>, seedContext: Boolean): String =
@@ -112,7 +113,10 @@ internal fun JarvisRuntime.runConversationInternal(
                                 this@runConversationInternal,
                                 canLaunchDirectly = { activityVisible }
                             )
-                        ).execute(directRequest)
+                        ).execute(directRequest).also {
+                            // Persist the synchronous side effect before cancellable Main -> caller dispatch.
+                            onActionResult(directRequest.name, it.message, it.succeeded)
+                        }
                     }
                     diagnosticRecorder.recordImportant("Action\nuser=${prompt.take(500)}\nrequest=$directRequest\nsucceeded=${result.succeeded}\nresult=${result.message}")
                     turnOrchestrator.recordResponse(prompt, result.message, turnPlan)
@@ -394,7 +398,9 @@ internal fun JarvisRuntime.runConversationInternal(
                                     this@runConversationInternal,
                                     canLaunchDirectly = { activityVisible }
                                 )
-                            ).execute(request)
+                            ).execute(request).also {
+                                onActionResult(request.name, it.message, it.succeeded)
+                            }
                         }
                         diagnosticRecorder.recordImportant("Action\nuser=${prompt.take(500)}\nrequest=$request\nsucceeded=${result.succeeded}\nresult=${result.message}")
                         actionResultMessage = result.message

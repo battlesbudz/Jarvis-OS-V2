@@ -26,7 +26,7 @@ class VoiceSessionController(
             call.transcript.any { it.complete } &&
                 call.endedAtMs?.let { now - it in 0..(15 * 60 * 1000L) } == true
         }.maxByOrNull { it.endedAtMs ?: 0 }?.transcript.orEmpty()
-            .filter { it.complete }.takeLast(6)
+            .filter { it.complete || (it.role == "Jarvis" && it.forConversation() != null) }.takeLast(6)
         return VoiceCallRecord(UUID.randomUUID().toString(), now).also {
             activeCall = it
             _state.value = VoiceSessionState.ACTIVELY_LISTENING
@@ -40,12 +40,58 @@ class VoiceSessionController(
         val entries = call.transcript.toMutableList()
         val previous = entries.lastOrNull()
         if (previous?.role == role && !previous.complete) {
-            entries[entries.lastIndex] = previous.copy(text = text, complete = complete, timestampMs = nowMs(), latency = latency ?: previous.latency)
+            entries[entries.lastIndex] = previous.copy(text = text, complete = complete, generationComplete = complete, timestampMs = nowMs(), latency = latency ?: previous.latency)
         } else {
             entries += TranscriptEntry(role, text, nowMs(), complete, latency)
         }
         activeCall = call.copy(transcript = entries)
         if (complete) checkpoint() else store.saveProgress(requireActiveCall())
+    }
+
+    /** Stable reply IDs separate generation, audio delivery and tool receipts. */
+    @Synchronized fun beginReply(callId: String, replyId: String) {
+        if (activeCall?.id != callId) return
+        val call = requireActiveCall()
+        check(call.transcript.none { it.replyId == replyId })
+        activeCall = call.copy(transcript = call.transcript + TranscriptEntry("Jarvis", "", nowMs(),
+            complete = false, replyId = replyId, delivery = SpeechDelivery(replyId), generationComplete = false))
+        checkpoint()
+    }
+    @Synchronized fun updateReplyText(callId: String, replyId: String, text: String, finished: Boolean = false,
+        latency: com.battlesbudz.jarvis.v2.diagnostics.TurnLatency? = null) {
+        if (activeCall?.id != callId) return // Late generation cannot rewrite an ended/replaced call.
+        changeReply(callId, replyId, durable = finished) { entry ->
+            if (entry.generationComplete) entry else entry.copy(text = text, generationComplete = finished,
+                complete = finished && entry.delivery?.state == SpeechDeliveryState.COMPLETED,
+                latency = latency ?: entry.latency)
+        }
+    }
+    @Synchronized fun updateDelivery(callId: String, delivery: SpeechDelivery) {
+        changeReply(callId, delivery.turnId) { entry ->
+            val previous = entry.delivery
+            if (previous?.terminal == true || delivery.revision <= (previous?.revision ?: -1)) entry
+            else entry.copy(delivery = delivery,
+                complete = entry.generationComplete && delivery.state == SpeechDeliveryState.COMPLETED)
+        }
+    }
+    @Synchronized fun recordReplyAction(callId: String, replyId: String, outcome: VoiceActionOutcome) {
+        changeReply(callId, replyId) { entry -> entry.copy(actions = entry.actions + outcome) }
+    }
+    private fun changeReply(callId: String, replyId: String, durable: Boolean = true,
+        transform: (TranscriptEntry) -> TranscriptEntry) {
+        // Final playback/atomic tool receipts may arrive after End, but never target a different call.
+        // A deleted call is not recreated.
+        val live = activeCall?.id == callId
+        val call = if (live) activeCall else store.list().firstOrNull { it.id == callId }
+        if (call == null) return
+        val index = call.transcript.indexOfFirst { it.replyId == replyId }
+        if (index < 0) return
+        val entry = transform(call.transcript[index])
+        if (entry == call.transcript[index]) return
+        val entries = call.transcript.toMutableList().also { it[index] = entry }
+        val updated = call.copy(transcript = entries)
+        if (live) activeCall = updated
+        if (durable || !live) store.save(updated) else store.saveProgress(updated)
     }
 
     /** Late speech metrics can update only the reply carrying this measurement ID. */
@@ -65,17 +111,22 @@ class VoiceSessionController(
 
     /** Background dialogue only: never imports task state or appends old entries to the new call. */
     @Synchronized fun conversationContext(): List<TranscriptEntry> =
-        (recentCallContext + currentTranscript()).takeLast(8)
+        (recentCallContext + currentTranscript()).mapNotNull { it.forConversation() }.takeLast(8)
 
     /** Starts a new linked session with the prior call's transcript as context. */
     @Synchronized fun resumeCall(call: VoiceCallRecord): VoiceCallRecord {
         check(activeCall == null) { "A Voice Call is already active." }
         recentCallContext = emptyList()
+        val latest = store.list().firstOrNull { it.id == call.id } ?: call
         return VoiceCallRecord(
             id = UUID.randomUUID().toString(),
             startedAtMs = nowMs(),
-            transcript = call.transcript,
-            taskStatus = call.taskStatus
+            transcript = latest.transcript.map { entry ->
+                entry.delivery?.takeIf { !it.terminal }?.let {
+                    entry.copy(delivery = it.copy(state = SpeechDeliveryState.INTERRUPTED), complete = false)
+                } ?: entry
+            },
+            taskStatus = latest.taskStatus
         ).also {
             activeCall = it
             _state.value = VoiceSessionState.ACTIVELY_LISTENING

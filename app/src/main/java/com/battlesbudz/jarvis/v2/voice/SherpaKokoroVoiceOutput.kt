@@ -27,6 +27,7 @@ class SherpaKokoroVoiceOutput(
     private val benchmarkProfile: TtsBenchmarkProfile? = null,
     private val benchmarkRun: Boolean = false,
     private val modelSession: VoiceModelSession? = null,
+    private val deliveryLedger: SpeechDeliveryLedger? = null,
     private val onPlaybackEnded: () -> Unit = {},
     private val benchmarkSubmissions: List<String>? = null,
     private val acknowledgeDelays: Boolean = false,
@@ -167,6 +168,7 @@ class SherpaKokoroVoiceOutput(
         var playbackConfirmed = false
         var completed = false
         var failureMessage: String? = null
+        val deliveryFailed = AtomicBoolean(false)
         var finalUnderruns = 0
         val streamingUnderruns = AtomicLong(0)
         val draining = AtomicBoolean(false)
@@ -340,6 +342,7 @@ class SherpaKokoroVoiceOutput(
                                     val waitStart = System.nanoTime()
                                     // One copy of each callback, never also enqueue the returned full utterance.
                                     // Captions remain estimated; the text belongs to the first audio chunk.
+                                    deliveryLedger?.append(phraseIndex, text, pcm.size, rate)
                                     audio.sendFromNative(SynthesizedPhrase(phraseIndex,
                                         if (callbackCount == 0) text else "", rate, pcm, if (phraseIndex == 0 && callbackCount == 0) paulBufferMs.toLong() else 0,
                                         benchmarkProfile?.playbackSpeed ?: 1f, captionGroup = phraseIndex))
@@ -374,6 +377,7 @@ class SherpaKokoroVoiceOutput(
                                 0, 1f, sentenceEnd = true))
                             queueWaitMs += elapsedMs(boundaryWait)
                         }
+                        deliveryLedger?.seal(phraseIndex)
                         captions.complete(phraseIndex, frames)
                         streamDiagnostics?.finish(phraseIndex)
                         val synthesisMs = (elapsedMs(started) - queueWaitMs).coerceAtLeast(0)
@@ -403,6 +407,8 @@ class SherpaKokoroVoiceOutput(
                     val rate = result.sampleRate
                     val frames = result.pcm.size.toLong()
                     val waitStart = System.nanoTime()
+                    deliveryLedger?.append(phraseIndex, text, result.pcm.size, rate)
+                    deliveryLedger?.seal(phraseIndex)
                     audio.sendFromNative(SynthesizedPhrase(phraseIndex, text, rate, result.pcm,
                         if (pocket || benchmarkProfile != null) 0 else PlaybackBufferPolicy.startupWaitMs(result.synthesisMs, frames * 1000 / rate),
                         benchmarkProfile?.playbackSpeed ?: if (normalSpeed || pocket) 1f else PlaybackBufferPolicy.playbackSpeed(result.synthesisMs, frames * 1000 / rate)))
@@ -493,6 +499,7 @@ class SherpaKokoroVoiceOutput(
                 } else while (true) generate(nextPhrase(final = true) ?: break)
             } catch (error: Throwable) {
                 failureMessage = error.message ?: error.javaClass.simpleName
+                if (error !is CancellationException) deliveryFailed.set(true)
                 failure = error
                 throw error
             } finally {
@@ -583,6 +590,7 @@ class SherpaKokoroVoiceOutput(
                                         "routeId=${startedTrack.routedDevice?.id}")
                                     onChunkStarted("audio")
                                 }
+                                deliveryLedger?.advance(head.coerceAtMost(writtenFrames))
                                 onPlayback(captions.at(head))
                                 delay(if (playbackConfirmed) 40 else 10)
                             }
@@ -663,6 +671,7 @@ class SherpaKokoroVoiceOutput(
             }
         } catch (error: Throwable) {
             failureMessage = error.message ?: error.javaClass.simpleName
+            if (error !is CancellationException) deliveryFailed.set(true)
             throw error
         } finally {
             val wasStopped = stopped
@@ -673,7 +682,13 @@ class SherpaKokoroVoiceOutput(
             tokens.cancel()
             preparedOpening.getAndSet(null)?.discard()
             withContext(NonCancellable) { playbackMonitor?.cancelAndJoin() }
-            val playedFrames = maxOf(audioTrack?.let(::unsignedHead) ?: 0L, stoppedPlaybackHead.get())
+            val playedFrames = synchronized(playbackLock) {
+                if (!completed) audioTrack?.let { runCatching { it.pause() } }
+                maxOf(audioTrack?.let(::unsignedHead) ?: 0L, stoppedPlaybackHead.get())
+            }
+            deliveryLedger?.advance(playedFrames.coerceAtMost(writtenFrames),
+                if (completed && !wasStopped && failureMessage == null) SpeechDeliveryState.COMPLETED
+                else if (deliveryFailed.get()) SpeechDeliveryState.FAILED else SpeechDeliveryState.INTERRUPTED)
             withContext(NonCancellable + Dispatchers.IO) {
                 runCatching { audioTrace?.finish(playedFrames) }
                     .onFailure { log("speech_audio_trace_failed reason=${it.message}") }
@@ -717,8 +732,10 @@ class SherpaKokoroVoiceOutput(
             audioTrack?.let { track ->
                 runCatching { track.pause() }
                 runCatching { stoppedPlaybackHead.accumulateAndGet(unsignedHead(track)) { previous, current -> maxOf(previous, current) } }
+                deliveryLedger?.advance(stoppedPlaybackHead.get().coerceAtMost(writtenFrames), SpeechDeliveryState.INTERRUPTED)
                 runCatching { track.flush() }
             }
+            deliveryLedger?.advance(stoppedPlaybackHead.get().coerceAtMost(writtenFrames), SpeechDeliveryState.INTERRUPTED)
         }
     }
 
