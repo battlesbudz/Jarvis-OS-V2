@@ -126,4 +126,35 @@ class VoiceAudioSessionTest {
             assertEquals(8, next.chunks().first()[0].toInt()); next.stop()
         } finally { session.close() }
     }
+    @Test fun completedReplyHandsOffConsumedAndNewFollowupAudioExactlyOnce() = runBlocking {
+        val source = Source(); val session = VoiceAudioSession(source, this)
+        val consumed = CompletableDeferred<Unit>()
+        val replyInput = session.borrow("reply")
+        try {
+            val result = withTimeout(1000) {
+                runInterruptibleReply(
+                    reply = { consumed.await(); "done" },
+                    listen = {
+                        replyInput.start()
+                        val consume = launch {
+                            replyInput.chunks().take(2).collect()
+                            consumed.complete(Unit)
+                        }
+                        source.push(1, 100) // Last reply audio.
+                        source.push(2, 200) // Immediate follow-up consumed by keyword reader.
+                        try { consume.join(); awaitCancellation() }
+                        finally { replyInput.stop() }
+                    }, stopReply = { fail("Natural reply completed") })
+            }
+            assertEquals(ReplyOutcome.Finished("done"), result)
+            source.push(3, 300) // More speech during cleanup and ordinary ASR setup.
+            val followup = session.borrow("command", replayAfterMs = 200)
+            followup.start()
+            source.push(4, 400)
+            assertEquals(listOf(2, 3, 4), followup.chunks().take(3).map { it[0].toInt() }.toList())
+            followup.stop()
+            assertEquals(1, source.starts)
+            assertEquals(0, source.stops)
+        } finally { session.close() }
+    }
 }

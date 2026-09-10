@@ -13,7 +13,8 @@ class KeywordBargeInAudioInput(
     private val input: AudioInput,
     private val createDetector: () -> InterruptionKeywordDetector,
     private val onConfirmed: (String) -> Unit,
-    private val log: (String) -> Unit = {}
+    private val log: (String) -> Unit = {},
+    private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 }
 ) : AudioInput {
     override val sampleRateHz get() = input.sampleRateHz
     override val channelCount get() = input.channelCount
@@ -24,14 +25,26 @@ class KeywordBargeInAudioInput(
     override fun chunks() = flow {
         var delivered = false
         var readyReported = false
+        val startedAt = nowMs()
         val detector = createDetector()
+        val loadMs = (nowMs() - startedAt).coerceAtLeast(0)
+        var inputBytes = 0L
+        var maxWorkMs = 0L
+        var maxBacklogMs = 0L
+        log("barge_keyword_loading_finished loadMs=$loadMs ready=${detector.ready} naturalSpeechReady=false")
         try {
             input.chunks().collect { pcm ->
                 if (delivered) { emit(pcm); return@collect }
+                val workAt = nowMs()
                 val keyword = detector.accept(pcm)
+                inputBytes += pcm.size
+                maxWorkMs = maxOf(maxWorkMs, (nowMs() - workAt).coerceAtLeast(0))
+                maxBacklogMs = maxOf(maxBacklogMs, input.bufferedAudioMs)
                 if (detector.ready && !readyReported) {
                     readyReported = true
-                    log("barge_keyword_ready keywords=Hey_Jarvis,stop asrLoaded=false")
+                    log("barge_keyword_ready keywords=Hey_Jarvis,stop asrLoaded=false " +
+                        "readyMs=${(nowMs() - startedAt).coerceAtLeast(0)} inputMs=${inputBytes * 1000 / (sampleRateHz * channelCount * 2)} " +
+                        "loadMs=$loadMs maxWorkMs=$maxWorkMs maxBacklogMs=$maxBacklogMs naturalSpeechReady=false")
                 }
                 if (keyword != null) {
                     delivered = true
@@ -43,6 +56,12 @@ class KeywordBargeInAudioInput(
                     // The user can speak the new request after playback stops.
                 }
             }
-        } finally { detector.close() }
+        } finally {
+            try { detector.close() } finally {
+                log("barge_keyword_summary ready=$readyReported confirmed=$delivered " +
+                    "inputMs=${inputBytes * 1000 / (sampleRateHz * channelCount * 2)} " +
+                    "loadMs=$loadMs maxWorkMs=$maxWorkMs maxBacklogMs=$maxBacklogMs")
+            }
+        }
     }
 }

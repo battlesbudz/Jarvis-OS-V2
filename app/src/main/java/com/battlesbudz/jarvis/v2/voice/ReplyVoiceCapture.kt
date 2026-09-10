@@ -32,7 +32,7 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 onPartialTranscript = { text, _ -> onPartialTranscript(text) })
             try {
                 capture.start(initialSilenceTimeoutMs = null)
-                log("barge_listener_ready")
+                log("barge_capture_ready keywordReadiness=reported_separately naturalSpeechReady=false")
                 // Observe capture failures while waiting for speech, too.
                 val completion = async { capture.awaitTurnCompletion() }
                 kotlinx.coroutines.selects.select<Unit> {

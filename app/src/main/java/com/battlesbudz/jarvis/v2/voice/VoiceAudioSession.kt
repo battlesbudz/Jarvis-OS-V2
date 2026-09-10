@@ -94,6 +94,11 @@ class VoiceAudioSession(
                 replay.forEach(::offer)
                 active = this; started = true
                 log("call_capture_borrow consumer=$label replayChunks=${replay.size} recorderRetained=true")
+                if (replayAfterMs != null) {
+                    log("call_capture_followup consumer=$label boundaryMs=$replayAfterMs " +
+                        "firstRetainedMs=${replay.firstOrNull()?.atMs} replayMs=${replay.sumOf { it.pcm.size.toLong() } * 1000 / (sampleRateHz * 2)} " +
+                        "handoffMs=${(System.nanoTime() / 1_000_000 - replayAfterMs).coerceAtLeast(0)}")
+                }
             }
         }
         override fun chunks(): Flow<ByteArray> = flow {

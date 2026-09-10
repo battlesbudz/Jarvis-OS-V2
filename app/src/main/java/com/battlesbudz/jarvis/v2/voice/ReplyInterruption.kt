@@ -13,8 +13,7 @@ sealed interface ReplyOutcome<out T> {
 suspend fun <T> runInterruptibleReply(
     reply: suspend () -> T,
     listen: suspend (onConfirmed: () -> Unit) -> CapturedVoiceTurn,
-    stopReply: () -> Unit,
-    continuationGraceMs: Long = 500
+    stopReply: () -> Unit
 ): ReplyOutcome<T> = coroutineScope {
     val confirmed = CompletableDeferred<Unit>()
     val replyJob = async { reply() }
@@ -24,9 +23,10 @@ suspend fun <T> runInterruptibleReply(
             confirmed.onAwait { true }
             replyJob.onAwait { false }
         }
-        // Capture a correction begun at the very end of the spoken reply, too.
-        val continueNow = interrupted || withTimeoutOrNull(continuationGraceMs) { confirmed.await(); true } == true
-        if (continueNow) {
+        // An already confirmed correction wins a simultaneous completion. Otherwise
+        // release the keyword reader immediately: the retained microphone replays
+        // post-playback audio into ordinary follow-up ASR, without a keyword-only wait.
+        if (interrupted || confirmed.isCompleted) {
             replyJob.cancel(VoiceControlCancellation(VoiceControl.STOP_REPLY))
             stopReply()
             replyJob.join()
