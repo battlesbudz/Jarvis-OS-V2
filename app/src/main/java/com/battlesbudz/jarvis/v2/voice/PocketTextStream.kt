@@ -2,11 +2,12 @@ package com.battlesbudz.jarvis.v2.voice
 
 /** Text conditioning for a Pocket answer, independent of PCM chunk sizes.
  * Hold incomplete sentences so token boundaries, decimals and abbreviations don't restart prosody.
- * Release one complete sentence per submission, joining very short sentences to their neighbor.
+ * Release the first complete sentence immediately; later very short sentences may join their neighbor.
  * Like upstream, a single unusually long sentence is kept intact rather than cut by character count.
  */
 internal class PocketTextStream(private val combineShort: Boolean = true) {
     private val pending = StringBuilder()
+    private var emittedOpening = false
     fun append(text: String) { pending.append(text) }
     fun take(final: Boolean = false): String? {
         if (pending.isBlank()) { if (final) pending.clear(); return null }
@@ -22,7 +23,7 @@ internal class PocketTextStream(private val combineShort: Boolean = true) {
             if (pending[i] == '.' && (word in ABBREVIATIONS || word.length == 1 && word[0].isLetter())) continue
             boundary = end
             val prefixWords = pending.substring(0, end).trim().split(Regex("\\s+")).size
-            if (combineShort && prefixWords < 4 && (!final || end < pending.length)) { boundary = -1; continue }
+            if (combineShort && emittedOpening && prefixWords < 4 && (!final || end < pending.length)) { boundary = -1; continue }
             break
         }
         if (final && boundary < 0) boundary = pending.length
@@ -30,6 +31,7 @@ internal class PocketTextStream(private val combineShort: Boolean = true) {
         val text = pending.substring(0, boundary).trim()
         pending.delete(0, boundary)
         while (pending.isNotEmpty() && pending[0].isWhitespace()) pending.deleteCharAt(0)
+        if (text.isNotEmpty()) emittedOpening = true
         return text.takeIf { it.isNotEmpty() } ?: take(final)
     }
     private companion object {

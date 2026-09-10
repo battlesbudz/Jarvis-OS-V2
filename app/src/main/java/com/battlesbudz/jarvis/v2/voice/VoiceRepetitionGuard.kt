@@ -10,6 +10,9 @@ class VoiceRepetitionGuard(user: String, previousReply: String?, private val emi
     private val pending = StringBuilder()
     private val accepted = StringBuilder()
     private var received = false
+    /** Optional evidence/knowledge-gap policy, applied to complete sentences before publication. */
+    var isPublishable: (String) -> Boolean = { true }
+    private var policyRejected = false
     var suppressedSentences = 0
         private set
     var acceptedSentences = 0
@@ -44,11 +47,16 @@ class VoiceRepetitionGuard(user: String, previousReply: String?, private val emi
         if (!received && finalText != null) accept(finalText)
         if (pending.isNotBlank()) publish(pending.toString())
         pending.clear()
+        // If every streamed draft sentence failed policy, a final safe fallback may still be spoken.
+        if (accepted.isEmpty() && policyRejected && finalText != null && isPublishable(finalText)) {
+            publish(finalText)
+        }
         return text
     }
     private fun publish(candidate: String) {
         val phrase = candidate.trim()
         if (phrase.isBlank()) return
+        if (!isPublishable(phrase)) { policyRejected = true; return }
         if (references.any { duplicates(phrase, it) }) { suppressedSentences++; return }
         val output = (if (accepted.isEmpty()) "" else " ") + phrase
         accepted.append(output)

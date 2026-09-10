@@ -243,18 +243,22 @@ internal fun JarvisRuntime.runConversationInternal(
                     conversationCharacters = 0
                 }
                 diagnosticRecorder.record("Generation tool policy allowed=$allowTools source=current_action_intent")
+                val streamGroundedVoice = voiceAudio != null && !referenceContext.isNullOrBlank()
                 val voiceRepetitionGuard = if (voiceAudio != null &&
                     actionIntentRouter.classifyActionIntent(prompt, history) == null) {
                     com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard(
                         prompt, history.lastOrNull { it.role == "Jarvis" }?.text,
                         emit = { safe -> mainHandler.post { deliverToken(com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard.speechReady(safe)) } })
                 } else null
+                if (voiceAudio != null) diagnosticRecorder.record("Voice sentence streaming: " +
+                    "suppliedReference=$streamGroundedVoice actionGuard=$allowTools")
+                if (streamGroundedVoice) voiceRepetitionGuard?.isPublishable = {
+                    !referenceGrounding.isInsufficientAnswer(it)
+                }
                 val streamFilter = AssistantStreamFilter { safeText ->
-                    // Factual/reference turns are held until the final answer
-                    // passes the knowledge-gap guard. This prevents a draft
-                    // such as "I don't have that in my knowledge base" from
-                    // flashing into the transcript before the retry runs.
-                    if (turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT &&
+                    // With supplied evidence, release checked voice sentences as they arrive.
+                    // Unverified local-factual drafts and action results retain their final gates.
+                    if ((turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT || streamGroundedVoice) &&
                         actionIntentRouter.classifyActionIntent(prompt, history) == null
                     ) {
                         if (voiceRepetitionGuard != null) voiceRepetitionGuard.accept(safeText)
@@ -504,7 +508,8 @@ internal fun JarvisRuntime.runConversationInternal(
                 val requiresReference = turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.FACTUAL_LOCAL_FIRST ||
                     turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.EXPLICIT_LOOKUP ||
                     turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.LOOKUP_CONFIRMATION
-                if (requiresReference && referenceGrounding.isInsufficientAnswer(cleanedResponse)) {
+                if (requiresReference && referenceGrounding.isInsufficientAnswer(cleanedResponse) &&
+                    (voiceRepetitionGuard?.acceptedSentences ?: 0) == 0) {
                     // Never expose a local knowledge-base disclaimer for a
                     // person/entity question. Re-query the reference APIs once
                     // and regenerate from the fresh evidence before replying.
@@ -519,6 +524,7 @@ internal fun JarvisRuntime.runConversationInternal(
                                 "lookupQuery=${retryQuery.take(1_000)}"
                         )
                         resetNativeConversation()
+                        voiceRepetitionGuard?.discardPending()
                         val retryPrompt = buildTurnPrompt(
                             prompt,
                             null,
@@ -543,7 +549,8 @@ internal fun JarvisRuntime.runConversationInternal(
                         cleanedResponse = cleanAssistantText(generated.text)
                     }
                 }
-                if (requiresReference && referenceGrounding.isInsufficientAnswer(cleanedResponse)) {
+                if (requiresReference && referenceGrounding.isInsufficientAnswer(cleanedResponse) &&
+                    (voiceRepetitionGuard?.acceptedSentences ?: 0) == 0) {
                     cleanedResponse = "I couldn't produce a verified answer from Wikipedia right now. Please try again."
                 }
                 if (voiceRepetitionGuard != null && actionResultMessage == null) {

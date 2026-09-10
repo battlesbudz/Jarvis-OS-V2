@@ -27,12 +27,12 @@ class PocketTextStreamTest {
         assertEquals(listOf("Dr. Paul paid 3.25 dollars.", "He said, ‘Hello!’", "Then left."), parts)
         assertEquals(text, parts.joinToString(" "))
     }
-    @Test fun shortOpeningWaitsAndJoinsNextSentence() {
+    @Test fun shortOpeningReleasesBeforeContinuationArrives() {
         val s = PocketTextStream()
         s.append("I understand. ")
-        assertNull(s.take())
+        assertEquals("I understand.", s.take())
         s.append("I can keep up with your requests. ")
-        assertEquals("I understand. I can keep up with your requests.", s.take())
+        assertEquals("I can keep up with your requests.", s.take())
         assertNull(s.take(final = true))
     }
     @Test fun finalShortReplyIsNeverLost() {

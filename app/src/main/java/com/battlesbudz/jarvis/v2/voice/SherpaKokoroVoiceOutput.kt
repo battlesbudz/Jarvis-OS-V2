@@ -46,13 +46,14 @@ class SherpaKokoroVoiceOutput(
     @Volatile private var stopped = false
     @Volatile private var audioTrack: AudioTrack? = null
     private val speaking = AtomicBoolean(false)
+    private val gapCuePlaying = AtomicBoolean(false)
     private val playbackLock = Any()
     @Volatile private var interrupted = false
     private val playbackClock = PlaybackClock()
     private val spokenReference = StringBuilder()
     fun recentSpokenText(): String = synchronized(spokenReference) { spokenReference.toString() }
     @Volatile private var writtenFrames = 0L
-    private var lastAudibleAt = Long.MIN_VALUE / 2
+    @Volatile private var lastAudibleAt = Long.MIN_VALUE / 2
     private val preparedOpening = AtomicReference<PreparedSpeechOpening?>(null)
     private val openingRequests = Channel<PreparedSpeechOpening>(Channel.CONFLATED,
         onUndeliveredElement = { it.discard() })
@@ -89,7 +90,7 @@ class SherpaKokoroVoiceOutput(
             it.playState == AudioTrack.PLAYSTATE_PLAYING && unsignedHead(it) < writtenFrames
         } == true
         if (audible) lastAudibleAt = now
-        audible || now - lastAudibleAt < 350 // Speaker/reverberation tail after drain.
+        gapCuePlaying.get() || audible || now - lastAudibleAt < 350 // Speaker/reverberation tail after drain.
     }
     private fun applyPause() {
         val paused = interrupted
@@ -116,7 +117,8 @@ class SherpaKokoroVoiceOutput(
         val pcm: ShortArray,
         val startupWaitMs: Long,
         val playbackSpeed: Float,
-        val captionGroup: Int? = null
+        val captionGroup: Int? = null,
+        val sentenceEnd: Boolean = false
     )
 
     override suspend fun speak(chunks: Flow<String>, onChunkStarted: (String) -> Unit) = coroutineScope {
@@ -358,6 +360,12 @@ class SherpaKokoroVoiceOutput(
                                 "callbackSha256=${result.callbackHash} returnedSha256=${result.returnedHash}")
                             check(result.matches) { "Pocket callback samples differ from returned audio." }
                         }
+                        if (acknowledgeDelays && !benchmarkRun) {
+                            val boundaryWait = System.nanoTime()
+                            audio.sendFromNative(SynthesizedPhrase(phraseIndex, "", rate, ShortArray(0),
+                                0, 1f, sentenceEnd = true))
+                            queueWaitMs += elapsedMs(boundaryWait)
+                        }
                         captions.complete(phraseIndex, frames)
                         streamDiagnostics?.finish(phraseIndex)
                         val synthesisMs = (elapsedMs(started) - queueWaitMs).coerceAtLeast(0)
@@ -491,7 +499,32 @@ class SherpaKokoroVoiceOutput(
                 var first = true
                 var lastWriteAt = 0L
                 var lastQueuedMs = 0L
-                for (phrase in audio.chunks) {
+                var atSentenceBoundary = false
+                var interveningCueMs = 0L
+                val gapWaiter = SentenceGapWaiter()
+                val gapAudio = acknowledgementCache[fillerCacheKey(neutralFiller)]
+                while (true) {
+                    val received = if (atSentenceBoundary && acknowledgeDelays && !benchmarkRun && gapAudio != null) {
+                        gapWaiter.receive(audio.chunks, boundaryDrained = {
+                            !stopped && !interrupted && audioTrack?.let { unsignedHead(it) >= writtenFrames } == true
+                        }) {
+                            val cueStarted = System.nanoTime()
+                            gapCuePlaying.set(true)
+                            log("sentence_gap_filler text=${gapAudio.text} boundary=completed_sentence excludes=answer_pcm")
+                            try {
+                                VoiceCues.playAcknowledgement(gapAudio, { stopped }, { interrupted }, log, playbackVolume())
+                            } finally {
+                                interveningCueMs += elapsedMs(cueStarted)
+                                gapCuePlaying.set(false)
+                                lastAudibleAt = System.nanoTime() / 1_000_000
+                                log("sentence_gap_filler_finished answer_priority=true")
+                            }
+                        }
+                    } else audio.chunks.receiveCatching()
+                    received.exceptionOrNull()?.let { throw it }
+                    val phrase = received.getOrNull() ?: break
+                    if (phrase.sentenceEnd) { atSentenceBoundary = true; continue }
+                    atSentenceBoundary = false
                     ensureActive()
                     if (stopped || phrase.pcm.isEmpty()) continue
                     outputSampleRate = phrase.sampleRate
@@ -545,7 +578,8 @@ class SherpaKokoroVoiceOutput(
                         }
                     }
                     if (lastWriteAt != 0L) {
-                        val gap = (elapsedMs(lastWriteAt) - lastQueuedMs).coerceAtLeast(0)
+                        val gap = (elapsedMs(lastWriteAt) - lastQueuedMs - interveningCueMs).coerceAtLeast(0)
+                        interveningCueMs = 0
                         estimatedGapMs += gap
                         if (gap > 50) log("audio_supply_gap index=${phrase.index} estimatedMs=$gap")
                     }

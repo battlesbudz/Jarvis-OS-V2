@@ -69,6 +69,16 @@ class DelayedAcknowledgementTest {
         assertEquals(listOf("Thinking."), requested); cue.close()
     }
 
+    @Test fun initialGapPrefersRecordedUmOverCachedThinking() = runBlocking {
+        val cue = DelayedAcknowledgement(); val first = CompletableDeferred<String>()
+        cue.prepare(audio); cue.prepare(audio.copy(text = "Thinking."))
+        cue.updateStage(DelayedAcknowledgement.Stage.GENERATING)
+        cue.start(this, delayMs = 1) { first.complete(it.text) }
+        cue.request()
+        assertEquals(FillerPhrases.INITIAL, withTimeout(500) { first.await() })
+        cue.answerReady(); cue.close()
+    }
+
     @Test fun stopCancelsActiveCue() = runBlocking {
         val cue = DelayedAcknowledgement(); val started = CompletableDeferred<Unit>(); var released = false
         cue.prepare(audio); cue.start(this, delayMs = 1) {
