@@ -11,7 +11,8 @@ class ConversationPromptBuilder(
         userPrompt: String,
         actionResultContext: String?,
         history: List<ChatEntry>,
-        seedContext: Boolean
+        seedContext: Boolean,
+        voice: Boolean = false
     ): String {
         val dialogue = DialogueContextPolicy.resolve(userPrompt, history.map { it.role to it.text })
         val dialogueInstruction = if (dialogue.recall)

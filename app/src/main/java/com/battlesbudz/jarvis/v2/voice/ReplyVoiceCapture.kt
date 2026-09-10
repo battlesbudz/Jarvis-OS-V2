@@ -8,10 +8,15 @@ import kotlinx.coroutines.*
 /** Local speech capture alongside generation/playback, with the ordinary mic-priority contract. */
 class ReplyVoiceCapture(private val context: Context, private val log: (String) -> Unit) {
     suspend fun listen(output: SherpaKokoroVoiceOutput, asrDirectory: File,
-                       onConfirmed: () -> Unit, onPartialTranscript: (String) -> Unit = {}): CapturedVoiceTurn = recoverReplyListener(log) {
+                       onConfirmed: () -> Unit, onPartialTranscript: (String) -> Unit = {},
+                       asrEngine: AsrEngine = AsrEngine.MOONSHINE,
+                       acceptCandidate: (ByteArray) -> Boolean = { true },
+                       trace: VoiceTurnTrace? = null,
+                       inputFactory: (suspend () -> AudioInput)? = null,
+                       modelSession: VoiceModelSession? = null): CapturedVoiceTurn = recoverReplyListener(log) {
         supervisorScope {
             MicrophoneInterruptionMonitor.awaitAvailable()
-            val input = AndroidAudioInput(this,
+            val input = inputFactory?.invoke() ?: AndroidAudioInput(this,
                 audioManager = context.getSystemService(AudioManager::class.java),
                 echoCancellation = true, noiseSuppression = true, log = log)
             val confirmed = CompletableDeferred<Unit>()
@@ -22,7 +27,7 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 createDetector = { SileroSpeechDetector.create(context.assets) },
                 playing = { output.isPlayingAudio },
                 createTranscriber = { PacedStreamingTranscriber(
-                    MoonshineStreamingTranscriber(asrDirectory), log) },
+                    asrEngine.create(asrDirectory, log = log, modelSession = modelSession), log) },
                 spokenText = output::recentSpokenText,
                 onConfirmed = {
                     output.stopSpeaking()
@@ -33,8 +38,10 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 createKeywordDetector = { MicroInterruptionKeywords(context.assets) })
             val capture = AudioTurnCapture(gated, this,
                 createDetector = { SileroSpeechDetector.create(context.assets) },
-                createTranscriber = { LazyStreamingTranscriber { MoonshineStreamingTranscriber(asrDirectory) } }, log = log,
+                createTranscriber = { LazyStreamingTranscriber { asrEngine.create(asrDirectory, log = log, modelSession = modelSession) } }, log = log,
                 allowAudioOnlyTurns = true,
+                acceptCandidate = acceptCandidate,
+                onAcceptedCandidate = { trace?.mark(VoiceTurnTrace.Stage.INTERRUPTION_CONFIRMED) },
                 onPartialTranscript = { text, _ -> onPartialTranscript(text) })
             try {
                 capture.start(initialSilenceTimeoutMs = null)
