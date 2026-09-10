@@ -12,9 +12,7 @@ class BargeInAudioInput(
     private val spokenText: () -> String,
     private val onConfirmed: () -> Unit,
     private val log: (String) -> Unit = {},
-    private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 },
-    /** Lightweight wake/stop detector kept live while the natural recognizer warms. */
-    private val createKeywordDetector: (() -> InterruptionKeywordDetector)? = null
+    private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 }
 ) : AudioInput {
     override val sampleRateHz = input.sampleRateHz
     override val channelCount = input.channelCount
@@ -27,46 +25,22 @@ class BargeInAudioInput(
         var gate = BargeInGate()
         val detector = createDetector()
         val quietEvidence = QuietSpeechEvidence()
-        val keywordDetector = createKeywordDetector?.invoke()
         var recognizer: StreamingTranscriber? = null
         var recognizedBytes = 0
         var delivered = false
         var lastCandidateLog = Long.MIN_VALUE / 2
-        var keywordReadyLogged = false
         try {
             input.chunks().collect { pcm ->
                 if (delivered) { emit(pcm); return@collect }
                 preRoll.append(pcm)
-                val keyword = keywordDetector?.accept(pcm)
-                if (keywordDetector?.ready == true && !keywordReadyLogged) {
-                    keywordReadyLogged = true
-                    log("barge_keyword_ready keywords=Hey_Jarvis,stop asrLoaded=false")
-                }
-                if (keyword != null) {
-                    // A keyword is an explicit interruption. Do not feed the trigger or
-                    // the reply echo into the correction turn; continue with fresh audio.
-                    recognizer?.close(); recognizer = null
-                    delivered = true
-                    preRoll.clear()
-                    onConfirmed()
-                    log("barge_keyword_confirmed keyword=$keyword")
-                    return@collect
-                }
                 val decision = detector.accept(pcm)
                 val audible = playing()
                 // Recognition is required while preparing the reply as well as during
                 // playback. VAD alone previously let a rustle cancel unfinished synthesis.
-                // Do not spend Moonshine time on silence. This keeps the natural
-                // recognizer ready for actual user speech instead of exhausting its
-                // probe budget while the reply is merely audible.
-                val transcript = if (decision.isSpeech || audible) {
-                    val asr = recognizer ?: createTranscriber().also {
-                        recognizer = it
-                        log("barge_natural_ready")
-                    }
-                    recognizedBytes += pcm.size
-                    asr.accept(pcm)
-                } else ""
+                val asr = recognizer ?: createTranscriber().also { recognizer = it }
+                recognizedBytes += pcm.size
+                asr.observeSpeech(decision.isSpeech)
+                val transcript = TranscriptContent.speech(asr.accept(pcm))
                 val speech = decision.isSpeech || quietEvidence.accept(transcript, decision.probability, nowMs(), false)
                 if (gate.update(speech, audible, nowMs(), transcript, spokenText()) == BargeInGate.Action.CONFIRM) {
                     // Close the probe ASR before the turn's lazy ASR can load: never two models.
@@ -85,7 +59,7 @@ class BargeInAudioInput(
                     log("barge_candidate_rejected reason=${gate.reason} playing=$audible transcript=${transcript.takeLast(80)}")
                 }
             }
-        } finally { recognizer?.close(); keywordDetector?.close(); detector.close(); preRoll.clear() }
+        } finally { recognizer?.close(); detector.close(); preRoll.clear() }
     }
 }
 
@@ -93,6 +67,8 @@ class BargeInAudioInput(
 class LazyStreamingTranscriber(private val create: () -> StreamingTranscriber) : StreamingTranscriber {
     private var delegate: StreamingTranscriber? = null
     private fun active() = delegate ?: create().also { delegate = it }
+    override val noTextSilenceMs: Long get() = delegate?.noTextSilenceMs ?: 900
+    override fun observeSpeech(speech: Boolean) { if (speech) active().observeSpeech(true) else delegate?.observeSpeech(false) }
     override fun accept(pcm: ByteArray) = active().accept(pcm)
     override fun finish() = delegate?.finish().orEmpty()
     override fun recover(pcm: ByteArray) = active().recover(pcm)

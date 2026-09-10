@@ -20,9 +20,14 @@ class ConversationPromptBuilder(
         else dialogue.storyInstruction.orEmpty()
         val actionContext = actionResultContext?.let { "\n\n$it" }.orEmpty()
         val sessionContext = if (seedContext) {
-            shortTermContext.promptContext(history.map { it.role to it.text })
+            shortTermContext.promptContext(history.map { it.role to it.text }, compact = voice)
                 .takeIf { it.isNotBlank() }?.let { "\n\n$it" }.orEmpty()
         } else ""
+        if (voice) return listOf(
+            com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions,
+            sessionContext.trim(), dialogueInstruction,
+            "Current user message:\n$userPrompt", actionContext.trim()
+        ).filter { it.isNotBlank() }.joinToString("\n\n")
         return """
             You are Jarvis, a private local assistant. Answer the current
             user message directly and naturally. Do not list your capabilities,
@@ -41,11 +46,9 @@ class ConversationPromptBuilder(
             to search Wikipedia; the app handles factual lookup automatically.
             Do not claim Wikipedia or Wikidata was searched unless evidence is
             included below.
-            Prefer a concise answer for ordinary requests, with the key point first.
-            When the user asks for a detailed, long, one-minute, story, explanation,
-            or otherwise extended response, follow that requested length and provide
-            enough substance to make the answer useful. Never shorten an explicitly
-            extended request merely to fit a mobile turn budget.
+            Prefer a concise answer that fits the current mobile turn budget.
+            For broad requests, give the key points first and avoid unnecessary
+            repetition or a long preamble.
             
             $sessionContext
 
