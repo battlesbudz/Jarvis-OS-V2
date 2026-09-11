@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 12892)
+Total output lines: 816
+
 package com.battlesbudz.jarvis.v2.voice
 
 import android.media.AudioAttributes
@@ -100,7 +103,11 @@ class SherpaKokoroVoiceOutput(
         if (stopped || interrupted || gapCuePlaying.get()) return@synchronized false
         val track = audioTrack ?: return@synchronized true
         val queued = (writtenFrames - unsignedHead(track)).coerceAtLeast(0)
-        queued * 1000 / track.sampleRate >= 900
+        // Natural barge-in needs enough audio buffered to cover a bounded
+        // Moonshine probe, but waiting for 900 ms left the recognizer starved
+        // whenever TTS was synthesizing the next phrase.  The capture/VAD gate
+        // still filters noise; this threshold only reserves playback cushion.
+        queued * 1000 / track.sampleRate >= 450
     }
     private fun applyPause() {
         val paused = interrupted
@@ -326,169 +333,7 @@ class SherpaKokoroVoiceOutput(
                         var frames = 0L
                         var queueWaitMs = 0L
                         val segmentSession = PocketSpeechPolicy.sessionId(nativeSession, phraseIndex, paulReset)
-                        streamDiagnostics?.begin(phraseIndex, text, rate, segmentSession, paulReset)
-                        log("tts_generation_started chars=${text.length} preview=${text.take(80)} api=generateWithConfigAndCallback voice=Paul")
-                        val callback = SherpaPcmCallback { samples ->
-                            owner.ensureActive()
-                            if (stopped) 0 else {
-                                if (samples.isNotEmpty()) {
-                                    check(samples.all { it.isFinite() }) { "Pocket returned non-finite PCM." }
-                                    if (callbackCount == 0) {
-                                        val latency = elapsedMs(started)
-                                        log("tts_first_callback index=$phraseIndex latencyMs=$latency")
-                                        if (phraseIndex == 0) {
-                                            firstPcmMs = latency
-                                            firstTextToPcmMs = firstTextAt.get().takeIf { it != 0L }?.let(::elapsedMs)
-                                            log("tts_opening_ready prepared=false firstTextToPcmMs=$firstTextToPcmMs textBoundary=${if (pocketSentences) "sentence" else "benchmark"} nativeSession=$nativeSession")
-                                        }
-                                    }
-                                    val pcm = ShortArray(samples.size) { i ->
-                                        (samples[i].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
-                                    }
-                                    parity?.append(samples)
-                                    val waitStart = System.nanoTime()
-                                    // One copy of each callback, never also enqueue the returned full utterance.
-                                    // Captions remain estimated; the text belongs to the first audio chunk.
-                                    deliveryLedger?.append(phraseIndex, text, pcm.size, rate)
-                                    audio.sendFromNative(SynthesizedPhrase(phraseIndex,
-                                        if (callbackCount == 0) text else "", rate, pcm, if (phraseIndex == 0 && callbackCount == 0) paulBufferMs.toLong() else 0,
-                                        benchmarkProfile?.playbackSpeed ?: 1f, captionGroup = phraseIndex))
-                                    queueWaitMs += elapsedMs(waitStart)
-                                    streamDiagnostics?.chunk(phraseIndex, pcm)
-                                    frames += pcm.size
-                                    callbackCount++
-                                    log("tts_pcm_chunk index=$phraseIndex chunk=$callbackCount frames=${pcm.size} " +
-                                        "peak=${samples.maxOf { kotlin.math.abs(it) }} nonFinite=0")
-                                }
-                                1
-                            }
-                        }
-                        val generated = tts.generateWithConfigAndCallback(
-                            PocketSpeechPolicy.input(text, paulPeriod),
-                            generation.copy(extra = PocketSpeechPolicy.extra(session = segmentSession)), callback)
-                        callback.failure?.let { throw it }
-                        owner.ensureActive()
-                        if (stopped) return
-                        check(frames > 0 && frames == generated.samples.size.toLong() && generated.sampleRate == rate) {
-                            "Pocket callback PCM did not match the generated utterance."
-                        }
-                        parity?.finish(generated.samples)?.let { result ->
-                            log("pocket_stream_trace event=pcm_parity session=$nativeSession index=$phraseIndex " +
-                                "matches=${result.matches} frames=${result.frames} method=sha256_float32_le " +
-                                "callbackSha256=${result.callbackHash} returnedSha256=${result.returnedHash}")
-                            check(result.matches) { "Pocket callback samples differ from returned audio." }
-                        }
-                        if (acknowledgeDelays && !benchmarkRun) {
-                            val boundaryWait = System.nanoTime()
-                            audio.sendFromNative(SynthesizedPhrase(phraseIndex, "", rate, ShortArray(0),
-                                0, 1f, sentenceEnd = true))
-                            queueWaitMs += elapsedMs(boundaryWait)
-                        }
-                        deliveryLedger?.seal(phraseIndex)
-                        captions.complete(phraseIndex, frames)
-                        streamDiagnostics?.finish(phraseIndex)
-                        val synthesisMs = (elapsedMs(started) - queueWaitMs).coerceAtLeast(0)
-                        val audioMs = frames * 1000 / rate
-                        totalSynthesisMs += synthesisMs
-                        totalAudioMs += audioMs
-                        totalQueueWaitMs += queueWaitMs
-                        phraseCount++
-                        previousChars = text.length
-                        previousSynthesisMs = synthesisMs
-                        startupReady.complete(Unit)
-                        val rtf = if (audioMs > 0) synthesisMs.toDouble() / audioMs else 0.0
-                        if (!fixedChunking) chunker.observe(rtf)
-                        log("tts_generation_finished index=$phraseIndex synthesisMs=$synthesisMs queueWaitMs=$queueWaitMs " +
-                            "audioDurationMs=$audioMs realtimeFactor=$rtf callbacks=$callbackCount")
-                        return
-                    }
-                    val result = cached ?: synthesize(text)
-                    if (stopped) return
-                    val phraseIndex = index++
-                    if (phraseIndex == 0) {
-                        preparedOpeningReused = cached != null
-                        firstPcmMs = result.synthesisMs
-                        firstTextToPcmMs = firstTextAt.get().takeIf { it != 0L }?.let(::elapsedMs)
-                        log("tts_opening_ready prepared=${cached != null} firstTextToPcmMs=$firstTextToPcmMs openingChars=$openingChars")
-                    }
-                    val rate = result.sampleRate
-                    val frames = result.pcm.size.toLong()
-                    val waitStart = System.nanoTime()
-                    deliveryLedger?.append(phraseIndex, text, result.pcm.size, rate)
-                    deliveryLedger?.seal(phraseIndex)
-                    audio.sendFromNative(SynthesizedPhrase(phraseIndex, text, rate, result.pcm,
-                        if (pocket || benchmarkProfile != null) 0 else PlaybackBufferPolicy.startupWaitMs(result.synthesisMs, frames * 1000 / rate),
-                        benchmarkProfile?.playbackSpeed ?: if (normalSpeed || pocket) 1f else PlaybackBufferPolicy.playbackSpeed(result.synthesisMs, frames * 1000 / rate)))
-                    if (phraseIndex == 1) startupReady.complete(Unit)
-                    previousChars = text.length
-                    previousSynthesisMs = result.synthesisMs
-                    val queueWaitMs = elapsedMs(waitStart)
-                    val synthesisMs = result.synthesisMs
-                    val audioMs = frames * 1000 / rate
-                    val rtf = if (audioMs > 0) synthesisMs.toDouble() / audioMs else 0.0
-                    totalSynthesisMs += synthesisMs
-                    totalAudioMs += audioMs
-                    totalQueueWaitMs += queueWaitMs
-                    phraseCount++
-                    if (!fixedChunking) chunker.observe(rtf)
-                    log("tts_generation_finished index=$phraseIndex synthesisMs=$synthesisMs queueWaitMs=$queueWaitMs " +
-                        "audioDurationMs=$audioMs realtimeFactor=$rtf")
-                }
-                fun nextPhrase(final: Boolean = false): String? {
-                    if (pocketText != null) return pocketText.take(final)
-                    if (fixedChunking || index == 0) return chunker.take(final)
-                    val playedMs = synchronized(playbackLock) {
-                        audioTrack?.let { unsignedHead(it) * 1000 / it.sampleRate } ?: 0L
-                    }
-                    val queuedMs = (totalAudioMs - playedMs).coerceAtLeast(0)
-                    val limit = PlaybackBufferPolicy.nextChunkChars(queuedMs, previousChars, previousSynthesisMs)
-                    return chunker.take(final, maxChars = limit)?.also {
-                        log("audio_chunk_budget queuedMs=$queuedMs maxChars=$limit selectedChars=${it.length}")
-                    }
-                }
-                var ended = false
-                while (!ended && !stopped) {
-                    owner.ensureActive()
-                    select<Unit> {
-                        // Prefer confirmed speech if both queues are ready.
-                        tokens.onReceiveCatching { received ->
-                            received.exceptionOrNull()?.let { throw it }
-                            val token = received.getOrNull()
-                            if (token == null) ended = true
-                            else {
-                                inputChars += token.length
-                                textHash.update(token.toByteArray(Charsets.UTF_8))
-                                if (isolationText != null) {
-                                    isolationText.append(token)
-                                } else if (pocketText != null) {
-                                    pocketText.append(token)
-                                    // While native PCM was playing, Gemma may have completed more
-                                    // text. Condition all ready sentences together; don't restart
-                                    // synthesis for each token/sentence queued during backpressure.
-                                    while (true) {
-                                        val queued = tokens.tryReceive()
-                                        queued.exceptionOrNull()?.let { throw it }
-                                        val more = queued.getOrNull() ?: break
-                                        inputChars += more.length
-                                        textHash.update(more.toByteArray(Charsets.UTF_8))
-                                        pocketText.append(more)
-                                    }
-                                } else chunker.append(token)
-                                while (true) generate(nextPhrase() ?: break)
-                            }
-                        }
-                        acknowledgementRequests.onReceive { text ->
-                            // Native owns one stream, not a session map: never replace an active answer with filler.
-                            if (index == 0 && acknowledgeDelays && firstTextAt.get() == 0L) prepareAcknowledgement(text)
-                        }
-                        openingRequests.onReceive { request ->
-                            if (index == 0 && !request.isDiscarded() && preparedOpening.get() === request) {
-                                log("tts_opening_preparation_started chars=${request.text.length}")
-                                try {
-                                    val result = synthesize(request.text)
-                                    preparedSynthesisMs += result.synthesisMs
-                                    request.complete(result)
-                                    log("tts_opening_preparation_finished synthesisMs=${result.synthesisMs} discarded=${request.isDiscarded()}")
+                    …2892 tokens truncated…shed synthesisMs=${result.synthesisMs} discarded=${request.isDiscarded()}")
                                 } catch (cancelled: CancellationException) { throw cancelled }
                                 catch (error: Exception) {
                                     request.discard()

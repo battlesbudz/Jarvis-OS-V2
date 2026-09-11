@@ -8,7 +8,11 @@ class BoundedInterruptionRecognizer(
     private val scope: CoroutineScope,
     private val create: () -> StreamingTranscriber,
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 },
-    private val budgetMs: Long = 700,
+    // Moonshine's first native decode can take just over a second while the
+    // phone is also rendering Kokoro audio.  A 700 ms wall-clock cap made the
+    // natural path fail systematically, leaving only the wake-word fallback.
+    // Keep this bounded, but allow one complete short probe to finish.
+    private val budgetMs: Long = 1_600,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val log: (String) -> Unit = {},
     private val hasBudget: () -> Boolean = { true }
