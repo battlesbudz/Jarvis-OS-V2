@@ -24,6 +24,9 @@ class BoundedInterruptionRecognizer(
     @Volatile var retryableFailure: Boolean = false
         private set
     private class PlaybackPressure : Exception()
+    private class DecodeBudget : Exception()
+    @Volatile var retryReason: String = "none"
+        private set
     private var job: Job? = null
     private var closed = false
     val busy: Boolean get() = job?.isCompleted == false
@@ -34,17 +37,19 @@ class BoundedInterruptionRecognizer(
         val owned = pcm.copyOf()
         result.set(null)
         retryableFailure = false
+        retryReason = "none"
         job = scope.launch(dispatcher) {
             val started = nowMs()
             var asr: StreamingTranscriber? = null
             fun checkBudget() {
                 ensureActive()
                 if (!hasBudget()) throw PlaybackPressure()
-                check(nowMs() - started <= budgetMs) { "decode_budget" }
+                if (nowMs() - started > budgetMs) throw DecodeBudget()
             }
             try {
                 if (started - audioAtMs > InterruptionTiming.START_AGE_MS) {
                     retryableFailure = true
+                    retryReason = "queued_audio_too_old"
                     log("barge_probe_deferred reason=queued_audio_too_old retryable=true fallback=keyword")
                     return@launch
                 }
@@ -71,7 +76,13 @@ class BoundedInterruptionRecognizer(
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (pressure: PlaybackPressure) {
                 retryableFailure = true
+                retryReason = "playback_budget"
                 log("barge_probe_deferred reason=playback_budget retryable=true fallback=keyword")
+            }
+            catch (budget: DecodeBudget) {
+                retryableFailure = true
+                retryReason = "decode_budget"
+                log("barge_probe_deferred reason=decode_budget retryable=true fallback=keyword")
             }
             catch (error: Exception) {
                 unavailable = true

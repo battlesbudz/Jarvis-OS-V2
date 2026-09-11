@@ -17,7 +17,7 @@ class NaturalBargeInAudioInput(
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 },
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : AudioInput {
-    companion object { const val MAX_PROBES = 4 }
+    companion object { const val MAX_PROBES = 4; const val MAX_STOP_PROBES = 2 }
     init { require(input.sampleRateHz == 16_000 && input.channelCount == 1) }
     override val sampleRateHz get() = input.sampleRateHz
     override val channelCount get() = input.channelCount
@@ -35,6 +35,11 @@ class NaturalBargeInAudioInput(
             var maxBacklogMs = 0L
             var vad: SpeechDetector? = null
             val worker = BoundedInterruptionRecognizer(this, createTranscriber, nowMs, dispatcher = dispatcher, log = log, hasBudget = hasPlaybackBudget)
+            val stopAudio = RollingAudioBuffer(maxDurationMs = 2000)
+            data class StopCandidate(val pcm: ByteArray, val at: Long, val reference: String, val id: Long, var submitted: Boolean = false)
+            var pendingStop: StopCandidate? = null
+            var stopProbes = 0
+            var stopHits = 0L
             val onset = RollingAudioBuffer(maxDurationMs = 400)
             val candidate = RollingAudioBuffer(maxDurationMs = 4000)
             var active = false
@@ -78,6 +83,7 @@ class NaturalBargeInAudioInput(
                     if (delivered) { emit(pcm); return@collect }
                     val now = nowMs()
                     val at = input.lastChunkCaptureTimeMs ?: now
+                    stopAudio.append(pcm)
                     val keywordAt = nowMs()
                     val hit = keyword.accept(pcm)
                     keywordBytes += pcm.size
@@ -88,20 +94,59 @@ class NaturalBargeInAudioInput(
                         log("barge_keyword_ready keywords=Hey_Jarvis,stop readyMs=${now - started} mode=bounded_candidates " +
                             "loadMs=$keywordLoadMs inputMs=${keywordBytes / 32} maxWorkMs=$maxKeywordWorkMs maxBacklogMs=$maxBacklogMs")
                     }
-                    if (hit != null) {
+                    if (hit != null && (hit != "stop" || !playing())) {
                         finalReason = "keyword_$hit"
                         delivered = true
-                        onConfirmed(false, hit) // Stop playback before waiting for native ownership.
+                        onConfirmed(false, hit)
                         worker.close()
-                        log("barge_keyword_confirmed keyword=$hit")
-                        return@collect // Consume the trigger, as on the existing keyword path.
+                        log("barge_keyword_confirmed keyword=$hit verification=not_required")
+                        return@collect
                     }
-                    worker.poll()?.let { result ->
+                    if (hit == "stop" && pendingStop == null) {
+                        reset() // Results for an earlier natural candidate cannot verify this hit.
+                        stopHits++
+                        pendingStop = StopCandidate(stopAudio.snapshot(), at, reference(), -stopHits)
+                        log("barge_stop_candidate playback=true verification=required evidence=${keyword.lastHitEvidence}")
+                    }
+                    val polled = worker.poll()
+                    val stop = pendingStop
+                    if (stop != null) {
+                        if (polled?.revision == stop.id) {
+                            val fresh = now - stop.at <= InterruptionTiming.RESULT_AGE_MS
+                            val accepted = fresh && StopKeywordEvidence.confirms(polled.text, stop.reference + " " + reference())
+                            pendingStop = null
+                            if (accepted) {
+                                finalReason = "keyword_stop"
+                                delivered = true
+                                onConfirmed(false, "stop")
+                                worker.close()
+                                log("barge_keyword_confirmed keyword=stop verification=asr_non_echo workMs=${polled.workMs}")
+                            } else log("barge_stop_rejected reason=${if (fresh) "unconfirmed_or_echo" else "stale"} chars=${polled.text.length} playback_uninterrupted=true")
+                            return@collect
+                        }
+                        if (now - stop.at > InterruptionTiming.RESULT_AGE_MS || worker.unavailable ||
+                            (stop.submitted && !worker.busy && worker.retryableFailure)) {
+                            log("barge_stop_rejected reason=verification_unavailable playback_uninterrupted=true")
+                            pendingStop = null
+                            cooldownUntil = now + 500
+                            return@collect
+                        }
+                        if (!stop.submitted && !worker.busy) {
+                            if (stopProbes >= MAX_STOP_PROBES || now - stop.at > InterruptionTiming.START_AGE_MS || !hasPlaybackBudget()) {
+                                log("barge_stop_rejected reason=verification_budget playback_uninterrupted=true fallback=Hey_Jarvis")
+                                pendingStop = null
+                            } else if (worker.submit(stop.id, stop.pcm, stop.at)) {
+                                stopProbes++
+                                stop.submitted = true
+                            }
+                        }
+                        return@collect
+                    }
+                    polled?.let { result ->
                         if (result.revision == revision && now - result.audioAtMs <= InterruptionTiming.RESULT_AGE_MS) {
                             hypothesis = result
                             log("barge_natural_ready scope=candidate revision=$revision resultAgeMs=${now - result.audioAtMs}")
-                        }
-                        else {
+                        } else {
                             staleResults++
                             log("barge_probe_discarded reason=stale revision=${result.revision}")
                         }
@@ -127,7 +172,7 @@ class NaturalBargeInAudioInput(
                     }
                     if (submitted && !worker.busy && worker.retryableFailure) {
                         reset(); cooldownUntil = now + 500
-                        log("barge_candidate_deferred reason=playback_budget retryAfterMs=500")
+                        log("barge_candidate_deferred reason=${worker.retryReason} retryAfterMs=500")
                     }
                     val speech = try { vad?.accept(pcm)?.isSpeech == true } catch (error: Exception) {
                         disable("vad_${error.javaClass.simpleName}"); false
@@ -177,10 +222,10 @@ class NaturalBargeInAudioInput(
             } finally {
                 worker.close()
                 try { vad?.close() } finally {
-                    keyword.close(); onset.clear(); candidate.clear()
+                    keyword.close(); onset.clear(); candidate.clear(); stopAudio.clear()
                     log("barge_keyword_summary ready=$keywordReady inputMs=${keywordBytes / 32} " +
                         "loadMs=$keywordLoadMs maxWorkMs=$maxKeywordWorkMs maxBacklogMs=$maxBacklogMs")
-                    log("barge_natural_summary probes=$probes reason=$finalReason backlogRecoveries=$backlogRecoveries " +
+                    log("barge_natural_summary probes=$probes stopProbes=$stopProbes stopHits=$stopHits reason=$finalReason backlogRecoveries=$backlogRecoveries " +
                         "backlogSuspended=$backlogSuspended pressureFrames=$pressureFrames " +
                         "windowRejects=$rejectedWindows staleResults=$staleResults")
                 }

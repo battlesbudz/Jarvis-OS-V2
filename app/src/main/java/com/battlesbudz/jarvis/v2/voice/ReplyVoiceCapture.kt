@@ -17,6 +17,7 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 echoCancellation = true, noiseSuppression = true, log = log)
             val confirmed = CompletableDeferred<Unit>()
             var naturalReference: String? = null
+            var stopOnly = false
             fun confirm() {
                 trace?.mark(VoiceTurnTrace.Stage.INTERRUPTION_CONFIRMED)
                 trace?.mark(VoiceTurnTrace.Stage.PLAYBACK_STOP_REQUESTED)
@@ -36,11 +37,13 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                     hasPlaybackBudget = output::hasInterruptionBudget,
                     onConfirmed = { natural, evidence ->
                         if (natural) naturalReference = evidence
+                        else stopOnly = evidence == "stop"
                         confirm()
                     }, log = log)
             } else KeywordBargeInAudioInput(input,
                 createDetector = { MicroInterruptionKeywords(context.assets) },
-                onConfirmed = { confirm() }, log = log)
+                onConfirmed = { keyword -> stopOnly = keyword == "stop"; confirm() },
+                allowKeyword = { keyword -> keyword != "stop" || !output.isPlayingAudio }, log = log)
             val capture = AudioTurnCapture(gated, this,
                 createDetector = { SileroSpeechDetector.create(context.assets) },
                 createTranscriber = { LazyStreamingTranscriber { asrEngine.create(asrDirectory, log = log, modelSession = modelSession) } }, log = log,
@@ -54,6 +57,13 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 kotlinx.coroutines.selects.select<Unit> {
                     confirmed.onAwait { }
                     completion.onAwait { error("Interruption capture ended without confirmed speech") }
+                }
+                if (stopOnly) {
+                    // Stop is a control, not a request for an audio-model answer. The retained
+                    // microphone hands subsequent speech to the ordinary follow-up listener.
+                    log("barge_stop_complete destination=followup_listening audio_fallback=false")
+                    completion.cancel()
+                    return@supervisorScope CapturedVoiceTurn("", byteArrayOf())
                 }
                 withTimeout(130_000) { completion.await() }
                 val wav = capture.stop()

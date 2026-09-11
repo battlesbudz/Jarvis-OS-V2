@@ -17,6 +17,8 @@ class MicroInterruptionKeywords(assets: AssetManager) : InterruptionKeywordDetec
             add("stop", "stop.tflite", 10, 0.5f, 5)
         } catch (error: Throwable) { close(); throw error }
     }
+    override var lastHitEvidence: String = "none"
+        private set
     override val ready get() = detectors.all { it.second.ready }
     override fun accept(pcm: ByteArray): String? {
         require(pcm.size % 2 == 0)
@@ -24,7 +26,15 @@ class MicroInterruptionKeywords(assets: AssetManager) : InterruptionKeywordDetec
             ((pcm[i * 2].toInt() and 255) or (pcm[i * 2 + 1].toInt() shl 8)).toShort()
         }
         var match: String? = null
-        for ((keyword, detector) in detectors) if (detector.processAudio(samples)) match = keyword
+        for ((keyword, detector) in detectors) if (detector.processAudio(samples)) {
+            if (match == null) {
+                match = keyword // Hey Jarvis wins simultaneous hits.
+                lastHitEvidence = "keyword=$keyword probability=${detector.probability} ${detector.diagnostics}"
+            }
+            // Verification may reject this hit. Do not return the latched event on every
+            // subsequent frame and spend all bounded ASR probes on the same acoustic event.
+            detector.reset()
+        }
         return match
     }
     override fun close() { detectors.forEach { it.second.close() }; detectors.clear() }

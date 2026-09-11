@@ -26,7 +26,7 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
     // to bound that bookkeeping. Commands rotate early when necessary to reserve
     // all bounded reply probes; optional probes themselves never rotate or load.
     private val lease = modelSession?.moonshine?.acquire("${directory.path}:$updateIntervalSeconds", MAX_STREAMS,
-        requiredUses = if (reserveReplyProbes) 1 + NaturalBargeInAudioInput.MAX_PROBES else 1, create = ::createLoaded)
+        requiredUses = if (reserveReplyProbes) 1 + NaturalBargeInAudioInput.MAX_PROBES + NaturalBargeInAudioInput.MAX_STOP_PROBES else 1, create = ::createLoaded)
     private var leased = lease != null
     private var transcriber = lease?.value ?: createLoaded()
     private var streamHandle = -1

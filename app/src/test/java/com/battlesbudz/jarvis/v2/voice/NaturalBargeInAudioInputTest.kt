@@ -13,7 +13,7 @@ class NaturalBargeInAudioInputTest {
     private var keywordCalls = 0
     private val logs = mutableListOf<String>()
     private fun gate(text: String = "Actually open settings", reference: String = "The sky is blue",
-                     speech: Boolean = true, budget: Boolean = true, keywordAt: Int = -1,
+                     speech: Boolean = true, budget: Boolean = true, keywordAt: Int = -1, keyword: String = "Hey_Jarvis",
                      failing: Boolean = false, chunks: Int = 30,
                      dispatcher: CoroutineDispatcher = Dispatchers.Unconfined, beforeFrame: (Int) -> Unit = {},
                      acceptAction: () -> Unit = {}, speechNow: () -> Boolean = { speech },
@@ -33,7 +33,7 @@ class NaturalBargeInAudioInputTest {
             createKeyword = { object : InterruptionKeywordDetector {
                 override val ready = true
                 override fun accept(pcm: ByteArray): String? {
-                    keywordCalls++; return if (keywordCalls == keywordAt) "stop" else null
+                    keywordCalls++; return if (keywordCalls == keywordAt) keyword else null
                 }
                 override fun close() {}
             } },
@@ -54,6 +54,40 @@ class NaturalBargeInAudioInputTest {
                 onConfirmation(natural)
                 confirmed++
             }, log = logs::add, nowMs = { clock }, dispatcher = dispatcher)
+    }
+    @Test fun sirMistakenForStopDoesNotCutOffPlayback() = runBlocking {
+        val audio = gate(text = "Sir, I apologize for the interruption", reference = "Sir, I apologize for the interruption",
+            speech = false, keywordAt = 10, keyword = "stop").chunks().toList()
+        assertTrue(audio.isEmpty()); assertEquals(0, confirmed)
+        assertEquals(1, models); assertEquals(models, closedModels)
+        assertTrue(logs.any { "barge_stop_rejected reason=unconfirmed_or_echo" in it })
+    }
+    @Test fun recognizedStopConfirmsOnlyAfterVerificationAndNativeRelease() = runBlocking {
+        val audio = gate(text = "Stop.", speech = false, keywordAt = 10, keyword = "stop",
+            onConfirmation = { natural -> assertFalse(natural); assertEquals(models, closedModels) }).chunks().toList()
+        assertEquals(1, confirmed); assertEquals(1, models)
+        assertTrue(audio.isNotEmpty())
+        assertTrue(logs.any { "verification=asr_non_echo" in it })
+    }
+    @Test fun assistantSayingStopCannotConfirmItsOwnKeyword() = runBlocking {
+        assertTrue(gate(text = "Stop.", reference = "You can say stop at any time.",
+            speech = false, keywordAt = 10, keyword = "stop").chunks().toList().isEmpty())
+        assertEquals(0, confirmed)
+    }
+    @Test fun stopWithoutVerificationBudgetLeavesPlaybackRunning() = runBlocking {
+        assertTrue(gate(budget = false, speech = false, keywordAt = 10, keyword = "stop").chunks().toList().isEmpty())
+        assertEquals(0, models); assertEquals(0, confirmed)
+        assertTrue(logs.any { "barge_stop_rejected reason=verification_budget" in it })
+    }
+    @Test fun temporaryDecodeOverrunAllowsLaterNaturalCandidate() = runBlocking {
+        var first = true
+        val audio = gate(chunks = 60, acceptAction = {
+            if (first) { first = false; clock += 1700 }
+        }).chunks().toList()
+        assertTrue(audio.isNotEmpty()); assertEquals(1, confirmed)
+        assertTrue(models >= 2); assertEquals(models, closedModels)
+        assertTrue(logs.any { "reason=decode_budget retryable=true" in it })
+        assertFalse(logs.any { "barge_natural_unavailable" in it })
     }
     @Test fun ordinaryCorrectionPreservesOnsetAndStreamsFollowingAudioOnce() = runBlocking {
         val delivered = gate().chunks().toList()

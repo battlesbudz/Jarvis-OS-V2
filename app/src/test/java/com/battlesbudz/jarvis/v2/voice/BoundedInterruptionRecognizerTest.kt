@@ -37,8 +37,9 @@ class BoundedInterruptionRecognizerTest {
             }
         }, nowMs = { clock }, dispatcher = Dispatchers.Unconfined)
         worker.submit(1, ByteArray(32000), 0)
-        assertTrue(worker.unavailable); assertTrue(closed); assertNull(worker.poll())
-        assertFalse(worker.submit(2, ByteArray(2), 0))
+        assertFalse(worker.unavailable); assertTrue(worker.retryableFailure); assertTrue(closed); assertNull(worker.poll())
+        assertEquals("decode_budget", worker.retryReason)
+        assertTrue(worker.submit(2, ByteArray(32000), clock))
         worker.close()
     }
     @Test fun nativeFailureAndCloseFailureDoNotEscapeOptionalWorker() = runBlocking {

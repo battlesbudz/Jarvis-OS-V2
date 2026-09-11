@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.collect
 
 interface InterruptionKeywordDetector : AutoCloseable {
     val ready: Boolean
+    val lastHitEvidence: String get() = "unavailable"
     fun accept(pcm: ByteArray): String?
 }
 
@@ -14,7 +15,8 @@ class KeywordBargeInAudioInput(
     private val createDetector: () -> InterruptionKeywordDetector,
     private val onConfirmed: (String) -> Unit,
     private val log: (String) -> Unit = {},
-    private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 }
+    private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 },
+    private val allowKeyword: (String) -> Boolean = { true }
 ) : AudioInput {
     override val sampleRateHz get() = input.sampleRateHz
     override val channelCount get() = input.channelCount
@@ -46,7 +48,9 @@ class KeywordBargeInAudioInput(
                         "readyMs=${(nowMs() - startedAt).coerceAtLeast(0)} inputMs=${inputBytes * 1000 / (sampleRateHz * channelCount * 2)} " +
                         "loadMs=$loadMs maxWorkMs=$maxWorkMs maxBacklogMs=$maxBacklogMs naturalSpeechReady=false")
                 }
-                if (keyword != null) {
+                if (keyword != null && !allowKeyword(keyword)) {
+                    log("barge_stop_rejected reason=verification_unavailable playback_uninterrupted=true fallback=Hey_Jarvis")
+                } else if (keyword != null) {
                     delivered = true
                     // Stop playback before lazily loading ASR, preserving subsequent chunks.
                     onConfirmed(keyword)
