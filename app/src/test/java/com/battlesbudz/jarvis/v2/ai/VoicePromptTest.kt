@@ -42,7 +42,7 @@ class VoicePromptTest {
         val voice = builder.buildGemmaPrompt("Hello", null, emptyList(), true, voice = true)
         assertTrue(chat.contains("Do not list your capabilities"))
         assertFalse(chat.contains("4–8 words"))
-        assertTrue(voice.contains("Answer the user's current"))
+        assertTrue(voice.contains("Address the user as \"sir.\""))
         assertFalse(voice.contains("4–8 words"))
         assertTrue("Fixed voice overhead grew: ${voice.length}", voice.length < 1100)
         assertFalse(voice.contains("Answer what changed in the latest follow-up"))
