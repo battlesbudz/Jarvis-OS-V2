@@ -9,10 +9,14 @@ import java.io.File
 /** Owns one utterance. Native calls are serialized by AudioTurnCapture's collector. */
 class MoonshineStreamingTranscriber(private val directory: File, private val updateIntervalSeconds: Double = DEFAULT_INTERVAL, modelSession: VoiceModelSession? = null, reserveReplyProbes: Boolean = true) : StreamingTranscriber {
     private val lines = linkedMapOf<Long, String>()
+    // Avoid applying a second native speech gate to audio qualified by Jarvis VAD.
+    // It could return an empty stream without ever invoking the speech decoder.
+    private val speechGate = ExternalSpeechGate()
+    override fun observeSpeech(speech: Boolean) = speechGate.observe(speech)
     private fun createLoaded(): Transcriber {
         val created = Transcriber(listOf(
             TranscriberOption("transcription_interval", updateIntervalSeconds.toString()),
-            TranscriberOption("vad_threshold", "0.3"),
+            TranscriberOption("vad_threshold", "0.0"),
             TranscriberOption("identify_speakers", "false"),
             TranscriberOption("return_audio_data", "false")
         ))
@@ -24,9 +28,9 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
     }
     // SDK 0.1.5 retains a private completed-line map. Rotate after eight streams
     // to bound that bookkeeping. Commands rotate early when necessary to reserve
-    // all bounded reply probes; optional probes themselves never rotate or load.
+    // an initial reply allowance. Later probes may rotate a resident model on their sole worker.
     private val lease = modelSession?.moonshine?.acquire("${directory.path}:$updateIntervalSeconds", MAX_STREAMS,
-        requiredUses = if (reserveReplyProbes) 1 + NaturalBargeInAudioInput.MAX_PROBES + NaturalBargeInAudioInput.MAX_STOP_PROBES else 1, create = ::createLoaded)
+        requiredUses = if (reserveReplyProbes) 7 else 1, create = ::createLoaded)
     private var leased = lease != null
     private var transcriber = lease?.value ?: createLoaded()
     private var streamHandle = -1
@@ -64,6 +68,10 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
 
     override fun accept(pcm: ByteArray): String {
         check(!closed && !finished)
+        return acceptQualified(speechGate.accept(pcm))
+    }
+
+    private fun acceptQualified(pcm: ByteArray): String {
         val samples = FloatArray((pcm.size + if (lowByte != null) 1 else 0) / 2)
         var count = 0
         for (byte in pcm) {
@@ -116,6 +124,7 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
     override fun close() {
         if (!closed) {
             closed = true
+            speechGate.clear()
             try {
                 transcriber.removeAllListeners()
                 if (streamHandle >= 0) native { transcriber.freeStream(streamHandle) }
@@ -129,6 +138,6 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
         private const val DEFAULT_INTERVAL = 0.25
         private const val MAX_STREAMS = 8
         fun canReuseForProbe(directory: File, session: VoiceModelSession?): Boolean =
-            session?.moonshine?.canReuse("${directory.path}:$DEFAULT_INTERVAL", MAX_STREAMS) == true
+            session?.moonshine?.canReuse("${directory.path}:$DEFAULT_INTERVAL", Int.MAX_VALUE) == true
     }
 }

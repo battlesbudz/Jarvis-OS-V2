@@ -187,7 +187,7 @@ class SherpaKokoroVoiceOutput(
         val pocketSentences = engine == TtsEngine.POCKET_PAUL && (benchmarkProfile?.nativeStreaming == true || !fixedChunking && benchmarkProfile == null)
         val pocketText = if (pocketSentences) PocketTextStream() else null
         val isolationText = if (benchmarkSubmissions != null) StringBuilder() else null
-        val chunker = SpeechChunker(openingChars, fullText = benchmarkProfile?.fullText == true)
+        val chunker = SpeechChunker(openingChars, fullText = benchmarkProfile?.fullText == true, minPhraseChars = 40)
         val paulReset = benchmarkProfile?.resetDecoder ?: true
         val paulPeriod = benchmarkProfile?.leadingPeriod ?: false
         val paulBaseBuffer = if (pocketSentences) benchmarkProfile?.bufferMs ?: 200 else 0

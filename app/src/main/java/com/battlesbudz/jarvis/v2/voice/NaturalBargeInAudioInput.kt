@@ -17,7 +17,6 @@ class NaturalBargeInAudioInput(
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 },
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : AudioInput {
-    companion object { const val MAX_PROBES = 4; const val MAX_STOP_PROBES = 2 }
     init { require(input.sampleRateHz == 16_000 && input.channelCount == 1) }
     override val sampleRateHz get() = input.sampleRateHz
     override val channelCount get() = input.channelCount
@@ -35,6 +34,8 @@ class NaturalBargeInAudioInput(
             var maxBacklogMs = 0L
             var vad: SpeechDetector? = null
             val worker = BoundedInterruptionRecognizer(this, createTranscriber, nowMs, dispatcher = dispatcher, log = log, hasBudget = hasPlaybackBudget)
+            val workBudget = InterruptionProbeBudget()
+            var budgetDeferrals = 0
             val stopAudio = RollingAudioBuffer(maxDurationMs = 2000)
             data class StopCandidate(val pcm: ByteArray, val at: Long, val reference: String, val id: Long, var submitted: Boolean = false)
             var pendingStop: StopCandidate? = null
@@ -132,11 +133,12 @@ class NaturalBargeInAudioInput(
                             return@collect
                         }
                         if (!stop.submitted && !worker.busy) {
-                            if (stopProbes >= MAX_STOP_PROBES || now - stop.at > InterruptionTiming.START_AGE_MS || !hasPlaybackBudget()) {
+                            if (!workBudget.available(now) || now - stop.at > InterruptionTiming.START_AGE_MS || !hasPlaybackBudget()) {
                                 log("barge_stop_rejected reason=verification_budget playback_uninterrupted=true fallback=Hey_Jarvis")
                                 pendingStop = null
                             } else if (worker.submit(stop.id, stop.pcm, stop.at)) {
                                 stopProbes++
+                                workBudget.record(now)
                                 stop.submitted = true
                             }
                         }
@@ -211,8 +213,14 @@ class NaturalBargeInAudioInput(
                     if (!hasPlaybackBudget()) pressureFrames++
                     if ((!submitted || (hypothesis != null && gate.reason != "words_settling" && candidateProbes < 2 && candidate.sizeBytes() >= submittedBytes + 16_000)) &&
                         candidate.sizeBytes() >= 32_000 && hasPlaybackBudget()) {
-                        if (probes >= MAX_PROBES) { disable("reply_probe_limit"); return@collect }
+                        if (!workBudget.available(now)) {
+                            budgetDeferrals++
+                            if (budgetDeferrals == 1 || budgetDeferrals % 50 == 0)
+                                log("barge_probe_deferred reason=rolling_work_budget retryable=true")
+                            return@collect
+                        }
                         if (worker.submit(revision, candidate.snapshot(), at)) {
+                            workBudget.record(now)
                             submitted = true; submittedBytes = candidate.sizeBytes(); candidateProbes++; probes++
                             hypothesis = null; gate = BargeInGate()
                             log("barge_probe_started revision=$revision preRollMs=${candidate.sizeBytes() / 32} attempt=$probes")
@@ -225,7 +233,7 @@ class NaturalBargeInAudioInput(
                     keyword.close(); onset.clear(); candidate.clear(); stopAudio.clear()
                     log("barge_keyword_summary ready=$keywordReady inputMs=${keywordBytes / 32} " +
                         "loadMs=$keywordLoadMs maxWorkMs=$maxKeywordWorkMs maxBacklogMs=$maxBacklogMs")
-                    log("barge_natural_summary probes=$probes stopProbes=$stopProbes stopHits=$stopHits reason=$finalReason backlogRecoveries=$backlogRecoveries " +
+                    log("barge_natural_summary probes=$probes budgetDeferrals=$budgetDeferrals stopProbes=$stopProbes stopHits=$stopHits reason=$finalReason backlogRecoveries=$backlogRecoveries " +
                         "backlogSuspended=$backlogSuspended pressureFrames=$pressureFrames " +
                         "windowRejects=$rejectedWindows staleResults=$staleResults")
                 }

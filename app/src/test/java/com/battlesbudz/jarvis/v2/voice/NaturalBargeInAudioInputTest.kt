@@ -13,7 +13,7 @@ class NaturalBargeInAudioInputTest {
     private var keywordCalls = 0
     private val logs = mutableListOf<String>()
     private fun gate(text: String = "Actually open settings", reference: String = "The sky is blue",
-                     speech: Boolean = true, budget: Boolean = true, keywordAt: Int = -1, keyword: String = "Hey_Jarvis",
+                     textNow: () -> String = { text }, speech: Boolean = true, budget: Boolean = true, keywordAt: Int = -1, keyword: String = "Hey_Jarvis",
                      failing: Boolean = false, chunks: Int = 30,
                      dispatcher: CoroutineDispatcher = Dispatchers.Unconfined, beforeFrame: (Int) -> Unit = {},
                      acceptAction: () -> Unit = {}, speechNow: () -> Boolean = { speech },
@@ -44,8 +44,8 @@ class NaturalBargeInAudioInputTest {
             createTranscriber = {
                 models++
                 object : StreamingTranscriber {
-                    override fun accept(pcm: ByteArray): String { acceptAction(); if (failing) error("slow native"); return text }
-                    override fun finish() = text
+                    override fun accept(pcm: ByteArray): String { acceptAction(); if (failing) error("slow native"); return textNow() }
+                    override fun finish() = textNow()
                     override fun close() { closedModels++ }
                 }
             }, playing = { true }, reference = { reference }, hasPlaybackBudget = budgetNow,
@@ -120,9 +120,10 @@ class NaturalBargeInAudioInputTest {
     }
     @Test fun sustainedEchoHasBoundedProbeCountAndNoDuplicateAudio() = runBlocking {
         assertTrue(gate(text = "The sky is blue", chunks = 500).chunks().toList().isEmpty())
-        assertEquals(0, confirmed); assertTrue(models <= 4); assertEquals(models, closedModels)
+        assertEquals(0, confirmed); assertTrue(models in 5..20); assertEquals(models, closedModels)
         assertEquals(500, keywordCalls)
-        assertTrue(logs.any { it.contains("reply_probe_limit") })
+        assertTrue(logs.any { it.contains("rolling_work_budget") })
+        assertFalse(logs.any { it.contains("reply_probe_limit") })
     }
     @Test fun resultFromDelayedWorkerCannotInterruptFromOldAudio() = runBlocking {
         val pending = java.util.ArrayDeque<Runnable>()
@@ -218,6 +219,15 @@ class NaturalBargeInAudioInputTest {
         assertEquals(1, models)
         assertTrue(delivered.isNotEmpty())
         assertFalse(logs.any { it.contains("barge_probe_discarded") })
+    }
+
+    @Test fun genuineSpeechCanInterruptAfterFourEmptyProbesInTheSameReply() = runBlocking {
+        val delivered = gate(chunks = 200, textNow = { if (models <= 4) "" else "Actually open settings" }).chunks().toList()
+        assertEquals(1, confirmed)
+        assertTrue(models > 4)
+        assertEquals(models, closedModels)
+        assertTrue(delivered.isNotEmpty())
+        assertFalse(logs.any { "reply_probe_limit" in it })
     }
 
 }

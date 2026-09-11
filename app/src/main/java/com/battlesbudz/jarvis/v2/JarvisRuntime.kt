@@ -445,7 +445,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 }
                 val asrTranscript = correction?.transcript ?: activeCapture.finalTranscript
                 val audioIsComplete = correction?.audioIsComplete ?: activeCapture.audioIsComplete
-                val recognitionIssue = correction?.recognitionIssue ?: activeCapture.recognitionIssue
+                var recognitionIssue = correction?.recognitionIssue ?: activeCapture.recognitionIssue
                 if (activeVoiceCapture === activeCapture) activeVoiceCapture = null
                 status("Processing your Voice Call turn locally…")
                 if (correction == null && !activeCapture.hasSpeech) {
@@ -459,7 +459,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     if (voiceSessionController.currentCallId() == expectedCallId) onTranscript("You", asrTranscript, true)
                 }
                 diagnosticRecorder.recordSummary("Voice recognition turn=$asrTurnId path=${if (correction == null) "normal" else "after_keyword"} " +
-                    "engine=${asrEngine.id} asrChars=${asrTranscript.length} gemmaTranscriptionFallback=${asrTranscript.isBlank()}")
+                    "engine=${asrEngine.id} asrChars=${asrTranscript.length} gemmaTranscriptionFallback=${asrTranscript.isBlank()} " +
+                    "speechGate=${if (asrEngine == com.battlesbudz.jarvis.v2.voice.AsrEngine.MOONSHINE) "jarvis_vad_native_gate_bypassed_v1" else "engine_default"}")
                 // The turn is already confirmed. Play cached PCM while obsolete speculative
                 // work is joined/reset; it needs neither Gemma nor tool execution permission.
                 if (asrTranscript.isNotBlank() &&
@@ -480,13 +481,24 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     output.updateWaitStage(com.battlesbudz.jarvis.v2.voice.DelayedAcknowledgement.Stage.RECOGNIZING)
                     status("Listening to your recorded speech with Gemma…")
                     diagnosticRecorder.recordImportant("Voice audio fallback: ${asrEngine.label} empty; Gemma receiving ${audio.size} bytes")
-                    resetNativeConversation()
                     try {
-                        val heard = engine.generateAudio(
-                            com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.instructions, audio, {})
-                        // This recognition pass never dispatches tools or speaks model output.
-                        if (heard.toolCalls.isEmpty()) heard.text else ""
+                        kotlinx.coroutines.withTimeout(12_000L) {
+                            resetNativeConversation()
+                            diagnosticRecorder.recordImportant("Voice audio fallback: stage=submit deadlineMs=12000")
+                            val heard = engine.generateAudio(
+                                com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.instructions, audio, {})
+                            // Recognition never dispatches tools or speaks model output.
+                            if (heard.toolCalls.isEmpty()) heard.text else ""
+                        }
+                    } catch (timeout: kotlinx.coroutines.TimeoutCancellationException) {
+                        kotlin.coroutines.coroutineContext.ensureActive()
+                        recognitionIssue = "audio_fallback_timeout"
+                        status("I couldn't make out that request. Please say it again.")
+                        diagnosticRecorder.recordImportant("Voice audio fallback: result=timeout action=clarify")
+                        ""
                     } finally {
+                        // Native cancellation joins its owner before resetting the conversation.
+                        // Its cleanup can extend the deadline; never close a model concurrently.
                         resetNativeConversation()
                         turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.AUDIO_FALLBACK_FINISHED)
                     }
@@ -554,7 +566,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             val interruptionTest = com.battlesbudz.jarvis.v2.voice.VoiceInterruptionTest.requested(transcript)
                             if (recognitionIssue != null) {
                                 speculative.close()
-                                val clarification = "I couldn't retain that whole request reliably. Please repeat it in shorter parts, sir."
+                                val clarification = if (recognitionIssue == "audio_fallback_timeout")
+                                    "I couldn't make out that request, sir. Please say it again."
+                                else "I couldn't retain that whole request reliably. Please repeat it in shorter parts, sir."
                                 diagnosticRecorder.recordImportant("Voice input rejected reason=$recognitionIssue action=clarify tools=disabled")
                                 recordFirstText(clarification)
                                 onToken(clarification)

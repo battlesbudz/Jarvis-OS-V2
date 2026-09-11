@@ -11,6 +11,7 @@ class PacedStreamingTranscriber(
     private val pending = ByteArrayOutputStream()
     private var nextPassAt = 0L
     private var text = ""
+    override fun observeSpeech(speech: Boolean) = delegate.observeSpeech(speech)
     override fun accept(pcm: ByteArray): String {
         check(pending.size() + pcm.size <= 16_000 * 2 * 8) { "Interruption ASR exceeded its audio budget" }
         pending.write(pcm)

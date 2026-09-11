@@ -2,7 +2,8 @@ package com.battlesbudz.jarvis.v2.voice
 
 /** Preserve natural boundaries while allowing an early first clause from a token stream. */
 class SpeechChunker(private val openingChars: Int = DEFAULT_OPENING_CHARS,
-                    private val fullText: Boolean = false, private val sentenceMode: Boolean = false) {
+                    private val fullText: Boolean = false, private val sentenceMode: Boolean = false,
+                    private val minPhraseChars: Int = 0) {
     private val buffer = StringBuilder()
     private var first = true
     private var slow = false
@@ -27,7 +28,7 @@ class SpeechChunker(private val openingChars: Int = DEFAULT_OPENING_CHARS,
             val c = buffer[i]
             // Wait for whitespace after punctuation so decimals and token-split words stay intact.
             val followedBySpace = i + 1 < buffer.length && buffer[i + 1].isWhitespace()
-            if ((c in ".!?" && followedBySpace) || c == '\n') {
+            if (i + 1 >= minPhraseChars && ((c in ".!?" && followedBySpace) || c == '\n')) {
                 boundary = i + 1
                 break
             }

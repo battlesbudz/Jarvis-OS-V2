@@ -98,4 +98,18 @@ class SpeechChunkerTest {
         assertTrue(result.all { it.length <= SpeechChunker.SENTENCE_LIMIT })
     }
 
+    @Test fun kokoroGroupsShortIntroductionsWithoutDroppingText() {
+        val chunks = SpeechChunker(60, minPhraseChars = 40)
+        chunks.append("Certainly, sir. Here is a joke for you. ")
+        assertNull(chunks.take())
+        chunks.append("Why did the scarecrow win? Because he was outstanding.")
+        val result = mutableListOf<String>()
+        while (true) result += chunks.take(final = true) ?: break
+        assertEquals("Certainly, sir. Here is a joke for you. Why did the scarecrow win? Because he was outstanding.", result.joinToString(" "))
+        assertTrue(result.first().length >= 40)
+        val short = SpeechChunker(60, minPhraseChars = 40)
+        short.append("Hello, sir.")
+        assertEquals("Hello, sir.", short.take(final = true))
+    }
+
 }
