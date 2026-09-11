@@ -583,6 +583,56 @@ class AudioTurnCaptureTest {
         fixture.capture.stop()
     }
 
+    @Test fun speechArrivingDuringFinalizationInvalidatesEndpoint() = runBlocking<Unit> {
+        lateinit var fixture: CaptureFixture
+        var finishes = 0
+        var loads = 0
+        val first = object : StreamingTranscriber {
+            override fun accept(pcm: ByteArray) = "Open Facebook"
+            override fun finish(): String { finishes++; fixture.bufferedMs = 100; return "Open Facebook" }
+            override fun close() {}
+        }
+        fixture = CaptureFixture(this, factory = {
+            if (loads++ == 0) first else FakeTranscriber("actually use YouTube", "actually use YouTube")
+        })
+        fixture.capture.start()
+        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+        fixture.emit(100, 2000, speech = true)
+        fixture.emit(1300, 0)
+        assertFalse(completion.isCompleted)
+        fixture.bufferedMs = 0
+        fixture.emit(1400, 2000, speech = true)
+        assertFalse(completion.isCompleted)
+        fixture.emit(2600, 0)
+        assertTrue(withTimeout(1000) { completion.await() })
+        assertEquals("Open Facebook actually use YouTube", fixture.capture.finalTranscript)
+        assertEquals(1, finishes)
+        assertTrue(fixture.events.any { "turn_endpoint_invalidated" in it })
+        fixture.capture.stop()
+    }
+
+    @Test fun silenceArrivingDuringFinalizationDoesNotFinalizeTwice() = runBlocking<Unit> {
+        lateinit var fixture: CaptureFixture
+        var finishes = 0
+        val asr = object : StreamingTranscriber {
+            override fun accept(pcm: ByteArray) = "Tell me a story"
+            override fun finish(): String { finishes++; fixture.bufferedMs = 100; return "Tell me a story" }
+            override fun close() {}
+        }
+        fixture = CaptureFixture(this, asr)
+        fixture.capture.start()
+        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+        fixture.emit(100, 2000, speech = true)
+        fixture.emit(1300, 0)
+        assertFalse(completion.isCompleted)
+        fixture.bufferedMs = 0
+        fixture.emit(1400, 0)
+        assertTrue(withTimeout(1000) { completion.await() })
+        assertEquals(1, finishes)
+        assertEquals("Tell me a story", fixture.capture.finalTranscript)
+        fixture.capture.stop()
+    }
+
     private class FakeTranscriber(
         private val partial: String = "story about pirates",
         private val final: String = "story about astronauts",

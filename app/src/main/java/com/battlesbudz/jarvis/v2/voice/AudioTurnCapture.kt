@@ -190,6 +190,7 @@ class AudioTurnCapture(
                             finalTranscript = ""
                             synchronized(pcm) { pcm.clear(); capturedPcmBytes = 0; preRoll.clear() }
                             speakerPcm.reset(); recoveryAudio.clear()
+                            pendingEndpoint = false; pendingAudio.clear(); recognitionIssue = null
                             firstSpeechAt = null; firstPartialAfterSpeechMs = null; lastPartial = ""
                             quietEvidence.reset(); turnEnd.reset()
                             transcriber?.close(); transcriber = null

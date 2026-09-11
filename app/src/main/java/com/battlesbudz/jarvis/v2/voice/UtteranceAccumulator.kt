@@ -16,7 +16,10 @@ class UtteranceAccumulator(private val maxChars: Int = 12_000) {
         overlapping = nextOverlaps
         segments++
     }
-    fun finish(text: String): String = combine(text, final = true)
+    fun finish(text: String, speechExpected: Boolean = false): String {
+        if (speechExpected && TranscriptContent.speech(text).isBlank()) issue = "unrecognized_segment"
+        return combine(text, final = true)
+    }
     private fun combine(text: String, final: Boolean): String {
         var suffix = TranscriptContent.speech(text).trim()
         if (overlapping && committed.isNotBlank()) {

@@ -61,7 +61,7 @@ class SegmentedTranscriber(
             last = if (current == null) last else {
                 finalSegment = current!!.finish()
                 if (segments == 0 && TranscriptContent.isSoundOnly(finalSegment)) finalSegment
-                else text.finish(finalSegment)
+                else text.finish(finalSegment, speechExpected = segments > 0 && segmentHadSpeech)
             }
         }
         return last

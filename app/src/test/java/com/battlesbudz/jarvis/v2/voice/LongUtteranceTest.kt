@@ -4,6 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LongUtteranceTest {
+    @Test fun missingFinalCorrectionCannotDispatchOnlyCommittedPrefix() {
+        val text = UtteranceAccumulator()
+        text.commit("Open Facebook", nextOverlaps = false)
+        assertEquals("Open Facebook", text.finish("", speechExpected = true))
+        assertEquals("unrecognized_segment", text.issue)
+    }
+
     @Test fun thirtyAndSixtySecondRequestsKeepCorrectionsAcrossForcedSegments() {
         for (seconds in listOf(30, 60)) {
             var loads = 0
