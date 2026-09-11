@@ -99,7 +99,7 @@ class BargeInGate(private val stableMs: Long = 300) {
     }
 
     private companion object {
-        val controls = setOf("stop", "pause", "cancel", "wait", "jarvis", "jervis")
+        val controls = setOf("stop", "pause", "cancel", "wait", "jarvis", "jervis", "goodbye")
         val requests = setOf("open", "set", "turn", "tell", "show", "find", "search", "read", "explain",
             "give", "play", "call", "message", "send", "navigate", "take", "check", "look", "help",
             "switch", "close", "launch", "repeat", "continue")

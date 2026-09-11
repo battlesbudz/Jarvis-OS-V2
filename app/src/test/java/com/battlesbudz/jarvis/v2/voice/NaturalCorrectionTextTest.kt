@@ -25,4 +25,10 @@ class NaturalCorrectionTextTest {
         assertEquals("Actually, tell me about New York.",
             NaturalCorrectionText.resolve("Actually, tell me about New York.", "Hello there"))
     }
+    @Test fun goodbyeCanPassTheInterruptionPathButAssistantEchoCannot() {
+        assertEquals("Goodbye", NaturalCorrectionText.resolve("Goodbye", "Let me tell you a story"))
+        assertEquals("Goodbye Jarvis", NaturalCorrectionText.resolve("Goodbye Jarvis", "Let me tell you a story"))
+        assertNull(NaturalCorrectionText.resolve("Goodbye", "Goodbye sir"))
+    }
+
 }
