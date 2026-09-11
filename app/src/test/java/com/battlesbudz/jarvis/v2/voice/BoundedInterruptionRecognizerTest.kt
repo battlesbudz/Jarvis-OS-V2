@@ -48,7 +48,7 @@ class BoundedInterruptionRecognizerTest {
                 override fun finish() = ""
                 override fun close() { error("release failed") }
             }
-        }, dispatcher = Dispatchers.Unconfined)
+        }, nowMs = { 0L }, dispatcher = Dispatchers.Unconfined)
         worker.submit(1, ByteArray(32000), 0)
         assertTrue(worker.unavailable); assertNull(worker.poll()); worker.close()
     }
@@ -63,7 +63,7 @@ class BoundedInterruptionRecognizerTest {
                 override fun finish() = "actually stop"
                 override fun close() { closed = true }
             }
-        })
+        }, nowMs = { 0L })
         try {
             assertTrue(worker.submit(1, ByteArray(8000), 0))
             assertTrue(entered.await(2, TimeUnit.SECONDS))
@@ -80,7 +80,7 @@ class BoundedInterruptionRecognizerTest {
                 override fun finish(): String { check(budget); return "Actually open settings" }
                 override fun close() {}
             }
-        }, dispatcher = Dispatchers.Unconfined, hasBudget = { budget })
+        }, nowMs = { 0L }, dispatcher = Dispatchers.Unconfined, hasBudget = { budget })
         worker.submit(1, ByteArray(32000), 0)
         assertEquals(1, calls); assertFalse(worker.unavailable); assertTrue(worker.retryableFailure)
         assertNull(worker.poll())

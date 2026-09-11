@@ -51,6 +51,13 @@ class NaturalBargeInAudioInput(
             var hypothesis: BoundedInterruptionRecognizer.Result? = null
             var gate = BargeInGate()
             var keywordReady = false
+            var backlogSuspended = false
+            var recoveredAt: Long? = null
+            var backlogRecoveries = 0
+            var rejectedWindows = 0
+            var staleResults = 0
+            var pressureFrames = 0
+            var finalReason = "no_confirmed_request"
             fun reset() {
                 active = false; submitted = false; submittedBytes = 0; candidateProbes = 0; hypothesis = null
                 candidate.clear(); gate = BargeInGate(); revision++
@@ -58,6 +65,7 @@ class NaturalBargeInAudioInput(
             fun disable(reason: String) {
                 if (!disabled) {
                     disabled = true; reset()
+                    finalReason = reason
                     log("barge_natural_unavailable reason=$reason fallback=keyword")
                 }
             }
@@ -81,6 +89,7 @@ class NaturalBargeInAudioInput(
                             "loadMs=$keywordLoadMs inputMs=${keywordBytes / 32} maxWorkMs=$maxKeywordWorkMs maxBacklogMs=$maxBacklogMs")
                     }
                     if (hit != null) {
+                        finalReason = "keyword_$hit"
                         delivered = true
                         onConfirmed(false, hit) // Stop playback before waiting for native ownership.
                         worker.close()
@@ -88,15 +97,34 @@ class NaturalBargeInAudioInput(
                         return@collect // Consume the trigger, as on the existing keyword path.
                     }
                     worker.poll()?.let { result ->
-                        if (result.revision == revision && now - result.audioAtMs <= 1000) {
+                        if (result.revision == revision && now - result.audioAtMs <= InterruptionTiming.RESULT_AGE_MS) {
                             hypothesis = result
                             log("barge_natural_ready scope=candidate revision=$revision resultAgeMs=${now - result.audioAtMs}")
                         }
-                        else log("barge_probe_discarded reason=stale revision=${result.revision}")
+                        else {
+                            staleResults++
+                            log("barge_probe_discarded reason=stale revision=${result.revision}")
+                        }
                     }
                     if (worker.unavailable) disable("recognizer_budget_or_failure")
-                    if (input.bufferedAudioMs > 600 || now - at > 800) disable("capture_backlog")
                     if (disabled) return@collect
+                    if (input.bufferedAudioMs > 600 || now - at > 800) {
+                        if (!backlogSuspended) {
+                            backlogSuspended = true; reset(); onset.clear()
+                            log("barge_natural_suspended reason=capture_backlog retryable=true fallback=keyword")
+                        }
+                        recoveredAt = null
+                    }
+                    if (backlogSuspended) {
+                        if (input.bufferedAudioMs <= 200 && now - at <= 300 && !worker.busy) {
+                            if (recoveredAt == null) recoveredAt = now
+                            if (now - requireNotNull(recoveredAt) >= InterruptionTiming.RECOVERY_QUIET_MS) {
+                                backlogSuspended = false; backlogRecoveries++
+                                log("barge_natural_recovered reason=capture_caught_up fresh_candidate_required=true")
+                            }
+                        } else recoveredAt = null
+                        if (backlogSuspended) return@collect
+                    }
                     if (submitted && !worker.busy && worker.retryableFailure) {
                         reset(); cooldownUntil = now + 500
                         log("barge_candidate_deferred reason=playback_budget retryAfterMs=500")
@@ -114,23 +142,28 @@ class NaturalBargeInAudioInput(
                     if (at - candidateAt >= 3400) {
                         // Never recognize a truncated candidate whose onset has rolled away.
                         reset(); cooldownUntil = now + 1000
+                        rejectedWindows++
                         log("barge_candidate_rejected reason=window_limit playback_uninterrupted=true")
                         return@collect
                     }
                     val heard = hypothesis
-                    if (heard != null && now - heard.audioAtMs <= 1300 && now - lastSpeechAt <= 1000 &&
-                        gate.update(now - lastSpeechAt <= 600, playing(), now, heard.text, reference()) == BargeInGate.Action.CONFIRM) {
+                    if (heard != null && now - heard.audioAtMs <= InterruptionTiming.CONFIRM_AGE_MS &&
+                        now - lastSpeechAt <= InterruptionTiming.CONFIRM_AGE_MS &&
+                        gate.update(true, playing(), now, heard.text, reference()) == BargeInGate.Action.CONFIRM) {
                         delivered = true
+                        finalReason = "natural_confirmed"
                         val echo = reference()
                         onConfirmed(true, echo)
                         worker.close() // Final-turn ASR must never overlap the probe lease.
                         log("barge_speech_confirmed method=bounded_candidate preRollMs=${candidate.sizeBytes() / 32}")
                         emit(candidate.snapshot())
                         candidate.clear(); onset.clear()
-                    } else if ((heard != null && now - heard.audioAtMs > 1300) || at - lastSpeechAt > 800) {
+                    } else if ((heard != null && now - heard.audioAtMs > InterruptionTiming.CONFIRM_AGE_MS) ||
+                        (heard == null && !worker.busy && at - lastSpeechAt > 800)) {
                         reset(); cooldownUntil = now + 500
                     }
                     if (delivered || !active) return@collect
+                    if (!hasPlaybackBudget()) pressureFrames++
                     if ((!submitted || (hypothesis != null && gate.reason != "words_settling" && candidateProbes < 2 && candidate.sizeBytes() >= submittedBytes + 16_000)) &&
                         candidate.sizeBytes() >= 32_000 && hasPlaybackBudget()) {
                         if (probes >= MAX_PROBES) { disable("reply_probe_limit"); return@collect }
@@ -147,6 +180,9 @@ class NaturalBargeInAudioInput(
                     keyword.close(); onset.clear(); candidate.clear()
                     log("barge_keyword_summary ready=$keywordReady inputMs=${keywordBytes / 32} " +
                         "loadMs=$keywordLoadMs maxWorkMs=$maxKeywordWorkMs maxBacklogMs=$maxBacklogMs")
+                    log("barge_natural_summary probes=$probes reason=$finalReason backlogRecoveries=$backlogRecoveries " +
+                        "backlogSuspended=$backlogSuspended pressureFrames=$pressureFrames " +
+                        "windowRejects=$rejectedWindows staleResults=$staleResults")
                 }
             }
         }

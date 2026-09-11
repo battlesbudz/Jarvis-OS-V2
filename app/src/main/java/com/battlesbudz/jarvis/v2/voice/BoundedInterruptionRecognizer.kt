@@ -12,7 +12,7 @@ class BoundedInterruptionRecognizer(
     // phone is also rendering Kokoro audio.  A 700 ms wall-clock cap made the
     // natural path fail systematically, leaving only the wake-word fallback.
     // Keep this bounded, but allow one complete short probe to finish.
-    private val budgetMs: Long = 1_600,
+    private val budgetMs: Long = InterruptionTiming.DECODE_MS,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val log: (String) -> Unit = {},
     private val hasBudget: () -> Boolean = { true }
@@ -43,6 +43,11 @@ class BoundedInterruptionRecognizer(
                 check(nowMs() - started <= budgetMs) { "decode_budget" }
             }
             try {
+                if (started - audioAtMs > InterruptionTiming.START_AGE_MS) {
+                    retryableFailure = true
+                    log("barge_probe_deferred reason=queued_audio_too_old retryable=true fallback=keyword")
+                    return@launch
+                }
                 checkBudget()
                 asr = create()
                 checkBudget()

@@ -91,9 +91,9 @@ class AudioTurnCaptureTest {
         assertFalse(completion.isCompleted)
         fixture.emit(1600, 2000, speech = true)
         assertEquals(1, fixture.resumed)
-        fixture.emit(4599, 0)
+        fixture.emit(5099, 0)
         assertFalse(completion.isCompleted)
-        fixture.emit(4600, 0)
+        fixture.emit(5100, 0)
         assertTrue(withTimeout(1000) { completion.await() })
         fixture.capture.stop()
     }
@@ -273,13 +273,16 @@ class AudioTurnCaptureTest {
     }
 
     @Test
-    fun continuouslyPositiveDetectorCannotRecordPastTwentyFiveSeconds() = runBlocking<Unit> {
+    fun continuousSpeechPassesTwentyFiveSecondsWhileRawAudioStaysBounded() = runBlocking<Unit> {
         val fixture = CaptureFixture(this)
         fixture.capture.start()
         val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
         repeat(260) { fixture.emit((it + 1) * 100L, 2000, speech = true, samples = 1600) }
+        assertFalse(completion.isCompleted)
+        assertFalse(fixture.capture.audioIsComplete)
+        fixture.emit(27200, 0)
         assertTrue(withTimeout(1000) { completion.await() })
-        assertTrue(fixture.events.any { "reason=max_turn_duration" in it })
+        assertTrue(fixture.events.any { "reason=trailing_silence" in it })
         assertEquals(44 + 800_000, fixture.capture.stop().size)
     }
 

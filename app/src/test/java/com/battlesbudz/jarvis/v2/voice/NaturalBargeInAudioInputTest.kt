@@ -17,11 +17,12 @@ class NaturalBargeInAudioInputTest {
                      failing: Boolean = false, chunks: Int = 30,
                      dispatcher: CoroutineDispatcher = Dispatchers.Unconfined, beforeFrame: (Int) -> Unit = {},
                      acceptAction: () -> Unit = {}, speechNow: () -> Boolean = { speech },
-                     budgetNow: () -> Boolean = { budget }, onConfirmation: (Boolean) -> Unit = {}): NaturalBargeInAudioInput {
+                     budgetNow: () -> Boolean = { budget }, backlogNow: () -> Long = { 0L }, onConfirmation: (Boolean) -> Unit = {}): NaturalBargeInAudioInput {
         val input = object : AudioInput {
             override val sampleRateHz = 16000
             override val channelCount = 1
             override val lastChunkCaptureTimeMs get() = clock
+            override val bufferedAudioMs get() = backlogNow()
             override suspend fun start() {}
             override suspend fun stop() {}
             override fun chunks() = flow {
@@ -101,7 +102,7 @@ class NaturalBargeInAudioInputTest {
             }
         }).chunks().toList()
         assertTrue(delivered.isEmpty()); assertEquals(0, confirmed)
-        assertTrue(logs.any { it.contains("barge_probe_discarded reason=stale") })
+        assertTrue(logs.any { it.contains("queued_audio_too_old") })
     }
     @Test fun keywordCanStopPlaybackWhileNativeDecodeIsBlocked() = runBlocking {
         val entered = java.util.concurrent.CountDownLatch(1)
@@ -133,10 +134,10 @@ class NaturalBargeInAudioInputTest {
         gate(chunks = 23, dispatcher = dispatcher, speechNow = { voiced }, beforeFrame = { index ->
             if (index == 10) voiced = false
             if (index == 19) while (pending.isNotEmpty()) pending.removeFirst().run()
-            if (index == 20) assertTrue(logs.any { it.contains("barge_probe_discarded reason=stale") })
+            if (index == 20) assertTrue(logs.any { it.contains("queued_audio_too_old") })
         }).chunks().toList()
         assertEquals(0, confirmed)
-        assertEquals(1, models)
+        assertEquals(0, models) // Old queued work is rejected before model acquisition.
     }
     @Test fun temporaryPlaybackPressureRecoversForLaterSpeechInSameReply() = runBlocking {
         var budget = true
@@ -157,10 +158,32 @@ class NaturalBargeInAudioInputTest {
             override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) { pending.add(block) }
         }
         val delivered = gate(chunks = 23, dispatcher = dispatcher, beforeFrame = { index ->
-            if (index == 15) while (pending.isNotEmpty()) pending.removeFirst().run()
+            if (index == 11) while (pending.isNotEmpty()) pending.removeFirst().run()
         }).chunks().toList()
         assertEquals(1, confirmed)
         assertEquals(1, models)
         assertEquals(23 * 3200, delivered.sumOf { it.size })
     }
+    @Test fun temporarySevenHundredMsBacklogRecoversInSameReply() = runBlocking {
+        var backlog = 700L
+        val delivered = gate(chunks = 50, backlogNow = { backlog },
+            beforeFrame = { if (it == 10) backlog = 0L }).chunks().toList()
+        assertEquals(1, confirmed)
+        assertTrue(delivered.isNotEmpty())
+        assertTrue(logs.any { it.contains("barge_natural_suspended") })
+        assertTrue(logs.any { it.contains("barge_natural_recovered") })
+        assertTrue(logs.any { it.contains("backlogRecoveries=1") })
+    }
+    @Test fun twelveHundredMsNativeResultCanSettleAfterSpeechEnds() = runBlocking {
+        var first = true
+        var voiced = true
+        val delivered = gate(chunks = 25, speechNow = { voiced }, acceptAction = {
+            if (first) { clock += 1200; first = false; voiced = false }
+        }).chunks().toList()
+        assertEquals(1, confirmed)
+        assertEquals(1, models)
+        assertTrue(delivered.isNotEmpty())
+        assertFalse(logs.any { it.contains("barge_probe_discarded") })
+    }
+
 }

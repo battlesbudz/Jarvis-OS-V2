@@ -33,7 +33,7 @@ class AdaptiveTurnEndTest {
             "Set the volume to", "What is the battery percentage, um", "No, I mean", "Hold on", "Do you know why?")) {
             val policy = AdaptiveTurnEnd()
             policy.update(text, 0)
-            assertEquals(text, 3000, policy.decision(1000).silenceMs.toInt())
+            assertEquals(text, 3500, policy.decision(1000).silenceMs.toInt())
         }
     }
 

@@ -596,3 +596,31 @@ Implemented corrections:
 Validation: 105 focused Kotlin/JUnit tests pass with assertions enabled. Regression tests cover pressure recovery in the same reply, result consumption during silence, delayed credible-result settling without a replacement probe, reservation through the full four-probe budget while retaining the eight-stream ceiling, and exact test-command dispatch. Existing echo rejection, final correction arguments/cancellation, keyword fallback, blocked-native ownership, delivery/history and microphone tests remain required. Android debug/release unit tests and assembly passed in [build 655](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/34537730235). Release signing verification passed; the [signed APK](https://github.com/battlesbudz/Jarvis-OS-V2/releases/download/audio-pr2-pr6-build.655/app-release.apk) is published from source commit `a0cc985438c04b69ff00f9ce51b075bbe12618d1`. Phone acceptance remains pending.
 
 Phone acceptance: say “Start the interruption test,” wait about two seconds after story speech starts, then say “Actually, tell me about dogs.” Repeat using “stop,” and repeat across several calls to exercise model rotation. Confirm playback stops, the correction retains its first words, and saved history distinguishes delivered text from the unplayed story. Inspect deferred/retry events, `barge_natural_ready`, `barge_speech_confirmed`, model-rotation reason and TTS supply gaps. If the four-probe budget is exhausted, keyword fallback remains expected and must be visible in diagnostics; sustained natural availability and acoustic echo/alternate-speaker acceptance remain open. Phase 3 is not complete.
+
+
+## Follow-up to build 666: interruption recovery and Phase 4 long turns
+
+Implementation on `audio-pr2`, 11 September 2026. This entry supersedes older execution-status summaries for these changes. Build 666 phone feedback reports a substantially better experience, working Hey Jarvis, and unreliable natural interruption. Phase 3 phone acceptance remains open.
+
+### Experience fixes
+
+- Natural interruption suspends during excessive capture backlog, then resumes after 500 ms of recovered fresh input. A temporary 700 ms backlog no longer disables natural interruption for the entire answer. Queued probes older than 300 ms are dropped before loading ASR. Result freshness now accommodates the existing 1600 ms worker budget. Keyword listening remains independent.
+- Retain the four-probe per-reply limit and 900 ms audio-supply gate. These still limit interruption opportunities under sustained synthesis pressure; this change is not a claim of reliable full duplex on the phone. A final compact natural-barge summary records recovery, pressure and rejection evidence.
+- Explicit final-clause stop requests bypass answer generation and keep the call listening. Quoted, negated, and task-specific uses such as stopping music are excluded.
+- Prompt diagnostics break down the assembled answer prompt into base/request, context/dialogue, resolved subject and references. They do not persist the verbatim prompt or claim to account for native retained KV context. The old 7283-character prompt cannot be reconstructed from the shared logs.
+
+### Phase 4 implemented portion
+
+- `TurnEndDetector` separates completion policy from capture. Adaptive fallback gives unfinished/hesitant speech 3500 ms, preserving the existing 350 ms stable-complete endpoint.
+- Internal ASR segments rotate at a quiet boundary after 15 seconds, or at 22 seconds with a bounded 1200 ms overlap. Segment boundaries never dispatch a turn. Native streams are closed before replacement; whole-utterance text is accumulated with conservative overlap reconciliation.
+- Raw recognition/fallback audio retains only the latest 25 seconds; transcript storage is bounded at 12000 characters. At 120 seconds, or on an ambiguous/unrecognized segment boundary, the reply asks for shorter repeated parts and disables action dispatch for that request. These are capacity failures, not automatic submission of an incomplete command.
+- Beyond 25 seconds, speculative audio work is invalidated and the final complete transcript uses the text inference route with voice response policy retained. A truncated audio tail is never presented as the full request to Gemma. Short utterances retain the existing audio/text path. This necessary long-turn safeguard does not implement Phase 5's broader selective-audio policy.
+- Speech arriving while final ASR is running defers endpoint acceptance and resumes recognition. Silence arriving during finalization does not repeatedly finalize a sealed native stream.
+
+### Smart Turn evaluation and remaining gate
+
+Reviewed the upstream [Smart Turn inference implementation](https://github.com/pipecat-ai/smart-turn/blob/main/inference.py) and [model repository](https://huggingface.co/pipecat-ai/smart-turn-v3). The current v3.2 candidate is quantized, BSD-2-Clause licensed and consumes Whisper-style features from an 8-second, 16 kHz window, not raw PCM directly. The model repository revision observed was `f766f81d3cfdf7737ac64aad813d91bbfd56bf93`. Exact preprocessing parity, selected artifact checksum/operator compatibility, Android runtime packaging, and Fold 6 latency/memory measurements remain unverified. No learned detector is promoted or bundled in this change. Phase 4 remains open for that evaluation and device acceptance; its bounded long-turn/fallback implementation is delivered here.
+
+### Validation
+
+157 focused Kotlin/JUnit tests pass locally, including 30/60-second segmented transcripts, bounded PCM beyond 25 seconds, conservative seam failures, retained corrections, exclusive native ownership, endpoint resumption without double finalization, stop-policy exclusions, and transient backlog recovery. Full Android compilation, release unit tests and signed APK packaging are required in the PR workflow. Device acceptance still needs: hesitant 30/60-second speech without premature reply; correction after a segment boundary; natural interruption during both early synthesis pressure and later buffered playback; and stop/Hey Jarvis at varied timing and volume. These logs do not establish acoustic quality or successful natural barge-in.

@@ -3,25 +3,25 @@ package com.battlesbudz.jarvis.v2.voice
 import java.util.Locale
 
 /** Conservative text cues plus acoustic silence. This is not a semantic model. */
-class AdaptiveTurnEnd {
+class AdaptiveTurnEnd : TurnEndDetector {
     data class Decision(val silenceMs: Long, val cue: String)
     private var transcript = ""
     private var changedAtMs = 0L
 
-    fun update(text: String, nowMs: Long) {
+    override fun update(text: String, nowMs: Long) {
         val normalized = text.trim().lowercase(Locale.ROOT).replace('’', '\'')
             .replace(Regex("\\s+"), " ")
         if (normalized != transcript) { transcript = normalized; changedAtMs = nowMs }
     }
 
-    fun decision(nowMs: Long): Decision {
+    override fun decision(nowMs: Long): Decision {
         val words = Regex("[\\p{L}\\p{N}']+").findAll(transcript).map { it.value }.toList()
         if (words.isEmpty()) return Decision(3000, "no_transcript")
         val last = words.last()
         if (last in unfinished || transcript.endsWith("...") || transcript.endsWith("…") ||
             Regex("(?:i mean|let me think|hold on|wait a second|you know|tell me|show me|give me)$")
                 .containsMatchIn(words.joinToString(" "))) {
-            return Decision(3000, "hesitation_or_unfinished")
+            return Decision(3500, "hesitation_or_unfinished")
         }
         // Punctuation is only a cue: ASR can add a question mark to an unfinished fragment.
         val question = words.first() in questionStarts &&
@@ -36,7 +36,7 @@ class AdaptiveTurnEnd {
         }
     }
 
-    fun reset() { transcript = ""; changedAtMs = 0L }
+    override fun reset() { transcript = ""; changedAtMs = 0L }
 
     private companion object {
         val questionStarts = setOf("what", "where", "when", "why", "who", "whose", "which", "how",

@@ -55,9 +55,12 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                     confirmed.onAwait { }
                     completion.onAwait { error("Interruption capture ended without confirmed speech") }
                 }
-                withTimeout(30_000) { completion.await() }
+                withTimeout(130_000) { completion.await() }
                 val wav = capture.stop()
                 val finalText = capture.finalTranscript
+                if (capture.recognitionIssue != null) {
+                    return@supervisorScope CapturedVoiceTurn(finalText, wav, capture.audioIsComplete, capture.recognitionIssue)
+                }
                 val echo = naturalReference
                 if (echo != null) {
                     // Recheck the final recognition: provisional words never authorize actions.
@@ -66,9 +69,9 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                         log("barge_correction_discarded reason=final_request_not_confirmed")
                         return@supervisorScope CapturedVoiceTurn("", byteArrayOf())
                     }
-                    return@supervisorScope CapturedVoiceTurn(checked, wav)
+                    return@supervisorScope CapturedVoiceTurn(checked, wav, capture.audioIsComplete, capture.recognitionIssue)
                 }
-                return@supervisorScope CapturedVoiceTurn(finalText, wav)
+                return@supervisorScope CapturedVoiceTurn(finalText, wav, capture.audioIsComplete, capture.recognitionIssue)
             } catch (busy: MicrophoneBusyException) {
                 log("barge_listener_yielded external_microphone=true")
                 throw busy

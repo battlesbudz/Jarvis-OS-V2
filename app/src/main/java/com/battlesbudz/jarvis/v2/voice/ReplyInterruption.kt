@@ -4,7 +4,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.selects.select
 
 /** Carries the correction itself across turn cleanup, so the user need not repeat it. */
-data class CapturedVoiceTurn(val transcript: String, val wav: ByteArray)
+data class CapturedVoiceTurn(val transcript: String, val wav: ByteArray,
+    val audioIsComplete: Boolean = true, val recognitionIssue: String? = null)
 sealed interface ReplyOutcome<out T> {
     data class Finished<T>(val value: T) : ReplyOutcome<T>
     data class Interrupted(val correction: CapturedVoiceTurn) : ReplyOutcome<Nothing>

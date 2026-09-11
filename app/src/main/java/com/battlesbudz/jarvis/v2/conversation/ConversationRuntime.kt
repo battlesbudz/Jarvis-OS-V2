@@ -18,6 +18,7 @@ internal fun JarvisRuntime.runConversationInternal(
         onComplete: (String) -> Unit,
         preparedVoice: com.battlesbudz.jarvis.v2.voice.PreparedVoiceDraft? = null,
         voiceAudio: ByteArray? = null,
+        voiceAudioIsComplete: Boolean = true,
         onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit = {},
         onActionResult: (String, String, Boolean) -> Unit = { _, _, _ -> }
     ) {
@@ -95,7 +96,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     return@launch
                 }
                 val acceptedPreparation = preparedVoice?.takeIf {
-                    imageUri == null && turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT &&
+                    voiceAudioIsComplete && imageUri == null && turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT &&
                         it.matches(prompt) && !it.failed
                 }
                 if (acceptedPreparation == null && preparedVoice != null) {
@@ -313,6 +314,16 @@ internal fun JarvisRuntime.runConversationInternal(
                             "action=continue with concise response"
                     )
                 }
+                if (voiceAudio != null) {
+                    val emptyContextPrompt = buildTurnPrompt(prompt, actionResultForGemma, emptyList(), false)
+                    val subjectChars = turnPlan.activeSubject?.let { ("\n\nResolved subject for this turn: " + it).length } ?: 0
+                    val referenceChars = referenceContext?.let { it.length + 2 } ?: 0
+                    val contextChars = (submittedPrompt.length - emptyContextPrompt.length - subjectChars - referenceChars).coerceAtLeast(0)
+                    diagnosticRecorder.recordSummary("Voice prompt parts totalChars=${submittedPrompt.length} " +
+                        "baseAndRequestChars=${emptyContextPrompt.length} contextAndDialogueChars=$contextChars " +
+                        "subjectChars=$subjectChars referenceChars=$referenceChars audioComplete=$voiceAudioIsComplete " +
+                        "scope=assembled_answer_prompt prepared=${acceptedPreparation != null}")
+                }
                 val imageBytes = imageUri?.let { uri ->
                     openVisionInputStream(uri)?.use { input ->
                         input.readBytes().also { bytes ->
@@ -349,14 +360,15 @@ internal fun JarvisRuntime.runConversationInternal(
                     streamFilter.accept(token)
                 }
                 diagnosticRecorder.recordSummary("Inference input: mode=" +
-                    (if (acceptedPreparation != null) "prepared_audio_text" else if (voiceAudio != null) "audio_text"
+                    (if (acceptedPreparation != null) "prepared_audio_text" else if (voiceAudio != null && voiceAudioIsComplete) "audio_text"
+                        else if (voiceAudio != null) "text_long_utterance"
                         else if (imageBytes != null) "image_text" else "text") +
                     " audioBytes=${voiceAudio?.size ?: 0} promptChars=${submittedPrompt.length}" +
                     " nativeAudioEncodeMs=unavailable queueMs=unavailable")
                 var generated = if (acceptedPreparation != null) {
                     diagnosticRecorder.record("Voice preparation: consuming_validated_draft")
                     acceptedPreparation.consume(acceptVoiceToken)
-                } else if (voiceAudio != null) {
+                } else if (voiceAudio != null && voiceAudioIsComplete) {
                     engine.generateAudio(
                         prompt = submittedPrompt,
                         audioBytes = voiceAudio,
