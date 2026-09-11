@@ -633,6 +633,63 @@ class AudioTurnCaptureTest {
         fixture.capture.stop()
     }
 
+    @Test fun slowSpeakerCheckCannotKeepRecreatingSilentBacklog() = runBlocking<Unit> {
+        lateinit var fixture: CaptureFixture
+        var speakerChecks = 0
+        val asr = FakeTranscriber("How are you?", "How are you?")
+        fixture = CaptureFixture(this, asr, acceptCandidate = {
+            speakerChecks++
+            // The real speaker embedding takes ~300 ms while the microphone keeps recording.
+            fixture.bufferedMs = 300
+            true
+        })
+        fixture.capture.start()
+        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+        fixture.emit(100, 2000, speech = true)
+        fixture.emit(1300, 0)
+        assertFalse(completion.isCompleted)
+        assertEquals(1, speakerChecks)
+        fixture.bufferedMs = 200
+        fixture.emit(1400, 0)
+        fixture.bufferedMs = 100
+        fixture.emit(1500, 0)
+        fixture.bufferedMs = 0
+        fixture.emit(1600, 0)
+        try {
+            assertTrue("Silent backlog must drain without another speaker embedding", completion.isCompleted)
+            assertEquals(1, speakerChecks)
+            assertEquals(1, asr.finishes)
+            assertTrue(completion.await())
+        } finally { fixture.capture.stop() }
+    }
+
+    @Test fun resumedSpeechRequiresFreshSpeakerDecisionBeforeFinalSubmission() = runBlocking<Unit> {
+        lateinit var fixture: CaptureFixture
+        var speakerChecks = 0
+        var loads = 0
+        fixture = CaptureFixture(this,
+            factory = { loads++; FakeTranscriber("Open Facebook", "Open Facebook") },
+            acceptCandidate = {
+                speakerChecks++
+                fixture.bufferedMs = 300
+                speakerChecks == 1 // The resumed candidate is rejected by speaker preference.
+            })
+        fixture.capture.start()
+        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+        fixture.emit(100, 2000, speech = true)
+        fixture.emit(1300, 0)
+        fixture.bufferedMs = 0
+        fixture.emit(1400, 2000, speech = true)
+        fixture.emit(2600, 0)
+        try {
+            assertEquals(2, speakerChecks)
+            assertFalse(completion.isCompleted)
+            assertFalse(fixture.capture.hasSpeech)
+            assertEquals("", fixture.capture.finalTranscript)
+            assertTrue(fixture.events.any { "speaker_candidate_rejected" in it })
+        } finally { fixture.capture.stop() }
+    }
+
     private class FakeTranscriber(
         private val partial: String = "story about pirates",
         private val final: String = "story about astronauts",

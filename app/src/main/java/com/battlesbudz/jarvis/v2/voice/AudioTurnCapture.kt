@@ -1,6 +1,8 @@
 package com.battlesbudz.jarvis.v2.voice
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -183,7 +185,14 @@ class AudioTurnCapture(
                     }
                     if (reason != null && !turnCompleted.isCompleted) {
                         val finalizeStartedAt = nowMs()
-                        if (hasSpeech && !acceptCandidate(speakerPcm.toByteArray())) {
+                        // The pending endpoint already passed speaker preference. Repeating
+                        // its ~300 ms embedding while draining silence recreates microphone
+                        // backlog on every retry and prevents the turn from ever completing.
+                        // Resumed speech clears pendingEndpoint above, requiring a fresh check.
+                        val speakerAccepted = !hasSpeech || pendingEndpoint || acceptCandidate(speakerPcm.toByteArray())
+                        currentCoroutineContext().ensureActive()
+                        if (turnCompleted.isCompleted) return@collect
+                        if (!speakerAccepted) {
                             log("speaker_candidate_rejected microphone=kept_open elapsedMs=${now - startedAt}")
                             onSpeechResumed()
                             hasSpeech = false
@@ -205,6 +214,8 @@ class AudioTurnCapture(
                         }
                         if (hasSpeech) {
                             val rawFinal = transcriber?.finish().orEmpty().trim()
+                            currentCoroutineContext().ensureActive()
+                            if (turnCompleted.isCompleted) return@collect
                             recognitionIssue = (transcriber as? SegmentedTranscriber)?.issue
                                 ?: if (reason == "utterance_capacity") "utterance_capacity" else null
                             if (!audioIsComplete && rawFinal.isBlank()) recognitionIssue = "missing_long_transcript"
@@ -212,9 +223,11 @@ class AudioTurnCapture(
                             // consume it before accepting an old endpoint. Retain the final words
                             // as a committed segment and continue on the same hardware reader.
                             if (reason == "trailing_silence" && input.bufferedAudioMs > 0 && transcriber is SegmentedTranscriber) {
-                                if (!pendingEndpoint) pendingAudio.clear()
+                                if (!pendingEndpoint) {
+                                    pendingAudio.clear()
+                                    log("turn_endpoint_deferred reason=audio_arrived_during_finalization speakerCheck=reused_until_speech")
+                                }
                                 pendingEndpoint = true
-                                log("turn_endpoint_deferred reason=audio_arrived_during_finalization")
                                 return@collect
                             }
                             val nonverbal = TranscriptContent.isSoundOnly(rawFinal)
