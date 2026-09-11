@@ -92,4 +92,21 @@ class BoundedInterruptionRecognizerTest {
         assertFalse(worker.retryableFailure)
         worker.close()
     }
+    @Test fun admittedDecodeFinishesWhenAudioFallsBelowAdmissionButAboveEmergencyFloor() = runBlocking {
+        var queued: Long? = null
+        val worker = BoundedInterruptionRecognizer(this, {
+            object : StreamingTranscriber {
+                override fun accept(pcm: ByteArray): String { queued = 240; return "Actually tell me about dogs" }
+                override fun finish() = "Actually tell me about dogs"
+                override fun close() {}
+            }
+        }, nowMs = { 0L }, dispatcher = Dispatchers.Unconfined,
+            hasBudget = { DuplexPlaybackBudget.allows(queued, false, false) },
+            canContinue = { DuplexPlaybackBudget.allows(queued, true, false) })
+        worker.submit(1, ByteArray(32000), 0)
+        assertEquals("Actually tell me about dogs", worker.poll()?.text)
+        assertFalse(worker.retryableFailure)
+        worker.close()
+    }
+
 }

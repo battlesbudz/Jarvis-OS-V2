@@ -35,6 +35,7 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                     },
                     playing = { output.isPlayingAudio }, reference = { output.recentSpokenText() },
                     hasPlaybackBudget = output::hasInterruptionBudget,
+                    canContinuePlayback = output::canContinueInterruption,
                     onConfirmed = { natural, evidence ->
                         if (natural) naturalReference = evidence
                         else stopOnly = evidence == "stop"

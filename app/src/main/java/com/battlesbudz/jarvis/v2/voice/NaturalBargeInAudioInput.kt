@@ -15,7 +15,8 @@ class NaturalBargeInAudioInput(
     private val onConfirmed: (Boolean, String) -> Unit,
     private val log: (String) -> Unit = {},
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 },
-    private val dispatcher: CoroutineDispatcher = Dispatchers.Default
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val canContinuePlayback: () -> Boolean = hasPlaybackBudget
 ) : AudioInput {
     init { require(input.sampleRateHz == 16_000 && input.channelCount == 1) }
     override val sampleRateHz get() = input.sampleRateHz
@@ -28,13 +29,16 @@ class NaturalBargeInAudioInput(
         supervisorScope {
             val started = nowMs()
             val keyword = createKeyword()
+            try { primeInterruptionKeywords(keyword, input.priorAudioForKeywords, log) }
+            catch (error: Throwable) { keyword.close(); throw error }
             val keywordLoadMs = (nowMs() - started).coerceAtLeast(0)
             var keywordBytes = 0L
             var maxKeywordWorkMs = 0L
             var maxBacklogMs = 0L
             var vad: SpeechDetector? = null
-            val worker = BoundedInterruptionRecognizer(this, createTranscriber, nowMs, dispatcher = dispatcher, log = log, hasBudget = hasPlaybackBudget)
+            val worker = BoundedInterruptionRecognizer(this, createTranscriber, nowMs, dispatcher = dispatcher, log = log, hasBudget = hasPlaybackBudget, canContinue = canContinuePlayback)
             val workBudget = InterruptionProbeBudget()
+            val stopWorkBudget = InterruptionProbeBudget(capacity = 2)
             var budgetDeferrals = 0
             val stopAudio = RollingAudioBuffer(maxDurationMs = 2000)
             data class StopCandidate(val pcm: ByteArray, val at: Long, val reference: String, val id: Long, var submitted: Boolean = false)
@@ -57,6 +61,7 @@ class NaturalBargeInAudioInput(
             var hypothesis: BoundedInterruptionRecognizer.Result? = null
             var gate = BargeInGate()
             var keywordReady = false
+            var lastKeywordReport = 0L
             var backlogSuspended = false
             var recoveredAt: Long? = null
             var backlogRecoveries = 0
@@ -87,6 +92,10 @@ class NaturalBargeInAudioInput(
                     stopAudio.append(pcm)
                     val keywordAt = nowMs()
                     val hit = keyword.accept(pcm)
+                    if (now - lastKeywordReport >= 1000) {
+                        lastKeywordReport = now
+                        log("barge_keyword_levels ${keyword.diagnosticSummary}")
+                    }
                     keywordBytes += pcm.size
                     maxKeywordWorkMs = maxOf(maxKeywordWorkMs, (nowMs() - keywordAt).coerceAtLeast(0))
                     maxBacklogMs = maxOf(maxBacklogMs, input.bufferedAudioMs)
@@ -133,12 +142,12 @@ class NaturalBargeInAudioInput(
                             return@collect
                         }
                         if (!stop.submitted && !worker.busy) {
-                            if (!workBudget.available(now) || now - stop.at > InterruptionTiming.START_AGE_MS || !hasPlaybackBudget()) {
+                            if (!stopWorkBudget.available(now) || now - stop.at > InterruptionTiming.START_AGE_MS || !hasPlaybackBudget()) {
                                 log("barge_stop_rejected reason=verification_budget playback_uninterrupted=true fallback=Hey_Jarvis")
                                 pendingStop = null
                             } else if (worker.submit(stop.id, stop.pcm, stop.at)) {
                                 stopProbes++
-                                workBudget.record(now)
+                                stopWorkBudget.record(now)
                                 stop.submitted = true
                             }
                         }
@@ -232,7 +241,7 @@ class NaturalBargeInAudioInput(
                 try { vad?.close() } finally {
                     keyword.close(); onset.clear(); candidate.clear(); stopAudio.clear()
                     log("barge_keyword_summary ready=$keywordReady inputMs=${keywordBytes / 32} " +
-                        "loadMs=$keywordLoadMs maxWorkMs=$maxKeywordWorkMs maxBacklogMs=$maxBacklogMs")
+                        "loadMs=$keywordLoadMs maxWorkMs=$maxKeywordWorkMs maxBacklogMs=$maxBacklogMs ${keyword.diagnosticSummary}")
                     log("barge_natural_summary probes=$probes budgetDeferrals=$budgetDeferrals stopProbes=$stopProbes stopHits=$stopHits reason=$finalReason backlogRecoveries=$backlogRecoveries " +
                         "backlogSuspended=$backlogSuspended pressureFrames=$pressureFrames " +
                         "windowRejects=$rejectedWindows staleResults=$staleResults")

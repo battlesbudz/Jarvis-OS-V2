@@ -326,6 +326,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     onPlayback = { voicePlayback.value = it },
                     onMetrics = {
                         replyTtsMetrics.set(it)
+                        diagnosticRecorder.recordTurnEvidence(asrTurnId, "tts", "engine=${ttsEngine.id} firstTextToPcmMs=${it.firstTextToPcmMs} " +
+                            "synthesisMs=${it.synthesisMs} audioMs=${it.audioMs} underruns=${it.underruns}")
                         ttsComparisonStore.add(ttsEngine, "voice-call", asrTurnId, it)
                         diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId loadMs=${it.loadMs} " +
                             "firstTextToPcmMs=${it.firstTextToPcmMs} firstTextToPlaybackMs=${it.firstTextToPlaybackMs} " +
@@ -333,6 +335,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             "underruns=${it.underruns}")
                     },
                     log = {
+                        if (it.startsWith("tts_session_finished") || it.startsWith("pocket_stream_trace event=summary"))
+                            diagnosticRecorder.recordTurnEvidence(asrTurnId, if (it.startsWith("tts_session")) "supply" else "pcm", it)
                         if (it.startsWith("acknowledgement_") || it.startsWith("pocket_voice_policy") ||
                             it.startsWith("pocket_stream_trace") || it.startsWith("audio_underrun") ||
                             it.startsWith("audio_supply_gap")) diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId: $it")
@@ -366,6 +370,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         status("Voice playback failed: ${error.message}")
                     }
                 }
+                var draftStarts = 0
                 val speculative = VoicePreparation(this, generate = { partial, audio, onToken ->
                     resetNativeConversation()
                     conversationCharacters = 0
@@ -374,7 +379,20 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     engine.generateAudio(prompt, audio, onToken)
                 }, log = { diagnosticRecorder.record("Voice preparation: $it") },
                     prepareOpening = output::prepareOpening, speechText = ::cleanSpeechText,
-                    sentenceOpenings = ttsEngine == com.battlesbudz.jarvis.v2.voice.TtsEngine.POCKET_PAUL)
+                    sentenceOpenings = ttsEngine == com.battlesbudz.jarvis.v2.voice.TtsEngine.POCKET_PAUL,
+                    canPrepare = {
+                        val thermal = if (android.os.Build.VERSION.SDK_INT >= 29)
+                            getSystemService(android.os.PowerManager::class.java)?.currentThermalStatus ?: 0 else 0
+                        val allowed = draftStarts < 2 && models.workScheduler.admit(System.nanoTime() / 1_000_000,
+                            input.bufferedAudioMs, output.queuedPlaybackMs() ?: 0, thermal)
+                        if (allowed) draftStarts++
+                        diagnosticRecorder.record("Voice preparation scheduler: allowed=$allowed starts=$draftStarts " +
+                            "reason=${if (draftStarts >= 2 && !allowed) "turn_limit" else models.workScheduler.reason} thermal=$thermal backlogMs=${input.bufferedAudioMs}")
+                        allowed
+                    }, onOutcome = { reused, cancelMs ->
+                        models.workScheduler.outcome(System.nanoTime() / 1_000_000, reused, cancelMs)
+                        diagnosticRecorder.recordSummary("Voice preparation outcome turn=$asrTurnId reused=$reused cancellationWaitMs=$cancelMs")
+                    })
                 preparation = speculative
                 val preference = com.battlesbudz.jarvis.v2.voice.SpeakerPreferenceGuard(applicationContext,
                     speakerModel, asrTurnId, learnFromActivation = wokeThisTurn || !hadActiveCall,
@@ -626,6 +644,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     listen = { confirmed ->
                         com.battlesbudz.jarvis.v2.voice.ReplyVoiceCapture(applicationContext) {
                             diagnosticRecorder.recordImportant("Voice interruption: $it")
+                            if (it.startsWith("barge_natural_summary") || it.startsWith("barge_keyword_summary"))
+                                diagnosticRecorder.recordTurnEvidence(asrTurnId, it.substringBefore(" "), it)
                         }.listen(output, asrDirectory, confirmed,
                             asrEngine = asrEngine, acceptCandidate = preference::accept, trace = turnTrace,
                             inputFactory = { borrowCallMicrophone("reply") }, modelSession = models, onPartialTranscript = { text ->
@@ -735,6 +755,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 val stages = org.json.JSONObject(turnTrace.snapshot())
                 asrComparisonStore.update(asrTurnId, "pipeline_stage_ms", stages)
                 diagnosticRecorder.recordSummary("Voice pipeline turn=$asrTurnId stageOffsetsMs=$stages clock=monotonic fillerExcluded=true")
+                diagnosticRecorder.recordTurnEvidence(asrTurnId, "pipeline", "stageOffsetsMs=$stages")
                 (voiceCallStore as? com.battlesbudz.jarvis.v2.voice.CoalescingVoiceCallStore)?.metrics()?.let {
                     diagnosticRecorder.recordSummary("Voice checkpoints scope=runtime_cumulative progressUpdates=${it.progressUpdates} " +
                         "coalescedUpdates=${it.coalescedUpdates} writes=${it.writes} writeMs=${it.writeMs} failures=${it.failures}")

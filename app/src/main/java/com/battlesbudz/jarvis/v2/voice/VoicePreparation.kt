@@ -17,7 +17,9 @@ class VoicePreparation(
     private val coalesceMs: Long = 300,
     private val prepareOpening: (String) -> PreparedSpeechOpening? = { null },
     private val speechText: (String) -> String = { it },
-    private val sentenceOpenings: Boolean = false
+    private val sentenceOpenings: Boolean = false,
+    private val canPrepare: () -> Boolean = { true },
+    private val onOutcome: (Boolean, Long) -> Unit = { _, _ -> }
 ) {
     private data class Hypothesis(val revision: Long, val text: String?, val audio: ByteArray)
     private val updates = Channel<Hypothesis>(Channel.CONFLATED)
@@ -34,10 +36,18 @@ class VoicePreparation(
             while (true) latest = updates.tryReceive().getOrNull() ?: break
             transition.withLock {
                 if (sealed) return@withLock
-                draft?.discard()
+                draft?.let {
+                    val began = System.nanoTime()
+                    it.discard()
+                    onOutcome(false, (System.nanoTime() - began) / 1_000_000)
+                }
                 draft = null
                 val text = latest.text
                 if (!sealed && text != null && latest.revision == revision.get()) {
+                    if (!canPrepare()) {
+                        log("preparation_deferred reason=work_scheduler committed_recognition_unaffected=true")
+                        return@withLock
+                    }
                     log("preparation_started chars=${text.length} revision=${latest.revision}")
                     draftRevision = latest.revision
                     val created = PreparedVoiceDraft(scope, text, log, prepareOpening, speechText, sentenceOpenings) { onToken ->
@@ -61,7 +71,7 @@ class VoicePreparation(
             }
             val current = revision.incrementAndGet()
             draft?.invalidate()
-            val candidate = text.takeIf { it.trim().split(Regex("\\s+")).size >= 3 }
+            val candidate = text.takeIf { it.trim().split(Regex("\\s+")).size >= 3 && !VoiceCallPolicy.isGoodbye(it) && !VoiceStopRequest.matches(it) }
             updates.trySend(Hypothesis(current, candidate, if (candidate != null) audio.copyOf() else byteArrayOf()))
         }
     }
@@ -86,9 +96,14 @@ class VoicePreparation(
             if (candidate != null && draftRevision == revision.get() && candidate.matches(finalTranscript) && !candidate.failed) {
                 log("preparation_validated finalChars=${finalTranscript.length}")
                 candidate.authorize(finalTranscript)
+                onOutcome(true, 0)
                 candidate
             } else {
-                candidate?.discard()
+                candidate?.let {
+                    val began = System.nanoTime()
+                    it.discard()
+                    onOutcome(false, (System.nanoTime() - began) / 1_000_000)
+                }
                 log("preparation_discarded reason=final_transcript_changed_or_not_ready")
                 null
             }

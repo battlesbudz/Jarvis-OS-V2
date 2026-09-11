@@ -192,4 +192,15 @@ class VoicePreparationTest {
         assertTrue(runCatching { draft.consume {} }.isFailure)
         draft.discard()
     }
+    @Test fun schedulerDenialLeavesNoDraftAndNeverStartsGeneration() = runBlocking<Unit> {
+        var called = false
+        val deferred = CompletableDeferred<Unit>()
+        val preparation = VoicePreparation(this, generate = { _, _, _ -> called = true; error("not admitted") },
+            coalesceMs = 0, canPrepare = { deferred.complete(Unit); false })
+        preparation.submit("tell me a story", byteArrayOf(1, 2))
+        withTimeout(1000) { deferred.await() }
+        assertNull(preparation.seal("tell me a story"))
+        assertFalse(called); preparation.close()
+    }
+
 }

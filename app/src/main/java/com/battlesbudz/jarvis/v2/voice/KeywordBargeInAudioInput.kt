@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.collect
 interface InterruptionKeywordDetector : AutoCloseable {
     val ready: Boolean
     val lastHitEvidence: String get() = "unavailable"
+    val diagnosticSummary: String get() = "unavailable"
     fun accept(pcm: ByteArray): String?
 }
 
@@ -29,6 +30,8 @@ class KeywordBargeInAudioInput(
         var readyReported = false
         val startedAt = nowMs()
         val detector = createDetector()
+        try { primeInterruptionKeywords(detector, input.priorAudioForKeywords, log) }
+        catch (error: Throwable) { detector.close(); throw error }
         val loadMs = (nowMs() - startedAt).coerceAtLeast(0)
         var inputBytes = 0L
         var maxWorkMs = 0L

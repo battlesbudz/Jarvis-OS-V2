@@ -8,6 +8,7 @@ import java.util.concurrent.Executors
 
 /** Call-owned weights; utterance streams and decoder session IDs still belong to individual turns. */
 class VoiceModelSession(log: (String) -> Unit = {}) {
+    internal val workScheduler = VoiceWorkScheduler()
     internal val tts = CallModelSlot<OfflineTts>({ it.release() }, { log("tts_$it") })
     internal val moonshine = CallModelSlot<Transcriber>({ it.removeAllListeners(); it.close() }, { log("moonshine_$it") })
     internal val whisper = CallModelSlot<OfflineRecognizer>({ it.release() }, { log("whisper_$it") })

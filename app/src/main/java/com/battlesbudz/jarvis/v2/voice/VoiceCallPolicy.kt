@@ -7,11 +7,13 @@ object VoiceCallPolicy {
     const val CALL_INACTIVITY_MS = 20_000L
     const val ENDED_PREFIX = "Voice Call ended:"
 
-    /** Whole utterances only: a story mentioning goodbye is not a hang-up command. */
+    /** A direct final farewell, optionally preceded by a short polite acknowledgement. */
     fun isGoodbye(transcript: String): Boolean {
+        if (transcript.any { it in "\"“”" }) return false
         val words = transcript.lowercase(Locale.ROOT)
             .replace(Regex("[^\\p{L}\\p{N} ]"), " ").trim().replace(Regex("\\s+"), " ")
-        return words in setOf("goodbye", "goodbye jarvis", "jarvis goodbye",
-            "stop listening", "stop listening jarvis", "jarvis stop listening")
+        val farewell = "(?:goodbye(?: jarvis)?|jarvis goodbye|stop listening(?: jarvis)?|jarvis stop listening)"
+        val polite = "(?:(?:uh|um|okay|ok|alright|well|no thank you|no thanks|thank you|thanks|please|sir|that s all|that is all) )*"
+        return Regex("^$polite$farewell(?: please)?$").matches(words)
     }
 }

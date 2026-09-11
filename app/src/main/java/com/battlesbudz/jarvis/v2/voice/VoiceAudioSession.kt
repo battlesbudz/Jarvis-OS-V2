@@ -67,6 +67,8 @@ class VoiceAudioSession(
         private var stopped = false
         private var queued = 0L
         private var collecting = false
+        override var priorAudioForKeywords: ByteArray = byteArrayOf()
+            private set
         override val sampleRateHz get() = source.sampleRateHz
         override val channelCount get() = source.channelCount
         @Volatile override var lastChunkCaptureTimeMs: Long? = null
@@ -91,6 +93,10 @@ class VoiceAudioSession(
                     throw AudioBacklogException()
                 }
                 val replay = ring.filter { if (replayAfterMs != null) it.atMs >= replayAfterMs else it.sequence > cursor }
+                val firstReplay = replay.firstOrNull()?.sequence ?: (sequence + 1)
+                val history = RollingAudioBuffer(maxDurationMs = 3100)
+                ring.filter { it.sequence < firstReplay }.forEach { history.append(it.pcm) }
+                priorAudioForKeywords = history.snapshot()
                 replay.forEach(::offer)
                 active = this; started = true
                 log("call_capture_borrow consumer=$label replayChunks=${replay.size} recorderRetained=true")

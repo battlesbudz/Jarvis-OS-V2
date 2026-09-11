@@ -36,13 +36,14 @@ internal class AsyncWhisperSession(
         if (active && total >= 48000 && total - scheduled >= 38400 && inFlight?.isDone != false) {
             val snapshot = audio.snapshot(); val end = total
             scheduled = end
+            val queuedAt = System.nanoTime()
             inFlight = worker.submit {
                 try {
                     val began = System.nanoTime()
                     val text = decode(snapshot)
                     stable = agreeingPrefix(latest.text, text)
                     latest = Result(end, text)
-                    log("whisper_partial audioMs=${snapshot.size / 32} decodeMs=${(System.nanoTime()-began)/1_000_000} stableChars=${stable.length} pendingWindows=0")
+                    log("whisper_partial recognition=provisional queueWaitMs=${(began - queuedAt) / 1_000_000} audioMs=${snapshot.size / 32} decodeMs=${(System.nanoTime()-began)/1_000_000} stableChars=${stable.length} pendingWindows=0")
                 } catch (error: Throwable) { failure = error }
             }
         }
@@ -58,7 +59,7 @@ internal class AsyncWhisperSession(
             val reused = latest.end == end
             val began = System.nanoTime()
             val result = if (reused) latest.text else decode(snapshot)
-            log("whisper_final reused=$reused queueWaitMs=$queueWaitMs audioMs=${snapshot.size / 32} decodeMs=${(System.nanoTime()-began)/1_000_000}")
+            log("whisper_final recognition=committed reused=$reused queueWaitMs=$queueWaitMs audioMs=${snapshot.size / 32} decodeMs=${(System.nanoTime()-began)/1_000_000}")
             result
         }.get()
     }

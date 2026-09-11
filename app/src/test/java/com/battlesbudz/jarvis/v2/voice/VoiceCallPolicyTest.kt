@@ -18,4 +18,11 @@ class VoiceCallPolicyTest {
         assertEquals(3000L, VoiceCallPolicy.TURN_SILENCE_MS)
         assertEquals(20000L, VoiceCallPolicy.CALL_INACTIVITY_MS)
     }
+    @Test fun politeGoodbyeEndsButReportedOrNegatedGoodbyeDoesNot() {
+        for (text in listOf("Uh, no thank you. Goodbye.", "Okay goodbye Jarvis", "Thanks, goodbye!", "Goodbye Jarvis please"))
+            assertTrue(text, VoiceCallPolicy.isGoodbye(text))
+        for (text in listOf("Don't say goodbye", "He said goodbye", "Say goodbye Jarvis", "No goodbye yet", "No goodbye", "The story ends with goodbye.", "He said. Goodbye.", "Say \"goodbye\""))
+            assertFalse(text, VoiceCallPolicy.isGoodbye(text))
+    }
+
 }

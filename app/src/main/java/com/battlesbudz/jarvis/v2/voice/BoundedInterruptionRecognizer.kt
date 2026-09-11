@@ -15,7 +15,8 @@ class BoundedInterruptionRecognizer(
     private val budgetMs: Long = InterruptionTiming.DECODE_MS,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val log: (String) -> Unit = {},
-    private val hasBudget: () -> Boolean = { true }
+    private val hasBudget: () -> Boolean = { true },
+    private val canContinue: () -> Boolean = hasBudget
 ) {
     data class Result(val revision: Long, val text: String, val audioAtMs: Long, val workMs: Long)
     private val result = AtomicReference<Result?>()
@@ -41,9 +42,9 @@ class BoundedInterruptionRecognizer(
         job = scope.launch(dispatcher) {
             val started = nowMs()
             var asr: StreamingTranscriber? = null
-            fun checkBudget() {
+            fun checkBudget(admitting: Boolean = false) {
                 ensureActive()
-                if (!hasBudget()) throw PlaybackPressure()
+                if (!(if (admitting) hasBudget() else canContinue())) throw PlaybackPressure()
                 if (nowMs() - started > budgetMs) throw DecodeBudget()
             }
             try {
@@ -53,7 +54,7 @@ class BoundedInterruptionRecognizer(
                     log("barge_probe_deferred reason=queued_audio_too_old retryable=true fallback=keyword")
                     return@launch
                 }
-                checkBudget()
+                checkBudget(admitting = true)
                 asr = create()
                 checkBudget()
                 asr.observeSpeech(true)

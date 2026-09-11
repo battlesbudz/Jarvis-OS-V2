@@ -19,6 +19,9 @@ class MicroInterruptionKeywords(assets: AssetManager) : InterruptionKeywordDetec
     }
     override var lastHitEvidence: String = "none"
         private set
+    override val diagnosticSummary get() = detectors.joinToString(" ") { (name, detector) ->
+        "$name:score=${detector.probability},ready=${detector.ready},${detector.diagnostics}"
+    }
     override val ready get() = detectors.all { it.second.ready }
     override fun accept(pcm: ByteArray): String? {
         require(pcm.size % 2 == 0)

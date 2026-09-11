@@ -157,4 +157,18 @@ class VoiceAudioSessionTest {
             assertEquals(0, source.stops)
         } finally { session.close() }
     }
+    @Test fun keywordHistoryContainsOnlyFramesBeforeTheNewConsumer() = runBlocking {
+        val source = Source(); val session = VoiceAudioSession(source, this)
+        try {
+            val first = session.borrow("command"); first.start()
+            source.push(1); source.push(2)
+            first.chunks().first(); first.stop()
+            val next = session.borrow("reply"); next.start()
+            assertEquals(3200, next.priorAudioForKeywords.size)
+            assertTrue(next.priorAudioForKeywords.all { it == 1.toByte() })
+            assertTrue(next.chunks().first().all { it == 2.toByte() })
+            next.stop()
+        } finally { session.close() }
+    }
+
 }

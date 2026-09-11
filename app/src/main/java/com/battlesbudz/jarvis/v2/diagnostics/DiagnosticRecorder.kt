@@ -10,6 +10,17 @@ class DiagnosticRecorder(
     private val entries = mutableListOf<String>()
     private val important = mutableListOf<String>()
     private val summaries = mutableListOf<String>()
+    private val turnEvidence = linkedMapOf<String, String>()
+
+    fun recordTurnEvidence(turn: String, category: String, entry: String) = synchronized(entries) {
+        turnEvidence["$turn/$category"] = "turn=$turn $category atMs=${System.currentTimeMillis()}\n${entry.take(1500)}"
+        while (turnEvidence.keys.map { it.substringBefore('/') }.distinct().size > 12) {
+            val oldest = turnEvidence.keys.first().substringBefore('/')
+            turnEvidence.keys.removeAll { it.substringBefore('/') == oldest }
+        }
+        val saved = org.json.JSONObject().also { obj -> turnEvidence.forEach { (key, value) -> obj.put(key, value) } }
+        preferences.edit().putString("diagnostics_turn_evidence", saved.toString()).apply()
+    }
     private var sessionLabel = "Previous app runtime (may include earlier calls or chat)"
 
     fun startSession(label: String) {
@@ -18,7 +29,8 @@ class DiagnosticRecorder(
             entries.clear()
             important.clear()
             summaries.clear()
-            preferences.edit().remove("diagnostics_summaries").remove("diagnostics_important").putString("diagnostics_session", sessionLabel)
+            turnEvidence.clear()
+            preferences.edit().remove("diagnostics_turn_evidence").remove("diagnostics_summaries").remove("diagnostics_important").putString("diagnostics_session", sessionLabel)
                 .putString("diagnostics", "[]").apply()
         }
     }
@@ -55,12 +67,19 @@ class DiagnosticRecorder(
                 (0 until saved.length()).map { saved.getString(it).take(1200) }.takeLast(48)
             }.getOrDefault(emptyList()).forEach(summaries::add)
         }
+        synchronized(entries) {
+            turnEvidence.clear()
+            runCatching {
+                val saved = org.json.JSONObject(preferences.getString("diagnostics_turn_evidence", "{}"))
+                saved.keys().asSequence().toList().takeLast(60).forEach { key -> turnEvidence[key] = saved.getString(key).take(1700) }
+            }
+        }
         return restored
     }
 
     fun snapshot(): String {
         return synchronized(entries) {
-            "Running build: $buildLabel\n$sessionLabel\n\nTiming and recognition summaries:\n${summaries.joinToString("\n\n")}\n\nCall actions and turns:\n${important.joinToString("\n\n")}\n\nRecent audio events:\n" + entries.takeLast(100).joinToString("\n\n")
+            "Running build: $buildLabel\n$sessionLabel\n\nRetained turn evidence (up to 12 turns):\n${turnEvidence.values.joinToString("\n\n")}\n\nTiming and recognition summaries:\n${summaries.joinToString("\n\n")}\n\nCall actions and turns:\n${important.joinToString("\n\n")}\n\nRecent audio events:\n" + entries.takeLast(100).joinToString("\n\n")
                 .ifBlank { "No runtime events in this session yet." }
         }
     }

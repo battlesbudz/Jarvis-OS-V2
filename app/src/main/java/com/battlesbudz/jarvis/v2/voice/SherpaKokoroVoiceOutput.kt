@@ -96,13 +96,15 @@ class SherpaKokoroVoiceOutput(
         if (audible) lastAudibleAt = now
         gapCuePlaying.get() || audible || now - lastAudibleAt < 350 // Speaker/reverberation tail after drain.
     }
-    /** Optional interruption ASR yields when answer audio cannot cover its work budget. */
-    fun hasInterruptionBudget(): Boolean = synchronized(playbackLock) {
-        if (stopped || interrupted || gapCuePlaying.get()) return@synchronized false
-        val track = audioTrack ?: return@synchronized true
-        val queued = (writtenFrames - unsignedHead(track)).coerceAtLeast(0)
-        queued * 1000 / track.sampleRate >= 900
+    fun queuedPlaybackMs(): Long? = synchronized(playbackLock) {
+        audioTrack?.let { track ->
+            (writtenFrames - unsignedHead(track)).coerceAtLeast(0) * 1000 / track.sampleRate
+        }
     }
+    fun hasInterruptionBudget(): Boolean = DuplexPlaybackBudget.allows(
+        queuedPlaybackMs(), continuing = false, unavailable = stopped || interrupted || gapCuePlaying.get())
+    fun canContinueInterruption(): Boolean = DuplexPlaybackBudget.allows(
+        queuedPlaybackMs(), continuing = true, unavailable = stopped || interrupted || gapCuePlaying.get())
     private fun applyPause() {
         val paused = interrupted
         playbackClock.setPaused(paused)
@@ -178,6 +180,7 @@ class SherpaKokoroVoiceOutput(
         var failureMessage: String? = null
         var finalUnderruns = 0
         val streamingUnderruns = AtomicLong(0)
+        val playbackStarvationMs = AtomicLong(0)
         val draining = AtomicBoolean(false)
         var playbackSpeed = 1f
         var estimatedGapMs = 0L
@@ -356,6 +359,7 @@ class SherpaKokoroVoiceOutput(
                                     queueWaitMs += elapsedMs(waitStart)
                                     streamDiagnostics?.chunk(phraseIndex, pcm)
                                     frames += pcm.size
+                                    if (phraseIndex == 0 && frames * 1000 / rate >= 640) startupReady.complete(Unit)
                                     callbackCount++
                                     log("tts_pcm_chunk index=$phraseIndex chunk=$callbackCount frames=${pcm.size} " +
                                         "peak=${samples.maxOf { kotlin.math.abs(it) }} nonFinite=0")
@@ -557,9 +561,11 @@ class SherpaKokoroVoiceOutput(
                         // Small startup headroom; never hold a short, completed answer for this delay.
                         val start = System.nanoTime()
                         acknowledgement.answerReady()
-                        val remainingHeadroom = (phrase.startupWaitMs - elapsedMs(start)).coerceAtLeast(0)
+                        // Wait for actual callback PCM (640 ms), a completed short phrase, or a bounded deadline.
+                        val startupDeadline = if (pocketSentences && !benchmarkRun) maxOf(1000L, phrase.startupWaitMs) else phrase.startupWaitMs
+                        val remainingHeadroom = (startupDeadline - elapsedMs(start)).coerceAtLeast(0)
                         if (remainingHeadroom > 0) withTimeoutOrNull(remainingHeadroom) { startupReady.await() }
-                        log("audio_startup_buffer targetMs=${phrase.startupWaitMs} waitMs=${elapsedMs(start)}")
+                        log("audio_startup_buffer targetMs=${phrase.startupWaitMs} pcmTargetMs=${if (pocketSentences && !benchmarkRun) 640 else 0} deadlineMs=$startupDeadline waitMs=${elapsedMs(start)}")
                         first = false
                         if (stopped) break
                     }
@@ -581,9 +587,15 @@ class SherpaKokoroVoiceOutput(
                         // A sibling of the IO writer: its infinite loop must not block the writer returning.
                         playbackMonitor = speechScope.launch {
                             var previousUnderruns = startedTrack.underrunCount
+                            var previousPoll = System.nanoTime() / 1_000_000
+                            var wasStarved = false
                             while (isActive && !stopped) {
                                 val head = unsignedHead(startedTrack)
                                 val underruns = startedTrack.underrunCount
+                                val poll = System.nanoTime() / 1_000_000
+                                val starved = !draining.get() && !interrupted && writtenFrames > 0 && head >= writtenFrames
+                                if (wasStarved && starved) playbackStarvationMs.addAndGet((poll - previousPoll).coerceAtLeast(0))
+                                wasStarved = starved; previousPoll = poll
                                 if (underruns > previousUnderruns) {
                                     log("audio_underrun count=$underruns queuedFrames=${(writtenFrames - head).coerceAtLeast(0)}")
                                     if (!draining.get()) streamingUnderruns.addAndGet((underruns - previousUnderruns).toLong())
@@ -727,7 +739,7 @@ class SherpaKokoroVoiceOutput(
             }.onFailure { log("tts_metrics_failed reason=${it.message}") }
             log("tts_session_finished phrases=$phraseCount synthesisMs=$totalSynthesisMs " +
                 "audioDurationMs=$totalAudioMs queueWaitMs=$totalQueueWaitMs playbackSpeed=$playbackSpeed " +
-                "estimatedSupplyGapMs=$estimatedGapMs " +
+                "estimatedSupplyGapMs=$estimatedGapMs observedPlaybackStarvationMs=${playbackStarvationMs.get()} " +
                 "realtimeFactor=${if (totalAudioMs > 0) totalSynthesisMs.toDouble() / totalAudioMs else 0.0}")
         }
     }
