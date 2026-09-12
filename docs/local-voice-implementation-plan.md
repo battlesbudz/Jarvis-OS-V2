@@ -1,5 +1,16 @@
 # Local voice implementation plan
 
+## Build 673 repair and structured phone testing
+
+The [12 September research proposal](voice-repair-proposal-2026-09-12.md) and
+[bounded implementation commits and phone test protocol](voice-repair-implementation-and-phone-tests.md)
+define the next repair sequence for Paul voice consistency, playback starvation,
+and failed interruption. The latter includes fixed profiles, exact user scripts,
+per-build test cards, acceptance gates, and a delivery ledger. All new code steps
+in that protocol are planned until their ledger records implementation and evidence.
+Use its assigned test packs for this repair effort; retain the historical evidence
+and broader requirements below. Publishing these documents does not change app behavior.
+
 Status: implementation started on `audio-pr2`. Phase 0 checkpointing and initial turn timelines are implemented. Source-PCM measurements and the early Paul isolation runner are now implemented; baseline measurements and phone acceptance remain pending.
 
 Prepared: 2026-09-09. Repository: `battlesbudz/Jarvis-OS-V2`. Working branch: `audio-pr2`, existing [PR #6](https://github.com/battlesbudz/Jarvis-OS-V2/pull/6).
