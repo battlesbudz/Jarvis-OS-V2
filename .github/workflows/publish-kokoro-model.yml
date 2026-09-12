@@ -1,0 +1,59 @@
+name: Publish permanent Kokoro voice model
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [audio-pr2]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish full uncompressed Kokoro bundle
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip when the permanent model release already exists
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view voice-model-kokoro-v0_19 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download the official Sherpa Kokoro bundle
+        if: steps.existing.outputs.exists != 'true'
+        run: |
+          curl --fail --location --retry 5 --retry-all-errors \
+            --output kokoro-en-v0_19.tar.bz2 \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-en-v0_19.tar.bz2
+
+      - name: Convert to a plain uncompressed TAR bundle
+        if: steps.existing.outputs.exists != 'true'
+        run: |
+          mkdir extracted
+          tar --extract --bzip2 --file kokoro-en-v0_19.tar.bz2 --directory extracted
+          test -f extracted/kokoro-en-v0_19/model.onnx
+          test -f extracted/kokoro-en-v0_19/voices.bin
+          test -f extracted/kokoro-en-v0_19/tokens.txt
+          test -d extracted/kokoro-en-v0_19/espeak-ng-data
+          tar --create --file kokoro-en-v0_19.tar --directory extracted kokoro-en-v0_19
+          test "$(stat --format=%s kokoro-en-v0_19.tar)" -ge 369000000
+
+      - name: Publish permanent model release
+        if: steps.existing.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create voice-model-kokoro-v0_19 \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Jarvis Kokoro voice model v0.19" \
+            --notes "Full-precision Kokoro v0.19 model, repackaged as an uncompressed TAR bundle from the official Sherpa-ONNX release. Jarvis uses this permanent asset URL for offline voice output." \
+            kokoro-en-v0_19.tar

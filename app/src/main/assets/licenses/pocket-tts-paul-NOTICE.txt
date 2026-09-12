@@ -1,0 +1,16 @@
+Pocket TTS / Paul third-party attribution
+
+Pocket TTS by Kyutai: https://github.com/kyutai-labs/pocket-tts
+ONNX conversion by KevinAHM: https://huggingface.co/KevinAHM/pocket-tts-onnx
+INT8 package distributed by k2-fsa/sherpa-onnx (2026-01-26):
+https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models
+Model weights: Creative Commons Attribution 4.0, per the package LICENSE and current upstream ONNX model card. See pocket-tts-CC-BY-4.0.txt.
+The archive's old README additionally says "for non-commercial"; that wording conflicts with its shipped CC BY 4.0 LICENSE and current upstream model card. Both original files remain intact in the downloaded package.
+
+Paul reference: Kyutai's enhanced VCTK recording vctk/p259_023_enhanced.wav.
+Source: https://huggingface.co/kyutai/tts-voices
+Pinned revision: a0de156151266cf8eb27ac8f27312f7aff2ef7b8
+Voice reference license: Creative Commons Attribution 4.0, per Kyutai's VCTK section.
+VCTK Corpus: Junichi Yamagishi, Christophe Veaux, Kirsten MacDonald, University of Edinburgh (2019).
+https://doi.org/10.7488/ds/2645
+Jarvis renames the reference to paul.wav without changing the downloaded audio bytes; the engine resamples it to 24 kHz during inference. No other speaker or custom voice is substituted.

@@ -1,0 +1,112 @@
+package com.battlesbudz.jarvis.v2.voice
+
+import kotlinx.coroutines.*
+import org.junit.Assert.*
+import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+
+class BoundedInterruptionRecognizerTest {
+    @Test fun oneOwnerPublishesResultOnlyAfterRelease() = runBlocking {
+        var clock = 100L
+        var closed = false
+        val worker = BoundedInterruptionRecognizer(this, {
+            object : StreamingTranscriber {
+                override fun accept(pcm: ByteArray): String { clock += 10; return "actually" }
+                override fun finish() = "Actually use the other one"
+                override fun close() { closed = true }
+            }
+        }, nowMs = { clock }, dispatcher = Dispatchers.Unconfined)
+        assertTrue(worker.submit(7, ByteArray(32000), 100))
+        val result = worker.poll()!!
+        assertTrue(closed)
+        assertEquals(7L, result.revision)
+        assertEquals(40L, result.workMs)
+        assertEquals("Actually use the other one", result.text)
+        worker.close()
+        assertFalse(worker.submit(8, ByteArray(2), 100))
+    }
+    @Test fun overBudgetDecodeClosesOnItsOwnerAndSuppressesResult() = runBlocking {
+        var clock = 0L
+        var closed = false
+        val worker = BoundedInterruptionRecognizer(this, {
+            object : StreamingTranscriber {
+                override fun accept(pcm: ByteArray): String { clock += 800; return "open settings" }
+                override fun finish(): String = error("Budget must stop before finalization")
+                override fun close() { closed = true }
+            }
+        }, nowMs = { clock }, dispatcher = Dispatchers.Unconfined)
+        worker.submit(1, ByteArray(32000), 0)
+        assertFalse(worker.unavailable); assertTrue(worker.retryableFailure); assertTrue(closed); assertNull(worker.poll())
+        assertEquals("decode_budget", worker.retryReason)
+        assertTrue(worker.submit(2, ByteArray(32000), clock))
+        worker.close()
+    }
+    @Test fun nativeFailureAndCloseFailureDoNotEscapeOptionalWorker() = runBlocking {
+        val worker = BoundedInterruptionRecognizer(this, {
+            object : StreamingTranscriber {
+                override fun accept(pcm: ByteArray): String = error("native failure")
+                override fun finish() = ""
+                override fun close() { error("release failed") }
+            }
+        }, nowMs = { 0L }, dispatcher = Dispatchers.Unconfined)
+        worker.submit(1, ByteArray(32000), 0)
+        assertTrue(worker.unavailable); assertNull(worker.poll()); worker.close()
+    }
+    @Test fun busyWorkerRefusesAnotherWindowWithoutBlockingCaller() = runBlocking {
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        var closed = false
+        val worker = BoundedInterruptionRecognizer(this, {
+            object : StreamingTranscriber {
+                override fun accept(pcm: ByteArray): String {
+                    entered.countDown(); check(release.await(2, TimeUnit.SECONDS)); return "actually stop"
+                }
+                override fun finish() = "actually stop"
+                override fun close() { closed = true }
+            }
+        }, nowMs = { 0L })
+        try {
+            assertTrue(worker.submit(1, ByteArray(8000), 0))
+            assertTrue(entered.await(2, TimeUnit.SECONDS))
+            assertFalse(worker.submit(2, ByteArray(8000), 0))
+        } finally { release.countDown(); worker.close() }
+        assertTrue(closed); assertNull(worker.poll())
+    }
+    @Test fun playbackPressureStopsFurtherInference() = runBlocking {
+        var budget = true
+        var calls = 0
+        val worker = BoundedInterruptionRecognizer(this, {
+            object : StreamingTranscriber {
+                override fun accept(pcm: ByteArray): String { calls++; if (calls == 1) budget = false; return "stop" }
+                override fun finish(): String { check(budget); return "Actually open settings" }
+                override fun close() {}
+            }
+        }, nowMs = { 0L }, dispatcher = Dispatchers.Unconfined, hasBudget = { budget })
+        worker.submit(1, ByteArray(32000), 0)
+        assertEquals(1, calls); assertFalse(worker.unavailable); assertTrue(worker.retryableFailure)
+        assertNull(worker.poll())
+        budget = true
+        assertTrue(worker.submit(2, ByteArray(32000), 0))
+        assertEquals(5, calls)
+        assertEquals("Actually open settings", worker.poll()!!.text)
+        assertFalse(worker.retryableFailure)
+        worker.close()
+    }
+    @Test fun admittedDecodeFinishesWhenAudioFallsBelowAdmissionButAboveEmergencyFloor() = runBlocking {
+        var queued: Long? = null
+        val worker = BoundedInterruptionRecognizer(this, {
+            object : StreamingTranscriber {
+                override fun accept(pcm: ByteArray): String { queued = 240; return "Actually tell me about dogs" }
+                override fun finish() = "Actually tell me about dogs"
+                override fun close() {}
+            }
+        }, nowMs = { 0L }, dispatcher = Dispatchers.Unconfined,
+            hasBudget = { DuplexPlaybackBudget.allows(queued, false, false) },
+            canContinue = { DuplexPlaybackBudget.allows(queued, true, false) })
+        worker.submit(1, ByteArray(32000), 0)
+        assertEquals("Actually tell me about dogs", worker.poll()?.text)
+        assertFalse(worker.retryableFailure)
+        worker.close()
+    }
+
+}

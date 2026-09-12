@@ -10,20 +10,51 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.InputStream
 
-internal fun MainActivity.runConversationInternal(
+internal fun JarvisRuntime.runConversationInternal(
         prompt: String,
         history: List<ChatEntry>,
         imageUri: Uri?,
         onToken: (String) -> Unit,
-        onComplete: (String) -> Unit
+        onComplete: (String) -> Unit,
+        preparedVoice: com.battlesbudz.jarvis.v2.voice.PreparedVoiceDraft? = null,
+        voiceAudio: ByteArray? = null,
+        voiceAudioIsComplete: Boolean = true,
+        onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit = {},
+        onActionResult: (String, String, Boolean) -> Unit = { _, _, _ -> }
     ) {
-        if (!MainActivity.activeConversationJobs.compareAndSet(0, 1)) {
-            onComplete("The previous response is still finishing. Please try again in a moment.")
+        fun buildTurnPrompt(userPrompt: String, actionResultContext: String?,
+                            history: List<ChatEntry>, seedContext: Boolean): String =
+            promptBuilder.buildGemmaPrompt(userPrompt, actionResultContext, history, seedContext,
+                voice = voiceAudio != null)
+        val latencyStarted = System.nanoTime()
+        val latencyId = java.util.UUID.randomUUID().toString()
+        var loadMs = 0L
+        var lookupMs = 0L
+        val inferencePasses = mutableListOf<com.battlesbudz.jarvis.v2.diagnostics.InferenceTiming>()
+        var firstVisibleMs: Long? = null
+        fun elapsed() = (System.nanoTime() - latencyStarted) / 1_000_000
+        fun deliverToken(text: String) {
+            if (firstVisibleMs == null && text.isNotBlank()) firstVisibleMs = elapsed()
+            onToken(text)
+        }
+        fun finish(text: String) {
+            if (firstVisibleMs == null && text.isNotBlank()) firstVisibleMs = elapsed()
+            onLatency(com.battlesbudz.jarvis.v2.diagnostics.TurnLatency(latencyId, elapsed(),
+                firstVisibleMs, loadMs, lookupMs, inferencePasses.toList()))
+            onComplete(text)
+        }
+        if (voiceAudio == null && modelStore.isModelOperationActive()) {
+            finish("A voice or model operation is still active. Please finish it first.")
             return
         }
-        conversationJob = lifecycleScope.launch(Dispatchers.Default) {
+        if (!MainActivity.activeConversationJobs.compareAndSet(0, 1)) {
+            finish("The previous response is still finishing. Please try again in a moment.")
+            return
+        }
+        conversationJob = runtimeScope.launch(Dispatchers.Default) {
             try {
                 if (!modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
+                    preparedVoice?.discard()
                     conversationEngine?.close()
                     conversationEngine = null
                     error("The Gemma model file changed or failed integrity verification. Re-import it.")
@@ -38,7 +69,7 @@ internal fun MainActivity.runConversationInternal(
                             "reason=single user message exceeds safe mobile budget"
                     )
                     mainHandler.post {
-                        onComplete(
+                        finish(
                             "That request is too large for the local model's safe mobile budget. " +
                                 "Please send it in smaller parts."
                         )
@@ -49,10 +80,59 @@ internal fun MainActivity.runConversationInternal(
                 var actionResultForGemma: String? = null
                 var actionResultMessage: String? = null
                 var actionName: String? = null
-                val turnPlan = turnOrchestrator.plan(prompt)
+                val turnPlan = turnOrchestrator.plan(prompt, history.map { it.role to it.text })
+                if (voiceAudio != null && turnPlan.lookupQuery == null) activeVoiceOutput?.acknowledgeConfirmedTurn()
+                val repeatReply = if (imageUri == null && voiceAudio == null) com.battlesbudz.jarvis.v2.ai.LastReplyRecall.resolve(
+                    prompt, history.map { it.role to it.text }
+                ) else null
+                if (repeatReply != null) {
+                    // Speculation may have guessed an older reply. The saved visible
+                    // answer is authoritative; repeating it never reruns a phone tool.
+                    preparedVoice?.discard()
+                    resetNativeConversation()
+                    turnOrchestrator.recordResponse(prompt, repeatReply, turnPlan)
+                    diagnosticRecorder.record("Dialogue recall: source=latest_visible_reply chars=${repeatReply.length}")
+                    mainHandler.post { finish(repeatReply) }
+                    return@launch
+                }
+                val acceptedPreparation = preparedVoice?.takeIf {
+                    voiceAudioIsComplete && imageUri == null && turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT &&
+                        it.matches(prompt) && !it.failed
+                }
+                if (acceptedPreparation == null && preparedVoice != null) {
+                    preparedVoice.discard()
+                    resetNativeConversation()
+                }
+                // A final, explicit app command does not depend on the model emitting a tool call.
+                val directRequest = com.battlesbudz.jarvis.v2.actions.DirectAppCommand.parse(prompt)
+                if (directRequest != null) {
+                    preparedVoice?.discard()
+                    resetNativeConversation()
+                    val result = kotlinx.coroutines.withContext(Dispatchers.Main) {
+                        com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
+                            executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
+                                this@runConversationInternal,
+                                canLaunchDirectly = { activityVisible }
+                            )
+                        ).execute(directRequest).also {
+                            // Persist the synchronous side effect before cancellable Main -> caller dispatch.
+                            onActionResult(directRequest.name, it.message, it.succeeded)
+                        }
+                    }
+                    diagnosticRecorder.recordImportant("Action\nuser=${prompt.take(500)}\nrequest=$directRequest\nsucceeded=${result.succeeded}\nresult=${result.message}")
+                    turnOrchestrator.recordResponse(prompt, result.message, turnPlan)
+                    mainHandler.post { finish(result.message) }
+                    return@launch
+                }
+                val lookupStarted = System.nanoTime()
                 val referenceContext = turnPlan.lookupQuery?.let {
+                    if (voiceAudio != null) activeVoiceOutput?.acknowledgeConfirmedTurn()
                     referenceGrounding.fetchIfRequested(it)?.context
                 }
+                if (turnPlan.lookupQuery != null) diagnosticRecorder.recordSummary(
+                    "Voice lookup durationMs=${(System.nanoTime() - lookupStarted) / 1_000_000} success=${!referenceContext.isNullOrBlank()}")
+
+                lookupMs += if (turnPlan.lookupQuery != null) (System.nanoTime() - lookupStarted) / 1_000_000 else 0L
 
                 // Automatic factual routing owns the lookup decision. If the
                 // reference service is unavailable, do not let the local model
@@ -67,7 +147,7 @@ internal fun MainActivity.runConversationInternal(
                             "lookupQuery=${turnPlan.lookupQuery?.take(1_000)}"
                     )
                     mainHandler.post {
-                        onComplete("I tried to verify that with Wikipedia, but it was unavailable right now.")
+                        finish("I tried to verify that with Wikipedia, but it was unavailable right now.")
                     }
                     return@launch
                 }
@@ -82,7 +162,7 @@ internal fun MainActivity.runConversationInternal(
                             "reason=reference source returned no evidence"
                     )
                     mainHandler.post {
-                        onComplete(
+                        finish(
                             "I couldn't reach Wikipedia right now. Please check your connection and try again."
                         )
                     }
@@ -97,13 +177,13 @@ internal fun MainActivity.runConversationInternal(
                 // Compact before the native conversation approaches its
                 // practical limit. Keep the transcript in the app and reset
                 // only the bounded native conversation.
-                val existingPromptSize = promptBuilder.buildGemmaPrompt(
+                val existingPromptSize = buildTurnPrompt(
                     prompt,
                     actionResultForGemma,
                     history,
                     seedContext = false
                 ).length
-                val freshPromptSize = promptBuilder.buildGemmaPrompt(
+                val freshPromptSize = buildTurnPrompt(
                     prompt,
                     actionResultForGemma,
                     history,
@@ -111,7 +191,7 @@ internal fun MainActivity.runConversationInternal(
                 ).length
                 val pendingRequestSize = maxOf(existingPromptSize, freshPromptSize) + referenceSize
                 var promptHistory = history
-                if (conversationCharacters + pendingRequestSize + MainActivity.GENERATION_HEADROOM >
+                if (acceptedPreparation == null && conversationCharacters + pendingRequestSize + MainActivity.GENERATION_HEADROOM >
                     MainActivity.CONVERSATION_COMPACTION_LIMIT
                 ) {
                     val compactedText = shortTermContext.compactSnapshot(
@@ -134,36 +214,64 @@ internal fun MainActivity.runConversationInternal(
                 // native conversation. Keep the app transcript/history intact
                 // and reseed that history into the fresh conversation below.
                 if (imageUri != null) {
-                    resetNativeConversation()
+                    if (conversationEngine?.visionEnabled != true) {
+                        conversationEngine?.close()
+                        conversationEngine = null
+                        nativeConversationHasContext = false
+                        conversationCharacters = 0
+                    } else resetNativeConversation()
                 }
 
                 // Keep the expensive model/GPU engine alive. The replaceable
                 // Conversation is reset only when the bounded context needs
                 // to be compacted or an isolated retry is required.
+                val loadingStarted = System.nanoTime()
+                val engineWasLoaded = conversationEngine != null
                 val engine = conversationEngine ?: LiteRtLmEngine(
                     ModelCatalog.gemma4E2b.id,
                     modelStore.fileFor(ModelCatalog.gemma4E2b).path,
                     cacheDir.path,
                     useGpu = true,
                     tools = com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions.all(),
-                    visionEnabled = true
+                    visionEnabled = true,
+                    audioEnabled = voiceAudio != null
                 ).also {
                     it.initialize()
                     conversationEngine = it
                     nativeConversationHasContext = false
                     conversationCharacters = 0
                 }
+                if (!engineWasLoaded) loadMs += (System.nanoTime() - loadingStarted) / 1_000_000
+                val allowTools = actionIntentRouter.classifyActionIntent(prompt, history) != null
+                if (acceptedPreparation == null && engine.setToolsEnabled(allowTools)) {
+                    nativeConversationHasContext = false
+                    conversationCharacters = 0
+                }
+                diagnosticRecorder.record("Generation tool policy allowed=$allowTools source=current_action_intent")
+                val streamGroundedVoice = voiceAudio != null && !referenceContext.isNullOrBlank()
+                val voiceRepetitionGuard = if (voiceAudio != null &&
+                    actionIntentRouter.classifyActionIntent(prompt, history) == null) {
+                    com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard(
+                        prompt, history.lastOrNull { it.role == "Jarvis" }?.text,
+                        emit = { safe -> mainHandler.post { deliverToken(com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard.speechReady(safe)) } })
+                } else null
+                if (voiceAudio != null) diagnosticRecorder.record("Voice sentence streaming: " +
+                    "suppliedReference=$streamGroundedVoice actionGuard=$allowTools")
+                if (streamGroundedVoice) voiceRepetitionGuard?.isPublishable = {
+                    !referenceGrounding.isInsufficientAnswer(it)
+                }
                 val streamFilter = AssistantStreamFilter { safeText ->
-                    // Factual/reference turns are held until the final answer
-                    // passes the knowledge-gap guard. This prevents a draft
-                    // such as "I don't have that in my knowledge base" from
-                    // flashing into the transcript before the retry runs.
-                    if (turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT) {
-                        mainHandler.post { onToken(safeText) }
+                    // With supplied evidence, release checked voice sentences as they arrive.
+                    // Unverified local-factual drafts and action results retain their final gates.
+                    if ((turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT || streamGroundedVoice) &&
+                        actionIntentRouter.classifyActionIntent(prompt, history) == null
+                    ) {
+                        if (voiceRepetitionGuard != null) voiceRepetitionGuard.accept(safeText)
+                        else mainHandler.post { deliverToken(safeText) }
                     }
                 }
                 var seedContext = !nativeConversationHasContext
-                var submittedPrompt = promptBuilder.buildGemmaPrompt(
+                var submittedPrompt = buildTurnPrompt(
                     prompt,
                     actionResultForGemma,
                     if (seedContext) promptHistory else emptyList(),
@@ -181,7 +289,7 @@ internal fun MainActivity.runConversationInternal(
                     // Wikipedia evidence. Retry the fresh session without
                     // seeded history before rejecting the user turn.
                     seedContext = false
-                    submittedPrompt = promptBuilder.buildGemmaPrompt(
+                    submittedPrompt = buildTurnPrompt(
                         prompt,
                         actionResultForGemma,
                         emptyList(),
@@ -206,6 +314,16 @@ internal fun MainActivity.runConversationInternal(
                             "action=continue with concise response"
                     )
                 }
+                if (voiceAudio != null) {
+                    val emptyContextPrompt = buildTurnPrompt(prompt, actionResultForGemma, emptyList(), false)
+                    val subjectChars = turnPlan.activeSubject?.let { ("\n\nResolved subject for this turn: " + it).length } ?: 0
+                    val referenceChars = referenceContext?.let { it.length + 2 } ?: 0
+                    val contextChars = (submittedPrompt.length - emptyContextPrompt.length - subjectChars - referenceChars).coerceAtLeast(0)
+                    diagnosticRecorder.recordSummary("Voice prompt parts totalChars=${submittedPrompt.length} " +
+                        "baseAndRequestChars=${emptyContextPrompt.length} contextAndDialogueChars=$contextChars " +
+                        "subjectChars=$subjectChars referenceChars=$referenceChars audioComplete=$voiceAudioIsComplete " +
+                        "scope=assembled_answer_prompt prepared=${acceptedPreparation != null}")
+                }
                 val imageBytes = imageUri?.let { uri ->
                     openVisionInputStream(uri)?.use { input ->
                         input.readBytes().also { bytes ->
@@ -215,7 +333,48 @@ internal fun MainActivity.runConversationInternal(
                         }
                     } ?: error("The selected image could not be read.")
                 }
-                var generated = if (imageBytes != null) {
+                fun recordInference(label: String, result: com.battlesbudz.jarvis.v2.ai.GenerationResult) {
+                    inferencePasses += com.battlesbudz.jarvis.v2.diagnostics.InferenceTiming.from(
+                        label, result, prepared = label == "answer" && acceptedPreparation != null)
+                    diagnosticRecorder.recordSummary(
+                        "Inference\n" +
+                            "stage=$label\n" +
+                            "promptChars=${submittedPrompt.length}\n" +
+                            "timeToFirstTokenMs=${result.timeToFirstTokenMs}\n" +
+                            "nativeSubmitMs=${result.nativeSubmitMs} firstCallbackMs=${result.firstCallbackMs}\n" +
+                            "totalGenerationTimeMs=${result.totalGenerationTimeMs}\n" +
+                            "outputTokensEstimated=${result.outputTokens ?: -1}\n" +
+                            "streamEvents=${result.streamEvents}\n" +
+                            "decodeTokensPerSecondEstimated=${result.decodeTokensPerSecond ?: -1.0}"
+                    )
+                }
+                val voiceGenerationStarted = System.nanoTime()
+                var rawVoiceTokenSeen = false
+                val acceptVoiceToken: (String) -> Unit = { token ->
+                    if (!rawVoiceTokenSeen && token.isNotBlank()) {
+                        rawVoiceTokenSeen = true
+                        diagnosticRecorder.recordSummary("Voice generation: first_raw_token_ms=" +
+                            ((System.nanoTime() - voiceGenerationStarted) / 1_000_000) +
+                            " source=" + if (acceptedPreparation != null) "prepared" else "live")
+                    }
+                    streamFilter.accept(token)
+                }
+                diagnosticRecorder.recordSummary("Inference input: mode=" +
+                    (if (acceptedPreparation != null) "prepared_audio_text" else if (voiceAudio != null && voiceAudioIsComplete) "audio_text"
+                        else if (voiceAudio != null) "text_long_utterance"
+                        else if (imageBytes != null) "image_text" else "text") +
+                    " audioBytes=${voiceAudio?.size ?: 0} promptChars=${submittedPrompt.length}" +
+                    " nativeAudioEncodeMs=unavailable queueMs=unavailable")
+                var generated = if (acceptedPreparation != null) {
+                    diagnosticRecorder.record("Voice preparation: consuming_validated_draft")
+                    acceptedPreparation.consume(acceptVoiceToken)
+                } else if (voiceAudio != null && voiceAudioIsComplete) {
+                    engine.generateAudio(
+                        prompt = submittedPrompt,
+                        audioBytes = voiceAudio,
+                        onToken = acceptVoiceToken
+                    )
+                } else if (imageBytes != null) {
                     engine.generate(
                         prompt = submittedPrompt,
                         imageBytes = imageBytes,
@@ -227,23 +386,35 @@ internal fun MainActivity.runConversationInternal(
                         onToken = streamFilter::accept
                     )
                 }
+                recordInference("answer", generated)
                 var nativeConversationContainsCurrentTurn = true
                 val candidateCall = generated.toolCalls.singleOrNull()
                 // Gemma can occasionally emit a tool call copied from the
                 // previous turn while answering a normal question. Never let
                 // that stale call cause a phone side effect.
                 val proposedCall = candidateCall?.takeIf {
-                    actionIntentRouter.toolMatchesUserIntent(prompt, history, it)
+                    actionIntentRouter.toolMatchesUserIntent(prompt, history, it) &&
+                        (voiceAudio == null || com.battlesbudz.jarvis.v2.actions.NativeActionDecoder.decode(it)?.let { request ->
+                            com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard.allows(prompt, request.name, request.arguments)
+                        } == true)
                 }
                 if (proposedCall != null &&
                     proposedCall.name in setOf("read_battery", "set_volume", "open_app")
                 ) {
                     actionName = proposedCall.name
-                    val request = com.battlesbudz.jarvis.v2.actions.FunctionGemmaActionDecoder.decode(proposedCall)
+                    val request = com.battlesbudz.jarvis.v2.actions.NativeActionDecoder.decode(proposedCall)
                     if (request != null) {
-                        val result = com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
-                            executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(applicationContext)
-                        ).execute(request)
+                        val result = kotlinx.coroutines.withContext(Dispatchers.Main) {
+                            com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
+                                executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
+                                    this@runConversationInternal,
+                                    canLaunchDirectly = { activityVisible }
+                                )
+                            ).execute(request).also {
+                                onActionResult(request.name, it.message, it.succeeded)
+                            }
+                        }
+                        diagnosticRecorder.recordImportant("Action\nuser=${prompt.take(500)}\nrequest=$request\nsucceeded=${result.succeeded}\nresult=${result.message}")
                         actionResultMessage = result.message
                         actionResultForGemma = promptBuilder.buildToolResultContext(
                             userPrompt = prompt,
@@ -256,6 +427,7 @@ internal fun MainActivity.runConversationInternal(
                             actionResultForGemma!!,
                             streamFilter::accept
                         )
+                        recordInference("tool response", generated)
                     }
                 }
                 // A rejected tool call can sometimes contain no answer text at all.
@@ -266,6 +438,8 @@ internal fun MainActivity.runConversationInternal(
                     cleanAssistantText(generated.text).isBlank()
                 ) {
                     resetNativeConversation()
+                    engine.setToolsEnabled(false)
+                    diagnosticRecorder.recordSummary("Rejected tool name=${candidateCall.name} reason=does_not_match_current_intent retryToolsEnabled=false")
                     val retryPrompt = submittedPrompt + """
                         
                         The previous output contained an invalid tool call. Answer the user's current message directly as normal text. Do not call a tool.
@@ -282,6 +456,7 @@ internal fun MainActivity.runConversationInternal(
                             onToken = streamFilter::accept
                         )
                     }
+                    recordInference("invalid tool retry", generated)
                 }
                 val localAnswer = cleanAssistantText(generated.text)
                 val isFactualQuestion =
@@ -300,6 +475,7 @@ internal fun MainActivity.runConversationInternal(
                         prompt = factualityVerifier.buildPrompt(prompt, localAnswer),
                         onToken = {}
                     )
+                    recordInference("factuality check", verdict)
                     verifierRequestsLookup = factualityVerifier.requestsLookup(verdict.text)
                     // The verifier is an isolated internal pass. Do not leave
                     // its prompt in the user conversation.
@@ -312,10 +488,12 @@ internal fun MainActivity.runConversationInternal(
                             verifierRequestsLookup)
                 if (shouldUseAutomaticFallback) {
                     val fallbackQuery = turnOrchestrator.automaticFallbackQuery(prompt)
+                    val fallbackStarted = System.nanoTime()
                     val fallbackContext = referenceGrounding.fetchIfRequested(fallbackQuery)?.context
+                    lookupMs += (System.nanoTime() - fallbackStarted) / 1_000_000
                     if (!fallbackContext.isNullOrBlank()) {
                         resetNativeConversation()
-                        val fallbackPrompt = promptBuilder.buildGemmaPrompt(
+                        val fallbackPrompt = buildTurnPrompt(
                             prompt,
                             null,
                             promptHistory,
@@ -333,12 +511,12 @@ internal fun MainActivity.runConversationInternal(
                                 onToken = streamFilter::accept
                             )
                         }
+                        recordInference("reference fallback", generated)
                         nativeConversationContainsCurrentTurn = true
                     }
                 }
                 val rawControlOutput = generated.toolCalls.isNotEmpty() || generated.text.contains("tool_call>") ||
-                    generated.text.contains("start_function_call") ||
-                    generated.text.contains("call:MobileActions:")
+                    generated.text.contains("start_function_call")
                 if (rawControlOutput) {
                     // Do not carry protocol text into the next turn.
                     resetNativeConversation()
@@ -348,12 +526,15 @@ internal fun MainActivity.runConversationInternal(
                 val requiresReference = turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.FACTUAL_LOCAL_FIRST ||
                     turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.EXPLICIT_LOOKUP ||
                     turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.LOOKUP_CONFIRMATION
-                if (requiresReference && referenceGrounding.isInsufficientAnswer(cleanedResponse)) {
+                if (requiresReference && referenceGrounding.isInsufficientAnswer(cleanedResponse) &&
+                    (voiceRepetitionGuard?.acceptedSentences ?: 0) == 0) {
                     // Never expose a local knowledge-base disclaimer for a
                     // person/entity question. Re-query the reference APIs once
                     // and regenerate from the fresh evidence before replying.
                     val retryQuery = turnPlan.lookupQuery ?: prompt
+                    val retryLookupStarted = System.nanoTime()
                     val retryContext = referenceGrounding.fetchIfRequested(retryQuery)?.context
+                    lookupMs += (System.nanoTime() - retryLookupStarted) / 1_000_000
                     if (!retryContext.isNullOrBlank()) {
                         diagnosticRecorder.record(
                             "Reference retry after knowledge-gap draft\n" +
@@ -361,7 +542,8 @@ internal fun MainActivity.runConversationInternal(
                                 "lookupQuery=${retryQuery.take(1_000)}"
                         )
                         resetNativeConversation()
-                        val retryPrompt = promptBuilder.buildGemmaPrompt(
+                        voiceRepetitionGuard?.discardPending()
+                        val retryPrompt = buildTurnPrompt(
                             prompt,
                             null,
                             promptHistory,
@@ -381,11 +563,56 @@ internal fun MainActivity.runConversationInternal(
                             )
                         }
                         nativeConversationContainsCurrentTurn = true
+                        recordInference("reference retry", generated)
                         cleanedResponse = cleanAssistantText(generated.text)
                     }
                 }
-                if (requiresReference && referenceGrounding.isInsufficientAnswer(cleanedResponse)) {
+                if (requiresReference && referenceGrounding.isInsufficientAnswer(cleanedResponse) &&
+                    (voiceRepetitionGuard?.acceptedSentences ?: 0) == 0) {
                     cleanedResponse = "I couldn't produce a verified answer from Wikipedia right now. Please try again."
+                }
+                if (voiceRepetitionGuard != null && actionResultMessage == null) {
+                    cleanedResponse = voiceRepetitionGuard.finish(cleanedResponse)
+                    if (voiceRepetitionGuard.needsRepair) {
+                        diagnosticRecorder.recordImportant("Voice repetition blocked: sentences=${voiceRepetitionGuard.suppressedSentences}; streaming one bounded read-only repair.")
+                        val repairStarted = System.nanoTime()
+                        val beforeRepair = voiceRepetitionGuard.text.length
+                        resetNativeConversation()
+                        nativeConversationContainsCurrentTurn = false
+                        try {
+                            val repairPrompt = buildTurnPrompt(prompt, null, history, seedContext = true) +
+                                "\n" + referenceContext.orEmpty() + "\n" +
+                                "\nYour previous draft repeated the user or an earlier reply and was suppressed. " +
+                                "Give a NEW direct answer to the CURRENT question in one or two sentences. " +
+                                "Do not recap, apologize, quote earlier sentences, or call tools. " +
+                                "Resolve follow-ups using the dialogue above."
+                            // Disable native tool production as well as keeping repair outside dispatch.
+                            engine.setToolsEnabled(false)
+                            val repair = com.battlesbudz.jarvis.v2.voice.VoiceRepetitionRepair.run(voiceRepetitionGuard) { emit ->
+                                engine.generate(prompt = repairPrompt, onToken = emit)
+                            }
+                            repair.generation?.let { recordInference("repetition repair", it) }
+                            diagnosticRecorder.recordImportant("Voice repetition repair ended reason=${repair.reason} " +
+                                "budgetMs=10000 nativeCancellationWaitSeparate=true")
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                        catch (error: Exception) {
+                            diagnosticRecorder.record("Voice repetition repair failed: ${error.message}")
+                        } finally {
+                            resetNativeConversation()
+                            nativeConversationContainsCurrentTurn = false
+                        }
+                        if (voiceRepetitionGuard.text.length == beforeRepair) {
+                            for (fallback in listOf("I couldn't produce a fresh answer to that.",
+                                "I'm stuck on that question at the moment.", "I don't have a useful new answer yet.")) {
+                                voiceRepetitionGuard.accept(fallback)
+                                voiceRepetitionGuard.finish()
+                                if (voiceRepetitionGuard.text.length > beforeRepair) break
+                            }
+                        }
+                        cleanedResponse = voiceRepetitionGuard.text
+                        diagnosticRecorder.recordImportant("Voice repetition guard: suppressed=${voiceRepetitionGuard.suppressedSentences} " +
+                            "acceptedChars=${cleanedResponse.length} repairMs=${(System.nanoTime() - repairStarted) / 1_000_000}")
+                    }
                 }
                 if (!rawControlOutput) {
                     // Count the exact prompt submitted to the native engine,
@@ -404,7 +631,9 @@ internal fun MainActivity.runConversationInternal(
                 // Android's typed result is authoritative. Gemma is used to
                 // explain it, but must never replace a verified success (or
                 // failure) with a stale apology or hallucinated outcome.
-                val finalResponse = actionResultMessage ?: if (repeatedFragment) {
+                val finalResponse = actionResultMessage ?: if (actionIntentRouter.classifyActionIntent(prompt, history) != null) {
+                    "I couldn't execute that phone action. Please ask again with the app name or exact setting."
+                } else if (repeatedFragment) {
                     "I lost the thread of the conversation. Please ask that again."
                 } else cleanedResponse.ifBlank {
                     if (actionName != null) {
@@ -415,7 +644,7 @@ internal fun MainActivity.runConversationInternal(
                 }
                 turnOrchestrator.recordResponse(prompt, finalResponse, turnPlan)
                 nativeConversationHasContext = nativeConversationContainsCurrentTurn
-                diagnosticRecorder.record(
+                diagnosticRecorder.recordImportant(
                     "Turn\n" +
                         "user=${prompt.take(1_000)}\n" +
                         "historyEntries=${history.size}\n" +
@@ -427,8 +656,11 @@ internal fun MainActivity.runConversationInternal(
                         "repeatedFragment=$repeatedFragment\n" +
                         "conversationCharacters=$conversationCharacters"
                 )
-                mainHandler.post { onComplete(finalResponse) }
+                mainHandler.post { finish(finalResponse) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
+                preparedVoice?.discard()
                 // Leave the next turn with a fresh native session after any
                 // recoverable generation failure.
                 conversationEngine?.close()
@@ -441,13 +673,13 @@ internal fun MainActivity.runConversationInternal(
                         "imageAttached=${imageUri != null}\n" +
                         "error=${error.stackTraceToString().take(4_000)}"
                 )
-                mainHandler.post { onComplete("I could not load the local model: ${error.message ?: "unknown error"}") }
+                mainHandler.post { finish("I could not load the local model: ${error.message ?: "unknown error"}") }
             }
         }
         conversationJob?.invokeOnCompletion { MainActivity.activeConversationJobs.decrementAndGet() }
     }
 
-private fun MainActivity.openVisionInputStream(uri: Uri): InputStream? {
+private fun JarvisRuntime.openVisionInputStream(uri: Uri): InputStream? {
     return runCatching { contentResolver.openInputStream(uri) }.getOrNull()
         ?: runCatching {
             contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream()

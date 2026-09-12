@@ -4,10 +4,10 @@ import com.battlesbudz.jarvis.v2.ai.ToolCall
 import org.json.JSONObject
 
 /**
- * Converts LiteRT-LM's structured FunctionGemma call into the small, typed
+ * Converts Gemma's structured tool call into the small, typed
  * action contract used by the Android executor.
  */
-object FunctionGemmaActionDecoder {
+object NativeActionDecoder {
     fun decode(call: ToolCall): ActionRequest? {
         val json = runCatching { JSONObject(call.arguments) }.getOrNull() ?: return null
         val args = when {
