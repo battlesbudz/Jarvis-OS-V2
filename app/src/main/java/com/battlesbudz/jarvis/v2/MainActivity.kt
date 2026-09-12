@@ -245,7 +245,12 @@ class MainActivity : ComponentActivity() {
                 ttsBenchmarks.start(engine, status, finished, compareOpenings = true)
             }, comparePaulIsolation = { status, finished ->
                 ttsBenchmarks.start(com.battlesbudz.jarvis.v2.voice.TtsEngine.POCKET_PAUL, status, finished, paulIsolation = true)
-            }, stop = { ttsBenchmarks.stop(); gemmaBenchmarks.stop() })
+            }, stop = { ttsBenchmarks.stop(); gemmaBenchmarks.stop() },
+            setupTests = com.battlesbudz.jarvis.v2.voice.VoiceTestSetupController(
+                applicationContext, lifecycleScope, modelStore, runtime.voiceTestSessions,
+                canStart = { !voiceSessionArmed && voiceSessionController.currentCallId() == null &&
+                    voiceTurnJob?.isCompleted != false && activeConversationJobs.get() == 0 &&
+                    !ttsBenchmarks.running && !gemmaBenchmarks.running }))
         val interruptedSession = sessionPreferences.getBoolean("sending", false)
         if (!voiceSessionArmed) shortTermContext.restoreSummary(
             if (interruptedSession) null else {

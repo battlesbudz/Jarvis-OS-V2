@@ -24,6 +24,10 @@ internal fun TtsComparisonDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val setup by latencyBenchmarks.setupTests.state.collectAsState()
+    DisposableEffect(latencyBenchmarks.setupTests) {
+        onDispose { latencyBenchmarks.setupTests.cancel() }
+    }
     var copiedId by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf(store.selectedEngine()) }
     var appliedProfile by remember(selected) { mutableStateOf(store.callProfile(selected)) }
@@ -69,11 +73,25 @@ internal fun TtsComparisonDialog(
         if (isolation) latencyBenchmarks.comparePaulIsolation({ status = it }, finished)
         else onBenchmark(engine, profile, { status = it }, finished)
     }
-    AlertDialog(onDismissRequest = { if (!running) onDismiss() },
+    AlertDialog(onDismissRequest = { if (!running && !setup.busy) onDismiss() },
         title = { Text("Voice and response speed") },
         text = {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Structured voice tests", style = MaterialTheme.typography.titleMedium)
+                Text("P1 · Setup and profile recovery. No audio is generated in this pack. P2–P7 are not available yet.")
+                Text(setup.message)
+                Button(onClick = { latencyBenchmarks.setupTests.start() }, enabled = canChange && !running && !setup.busy) {
+                    Text("Start P1 setup")
+                }
+                if (setup.busy) {
+                    Text(VoiceTestPacks.reference.label)
+                    TextButton(onClick = { latencyBenchmarks.setupTests.complete() }, enabled = setup.ready) { Text("Complete P1 setup") }
+                    TextButton(onClick = { latencyBenchmarks.setupTests.cancel() }) { Text("Cancel P1 setup") }
+                }
+                TextButton(onClick = { copy("Jarvis P1 setup report", setup.report) }, enabled = !setup.busy && setup.report.isNotBlank()) { Text("Copy P1 report") }
+                HorizontalDivider()
+                if (!setup.busy) {
                 TtsEngine.entries.forEach { engine ->
                     OutlinedButton(onClick = { if (onSelect(engine)) selected = engine },
                         enabled = canChange && !running, modifier = Modifier.fillMaxWidth()) {
@@ -207,6 +225,7 @@ internal fun TtsComparisonDialog(
                         }
                     }
                 }
+                }
             }
         }, dismissButton = {
             TextButton(onClick = {
@@ -214,9 +233,9 @@ internal fun TtsComparisonDialog(
                     copy("Jarvis voice text-run diagnostics", TtsComparisonStore.diagnosticReport(record))
                     copiedId = record.optString("id")
                 }
-            }, enabled = !running && records.getOrNull(index) != null) {
+            }, enabled = !running && !setup.busy && records.getOrNull(index) != null) {
                 Text(if (copiedId != null && copiedId == records.getOrNull(index)?.optString("id"))
                     "Copied this run" else "Copy this text run")
             }
-        }, confirmButton = { TextButton(onClick = onDismiss, enabled = !running) { Text("Done") } })
+        }, confirmButton = { TextButton(onClick = onDismiss, enabled = !running && !setup.busy) { Text("Done") } })
 }

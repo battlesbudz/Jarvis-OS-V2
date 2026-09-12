@@ -416,7 +416,7 @@ Update this table after each actual delivery. `Planned` is deliberately not `imp
 
 | ID | State | Commit / APK | Developer evidence | Justin pack / result |
 | --- | --- | --- | --- | --- |
-| A1 | Planned | — | — | P1 — |
+| A1 | Implemented; CI and phone acceptance pending | Current A1 commit; APK pending CI | 11 focused JVM tests pass | A1 setup-only card below |
 | A2 | Planned | — | — | P2 screen — |
 | A3 | Planned | — | — | P1/P2 — |
 | B1 | Planned | — | — | P3 compare — |
@@ -434,3 +434,21 @@ Update this table after each actual delivery. `Planned` is deliberately not `imp
 | F2 | Planned | — | — | Reuse F1 evidence |
 
 This work refines the parent roadmap's interruption, source-quality, integrated-load and phone-acceptance phases. It does not roll back completed external Moonshine gating, long-turn handling, microphone ownership, speculative-work limits, or tool-finalization safeguards. Recheck the current implementation before each commit; preserve unrelated changes. Publish measured failures as clearly as successful results.
+
+
+## A1 delivery card — setup only
+
+A1 adds `Start P1 setup`, `Complete P1 setup`, `Cancel P1 setup`, and `Copy P1 report` at the top of **Voice and response speed**. This initial P1 does not play a passage: audio execution and fuller report exports belong to A2/A3. Do not run the future P2–P7 controls from this build.
+
+Implementation choice: the snapshot and temporary profile live in a separate test-session preference store. Production voice/ASR/profile preferences are never rewritten. Completion, cancellation, dialog disposal, and process-restart recovery discard the temporary test profile rather than restoring stale values over production settings. The model-operation gate is held until cleanup. P1 checks installed Paul file sizes, records actual hashes, and verifies the pinned Paul reference; it does not download models or initialize native speech models. Active audio routes are correctly marked not measured because P1 opens neither playback nor capture.
+
+Once the signed A1 APK passes CI, run only this 3–5 minute check:
+
+1. End the call and stop passive listening. Note/screenshot your saved voice and profile. Open **Voice and response speed**.
+2. Tap **Start P1 setup**, then **Cancel P1 setup**. Wait for cancellation to finish. Other tuning controls should return. Tap **Copy P1 report** and save it here as `P1-cancel`.
+3. Start P1 again. Wait for **P1 ready**, tap **Complete P1 setup**, then **Copy P1 report**. Save as `P1-complete`. If Paul is missing, report that failure; no download should start automatically.
+4. Start once more and wait for ready. Leave the app and close/relaunch it; for a definite process-restart test use Android App info → Force stop → Open. Return to the voice/speed dialog and copy `P1-recovery`. Depending on whether Android destroyed the activity cleanly or killed the process, terminal state may be cancelled or interrupted; it must not remain active. No ADB is needed.
+5. Verify the same original voice/profile are still selected. Rearm Jarvis normally, say **What is two plus two?**, then **Goodbye Jarvis**. These are a smoke check, not proof the existing barge-in problems are fixed.
+6. Send the three reports plus whether settings returned and the normal call worked. No WAV is required for A1.
+
+Developer evidence: focused session/profile tests cover durable snapshots, completion readiness, cancellation/failure outcomes, process recovery, stale completions, failed persistence, future-pack rejection, and existing profile contracts. Android integration/build/signing must pass CI before assigning the APK. Phone acceptance remains pending until Justin returns the reports. Full source/load comparisons remain A2 work.

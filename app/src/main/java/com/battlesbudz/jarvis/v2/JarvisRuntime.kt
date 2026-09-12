@@ -77,6 +77,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     internal lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
     internal lateinit var voiceCallStore: com.battlesbudz.jarvis.v2.voice.VoiceCallStore
     internal lateinit var voiceSessionController: VoiceSessionController
+    internal lateinit var voiceTestSessions: com.battlesbudz.jarvis.v2.voice.VoiceTestSessionStore
     internal lateinit var ttsComparisonStore: com.battlesbudz.jarvis.v2.voice.TtsComparisonStore
     internal lateinit var ttsModels: com.battlesbudz.jarvis.v2.voice.TtsModelStore
     internal val voicePlayback = kotlinx.coroutines.flow.MutableStateFlow(com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame())
@@ -103,11 +104,14 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         voiceSessionController = VoiceSessionController(voiceCallStore)
         asrComparisonStore = com.battlesbudz.jarvis.v2.voice.AsrComparisonStore(getSharedPreferences("asr_comparison", MODE_PRIVATE))
         ttsComparisonStore = com.battlesbudz.jarvis.v2.voice.TtsComparisonStore(getSharedPreferences("tts_comparison", MODE_PRIVATE))
+        voiceTestSessions = com.battlesbudz.jarvis.v2.voice.VoiceTestSessionStore(getSharedPreferences("voice_test_sessions", MODE_PRIVATE))
+        val testRecovery = runCatching { voiceTestSessions.recoverAfterProcessRestart() }
         ttsModels = com.battlesbudz.jarvis.v2.voice.TtsModelStore(applicationContext, kokoroModelStore)
         val installedPackage = packageManager.getPackageInfo(packageName, 0)
         diagnosticRecorder = com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(sessionPreferences,
             "${installedPackage.versionName} (${installedPackage.longVersionCode})")
         diagnosticRecorder.restore()
+        testRecovery.exceptionOrNull()?.let { diagnosticRecorder.recordImportant("Test session recovery failed: ${it.javaClass.simpleName}") }
         diagnosticRecorder.recordPreviousProcessExit(applicationContext)
         shortTermContext.restoreSummary(sessionPreferences.getString(MainActivity.SHORT_TERM_SUMMARY_KEY, null))
         runtimeScope.launch {
