@@ -16,7 +16,7 @@ class NaturalBargeInAudioInputTest {
                      textNow: () -> String = { text }, speech: Boolean = true, budget: Boolean = true, keywordAt: Int = -1, keyword: String = "Hey_Jarvis",
                      failing: Boolean = false, chunks: Int = 30,
                      dispatcher: CoroutineDispatcher = Dispatchers.Unconfined, beforeFrame: (Int) -> Unit = {},
-                     acceptAction: () -> Unit = {}, speechNow: () -> Boolean = { speech },
+                     acceptAction: () -> Unit = {}, loadAction: () -> Unit = {}, speechNow: () -> Boolean = { speech },
                      budgetNow: () -> Boolean = { budget }, backlogNow: () -> Long = { 0L }, onConfirmation: (Boolean) -> Unit = {}): NaturalBargeInAudioInput {
         val input = object : AudioInput {
             override val sampleRateHz = 16000
@@ -43,6 +43,7 @@ class NaturalBargeInAudioInputTest {
             } },
             createTranscriber = {
                 models++
+                loadAction()
                 object : StreamingTranscriber {
                     override fun accept(pcm: ByteArray): String { acceptAction(); if (failing) error("slow native"); return textNow() }
                     override fun finish() = textNow()
@@ -96,6 +97,34 @@ class NaturalBargeInAudioInputTest {
         // The retained prefix starts with the first observed speech chunk, not confirmation.
         assertEquals(1, delivered.first()[0].toInt())
         assertEquals(30, delivered.last()[0].toInt())
+    }
+    @Test fun fullCorrectionAfterTwoIncompleteProbesRetainsEveryAudioChunk() = runBlocking {
+        val delivered = gate(chunks = 45, textNow = {
+            when (models) { 1 -> ""; 2 -> "Actually"; else -> "Actually tell me what two plus two is" }
+        }).chunks().toList()
+        assertEquals(1, confirmed); assertEquals(3, models); assertEquals(models, closedModels)
+        val bytes = delivered.flatMap { it.toList() }.toByteArray()
+        val expected = ByteArray(45 * 3200) { (it / 3200 + 1).toByte() }
+        assertArrayEquals(expected, bytes)
+        assertTrue(logs.any { "reason=confirmed_new_request" in it && "probes=3" in it })
+    }
+    @Test fun pendingResultCanSettleAfterCandidateInputDeadline() = runBlocking {
+        var firstAccept = true
+        val delivered = gate(chunks = 25, loadAction = { clock += 800 }, acceptAction = {
+            if (firstAccept) { firstAccept = false; clock += 1600 }
+        }).chunks().toList()
+        assertEquals(1, confirmed); assertEquals(1, models); assertEquals(models, closedModels)
+        assertEquals(25 * 3200, delivered.sumOf { it.size })
+        assertTrue(logs.any { "reason=words_settling" in it })
+        assertFalse(logs.any { "reason=window_limit" in it })
+    }
+    @Test fun lateEchoStillCannotConfirmAfterCandidateInputDeadline() = runBlocking {
+        var firstAccept = true
+        val delivered = gate(chunks = 15, text = "The sky is blue", loadAction = { clock += 800 }, acceptAction = {
+            if (firstAccept) { firstAccept = false; clock += 1600 }
+        }).chunks().toList()
+        assertTrue(delivered.isEmpty()); assertEquals(0, confirmed); assertEquals(models, closedModels)
+        assertTrue(logs.any { "barge_candidate_rejected reason=window_limit" in it })
     }
     @Test fun echoAndBackchannelsNeverPauseOrConfirm() = runBlocking {
         for (text in listOf("Can you open settings", "mm hmm", "okay", "The sky is blue")) {

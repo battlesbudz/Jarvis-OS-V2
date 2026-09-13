@@ -46,11 +46,14 @@ class NaturalBargeInAudioInput(
             var stopProbes = 0
             var stopHits = 0L
             val onset = RollingAudioBuffer(maxDurationMs = 400)
-            val candidate = RollingAudioBuffer(maxDurationMs = 4000)
+            val candidate = RollingAudioBuffer(maxDurationMs = InterruptionTiming.CANDIDATE_RETAIN_MS)
             var active = false
             var submitted = false
             var submittedBytes = 0L
             var candidateProbes = 0
+            var retryAt = 0L
+            var lastGateDecision = ""
+            var workerDeferrals = 0
             var delivered = false
             var disabled = false
             var revision = 0L
@@ -71,7 +74,7 @@ class NaturalBargeInAudioInput(
             var finalReason = "no_confirmed_request"
             fun reset() {
                 active = false; submitted = false; submittedBytes = 0; candidateProbes = 0; hypothesis = null
-                candidate.clear(); gate = BargeInGate(); revision++
+                candidate.clear(); gate = BargeInGate(); retryAt = 0; lastGateDecision = ""; revision++
             }
             fun disable(reason: String) {
                 if (!disabled) {
@@ -182,7 +185,7 @@ class NaturalBargeInAudioInput(
                         if (backlogSuspended) return@collect
                     }
                     if (submitted && !worker.busy && worker.retryableFailure) {
-                        reset(); cooldownUntil = now + 500
+                        submitted = false; hypothesis = null; retryAt = now + 500; workerDeferrals++
                         log("barge_candidate_deferred reason=${worker.retryReason} retryAfterMs=500")
                     }
                     val speech = try { vad?.accept(pcm)?.isSpeech == true } catch (error: Exception) {
@@ -195,17 +198,25 @@ class NaturalBargeInAudioInput(
                         active = true; candidateAt = at; candidate.append(onset.snapshot())
                     } else if (active) candidate.append(pcm)
                     if (!active) return@collect
-                    if (at - candidateAt >= 3400) {
-                        // Never recognize a truncated candidate whose onset has rolled away.
-                        reset(); cooldownUntil = now + 1000
-                        rejectedWindows++
-                        log("barge_candidate_rejected reason=window_limit playback_uninterrupted=true")
+                    if (at - candidateAt + 400 >= InterruptionTiming.CANDIDATE_RETAIN_MS) {
+                        reset(); cooldownUntil = now + 1000; rejectedWindows++
+                        log("barge_candidate_rejected reason=retention_limit playback_uninterrupted=true")
                         return@collect
                     }
                     val heard = hypothesis
-                    if (heard != null && now - heard.audioAtMs <= InterruptionTiming.CONFIRM_AGE_MS &&
-                        now - lastSpeechAt <= InterruptionTiming.CONFIRM_AGE_MS &&
-                        gate.update(true, playing(), now, heard.text, reference()) == BargeInGate.Action.CONFIRM) {
+                    val fresh = heard != null && now - heard.audioAtMs <= InterruptionTiming.CONFIRM_AGE_MS &&
+                        now - lastSpeechAt <= InterruptionTiming.CONFIRM_AGE_MS
+                    val action = if (fresh) gate.update(true, playing(), now, requireNotNull(heard).text, reference()) else BargeInGate.Action.WAIT
+                    if (heard != null) {
+                        val decision = if (fresh) gate.reason else "stale_or_no_recent_speech"
+                        val key = "$decision:${heard.text.length}"
+                        if (key != lastGateDecision) {
+                            lastGateDecision = key
+                            log("barge_candidate_decision revision=$revision reason=$decision chars=${heard.text.length} " +
+                                "audioMs=${candidate.sizeBytes() / 32} resultAgeMs=${now - heard.audioAtMs} probes=$candidateProbes")
+                        }
+                    }
+                    if (action == BargeInGate.Action.CONFIRM) {
                         delivered = true
                         finalReason = "natural_confirmed"
                         val echo = reference()
@@ -219,9 +230,19 @@ class NaturalBargeInAudioInput(
                         reset(); cooldownUntil = now + 500
                     }
                     if (delivered || !active) return@collect
+                    if (at - candidateAt >= InterruptionTiming.CANDIDATE_INPUT_MS) {
+                        // Stop submitting new audio, but retain the onset/tail for a pending result
+                        // and its stability check. Never reset before evaluating a fresh result.
+                        if (!worker.busy && !(fresh && gate.reason == "words_settling")) {
+                            log("barge_candidate_rejected reason=window_limit lastDecision=${gate.reason} probes=$candidateProbes playback_uninterrupted=true")
+                            reset(); cooldownUntil = now + 1000; rejectedWindows++
+                        }
+                        return@collect
+                    }
                     if (!hasPlaybackBudget()) pressureFrames++
-                    if ((!submitted || (hypothesis != null && gate.reason != "words_settling" && candidateProbes < 2 && candidate.sizeBytes() >= submittedBytes + 16_000)) &&
-                        candidate.sizeBytes() >= 32_000 && hasPlaybackBudget()) {
+                    if (candidateProbes < 3 && now >= retryAt &&
+                        (!submitted || (hypothesis != null && gate.reason != "words_settling" && candidate.sizeBytes() >= submittedBytes + 32_000)) &&
+                        candidate.sizeBytes() in 32_000..128_000 && hasPlaybackBudget()) {
                         if (!workBudget.available(now)) {
                             budgetDeferrals++
                             if (budgetDeferrals == 1 || budgetDeferrals % 50 == 0)
@@ -231,7 +252,7 @@ class NaturalBargeInAudioInput(
                         if (worker.submit(revision, candidate.snapshot(), at)) {
                             workBudget.record(now)
                             submitted = true; submittedBytes = candidate.sizeBytes(); candidateProbes++; probes++
-                            hypothesis = null; gate = BargeInGate()
+                            hypothesis = null // Preserve lexical stability across growing probes.
                             log("barge_probe_started revision=$revision preRollMs=${candidate.sizeBytes() / 32} attempt=$probes")
                         }
                     }
@@ -244,7 +265,7 @@ class NaturalBargeInAudioInput(
                         "loadMs=$keywordLoadMs maxWorkMs=$maxKeywordWorkMs maxBacklogMs=$maxBacklogMs ${keyword.diagnosticSummary}")
                     log("barge_natural_summary probes=$probes budgetDeferrals=$budgetDeferrals stopProbes=$stopProbes stopHits=$stopHits reason=$finalReason backlogRecoveries=$backlogRecoveries " +
                         "backlogSuspended=$backlogSuspended pressureFrames=$pressureFrames " +
-                        "windowRejects=$rejectedWindows staleResults=$staleResults")
+                        "windowRejects=$rejectedWindows staleResults=$staleResults workerDeferrals=$workerDeferrals")
                 }
             }
         }

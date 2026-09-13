@@ -1,6 +1,6 @@
 # Voice repair: bounded commits and phone test protocol
 
-Prepared: 12 September 2026. Branch: `audio-pr2`. Source baseline: `93a144c` (build 673 investigation). Status: **documentation published; all implementation steps below are planned, not completed**.
+Prepared: 12 September 2026. Branch: `audio-pr2`. Source baseline: `93a144c` (build 673 investigation). Status: **A1 accepted; A2 screening evidence retained; first C1 repair implemented pending CI and phone acceptance. See the ledger and delivery cards below.**
 
 Companion: [research proposal](voice-repair-proposal-2026-09-12.md). Parent roadmap: [local voice implementation plan](local-voice-implementation-plan.md). Continue in the existing Audio PR2 PR; no merge without Justin's explicit approval. This document defines future code work; publishing it does not claim that work is implemented or tested.
 
@@ -417,12 +417,12 @@ Update this table after each actual delivery. `Planned` is deliberately not `imp
 | ID | State | Commit / APK | Developer evidence | Justin pack / result |
 | --- | --- | --- | --- | --- |
 | A1 | Accepted | a348eb6; build 675 | CI passed; phone cancel/complete/restart/call passed | Acceptance record below |
-| A2 | Implemented; CI and phone P2 pending | Current A2 commit | 14 focused JVM tests pass | A2 delivery card below |
+| A2 | Implemented; partial phone screening retained | ca3210f, recording fix 46ec232; builds 676–677 | CI passed; 17 focused recording/session tests | A–D retained; E and extended acceptance incomplete |
 | A3 | Planned | — | — | P1/P2 — |
 | B1 | Planned | — | — | P3 compare — |
 | B2 | Conditional on B1 winner | — | — | P3 confirm — |
 | B3 | Planned | — | — | Reuse B2 evidence |
-| C1 | Planned | — | — | P4 screen — |
+| C1 | First repair implemented; CI/phone pending; renewal scheduling remains | Current bounded commit | 52 focused JVM tests pass | One normal-call correction; card below |
 | C2 | Planned | — | — | P2/P4 screen — |
 | C3 | Evidence-dependent; split C3a/C3b if needed | — | — | P2 extended/P3 — |
 | D1 | Planned; measure early | — | — | P5 — |
@@ -543,3 +543,87 @@ open Start P2 screening, tap Continue at the recording prompt, and read the phra
 at READ NOW. Stop at the displayed recognized phrase and report whether it is
 correct. Do not change the saved voice settings. Load-condition acceptance is
 still pending.
+
+## Build 677 evidence and next bounded repair
+
+Justin's second P2 run `998b9b0d-2c8c-4b3d-bcf7-22517686e42b` was cancelled
+after D. A–D remain usable screening records; cancellation does not erase them.
+The microphone fixture captured eight seconds and recognized the full correction.
+All completed conditions used the phone speaker (`type=2 id=3`), volume 15/15,
+and reported thermal status 3. These are warm-device observations, not a cool
+performance baseline. The earlier run's C listening result was invalid because
+car Bluetooth connected and Justin could not hear playback.
+
+A–D sounded broadly alike: sentence-to-sentence accents remained, with no
+additional pauses or garbling under C/D. The four generated segment PCM hashes
+matched across preparation, B, C and D. Each reported zero supply gap and zero
+observed playback starvation. The single AudioTrack underrun counter alone does
+not establish a mid-speech gap. D made only two probes (1,000 and 1,500 ms of
+audio, producing zero and eight characters), then rejected the candidate at
+the window limit. There were no decode-budget deferrals in D.
+
+The subsequent normal-call test (`13e96d6c-39b4-4b0e-9158-911e37cdfc69`, turn
+`9277cd08-d173-4e0b-8b94-81449f2b5a71`) failed spoken interruption. It logged
+nine natural probes, decode-budget deferrals, three window rejections and no
+confirmed request. The summary's 28 budget deferrals count rolling-work
+deferrals; worker deadline failures also appear separately in the events.
+Model rotation took roughly 772 ms before acquisition completed in one probe.
+STOP_REPLY occurred, but there was no confirmed barge-in; this is not a spoken
+interruption pass. The shown playback interval had zero underruns and a substantial
+queued buffer. Its blocking writes do not prove that synthesis itself was slow.
+
+Justin subsequently described the saved WAV as having a subtle click and a new
+accent at sentence boundaries. Source WAVs exclude playback gaps, time stretching
+and microphone audio. This evidence warrants a separate Paul source/reference
+comparison; it does not establish that accent changes are unavoidable or that
+this interruption repair fixes voice quality.
+
+### C1 first delivery — recognition timing and candidate completion
+
+Justin authorized this repair ahead of A3 and the Paul comparison after the
+normal-call failure. This is a bounded first part of C1; model-renewal scheduling,
+compute tuning, acoustic qualification and full interruption acceptance remain.
+
+- Acquisition now has a separate 1,200 ms allowance, informed by the observed
+  approximately 772 ms acquisition. The existing 1,600 ms decode allowance applies
+  only to ASR work. Native calls remain non-preemptible; limits are checked between
+  calls and the owner is joined before release or reuse.
+- Release time is measured separately. Results publish only after release and
+  must still be at most 3,300 ms old (load + decode + 300 ms queue allowance +
+  200 ms margin). Confirmation has a bounded additional 400 ms. These wider
+  freshness bounds are a candidate change requiring the phone test below.
+- A candidate can make up to three probes of growing audio, normally at one,
+  two and three seconds, within the unchanged four-start/12-second work quota.
+  Retryable failures preserve its onset. New submissions stop at 3.4 seconds;
+  an already-running result can finish and pass the existing 300 ms stability
+  check before rejection. Retained audio is bounded to 7.5 seconds, while each
+  submitted ASR window remains at most four seconds.
+- Echo checks, request-intent checks, keyword thresholds, playback admission
+  and single native ownership remain in force. Logs distinguish load, decode,
+  release and total time, worker deferrals, and candidate decision reasons.
+
+Developer evidence: 52 focused JVM tests pass, including separate load/decode/
+release timing, excessive load, stale results after cleanup, recovery from budget
+pressure, a complete correction after two incomplete probes, late confirmation,
+late echo rejection, exact audio handoff, and keyword access during blocked ASR.
+The Android debug/release, native packaging, callback ABI and signing gates must
+pass before delivering the APK. Device acceptance is still pending.
+
+**Justin's next test — one normal call, no P2 restart:**
+
+1. Install the supplied signed APK. If ChatGPT's download stalls, open its GitHub
+   release page in Chrome and download `app-release.apk` under Assets.
+2. Disconnect Bluetooth, use the phone speaker in a quiet room, and keep the
+   current Paul/Moonshine settings. Let the phone cool before starting.
+3. Tap **Start Listening**, say **Hey Jarvis**, and wait for the listening cue.
+4. Say **Start interruption test**. About five seconds into the story, say once:
+   **Actually, tell me what two plus two is.** Do not precede the correction
+   with Hey Jarvis; this trial checks natural interruption.
+5. Note whether the story stops, roughly how long that takes, and whether Jarvis
+   answers the correction. If he continues for about five seconds after you finish,
+   use the on-screen stop control and report the miss. Copy the latest Voice Call
+   diagnostics immediately. A WAV is only needed for a new audio-quality issue.
+
+Stop after this trial. A pass is a useful screening result, not acceptance of
+Hey Jarvis, Stop, every route, or long-call behavior. The next test is selected
+from this result; do not change sliders or repeat all previous comparisons.

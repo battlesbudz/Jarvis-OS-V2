@@ -7,6 +7,57 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class BoundedInterruptionRecognizerTest {
+    @Test fun loadAndReleaseDoNotConsumeDecodeAllowance() = runBlocking {
+        var clock = 0L
+        var closed = false
+        val logs = mutableListOf<String>()
+        val worker = BoundedInterruptionRecognizer(this, {
+            clock += 800
+            object : StreamingTranscriber {
+                override fun accept(pcm: ByteArray): String { clock += 300; return "" }
+                override fun finish() = "Actually tell me what two plus two is"
+                override fun close() { clock += 700; closed = true }
+            }
+        }, nowMs = { clock }, dispatcher = Dispatchers.Unconfined, log = logs::add)
+        worker.submit(1, ByteArray(32000), 0)
+        assertTrue(closed)
+        assertEquals(2700L, worker.poll()?.workMs)
+        assertFalse(worker.retryableFailure)
+        assertTrue(logs.any { "loadMs=800 decodeMs=1200 releaseMs=700" in it && "outcome=result" in it })
+        worker.close()
+    }
+    @Test fun excessiveLoadClosesOwnerWithoutStartingDecode() = runBlocking {
+        var clock = 0L
+        var closed = false
+        val worker = BoundedInterruptionRecognizer(this, {
+            clock += InterruptionTiming.LOAD_MS + 1
+            object : StreamingTranscriber {
+                override fun accept(pcm: ByteArray): String = error("Must not decode after excessive load")
+                override fun finish(): String = error("Must not finalize after excessive load")
+                override fun close() { closed = true }
+            }
+        }, nowMs = { clock }, dispatcher = Dispatchers.Unconfined)
+        worker.submit(1, ByteArray(32000), 0)
+        assertTrue(closed); assertNull(worker.poll())
+        assertTrue(worker.retryableFailure); assertFalse(worker.unavailable)
+        assertEquals("load_budget", worker.retryReason)
+        worker.close()
+    }
+    @Test fun slowReleaseCannotPublishAnOldResultOrCloseTwice() = runBlocking {
+        var clock = 0L
+        var closes = 0
+        val worker = BoundedInterruptionRecognizer(this, {
+            object : StreamingTranscriber {
+                override fun accept(pcm: ByteArray) = ""
+                override fun finish() = "Actually open settings"
+                override fun close() { closes++; clock += InterruptionTiming.RESULT_AGE_MS + 1 }
+            }
+        }, nowMs = { clock }, dispatcher = Dispatchers.Unconfined)
+        worker.submit(1, ByteArray(32000), 0)
+        assertNull(worker.poll()); assertEquals("result_too_old", worker.retryReason)
+        worker.close()
+        assertEquals(1, closes)
+    }
     @Test fun oneOwnerPublishesResultOnlyAfterRelease() = runBlocking {
         var clock = 100L
         var closed = false

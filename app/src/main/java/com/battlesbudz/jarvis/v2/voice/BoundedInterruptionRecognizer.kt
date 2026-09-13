@@ -8,10 +8,7 @@ class BoundedInterruptionRecognizer(
     private val scope: CoroutineScope,
     private val create: () -> StreamingTranscriber,
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 },
-    // Moonshine's first native decode can take just over a second while the
-    // phone is also rendering Kokoro audio.  A 700 ms wall-clock cap made the
-    // natural path fail systematically, leaving only the wake-word fallback.
-    // Keep this bounded, but allow one complete short probe to finish.
+    // Load has its own bound; only ASR accept/finalization consume the decode allowance.
     private val budgetMs: Long = InterruptionTiming.DECODE_MS,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val log: (String) -> Unit = {},
@@ -26,6 +23,8 @@ class BoundedInterruptionRecognizer(
         private set
     private class PlaybackPressure : Exception()
     private class DecodeBudget : Exception()
+    private class LoadBudget : Exception()
+    private class StaleResult : Exception()
     @Volatile var retryReason: String = "none"
         private set
     private var job: Job? = null
@@ -42,57 +41,98 @@ class BoundedInterruptionRecognizer(
         job = scope.launch(dispatcher) {
             val started = nowMs()
             var asr: StreamingTranscriber? = null
+            var phase = "admission"
+            var outcome = "cancelled"
+            var loadMs = 0L
+            var decodeMs = 0L
+            var releaseMs = 0L
+            var decodeStarted: Long? = null
+            fun release() {
+                val ownedModel = asr ?: return
+                asr = null // Never release a failed native owner twice.
+                val releaseStarted = nowMs()
+                try { ownedModel.close() } finally { releaseMs += (nowMs() - releaseStarted).coerceAtLeast(0) }
+            }
             fun checkBudget(admitting: Boolean = false) {
                 ensureActive()
                 if (!(if (admitting) hasBudget() else canContinue())) throw PlaybackPressure()
-                if (nowMs() - started > budgetMs) throw DecodeBudget()
+                if (decodeStarted?.let { nowMs() - it > budgetMs } == true) throw DecodeBudget()
             }
             try {
                 if (started - audioAtMs > InterruptionTiming.START_AGE_MS) {
                     retryableFailure = true
                     retryReason = "queued_audio_too_old"
+                    outcome = retryReason
                     log("barge_probe_deferred reason=queued_audio_too_old retryable=true fallback=keyword")
                     return@launch
                 }
                 checkBudget(admitting = true)
-                asr = create()
+                phase = "load"
+                val loadStarted = nowMs()
+                try { asr = create() } finally { loadMs = (nowMs() - loadStarted).coerceAtLeast(0) }
+                ensureActive()
+                if (loadMs > InterruptionTiming.LOAD_MS) throw LoadBudget()
+                phase = "decode"
+                decodeStarted = nowMs()
                 checkBudget()
-                asr.observeSpeech(true)
+                val transcriber = requireNotNull(asr)
+                transcriber.observeSpeech(true)
                 // Bound work between cancellation/budget checks; native calls themselves
                 // cannot be preempted. Never close their model from the capture thread.
                 var offset = 0
                 while (offset < owned.size) {
                     val end = minOf(offset + 8000, owned.size)
-                    asr.accept(owned.copyOfRange(offset, end))
+                    transcriber.accept(owned.copyOfRange(offset, end))
                     offset = end
                     checkBudget()
                 }
-                val text = TranscriptContent.speech(asr.finish())
+                val text = TranscriptContent.speech(transcriber.finish())
                 checkBudget()
-                asr.close(); asr = null
-                checkBudget()
+                decodeMs = (nowMs() - requireNotNull(decodeStarted)).coerceAtLeast(0)
+                phase = "release"
+                release()
+                ensureActive()
+                // Cleanup is not decode time, but a result must still belong to recent audio.
+                if (nowMs() - audioAtMs > InterruptionTiming.RESULT_AGE_MS) throw StaleResult()
                 val workMs = (nowMs() - started).coerceAtLeast(0)
+                outcome = "result"
                 result.set(Result(revision, text, audioAtMs, workMs))
                 log("barge_probe_result revision=$revision audioMs=${owned.size / 32} workMs=$workMs chars=${text.length}")
             } catch (cancelled: CancellationException) { throw cancelled }
+            catch (load: LoadBudget) {
+                retryableFailure = true; retryReason = "load_budget"; outcome = retryReason
+                log("barge_probe_deferred reason=load_budget retryable=true fallback=keyword")
+            }
+            catch (stale: StaleResult) {
+                retryableFailure = true; retryReason = "result_too_old"; outcome = retryReason
+                log("barge_probe_deferred reason=result_too_old retryable=true fallback=keyword")
+            }
             catch (pressure: PlaybackPressure) {
                 retryableFailure = true
                 retryReason = "playback_budget"
+                outcome = retryReason
                 log("barge_probe_deferred reason=playback_budget retryable=true fallback=keyword")
             }
             catch (budget: DecodeBudget) {
                 retryableFailure = true
                 retryReason = "decode_budget"
+                outcome = retryReason
                 log("barge_probe_deferred reason=decode_budget retryable=true fallback=keyword")
             }
             catch (error: Exception) {
+                outcome = "native_failure"
                 unavailable = true
                 log("barge_natural_unavailable reason=${error.message} fallback=keyword")
             } finally {
-                runCatching { asr?.close() }.onFailure {
+                if (phase == "decode") decodeMs = (nowMs() - requireNotNull(decodeStarted)).coerceAtLeast(0)
+                runCatching { release() }.onFailure {
+                    outcome = "release_failure"
                     unavailable = true
                     log("barge_natural_unavailable reason=model_release fallback=keyword")
                 }
+                log("barge_probe_timing revision=$revision loadMs=$loadMs decodeMs=$decodeMs releaseMs=$releaseMs " +
+                    "totalMs=${(nowMs() - started).coerceAtLeast(0)} phase=$phase outcome=$outcome " +
+                    "loadLimitMs=${InterruptionTiming.LOAD_MS} decodeLimitMs=$budgetMs")
             }
         }
         return true
