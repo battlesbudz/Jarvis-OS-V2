@@ -46,6 +46,11 @@ class BoundedInterruptionRecognizer(
             var loadMs = 0L
             var decodeMs = 0L
             var releaseMs = 0L
+            var feedMs = 0L
+            var finalizeMs = 0L
+            var acceptCalls = 0
+            var maxAcceptMs = 0L
+            var decodeStage = "not_started"
             var decodeStarted: Long? = null
             fun release() {
                 val ownedModel = asr ?: return
@@ -76,17 +81,31 @@ class BoundedInterruptionRecognizer(
                 decodeStarted = nowMs()
                 checkBudget()
                 val transcriber = requireNotNull(asr)
+                decodeStage = "prepare"
+                val mode = transcriber.prepareForBoundedProbe(4000)
+                log("barge_probe_policy revision=$revision mode=$mode maxAudioMs=4000")
+                checkBudget()
                 transcriber.observeSpeech(true)
                 // Bound work between cancellation/budget checks; native calls themselves
                 // cannot be preempted. Never close their model from the capture thread.
                 var offset = 0
                 while (offset < owned.size) {
                     val end = minOf(offset + 8000, owned.size)
-                    transcriber.accept(owned.copyOfRange(offset, end))
+                    decodeStage = "accept"
+                    val acceptStarted = nowMs()
+                    acceptCalls++
+                    try { transcriber.accept(owned.copyOfRange(offset, end)) } finally {
+                        val elapsed = (nowMs() - acceptStarted).coerceAtLeast(0)
+                        feedMs += elapsed
+                        maxAcceptMs = maxOf(maxAcceptMs, elapsed)
+                    }
                     offset = end
                     checkBudget()
                 }
-                val text = TranscriptContent.speech(transcriber.finish())
+                decodeStage = "finish"
+                val finishStarted = nowMs()
+                val text = try { TranscriptContent.speech(transcriber.finish()) }
+                    finally { finalizeMs = (nowMs() - finishStarted).coerceAtLeast(0) }
                 checkBudget()
                 decodeMs = (nowMs() - requireNotNull(decodeStarted)).coerceAtLeast(0)
                 phase = "release"
@@ -132,7 +151,8 @@ class BoundedInterruptionRecognizer(
                 }
                 log("barge_probe_timing revision=$revision loadMs=$loadMs decodeMs=$decodeMs releaseMs=$releaseMs " +
                     "totalMs=${(nowMs() - started).coerceAtLeast(0)} phase=$phase outcome=$outcome " +
-                    "loadLimitMs=${InterruptionTiming.LOAD_MS} decodeLimitMs=$budgetMs")
+                    "loadLimitMs=${InterruptionTiming.LOAD_MS} decodeLimitMs=$budgetMs " +
+                    "feedMs=$feedMs finalizeMs=$finalizeMs acceptCalls=$acceptCalls maxAcceptMs=$maxAcceptMs decodeStage=$decodeStage")
             }
         }
         return true

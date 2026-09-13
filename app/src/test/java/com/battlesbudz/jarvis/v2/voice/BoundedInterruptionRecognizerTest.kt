@@ -7,6 +7,50 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class BoundedInterruptionRecognizerTest {
+    @Test fun probeModePrecedesAllAudioAndFinalizationPublishesAfterRelease() = runBlocking {
+        var clock = 0L
+        var prepared = false
+        var finishes = 0
+        var closed = false
+        val fed = java.io.ByteArrayOutputStream()
+        val logs = mutableListOf<String>()
+        val pcm = ByteArray(35200) { (it % 251).toByte() }
+        val worker = BoundedInterruptionRecognizer(this, {
+            object : StreamingTranscriber {
+                override fun prepareForBoundedProbe(maxAudioMs: Long): String {
+                    assertEquals(4000L, maxAudioMs); prepared = true; return "final_only_test"
+                }
+                override fun accept(pcm: ByteArray): String {
+                    check(prepared); fed.write(pcm); clock += 10; return ""
+                }
+                override fun finish(): String { finishes++; clock += 600; return "Actually tell me about dogs" }
+                override fun close() { closed = true }
+            }
+        }, nowMs = { clock }, dispatcher = Dispatchers.Unconfined, log = logs::add)
+        worker.submit(1, pcm, 0)
+        assertArrayEquals(pcm, fed.toByteArray())
+        assertEquals(1, finishes); assertTrue(closed)
+        assertEquals("Actually tell me about dogs", worker.poll()?.text)
+        assertTrue(logs.any { "feedMs=50 finalizeMs=600 acceptCalls=5 maxAcceptMs=10 decodeStage=finish" in it })
+        worker.close()
+    }
+    @Test fun slowFinalPassIsStillRejectedAndIdentified() = runBlocking {
+        var clock = 0L
+        var closes = 0
+        val logs = mutableListOf<String>()
+        val worker = BoundedInterruptionRecognizer(this, {
+            object : StreamingTranscriber {
+                override fun accept(pcm: ByteArray) = ""
+                override fun finish(): String { clock += 2700; return "Actually open settings" }
+                override fun close() { closes++ }
+            }
+        }, nowMs = { clock }, dispatcher = Dispatchers.Unconfined, log = logs::add)
+        worker.submit(1, ByteArray(32000), 0)
+        assertNull(worker.poll()); assertEquals("decode_budget", worker.retryReason)
+        assertEquals(1, closes)
+        assertTrue(logs.any { "finalizeMs=2700" in it && "decodeStage=finish" in it && "outcome=decode_budget" in it })
+        worker.close()
+    }
     @Test fun loadAndReleaseDoNotConsumeDecodeAllowance() = runBlocking {
         var clock = 0L
         var closed = false

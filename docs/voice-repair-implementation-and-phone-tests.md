@@ -1,6 +1,6 @@
 # Voice repair: bounded commits and phone test protocol
 
-Prepared: 12 September 2026. Branch: `audio-pr2`. Source baseline: `93a144c` (build 673 investigation). Status: **A1 accepted; A2 screening evidence retained; first C1 repair implemented pending CI and phone acceptance. See the ledger and delivery cards below.**
+Prepared: 12 September 2026. Branch: `audio-pr2`. Source baseline: `93a144c` (build 673 investigation). Status: **A1 accepted; A2 screening retained; C1 first repair passed CI but failed phone interruption; C2 first change awaits CI/phone acceptance. See the ledger and delivery cards below.**
 
 Companion: [research proposal](voice-repair-proposal-2026-09-12.md). Parent roadmap: [local voice implementation plan](local-voice-implementation-plan.md). Continue in the existing Audio PR2 PR; no merge without Justin's explicit approval. This document defines future code work; publishing it does not claim that work is implemented or tested.
 
@@ -422,8 +422,8 @@ Update this table after each actual delivery. `Planned` is deliberately not `imp
 | B1 | Planned | — | — | P3 compare — |
 | B2 | Conditional on B1 winner | — | — | P3 confirm — |
 | B3 | Planned | — | — | Reuse B2 evidence |
-| C1 | First repair implemented; CI/phone pending; renewal scheduling remains | Current bounded commit | 52 focused JVM tests pass | One normal-call correction; card below |
-| C2 | Planned | — | — | P2/P4 screen — |
+| C1 | First repair delivered; phone interruption failed; renewal scheduling remains | 3509b4b; build 678 | 52 focused JVM tests and Android CI passed | Failure record below |
+| C2 | First bounded change: final-only probe updates; CI/phone pending | Current commit | SDK cadence and worker checks below | Repeat one normal-call correction |
 | C3 | Evidence-dependent; split C3a/C3b if needed | — | — | P2 extended/P3 — |
 | D1 | Planned; measure early | — | — | P5 — |
 | D2 | Conditional on route evidence | — | — | P5/P6 — |
@@ -627,3 +627,61 @@ pass before delivering the APK. Device acceptance is still pending.
 Stop after this trial. A pass is a useful screening result, not acceptance of
 Hey Jarvis, Stop, every route, or long-call behavior. The next test is selected
 from this result; do not change sliders or repeat all previous comparisons.
+
+### Build 678 result and C2 first delivery — avoid unused probe updates
+
+Call `93a55d75-9011-43f3-a1e5-e9d3020b5566`, turn
+`51c17cef-d83d-4b0e-90e2-6f2516e132a3`, failed natural interruption. Justin
+reported a possible skip when he spoke. Four underruns coincided with empty
+playback queues and estimated supply gaps of 53, 507, 122 and 243 ms. The report
+does not timestamp his speech onset, so it cannot establish that exact timing.
+The visible probes spent 2,619, 2,753 and 3,165 ms in decode, with only 0–1 ms
+loading and 0 ms release. All four attempts were deferred and no request was
+confirmed. The later END_CONVERSATION event is not a barge-in pass.
+
+The acquisition change is functioning as measured, but did not resolve the
+slow inference. Competition with synthesis is a hypothesis supported by their
+overlap, not an isolated hardware measurement. No temperature evidence in this
+call establishes a thermal cause.
+
+Source review found avoidable work before changing CPU thread counts:
+[Moonshine Android v0.1.5 Transcriber.java](https://github.com/moonshine-ai/moonshine/blob/234f60faa0eb388b01cdf7e60aca232af37aefda/language-bindings/android/java/main/java/ai/moonshine/voice/Transcriber.java)
+queues PCM in `addAudioToStream`, then asks whether a transcript update is due.
+`stopStream` forces a final update. Jarvis previously used its ordinary 250 ms
+cadence while replaying probe PCM, although `BoundedInterruptionRecognizer`
+ignores the returned partial text. Native work can therefore be spent producing
+unused intermediate hypotheses. The SDK's native ASR runtime already configures
+one intra-op and one inter-op thread; no unsupported thread option is introduced.
+
+This commit asks Moonshine to defer periodic SDK updates beyond the bounded
+four-second probe window and flush once at finalization. PCM remains in the same
+native stream and warm model lease, fed in the existing 250 ms chunks with budget
+checks between calls. It does not switch to the SDK batch recovery path or add a
+second model. Both natural probes and ASR verification of a stop keyword use this
+policy. Ordinary command/follow-up recognition keeps its 250 ms streaming updates;
+the cadence is restored on release and when a new stream borrows the model.
+
+The existing 1,600 ms decode limit, playback admission, candidate sizes, echo
+checks, keyword thresholds and TTS profile are unchanged for this comparison.
+A slow final native call is still non-preemptible and its result will be rejected
+if it exceeds the budget. Logs now identify `moonshine_final_only_v1` and split
+decode time into `feedMs`, `finalizeMs`, `acceptCalls`, `maxAcceptMs` and
+`decodeStage`. This distinguishes unused periodic work from an expensive final
+pass. CPU scheduling/thread experiments remain later C2 work if this change is
+insufficient; Paul accent/reference comparisons remain separate.
+
+All 57 focused JVM checks passed. They exercise the actual pinned SDK's Java cadence without native
+loading: no periodic update over four seconds of probe PCM, ordinary streaming
+restored for the next stream, and rejection of oversized/late mode switches.
+Worker checks verify all PCM arrives exactly once, one finalization, release
+before publication, final-pass overrun diagnostics, and existing echo/cancellation
+behavior. Android CI must pass before APK delivery; phone performance remains
+unproven until the following trial.
+
+**Phone card:** install the supplied signed APK, disconnect Bluetooth, keep the
+same Paul/Moonshine settings, tap Start Listening → say Hey Jarvis → wait for the
+cue → say “Start interruption test.” Five seconds into the story, say once
+“Actually, tell me what two plus two is.” Report whether he stops and answers,
+and whether playback skips. If he continues five seconds after your correction,
+use the on-screen stop. Copy the latest call diagnostics immediately. Run only
+this trial; do not restart P2 or change sliders.

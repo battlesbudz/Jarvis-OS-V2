@@ -40,6 +40,16 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
     private var lowByte: Int? = null
     private var closed = false
     private var finished = false
+    private val cadence = MoonshineUpdateCadence(transcriber, updateIntervalSeconds)
+
+    override fun prepareForBoundedProbe(maxAudioMs: Long): String {
+        check(!closed && !finished)
+        // SDK addAudioToStream queues PCM before checking this Java-side interval.
+        // No partial transcript is consumed by the bounded worker. Defer its costly
+        // updates until stopStream's forced final pass; retain the warm model key.
+        cadence.prepareProbe(maxAudioMs)
+        return "moonshine_final_only_v1"
+    }
 
     init {
         try {
@@ -68,6 +78,7 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
 
     override fun accept(pcm: ByteArray): String {
         check(!closed && !finished)
+        cadence.beforeAccept(pcm.size)
         return acceptQualified(speechGate.accept(pcm))
     }
 
@@ -126,6 +137,7 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
             closed = true
             speechGate.clear()
             try {
+                cadence.restore()
                 transcriber.removeAllListeners()
                 if (streamHandle >= 0) native { transcriber.freeStream(streamHandle) }
             } finally {

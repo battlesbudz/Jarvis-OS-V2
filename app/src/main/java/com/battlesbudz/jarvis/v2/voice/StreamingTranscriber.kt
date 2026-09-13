@@ -4,6 +4,8 @@ package com.battlesbudz.jarvis.v2.voice
 interface StreamingTranscriber : AutoCloseable {
     val noTextSilenceMs: Long get() = 3000
     fun observeSpeech(speech: Boolean) {}
+    /** Optional final-only mode for a bounded clip. Call before accept; finish must flush all audio. */
+    fun prepareForBoundedProbe(maxAudioMs: Long): String = "streaming"
     fun accept(pcm: ByteArray): String
     fun finish(): String
     /** One independent full-clip pass after an empty streaming result; PCM stays in memory. */
