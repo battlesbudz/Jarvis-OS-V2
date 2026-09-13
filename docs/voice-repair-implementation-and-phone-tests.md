@@ -416,8 +416,8 @@ Update this table after each actual delivery. `Planned` is deliberately not `imp
 
 | ID | State | Commit / APK | Developer evidence | Justin pack / result |
 | --- | --- | --- | --- | --- |
-| A1 | Implemented; CI and phone acceptance pending | Current A1 commit; APK pending CI | 11 focused JVM tests pass | A1 setup-only card below |
-| A2 | Planned | — | — | P2 screen — |
+| A1 | Accepted | a348eb6; build 675 | CI passed; phone cancel/complete/restart/call passed | Acceptance record below |
+| A2 | Implemented; CI and phone P2 pending | Current A2 commit | 14 focused JVM tests pass | A2 delivery card below |
 | A3 | Planned | — | — | P1/P2 — |
 | B1 | Planned | — | — | P3 compare — |
 | B2 | Conditional on B1 winner | — | — | P3 confirm — |
@@ -452,3 +452,73 @@ Once the signed A1 APK passes CI, run only this 3–5 minute check:
 6. Send the three reports plus whether settings returned and the normal call worked. No WAV is required for A1.
 
 Developer evidence: focused session/profile tests cover durable snapshots, completion readiness, cancellation/failure outcomes, process recovery, stale completions, failed persistence, future-pack rejection, and existing profile contracts. Android integration/build/signing must pass CI before assigning the APK. Phone acceptance remains pending until Justin returns the reports. Full source/load comparisons remain A2 work.
+
+## A1 phone acceptance — build 675
+
+Justin completed cancellation (`3b57c303-d804-4702-b1c6-b66453580914`), completion
+(`4884d5c9-ecd8-4499-b6fd-647cb1cfcdbc`), and force-stop recovery
+(`4273419d-2cfb-4a35-8ff5-6216edae9bdb`). Each report discarded the temporary
+profile and retained the same saved settings. He then tapped Start Listening,
+said Hey Jarvis, and received a spoken answer to “What is two plus two?”. A1
+phone acceptance passed. This does not establish audio quality or interruption reliability.
+
+## A2 delivery card — fixed audio and load baseline
+
+Controls live in **Voice and response speed**: **Start P2 screening**, **Continue**,
+**Replay this source at 0.9x**, **Cancel P2**, **Copy P2 report**, and a separate
+**Start P2 long narration**. Leave Start Listening off throughout these tests.
+Saved voice settings are never overwritten. The temporary profile is B673-reference-v1.
+
+First phone test (screening only):
+
+1. End any call and stop passive listening. Keep the phone in one position in a
+   quiet room, with the same output route and comfortable volume throughout.
+2. Open Voice and response speed → Start P2 screening.
+3. Follow the displayed prompt. After Continue, wait for READ NOW and say
+   “Actually, tell me what two plus two is.” once. Remain silent afterward.
+   The recording lasts up to eight seconds and stays in memory only.
+4. Review the recognized phrase. Continue if correct; otherwise cancel and retry.
+5. Continue to the explicit preparation playback, which produces the reference
+   audio before comparisons. Preparation is excluded from A/B ordering.
+6. Follow each condition's Continue prompt. A plays prepared PCM; B generates the
+   same paragraph; C adds live keyword/VAD; D replays the captured microphone
+   fixture once through bounded recognition, starting five seconds after playback
+   begins; E uses the ordinary reply capture/stop path with the existing Mira
+   interruption fixture. Only speak at C/E's READ NOW cues. E is a fixed reply
+   integration test; it bypasses Gemma and is not a full normal-call dispatch test.
+7. After each condition enter separate notes for gaps, crackle, garbling,
+   repetition, and accent changes. Source replay uses the same AudioTrack path
+   at the locked 0.9x speed; distinguish source-listening notes from live notes.
+   Continue retains the condition and advances; it never overwrites an earlier case.
+8. Copy P2 report and send it here. Cancel preserves completed cases. A process
+   restart marks the unfinished run interrupted; microphone/source replay memory
+   is discarded. Do not change tuning settings between conditions.
+
+A/B order alternates across suite starts after preparation. Both use identical
+text; A references the preparation PCM hash, while B performs a fresh generation.
+All conditions use fresh native sessions, with model-file caches already warmed
+by provenance hashing and previous conditions; none is labeled cold. D primes
+Moonshine before playback and uses the production bounded recognition budget.
+D suppresses playback cancellation for isolation; its detector finishes after
+its first confirmation. C runs keyword and VAD processing without ASR. Neither
+is an interruption-acceptance pass. E records whether a real stop occurred.
+A separate normal call remains necessary to check live Gemma dispatch.
+
+Long narration is an optional separate baseline: three trials reach at least
+120 seconds of playback-head-derived duration each, finishing whole
+`long-narration-v1` cycles. Intentional cycles are labeled and individually
+measured; if a trial needs multiple cycles, each uses a fresh output session.
+Do not interpret aggregate duration across cycles as proof of uninterrupted
+continuous playback. Listening quality and starvation still require review;
+this control does not automatically pass Milestone C.
+
+The source capture fails rather than truncates above four minutes per cycle.
+Reports retain bounded event excerpts (150 events of at most 700 characters per
+condition, with an explicit limit indicator), metrics, source/text hashes,
+recognized fixture text, notes, and terminal states. Microphone PCM is never
+written to disk. Durable source WAVs, 1.0x source exports, comprehensive timing,
+and a bundled report remain A3. The normal latest-call audio policy is unchanged.
+
+Developer checks: session recovery/checkpoint tests and bounded PCM integrity
+tests pass locally; Android CI must pass before assigning the new APK. Phone
+P2 results remain pending. A2 is a baseline harness, not a speech-quality fix.

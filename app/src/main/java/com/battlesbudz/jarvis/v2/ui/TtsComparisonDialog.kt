@@ -24,9 +24,11 @@ internal fun TtsComparisonDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val load by latencyBenchmarks.loadTests.state.collectAsState()
+    var loadNotes by remember { mutableStateOf("") }
     val setup by latencyBenchmarks.setupTests.state.collectAsState()
     DisposableEffect(latencyBenchmarks.setupTests) {
-        onDispose { latencyBenchmarks.setupTests.cancel() }
+        onDispose { latencyBenchmarks.setupTests.cancel(); latencyBenchmarks.loadTests.cancel() }
     }
     var copiedId by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf(store.selectedEngine()) }
@@ -73,15 +75,15 @@ internal fun TtsComparisonDialog(
         if (isolation) latencyBenchmarks.comparePaulIsolation({ status = it }, finished)
         else onBenchmark(engine, profile, { status = it }, finished)
     }
-    AlertDialog(onDismissRequest = { if (!running && !setup.busy) onDismiss() },
+    AlertDialog(onDismissRequest = { if (!running && !setup.busy && !load.busy) onDismiss() },
         title = { Text("Voice and response speed") },
         text = {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Structured voice tests", style = MaterialTheme.typography.titleMedium)
-                Text("P1 · Setup and profile recovery. No audio is generated in this pack. P2–P7 are not available yet.")
+                Text("P1 · Setup and profile recovery. No audio is generated in this pack. P2 adds fixed audio comparisons; P3–P7 are planned.")
                 Text(setup.message)
-                Button(onClick = { latencyBenchmarks.setupTests.start() }, enabled = canChange && !running && !setup.busy) {
+                Button(onClick = { latencyBenchmarks.setupTests.start() }, enabled = canChange && !running && !setup.busy && !load.busy) {
                     Text("Start P1 setup")
                 }
                 if (setup.busy) {
@@ -91,7 +93,19 @@ internal fun TtsComparisonDialog(
                 }
                 TextButton(onClick = { copy("Jarvis P1 setup report", setup.report) }, enabled = !setup.busy && setup.report.isNotBlank()) { Text("Copy P1 report") }
                 HorizontalDivider()
-                if (!setup.busy) {
+                Text("P2 · Fixed audio comparisons", style = MaterialTheme.typography.titleMedium)
+                Text(load.message)
+                Button(onClick = { loadNotes = ""; latencyBenchmarks.loadTests.start() }, enabled = canChange && !running && !setup.busy && !load.busy) { Text("Start P2 screening") }
+                Button(onClick = { loadNotes = ""; latencyBenchmarks.loadTests.start(long = true) }, enabled = canChange && !running && !setup.busy && !load.busy) { Text("Start P2 long narration") }
+                if (load.waiting) {
+                    OutlinedTextField(value = loadNotes, onValueChange = { loadNotes = it }, label = { Text("Listening notes (optional)") })
+                    Button(onClick = { latencyBenchmarks.loadTests.next(loadNotes); loadNotes = "" }) { Text("Continue") }
+                    if (load.canReplay) TextButton(onClick = { latencyBenchmarks.loadTests.replay() }) { Text("Replay this source at 0.9x") }
+                }
+                if (load.busy) TextButton(onClick = { latencyBenchmarks.loadTests.cancel() }) { Text("Cancel P2") }
+                TextButton(onClick = { copy("Jarvis P2 report", load.report) }, enabled = !load.busy && load.report.isNotBlank()) { Text("Copy P2 report") }
+                HorizontalDivider()
+                if (!setup.busy && !load.busy) {
                 TtsEngine.entries.forEach { engine ->
                     OutlinedButton(onClick = { if (onSelect(engine)) selected = engine },
                         enabled = canChange && !running, modifier = Modifier.fillMaxWidth()) {
@@ -233,9 +247,9 @@ internal fun TtsComparisonDialog(
                     copy("Jarvis voice text-run diagnostics", TtsComparisonStore.diagnosticReport(record))
                     copiedId = record.optString("id")
                 }
-            }, enabled = !running && !setup.busy && records.getOrNull(index) != null) {
+            }, enabled = !running && !setup.busy && !load.busy && records.getOrNull(index) != null) {
                 Text(if (copiedId != null && copiedId == records.getOrNull(index)?.optString("id"))
                     "Copied this run" else "Copy this text run")
             }
-        }, confirmButton = { TextButton(onClick = onDismiss, enabled = !running && !setup.busy) { Text("Done") } })
+        }, confirmButton = { TextButton(onClick = onDismiss, enabled = !running && !setup.busy && !load.busy) { Text("Done") } })
 }

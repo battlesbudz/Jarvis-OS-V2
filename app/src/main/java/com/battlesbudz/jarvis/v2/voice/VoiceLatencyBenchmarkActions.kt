@@ -9,5 +9,6 @@ class VoiceLatencyBenchmarkActions(
     val compareOpenings: (TtsEngine, (String) -> Unit, () -> Unit) -> Unit,
     val comparePaulIsolation: ((String) -> Unit, () -> Unit) -> Unit,
     val stop: () -> Unit,
+    val loadTests: VoiceLoadTestController,
     val setupTests: VoiceTestSetupController
 )

@@ -13,15 +13,15 @@ class VoiceTestSessionStore(private val preferences: SharedPreferences) {
     @Synchronized fun active(): JSONObject? = preferences.getString("active", null)?.let(::JSONObject)
     @Synchronized fun begin(pack: String, savedSettings: JSONObject, metadata: JSONObject): String {
         check(active() == null) { "A test session is already active." }
-        require(pack == VoiceTestPacks.SETUP)
+        require(pack in setOf(VoiceTestPacks.SETUP, VoiceTestPacks.LOAD))
         val id = UUID.randomUUID().toString()
-        val record = JSONObject().put("id", id).put("pack", pack).put("case", "profile-lifecycle-v1")
+        val record = JSONObject().put("id", id).put("pack", pack).put("case", if (pack == VoiceTestPacks.SETUP) "profile-lifecycle-v1" else "fixed-source-load-v1")
             .put("repetition", 1).put("startedAtMs", System.currentTimeMillis()).put("state", "preparing")
             .put("savedSettings", savedSettings).put("metadata", metadata)
             .put("temporaryProfile", VoiceTestPacks.reference.id).put("temporaryVoice", TtsEngine.POCKET_PAUL.id)
             .put("temporaryAsr", "moonshine_small").put("profileVersion", "B673-reference-v1")
             .put("settingsScope", "test_session_only; production preferences unchanged")
-            .put("audioRun", false).put("physicalTiming", "not_measured")
+            .put("audioRun", pack == VoiceTestPacks.LOAD).put("physicalTiming", "not_measured")
         check(preferences.edit().putString("active", record.toString()).commit()) { "Cannot save test session." }
         return id
     }
@@ -30,11 +30,22 @@ class VoiceTestSessionStore(private val preferences: SharedPreferences) {
         item.put("state", "ready").put("provenance", JSONObject(provenance))
         check(preferences.edit().putString("active", item.toString()).commit()) { "Cannot save test readiness." }
     }
+    @Synchronized fun checkpoint(id: String, evidence: JSONObject) {
+        val item = requireActive(id)
+        item.put("loadEvidence", evidence)
+        check(preferences.edit().putString("active", item.toString()).commit()) { "Cannot save load evidence." }
+    }
     @Synchronized fun finish(id: String, state: String, reason: String): Boolean {
         require(state in setOf("completed", "cancelled", "interrupted", "failed"))
         val item = active() ?: return false
         if (item.getString("id") != id) return false // A late callback cannot finish a newer run.
         check(state != "completed" || item.getString("state") == "ready")
+        item.optJSONObject("loadEvidence")?.optJSONArray("conditions")?.let { conditions ->
+            for (i in 0 until conditions.length()) {
+                val condition = conditions.getJSONObject(i)
+                if (condition.optString("state") == "running") condition.put("state", state)
+            }
+        }
         item.put("state", state).put("reason", reason).put("finishedAtMs", System.currentTimeMillis())
             .put("temporaryProfileDiscarded", true)
         val records = JSONArray(preferences.getString("history", "[]"))
@@ -59,9 +70,10 @@ class VoiceTestSessionStore(private val preferences: SharedPreferences) {
 
 object VoiceTestPacks {
     const val SETUP = "P1-setup-v1"
+    const val LOAD = "P2-load-v1"
     val reference = TtsBenchmarkProfile(4, null, 0.9f, nativeStreaming = true,
         resetDecoder = true, leadingPeriod = true, bufferMs = 200)
-    val planned = listOf("P2-load-v1", "P3-quality-v1", "P4-interruption-v1", "P5-acoustic-v1", "P6-handoff-v1", "P7-acceptance-v1")
+    val planned = listOf("P3-quality-v1", "P4-interruption-v1", "P5-acoustic-v1", "P6-handoff-v1", "P7-acceptance-v1")
     val scripts = linkedMapOf("H-v1" to "Hey Jarvis", "S-v1" to "Stop",
         "N-v1" to "Actually, tell me what two plus two is.", "G-v1" to "Goodbye Jarvis")
 }

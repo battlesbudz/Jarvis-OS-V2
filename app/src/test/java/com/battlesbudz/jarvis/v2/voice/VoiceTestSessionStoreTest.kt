@@ -86,6 +86,18 @@ class VoiceTestSessionStoreTest {
         store.finish(begin(store), "cancelled", "user cancelled")
         assertEquals("cancelled", JSONObject(store.report()).getString("state"))
     }
+    @Test fun loadCheckpointsSurviveRestartAndRejectStaleWriters() {
+        val memory = Memory(); val store = VoiceTestSessionStore(memory.prefs)
+        val id = store.begin(VoiceTestPacks.LOAD, JSONObject(), JSONObject())
+        store.ready(id, emptyMap())
+        store.checkpoint(id, JSONObject().put("conditionA", "completed").put("conditionB", "running"))
+        assertThrows(IllegalStateException::class.java) { store.checkpoint("stale", JSONObject()) }
+        VoiceTestSessionStore(memory.prefs).recoverAfterProcessRestart()
+        val report = JSONObject(store.report())
+        assertTrue(report.getBoolean("audioRun"))
+        assertEquals("completed", report.getJSONObject("loadEvidence").getString("conditionA"))
+        assertEquals("interrupted", report.getString("state"))
+    }
     @Test fun registryNeverAdvertisesFutureAudioPacksAsRunnable() {
         val store = VoiceTestSessionStore(Memory().prefs)
         for (pack in VoiceTestPacks.planned) assertThrows(IllegalArgumentException::class.java) {

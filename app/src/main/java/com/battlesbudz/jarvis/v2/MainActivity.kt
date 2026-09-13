@@ -246,6 +246,11 @@ class MainActivity : ComponentActivity() {
             }, comparePaulIsolation = { status, finished ->
                 ttsBenchmarks.start(com.battlesbudz.jarvis.v2.voice.TtsEngine.POCKET_PAUL, status, finished, paulIsolation = true)
             }, stop = { ttsBenchmarks.stop(); gemmaBenchmarks.stop() },
+            loadTests = com.battlesbudz.jarvis.v2.voice.VoiceLoadTestController(
+                applicationContext, lifecycleScope, modelStore, runtime.voiceTestSessions, ttsBenchmarks,
+                canStart = { !voiceSessionArmed && voiceSessionController.currentCallId() == null &&
+                    voiceTurnJob?.isCompleted != false && activeConversationJobs.get() == 0 &&
+                    !ttsBenchmarks.running && !gemmaBenchmarks.running }),
             setupTests = com.battlesbudz.jarvis.v2.voice.VoiceTestSetupController(
                 applicationContext, lifecycleScope, modelStore, runtime.voiceTestSessions,
                 canStart = { !voiceSessionArmed && voiceSessionController.currentCallId() == null &&

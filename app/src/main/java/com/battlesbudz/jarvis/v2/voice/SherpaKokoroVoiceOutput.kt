@@ -30,6 +30,8 @@ class SherpaKokoroVoiceOutput(
     private val deliveryLedger: SpeechDeliveryLedger? = null,
     private val onPlaybackEnded: () -> Unit = {},
     private val benchmarkSubmissions: List<String>? = null,
+    private val diagnosticReplay: ShortArray? = null,
+    private val diagnosticPcm: ((ShortArray, Int) -> Unit)? = null,
     private val acknowledgeDelays: Boolean = false,
     private val openingPcm: ShortArray? = null,
     private val playbackVolume: () -> String = { "unavailable" },
@@ -42,6 +44,8 @@ class SherpaKokoroVoiceOutput(
     private val log: (String) -> Unit = {}
 ) : VoiceOutput {
     init {
+        require(diagnosticReplay == null || (benchmarkRun && diagnosticReplay.isNotEmpty()))
+        require(diagnosticPcm == null || benchmarkRun)
         require(benchmarkSubmissions == null || (benchmarkRun && engine == TtsEngine.POCKET_PAUL &&
             benchmarkProfile?.nativeStreaming == true && benchmarkSubmissions.isNotEmpty() &&
             benchmarkSubmissions.all { it.isNotBlank() }))
@@ -221,6 +225,28 @@ class SherpaKokoroVoiceOutput(
             var previousSynthesisMs = 0L
             val owner = currentCoroutineContext()
             try {
+                if (diagnosticReplay != null) {
+                    // Feed the ordinary queue/AudioTrack consumer without loading a native TTS model.
+                    onReady()
+                    val replayText = StringBuilder()
+                    for (token in tokens) {
+                        replayText.append(token)
+                        inputChars += token.length
+                        textHash.update(token.toByteArray(Charsets.UTF_8))
+                    }
+                    totalAudioMs = diagnosticReplay.size * 1000L / 24000
+                    phraseCount = 1
+                    for (offset in diagnosticReplay.indices step 9600) {
+                        ensureActive()
+                        if (stopped) break
+                        audio.sendFromNative(SynthesizedPhrase(0, if (offset == 0) replayText.toString() else "",
+                            24000, diagnosticReplay.copyOfRange(offset,
+                                minOf(offset + 9600, diagnosticReplay.size)),
+                            if (offset == 0) paulBufferMs.toLong() else 0,
+                            benchmarkProfile?.playbackSpeed ?: 1f, captionGroup = 0))
+                    }
+                    return@launch
+                }
                 val loadStart = System.nanoTime()
                 log("tts_engine_preload_started")
                 val modelKey = "${this@SherpaKokoroVoiceOutput.engine.id}:$modelDirectory:$numThreads"
@@ -556,6 +582,7 @@ class SherpaKokoroVoiceOutput(
                     atSentenceBoundary = false
                     ensureActive()
                     if (stopped || phrase.pcm.isEmpty()) continue
+                    diagnosticPcm?.invoke(phrase.pcm, phrase.sampleRate)
                     outputSampleRate = phrase.sampleRate
                     if (first) {
                         // Small startup headroom; never hold a short, completed answer for this delay.

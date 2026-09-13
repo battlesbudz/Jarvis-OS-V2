@@ -127,6 +127,20 @@ class TtsBenchmarkController(
         }
     }
 
+    /** The caller holds the model gate and owns the lifetime of the concurrent listener. */
+    internal suspend fun fixedRun(directory: java.io.File, text: String, session: VoiceModelSession,
+                         replay: SpeechAudio? = null, pcm: (ShortArray, Int) -> Unit,
+                         metrics: (TtsSessionMetrics) -> Unit, events: (String) -> Unit,
+                         alongside: suspend CoroutineScope.(SherpaKokoroVoiceOutput) -> Job?) = coroutineScope {
+        val speaker = SherpaKokoroVoiceOutput(directory.path, engine = TtsEngine.POCKET_PAUL,
+            numThreads = 4, benchmarkProfile = VoiceTestPacks.reference, benchmarkRun = true,
+            modelSession = session, diagnosticReplay = replay?.pcm, diagnosticPcm = pcm,
+            onMetrics = metrics, log = events)
+        val listener = alongside(speaker)
+        try { speaker.speak(flow { emit(text) }) {} }
+        finally { withContext(NonCancellable) { listener?.cancelAndJoin() }; speaker.stopSpeaking() }
+    }
+
     fun stop() { output?.stopSpeaking(); job?.cancel() }
 
     private data class Case(val engine: TtsEngine, val profile: TtsBenchmarkProfile,
