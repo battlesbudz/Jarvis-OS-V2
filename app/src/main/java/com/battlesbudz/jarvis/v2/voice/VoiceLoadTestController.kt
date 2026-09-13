@@ -5,7 +5,6 @@ import android.media.AudioManager
 import android.os.PowerManager
 import com.battlesbudz.jarvis.v2.BuildConfig
 import com.battlesbudz.jarvis.v2.ai.ModelStore
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
@@ -88,30 +87,45 @@ class VoiceLoadTestController(
                     return try { pending.await() } finally { decision = null; mutable.value = mutable.value.copy(waiting = false, canReplay = false) }
                 }
                 waitForNext("First, record the test phrase. Tap Continue, wait for READ NOW, then say: Actually, tell me what two plus two is.")
-                mic = coroutineScope {
-                    val input = AndroidAudioInput(this, audioManager = audio, echoCancellation = true,
-                        noiseSuppression = true)
-                    val captured = ByteArrayOutputStream()
-                    try {
-                        input.start()
-                        mutable.value = State(true, message = "READ NOW: Actually, tell me what two plus two is. Then remain silent.")
-                        withTimeoutOrNull(8_000) { input.chunks().collect { chunk ->
-                            check(captured.size() + chunk.size <= 8 * 32000 + 3200)
-                            captured.write(chunk)
-                        } }
-                    } finally { withContext(NonCancellable) { input.stop() } }
-                    captured.toByteArray().take(8 * 32000).toByteArray()
+                val micEvidence = JSONObject().put("stage", "opening_microphone").put("capturedMs", 0)
+                    .put("targetMs", 8000).put("startupAudioIncluded", true)
+                    .put("script", VoiceTestPacks.scripts.getValue("N-v1"))
+                evidence.put("micFixture", micEvidence)
+                save()
+                var capturedBytes = 0
+                val captureEvents = java.util.Collections.synchronizedList(mutableListOf<String>())
+                try {
+                    mic = coroutineScope {
+                        val input = AndroidAudioInput(this, audioManager = audio, echoCancellation = true,
+                            noiseSuppression = true, log = { event ->
+                                synchronized(captureEvents) { if (captureEvents.size < 30) captureEvents.add(event.take(700)) }
+                            })
+                        VoiceLoadMicrophone.capture(input, onReady = {
+                            mutable.value = State(true, message = "READ NOW: Actually, tell me what two plus two is. Then remain silent. Recording 0/8 seconds.")
+                        }, onProgress = { bytes ->
+                            val previousSeconds = capturedBytes / 32000
+                            capturedBytes = bytes
+                            if (bytes / 32000 != previousSeconds) mutable.value = mutable.value.copy(
+                                message = "READ NOW: Actually, tell me what two plus two is. Then remain silent. Recording ${bytes / 32000}/8 seconds.")
+                        })
+                    }
+                } finally {
+                    micEvidence.put("capturedMs", capturedBytes / 32).put("capturedBytes", capturedBytes)
+                        .put("stage", if (mic.isNotEmpty()) "captured" else "capture_incomplete")
+                        .put("captureEvents", synchronized(captureEvents) { JSONArray(captureEvents.toList()) })
+                    save()
                 }
-                check(mic.size >= 32000) { "Microphone fixture was too short. Check microphone access and retry." }
+                micEvidence.put("sha256", hash(mic)).put("durationMs", mic.size / 32).put("stage", "recognizing")
+                save()
+                mutable.value = State(true, message = "Recording finished. Checking what Moonshine heard…")
                 val recognized = MoonshineStreamingTranscriber(asr).use { recognizer ->
                     recognizer.observeSpeech(true)
                     recognizer.accept(mic)
                     recognizer.finish()
                 }
-                check(recognized.isNotBlank()) { "The recorded phrase was not recognized. Cancel and retry in a quiet room." }
-                evidence.put("micFixture", JSONObject().put("sha256", hash(mic)).put("durationMs", mic.size / 32)
-                    .put("script", VoiceTestPacks.scripts.getValue("N-v1")).put("recognizedText", recognized).put("spokenContentVerified", "listener_review"))
+                micEvidence.put("recognizedText", recognized).put("stage", "recognized").put("spokenContentVerified", "listener_review")
                 save()
+                check(recognized.isNotBlank()) { "The recorded phrase was not recognized. Cancel and retry in a quiet room." }
                 waitForNext("Recorded phrase: $recognized. If this matches what you said, tap Continue. Otherwise Cancel P2 and retry.")
                 // This preparation is explicit and excluded from A/B comparison ordering.
                 val text = if (long) TtsBenchmarkSamples.longNarration else TtsBenchmarkSamples.all.getValue("paragraph-v1")
@@ -264,7 +278,13 @@ class VoiceLoadTestController(
                 evidence.put("extended120SecondGate", if (long) "three_trials_reached_120s; audible_quality_requires_listener_review" else "not_run_in_screening")
                 save()
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Throwable) { outcome = "failed"; detail = "P2 failed: ${error.message ?: error.javaClass.simpleName}" }
+            catch (error: Throwable) {
+                outcome = "failed"
+                detail = "P2 failed: ${error.message ?: error.javaClass.simpleName}"
+                evidence.put("failure", JSONObject().put("type", error.javaClass.simpleName)
+                    .put("message", error.message).put("location", error.stackTrace.firstOrNull()?.toString()))
+                id?.let { sessions.checkpoint(it, evidence) }
+            }
             finally {
                 mic.fill(0); mic = byteArrayOf(); latestSource = null; decision = null
                 try { withContext(NonCancellable + Dispatchers.IO) { id?.let { sessions.finish(it, outcome, detail) } } }

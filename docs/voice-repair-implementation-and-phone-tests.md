@@ -522,3 +522,24 @@ and a bundled report remain A3. The normal latest-call audio policy is unchanged
 Developer checks: session recovery/checkpoint tests and bounded PCM integrity
 tests pass locally; Android CI must pass before assigning the new APK. Phone
 P2 results remain pending. A2 is a baseline harness, not a speech-quality fix.
+
+### P2 recording correction after build 676
+
+Phone run `13bd90c9-d5ae-4fde-8747-370c9fa3ddce` failed before any load
+condition with `Check failed.` The recording path counted eight wall-clock
+seconds after microphone readiness, although AndroidAudioInput already retained
+about 300 ms of startup PCM. That can exceed the former 8.1-second byte guard.
+The corrective commit counts exactly 256,000 PCM16 bytes (eight seconds at
+16 kHz mono), preserves startup audio, bounds the final chunk, and closes the
+microphone as soon as the target is reached. A separate 12-second timeout handles
+stalled capture. It displays recording progress and the transcription stage.
+Reports retain captured duration, microphone events, stage, and exception details
+before recognition so another failure is diagnosable without recording raw mic
+audio to disk. Seventeen focused JVM tests pass, including startup backlog,
+partial final chunks, early end-of-stream, cancellation, and timeout cleanup.
+
+Retest only the recording step on the corrected APK: leave Start Listening off,
+open Start P2 screening, tap Continue at the recording prompt, and read the phrase
+at READ NOW. Stop at the displayed recognized phrase and report whether it is
+correct. Do not change the saved voice settings. Load-condition acceptance is
+still pending.

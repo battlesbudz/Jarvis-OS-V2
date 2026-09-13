@@ -1,6 +1,8 @@
 package com.battlesbudz.jarvis.v2.voice
 
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.firstOrNull
+import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.flow.flow
 
 /** Bounded source capture: overflow fails a trial instead of silently truncating its evidence. */
@@ -32,5 +34,32 @@ internal class VoiceLoadReplay(private val pcm: ByteArray) : AudioInput {
             emit(pcm.copyOfRange(offset, end)); delay((end - offset) / 32L)
         }
         while (true) { emit(ByteArray(3200)); delay(100) }
+    }
+}
+
+/** Count PCM, not wall time: AndroidAudioInput already queues startup audio before start returns. */
+internal object VoiceLoadMicrophone {
+    const val TARGET_BYTES = 8 * 32000
+    suspend fun capture(input: AudioInput, onReady: () -> Unit,
+                        onProgress: (Int) -> Unit = {}, timeoutMs: Long = 12000): ByteArray {
+        require(input.sampleRateHz == 16000 && input.channelCount == 1)
+        val captured = ByteArrayOutputStream(TARGET_BYTES)
+        try {
+            input.start()
+            onReady()
+            val complete = withTimeoutOrNull(timeoutMs) {
+                input.chunks().firstOrNull { chunk ->
+                    check(chunk.size % 2 == 0) { "Microphone returned an incomplete PCM16 sample." }
+                    val count = minOf(chunk.size, TARGET_BYTES - captured.size())
+                    captured.write(chunk, 0, count)
+                    onProgress(captured.size())
+                    captured.size() == TARGET_BYTES
+                } != null
+            }
+            check(complete == true) {
+                "Microphone ${if (complete == null) "timed out" else "stream ended"}: received ${captured.size() / 32} ms of 8000 ms."
+            }
+            return captured.toByteArray()
+        } finally { withContext(NonCancellable) { input.stop() } }
     }
 }
