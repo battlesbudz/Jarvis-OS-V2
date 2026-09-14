@@ -6,6 +6,35 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TtsComparisonStoreTest {
+    @Test fun wholeSuiteSurvivesRestartOrdersRunsAndKeepsFailuresWithoutMixingSuites() {
+        val prefs = preferences()
+        val store = TtsComparisonStore(prefs)
+        val profile = TtsBenchmarkProfile(2, null, 1f, nativeStreaming = true)
+        val metrics = TtsSessionMetrics(10, 20, 50, 80, 0, 1f, 0, 0, 1, 3, "hash", 2, true, null)
+        // Deliberately save out of order: the original execution number wins over storage order.
+        for (number in listOf(14, 5, 10, 1)) {
+            store.add(TtsEngine.POCKET_PAUL, "paul-isolation-v1", "case-$number",
+                metrics.copy(completed = number != 10, error = if (number == 10) "stopped" else null),
+                TtsBenchmarkRun("suite-a", profile, if (number > 7) 2 else 1, "Text $number", 0, 3,
+                    audioFile = "suite-a-$number.wav"))
+        }
+        val selected = store.records().first()
+        store.add(TtsEngine.POCKET_PAUL, "paul-isolation-v1", "unrelated", metrics,
+            TtsBenchmarkRun("suite-b", profile, 1, "Unrelated", 0, 0))
+        val restored = TtsComparisonStore(prefs)
+        val report = restored.suiteDiagnosticReport(selected)
+        assertTrue(report.contains("saved_runs=4"))
+        assertTrue(report.contains("expected_runs=14"))
+        assertTrue(report.contains("all_runs_retained=false"))
+        assertTrue(report.contains("completed_runs=3"))
+        assertTrue(report.contains("error=stopped"))
+        assertTrue(report.indexOf("===== RUN 5") < report.indexOf("===== RUN 10"))
+        assertTrue(report.indexOf("===== RUN 10") < report.indexOf("===== RUN 14"))
+        assertFalse(report.contains("suite-b"))
+        assertFalse(report.contains("Unrelated"))
+    }
+
+
     @Test fun isolatedRunExportsItsOwnDeliveryAndProvenanceWithoutChangingCallProfile() {
         val store = TtsComparisonStore(preferences())
         val profile = TtsBenchmarkProfile(2, null, 1f, nativeStreaming = true)

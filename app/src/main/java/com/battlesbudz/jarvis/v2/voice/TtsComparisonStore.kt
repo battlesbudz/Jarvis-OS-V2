@@ -88,10 +88,48 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
         preferences.edit().putString(key, array.toString()).apply()
     }
 
+    /** Include saved results from this suite, even when the UI displays only its latest run. */
+    @Synchronized fun suiteRecords(item: JSONObject): List<JSONObject> {
+        val suite = item.optString("suite_id").takeIf { it.isNotBlank() && it != "null" }
+            ?: return emptyList()
+        return records().filter { it.optString("suite_id") == suite }
+            .sortedWith(compareBy<JSONObject> { executionNumber(it) ?: Int.MAX_VALUE }
+                .thenBy { it.optLong("atMs") })
+    }
+
+    @Synchronized fun suiteDiagnosticReport(item: JSONObject): String {
+        val runs = suiteRecords(item)
+        require(runs.isNotEmpty()) { "No saved suite for this run." }
+        return buildString {
+            appendLine("Jarvis OS V2 whole voice comparison suite diagnostics")
+            appendLine("suite_id=${item.optString("suite_id")}")
+            appendLine("saved_runs=${runs.size}")
+            if (runs.all { it.optString("source") == "paul-isolation-v1" }) {
+                val expected = PaulIsolationCases.all.size * 2
+                appendLine("expected_runs=$expected")
+                appendLine("all_runs_retained=${runs.mapNotNull { executionNumber(it) }.toSet() == (1..expected).toSet()}")
+            }
+            appendLine("completed_runs=${runs.count { it.optBoolean("completed") }}")
+            appendLine("Includes saved failures and partial results; audio files are not embedded.")
+            for ((index, run) in runs.withIndex()) {
+                appendLine()
+                appendLine("===== RUN ${executionNumber(run) ?: (index + 1)} =====")
+                appendLine(describe(run))
+            }
+        }.trimEnd()
+    }
+
     @Synchronized fun snapshot() = records().joinToString("\n\n", transform = ::describe)
         .ifBlank { "No TTS comparisons yet." }
 
     companion object {
+        private fun executionNumber(item: JSONObject): Int? {
+            val suite = item.optString("suite_id")
+            val file = item.optString("audio_file")
+            return file.takeIf { it.startsWith("$suite-") && it.endsWith(".wav") }
+                ?.removePrefix("$suite-")?.removeSuffix(".wav")?.toIntOrNull()
+        }
+
         /** Export the immutable displayed text run, never global history or current UI settings. */
         fun diagnosticReport(item: JSONObject) = "Jarvis OS V2 single voice text-run diagnostics\n\n" + describe(item)
 

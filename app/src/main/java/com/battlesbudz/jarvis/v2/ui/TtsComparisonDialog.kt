@@ -31,6 +31,7 @@ internal fun TtsComparisonDialog(
         onDispose { latencyBenchmarks.setupTests.cancel(); latencyBenchmarks.loadTests.cancel() }
     }
     var copiedId by remember { mutableStateOf<String?>(null) }
+    var copiedSuiteId by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf(store.selectedEngine()) }
     var appliedProfile by remember(selected) { mutableStateOf(store.callProfile(selected)) }
     var profile by remember(selected) { mutableStateOf(appliedProfile ?: if (selected == TtsEngine.POCKET_PAUL)
@@ -226,10 +227,20 @@ internal fun TtsComparisonDialog(
                         Text("${index + 1}/${records.size}")
                         TextButton(onClick = { index++ }, enabled = index < records.lastIndex) { Text("Older") }
                     }
+                    val suiteRuns = store.suiteRecords(record)
+                    if (suiteRuns.isNotEmpty()) {
+                        Button(enabled = !running && !setup.busy && !load.busy, onClick = {
+                            copy("Jarvis whole voice comparison suite", store.suiteDiagnosticReport(record))
+                            copiedSuiteId = record.optString("suite_id")
+                        }) {
+                            Text(if (copiedSuiteId == record.optString("suite_id")) "Copied whole suite · ${suiteRuns.size} runs"
+                                else "Copy whole suite · ${suiteRuns.size} runs")
+                        }
+                    }
                     Text(TtsComparisonStore.describe(record), style = MaterialTheme.typography.bodySmall)
                     BenchmarkAudioExport(record, enabled = !running)
                 }
-                Text("Compare the same sample and pass. Prioritize completed, thermally clean runs with the requested speed applied: lowest estimated supply gaps first, then lowest first-text-to-playback time. Effective RTF accounts for playback speed; below 1 can keep up. Playback timing detects the first non-silent audio, not a word recognized by a microphone. Gap values are estimates; listen for unnatural pauses too. Copy exports only the displayed text run.", style = MaterialTheme.typography.bodySmall)
+                Text("Compare the same sample and pass. Prioritize completed, thermally clean runs with the requested speed applied: lowest estimated supply gaps first, then lowest first-text-to-playback time. Effective RTF accounts for playback speed; below 1 can keep up. Playback timing detects the first non-silent audio, not a word recognized by a microphone. Gap values are estimates; listen for unnatural pauses too. Copy whole suite includes every saved run in that comparison, in execution order. Copy this text run exports only the displayed result.", style = MaterialTheme.typography.bodySmall)
                 if (gemmaRecords.isNotEmpty()) {
                     HorizontalDivider()
                     Text("Gemma text run", style = MaterialTheme.typography.titleMedium)

@@ -946,3 +946,26 @@ Ask “Why is the sky blue?” once, then remain silent through the reply and fo
 five seconds afterward. Stop and send diagnostics; report any invented follow-up,
 awkward phrase, or choppiness. This does not claim sustained TTS throughput or
 endpoint latency has been solved by buffering or slower playback.
+
+
+## C6 — export the complete comparison in one copy
+
+Justin's suite `48a57deb-7fcc-4a3c-b5f6-4260f62340ed` was exported as only run 14
+by the single-run copy action. Add **Copy whole suite · N runs** above the selected
+result. It reads all saved records matching that suite ID, orders by original WAV
+execution number (timestamp fallback), retains failure details and provenance,
+and reports saved/completed counts plus missing runs for the 14-run Paul suite.
+Existing saved suites work after updating; no repeat test is needed merely to export.
+The separate single-run button remains available.
+
+Listening feedback: runs 5, 10, 13 were clearest with no accent changes. Under the
+forward-then-reverse case order these are paragraph-one-reset (pass 1),
+opening-grouped-retained (pass 2), and opening-one-reset (pass 2). This favors
+comparing fewer resets but does not prove all grouped synthesis changes accent.
+Do not apply a new voice setting based only on the last-run report. Run 14 was
+thermal-limited; inspect the complete suite before comparing timing.
+
+Validation covers persisted suite selection, execution ordering, incomplete suite
+reporting, retention of failed runs, and exclusion of unrelated suites. Phone:
+update, browse saved text runs if needed, select any run from the completed Paul
+suite, then tap **Copy whole suite · 14 runs** once and paste it into the conversation.
