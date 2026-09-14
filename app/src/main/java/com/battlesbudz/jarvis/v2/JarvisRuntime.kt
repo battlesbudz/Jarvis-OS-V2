@@ -319,6 +319,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     acknowledgeDelays = true,
                     openingPcm = if (ttsEngine == com.battlesbudz.jarvis.v2.voice.TtsEngine.POCKET_PAUL)
                         com.battlesbudz.jarvis.v2.voice.PaulOpeningAudio.load(assets) else null,
+                    recoveryPcm = if (ttsEngine == com.battlesbudz.jarvis.v2.voice.TtsEngine.POCKET_PAUL)
+                        com.battlesbudz.jarvis.v2.voice.PaulOpeningAudio.loadRecovery(assets) else null,
                     playbackVolume = {
                         val manager = getSystemService(android.media.AudioManager::class.java)
                         val stream = android.media.AudioManager.STREAM_MUSIC

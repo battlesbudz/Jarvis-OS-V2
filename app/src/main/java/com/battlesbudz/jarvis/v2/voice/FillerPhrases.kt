@@ -1,9 +1,7 @@
 package com.battlesbudz.jarvis.v2.voice
 
-/** Neutral cues make no lookup, progress or success claims. */
+/** Requests patience without agreeing with a premise or claiming a lookup. */
 internal object FillerPhrases {
-    // Ask for a lingering hum; this text also invalidates the old clipped filler cache.
-    const val INITIAL = "Ummm..."
-    const val FOLLOWUP = "One second."
-    val VARIATIONS = listOf(FOLLOWUP, "One moment please.", "Just a second.")
+    const val INITIAL = "One moment, please, sir."
+    const val RECOVERY = "Bear with me, sir."
 }

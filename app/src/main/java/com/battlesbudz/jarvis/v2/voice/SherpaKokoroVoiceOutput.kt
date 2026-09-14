@@ -34,6 +34,7 @@ class SherpaKokoroVoiceOutput(
     private val diagnosticPcm: ((ShortArray, Int) -> Unit)? = null,
     private val acknowledgeDelays: Boolean = false,
     private val openingPcm: ShortArray? = null,
+    private val recoveryPcm: ShortArray? = null,
     private val playbackVolume: () -> String = { "unavailable" },
     private val audioTrace: SpeechAudioTrace? = null,
     private val onReady: () -> Unit = {},
@@ -60,6 +61,20 @@ class SherpaKokoroVoiceOutput(
     private val playbackClock = PlaybackClock()
     private val spokenReference = StringBuilder()
     fun recentSpokenText(): String = synchronized(spokenReference) { spokenReference.toString() }
+    private fun rememberPlayback(text: String) = synchronized(spokenReference) {
+        if (text.isNotBlank()) spokenReference.append(" ").append(text)
+        if (spokenReference.length > 1600) spokenReference.delete(0, spokenReference.length - 1600)
+    }
+    private suspend fun playCachedCue(audio: SpeechAudio) {
+        synchronized(playbackLock) { gapCuePlaying.set(true); applyPause() }
+        try {
+            VoiceCues.playAcknowledgement(audio, { stopped }, { interrupted }, log, playbackVolume(),
+                onStarted = { rememberPlayback(audio.text) })
+        } finally {
+            synchronized(playbackLock) { gapCuePlaying.set(false); applyPause() }
+            lastAudibleAt = System.nanoTime() / 1_000_000
+        }
+    }
     @Volatile private var writtenFrames = 0L
     @Volatile private var lastAudibleAt = Long.MIN_VALUE / 2
     private val preparedOpening = AtomicReference<PreparedSpeechOpening?>(null)
@@ -110,7 +125,7 @@ class SherpaKokoroVoiceOutput(
     fun canContinueInterruption(): Boolean = DuplexPlaybackBudget.allows(
         queuedPlaybackMs(), continuing = true, unavailable = stopped || interrupted || gapCuePlaying.get())
     private fun applyPause() {
-        val paused = interrupted
+        val paused = interrupted || gapCuePlaying.get()
         playbackClock.setPaused(paused)
         audioTrack?.let { if (paused) it.pause() else if (!stopped) it.play() }
     }
@@ -146,19 +161,20 @@ class SherpaKokoroVoiceOutput(
         if (acknowledgeDelays) {
             // Cached PCM needs no native model reload before it can be played.
             withContext(Dispatchers.IO) {
-                for (text in (listOf(neutralFiller) + FillerPhrases.VARIATIONS + DelayedAcknowledgement.Stage.entries.mapNotNull { it.cue })) {
+                for (text in (listOf(neutralFiller, FillerPhrases.RECOVERY))) {
                     val key = fillerCacheKey(text)
-                    (if (text == neutralFiller && openingPcm != null) SpeechAudio(text, 24000, openingPcm, 0)
-                    else acknowledgementCache[key] ?: fillerDiskCache.read(key, text))?.let {
+                    val bundled = if (text == neutralFiller) openingPcm else recoveryPcm
+                    (bundled?.let { SpeechAudio(text, 24000, it, 0) }
+                        ?: acknowledgementCache[key] ?: fillerDiskCache.read(key, text))?.let {
                         acknowledgementCache[key] = it
                         acknowledgement.prepare(it)
-                        log("acknowledgement_cache_hit beforeModelLoad=true text=$text source=${if (text == neutralFiller && openingPcm != null) "bundled_paul_umm_v1" else "generated_cache"}")
+                        log("acknowledgement_cache_hit beforeModelLoad=true text=$text source=${if (bundled != null) "bundled_paul_cues_v2" else "generated_cache"}")
                     }
                 }
             }
         }
         if (acknowledgeDelays) acknowledgement.start(this, requestPreparation = { acknowledgementRequests.trySend(it) }) { audio ->
-            VoiceCues.playAcknowledgement(audio, { stopped }, { interrupted }, log, playbackVolume())
+            playCachedCue(audio)
         }
         log("tts_session_started engine=${engine.id} modelDir=$modelDirectory speaker=$speakerId threads=$numThreads workers=1")
         var framesWritten = 0
@@ -190,7 +206,9 @@ class SherpaKokoroVoiceOutput(
         var estimatedGapMs = 0L
         // One owner creates, invokes and releases the native engine. Playback never owns it.
         // Bounded PCM backpressure prevents long answers from accumulating unlimited audio.
-        val audio = NativeAudioQueue<SynthesizedPhrase>(2)
+        val audio = NativeAudioQueue<SynthesizedPhrase>(if (acknowledgeDelays && !benchmarkRun) 8 else 2) {
+            it.pcm.size * 1000L / it.sampleRate
+        }
         val pocketSentences = engine == TtsEngine.POCKET_PAUL && (benchmarkProfile?.nativeStreaming == true || !fixedChunking && benchmarkProfile == null)
         val pocketText = if (pocketSentences) PocketTextStream() else null
         val isolationText = if (benchmarkSubmissions != null) StringBuilder() else null
@@ -342,6 +360,10 @@ class SherpaKokoroVoiceOutput(
                 fun generate(text: String) {
                     owner.ensureActive()
                     if (stopped) return
+                    if (index > 0 && pocketSentences && acknowledgeDelays && !benchmarkRun) {
+                        audio.sendFromNative(SynthesizedPhrase(index - 1, "", tts.sampleRate(), ShortArray(0),
+                            0, 1f, sentenceEnd = true))
+                    }
                     val candidate = preparedOpening.getAndSet(null)
                     val cached = if (index == 0) candidate?.takeFor(text) else null
                     candidate?.discard()
@@ -407,12 +429,6 @@ class SherpaKokoroVoiceOutput(
                                 "matches=${result.matches} frames=${result.frames} method=sha256_float32_le " +
                                 "callbackSha256=${result.callbackHash} returnedSha256=${result.returnedHash}")
                             check(result.matches) { "Pocket callback samples differ from returned audio." }
-                        }
-                        if (acknowledgeDelays && !benchmarkRun) {
-                            val boundaryWait = System.nanoTime()
-                            audio.sendFromNative(SynthesizedPhrase(phraseIndex, "", rate, ShortArray(0),
-                                0, 1f, sentenceEnd = true))
-                            queueWaitMs += elapsedMs(boundaryWait)
                         }
                         deliveryLedger?.seal(phraseIndex)
                         captions.complete(phraseIndex, frames)
@@ -557,27 +573,27 @@ class SherpaKokoroVoiceOutput(
                 var atSentenceBoundary = false
                 var interveningCueMs = 0L
                 val gapWaiter = SentenceGapWaiter()
-                val gapAudio = acknowledgementCache[fillerCacheKey(neutralFiller)]
+                val gapAudio = acknowledgementCache[fillerCacheKey(FillerPhrases.RECOVERY)]
                 while (true) {
                     val received = if (atSentenceBoundary && acknowledgeDelays && !benchmarkRun && gapAudio != null) {
-                        gapWaiter.receive(audio.chunks, boundaryDrained = {
-                            !stopped && !interrupted && audioTrack?.let { unsignedHead(it) >= writtenFrames } == true
-                        }) {
+                        gapWaiter.receive(audio.chunks, remainingMs = {
+                            audioTrack?.let { track ->
+                                val frames = (writtenFrames - unsignedHead(track)).coerceAtLeast(0)
+                                if (frames == 0L) 0L else maxOf(1L, (frames * 1000.0 / track.sampleRate / playbackSpeed).toLong())
+                            } ?: 0L
+                        }, bufferedMs = { audio.bufferedMs }, allowed = { !stopped && !interrupted }) {
                             val cueStarted = System.nanoTime()
-                            gapCuePlaying.set(true)
-                            log("sentence_gap_filler text=${gapAudio.text} boundary=completed_sentence excludes=answer_pcm")
-                            try {
-                                VoiceCues.playAcknowledgement(gapAudio, { stopped }, { interrupted }, log, playbackVolume())
-                            } finally {
+                            log("sentence_gap_filler text=${gapAudio.text} boundary=completed_sentence maxPerAnswer=1 excludes=answer_pcm")
+                            try { playCachedCue(gapAudio) }
+                            finally {
                                 interveningCueMs += elapsedMs(cueStarted)
-                                gapCuePlaying.set(false)
-                                lastAudibleAt = System.nanoTime() / 1_000_000
-                                log("sentence_gap_filler_finished answer_priority=true")
+                                log("sentence_gap_filler_finished bufferedAnswerMs=${audio.bufferedMs}")
                             }
                         }
                     } else audio.chunks.receiveCatching()
                     received.exceptionOrNull()?.let { throw it }
                     val phrase = received.getOrNull() ?: break
+                    audio.consumed(phrase)
                     if (phrase.sentenceEnd) { atSentenceBoundary = true; continue }
                     atSentenceBoundary = false
                     ensureActive()
@@ -620,12 +636,12 @@ class SherpaKokoroVoiceOutput(
                                 val head = unsignedHead(startedTrack)
                                 val underruns = startedTrack.underrunCount
                                 val poll = System.nanoTime() / 1_000_000
-                                val starved = !draining.get() && !interrupted && writtenFrames > 0 && head >= writtenFrames
+                                val starved = !draining.get() && !interrupted && !gapCuePlaying.get() && writtenFrames > 0 && head >= writtenFrames
                                 if (wasStarved && starved) playbackStarvationMs.addAndGet((poll - previousPoll).coerceAtLeast(0))
                                 wasStarved = starved; previousPoll = poll
                                 if (underruns > previousUnderruns) {
                                     log("audio_underrun count=$underruns queuedFrames=${(writtenFrames - head).coerceAtLeast(0)}")
-                                    if (!draining.get()) streamingUnderruns.addAndGet((underruns - previousUnderruns).toLong())
+                                    if (!draining.get() && !gapCuePlaying.get()) streamingUnderruns.addAndGet((underruns - previousUnderruns).toLong())
                                     previousUnderruns = underruns
                                 }
                                 val audibleFrame = firstAudibleFrame.get()
@@ -655,10 +671,7 @@ class SherpaKokoroVoiceOutput(
                         val audible = phrase.pcm.indexOfFirst { kotlin.math.abs(it.toInt()) >= 64 }
                         if (audible >= 0) firstAudibleFrame.set(framesWritten.toLong() + audible)
                     }
-                    synchronized(spokenReference) {
-                        spokenReference.append(" ").append(phrase.text)
-                        if (spokenReference.length > 1600) spokenReference.delete(0, spokenReference.length - 1600)
-                    }
+                    rememberPlayback(phrase.text)
                     captions.append(framesWritten.toLong(), phrase.sampleRate, phrase.pcm, phrase.text, phrase.captionGroup)
                     val start = System.nanoTime()
                     var offset = 0

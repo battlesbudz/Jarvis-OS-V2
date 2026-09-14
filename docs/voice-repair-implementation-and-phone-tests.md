@@ -846,3 +846,61 @@ when ASR consumed only frame 1, through the actual gain wrapper and call session
 114 focused JVM tests pass including all VoiceAudioSession tests. The corrected
 Android build must pass both debug and release jobs before phone delivery; use
 the same one-question phone card above. No phone acceptance yet.
+
+
+#### C4 — fixed neutral acknowledgments and bounded sentence recovery
+
+User authorized this implementation after confirming **no interruption attempts
+in either build 682 run** and silence after the Moon answer. Those runs are
+no-interruption controls, not barge-in failures. Sky: speech-end-to-final 4913 ms,
+46 underruns and 4408 ms observed starvation; Moon: endpoint 865 ms, zero observed
+starvation (one final-drain underrun). The later Moon follow-up falsely detected
+speech, got an empty transcript and entered Gemma fallback. Playback transcripts
+included Jarvis's own words and the old filler with an empty reference. These
+remain separate findings; this change does not claim to resolve the false
+follow-up, sustained synthesis deficit, accent drift or long endpoint delay.
+
+Implemented behavior:
+- Replace the bundled “Ummm...” with “One moment, please, sir.”; ship a separate
+  “Bear with me, sir.” recovery recording. Both use Paul and pinned checksums,
+  require no on-phone generation, and make no agreement or lookup claims.
+- Keep the 700 ms acknowledgment threshold. An answer ready before the clip starts
+  skips it. Once started, the clip finishes naturally while native answer
+  production continues. No repeated startup/stage fillers. Stop, pause and call
+  cancellation still interrupt playback; a four-second guard bounds a bad clip.
+- Ordinary calls have capacity for eight queued PCM chunks (Paul callback chunks) (typically about 3.2 s)
+  plus the one synchronous send in progress and the writer's current chunk.
+  This remains bounded; benchmarks retain capacity two. Existing device buffer
+  capacity, voice settings and answer PCM remain unchanged.
+- A recovery opportunity exists only between completed natural sentence groups,
+  after the producer knows another answer submission exists. No end-of-answer
+  recovery marker and no filler inserted within a sentence or callback boundary.
+  At <=250 ms of device audio and <640 ms of available next-answer PCM, the writer
+  waits for the prior sentence to drain. If generation catches up before then,
+  it skips recovery; otherwise it plays at most one recovery clip per answer.
+  Incoming PCM is retained in order while the clip finishes. Later shortages
+  remain measurable; an underrun counter does not trigger repeated speech.
+- Both cached phrases enter the spoken reference at playback start. Empty callback
+  text no longer pads that reference with spaces. Cached playback is marked active
+  for duplex budgeting and retains the same short speaker-tail interval. This is
+  reference accounting, not proof of acoustic echo cancellation or reliable barge-in.
+- Pause the drained answer track during recovery, resume after the clip unless
+  user-paused/stopped. Answer captions, delivery frame accounting and saved answer
+  WAV exclude cue PCM. Intentional cue duration is excluded from supply-gap and
+  observed-starvation time; the raw Android underrun counter is still reported.
+
+Validation: 21 focused JVM tests pass and cover fast-answer skip, missing cache, complete-cue
+handoff, cancellation, once-only limits, prior-sentence drain, catching up before
+recovery, PCM arrival during a clip, ordered bounded producer headroom, and pinned
+WAV content/levels/edges. Compile against Android 35 and Sherpa 1.13.7 APIs locally;
+Android debug/release CI and phone listening remain required for acceptance.
+
+Phone card after the signed build passes:
+1. Preview Paul's acknowledgment and recovery phrase in Voice and response speed. Report whether the
+   words are clear and the voice acceptable.
+2. Start Listening, say Hey Jarvis, then ask “Why is the sky blue?”
+3. Stay silent through the answer; end the call with the on-screen control.
+4. Send diagnostics and report whether the opening/recovery sounded complete,
+   whether a recovery phrase occurred, and whether pauses remained.
+Do not expect recovery on every answer: it must remain absent when unnecessary.
+A repeat, overlap, lost answer words, or a cue after the final sentence fails this step.

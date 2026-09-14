@@ -6,50 +6,65 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SentenceGapWaiterTest {
-    private fun waiter() = SentenceGapWaiter(delayMs = 2, repeatMs = 8, pollMs = 1)
-    @Test fun readyAnswerAndClosedStreamNeverStartCue() = runBlocking {
+    private fun waiter() = SentenceGapWaiter(pollMs = 1)
+    @Test fun bufferedAnswerAndClosedStreamNeverStartCue() = runBlocking {
         val channel = Channel<Int>(1); channel.send(7); channel.close()
         var calls = 0
-        assertEquals(7, waiter().receive(channel, { true }) { calls++ }.getOrThrow())
-        assertTrue(waiter().receive(channel, { true }) { calls++ }.isClosed)
+        assertEquals(7, waiter().receive(channel, { 0 }, { 1000 }) { calls++ }.getOrThrow())
+        assertTrue(waiter().receive(channel, { 0 }, { 0 }) { calls++ }.isClosed)
         assertEquals(0, calls)
     }
-    @Test fun midSentenceStarvationNeverStartsCue() = runBlocking {
+    @Test fun pausedPlaybackNeverStartsCue() = runBlocking {
         val channel = Channel<Int>(); var calls = 0
-        val receive = async { waiter().receive(channel, { false }) { calls++ } }
-        delay(25); channel.send(9)
+        val receive = async { waiter().receive(channel, { 0 }, { 0 }, { false }) { calls++ } }
+        channel.send(9)
         assertEquals(9, receive.await().getOrThrow()); assertEquals(0, calls)
     }
-    @Test fun answerArrivalCancelsCueBeforeReturningPcm() = runBlocking {
-        val channel = Channel<Int>(); val started = CompletableDeferred<Unit>(); var released = false
-        val receive = async { waiter().receive(channel, { true }) {
-            try { started.complete(Unit); awaitCancellation() } finally { released = true }
+    @Test fun answerArrivalDuringCueIsPreservedAndDoesNotTruncateCue() = runBlocking {
+        val channel = Channel<Int>(2); val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>(); var released = false
+        val receive = async { waiter().receive(channel, { 0 }, { 0 }) {
+            try { started.complete(Unit); finish.await() } finally { released = true }
         } }
-        withTimeout(1000) { started.await() }; channel.send(3)
+        withTimeout(1000) { started.await() }; channel.send(3); channel.send(4); yield()
+        assertFalse(receive.isCompleted); assertFalse(released)
+        finish.complete(Unit)
         assertEquals(3, receive.await().getOrThrow()); assertTrue(released)
+        assertEquals(4, channel.receive())
     }
-    @Test fun bufferedPreviousSentenceMustDrainFirst() = runBlocking {
-        val channel = Channel<Int>(); var drained = false; val started = CompletableDeferred<Unit>()
-        val receive = async { waiter().receive(channel, { drained }) { started.complete(Unit) } }
-        delay(25); assertFalse(started.isCompleted); drained = true
-        withTimeout(1000) { started.await() }; channel.close(); assertTrue(receive.await().isClosed)
+    @Test fun previousSentenceMustDrainBeforeCue() = runBlocking {
+        val channel = Channel<Int>(1); channel.send(3)
+        var remaining = 100L; val started = CompletableDeferred<Unit>()
+        val receive = async { waiter().receive(channel, { remaining }, { 240 }) { started.complete(Unit) } }
+        delay(20); assertFalse(started.isCompleted); remaining = 0
+        assertEquals(3, withTimeout(1000) { receive.await() }.getOrThrow())
+        assertTrue(started.isCompleted)
     }
-    @Test fun repeatedRealGapsCanCueAndStopCleansUp() = runBlocking {
-        val channel = Channel<Int>(); var calls = 0; var released = false
-        val repeated = CompletableDeferred<Unit>()
-        val receive = async { waiter().receive(channel, { true }) {
-            calls++
-            if (calls == 2) try { repeated.complete(Unit); awaitCancellation() } finally { released = true }
-        } }
-        withTimeout(1000) { repeated.await() }; receive.cancelAndJoin(); assertTrue(released)
+    @Test fun generationCatchingUpBeforeBoundarySkipsCue() = runBlocking {
+        val channel = Channel<Int>(1); channel.send(3)
+        var buffer = 240L; var calls = 0
+        val receive = async { waiter().receive(channel, { 100 }, { buffer }) { calls++ } }
+        delay(20); buffer = 800
+        assertEquals(3, withTimeout(1000) { receive.await() }.getOrThrow()); assertEquals(0, calls)
     }
-    @Test fun producerFailureCancelsActiveCueAndIsPreserved() = runBlocking {
+    @Test fun laterBoundariesNeverRepeatRecovery() = runBlocking {
+        val channel = Channel<Int>(1); val gap = waiter(); var calls = 0
+        channel.send(1)
+        assertEquals(1, gap.receive(channel, { 0 }, { 240 }) { calls++ }.getOrThrow())
+        channel.send(2)
+        assertEquals(2, gap.receive(channel, { 0 }, { 240 }) { calls++ }.getOrThrow())
+        assertEquals(1, calls)
+    }
+    @Test fun cancellationReleasesActiveCue() = runBlocking {
         val channel = Channel<Int>(); val started = CompletableDeferred<Unit>(); var released = false
-        val failure = IllegalStateException("native failure")
-        val receive = async { waiter().receive(channel, { true }) {
+        val receive = async { waiter().receive(channel, { 0 }, { 0 }) {
             try { started.complete(Unit); awaitCancellation() } finally { released = true }
         } }
-        withTimeout(1000) { started.await() }; channel.close(failure)
-        assertSame(failure, receive.await().exceptionOrNull()); assertTrue(released)
+        withTimeout(1000) { started.await() }; receive.cancelAndJoin(); assertTrue(released)
+    }
+    @Test fun closedProducerFailureIsPreservedWithoutFiller() = runBlocking {
+        val channel = Channel<Int>(); val failure = IllegalStateException("native failure")
+        channel.close(failure)
+        assertSame(failure, waiter().receive(channel, { 0 }, { 0 }) { fail("cue after failure") }.exceptionOrNull())
     }
 }

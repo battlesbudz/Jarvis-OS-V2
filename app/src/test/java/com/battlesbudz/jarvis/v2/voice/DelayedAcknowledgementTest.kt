@@ -11,79 +11,52 @@ class DelayedAcknowledgementTest {
         cue.prepare(audio); cue.start(this, delayMs = 1) { calls++ }; delay(10)
         assertEquals(0, calls); cue.close()
     }
-    @Test fun fastAnswerSkipsAllFillers() = runBlocking {
-        val cue = DelayedAcknowledgement(); val spoken = mutableListOf<String>()
-        cue.prepare(audio); cue.start(this, delayMs = 100) { spoken += it.text }; cue.request()
-        cue.answerReady(); assertTrue(spoken.isEmpty()); cue.close()
+    @Test fun fastAnswerSkipsCue() = runBlocking {
+        val cue = DelayedAcknowledgement(); var calls = 0
+        cue.prepare(audio); cue.start(this, delayMs = 100) { calls++ }; cue.request()
+        cue.answerReady(); assertEquals(0, calls); cue.close()
     }
     @Test fun missingCacheNeverHoldsAnswer() = runBlocking {
         val cue = DelayedAcknowledgement()
         cue.start(this, delayMs = 1) { fail("No audio cached") }; cue.request(); delay(5)
         withTimeout(100) { cue.answerReady() }; cue.close()
     }
-    @Test fun readyAnswerCancelsEvenActiveInitialCue() = runBlocking {
+    @Test fun readyAnswerWaitsForCompleteActiveClip() = runBlocking {
+        val cue = DelayedAcknowledgement(); val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>(); var released = false
+        cue.prepare(audio); cue.start(this, delayMs = 1) {
+            try { started.complete(Unit); finish.await() } finally { released = true }
+        }
+        cue.request(); withTimeout(500) { started.await() }
+        val answer = async { cue.answerReady() }; yield()
+        assertFalse(answer.isCompleted); assertFalse(released)
+        finish.complete(Unit); withTimeout(500) { answer.await() }
+        assertTrue(released); cue.close()
+    }
+    @Test fun slowAnswerNeverRepeatsOrAnnouncesAnotherStage() = runBlocking {
+        val cue = DelayedAcknowledgement(); val started = CompletableDeferred<Unit>(); var calls = 0
+        cue.prepare(audio)
+        cue.start(this, delayMs = 1) { calls++; started.complete(Unit) }
+        cue.request(); withTimeout(500) { started.await() }
+        cue.updateStage(DelayedAcknowledgement.Stage.SYNTHESIZING)
+        cue.request(); delay(30); cue.answerReady()
+        assertEquals(1, calls); cue.close()
+    }
+    @Test fun cacheCanBecomeReadyDuringInitialWait() = runBlocking {
+        val cue = DelayedAcknowledgement(); val played = CompletableDeferred<String>()
+        cue.start(this, delayMs = 1, requestPreparation = { cue.prepare(audio.copy(text = it)) }) {
+            played.complete(it.text)
+        }
+        cue.request(); assertEquals(FillerPhrases.INITIAL, withTimeout(500) { played.await() })
+        cue.answerReady(); cue.close()
+    }
+    @Test fun stopCancelsActiveCueAndUnblocksAnswer() = runBlocking {
         val cue = DelayedAcknowledgement(); val started = CompletableDeferred<Unit>(); var released = false
         cue.prepare(audio); cue.start(this, delayMs = 1) {
             try { started.complete(Unit); awaitCancellation() } finally { released = true }
         }
         cue.request(); withTimeout(500) { started.await() }
-        withTimeout(100) { cue.answerReady() }
-        assertTrue(released); cue.close()
-    }
-    @Test fun gapCuesVaryAndContinueAcrossMoreThanOneFollowup() = runBlocking {
-        val cue = DelayedAcknowledgement(); val spoken = mutableListOf<String>(); val enough = CompletableDeferred<Unit>()
-        cue.prepare(audio); FillerPhrases.VARIATIONS.forEach { cue.prepare(audio.copy(text = it)) }
-        cue.start(this, delayMs = 1, repeatGapMs = 5) {
-            spoken += it.text; if (spoken.size == 5) enough.complete(Unit)
-        }
-        cue.request(); withTimeout(500) { enough.await() }; cue.answerReady()
-        assertEquals(listOf(FillerPhrases.INITIAL, "One second.", "One moment please.", "Just a second.", "One second."), spoken)
-        cue.close()
-    }
-    @Test fun stageCueTracksActualStageAndDoesNotInventWork() = runBlocking {
-        val cue = DelayedAcknowledgement(); val spoken = mutableListOf<String>(); val ready = CompletableDeferred<Unit>()
-        cue.prepare(audio.copy(text = "Thinking."))
-        cue.prepare(audio.copy(text = "Preparing the audio."))
-        cue.updateStage(DelayedAcknowledgement.Stage.GENERATING)
-        cue.start(this, delayMs = 1, repeatGapMs = 5) {
-            spoken += it.text
-            if (spoken.size == 1) cue.updateStage(DelayedAcknowledgement.Stage.SYNTHESIZING)
-            else ready.complete(Unit)
-        }
-        cue.request(); withTimeout(500) { ready.await() }; cue.answerReady()
-        assertEquals(listOf("Thinking.", "Preparing the audio."), spoken); cue.close()
-    }
-    @Test fun aNewStageRequestsItsMissingCueBeforeAnotherGenericVariation() = runBlocking {
-        val cue = DelayedAcknowledgement(); val spoken = mutableListOf<String>(); val ready = CompletableDeferred<Unit>()
-        val requested = mutableListOf<String>()
-        cue.prepare(audio)
-        cue.start(this, delayMs = 1, repeatGapMs = 5, requestPreparation = {
-            requested += it; cue.prepare(audio.copy(text = it))
-        }) {
-            spoken += it.text
-            if (spoken.size == 1) cue.updateStage(DelayedAcknowledgement.Stage.GENERATING)
-            else ready.complete(Unit)
-        }
-        cue.request(); withTimeout(500) { ready.await() }; cue.answerReady()
-        assertEquals(listOf(FillerPhrases.INITIAL, "Thinking."), spoken)
-        assertEquals(listOf("Thinking."), requested); cue.close()
-    }
-
-    @Test fun initialGapPrefersRecordedUmOverCachedThinking() = runBlocking {
-        val cue = DelayedAcknowledgement(); val first = CompletableDeferred<String>()
-        cue.prepare(audio); cue.prepare(audio.copy(text = "Thinking."))
-        cue.updateStage(DelayedAcknowledgement.Stage.GENERATING)
-        cue.start(this, delayMs = 1) { first.complete(it.text) }
-        cue.request()
-        assertEquals(FillerPhrases.INITIAL, withTimeout(500) { first.await() })
-        cue.answerReady(); cue.close()
-    }
-
-    @Test fun stopCancelsActiveCue() = runBlocking {
-        val cue = DelayedAcknowledgement(); val started = CompletableDeferred<Unit>(); var released = false
-        cue.prepare(audio); cue.start(this, delayMs = 1) {
-            try { started.complete(Unit); awaitCancellation() } finally { released = true }
-        }
-        cue.request(); withTimeout(500) { started.await() }; cue.close(); assertTrue(released)
+        val answer = async { cue.answerReady() }; cue.close()
+        withTimeout(500) { answer.await() }; assertTrue(released)
     }
 }

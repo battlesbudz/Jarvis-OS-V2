@@ -113,20 +113,26 @@ internal fun TtsComparisonDialog(
                     }
                 }
                 Text("Selected voice is used for the next call. Pocket Paul downloads about 99 MB on first use. All voices then work offline.")
-                if (selected == TtsEngine.POCKET_PAUL) Text("Paul: Kyutai / VCTK p259 (CC BY 4.0). The opening ummm is bundled; follow-up acknowledgements are prepared once and cached.", style = MaterialTheme.typography.bodySmall)
-                if (selected == TtsEngine.POCKET_PAUL) OutlinedButton(enabled = canChange && !running,
-                    onClick = {
-                        running = true
-                        scope.launch {
-                            try {
-                                VoiceCues.playAcknowledgement(SpeechAudio(FillerPhrases.INITIAL, 24000,
-                                    PaulOpeningAudio.load(context.assets), 0), { false }, { false }, {})
-                                status = "Opening preview finished. Calls use this same clip."
-                            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-                            catch (error: Exception) { status = error.message ?: "Preview failed." }
-                            finally { running = false }
-                        }
-                    }) { Text("Preview Paul’s opening ummm") }
+                if (selected == TtsEngine.POCKET_PAUL) Text("Paul: Kyutai / VCTK p259 (CC BY 4.0). The neutral acknowledgment and recovery phrase are saved on the phone.", style = MaterialTheme.typography.bodySmall)
+                if (selected == TtsEngine.POCKET_PAUL) {
+                    listOf(false, true).forEach { recovery ->
+                        OutlinedButton(enabled = canChange && !running, onClick = {
+                            running = true
+                            scope.launch {
+                                try {
+                                    val text = if (recovery) FillerPhrases.RECOVERY else FillerPhrases.INITIAL
+                                    val pcm = if (recovery) PaulOpeningAudio.loadRecovery(context.assets)
+                                        else PaulOpeningAudio.load(context.assets)
+                                    VoiceCues.playAcknowledgement(SpeechAudio(text, 24000, pcm, 0),
+                                        { false }, { false }, {})
+                                    status = "Preview finished. Calls use this same clip."
+                                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                                catch (error: Exception) { status = error.message ?: "Preview failed." }
+                                finally { running = false }
+                            }
+                        }) { Text(if (recovery) "Preview Paul’s recovery phrase" else "Preview Paul’s acknowledgment") }
+                    }
+                }
                 if (!canChange) Text("End your call before changing voices or benchmarking.")
                 HorizontalDivider()
                 Text("Speech tuning", style = MaterialTheme.typography.titleMedium)
