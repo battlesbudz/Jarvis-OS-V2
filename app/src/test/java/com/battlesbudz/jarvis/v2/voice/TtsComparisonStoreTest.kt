@@ -6,6 +6,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TtsComparisonStoreTest {
+    @Test fun kokoroSourceAndPlaybackEvidenceSurvivesSavingAndWholeSuiteExport() {
+        val prefs = preferences()
+        val store = TtsComparisonStore(prefs)
+        val metrics = TtsSessionMetrics(10, 20, 50, 80, 0, 1f, 0, 1, 1, 3, "hash", 2, true, null,
+            observedPlaybackStarvationMs = 0, sourcePcmSummary = "event=source_summary nearSilentFrames=2400",
+            pcmDelivery = "kokoro_sentence_callbacks_v1")
+        store.add(TtsEngine.KOKORO, "test", "short", metrics,
+            TtsBenchmarkRun("kokoro-suite", TtsBenchmarkProfile(), 1, "Hello.", 0, 0,
+                audioFile = "kokoro-suite-1.wav"))
+        val restored = TtsComparisonStore(prefs)
+        val report = restored.suiteDiagnosticReport(restored.records().single())
+        assertTrue(report.contains("observed_playback_starvation_ms=0"))
+        assertTrue(report.contains("source_pcm_summary=event=source_summary nearSilentFrames=2400"))
+        assertTrue(report.contains("pcm_delivery=kokoro_sentence_callbacks_v1"))
+    }
+
     @Test fun wholeSuiteSurvivesRestartOrdersRunsAndKeepsFailuresWithoutMixingSuites() {
         val prefs = preferences()
         val store = TtsComparisonStore(prefs)

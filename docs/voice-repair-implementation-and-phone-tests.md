@@ -1,6 +1,6 @@
 # Voice repair: bounded commits and phone test protocol
 
-Prepared: 12 September 2026. Branch: `audio-pr2`. Source baseline: `93a144c` (build 673 investigation). Status: **A1 accepted; A2 screening retained; C1 first repair passed CI but failed phone interruption; C2 first change awaits CI/phone acceptance. See the ledger and delivery cards below.**
+Prepared: 12 September 2026. Branch: `audio-pr2`. Source baseline: `93a144c` (build 673 investigation). Status: **A1 accepted; A2/A3 partial; B1 has a user-preferred Paul submission candidate; B2 deferred while Justin evaluates preferred Kokoro voice. C1–C3 repairs remain partially accepted; D/E and integrated F acceptance remain open.**
 
 Companion: [research proposal](voice-repair-proposal-2026-09-12.md). Parent roadmap: [local voice implementation plan](local-voice-implementation-plan.md). Continue in the existing Audio PR2 PR; no merge without Justin's explicit approval. This document defines future code work; publishing it does not claim that work is implemented or tested.
 
@@ -418,13 +418,13 @@ Update this table after each actual delivery. `Planned` is deliberately not `imp
 | --- | --- | --- | --- | --- |
 | A1 | Accepted | a348eb6; build 675 | CI passed; phone cancel/complete/restart/call passed | Acceptance record below |
 | A2 | Implemented; partial phone screening retained | ca3210f, recording fix 46ec232; builds 676–677 | CI passed; 17 focused recording/session tests | A–D retained; E and extended acceptance incomplete |
-| A3 | Planned | — | — | P1/P2 — |
-| B1 | Planned | — | — | P3 compare — |
-| B2 | Conditional on B1 winner | — | — | P3 confirm — |
+| A3 | Partial delivery | Endpoint timings and build 685 whole-suite export; Kokoro source/playback separation in current commit | Full manifest/WAV harness not complete | P1/P2 acceptance remains |
+| B1 | Specific candidate identified | Suite 48a57deb: runs 5/10 paragraph-one-reset, 13 opening-one-reset preferred by Justin | Single text submission, audio streamed; no proof of zero drift | Formal P3/parity incomplete |
+| B2 | Deferred for Kokoro priority | No Paul passage grouping promoted | User prefers Kokoro; 684 Paul path retained | P3 confirm pending |
 | B3 | Planned | — | — | Reuse B2 evidence |
 | C1 | First repair delivered; phone interruption failed; renewal scheduling remains | 3509b4b; build 678 | 52 focused JVM tests and Android CI passed | Failure record below |
-| C2 | First bounded change: final-only probe updates; CI/phone pending | Current commit | SDK cadence and worker checks below | Repeat one normal-call correction |
-| C3 | Evidence-dependent; split C3a/C3b if needed | — | — | P2 extended/P3 — |
+| C2 | Partial repairs delivered; not accepted | Final-only probes and later scheduling repairs | Self-playback still triggers costly probes | Genuine interruption acceptance pending |
+| C3 | Partial playback repairs; Kokoro callbacks in current commit | Builds 683–684 buffering/cues; current Kokoro delivery change | One cohesive 684 call, no observed starvation; sustained gate not met | P2 extended/P3 remain |
 | D1 | Planned; measure early | — | — | P5 — |
 | D2 | Conditional on route evidence | — | — | P5/P6 — |
 | D3 | Conditional on insufficient platform AEC | — | — | P5/P2 — |
@@ -970,3 +970,18 @@ Validation covers persisted suite selection, execution ordering, incomplete suit
 reporting, retention of failed runs, and exclusion of unrelated suites. Phone:
 update, browse saved text runs if needed, select any run from the completed Paul
 suite, then tap **Copy whole suite · 14 runs** once and paste it into the conversation.
+
+
+### C3 follow-up — Kokoro sentence callback delivery (next APK)
+
+Justin explicitly prioritised Kokoro, whose voice he prefers, while running the existing all-profile comparison. This is one bounded C3/A3 change, not completion of the sixteen milestones. Later C4–C6 headings above are repair cards, not additions to the original A1–F2 milestone IDs. The Gemma latency extension and Paul passage grouping are deferred; neither is bundled here.
+
+- Kokoro non-full-text generation now uses the pinned Sherpa 1.13.7 sentence callback, copies each returned PCM sample once, and never replays the returned full utterance. Upstream contract checked in `sherpa-onnx/csrc/offline-tts-kokoro-impl.h` at tag `v1.13.7`: callback after each native sentence batch, not within-sentence latent streaming. No native/model change or promise of faster sentence inference.
+- Native sentences are handed to the writer in at most 400 ms PCM pieces with a 32-entry queue (12.8 seconds queued pieces, plus writer/AudioTrack/native working memory). This allows bounded synthesis ahead and keeps cancellation/backpressure on the native owner. Full-text benchmark baselines and prepared openings keep their existing buffered semantics. Selected voice, thread count, speed and text profiles are preserved; Paul remains available.
+- Existing completed-sentence refill handling is enabled for Kokoro at punctuation-ended application submissions. Character/clause splits do not qualify. No sample trimming, mid-clause filler or added audio normalization. A single sentence still must finish native synthesis before its first callback.
+- Copied single-run and whole-suite reports now retain `pcm_delivery`, `observed_playback_starvation_ms`, and a Kokoro `source_pcm_summary` measured over consumer-accepted PCM. Near-silence is a 10 ms energy-window measurement, not intelligibility, a measured acoustic pause, or a reason to trim audio. Full-text PCM uses the same analyser with the explicit `consumer_accepted_pcm` scope; the report includes the longest near-silent interval. Source summaries exclude inserted cues, playback time stretching and playback gaps. Incomplete playback is marked incomplete. Existing underrun totals still include drain events.
+- Callback parity is checked against returned float PCM in benchmarks; live calls check frame counts and sample rate. Tests cover exact sample order, one caption start, bounded chunks, propagation of consumer closure, recovery boundary eligibility and persisted whole-suite evidence.
+
+Validation before publishing: 38 focused playback/source-analysis tests and 41 report/profile tests passed; the modified Android audio implementation compiled against the Android and pinned Sherpa SDK jars. Full Android CI and phone acceptance are pending at this commit.
+
+Phone screen: retain the already-running old-build suite as a baseline and copy it once with **Copy whole suite**. After installing the next APK, use the preferred Kokoro profile for the same short question and one longer explanation, then copy the call diagnostics. Do not rerun the whole matrix automatically. Listen for pronunciation/voice continuity, missing or repeated words, first-speech delay and pauses. New-build callback timing is not directly equivalent to old whole-phrase completion timing; compare build and `pcm_delivery`. Device sound/throughput and sustained-load acceptance remain pending.

@@ -205,9 +205,13 @@ class SherpaKokoroVoiceOutput(
         val draining = AtomicBoolean(false)
         var playbackSpeed = 1f
         var estimatedGapMs = 0L
+        var sourcePcmSummary: String? = null
+        var kokoroSource: SourcePcmAnalysis? = null
+        val kokoroCallbacks = engine == TtsEngine.KOKORO && benchmarkProfile?.fullText != true
+        val pcmDelivery = if (kokoroCallbacks) "kokoro_sentence_callbacks_v1" else if (engine == TtsEngine.KOKORO) "buffered_full_text" else "pocket_existing_policy"
         // One owner creates, invokes and releases the native engine. Playback never owns it.
         // Bounded PCM backpressure prevents long answers from accumulating unlimited audio.
-        val audio = NativeAudioQueue<SynthesizedPhrase>(if (acknowledgeDelays && !benchmarkRun) 8 else 2) {
+        val audio = NativeAudioQueue<SynthesizedPhrase>(if (kokoroCallbacks) 32 else if (acknowledgeDelays && !benchmarkRun) 8 else 2) {
             it.pcm.size * 1000L / it.sampleRate
         }
         val pocketSentences = engine == TtsEngine.POCKET_PAUL && (benchmarkProfile?.nativeStreaming == true || !fixedChunking && benchmarkProfile == null)
@@ -240,6 +244,7 @@ class SherpaKokoroVoiceOutput(
             var engineLease: CallModelSlot<OfflineTts>.Lease? = null
             var failure: Throwable? = null
             var index = 0
+            var previousSentenceComplete = false
             var previousChars = 0
             var previousSynthesisMs = 0L
             val owner = currentCoroutineContext()
@@ -361,14 +366,15 @@ class SherpaKokoroVoiceOutput(
                 fun generate(text: String) {
                     owner.ensureActive()
                     if (stopped) return
-                    if (index > 0 && pocketSentences && acknowledgeDelays && !benchmarkRun) {
+                    if (index > 0 && (pocketSentences || kokoroCallbacks && previousSentenceComplete) && acknowledgeDelays && !benchmarkRun) {
                         audio.sendFromNative(SynthesizedPhrase(index - 1, "", tts.sampleRate(), ShortArray(0),
                             0, 1f, sentenceEnd = true))
                     }
+                    previousSentenceComplete = KokoroPcmDelivery.endsSentence(text)
                     val candidate = preparedOpening.getAndSet(null)
                     val cached = if (index == 0) candidate?.takeFor(text) else null
                     candidate?.discard()
-                    if (pocket && cached == null && benchmarkProfile?.fullText != true) {
+                    if ((pocket || kokoroCallbacks) && cached == null && benchmarkProfile?.fullText != true) {
                         val phraseIndex = index++
                         val rate = tts.sampleRate()
                         check(rate > 0)
@@ -379,12 +385,12 @@ class SherpaKokoroVoiceOutput(
                         var queueWaitMs = 0L
                         val segmentSession = PocketSpeechPolicy.sessionId(nativeSession, phraseIndex, paulReset)
                         streamDiagnostics?.begin(phraseIndex, text, rate, segmentSession, paulReset)
-                        log("tts_generation_started chars=${text.length} preview=${text.take(80)} api=generateWithConfigAndCallback voice=Paul")
+                        log("tts_generation_started chars=${text.length} preview=${text.take(80)} api=generateWithConfigAndCallback voice=${this@SherpaKokoroVoiceOutput.engine.id} pcmDelivery=$pcmDelivery")
                         val callback = SherpaPcmCallback { samples ->
                             owner.ensureActive()
                             if (stopped) 0 else {
                                 if (samples.isNotEmpty()) {
-                                    check(samples.all { it.isFinite() }) { "Pocket returned non-finite PCM." }
+                                    check(samples.all { it.isFinite() }) { "Voice model returned non-finite PCM." }
                                     if (callbackCount == 0) {
                                         val latency = elapsedMs(started)
                                         log("tts_first_callback index=$phraseIndex latencyMs=$latency")
@@ -402,13 +408,32 @@ class SherpaKokoroVoiceOutput(
                                     // One copy of each callback, never also enqueue the returned full utterance.
                                     // Captions remain estimated; the text belongs to the first audio chunk.
                                     deliveryLedger?.append(phraseIndex, text, pcm.size, rate)
-                                    audio.sendFromNative(SynthesizedPhrase(phraseIndex,
-                                        if (callbackCount == 0) text else "", rate, pcm, if (phraseIndex == 0 && callbackCount == 0) paulBufferMs.toLong() else 0,
-                                        benchmarkProfile?.playbackSpeed ?: 1f, captionGroup = phraseIndex))
+                                    if (pocket) {
+                                        audio.sendFromNative(SynthesizedPhrase(phraseIndex,
+                                            if (callbackCount == 0) text else "", rate, pcm,
+                                            if (phraseIndex == 0 && callbackCount == 0) paulBufferMs.toLong() else 0,
+                                            benchmarkProfile?.playbackSpeed ?: 1f, captionGroup = phraseIndex))
+                                    } else {
+                                        // Kokoro callbacks contain completed native sentences, not small latent chunks.
+                                        // Bound queued PCM without changing samples or replaying the returned utterance.
+                                        val latency = elapsedMs(started)
+                                        val duration = pcm.size * 1000L / rate
+                                        val speed = benchmarkProfile?.playbackSpeed ?: if (normalSpeed) 1f
+                                            else PlaybackBufferPolicy.playbackSpeed(latency, duration)
+                                        KokoroPcmDelivery.forEachChunk(pcm, rate) { part, firstPart ->
+                                            audio.sendFromNative(SynthesizedPhrase(phraseIndex,
+                                                if (callbackCount == 0 && firstPart) text else "", rate, part,
+                                                if (phraseIndex == 0 && callbackCount == 0 && firstPart && !benchmarkRun)
+                                                    PlaybackBufferPolicy.startupWaitMs(latency, duration) else 0,
+                                                speed, captionGroup = phraseIndex))
+                                            // Preserve measured startup headroom until a second submission supplies PCM.
+                                            if (phraseIndex > 0) startupReady.complete(Unit)
+                                        }
+                                    }
                                     queueWaitMs += elapsedMs(waitStart)
                                     streamDiagnostics?.chunk(phraseIndex, pcm)
                                     frames += pcm.size
-                                    if (phraseIndex == 0 && frames * 1000 / rate >= 640) startupReady.complete(Unit)
+                                    if (pocket && phraseIndex == 0 && frames * 1000 / rate >= 640) startupReady.complete(Unit)
                                     callbackCount++
                                     log("tts_pcm_chunk index=$phraseIndex chunk=$callbackCount frames=${pcm.size} " +
                                         "peak=${samples.maxOf { kotlin.math.abs(it) }} nonFinite=0")
@@ -417,19 +442,19 @@ class SherpaKokoroVoiceOutput(
                             }
                         }
                         val generated = tts.generateWithConfigAndCallback(
-                            PocketSpeechPolicy.input(text, paulPeriod),
-                            generation.copy(extra = PocketSpeechPolicy.extra(session = segmentSession)), callback)
+                            if (pocket) PocketSpeechPolicy.input(text, paulPeriod) else text,
+                            if (pocket) generation.copy(extra = PocketSpeechPolicy.extra(session = segmentSession)) else generation, callback)
                         callback.failure?.let { throw it }
                         owner.ensureActive()
                         if (stopped) return
                         check(frames > 0 && frames == generated.samples.size.toLong() && generated.sampleRate == rate) {
-                            "Pocket callback PCM did not match the generated utterance."
+                            "Voice callback PCM did not match the generated utterance."
                         }
                         parity?.finish(generated.samples)?.let { result ->
-                            log("pocket_stream_trace event=pcm_parity session=$nativeSession index=$phraseIndex " +
+                            log("${if (pocket) "pocket_stream_trace" else "kokoro_stream_trace"} event=pcm_parity session=$nativeSession index=$phraseIndex " +
                                 "matches=${result.matches} frames=${result.frames} method=sha256_float32_le " +
                                 "callbackSha256=${result.callbackHash} returnedSha256=${result.returnedHash}")
-                            check(result.matches) { "Pocket callback samples differ from returned audio." }
+                            check(result.matches) { "Voice callback samples differ from returned audio." }
                         }
                         deliveryLedger?.seal(phraseIndex)
                         captions.complete(phraseIndex, frames)
@@ -442,7 +467,7 @@ class SherpaKokoroVoiceOutput(
                         phraseCount++
                         previousChars = text.length
                         previousSynthesisMs = synthesisMs
-                        startupReady.complete(Unit)
+                        if (pocket || phraseIndex > 0) startupReady.complete(Unit)
                         val rtf = if (audioMs > 0) synthesisMs.toDouble() / audioMs else 0.0
                         if (!fixedChunking) chunker.observe(rtf)
                         log("tts_generation_finished index=$phraseIndex synthesisMs=$synthesisMs queueWaitMs=$queueWaitMs " +
@@ -606,6 +631,13 @@ class SherpaKokoroVoiceOutput(
                     ensureActive()
                     if (stopped || phrase.pcm.isEmpty()) continue
                     diagnosticPcm?.invoke(phrase.pcm, phrase.sampleRate)
+                    if (engine == TtsEngine.KOKORO) {
+                        if (kokoroSource == null) kokoroSource = SourcePcmAnalysis(phrase.sampleRate, 0, scope = "consumer_accepted_pcm") { event ->
+                            if (event.startsWith("event=source_summary")) sourcePcmSummary = event
+                            log("kokoro_source_pcm $event")
+                        }
+                        kokoroSource?.append(phrase.pcm)
+                    }
                     outputSampleRate = phrase.sampleRate
                     if (first) {
                         // Small startup headroom; never hold a short, completed answer for this delay.
@@ -769,6 +801,7 @@ class SherpaKokoroVoiceOutput(
             withContext(NonCancellable) { collectTokens.cancelAndJoin(); producer.cancelAndJoin() }
             if (engine == TtsEngine.POCKET_PAUL && !benchmarkRun && completed && !wasStopped && paulBaseBuffer > 0)
                 paulBuffer.observe(streamingUnderruns.get() > 0 || estimatedGapMs > 50)
+            kokoroSource?.finish(completed && !wasStopped && failureMessage == null)
             streamDiagnostics?.summary(finalUnderruns, estimatedGapMs,
                 completed && !wasStopped && failureMessage == null)
             acknowledgementRequests.cancel()
@@ -782,7 +815,7 @@ class SherpaKokoroVoiceOutput(
                     completed && !wasStopped && failureMessage == null, failureMessage,
                     playbackConfirmed, playedFrames, framesWritten.toLong(), outputRoute,
                     firstTextToPcmMs, firstTextToPlaybackMs, if (pocketSentences || benchmarkProfile?.fullText == true) null else openingChars,
-                    preparedSynthesisMs, preparedOpeningReused))
+                    preparedSynthesisMs, preparedOpeningReused, playbackStarvationMs.get(), sourcePcmSummary, pcmDelivery))
             }.onFailure { log("tts_metrics_failed reason=${it.message}") }
             log("tts_session_finished phrases=$phraseCount synthesisMs=$totalSynthesisMs " +
                 "audioDurationMs=$totalAudioMs queueWaitMs=$totalQueueWaitMs playbackSpeed=$playbackSpeed " +

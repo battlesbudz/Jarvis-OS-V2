@@ -5,6 +5,7 @@ import kotlin.math.sqrt
 
 /** Constant-memory PCM16 measurements. Energy is not intelligibility or speaker identity. */
 internal class SourcePcmAnalysis(private val rate: Int, private val startFrame: Long,
+                                 private val scope: String = "accepted_callback_pcm",
                                  private val emit: (String) -> Unit) {
     private val windowFrames = (rate / 100).coerceAtLeast(1)
     private var frames = 0L
@@ -15,6 +16,7 @@ internal class SourcePcmAnalysis(private val rate: Int, private val startFrame: 
     private var silentFrames = 0L
     private var silenceStart: Long? = null
     private var intervals = 0
+    private var longestSilentFrames = 0L
     private var clipped = 0L
     private var finished = false
 
@@ -47,6 +49,7 @@ internal class SourcePcmAnalysis(private val rate: Int, private val startFrame: 
 
     private fun closeSilence(end: Long) {
         silenceStart?.let { start ->
+            longestSilentFrames = maxOf(longestSilentFrames, end - start)
             intervals++
             if (intervals <= 128) emit("event=near_silence startFrame=$start endFrame=$end durationMs=${(end - start) * 1000 / rate}")
         }
@@ -60,9 +63,9 @@ internal class SourcePcmAnalysis(private val rate: Int, private val startFrame: 
         emit("event=source_summary startFrame=$startFrame endFrame=${startFrame + frames} sampleRate=$rate " +
             "windowFrames=$windowFrames rmsThresholdFS=0.001 normalization=pcm16_div_32768 " +
             "activeWindowRmsDbfs=$db activeWindowFrames=$activeFrames nearSilentFrames=$silentFrames " +
-            "nearSilentIntervals=$intervals omittedIntervals=${(intervals - 128).coerceAtLeast(0)} " +
+            "longestNearSilenceMs=${longestSilentFrames * 1000 / rate} nearSilentIntervals=$intervals omittedIntervals=${(intervals - 128).coerceAtLeast(0)} " +
             "railPcm16Samples=$clipped railThresholdAbs=32767 complete=$complete finalPartialWindow=included " +
-            "scope=accepted_callback_pcm excludes=playback_gaps,fillers " +
+            "scope=$scope excludes=playback_gaps,fillers " +
             "firstIntelligibleWordMs=unavailable qualityCause=not_determined")
     }
 }

@@ -14,7 +14,9 @@ data class TtsSessionMetrics(
     val speechFrames: Long? = null, val outputRoute: String? = null,
     val firstTextToPcmMs: Long? = null, val firstTextToPlaybackMs: Long? = null,
     val openingChars: Int? = null, val preparedSynthesisMs: Long = 0,
-    val preparedOpeningReused: Boolean = false
+    val preparedOpeningReused: Boolean = false,
+    val observedPlaybackStarvationMs: Long? = null, val sourcePcmSummary: String? = null,
+    val pcmDelivery: String? = null
 )
 
 /** Comparable raw synthesis measurements, separate from Gemma and ASR latency. */
@@ -60,6 +62,9 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
             .put("opening_target_chars", metrics.openingChars ?: JSONObject.NULL)
             .put("prepared_synthesis_ms", metrics.preparedSynthesisMs)
             .put("prepared_opening_reused", metrics.preparedOpeningReused)
+            .put("observed_playback_starvation_ms", metrics.observedPlaybackStarvationMs ?: JSONObject.NULL)
+            .put("source_pcm_summary", metrics.sourcePcmSummary ?: JSONObject.NULL)
+            .put("pcm_delivery", metrics.pcmDelivery ?: JSONObject.NULL)
         if (run != null) {
             item.put("audio_file", run.audioFile ?: JSONObject.NULL)
                 .put("paul_stability", run.profile.stabilityLabel)
@@ -143,6 +148,7 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
                 "playback_confirmed", "played_frames", "speech_frames", "output_route",
                 "first_text_to_pcm_ms", "first_text_to_playback_ms", "opening_target_chars",
                 "prepared_synthesis_ms", "prepared_opening_reused",
+                "observed_playback_starvation_ms", "source_pcm_summary", "pcm_delivery",
                 "queue_wait_ms", "underruns_including_drain", "phrases", "threads", "text_chars", "text_sha256", "error"))
                 appendLine("$key=${if (item.isNull(key)) "unavailable" else item.opt(key)}")
         }.trimEnd()

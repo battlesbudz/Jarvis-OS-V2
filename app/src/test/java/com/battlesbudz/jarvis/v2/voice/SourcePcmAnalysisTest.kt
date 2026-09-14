@@ -6,7 +6,7 @@ import org.junit.Test
 class SourcePcmAnalysisTest {
     private fun analyze(pcm: ShortArray, chunks: Int, start: Long = 0): List<String> {
         val events = mutableListOf<String>()
-        val analysis = SourcePcmAnalysis(24000, start, events::add)
+        val analysis = SourcePcmAnalysis(24000, start, emit = events::add)
         pcm.toList().chunked(chunks).forEach { analysis.append(it.toShortArray()) }
         analysis.finish(true)
         return events
@@ -18,6 +18,7 @@ class SourcePcmAnalysisTest {
         assertEquals(expected, analyze(pcm, 37, 124800))
         assertTrue(expected.first().contains("startFrame=125280 endFrame=126000 durationMs=30"))
         assertTrue(expected.last().contains("activeWindowFrames=960 nearSilentFrames=720"))
+        assertTrue(expected.last().contains("longestNearSilenceMs=30"))
     }
 
     @Test fun levelsUseOnlyActiveWindowsAndCannotStandInForIntelligibility() {
@@ -50,7 +51,7 @@ class SourcePcmAnalysisTest {
 
     @Test fun unfinishedSubmissionIsExplicitAndFinishIsIdempotent() {
         val events = mutableListOf<String>()
-        val a = SourcePcmAnalysis(24000, 0, events::add)
+        val a = SourcePcmAnalysis(24000, 0, emit = events::add)
         a.append(ShortArray(20)); a.finish(false); a.finish(true)
         assertEquals(2, events.size)
         assertTrue(events.last().contains("complete=false"))
