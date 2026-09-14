@@ -19,7 +19,8 @@ internal class CaptureSpeechQueue(
     private val maxBytes: Long = 25 * 32_000L,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default
 ) {
-    data class Frame(val pcm: ByteArray, val decision: SpeechDecision, val capturedAtMs: Long)
+    data class Frame(val pcm: ByteArray, val decision: SpeechDecision, val capturedAtMs: Long, val sequence: Long?)
+    init { input.deferConsumptionAcknowledgement() }
     private val pendingBytes = AtomicLong()
     val bufferedAudioMs: Long get() = pendingBytes.get() / 32 + input.bufferedAudioMs
     @Volatile var targetSilenceMs: Long = 3000
@@ -48,9 +49,12 @@ internal class CaptureSpeechQueue(
                         "recognitionBacklogMs=$bufferedAudioMs targetSilenceMs=$targetSilenceMs")
                 }
             }
-            emit(Frame(pcm, decision, capturedAt))
+            emit(Frame(pcm, decision, capturedAt, input.lastChunkSequence))
         }
     }.buffer(Channel.UNLIMITED).flowOn(dispatcher)
 
-    fun consumed(frame: Frame) { pendingBytes.addAndGet(-frame.pcm.size.toLong()) }
+    fun consumed(frame: Frame) {
+        pendingBytes.addAndGet(-frame.pcm.size.toLong())
+        frame.sequence?.let(input::acknowledgeConsumed)
+    }
 }

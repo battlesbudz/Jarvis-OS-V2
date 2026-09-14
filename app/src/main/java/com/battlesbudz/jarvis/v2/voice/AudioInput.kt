@@ -9,6 +9,10 @@ interface AudioInput {
     /** Monotonic microphone-read time of the currently delivered chunk, when available. */
     val lastChunkCaptureTimeMs: Long? get() = null
     val bufferedAudioMs: Long get() = 0
+    /** Optional session cursor: prefetch must not consume audio on behalf of the next reader. */
+    val lastChunkSequence: Long? get() = null
+    fun deferConsumptionAcknowledgement() {}
+    fun acknowledgeConsumed(sequence: Long) {}
     /** Already consumed microphone history; keyword warmup only, never a new command. */
     val priorAudioForKeywords: ByteArray get() = byteArrayOf()
 

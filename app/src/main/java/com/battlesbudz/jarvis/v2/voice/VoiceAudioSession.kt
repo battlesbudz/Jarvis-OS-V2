@@ -67,6 +67,19 @@ class VoiceAudioSession(
         private var stopped = false
         private var queued = 0L
         private var collecting = false
+        private var deferredAcknowledgement = false
+        @Volatile override var lastChunkSequence: Long? = null
+            private set
+        override fun deferConsumptionAcknowledgement() = synchronized(lock) {
+            check(!collecting && !stopped)
+            deferredAcknowledgement = true
+        }
+        override fun acknowledgeConsumed(sequence: Long) = synchronized(lock) {
+            if (!stopped && deferredAcknowledgement) {
+                check(sequence <= (lastChunkSequence ?: 0))
+                cursor = maxOf(cursor, sequence)
+            }
+        }
         override var priorAudioForKeywords: ByteArray = byteArrayOf()
             private set
         override val sampleRateHz get() = source.sampleRateHz
@@ -114,7 +127,8 @@ class VoiceAudioSession(
                     failure?.let { throw it }
                     synchronized(lock) {
                         queued -= frame.pcm.size
-                        cursor = maxOf(cursor, frame.sequence)
+                        if (!deferredAcknowledgement) cursor = maxOf(cursor, frame.sequence)
+                        lastChunkSequence = frame.sequence
                         lastChunkCaptureTimeMs = frame.atMs
                     }
                     emit(frame.pcm.copyOf()) // A consumer's gain processing must not mutate retained raw PCM.

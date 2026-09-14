@@ -10,6 +10,9 @@ class QuietSpeechAudioInput(private val input: AudioInput, private val log: (Str
     override val channelCount get() = input.channelCount
     override val lastChunkCaptureTimeMs get() = input.lastChunkCaptureTimeMs
     override val bufferedAudioMs get() = input.bufferedAudioMs
+    override val lastChunkSequence get() = input.lastChunkSequence
+    override fun deferConsumptionAcknowledgement() = input.deferConsumptionAcknowledgement()
+    override fun acknowledgeConsumed(sequence: Long) = input.acknowledgeConsumed(sequence)
     override suspend fun start() = input.start()
     override suspend fun stop() = input.stop()
     override fun chunks() = input.chunks().map { pcm ->

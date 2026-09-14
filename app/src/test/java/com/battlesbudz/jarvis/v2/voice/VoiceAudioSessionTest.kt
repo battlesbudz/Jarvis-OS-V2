@@ -45,19 +45,24 @@ class VoiceAudioSessionTest {
     }
     @Test fun recognitionEndpointLeavesNextSpeechForTheReplyReader() = runBlocking {
         val source = Source(); val session = VoiceAudioSession(source, this)
+        val firstRecognized = CompletableDeferred<Unit>()
         val input = session.borrow("command")
         val detector = object : SpeechDetector {
             override fun accept(pcm: ByteArray) = SpeechDecision(true, 0.99f)
             override fun close() = Unit
         }
         val transcriber = object : StreamingTranscriber {
-            override fun accept(pcm: ByteArray) = "Hello Jarvis."
+            override fun accept(pcm: ByteArray): String {
+                firstRecognized.complete(Unit)
+                return "Hello Jarvis."
+            }
             override fun finish() = "Hello Jarvis."
             override fun close() = Unit
         }
         val capture = AudioTurnCapture(input, this, { detector }, createTranscriber = { transcriber })
         try {
-            capture.start(); source.push(1); yield()
+            capture.start(); source.push(1)
+            withTimeout(1000) { firstRecognized.await() }
             capture.finishNow(); source.push(2)
             assertTrue(withTimeout(1000) { capture.awaitTurnCompletion() })
             source.push(3) // Arrives after endpoint, before the command consumer is returned.
@@ -68,6 +73,25 @@ class VoiceAudioSessionTest {
             reply.stop()
         } finally { capture.stop(); session.close() }
         assertEquals(1, source.starts); assertEquals(1, source.stops)
+    }
+    @Test fun prefetchedButUnprocessedAudioIsReplayedAfterCaptureReturns() = runBlocking {
+        val source = Source(); val session = VoiceAudioSession(source, this)
+        val detector = object : SpeechDetector {
+            override fun accept(pcm: ByteArray) = SpeechDecision(true, .99f)
+            override fun close() {}
+        }
+        try {
+            val command = QuietSpeechAudioInput(session.borrow("command"))
+            command.start()
+            val queue = CaptureSpeechQueue(command, detector, { 0 }, {}, dispatcher = Dispatchers.Unconfined)
+            source.push(1); source.push(2); source.push(3)
+            val prefetched = queue.frames().take(3).toList()
+            queue.consumed(prefetched.first()) // ASR processed only frame 1.
+            command.stop()
+            val reply = session.borrow("reply"); reply.start()
+            assertEquals(listOf(2, 3), reply.chunks().take(2).map { it[0].toInt() }.toList())
+            reply.stop()
+        } finally { session.close() }
     }
     @Test fun immediateFollowupReplaysOnlyPostPlaybackAudioEvenIfKeywordListenerConsumedIt() = runBlocking {
         val source = Source(); val session = VoiceAudioSession(source, this)

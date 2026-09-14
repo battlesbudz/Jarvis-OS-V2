@@ -818,3 +818,31 @@ Review the capture endpoint evidence independently of the later first-text and
 speech playback delays. A missing/truncated question, discarded command, or
 multi-second growing capture backlog fails this step. A quicker response must
 not be counted as overall voice acceptance while playback remains broken.
+
+
+#### C3 CI follow-up — preserve prefetched audio at handoff
+
+Build 681 / `c314be522fef08b99ac2faa3f6b0391cde278001` passed release tests,
+packaging, callback ABI and signing, but the debug suite failed
+`recognitionEndpointLeavesNextSpeechForTheReplyReader` (463 tests, one failure).
+Do not use 681 for the phone test. Investigation found that the new asynchronous
+reader could advance the call's consumed cursor ahead of ASR and could still be
+running when turn completion was reported. The test also used a scheduler yield
+instead of waiting for its first recognition, making its explicit-stop boundary
+ambiguous with asynchronous capture.
+
+The corrective commit gives session-backed audio an explicit consumption
+acknowledgement. Capture prefetch preserves the frame sequence; only delivery to
+the ASR consumer advances the call cursor. QuietSpeechAudioInput forwards these
+acknowledgements. Unprocessed prefetched frames remain replayable in the existing
+bounded call history; existing history-overflow rejection prevents a partial
+handoff if they are no longer retained. Ordinary non-prefetch consumers keep their
+original cursor behavior. Capture reports completion only after its producer has
+been cancelled and joined. It does not release the shared hardware recorder.
+
+The endpoint/handoff test now waits for the first recognized frame before asking
+for explicit completion, and a new test verifies prefetched frames 2 and 3 replay
+when ASR consumed only frame 1, through the actual gain wrapper and call session.
+114 focused JVM tests pass including all VoiceAudioSession tests. The corrected
+Android build must pass both debug and release jobs before phone delivery; use
+the same one-question phone card above. No phone acceptance yet.

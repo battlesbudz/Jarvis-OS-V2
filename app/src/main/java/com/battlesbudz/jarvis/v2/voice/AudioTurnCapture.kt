@@ -100,9 +100,10 @@ class AudioTurnCapture(
         captureReadyMs = nowMs() - captureRequestedAt
         collectionJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
-                speechQueue.frames().transformWhile { emit(it); !turnCompleted.isCompleted }.collect { frame ->
-                    speechQueue.consumed(frame)
+                var acceptedTurn: Boolean? = null
+                speechQueue.frames().transformWhile { emit(it); acceptedTurn == null && !turnCompleted.isCompleted }.collect { frame ->
                     if (turnCompleted.isCompleted) return@collect
+                    speechQueue.consumed(frame)
                     val chunk = frame.pcm
                     audioBytes += chunk.size
                     recoveryAudio.append(chunk)
@@ -321,7 +322,7 @@ class AudioTurnCapture(
                             "silenceDetectedToFinalMs=${speechQueue.latestSilenceDetectedAtMs?.let { (nowMs() - it).coerceAtLeast(0) }} " +
                             "finalDecodeMs=$finalDecodeMs deferredPartialChunks=$deferredPartialChunks " +
                             "recognitionBacklogMs=${speechQueue.bufferedAudioMs}")
-                        turnCompleted.complete(hasSpeech)
+                        acceptedTurn = hasSpeech
                         log("turn_endpoint reason=$reason elapsedMs=${now - startedAt} " +
                             "silenceMs=${audioAt - lastSpeechAt} endpointCue=${endpoint.cue} " +
                             "targetSilenceMs=${endpoint.silenceMs} speechDetected=$hasSpeech")
@@ -333,7 +334,11 @@ class AudioTurnCapture(
                             "recognitionBacklogMs=${speechQueue.bufferedAudioMs}")
                     }
                 }
-                if (!turnCompleted.isCompleted) {
+                // flowOn's producer is cancelled and joined before the owner can
+                // borrow the next reader. Prefetched but unacknowledged PCM stays
+                // in the call session's history for that reader.
+                if (acceptedTurn != null) turnCompleted.complete(acceptedTurn!!)
+                else if (!turnCompleted.isCompleted) {
                     turnCompleted.completeExceptionally(IllegalStateException("Microphone stream ended before the turn completed."))
                 }
             } catch (cancelled: CancellationException) {
