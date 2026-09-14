@@ -11,6 +11,12 @@ class BargeInGate(private val stableMs: Long = 300) {
     private var lastTranscript = ""
     private var lastReference = ""
     private var cachedRequest = emptyList<String>()
+    var echoMatchedWords = 0
+        private set
+    var examinedFragments: List<String> = emptyList()
+        private set
+    var selectedRequest = ""
+        private set
     var requestText = ""
         private set
     var reason = "no_words"
@@ -61,6 +67,9 @@ class BargeInGate(private val stableMs: Long = 300) {
     }
 
     private fun requestWords(transcript: String, echo: List<String>): List<String> {
+        echoMatchedWords = 0
+        examinedFragments = emptyList()
+        selectedRequest = ""
         for (clause in transcript.takeLast(1200).split(Regex("[.!?;\\n]+"))) {
             val tokens = words(clause)
             val matched = BooleanArray(tokens.size)
@@ -71,17 +80,23 @@ class BargeInGate(private val stableMs: Long = 300) {
                     tokens[i + length] == echo[j + length]) length++
                 if (length >= 3) for (k in i until i + length) matched[k] = true
             }
+            echoMatchedWords += matched.count { it }
             var i = 0
             while (i < tokens.size) {
                 if (matched[i]) { i++; continue }
                 val start = i
                 while (i < tokens.size && !matched[i]) i++
                 val run = tokens.subList(start, i).dropWhile { it in setOf("please", "hey") }
+                if (examinedFragments.size < 4) examinedFragments = examinedFragments +
+                    "${if (hasRequestIntent(run)) "intent" else "no_intent"}:${run.joinToString(" ").take(160)}"
                 // Only clause/echo boundaries start a request: "I can tell them" is incidental.
                 if (hasRequestIntent(run)) {
                     val novel = run.filter { it !in echo }
                     val control = run.firstOrNull() in controls && run.size <= 3 && novel.isNotEmpty()
-                    if (control || (novel.distinct().size >= 2 && novel.size * 2 >= run.size)) return run
+                    if (control || (novel.distinct().size >= 2 && novel.size * 2 >= run.size)) {
+                        selectedRequest = run.joinToString(" ")
+                        return run
+                    }
                 }
             }
         }

@@ -97,6 +97,8 @@ class NaturalBargeInAudioInputTest {
         // The retained prefix starts with the first observed speech chunk, not confirmation.
         assertEquals(1, delivered.first()[0].toInt())
         assertEquals(30, delivered.last()[0].toInt())
+        assertTrue(logs.any { it.startsWith("barge_evidence_") && "transcript=\"Actually open settings\"" in it &&
+            "reason=confirmed_new_request" in it })
     }
     @Test fun fullCorrectionAfterTwoIncompleteProbesRetainsEveryAudioChunk() = runBlocking {
         val delivered = gate(chunks = 45, textNow = {

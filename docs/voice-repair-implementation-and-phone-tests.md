@@ -685,3 +685,55 @@ cue → say “Start interruption test.” Five seconds into the story, say once
 and whether playback skips. If he continues five seconds after your correction,
 use the on-screen stop. Copy the latest call diagnostics immediately. Run only
 this trial; do not restart P2 or change sliders.
+
+### Build 679 result and next delivery — inspect rejected recognition
+
+Call `27c352c1-1519-4c89-b685-83b022493586`, turn
+`533716b4-1345-44fe-bbf5-4f0af3545a87`, still did not confirm an interruption.
+Justin noticed possible skips. The supplied report recorded zero underruns and
+its shown queue stayed near two seconds, so the reported sensation cannot be
+attributed to measured starvation in this run. This does not disprove an audible
+artifact or establish exactly when Justin spoke.
+
+The final-only policy ran. Visible completed probes took 1,570 and 1,594 ms and
+returned 27 and 33 characters. Feeding PCM took about 1 ms; finalization accounted
+for nearly all decode time. Both results were rejected with
+`no_new_request_in_mixed_transcript`. A later 2.6-second window took 1,968 ms total
+and exceeded the unchanged decode budget. The summary retained six probes, two
+worker deferrals, 29 rolling-budget deferrals, four rejected windows, and no
+confirmed request. This is improved diagnostic evidence, not barge-in acceptance.
+Build 679's Android debug/release, native packaging, callback and signing checks
+passed. Its phone test failed.
+
+Justin authorized a diagnostic-only bounded commit before further tuning. It
+retains the first two and latest four completed results examined by the natural
+barge-in gate. Each includes recognized text, result age, decision, a tail excerpt
+of the exact reference passed to that evaluation, the number of words matched
+as contiguous echo, up to four examined fragments labeled by request intent,
+and the selected request if any. Matching counts cover clauses examined up to
+selection, not necessarily every word in a longer transcript. Excerpts have
+explicit truncation markers and original text lengths. `evaluated=false` marks
+stale/unqualified results; it must not be read as a new echo evaluation.
+
+These records appear as `barge_evidence_0` through `barge_evidence_5` in **Retained
+turn evidence** when copying the latest Voice Call diagnostics. They are emitted
+when the reply listener finishes, retained per turn by the existing local
+recorder, and do not compete with periodic keyword levels in the rolling event
+list. The omitted count identifies older results excluded by the six-result
+bound. They cover results reaching the gate; work rejected by the recognition
+worker still appears in its timing/deferral events. No microphone audio is saved.
+The excerpts become part of the local diagnostic report Justin explicitly copies.
+
+Sixty focused JVM tests passed, including original gate/worker behavior, actual
+SDK cadence checks, echo and correction evidence, bounded first/latest retention,
+escaped single-line text, and evidence on the real listener-confirmation path.
+Android CI must pass before APK delivery. Thresholds, recognition deadlines,
+model settings, and playback behavior remain unchanged in this diagnostic commit.
+
+**Phone card:** install the supplied APK, disconnect Bluetooth, keep the same
+settings, tap Start Listening → say Hey Jarvis → wait for the cue → say
+“Start interruption test.” Five seconds into the story say once “Actually, tell
+me what two plus two is.” If playback continues five seconds after the correction,
+use the on-screen stop. Immediately copy the latest Voice Call diagnostics and
+send them here. No P2 restart, new settings, or WAV is required. This run collects
+rejected words; improvement is not expected from instrumentation alone.

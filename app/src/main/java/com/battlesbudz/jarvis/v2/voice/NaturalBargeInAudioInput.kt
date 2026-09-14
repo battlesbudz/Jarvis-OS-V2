@@ -72,6 +72,7 @@ class NaturalBargeInAudioInput(
             var staleResults = 0
             var pressureFrames = 0
             var finalReason = "no_confirmed_request"
+            val diagnosticEvidence = BargeInDiagnosticEvidence()
             fun reset() {
                 active = false; submitted = false; submittedBytes = 0; candidateProbes = 0; hypothesis = null
                 candidate.clear(); gate = BargeInGate(); retryAt = 0; lastGateDecision = ""; revision++
@@ -206,9 +207,12 @@ class NaturalBargeInAudioInput(
                     val heard = hypothesis
                     val fresh = heard != null && now - heard.audioAtMs <= InterruptionTiming.CONFIRM_AGE_MS &&
                         now - lastSpeechAt <= InterruptionTiming.CONFIRM_AGE_MS
-                    val action = if (fresh) gate.update(true, playing(), now, requireNotNull(heard).text, reference()) else BargeInGate.Action.WAIT
+                    val decisionReference = if (heard != null) reference() else ""
+                    val action = if (fresh) gate.update(true, playing(), now, requireNotNull(heard).text, decisionReference) else BargeInGate.Action.WAIT
                     if (heard != null) {
                         val decision = if (fresh) gate.reason else "stale_or_no_recent_speech"
+                        diagnosticEvidence.record("${heard.revision}/${heard.audioAtMs}", revision,
+                            now - heard.audioAtMs, decision, heard.text, decisionReference, gate, fresh)
                         val key = "$decision:${heard.text.length}"
                         if (key != lastGateDecision) {
                             lastGateDecision = key
@@ -266,6 +270,7 @@ class NaturalBargeInAudioInput(
                     log("barge_natural_summary probes=$probes budgetDeferrals=$budgetDeferrals stopProbes=$stopProbes stopHits=$stopHits reason=$finalReason backlogRecoveries=$backlogRecoveries " +
                         "backlogSuspended=$backlogSuspended pressureFrames=$pressureFrames " +
                         "windowRejects=$rejectedWindows staleResults=$staleResults workerDeferrals=$workerDeferrals")
+                    diagnosticEvidence.entries().forEach(log)
                 }
             }
         }

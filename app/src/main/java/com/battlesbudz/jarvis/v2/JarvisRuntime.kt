@@ -648,7 +648,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     listen = { confirmed ->
                         com.battlesbudz.jarvis.v2.voice.ReplyVoiceCapture(applicationContext) {
                             diagnosticRecorder.recordImportant("Voice interruption: $it")
-                            if (it.startsWith("barge_natural_summary") || it.startsWith("barge_keyword_summary"))
+                            if (it.startsWith("barge_natural_summary") || it.startsWith("barge_keyword_summary") || it.startsWith("barge_evidence_"))
                                 diagnosticRecorder.recordTurnEvidence(asrTurnId, it.substringBefore(" "), it)
                         }.listen(output, asrDirectory, confirmed,
                             asrEngine = asrEngine, acceptCandidate = preference::accept, trace = turnTrace,
