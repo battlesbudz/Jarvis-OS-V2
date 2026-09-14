@@ -4,6 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TtsBenchmarkProfileTest {
+    @org.junit.Test fun slowerProfileCanBePersistedWithoutChangingOldIds() {
+        val slow = TtsBenchmarkProfile(4, null, 0.85f, nativeStreaming = true)
+        org.junit.Assert.assertTrue(slow.id.contains("speed-0.85"))
+        org.junit.Assert.assertEquals(slow, TtsBenchmarkProfile.selectableProfiles.single { it.id == slow.id })
+        org.junit.Assert.assertTrue(TtsBenchmarkProfile(playbackSpeed = 0.9f).id.endsWith("speed-0.9"))
+    }
+
     @Test fun everySpeedOpeningAndThreadCombinationHasADistinctProfile() {
         val profiles = TtsBenchmarkProfile.all
         assertEquals(16, profiles.map { it.id }.toSet().size)

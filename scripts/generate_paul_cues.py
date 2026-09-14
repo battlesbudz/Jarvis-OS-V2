@@ -34,7 +34,7 @@ gen.extra = {'temperature': '0.7', 'chunk_size': '15', 'max_reference_audio_len'
              'seed': '42', 'min_char_in_sentence': '240', 'max_char_in_sentence': '240'}
 a.output.mkdir(parents=True, exist_ok=True)
 for name, text in [('paul-one-moment-v2.wav', 'One moment please, sir.'),
-                   ('paul-bear-with-me-v2.wav', 'Bear with me, sir.')]:
+                   ('paul-just-a-moment-v3.wav', 'Just a moment, sir.')]:
     audio = tts.generate('. ' + text, gen)
     pcm = np.asarray(audio.samples, dtype=np.float64)
     assert audio.sample_rate == 24000 and np.isfinite(pcm).all()

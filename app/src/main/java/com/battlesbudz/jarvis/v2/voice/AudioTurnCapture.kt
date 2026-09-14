@@ -32,6 +32,7 @@ class AudioTurnCapture(
     private val trailingSilenceMs: Long? = null,
     private val onRecognitionRecovery: (Boolean) -> Unit = {},
     private val allowAudioOnlyTurns: Boolean = false,
+    private val guardFollowupSpeech: Boolean = false,
     private val onSpeechResumed: () -> Unit = {},
     private val acceptCandidate: (ByteArray) -> Boolean = { true },
     private val onAcceptedCandidate: (String) -> Unit = {},
@@ -93,6 +94,7 @@ class AudioTurnCapture(
         var lastSpeechAt = startedAt
         var lastLevelLogAt = startedAt
         var pendingEndpoint = false
+        val followupEvidence = FollowupSpeechEvidence()
         val pendingAudio = RollingAudioBuffer(maxDurationMs = 1200)
         log("capture_started vad=silero threshold=0.5 speechConfirmationMs=96 " +
             "endpointing=${if (trailingSilenceMs == null) "adaptive" else "fixed"} " +
@@ -169,6 +171,7 @@ class AudioTurnCapture(
                     // Stable words corroborate weak whisper VAD; blank/noisy audio cannot
                     // qualify on amplitude alone. Strong VAD retains its existing fast path.
                     val corroborated = quietEvidence.accept(partial.orEmpty(), decision.probability, nowMs(), hasSpeech)
+                    followupEvidence.observe(chunk.size, decision.probability, partial, corroborated)
                     if (hasSpeech && corroborated) {
                         if (audioAt - lastSpeechAt >= 180) onSpeechResumed()
                         lastSpeechAt = audioAt
@@ -206,16 +209,20 @@ class AudioTurnCapture(
                         // its ~300 ms embedding while draining silence recreates microphone
                         // backlog on every retry and prevents the turn from ever completing.
                         // Resumed speech clears pendingEndpoint above, requiring a fresh check.
-                        val speakerAccepted = !hasSpeech || pendingEndpoint || acceptCandidate(speakerPcm.toByteArray())
+                        val acousticAccepted = !guardFollowupSpeech || !hasSpeech || followupEvidence.accepts()
+                        if (guardFollowupSpeech && hasSpeech && !pendingEndpoint) {
+                            log("followup_speech_evidence accepted=$acousticAccepted ${followupEvidence.diagnostic()}")
+                        }
+                        val speakerAccepted = acousticAccepted && (!hasSpeech || pendingEndpoint || acceptCandidate(speakerPcm.toByteArray()))
                         currentCoroutineContext().ensureActive()
                         if (turnCompleted.isCompleted) return@collect
                         if (!speakerAccepted) {
-                            log("speaker_candidate_rejected microphone=kept_open elapsedMs=${now - startedAt}")
+                            log("${if (acousticAccepted) "speaker_candidate_rejected" else "followup_candidate_rejected"} microphone=kept_open elapsedMs=${now - startedAt}")
                             onSpeechResumed()
                             hasSpeech = false
                             finalTranscript = ""
                             synchronized(pcm) { pcm.clear(); capturedPcmBytes = 0; preRoll.clear() }
-                            speakerPcm.reset(); recoveryAudio.clear()
+                            speakerPcm.reset(); followupEvidence.reset(); recoveryAudio.clear()
                             pendingEndpoint = false; pendingAudio.clear(); recognitionIssue = null
                             firstSpeechAt = null; firstPartialAfterSpeechMs = null; lastPartial = ""
                             quietEvidence.reset(); turnEnd.reset()
@@ -283,6 +290,7 @@ class AudioTurnCapture(
                                 pendingEndpoint = false
                                 turnEnd.reset()
                                 speakerPcm.reset()
+                                followupEvidence.reset()
                                 quietEvidence.reset()
                                 onSpeechResumed()
                                 log("empty_speech_candidate ignored=true count=$emptyCandidates microphone=kept_open inactivitySince=last_detected_speech")

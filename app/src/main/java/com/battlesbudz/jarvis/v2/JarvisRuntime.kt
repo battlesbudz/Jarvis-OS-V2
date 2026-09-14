@@ -263,7 +263,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 resetNativeConversation()
                 conversationCharacters = 0
                 val ttsDirectory = ttsModels.ensureReady(ttsEngine, ::status)
-                val input = borrowCallMicrophone("command", followupAudioAfterMs.getAndSet(0).takeIf { it > 0 })
+                val followupBoundary = followupAudioAfterMs.getAndSet(0).takeIf { it > 0 }
+                val input = borrowCallMicrophone("command", followupBoundary)
                 microphone = input
                 if (voiceSessionController.currentCallId() == null) {
                     val wakeDirectory = com.battlesbudz.jarvis.v2.voice.WakeWordModelStore(applicationContext).ensureReady(::status)
@@ -409,10 +410,14 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         diagnosticRecorder.record("Voice input: $it")
                     }), this,
                     allowAudioOnlyTurns = true,
+                    guardFollowupSpeech = followupBoundary != null,
                     acceptCandidate = preference::accept,
                     onAcceptedCandidate = preference::accepted,
                     createDetector = { SileroSpeechDetector.create(assets) },
                     log = {
+                        if (it.startsWith("followup_speech_evidence") || it.startsWith("followup_candidate_rejected")) {
+                            diagnosticRecorder.recordTurnEvidence(asrTurnId, "followup_speech", it)
+                        }
                         if (it.startsWith("capture_endpoint_timing")) {
                             diagnosticRecorder.recordTurnEvidence(asrTurnId, "capture_endpoint", it)
                         }

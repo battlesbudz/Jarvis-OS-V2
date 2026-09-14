@@ -6,7 +6,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SentenceGapWaiterTest {
-    private fun waiter() = SentenceGapWaiter(pollMs = 1)
+    private fun waiter() = SentenceGapWaiter(pollMs = 1, prolongedStallMs = 40, maxRefillMs = 80)
+    @Test fun routineShortageRefillsSilently() = runBlocking {
+        val channel = Channel<Int>(1); channel.send(7)
+        var buffer = 240L; var calls = 0; val transitions = mutableListOf<Boolean>()
+        val receive = async { waiter().receive(channel, { 0 }, { buffer },
+            onRefill = transitions::add) { calls++ } }
+        delay(10); assertFalse(receive.isCompleted); buffer = 1000
+        assertEquals(7, withTimeout(1000) { receive.await() }.getOrThrow())
+        assertEquals(listOf(true, false), transitions); assertEquals(0, calls)
+    }
+    @Test fun completedShortTailNeverWaitsForUnreachableHeadroom() = runBlocking {
+        val channel = Channel<Int>(1); channel.send(8); channel.close()
+        assertEquals(8, waiter().receive(channel, { 0 }, { 80 }, productionFinished = { true }) {
+            fail("cue after completed generation")
+        }.getOrThrow())
+    }
     @Test fun bufferedAnswerAndClosedStreamNeverStartCue() = runBlocking {
         val channel = Channel<Int>(1); channel.send(7); channel.close()
         var calls = 0
@@ -44,7 +59,7 @@ class SentenceGapWaiterTest {
         val channel = Channel<Int>(1); channel.send(3)
         var buffer = 240L; var calls = 0
         val receive = async { waiter().receive(channel, { 100 }, { buffer }) { calls++ } }
-        delay(20); buffer = 800
+        delay(20); buffer = 1000
         assertEquals(3, withTimeout(1000) { receive.await() }.getOrThrow()); assertEquals(0, calls)
     }
     @Test fun laterBoundariesNeverRepeatRecovery() = runBlocking {

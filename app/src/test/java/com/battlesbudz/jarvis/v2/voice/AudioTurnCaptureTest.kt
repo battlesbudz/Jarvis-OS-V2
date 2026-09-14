@@ -13,6 +13,27 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioTurnCaptureTest {
+    @Test fun isolatedFollowupSoundCannotSubmitHallucinatedThanksAndNextSpeechSurvives() = runBlocking<Unit> {
+        val noise = FakeTranscriber("", "Thank you.")
+        val real = FakeTranscriber("Yes", "Yes")
+        var loads = 0
+        val fixture = CaptureFixture(this, factory = { if (loads++ == 0) noise else real },
+            allowAudioOnlyTurns = true, guardFollowupSpeech = true)
+        fixture.capture.start()
+        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+        fixture.emit(100, 1500, speech = true, samples = 1600)
+        fixture.emit(1400, 0, samples = 1600)
+        assertFalse(completion.isCompleted)
+        assertEquals(0, noise.finishes)
+        assertTrue(fixture.events.any { it.startsWith("followup_candidate_rejected") })
+        fixture.emit(1600, 2000, speech = true, samples = 1600)
+        fixture.emit(2900, 0, samples = 1600)
+        assertTrue(withTimeout(1000) { completion.await() })
+        assertEquals("Yes", fixture.capture.finalTranscript)
+        assertEquals(1, fixture.microphoneStarts)
+        fixture.capture.stop()
+    }
+
     @Test fun soundCaptionsCannotExtendTheInitialListeningDeadline() = runBlocking<Unit> {
         val fixture = CaptureFixture(this, factory = { FakeTranscriber("[music]", "[music]") }, allowAudioOnlyTurns = true)
         fixture.capture.start()
@@ -731,6 +752,7 @@ class AudioTurnCaptureTest {
         factory: (() -> StreamingTranscriber)? = transcriber?.let { { it } },
         trailingSilenceMs: Long? = 1200L,
         allowAudioOnlyTurns: Boolean = false,
+        guardFollowupSpeech: Boolean = false,
         acceptCandidate: (ByteArray) -> Boolean = { true }
     ) {
         var microphoneStarts = 0
@@ -756,7 +778,7 @@ class AudioTurnCaptureTest {
             createTranscriber = factory, onPartialTranscript = { text, _ -> partials.add(text) },
             onMetrics = { stats, text -> metrics.add(stats to text) }, trailingSilenceMs = trailingSilenceMs,
             onRecognitionRecovery = recoveryStates::add, allowAudioOnlyTurns = allowAudioOnlyTurns,
-            onSpeechResumed = { resumed++ }, acceptCandidate = acceptCandidate)
+            guardFollowupSpeech = guardFollowupSpeech, onSpeechResumed = { resumed++ }, acceptCandidate = acceptCandidate)
 
         suspend fun emit(atMs: Long, sample: Int, speech: Boolean = false, samples: Int = 1, probability: Float = if (speech) 0.95f else 0.01f) {
             clock = atMs

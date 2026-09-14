@@ -124,8 +124,8 @@ internal fun TtsComparisonDialog(
                                     val pcm = if (recovery) PaulOpeningAudio.loadRecovery(context.assets)
                                         else PaulOpeningAudio.load(context.assets)
                                     VoiceCues.playAcknowledgement(SpeechAudio(text, 24000, pcm, 0),
-                                        { false }, { false }, {})
-                                    status = "Preview finished. Calls use this same clip."
+                                        { false }, { false }, {}, speed = profile.playbackSpeed)
+                                    status = "Preview finished at ${profile.playbackSpeed}×. Apply this profile to use that pace in calls."
                                 } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                                 catch (error: Exception) { status = error.message ?: "Preview failed." }
                                 finally { running = false }
@@ -144,7 +144,7 @@ internal fun TtsComparisonDialog(
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(1f, 0.9f).forEach { speed ->
+                    listOf(1f, 0.9f, 0.85f).forEach { speed ->
                         FilterChip(selected = profile.playbackSpeed == speed, enabled = !running,
                             onClick = { profile = profile.copy(playbackSpeed = speed) }, label = { Text("${speed}×") })
                     }

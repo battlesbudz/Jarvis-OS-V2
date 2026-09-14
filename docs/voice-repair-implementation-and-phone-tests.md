@@ -904,3 +904,45 @@ Phone card after the signed build passes:
    whether a recovery phrase occurred, and whether pauses remained.
 Do not expect recovery on every answer: it must remain absent when unnecessary.
 A repeat, overlap, lost answer words, or a cue after the final sentence fails this step.
+
+
+## C5 — quiet recovery, consistent pace, and guarded follow-up capture
+
+Build 683 phone clarification: Justin said only “Why is the sky blue?” and was
+then silent. The accepted “Thank you.” and its generated reply were false turns.
+The retained microphone transcripts also contain the assistant's own speech.
+No microphone recording establishes whether the false final came from echo,
+noise, ASR hallucination, or a combination. Do not label these as user interruptions.
+
+Changes:
+- At a known completed sentence, wait quietly for 1000 ms of queued source PCM
+  when supply is low. Pause the answer track only once the prior sentence drains.
+  Resume when headroom arrives, production finishes, or 4500 ms elapses with PCM
+  available. Never discard or reorder a pending chunk. A producer failure propagates.
+- Only after a 2500 ms drained stall may the pinned “Just a moment, sir.” play,
+  at most once per answer. Completion of that clip is preserved. Stop/cancellation
+  releases the wait; user pause keeps the answer track paused. Intentional waits
+  are excluded from starvation estimates, with separate sentence_rebuffer logs.
+- Add selectable 0.85× profiles and matching cached-cue pace, pitch 1.0. Existing
+  saved profile IDs and automatic benchmark matrix remain unchanged. Preview and
+  Apply use existing speech-tuning controls; no silent settings migration.
+- Only automatic post-playback follow-ups require supporting acoustic evidence:
+  >=240 ms strong VAD, or >=96 ms plus live recognized words, or the existing
+  corroborated whisper path. An isolated unsupported sound is rejected before
+  final ASR/speaker processing and capture remains open. Sustained speech can
+  still use empty-ASR Gemma fallback. This is a bounded guard, not a guarantee
+  against longer echo or all ASR hallucinations. Retain followup_speech evidence.
+
+Validation: focused capture tests cover false final “Thank you” after a 100 ms
+sound, keeping the microphone open, and accepting the next real “Yes”. Policy
+checks preserve sustained empty-ASR fallback and corroborated whispers. Queue
+checks cover silent refill, prolonged cue, completion, ordering and cancellation.
+Pinned WAV wording checked with local Whisper base.en; level and edge checks
+cannot establish subjective naturalness. Android unit/debug and signed-release
+CI must pass before delivery.
+
+Phone card: select 0.85× in Speech tuning, preview both clips and Apply to calls.
+Ask “Why is the sky blue?” once, then remain silent through the reply and for
+five seconds afterward. Stop and send diagnostics; report any invented follow-up,
+awkward phrase, or choppiness. This does not claim sustained TTS throughput or
+endpoint latency has been solved by buffering or slower playback.

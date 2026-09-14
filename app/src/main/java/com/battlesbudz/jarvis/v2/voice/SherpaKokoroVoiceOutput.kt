@@ -54,6 +54,7 @@ class SherpaKokoroVoiceOutput(
     @Volatile private var stopped = false
     @Volatile private var audioTrack: AudioTrack? = null
     private val speaking = AtomicBoolean(false)
+    private val sentenceRefilling = java.util.concurrent.atomic.AtomicBoolean(false)
     private val gapCuePlaying = AtomicBoolean(false)
     private val playbackLock = Any()
     @Volatile private var interrupted = false
@@ -69,7 +70,7 @@ class SherpaKokoroVoiceOutput(
         synchronized(playbackLock) { gapCuePlaying.set(true); applyPause() }
         try {
             VoiceCues.playAcknowledgement(audio, { stopped }, { interrupted }, log, playbackVolume(),
-                onStarted = { rememberPlayback(audio.text) })
+                onStarted = { rememberPlayback(audio.text) }, speed = benchmarkProfile?.playbackSpeed ?: 1f)
         } finally {
             synchronized(playbackLock) { gapCuePlaying.set(false); applyPause() }
             lastAudibleAt = System.nanoTime() / 1_000_000
@@ -121,11 +122,11 @@ class SherpaKokoroVoiceOutput(
         }
     }
     fun hasInterruptionBudget(): Boolean = DuplexPlaybackBudget.allows(
-        queuedPlaybackMs(), continuing = false, unavailable = stopped || interrupted || gapCuePlaying.get())
+        queuedPlaybackMs(), continuing = false, unavailable = stopped || interrupted || gapCuePlaying.get() || sentenceRefilling.get())
     fun canContinueInterruption(): Boolean = DuplexPlaybackBudget.allows(
-        queuedPlaybackMs(), continuing = true, unavailable = stopped || interrupted || gapCuePlaying.get())
+        queuedPlaybackMs(), continuing = true, unavailable = stopped || interrupted || gapCuePlaying.get() || sentenceRefilling.get())
     private fun applyPause() {
-        val paused = interrupted || gapCuePlaying.get()
+        val paused = interrupted || gapCuePlaying.get() || sentenceRefilling.get()
         playbackClock.setPaused(paused)
         audioTrack?.let { if (paused) it.pause() else if (!stopped) it.play() }
     }
@@ -168,7 +169,7 @@ class SherpaKokoroVoiceOutput(
                         ?: acknowledgementCache[key] ?: fillerDiskCache.read(key, text))?.let {
                         acknowledgementCache[key] = it
                         acknowledgement.prepare(it)
-                        log("acknowledgement_cache_hit beforeModelLoad=true text=$text source=${if (bundled != null) "bundled_paul_cues_v2" else "generated_cache"}")
+                        log("acknowledgement_cache_hit beforeModelLoad=true text=$text source=${if (bundled != null) "bundled_paul_cues_v3" else "generated_cache"}")
                     }
                 }
             }
@@ -572,21 +573,27 @@ class SherpaKokoroVoiceOutput(
                 var lastQueuedMs = 0L
                 var atSentenceBoundary = false
                 var interveningCueMs = 0L
+                var refillStartedAt = 0L
                 val gapWaiter = SentenceGapWaiter()
                 val gapAudio = acknowledgementCache[fillerCacheKey(FillerPhrases.RECOVERY)]
                 while (true) {
-                    val received = if (atSentenceBoundary && acknowledgeDelays && !benchmarkRun && gapAudio != null) {
+                    val received = if (atSentenceBoundary && acknowledgeDelays && !benchmarkRun) {
                         gapWaiter.receive(audio.chunks, remainingMs = {
                             audioTrack?.let { track ->
                                 val frames = (writtenFrames - unsignedHead(track)).coerceAtLeast(0)
                                 if (frames == 0L) 0L else maxOf(1L, (frames * 1000.0 / track.sampleRate / playbackSpeed).toLong())
                             } ?: 0L
-                        }, bufferedMs = { audio.bufferedMs }, allowed = { !stopped && !interrupted }) {
-                            val cueStarted = System.nanoTime()
-                            log("sentence_gap_filler text=${gapAudio.text} boundary=completed_sentence maxPerAnswer=1 excludes=answer_pcm")
+                        }, bufferedMs = { audio.bufferedMs }, allowed = { !stopped && !interrupted },
+                            productionFinished = { audio.productionFinished }, onRefill = { active ->
+                                if (active) refillStartedAt = System.nanoTime()
+                                else interveningCueMs += elapsedMs(refillStartedAt)
+                                synchronized(playbackLock) { sentenceRefilling.set(active); applyPause() }
+                                log("sentence_rebuffer active=$active bufferedAnswerMs=${audio.bufferedMs}")
+                            }) {
+                            if (gapAudio == null) return@receive
+                            log("sentence_gap_filler text=${gapAudio.text} boundary=completed_sentence reason=prolonged_stall maxPerAnswer=1 excludes=answer_pcm")
                             try { playCachedCue(gapAudio) }
                             finally {
-                                interveningCueMs += elapsedMs(cueStarted)
                                 log("sentence_gap_filler_finished bufferedAnswerMs=${audio.bufferedMs}")
                             }
                         }
@@ -636,12 +643,12 @@ class SherpaKokoroVoiceOutput(
                                 val head = unsignedHead(startedTrack)
                                 val underruns = startedTrack.underrunCount
                                 val poll = System.nanoTime() / 1_000_000
-                                val starved = !draining.get() && !interrupted && !gapCuePlaying.get() && writtenFrames > 0 && head >= writtenFrames
+                                val starved = !draining.get() && !interrupted && !gapCuePlaying.get() && !sentenceRefilling.get() && writtenFrames > 0 && head >= writtenFrames
                                 if (wasStarved && starved) playbackStarvationMs.addAndGet((poll - previousPoll).coerceAtLeast(0))
                                 wasStarved = starved; previousPoll = poll
                                 if (underruns > previousUnderruns) {
                                     log("audio_underrun count=$underruns queuedFrames=${(writtenFrames - head).coerceAtLeast(0)}")
-                                    if (!draining.get() && !gapCuePlaying.get()) streamingUnderruns.addAndGet((underruns - previousUnderruns).toLong())
+                                    if (!draining.get() && !gapCuePlaying.get() && !sentenceRefilling.get()) streamingUnderruns.addAndGet((underruns - previousUnderruns).toLong())
                                     previousUnderruns = underruns
                                 }
                                 val audibleFrame = firstAudibleFrame.get()

@@ -27,7 +27,7 @@ object VoiceCues {
     }
     internal suspend fun playAcknowledgement(audio: SpeechAudio, stopped: () -> Boolean,
                                     paused: () -> Boolean, log: (String) -> Unit, mediaVolume: String = "unavailable",
-                                    onStarted: () -> Unit = {}) {
+                                    onStarted: () -> Unit = {}, speed: Float = 1f) {
         var track: android.media.AudioTrack? = null
         try {
             if (stopped() || paused()) return
@@ -44,11 +44,12 @@ object VoiceCues {
                 .setBufferSizeInBytes(audio.pcm.size * 2).build()
             check(track.write(audio.pcm, 0, audio.pcm.size) == audio.pcm.size)
             if (stopped() || paused()) return
+            track.playbackParams = android.media.PlaybackParams().allowDefaults().setPitch(1f).setSpeed(speed)
             track.setVolume(1f)
             onStarted()
             track.play()
             log("acknowledgement_playback_started text=${audio.text} separateFromAnswer=true " +
-                "usage=media volume=$mediaVolume rms=${FillerPcm.rms(audio.pcm)} firstSpeechFrame=$firstSpeechFrame")
+                "usage=media speed=${track.playbackParams.speed} pitch=1.0 volume=$mediaVolume rms=${FillerPcm.rms(audio.pcm)} firstSpeechFrame=$firstSpeechFrame")
             val started = System.nanoTime()
             var confirmed = false
             while (!stopped() && !paused() && track.playbackHeadPosition.toLong() < audio.pcm.size &&
