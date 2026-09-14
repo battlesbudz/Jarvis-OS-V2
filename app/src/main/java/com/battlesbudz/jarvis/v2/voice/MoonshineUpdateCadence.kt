@@ -17,10 +17,15 @@ internal class MoonshineUpdateCadence(private val sdk: Transcriber, private val 
         sdk.setUpdateInterval((maxAudioMs + 1000) / 1000.0)
     }
 
-    fun beforeAccept(bytes: Int) {
+    fun beforeAccept(bytes: Int, allowPartial: Boolean = true) {
         require(bytes >= 0)
         probeByteLimit?.let { check(receivedBytes + bytes <= it) { "Probe audio exceeded its final-only bound" } }
         receivedBytes += bytes
+        if (probeByteLimit == null) {
+            // Only suppress the SDK's optional Java update. PCM still reaches the
+            // native stream, and stopStream always forces its final transcription.
+            sdk.setUpdateInterval(if (allowPartial) normalInterval else Double.MAX_VALUE)
+        }
     }
 
     fun restore() {

@@ -5,6 +5,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class MoonshineUpdateCadenceTest {
+    @Test fun backlogFeedsEverySampleButCoalescesIntermediateUpdates() {
+        val sdk = Transcriber()
+        val cadence = MoonshineUpdateCadence(sdk, 0.25)
+        repeat(40) {
+            cadence.beforeAccept(3200, allowPartial = false)
+            assertFalse(due(sdk, 1, 1600))
+        }
+        cadence.beforeAccept(3200, allowPartial = true)
+        assertTrue("Catch-up must request a fresh hypothesis once current", due(sdk, 1, 1600))
+        cadence.restore()
+        assertTrue(due(sdk, 2, 4000))
+    }
+
     // Exercise the actual pinned SDK's Java cadence, without loading a native model.
     private fun due(sdk: Transcriber, stream: Int, samples: Int): Boolean =
         sdk.isUpdateDue(stream, samples, 16000)

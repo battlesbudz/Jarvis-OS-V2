@@ -76,9 +76,10 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
         }
     }
 
-    override fun accept(pcm: ByteArray): String {
+    override fun accept(pcm: ByteArray): String = accept(pcm, true)
+    override fun accept(pcm: ByteArray, allowPartial: Boolean): String {
         check(!closed && !finished)
-        cadence.beforeAccept(pcm.size)
+        cadence.beforeAccept(pcm.size, allowPartial)
         return acceptQualified(speechGate.accept(pcm))
     }
 

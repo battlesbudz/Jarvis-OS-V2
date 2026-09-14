@@ -25,18 +25,19 @@ class SegmentedTranscriber(
         if (speech) segmentHadSpeech = true
         current?.observeSpeech(speech)
     }
-    override fun accept(pcm: ByteArray): String {
+    override fun accept(pcm: ByteArray): String = accept(pcm, true)
+    override fun accept(pcm: ByteArray, allowPartial: Boolean): String {
         check(!closed && !sealed)
         val engine = current ?: create().also {
             current = it
-            if (replay.isNotEmpty()) { it.observeSpeech(true); it.accept(replay) }
+            if (replay.isNotEmpty()) { it.observeSpeech(true); it.accept(replay, allowPartial) }
             segmentBytes = replay.size.toLong(); replay = byteArrayOf()
             it.observeSpeech(speech)
         }
         overlap.append(pcm)
         segmentBytes += pcm.size
         silenceBytes = if (speech) 0 else silenceBytes + pcm.size
-        val partial = engine.accept(pcm)
+        val partial = engine.accept(pcm, allowPartial)
         last = text.partial(partial)
         val quietBoundary = segmentBytes >= 15 * 32000 && silenceBytes >= 6400
         val forcedBoundary = segmentBytes >= 22 * 32000

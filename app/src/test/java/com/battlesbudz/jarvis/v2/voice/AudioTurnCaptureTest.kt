@@ -131,7 +131,7 @@ class AudioTurnCaptureTest {
             override suspend fun stop() { chunks.close() }
         }
         val transcriber = FakeTranscriber()
-        val capture = AudioTurnCapture(input, this,
+        val capture = AudioTurnCapture(input, this, captureDispatcher = Dispatchers.Unconfined,
             createDetector = { assertTrue(microphoneStarted); FakeDetector() },
             createTranscriber = { assertTrue(microphoneStarted); transcriber })
         capture.start()
@@ -150,7 +150,7 @@ class AudioTurnCaptureTest {
             override suspend fun start() = Unit
             override suspend fun stop() = Unit
         }
-        val capture = AudioTurnCapture(input, CoroutineScope(Dispatchers.Unconfined), createDetector = { FakeDetector() })
+        val capture = AudioTurnCapture(input, CoroutineScope(Dispatchers.Unconfined), captureDispatcher = Dispatchers.Unconfined, createDetector = { FakeDetector() })
         capture.start()
         chunks.tryEmit(byteArrayOf(1, 2, 3, 4))
         val wav = capture.stop()
@@ -656,7 +656,7 @@ class AudioTurnCaptureTest {
         fixture.bufferedMs = 0
         fixture.emit(1600, 0)
         try {
-            assertTrue("Silent backlog must drain without another speaker embedding", completion.isCompleted)
+            assertTrue("Silent backlog must drain without another speaker embedding", withTimeout(1000) { completion.await() })
             assertEquals(1, speakerChecks)
             assertEquals(1, asr.finishes)
             assertTrue(completion.await())
@@ -752,7 +752,7 @@ class AudioTurnCaptureTest {
             override suspend fun stop() { microphoneStops++ }
         }
         val detector = FakeDetector()
-        val capture = AudioTurnCapture(input, scope, createDetector = { detector }, nowMs = { clock }, log = events::add,
+        val capture = AudioTurnCapture(input, scope, captureDispatcher = Dispatchers.Unconfined, createDetector = { detector }, nowMs = { clock }, log = events::add,
             createTranscriber = factory, onPartialTranscript = { text, _ -> partials.add(text) },
             onMetrics = { stats, text -> metrics.add(stats to text) }, trailingSilenceMs = trailingSilenceMs,
             onRecognitionRecovery = recoveryStates::add, allowAudioOnlyTurns = allowAudioOnlyTurns,

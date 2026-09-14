@@ -411,6 +411,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     onAcceptedCandidate = preference::accepted,
                     createDetector = { SileroSpeechDetector.create(assets) },
                     log = {
+                        if (it.startsWith("capture_endpoint_timing")) {
+                            diagnosticRecorder.recordTurnEvidence(asrTurnId, "capture_endpoint", it)
+                        }
                         if (it.startsWith("asr_recovery_") || it.startsWith("empty_speech_candidate") || it.startsWith("nonverbal_candidate")) {
                             diagnosticRecorder.recordImportant("Voice input: $it")
                         } else diagnosticRecorder.record("Voice input: $it")

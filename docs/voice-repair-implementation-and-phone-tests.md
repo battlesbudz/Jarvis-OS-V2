@@ -737,3 +737,84 @@ me what two plus two is.” If playback continues five seconds after the correct
 use the on-screen stop. Immediately copy the latest Voice Call diagnostics and
 send them here. No P2 restart, new settings, or WAV is required. This run collects
 rejected words; improvement is not expected from instrumentation alone.
+
+
+### C3 — normal-command capture under recognition load (2026-09-14)
+
+Justin reported ordinary question answering failing on build 679, call
+`4b08c211-fb7b-4959-915b-e473681ef095`. This takes priority over the pending
+build 680 interruption-evidence phone test. Build 680 passed Android CI and
+published successfully; no phone acceptance is claimed for it.
+
+The answered turn `1b8a8b33-f2a8-46a5-b18d-67f0fb5468dc` took 8,278 ms from
+recognition finalized to first answer audio: 44 ms to dispatch, 5,935 ms to
+first reply text, then 2,299 ms to audio. Last physical speech time is not
+retained, so the separately reported extra listening delay cannot be measured
+for this turn. Playback recorded 59 underrun increments, 3,287 ms observed
+starvation, 4,722 ms estimated supply gaps, and 46,508 ms synthesis for 35,760 ms
+source audio. Underrun count is not a count of distinct audible pauses.
+
+The following command recorded preparation deferrals with thermal=4, recognition
+backlog growing to 4,900 ms, capture failure, and an incomplete command discarded.
+Thermal=4 was measured during that follow-up, not established for every preceding
+stage. Optional preparation deferral itself does not suspend committed ASR.
+
+**Authorized bounded change:** separate microphone/VAD collection from synchronous
+ASR work, preserve full command audio, coalesce optional intermediate recognition
+under backlog, and retain endpoint timing. The existing collector had to finish
+`accept` before running the next VAD frame and required microphone backlog to be
+empty before accepting a silence endpoint.
+
+`CaptureSpeechQueue` now classifies PCM on a separate coroutine dispatcher and
+passes immutable PCM/decision/capture-time frames to the sole ASR owner. Its byte
+bound is 25 seconds at 16 kHz PCM16, with explicit failure instead of dropped or
+conflated audio. Pending bytes include frames undergoing classification. Both
+this queue and the hardware backlog participate in endpoint checks; queued
+resumed speech must drain before a pause is accepted. Detector and recognizer
+resources are released only after collection and native work have returned.
+Cancellation after a native accept cannot publish late partial words.
+
+Normal Moonshine capture suppresses optional Java-side partial decoding when
+at least 200 ms remains queued, or confirmed speech is followed by low-VAD silence
+(probability below 0.15). PCM still goes through the existing speech gate and
+native feed in order. Once current, ordinary partial cadence resumes; `finish`
+still forces the final transcript. Segment rollover propagates this policy and
+preserves its existing overlap and accumulated words. Suppressed cached hypotheses
+cannot act as fresh weak-speech evidence. Other ASR implementations retain their
+existing feed behavior. Bounded barge-in probes keep their existing final-only
+policy, limits, and cadence restoration.
+
+`capture_silence_detected` distinguishes acoustic silence from recognition lag.
+`capture_level` now separates audio-time silence from processing lag and backlog.
+`capture_endpoint_timing` is retained per turn as `capture_endpoint`, including
+speech-end-to-final, detector-silence-to-final when observed, cumulative final
+decode time, and deferred partial chunk count. These are software/VAD timings,
+not physical microphone-to-speaker measurements. The existing pipeline evidence
+still separates reply-text wait and first audio. No microphone PCM is saved.
+
+104 focused JVM tests passed: actual pinned SDK cadence/suppression/restoration,
+blocked recognition with continuing VAD and preserved resumed words, explicit
+queue overflow, cancellation during native work without late publication, and
+existing capture/endpoint/speaker/segmentation and interruption regressions.
+Tests using a synthetic synchronous clock explicitly inject a test dispatcher;
+the blocking-recognition tests use the production dispatcher. Android debug and
+signed release CI must pass before delivery. Phone acceptance remains pending.
+
+**Scope and tradeoff:** intermediate text may update less often under load.
+Native final decoding can still be slow, and other ASR engines may still fail
+to keep up. This commit does not fix sustained TTS supply, Paul accent changes,
+reply-text latency, or keyword/natural interruption. No new model or user setting.
+
+**One-question phone card:**
+1. Install the supplied next APK. Keep current settings and disconnect Bluetooth.
+2. Tap Start Listening, say “Hey Jarvis,” and wait for the listening cue.
+3. Say once: “Why does the Moon have phases? Answer in two sentences.”
+4. Stop speaking and let Jarvis answer. Do not interrupt this test.
+5. End the call with the on-screen control and copy the latest Voice Call diagnostics.
+6. Report whether the full question was captured and whether it still sat in the
+   listening state for several seconds after your last word. Send the diagnostics.
+
+Review the capture endpoint evidence independently of the later first-text and
+speech playback delays. A missing/truncated question, discarded command, or
+multi-second growing capture backlog fails this step. A quicker response must
+not be counted as overall voice acceptance while playback remains broken.
