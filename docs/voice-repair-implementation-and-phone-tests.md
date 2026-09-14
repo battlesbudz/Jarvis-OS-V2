@@ -960,8 +960,9 @@ The separate single-run button remains available.
 
 Listening feedback: runs 5, 10, 13 were clearest with no accent changes. Under the
 forward-then-reverse case order these are paragraph-one-reset (pass 1),
-opening-grouped-retained (pass 2), and opening-one-reset (pass 2). This favors
-comparing fewer resets but does not prove all grouped synthesis changes accent.
+paragraph-one-reset (pass 2), and opening-one-reset (pass 2). Both paragraph
+passes favor one submission. This supports comparing fewer resets but does not
+prove all grouped synthesis changes accent.
 Do not apply a new voice setting based only on the last-run report. Run 14 was
 thermal-limited; inspect the complete suite before comparing timing.
 
