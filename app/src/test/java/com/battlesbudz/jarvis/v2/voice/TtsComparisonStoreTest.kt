@@ -94,6 +94,7 @@ class TtsComparisonStoreTest {
         for (engine in TtsEngine.entries) {
             for (profile in TtsBenchmarkProfile.selectableProfiles) {
                 if (profile.nativeStreaming && engine != TtsEngine.POCKET_PAUL) continue
+                if (profile.piperPassages && engine != TtsEngine.PIPER_NORTHERN) continue
                 store.setCallProfile(engine, profile)
                 assertEquals(profile, TtsComparisonStore(prefs).callProfile(engine))
             }
