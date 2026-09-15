@@ -27,8 +27,8 @@ class TtsBenchmarkProfileTest {
         assertEquals(4, native.size)
         assertTrue(native.all { it.nativeStreaming && !it.fullText && it.openingChars == null })
         assertEquals(20, (TtsBenchmarkProfile.all + native).map { it.id }.toSet().size)
-        assertEquals(216, TtsBenchmarkProfile.comparisonRunCount)
-        assertTrue(TtsBenchmarkProfile.historyLimit >= 576)
+        assertEquals(312, TtsBenchmarkProfile.comparisonRunCount)
+        assertTrue(TtsBenchmarkProfile.historyLimit >= TtsBenchmarkProfile.comparisonRunCount * 2)
     }
 
     @Test fun fullTextWaitsForEndAndKeepsAllSentencesInOneSynthesisRequest() {

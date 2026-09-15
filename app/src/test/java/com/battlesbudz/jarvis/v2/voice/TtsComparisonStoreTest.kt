@@ -192,8 +192,14 @@ class TtsComparisonStoreTest {
             assertTrue(TtsEngine.diagnosticLabel(id).endsWith("(retired)"))
             assertFalse(TtsEngine.diagnosticLabel(id).startsWith("Kokoro"))
         }
-        assertEquals(setOf(TtsEngine.KOKORO, TtsEngine.POCKET_PAUL), TtsEngine.entries.toSet())
+        assertEquals(setOf(TtsEngine.KOKORO, TtsEngine.POCKET_PAUL, TtsEngine.PIPER_NORTHERN), TtsEngine.entries.toSet())
         assertEquals("future_voice", TtsEngine.diagnosticLabel("future_voice"))
+    }
+
+    @Test fun northernPiperSelectionSurvivesRestart() {
+        val prefs = preferences()
+        TtsComparisonStore(prefs).select(TtsEngine.PIPER_NORTHERN)
+        assertEquals(TtsEngine.PIPER_NORTHERN, TtsComparisonStore(prefs).selectedEngine())
     }
 
     @Test fun paulSelectionSurvivesRestartAndIsNotPiper() {
