@@ -1,6 +1,6 @@
 # Voice repair: bounded commits and phone test protocol
 
-Prepared: 12 September 2026. Branch: `audio-pr2`. Source baseline: `93a144c` (build 673 investigation). Status: **A1 accepted; A2/A3 partial; B1 has a user-preferred Paul submission candidate; B2 deferred while Justin evaluates preferred Kokoro voice. C1–C3 repairs remain partially accepted; D/E and integrated F acceptance remain open.**
+Prepared: 12 September 2026. Branch: `audio-pr2`. Source baseline: `93a144c` (build 673 investigation). Status: **A1 accepted; A2/A3 partial; B1 is investigating true Paul LM-context appendability at Justin’s request; B2 awaits a verified quality winner. Kokoro performance work is paused. C1–C3 repairs remain partially accepted; D/E and integrated F acceptance remain open.**
 
 Companion: [research proposal](voice-repair-proposal-2026-09-12.md). Parent roadmap: [local voice implementation plan](local-voice-implementation-plan.md). Continue in the existing Audio PR2 PR; no merge without Justin's explicit approval. This document defines future code work; publishing it does not claim that work is implemented or tested.
 
@@ -985,3 +985,15 @@ Justin explicitly prioritised Kokoro, whose voice he prefers, while running the 
 Validation before publishing: 38 focused playback/source-analysis tests and 41 report/profile tests passed; the modified Android audio implementation compiled against the Android and pinned Sherpa SDK jars. Full Android CI and phone acceptance are pending at this commit.
 
 Phone screen: retain the already-running old-build suite as a baseline and copy it once with **Copy whole suite**. After installing the next APK, use the preferred Kokoro profile for the same short question and one longer explanation, then copy the call diagnostics. Do not rerun the whole matrix automatically. Listen for pronunciation/voice continuity, missing or repeated words, first-speech delay and pauses. New-build callback timing is not directly equivalent to old whole-phrase completion timing; compare build and `pcm_delivery`. Device sound/throughput and sustained-load acceptance remain pending.
+
+### 15 September — B1: actual speech-LM appendability probe
+
+Justin prioritized Paul's voice consistency over latency and rejected the retained
+Mimi/RNG test despite its healthy supply metrics. The isolated host probe in
+[experiments/pocket-append](../experiments/pocket-append/RESULTS.md) inserts text into
+the currently generating LM cache, retaining decoder, RNG and current latent.
+Nine hash-matched model cases established mechanical insertion but failed content
+completion for mid-generation/word-wise input. Full-text controls transcribed
+correctly; two word-wise cases hit the 32-second diagnostic ceiling. No accent
+acceptance is claimed from ASR. This remains **B1**, not a B2 winner; Kokoro tuning
+is paused and live-call behavior is unchanged. No additional phone suite requested.
