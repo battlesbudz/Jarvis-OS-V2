@@ -196,6 +196,23 @@ class TtsComparisonStoreTest {
         assertEquals("future_voice", TtsEngine.diagnosticLabel("future_voice"))
     }
 
+    @Test fun piperPassageProfileSurvivesRestartWithoutChangingOtherVoices() {
+        val prefs = preferences()
+        val store = TtsComparisonStore(prefs)
+        val profile = TtsBenchmarkProfile(openingChars = 320)
+        store.setCallProfile(TtsEngine.PIPER_NORTHERN, profile)
+        assertEquals(profile, TtsComparisonStore(prefs).callProfile(TtsEngine.PIPER_NORTHERN))
+        assertNull(TtsComparisonStore(prefs).callProfile(TtsEngine.POCKET_PAUL))
+        assertFalse(profile.fullText)
+        assertFalse(profile.nativeStreaming)
+        assertTrue(profile.piperPassages)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun piperPassagesCannotBeAppliedToKokoro() {
+        TtsComparisonStore(preferences()).setCallProfile(TtsEngine.KOKORO, TtsBenchmarkProfile(openingChars = 320))
+    }
+
     @Test fun northernPiperSelectionSurvivesRestart() {
         val prefs = preferences()
         TtsComparisonStore(prefs).select(TtsEngine.PIPER_NORTHERN)

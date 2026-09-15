@@ -18,6 +18,18 @@ class SherpaTtsConfigTest {
         assertTrue(NorthernPiperSpec.files.keys.any { it.startsWith("espeak-ng-data/") })
     }
 
+    @Test fun piperPassagesDisableNativeSentenceSplittingAndKeepNaturalPauses() {
+        val passage = sherpaTtsConfig(TtsEngine.PIPER_NORTHERN, "/models/northern", 4, piperWholePassage = true)
+        assertEquals(0, passage.maxNumSentences)
+        assertEquals(1f, passage.silenceScale, 0f)
+        val legacy = sherpaTtsConfig(TtsEngine.PIPER_NORTHERN, "/models/northern", 4)
+        assertEquals(1, legacy.maxNumSentences)
+        assertEquals(1f, legacy.silenceScale, 0f)
+        for (engine in listOf(TtsEngine.KOKORO, TtsEngine.POCKET_PAUL)) {
+            assertEquals(1, sherpaTtsConfig(engine, "/models", 4, piperWholePassage = true).maxNumSentences)
+        }
+    }
+
     @Test fun pocketUsesAllSevenModelsWithoutPiperOrKokoroFallback() {
         val config = sherpaTtsConfig(TtsEngine.POCKET_PAUL, "/models/paul", 2)
         assertEquals(2, config.model.numThreads)

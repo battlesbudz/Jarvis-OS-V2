@@ -35,7 +35,8 @@ internal fun TtsComparisonDialog(
     var selected by remember { mutableStateOf(store.selectedEngine()) }
     var appliedProfile by remember(selected) { mutableStateOf(store.callProfile(selected)) }
     var profile by remember(selected) { mutableStateOf(appliedProfile ?: if (selected == TtsEngine.POCKET_PAUL)
-        TtsBenchmarkProfile(threads = 2, openingChars = null, nativeStreaming = true) else TtsBenchmarkProfile()) }
+        TtsBenchmarkProfile(threads = 2, openingChars = null, nativeStreaming = true)
+        else if (selected == TtsEngine.PIPER_NORTHERN) TtsBenchmarkProfile(openingChars = 320) else TtsBenchmarkProfile()) }
     var running by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
     fun savedRuns() = store.records().filter { it.optString("source") != "voice-call" }.asReversed()
@@ -151,12 +152,18 @@ internal fun TtsComparisonDialog(
                             onClick = { profile = profile.copy(playbackSpeed = speed) }, label = { Text("${speed}×") })
                     }
                 }
+                if (selected == TtsEngine.PIPER_NORTHERN) {
+                    FilterChip(selected = profile.piperPassages, enabled = !running,
+                        onClick = { profile = profile.copy(openingChars = 320, nativeStreaming = false, resetDecoder = true, leadingPeriod = true, bufferMs = 200) },
+                        label = { Text("Piper · longer passages") })
+                    Text("Keeps short replies together and groups longer replies at sentence boundaries around 320 characters, up to 640 per generation. Piper processes each passage together. More text context can delay the start; listen for voice consistency. Choose Test selected voice, then Apply to voice calls if you prefer it.")
+                }
                 listOf<Int?>(40, 60, 90, null).forEach { opening ->
                     FilterChip(selected = !profile.nativeStreaming && profile.openingChars == opening, enabled = !running,
                         onClick = { profile = profile.copy(openingChars = opening, nativeStreaming = false, resetDecoder = true, leadingPeriod = true, bufferMs = 200) },
-                        label = { Text(opening?.let { "$it-character opening" } ?: "Synthesize full text before playback") })
+                        label = { Text(opening?.let { "$it-character opening" } ?: if (selected == TtsEngine.PIPER_NORTHERN) "Piper · wait for full reply" else "Synthesize full text before playback") })
                 }
-                FilterChip(selected = profile.nativeStreaming, enabled = !running,
+                if (selected == TtsEngine.POCKET_PAUL) FilterChip(selected = profile.nativeStreaming, enabled = !running,
                     onClick = { profile = profile.copy(openingChars = null, nativeStreaming = true) },
                     label = { Text("Paul · native audio streaming (live call behavior)") })
                 if (selected == TtsEngine.POCKET_PAUL && profile.nativeStreaming) {
@@ -201,12 +208,12 @@ internal fun TtsComparisonDialog(
                     appliedProfile = null
                     status = "Original call defaults restored for ${selected.label}."
                 }, enabled = canChange && !running && appliedProfile != null) { Text("Restore call defaults") }
-                Text("Opening sizes are targets at natural word/clause boundaries. Full text waits for the entire input and synthesizes it in one call. 0.9× slows playback without lowering pitch. Paul’s native profile streams decoded audio as generation proceeds and uses the selected decoder state mode. Full text is a buffered baseline. Kokoro profiles add no startup wait; Paul native profiles use the selected cushion.", style = MaterialTheme.typography.bodySmall)
+                Text("Opening sizes are targets at natural word/clause boundaries. Full text waits for the entire input. Piper retains a 640-character generation limit even in full-reply mode. 0.9× slows playback without lowering pitch. Paul’s native profile streams decoded audio as generation proceeds and uses the selected decoder state mode. Full text is a buffered baseline. Kokoro profiles add no startup wait; Paul native profiles use the selected cushion.", style = MaterialTheme.typography.bodySmall)
                 Button(onClick = { run(selected) }, enabled = canChange && !running && (!profile.nativeStreaming || selected == TtsEngine.POCKET_PAUL)) { Text("Test selected voice") }
-                OutlinedButton(onClick = { run(null) }, enabled = canChange && !running && !profile.nativeStreaming) { Text("Compare all voices · this profile") }
+                OutlinedButton(onClick = { run(null) }, enabled = canChange && !running && !profile.nativeStreaming && !profile.piperPassages) { Text("Compare all voices · this profile") }
                 HorizontalDivider()
                 Text("Response speed", style = MaterialTheme.typography.titleMedium)
-                Text("The full comparison tests Kokoro and Pocket Paul with all 16 profiles: 2/4 threads, 40/60/90-character openings or full text, and 1.0×/0.9× playback. It also includes Paul’s 4 native streaming profiles. That is ${TtsBenchmarkProfile.comparisonRunCount} text runs including repeats and can take a long time. Heat status is recorded but never pauses or stops a test. Stop preserves completed results. Running a comparison keeps your applied call profile.")
+                Text("The full comparison tests Kokoro, Piper Northern English Male, and Pocket Paul with all 16 profiles: 2/4 threads, 40/60/90-character openings or full text, and 1.0×/0.9× playback. It also includes Paul’s 4 native streaming profiles. That is ${TtsBenchmarkProfile.comparisonRunCount} text runs including repeats and can take a long time. Heat status is recorded but never pauses or stops a test. Stop preserves completed results. Running a comparison keeps your applied call profile.")
                 OutlinedButton(onClick = { runLatency(false) }, enabled = canChange && !running) {
                     Text("Compare all profiles · all voices")
                 }

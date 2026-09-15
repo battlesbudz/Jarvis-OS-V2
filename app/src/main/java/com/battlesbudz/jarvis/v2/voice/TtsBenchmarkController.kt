@@ -52,7 +52,8 @@ class TtsBenchmarkController(
                         test.id, test.text, test.submissions)
                 } else profiles.flatMap { setting ->
                     TtsBenchmarkSamples.all.flatMap { (sample, text) ->
-                        engines.filter { !setting.nativeStreaming || it == TtsEngine.POCKET_PAUL }
+                        engines.filter { (!setting.nativeStreaming || it == TtsEngine.POCKET_PAUL) &&
+                            (!setting.piperPassages || it == TtsEngine.PIPER_NORTHERN) }
                             .map { engine -> Case(engine, setting, sample, text) }
                     }
                 }
@@ -81,7 +82,7 @@ class TtsBenchmarkController(
                     }
                     val runLog: (String) -> Unit = { event ->
                         log(event)
-                        if (event.startsWith("pocket_stream_trace") || event.startsWith("pocket_source_pcm") || event.startsWith("audio_underrun") ||
+                        if (event.startsWith("piper_passage_submit") || event.startsWith("piper_text_policy") || event.startsWith("pocket_stream_trace") || event.startsWith("pocket_source_pcm") || event.startsWith("audio_underrun") ||
                             event.startsWith("audio_supply_gap") || event.startsWith("speech_audio_trace") ||
                             event.startsWith("audio_playback_pace") || event.startsWith("audio_startup_buffer")) {
                             traceFile?.let { synchronized(it) { it.appendText("atMs=${System.currentTimeMillis()} $event\n") } }

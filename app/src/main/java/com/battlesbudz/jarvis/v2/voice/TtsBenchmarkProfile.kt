@@ -15,13 +15,14 @@ data class TtsBenchmarkProfile(
         require(bufferMs in listOf(0, 200, 400))
         require(!nativeStreaming || openingChars == null)
         require(threads in listOf(2, 4))
-        require(openingChars == null || openingChars in listOf(40, 60, 90))
+        require(openingChars == null || openingChars in listOf(40, 60, 90, 320))
         require(playbackSpeed == 1f || playbackSpeed == 0.9f || playbackSpeed == 0.85f)
     }
+    val piperPassages: Boolean get() = !nativeStreaming && openingChars == 320
     val fullText: Boolean get() = openingChars == null && !nativeStreaming
     val legacyId: String get() = "threads-$threads-${if (nativeStreaming) "native-stream" else openingChars?.let { "opening-$it" } ?: "full-text"}-speed-${playbackSpeed}"
     val id: String get() = legacyId + if (nativeStreaming) "-reset-$resetDecoder-period-$leadingPeriod-buffer-$bufferMs" else ""
-    val label: String get() = "$threads threads · ${if (nativeStreaming) "native audio stream" else openingChars?.let { "$it characters" } ?: "full text"} · ${playbackSpeed}×" + if (nativeStreaming) " · $stabilityLabel" else ""
+    val label: String get() = "$threads threads · ${if (nativeStreaming) "native audio stream" else if (piperPassages) "Piper longer passages" else openingChars?.let { "$it characters" } ?: "full text"} · ${playbackSpeed}×" + if (nativeStreaming) " · $stabilityLabel" else ""
 
     val stabilityLabel: String get() = "${if (resetDecoder) "Fresh decoder per sentence group" else "Continuous decoder"} · period ${if (leadingPeriod) "on" else "off"} · ${bufferMs}ms cushion"
 
@@ -34,7 +35,10 @@ data class TtsBenchmarkProfile(
         val nativeProfiles = listOf(2, 4).flatMap { threads ->
             listOf(1f, 0.9f).map { speed -> TtsBenchmarkProfile(threads, null, speed, nativeStreaming = true) }
         }
-        val selectableProfiles: List<TtsBenchmarkProfile> get() = (all + all.map { it.copy(playbackSpeed = 0.85f) }).distinctBy { it.id } +
+        val piperProfiles = listOf(2, 4).flatMap { threads ->
+            listOf(1f, 0.9f).map { speed -> TtsBenchmarkProfile(threads, 320, speed) }
+        }
+        val selectableProfiles: List<TtsBenchmarkProfile> get() = (all + piperProfiles + (all + piperProfiles).map { it.copy(playbackSpeed = 0.85f) }).distinctBy { it.id } +
             (nativeProfiles + nativeProfiles.map { it.copy(playbackSpeed = 0.85f) }).distinctBy { it.id }.flatMap { base ->
             listOf(true, false).flatMap { reset -> listOf(true, false).flatMap { period ->
                 listOf(0, 200, 400).map { buffer -> base.copy(resetDecoder = reset, leadingPeriod = period, bufferMs = buffer) }

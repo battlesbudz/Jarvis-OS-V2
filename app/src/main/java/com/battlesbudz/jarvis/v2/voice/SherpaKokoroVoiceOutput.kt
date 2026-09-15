@@ -51,6 +51,8 @@ class SherpaKokoroVoiceOutput(
             benchmarkProfile?.nativeStreaming == true && benchmarkSubmissions.isNotEmpty() &&
             benchmarkSubmissions.all { it.isNotBlank() }))
     }
+    private val piperWholePassage = engine == TtsEngine.PIPER_NORTHERN &&
+        (benchmarkProfile == null || benchmarkProfile.piperPassages || benchmarkProfile.fullText)
     @Volatile private var stopped = false
     @Volatile private var audioTrack: AudioTrack? = null
     private val speaking = AtomicBoolean(false)
@@ -88,7 +90,8 @@ class SherpaKokoroVoiceOutput(
     private val fillerDiskCache = FillerAudioCache(java.io.File(modelDirectory, "filler-cache-v3"))
     private val acknowledgementRequests = Channel<String>(Channel.CONFLATED)
     private fun fillerCacheKey(text: String) = "opening-v5:${engine.version}:$modelDirectory:$speakerId:$text" +
-        if (engine == TtsEngine.POCKET_PAUL) ":period=${benchmarkProfile?.leadingPeriod ?: false}" else ""
+        if (engine == TtsEngine.POCKET_PAUL) ":period=${benchmarkProfile?.leadingPeriod ?: false}"
+        else if (engine == TtsEngine.PIPER_NORTHERN) ":natural-pauses-v1" else ""
     internal fun updateWaitStage(stage: DelayedAcknowledgement.Stage) { acknowledgement.updateStage(stage) }
     fun acknowledgeConfirmedTurn() {
         if (!acknowledgeDelays) return
@@ -102,7 +105,7 @@ class SherpaKokoroVoiceOutput(
     /** Queues silent work on the SAME native owner used for live speech. */
     fun prepareOpening(text: String): PreparedSpeechOpening? {
         // A detached pre-generated Paul opening would lose the continuing native state.
-        if (benchmarkProfile != null || engine == TtsEngine.POCKET_PAUL || stopped || text.isBlank() || text.length > 240) return null
+        if (benchmarkProfile != null || engine == TtsEngine.POCKET_PAUL || piperWholePassage || stopped || text.isBlank() || text.length > 240) return null
         val request = PreparedSpeechOpening(text)
         preparedOpening.getAndSet(request)?.discard()
         if (!openingRequests.trySend(request).isSuccess) { request.discard(); return null }
@@ -208,13 +211,15 @@ class SherpaKokoroVoiceOutput(
         var sourcePcmSummary: String? = null
         var kokoroSource: SourcePcmAnalysis? = null
         val kokoroCallbacks = engine == TtsEngine.KOKORO && benchmarkProfile?.fullText != true
-        val pcmDelivery = if (kokoroCallbacks) "kokoro_sentence_callbacks_v1" else if (engine == TtsEngine.KOKORO) "buffered_full_text" else if (engine == TtsEngine.PIPER_NORTHERN) "piper_buffered_phrases" else "pocket_existing_policy"
+        val pcmDelivery = if (kokoroCallbacks) "kokoro_sentence_callbacks_v1" else if (engine == TtsEngine.KOKORO) "buffered_full_text" else if (engine == TtsEngine.PIPER_NORTHERN) if (piperWholePassage) "piper_whole_passages_max640_v1" else "piper_buffered_phrases" else "pocket_existing_policy"
         // One owner creates, invokes and releases the native engine. Playback never owns it.
         // Bounded PCM backpressure prevents long answers from accumulating unlimited audio.
         val audio = NativeAudioQueue<SynthesizedPhrase>(if (kokoroCallbacks) 32 else if (acknowledgeDelays && !benchmarkRun) 8 else 2) {
             it.pcm.size * 1000L / it.sampleRate
         }
         val pocketSentences = engine == TtsEngine.POCKET_PAUL && (benchmarkProfile?.nativeStreaming == true || !fixedChunking && benchmarkProfile == null)
+        val piperText = if (piperWholePassage) PiperTextStream(waitForEnd = benchmarkProfile?.fullText == true) else null
+        if (engine == TtsEngine.PIPER_NORTHERN) log("piper_text_policy version=whole-passages-v1 enabled=$piperWholePassage targetChars=320 maxChars=640 nativeMaxNumSentences=${if (piperWholePassage) 0 else 1} silenceScale=1.0 waitForEnd=${benchmarkProfile?.fullText == true}")
         val pocketText = if (pocketSentences) PocketTextStream() else null
         val isolationText = if (benchmarkSubmissions != null) StringBuilder() else null
         val chunker = SpeechChunker(openingChars, fullText = benchmarkProfile?.fullText == true, minPhraseChars = 40)
@@ -273,12 +278,12 @@ class SherpaKokoroVoiceOutput(
                 }
                 val loadStart = System.nanoTime()
                 log("tts_engine_preload_started")
-                val modelKey = "${this@SherpaKokoroVoiceOutput.engine.id}:$modelDirectory:$numThreads"
+                val modelKey = "${this@SherpaKokoroVoiceOutput.engine.id}:$modelDirectory:$numThreads:piperWholePassage=$piperWholePassage"
                 engineLease = modelSession?.tts?.acquire(modelKey) {
-                    OfflineTts(config = sherpaTtsConfig(this@SherpaKokoroVoiceOutput.engine, modelDirectory, numThreads))
+                    OfflineTts(config = sherpaTtsConfig(this@SherpaKokoroVoiceOutput.engine, modelDirectory, numThreads, piperWholePassage))
                 }
                 val tts = engineLease?.value ?: OfflineTts(config =
-                    sherpaTtsConfig(this@SherpaKokoroVoiceOutput.engine, modelDirectory, numThreads))
+                    sherpaTtsConfig(this@SherpaKokoroVoiceOutput.engine, modelDirectory, numThreads, piperWholePassage))
                 engine = tts
                 loadMs = elapsedMs(loadStart)
                 log("tts_engine_preload_finished loadMs=$loadMs reused=${engineLease?.reused == true}")
@@ -292,7 +297,7 @@ class SherpaKokoroVoiceOutput(
                     GenerationConfig(silenceScale = 1f, referenceAudio = reference.samples,
                         referenceSampleRate = reference.sampleRate, numSteps = 5,
                         extra = PocketSpeechPolicy.extra(session = nativeSession))
-                } else GenerationConfig(silenceScale = 0.2f, sid = speakerId)
+                } else GenerationConfig(silenceScale = if (this@SherpaKokoroVoiceOutput.engine == TtsEngine.PIPER_NORTHERN) 1f else 0.2f, sid = speakerId)
                 if (pocket && benchmarkProfile?.fullText == true) log("pocket_voice_policy version=${PocketSpeechPolicy.VERSION} pcmDelivery=buffered_full_text nativeContext=isolated_baseline")
                 else if (pocket) log("pocket_voice_policy version=${PocketSpeechPolicy.VERSION} " +
                     "seed=${PocketSpeechPolicy.SEED} temperature=0.7 steps=5 naturalSentenceInput=$pocketSentences " +
@@ -366,6 +371,10 @@ class SherpaKokoroVoiceOutput(
                 fun generate(text: String) {
                     owner.ensureActive()
                     if (stopped) return
+                    if (piperWholePassage) {
+                        check(text.length <= PiperTextStream.MAX_CHARS)
+                        log("piper_passage_submit index=$index chars=${text.length} nativeMaxNumSentences=0")
+                    }
                     if (index > 0 && (pocketSentences || kokoroCallbacks && previousSentenceComplete) && acknowledgeDelays && !benchmarkRun) {
                         audio.sendFromNative(SynthesizedPhrase(index - 1, "", tts.sampleRate(), ShortArray(0),
                             0, 1f, sentenceEnd = true))
@@ -507,6 +516,7 @@ class SherpaKokoroVoiceOutput(
                         "audioDurationMs=$audioMs realtimeFactor=$rtf")
                 }
                 fun nextPhrase(final: Boolean = false): String? {
+                    if (piperText != null) return piperText.take(final)
                     if (pocketText != null) return pocketText.take(final)
                     if (fixedChunking || index == 0) return chunker.take(final)
                     val playedMs = synchronized(playbackLock) {
@@ -532,6 +542,16 @@ class SherpaKokoroVoiceOutput(
                                 textHash.update(token.toByteArray(Charsets.UTF_8))
                                 if (isolationText != null) {
                                     isolationText.append(token)
+                                } else if (piperText != null) {
+                                    piperText.append(token)
+                                    while (true) {
+                                        val queued = tokens.tryReceive()
+                                        queued.exceptionOrNull()?.let { throw it }
+                                        val more = queued.getOrNull() ?: break
+                                        inputChars += more.length
+                                        textHash.update(more.toByteArray(Charsets.UTF_8))
+                                        piperText.append(more)
+                                    }
                                 } else if (pocketText != null) {
                                     pocketText.append(token)
                                     // While native PCM was playing, Gemma may have completed more

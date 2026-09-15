@@ -28,10 +28,12 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
     @Synchronized fun callProfile(engine: TtsEngine): TtsBenchmarkProfile? {
         val id = preferences.getString("call_profile_${engine.id}", null) ?: return null
         return TtsBenchmarkProfile.selectableProfiles.firstOrNull {
-            (it.id == id || it.legacyId == id) && (!it.nativeStreaming || engine == TtsEngine.POCKET_PAUL)
+            (it.id == id || it.legacyId == id) && (!it.nativeStreaming || engine == TtsEngine.POCKET_PAUL) &&
+                (!it.piperPassages || engine == TtsEngine.PIPER_NORTHERN)
         }
     }
     @Synchronized fun setCallProfile(engine: TtsEngine, profile: TtsBenchmarkProfile?) {
+        require(profile?.piperPassages != true || engine == TtsEngine.PIPER_NORTHERN)
         require(profile?.nativeStreaming != true || engine == TtsEngine.POCKET_PAUL)
         preferences.edit().putString("call_profile_${engine.id}", profile?.id).apply()
     }
@@ -67,14 +69,14 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
             .put("pcm_delivery", metrics.pcmDelivery ?: JSONObject.NULL)
         if (run != null) {
             item.put("audio_file", run.audioFile ?: JSONObject.NULL)
-                .put("paul_stability", run.profile.stabilityLabel)
+                .put("paul_stability", if (engine == TtsEngine.POCKET_PAUL) run.profile.stabilityLabel else JSONObject.NULL)
                 .put("suite_id", run.suiteId).put("profile_id", run.profile.id).put("pass", run.pass)
                 .put("input_text", run.text).put("input_delivery", run.inputDelivery)
                 .put("planned_submissions", run.submissions?.let { JSONArray(it) } ?: JSONObject.NULL)
                 .put("provenance", JSONObject(run.provenance))
                 .put("first_intelligible_word_ms", JSONObject.NULL)
                 .put("intelligibility_assessment", "not_assessed")
-                .put("synthesis_mode", when { run.submissions != null -> "native-audio-stream-fixed-submissions"; run.profile.nativeStreaming -> "native-audio-stream-natural-sentences"; run.profile.fullText -> "full-text-before-playback"; else -> "streamed-phrases" })
+                .put("synthesis_mode", when { run.profile.piperPassages -> "piper-bounded-passages"; run.submissions != null -> "native-audio-stream-fixed-submissions"; run.profile.nativeStreaming -> "native-audio-stream-natural-sentences"; run.profile.fullText -> "full-text-before-playback"; else -> "streamed-phrases" })
                 .put("requested_playback_speed", run.profile.playbackSpeed.toDouble())
                 .put("playback_speed_applied", kotlin.math.abs(metrics.playbackSpeed - run.profile.playbackSpeed) < 0.001f)
                 .put("opening_target_chars", run.profile.openingChars ?: JSONObject.NULL)

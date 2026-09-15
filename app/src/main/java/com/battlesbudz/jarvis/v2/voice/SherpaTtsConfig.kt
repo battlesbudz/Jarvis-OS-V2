@@ -3,7 +3,7 @@ package com.battlesbudz.jarvis.v2.voice
 import com.k2fsa.sherpa.onnx.*
 import java.io.File
 
-internal fun sherpaTtsConfig(engine: TtsEngine, directory: String, threads: Int): OfflineTtsConfig {
+internal fun sherpaTtsConfig(engine: TtsEngine, directory: String, threads: Int, piperWholePassage: Boolean = false): OfflineTtsConfig {
     val model = OfflineTtsModelConfig(numThreads = threads, debug = false, provider = "cpu")
     if (engine == TtsEngine.POCKET_PAUL) {
         model.pocket = OfflineTtsPocketModelConfig(
@@ -22,5 +22,5 @@ internal fun sherpaTtsConfig(engine: TtsEngine, directory: String, threads: Int)
             lexicon = File(directory, "lexicon-us-en.txt").takeIf { it.isFile }?.path.orEmpty(), lang = "en-us"
         )
     }
-    return OfflineTtsConfig(model = model, maxNumSentences = 1, silenceScale = 0.2f)
+    return OfflineTtsConfig(model = model, maxNumSentences = if (engine == TtsEngine.PIPER_NORTHERN && piperWholePassage) 0 else 1, silenceScale = if (engine == TtsEngine.PIPER_NORTHERN) 1f else 0.2f)
 }
