@@ -208,7 +208,7 @@ class SherpaKokoroVoiceOutput(
         var sourcePcmSummary: String? = null
         var kokoroSource: SourcePcmAnalysis? = null
         val kokoroCallbacks = engine == TtsEngine.KOKORO && benchmarkProfile?.fullText != true
-        val pcmDelivery = if (kokoroCallbacks) "kokoro_sentence_callbacks_v1" else if (engine == TtsEngine.KOKORO) "buffered_full_text" else "pocket_existing_policy"
+        val pcmDelivery = if (kokoroCallbacks) "kokoro_sentence_callbacks_v1" else if (engine == TtsEngine.KOKORO) "buffered_full_text" else if (engine == TtsEngine.PIPER_NORTHERN) "piper_buffered_phrases" else "pocket_existing_policy"
         // One owner creates, invokes and releases the native engine. Playback never owns it.
         // Bounded PCM backpressure prevents long answers from accumulating unlimited audio.
         val audio = NativeAudioQueue<SynthesizedPhrase>(if (kokoroCallbacks) 32 else if (acknowledgeDelays && !benchmarkRun) 8 else 2) {
@@ -490,7 +490,7 @@ class SherpaKokoroVoiceOutput(
                     deliveryLedger?.seal(phraseIndex)
                     audio.sendFromNative(SynthesizedPhrase(phraseIndex, text, rate, result.pcm,
                         if (pocket || benchmarkProfile != null) 0 else PlaybackBufferPolicy.startupWaitMs(result.synthesisMs, frames * 1000 / rate),
-                        benchmarkProfile?.playbackSpeed ?: if (normalSpeed || pocket) 1f else PlaybackBufferPolicy.playbackSpeed(result.synthesisMs, frames * 1000 / rate)))
+                        benchmarkProfile?.playbackSpeed ?: if (normalSpeed || pocket || engine == TtsEngine.PIPER_NORTHERN) 1f else PlaybackBufferPolicy.playbackSpeed(result.synthesisMs, frames * 1000 / rate)))
                     if (phraseIndex == 1) startupReady.complete(Unit)
                     previousChars = text.length
                     previousSynthesisMs = result.synthesisMs

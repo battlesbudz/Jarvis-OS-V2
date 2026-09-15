@@ -11,6 +11,10 @@ internal fun sherpaTtsConfig(engine: TtsEngine, directory: String, threads: Int)
             encoder = "$directory/encoder.onnx", decoder = "$directory/decoder.int8.onnx",
             textConditioner = "$directory/text_conditioner.onnx", vocabJson = "$directory/vocab.json",
             tokenScoresJson = "$directory/token_scores.json", voiceEmbeddingCacheCapacity = 1)
+    } else if (engine == TtsEngine.PIPER_NORTHERN) {
+        model.vits = OfflineTtsVitsModelConfig(
+            model = "$directory/${engine.modelFile}", tokens = "$directory/tokens.txt",
+            dataDir = "$directory/espeak-ng-data")
     } else {
         model.kokoro = OfflineTtsKokoroModelConfig(
             model = "$directory/${engine.modelFile}", voices = "$directory/voices.bin",

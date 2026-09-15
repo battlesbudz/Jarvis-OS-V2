@@ -113,7 +113,8 @@ internal fun TtsComparisonDialog(
                         Text((if (selected == engine) "✓ " else "") + engine.label)
                     }
                 }
-                Text("Selected voice is used for the next call. Pocket Paul downloads about 99 MB on first use. All voices then work offline.")
+                Text("Selected voice is used for the next call. Pocket Paul downloads about 99 MB and Piper Northern English Male about 67 MB on first use. All voices then work offline.")
+                if (selected == TtsEngine.PIPER_NORTHERN) Text("Northern English Male: OpenSLR 83 dataset (CC BY-SA 4.0). Voice model card is retained on the phone.", style = MaterialTheme.typography.bodySmall)
                 if (selected == TtsEngine.POCKET_PAUL) Text("Paul: Kyutai / VCTK p259 (CC BY 4.0). The neutral acknowledgment and recovery phrase are saved on the phone.", style = MaterialTheme.typography.bodySmall)
                 if (selected == TtsEngine.POCKET_PAUL) {
                     listOf(false, true).forEach { recovery ->

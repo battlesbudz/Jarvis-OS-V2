@@ -27,9 +27,11 @@ class TtsModelStore(context: Context, private val original: KokoroModelStore) {
         }
         if (engine == TtsEngine.KOKORO) return@withContext original.downloadOrReuse(onStatus = status).getOrThrow()
         val directory = File(root, engine.directory)
-        val verification = engine.archiveSha256 + ":${PocketVoiceSpec.PAUL_SHA256}"
-        fun ready(dir: File) = PocketVoiceSpec.files.all { (name, bytes) -> File(dir, name).length() == bytes } &&
+        val pocket = engine == TtsEngine.POCKET_PAUL
+        val verification = engine.archiveSha256 + if (pocket) ":${PocketVoiceSpec.PAUL_SHA256}" else ""
+        fun ready(dir: File) = if (pocket) PocketVoiceSpec.files.all { (name, bytes) -> File(dir, name).length() == bytes } &&
             File(dir, PocketVoiceSpec.PAUL_FILE).length() == PocketVoiceSpec.PAUL_BYTES
+        else NorthernPiperSpec.files.all { (name, bytes) -> File(dir, name).isFile && File(dir, name).length() == bytes }
         if (ready(directory) && File(directory, ".verified").takeIf { it.isFile }?.readText() == verification)
             return@withContext directory
         root.mkdirs()
@@ -104,8 +106,10 @@ class TtsModelStore(context: Context, private val original: KokoroModelStore) {
                     }
                 }
             }
-            status("Downloading Paul’s voice reference…")
-            downloadPaul(File(staging, PocketVoiceSpec.PAUL_FILE))
+            if (pocket) {
+                status("Downloading Paul’s voice reference…")
+                downloadPaul(File(staging, PocketVoiceSpec.PAUL_FILE))
+            }
             check(ready(staging)) { "The voice archive is incomplete." }
             File(staging, ".verified").writeText(verification)
             directory.deleteRecursively()
