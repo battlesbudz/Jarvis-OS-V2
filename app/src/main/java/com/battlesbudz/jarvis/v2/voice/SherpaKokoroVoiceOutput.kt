@@ -490,7 +490,7 @@ class SherpaKokoroVoiceOutput(
                     deliveryLedger?.seal(phraseIndex)
                     audio.sendFromNative(SynthesizedPhrase(phraseIndex, text, rate, result.pcm,
                         if (pocket || benchmarkProfile != null) 0 else PlaybackBufferPolicy.startupWaitMs(result.synthesisMs, frames * 1000 / rate),
-                        benchmarkProfile?.playbackSpeed ?: if (normalSpeed || pocket || engine == TtsEngine.PIPER_NORTHERN) 1f else PlaybackBufferPolicy.playbackSpeed(result.synthesisMs, frames * 1000 / rate)))
+                        benchmarkProfile?.playbackSpeed ?: if (normalSpeed || pocket || this@SherpaKokoroVoiceOutput.engine == TtsEngine.PIPER_NORTHERN) 1f else PlaybackBufferPolicy.playbackSpeed(result.synthesisMs, frames * 1000 / rate)))
                     if (phraseIndex == 1) startupReady.complete(Unit)
                     previousChars = text.length
                     previousSynthesisMs = result.synthesisMs
@@ -902,4 +902,3 @@ class SherpaKokoroVoiceOutput(
         runCatching { release() }
     }
 }
-
