@@ -1,0 +1,131 @@
+--- a/sherpa-onnx/csrc/offline-tts-pocket-impl.h
++++ b/sherpa-onnx/csrc/offline-tts-pocket-impl.h
+@@ -208,6 +208,14 @@
+       }
+     }
+
++    // Jarvis opts into one persistent acoustic session per answer. Text arrives at
++    // natural sentence boundaries; PCM is decoded BEFORE the sentence is complete.
++    const auto session = gen_config.GetExtraString("jarvis_session");
++    if (!session.empty() && callback) {
++      if (text.empty()) return {};
++      return GenerateStreaming(text, gen_config, session, callback);
++    }
++
+     auto sentences = SplitByPunctuation(text);
+
+     if (sentences.empty()) {
+@@ -450,6 +458,113 @@
+   }
+
+  private:
++  struct StreamingState {
++    std::string id;
++    PocketLmMainState voice_prompt;
++    PocketMimiDecoderState decoder;
++    NormalDataGenerator noise;
++    int64_t frames = 0;
++    StreamingState(std::string session, PocketLmMainState main,
++                   PocketMimiDecoderState mimi, float temperature, int seed)
++        : id(std::move(session)), voice_prompt(std::move(main)), decoder(std::move(mimi)),
++          noise(0, std::sqrt(temperature), seed) {}
++  };
++  // Same single-owner rule as OfflineTts; callers must not generate concurrently.
++  // Fillers/non-streaming benchmarks never touch this answer state.
++  mutable std::unique_ptr<StreamingState> stream_;
++
++  GeneratedAudio GenerateStreaming(const std::string &text,
++      const GenerationConfig &config, const std::string &session,
++      GeneratedAudioCallback callback) const {
++    auto memory = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
++    std::array<int64_t, 3> empty_shape = {1, 0, 32};
++    auto empty = Ort::Value::CreateTensor<float>(memory, nullptr, 0,
++                                                empty_shape.data(), 3);
++    try {
++      if (!stream_ || stream_->id != session) {
++        auto voice = GetVoiceEmbedding(config);
++        if (!voice) return {};
++        stream_ = std::make_unique<StreamingState>(session,
++            model_->GetLmMainInitState(), model_->GetMimiDecoderInitState(),
++            config.GetExtraFloat("temperature", 0.7f),
++            config.GetExtraInt("seed", 42));
++        RunLmMain(View(&empty), std::move(voice), stream_->voice_prompt);
++      }
++      auto &state = *stream_;
++      // Restore the SAME cached voice-conditioned prompt, as upstream's default
++      // copy_state=True does. Reusing a completed text/EOS state truncates later
++      // sentences with this ONNX model. Decoder and RNG continue across the answer.
++      PocketLmMainState lm;
++      lm.values.reserve(state.voice_prompt.values.size());
++      for (auto &value : state.voice_prompt.values)
++        lm.values.push_back(Clone(model_->Allocator(), &value));
++      auto text_embedding = GetTextEmbedding(text);
++      const auto text_tokens = text_embedding.GetTensorTypeAndShapeInfo().GetShape()[1];
++      RunLmMain(View(&empty), std::move(text_embedding), lm);
++      std::vector<float> current(32, std::numeric_limits<float>::quiet_NaN());
++      std::array<int64_t, 3> current_shape = {1, 1, 32};
++      std::array<int64_t, 3> no_text_shape = {1, 0, 1024};
++      auto no_text = Ort::Value::CreateTensor<float>(memory, nullptr, 0,
++                                                    no_text_shape.data(), 3);
++      std::vector<float> noise(32);
++      std::array<int64_t, 2> noise_shape = {1, 32};
++      auto noise_tensor = Ort::Value::CreateTensor(memory, noise.data(), noise.size(),
++                                                  noise_shape.data(), 2);
++      // Scale the ceiling with the supplied text (80 ms per latent), bounded at
++      // 200 seconds. EOS normally ends far earlier; callbacks remain cancellable.
++      const int max_frames = config.GetExtraInt("max_frames",
++          static_cast<int>(std::min<int64_t>(2500, std::max<int64_t>(500, text_tokens * 12))));
++      const int tail = config.GetExtraInt("frames_after_eos", 3);
++      // 3 latent frames = 240 ms PCM; subsequent 5-frame blocks amortize decoding.
++      // These are AUDIO frame counts, unrelated to input character counts.
++      int batch = state.frames == 0 ? config.GetExtraInt("first_chunk_size", 3)
++                                    : config.GetExtraInt("chunk_size", 5);
++      batch = std::max(1, std::min(batch, 15));
++      std::vector<float> pending;
++      GeneratedAudio result;
++      result.sample_rate = SampleRate();
++      bool running = true;
++      auto decode = [&](float progress) {
++        if (pending.empty() || !running) return;
++        std::array<int64_t, 3> shape = {1, static_cast<int64_t>(pending.size()/32), 32};
++        auto input = Ort::Value::CreateTensor(memory, pending.data(), pending.size(),
++                                              shape.data(), 3);
++        auto output = RunMimiDecoder(std::move(input), state.decoder);
++        const auto n = output.GetTensorTypeAndShapeInfo().GetElementCount();
++        const auto *pcm = output.GetTensorData<float>();
++        // Returned PCM and callbacks are exactly the same stream, once each.
++        result.samples.insert(result.samples.end(), pcm, pcm + n);
++        running = callback(pcm, static_cast<int32_t>(n), progress);
++        pending.clear();
++        batch = std::max(1, std::min(config.GetExtraInt("chunk_size", 5), 15));
++      };
++      int eos = -1;
++      for (int step = 0; step < max_frames && running; ++step) {
++        auto input = Ort::Value::CreateTensor(memory, current.data(), current.size(),
++                                              current_shape.data(), 3);
++        Ort::Value condition{nullptr}, stop{nullptr};
++        std::tie(condition, stop) = RunLmMain(std::move(input), View(&no_text), lm);
++        if (eos < 0 && stop.GetTensorData<float>()[0] > -4) eos = step;
++        if (eos >= 0 && step >= eos + tail) break;
++        state.noise.Fill(noise.data(), noise.size());
++        auto latent = RunLmFlow(std::move(condition), View(&noise_tensor), config.num_steps);
++        const float *values = latent.GetTensorData<float>();
++        current.assign(values, values + 32);
++        pending.insert(pending.end(), values, values + 32);
++        ++state.frames;
++        if (pending.size() >= static_cast<size_t>(batch * 32))
++          decode(static_cast<float>(step + 1) / max_frames);
++      }
++      decode(1.0f);
++      // Stop/restart cannot accidentally reuse a partially generated answer.
++      if (!running) stream_.reset();
++      return result;
++    } catch (...) {
++      stream_.reset();
++      throw;
++    }
++  }
++
+   template <typename Manager>
+   void InitTokenizer(Manager *mgr) {
+     tokenizer_ = std::make_unique<SentencePieceTokenizer>(

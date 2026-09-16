@@ -11,13 +11,23 @@ class ConversationPromptBuilder(
         userPrompt: String,
         actionResultContext: String?,
         history: List<ChatEntry>,
-        seedContext: Boolean
+        seedContext: Boolean,
+        voice: Boolean = false
     ): String {
+        val dialogue = DialogueContextPolicy.resolve(userPrompt, history.map { it.role to it.text })
+        val dialogueInstruction = if (dialogue.recall)
+            "Answer from the recent conversation. This is recall of dialogue, not a request for external facts. If the detail is missing, say so; do not invent it."
+        else dialogue.storyInstruction.orEmpty()
         val actionContext = actionResultContext?.let { "\n\n$it" }.orEmpty()
         val sessionContext = if (seedContext) {
-            shortTermContext.promptContext(history.map { it.role to it.text })
+            shortTermContext.promptContext(history.map { it.role to it.text }, compact = voice)
                 .takeIf { it.isNotBlank() }?.let { "\n\n$it" }.orEmpty()
         } else ""
+        if (voice) return listOf(
+            com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions,
+            sessionContext.trim(), dialogueInstruction,
+            "Current user message:\n$userPrompt", actionContext.trim()
+        ).filter { it.isNotBlank() }.joinToString("\n\n")
         return """
             You are Jarvis, a private local assistant. Answer the current
             user message directly and naturally. Do not list your capabilities,
@@ -42,6 +52,8 @@ class ConversationPromptBuilder(
             
             $sessionContext
 
+            $dialogueInstruction
+
             Current user message:
             $userPrompt
             $actionContext
@@ -55,7 +67,7 @@ class ConversationPromptBuilder(
         succeeded: Boolean
     ): String {
         return """
-            MobileActions tool execution context:
+            Native tool execution context:
             - User request: $userPrompt
             - Selected tool: $toolName
             - Execution status: ${if (succeeded) "succeeded" else "failed"}

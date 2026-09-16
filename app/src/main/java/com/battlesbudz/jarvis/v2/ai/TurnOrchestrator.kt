@@ -20,9 +20,16 @@ class TurnOrchestrator(
     private var activeSubjectQuestion: String? = null
     private var activeSubject: String? = null
 
-    fun plan(prompt: String): TurnPlan {
+    fun plan(prompt: String, history: List<Pair<String, String>> = emptyList()): TurnPlan {
         val confirmation = grounding.isLookupConfirmation(prompt)
         val explicit = grounding.isExplicitLookupRequest(prompt)
+        val dialogue = DialogueContextPolicy.resolve(prompt, history)
+        if (!explicit && (dialogue.recall || dialogue.storyInstruction != null)) {
+            pendingLookupSubject = null
+            activeSubject = null
+            activeSubjectQuestion = null
+            return TurnPlan(TurnKind.NORMAL_CHAT)
+        }
         if (confirmation && pendingLookupSubject != null) {
             return TurnPlan(
                 kind = TurnKind.LOOKUP_CONFIRMATION,
@@ -101,6 +108,14 @@ class TurnOrchestrator(
         } else {
             pendingLookupSubject = null
         }
+    }
+
+    /** An offer that was generated but never spoken cannot arm a later "yes". */
+    fun reconcileVoiceDelivery(spoken: String) {
+        val normalized = spoken.lowercase()
+        pendingLookupSubject = if (spoken.isNotBlank() && (grounding.isInsufficientAnswer(spoken) ||
+            normalized.contains("would you like me to search wikipedia") ||
+            normalized.contains("would you like me to search wikidata"))) activeSubject ?: activeSubjectQuestion else null
     }
 
     fun pendingSubjectForDiagnostics(): String? = pendingLookupSubject
