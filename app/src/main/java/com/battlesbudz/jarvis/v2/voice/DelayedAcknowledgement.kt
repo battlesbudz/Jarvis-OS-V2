@@ -3,7 +3,7 @@ package com.battlesbudz.jarvis.v2.voice
 import kotlinx.coroutines.*
 import kotlinx.coroutines.selects.select
 
-/** One cached acknowledgment. Once audible, finish it while answer PCM builds behind it. */
+/** One cached acknowledgment; ready answer PCM gets priority over an unfinished filler. */
 internal class DelayedAcknowledgement(private val log: (String) -> Unit = {}) {
     enum class Stage { PROCESSING, RECOGNIZING, GENERATING, SYNTHESIZING }
     private val requested = CompletableDeferred<String>()
@@ -14,7 +14,7 @@ internal class DelayedAcknowledgement(private val log: (String) -> Unit = {}) {
     private var job: Job? = null
     fun updateStage(value: Stage) { stage = value }
     fun request(text: String = FillerPhrases.INITIAL) {
-        if (requested.complete(text)) log("acknowledgement_requested text=$text policy=once_complete_clip")
+        if (requested.complete(text)) log("acknowledgement_requested text=$text policy=once_answer_priority")
     }
     fun prepare(audio: SpeechAudio) { synchronized(lock) { prepared[audio.text] = audio } }
     fun preparationFailed(text: String) { log("acknowledgement_cache_failed text=$text answer_unblocked=true") }
@@ -44,9 +44,14 @@ internal class DelayedAcknowledgement(private val log: (String) -> Unit = {}) {
         withTimeoutOrNull(ms.coerceAtLeast(1)) { answerReady.await(); true } == true
     suspend fun answerReady() {
         answerReady.complete(Unit)
-        // Native production continues on its own worker and bounded queue during this join.
-        // Stop/call cancellation still cancels the clip immediately through the parent scope.
-        job?.join()
+        val active = job ?: return
+        val started = System.nanoTime()
+        // Let a nearly finished clip drain, but never hold a ready answer for seconds.
+        if (withTimeoutOrNull(250) { active.join(); true } != true) {
+            log("acknowledgement_yield reason=answer_pcm_ready fadeOut=true")
+            active.cancelAndJoin()
+        }
+        log("acknowledgement_answer_wait_ms=${(System.nanoTime() - started) / 1_000_000}")
     }
     suspend fun close() { job?.cancelAndJoin() }
 }

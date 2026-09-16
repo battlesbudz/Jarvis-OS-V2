@@ -21,6 +21,15 @@ class CallModelSlot<T : Any>(private val release: (T) -> Unit, private val log: 
     @Synchronized fun canReuse(requestKey: String, maxUses: Int): Boolean =
         !closed && !borrowed && resource != null && key == requestKey && uses < maxUses
 
+    /** Atomic admission for optional probes: never load, rotate, or compete with a command. */
+    @Synchronized fun acquireWarm(requestKey: String): Lease {
+        check(canReuse(requestKey, Int.MAX_VALUE)) { "probe_model_not_warm" }
+        borrowed = true
+        uses++
+        log("model_acquired reused=true uses=$uses probe=true")
+        return Lease(requireNotNull(resource), true)
+    }
+
     @Synchronized fun acquire(requestKey: String, maxUses: Int = Int.MAX_VALUE, requiredUses: Int = 1, fresh: Boolean = false, create: () -> T): Lease {
         check(!closed && !borrowed) { "Call model is closed or already in use." }
         require(maxUses > 0 && requiredUses in 1..maxUses)

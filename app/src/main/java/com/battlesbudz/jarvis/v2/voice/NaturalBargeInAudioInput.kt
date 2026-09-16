@@ -132,7 +132,10 @@ class NaturalBargeInAudioInput(
                             if (accepted) {
                                 finalReason = "keyword_stop"
                                 delivered = true
-                                onConfirmed(false, "stop")
+                                // This is a final-only decode, not a provisional hypothesis.
+                                // Preserve end-call intent instead of reducing every control to
+                                // stop-reply and reopening ordinary listening.
+                                onConfirmed(false, if (VoiceCallPolicy.isGoodbye(polled.text)) "stop listening" else "stop")
                                 worker.close()
                                 log("barge_keyword_confirmed keyword=stop verification=asr_non_echo workMs=${polled.workMs}")
                             } else log("barge_stop_rejected reason=${if (fresh) "unconfirmed_or_echo" else "stale"} chars=${polled.text.length} playback_uninterrupted=true")

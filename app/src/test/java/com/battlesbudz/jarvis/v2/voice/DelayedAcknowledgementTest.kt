@@ -33,6 +33,21 @@ class DelayedAcknowledgementTest {
         finish.complete(Unit); withTimeout(500) { answer.await() }
         assertTrue(released); cue.close()
     }
+    @Test fun readyAnswerCancelsLongFillerAndWaitsForItsRelease() = runBlocking {
+        val logs = mutableListOf<String>()
+        val cue = DelayedAcknowledgement(logs::add)
+        val started = CompletableDeferred<Unit>()
+        var released = false
+        cue.prepare(audio); cue.start(this, delayMs = 1) {
+            try { started.complete(Unit); awaitCancellation() }
+            finally { withContext(NonCancellable) { delay(40); released = true } }
+        }
+        cue.request(); withTimeout(500) { started.await() }
+        withTimeout(1500) { cue.answerReady() }
+        assertTrue(released)
+        assertTrue(logs.any { "reason=answer_pcm_ready" in it })
+        cue.close()
+    }
     @Test fun slowAnswerNeverRepeatsOrAnnouncesAnotherStage() = runBlocking {
         val cue = DelayedAcknowledgement(); val started = CompletableDeferred<Unit>(); var calls = 0
         cue.prepare(audio)

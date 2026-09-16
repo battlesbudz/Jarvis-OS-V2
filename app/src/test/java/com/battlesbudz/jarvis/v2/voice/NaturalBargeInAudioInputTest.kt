@@ -17,7 +17,8 @@ class NaturalBargeInAudioInputTest {
                      failing: Boolean = false, chunks: Int = 30,
                      dispatcher: CoroutineDispatcher = Dispatchers.Unconfined, beforeFrame: (Int) -> Unit = {},
                      acceptAction: () -> Unit = {}, loadAction: () -> Unit = {}, speechNow: () -> Boolean = { speech },
-                     budgetNow: () -> Boolean = { budget }, backlogNow: () -> Long = { 0L }, onConfirmation: (Boolean) -> Unit = {}): NaturalBargeInAudioInput {
+                     budgetNow: () -> Boolean = { budget }, backlogNow: () -> Long = { 0L }, onConfirmation: (Boolean) -> Unit = {},
+                     onEvidence: (String) -> Unit = {}): NaturalBargeInAudioInput {
         val input = object : AudioInput {
             override val sampleRateHz = 16000
             override val channelCount = 1
@@ -50,7 +51,8 @@ class NaturalBargeInAudioInputTest {
                     override fun close() { closedModels++ }
                 }
             }, playing = { true }, reference = { reference }, hasPlaybackBudget = budgetNow,
-            onConfirmed = { natural, _ ->
+            onConfirmed = { natural, evidence ->
+                onEvidence(evidence)
                 if (natural) assertEquals(models, closedModels)
                 onConfirmation(natural)
                 confirmed++
@@ -74,6 +76,14 @@ class NaturalBargeInAudioInputTest {
         assertTrue(gate(text = "Stop.", reference = "You can say stop at any time.",
             speech = false, keywordAt = 10, keyword = "stop").chunks().toList().isEmpty())
         assertEquals(0, confirmed)
+    }
+    @Test fun finalStopListeningKeepsEndCallIntentDespiteNumericArtifacts() = runBlocking {
+        var evidence = ""
+        gate(text = "1. Stop listening. 2.", speech = false, keywordAt = 10, keyword = "stop",
+            onEvidence = { evidence = it }).chunks().toList()
+        assertEquals(1, confirmed)
+        assertEquals("stop listening", evidence)
+        assertEquals(models, closedModels)
     }
     @Test fun stopWithoutVerificationBudgetLeavesPlaybackRunning() = runBlocking {
         assertTrue(gate(budget = false, speech = false, keywordAt = 10, keyword = "stop").chunks().toList().isEmpty())

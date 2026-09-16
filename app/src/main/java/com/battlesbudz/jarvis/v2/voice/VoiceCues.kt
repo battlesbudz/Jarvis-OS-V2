@@ -4,6 +4,8 @@ import android.media.AudioManager
 import android.media.ToneGenerator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -65,7 +67,22 @@ object VoiceCues {
             log("acknowledgement_playback_finished frames=${track.playbackHeadPosition}")
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) { log("acknowledgement_unavailable reason=${error.message}") }
-        finally { track?.let { runCatching { it.pause() }; it.release() } }
+        finally {
+            track?.let { owned ->
+                // Answer-priority cancellation fades only the filler, never the answer track.
+                // Explicit stop still pauses immediately.
+                if (!stopped() && !paused() && owned.playbackHeadPosition < audio.pcm.size) {
+                    withContext(NonCancellable) {
+                        for (volume in listOf(.75f, .5f, .25f, 0f)) {
+                            runCatching { owned.setVolume(volume) }
+                            delay(10)
+                        }
+                    }
+                }
+                runCatching { owned.pause() }
+                owned.release()
+            }
+        }
     }
 
 }

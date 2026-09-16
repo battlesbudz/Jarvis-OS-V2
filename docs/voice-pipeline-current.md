@@ -1,6 +1,6 @@
 # Current voice pipeline and remaining acceptance
 
-Audited 16 September 2026 against build 694 (`542d75cf3beae282c2f497f7fc4e38fc5f0dace6`) and this follow-up. This document is the current policy summary; dated experiments in the older guides are historical. Work stays on `audio-pr2` / PR 6; publishing an APK does not authorize merging it.
+Audited 16 September 2026 against builds 694–695 and the release-only branch head `dbc43d17ef60d25b4234eb83bca7979c1f712fe0`; updated with the interruption/answer-priority implementation below. This document is the current policy summary; dated experiments in the older guides are historical. Work stays on `audio-pr2` / PR 6; publishing an APK does not authorize merging it.
 
 ## Current user goal and policies
 
@@ -12,9 +12,9 @@ Justin accepts Piper Northern English Male's voice and accent consistency. Prese
 - Whisper uses growing batch windows on one native worker. It is not native streaming. Its selected setting is preserved; the current unset preference defaults to Whisper. Ordinary turn admission/endpointing is shared with Moonshine.
 - Explicit goodbye/stop-listening controls are handled locally. Ordinary accepted short turns still pass audio plus transcript to Gemma. Complete-audio recognition recovery and `[NO_SPEECH]` handling remain available. A rolling long-turn audio tail cannot stand in for the whole request.
 - Long speech is accumulated as text across internal 15/22-second segment boundaries; raw audio is bounded at 25 seconds and turns at 120 seconds. Uncertain text seams cannot execute a partial command.
-- The current acknowledgement is one cached “One moment, please, sir.” after a 700 ms wait, completing before the answer starts. It is excluded from meaningful-answer latency. Older “Um”/repeating-filler policies are superseded.
+- The current acknowledgement is one cached “One moment, please, sir.” after a 700 ms wait. Once answer PCM is ready, allow up to 250 ms for the clip to finish, then cancel it with a 40 ms fade and release its track before starting the answer. It is excluded from meaningful-answer latency. Older “Um”/repeating-filler policies are superseded.
 - Speculation is optional, capped and deferred under thermal pressure/backlog. A matching final transcript and final tool validation are mandatory. Device logs regularly show speculation disabled by the scheduler; speculative speedups are not guaranteed.
-- Moonshine has bounded natural-interruption probes. Whisper currently has keyword-only reply listening, with `stop` suppressed while playback is active; `Hey Jarvis` remains eligible. This is an explicit unresolved gap, not full duplex parity.
+- Both selected ASR engines now use bounded natural-interruption probes and ASR-verified playback stop. Whisper borrows only warm call-owned weights atomically and decodes a final-only clip of at most four seconds; no growing-window background worker runs inside its probe. The worker releases its lease before any confirmed correction starts ordinary recognition. Cold/busy models, expired results and exhausted playback/work budgets retain the keyword fallback. Phone duplex parity is not yet accepted.
 
 ## Build 694 evidence and changes in this follow-up
 
@@ -31,14 +31,21 @@ Implemented in this follow-up:
 
 Focused regression coverage: call calibration continuity/reset and playback exclusion, the reported 104 RMS follow-up, preserved quiet/foreground speech, byte-exact deferred Whisper finalization, bounded streaming versus overlapping batch audio evidence, and latest rap exchange retention under maximal old context. Full Android tests, packaging and signing are publication gates. A successful build does not establish phone acoustic acceptance.
 
+## Implementation continuation: interruption and ready-answer priority
+
+- Connected Whisper to the existing bounded natural-correction and playback-stop path. Existing rolling probe budgets, echo rejection, freshness checks and playback-supply admission remain enforced. Optional Whisper work cannot load a second model or borrow a model already in use.
+- Verified final-only “stop listening” results retain end-conversation intent, including the reported numeric decorations. They pass the existing local farewell path without a Gemma answer or a second ASR pass. Ordinary “stop” still means stop the reply and listen for a new request. Echo containing “stop” does not authorize a stop.
+- A ready answer no longer waits seconds for cached acknowledgement completion. A nearly finished cue may drain for 250 ms; otherwise a 40 ms fade precedes track release. Explicit stop still pauses immediately. `acknowledgement_answer_wait_ms` and `acknowledgement_yield` make the remaining wait visible. No Piper passage, sentence-pause, speed or voice changes.
+- Regression coverage includes cold/busy/wrong-model rejection, release after active ownership, final-only probe budgets, non-echo stop, end-call intent with numeric artifacts, long-filler cancellation and cleanup before answer admission.
+
 ## Remaining work, in priority order
 
 | Priority | Work still required | Acceptance evidence |
 | --- | --- | --- |
 | 1 | Recognition and microphone quality on the Fold 6: onset, near/quiet speech, room noise, competing speaker, decoder-versus-microphone audio | One short recognition recording for the selected engine; compare heard words with transcript and gate decisions. Do not increase thresholds or change AEC modes blindly. If decoder input is clean but errors persist, compare the other engine on the same recording before selecting a model. |
-| 2 | Reliable interruption for both ASR choices, especially Whisper playback stop and natural corrections; limit repeated echo probes | Early/late stop and a real correction during a long reply; echo alone does not interrupt, correction onset retained, playback stop time logged independently of native cleanup. Keep one ASR owner; do not simply enable continuous Whisper decoding. |
+| 2 | Phone acceptance of the implemented shared interruption path; measure Whisper playback stop, natural corrections and echo probe cost | Early/late stop and a real correction during a long reply; echo alone does not interrupt, correction onset retained, playback stop time logged independently of native cleanup. Keep one ASR owner; do not simply enable continuous Whisper decoding. |
 | 3 | End-of-turn latency: speaker-check cost, pending decode/finalization, uncertain 1500 ms and hesitation 3500 ms waits | Matched normal, hesitant and resumed-speech clips. Reduce dead work while retaining 2–3-second thinking pauses and corrections. A local semantic turn model (Smart Turn) remains unevaluated, not a dependency already implemented. |
-| 4 | First substantive answer delay: passage accumulation, mandatory completion of an active acknowledgement, context/audio inference cost | Separate speech-end → final, final → text, text-wait → synthesis → playback. Compare a smaller natural opening only as an opt-in experiment; preserve Piper quality until Justin accepts it. Compare text-only vs tandem audio using actual recognition errors as well as latency. |
+| 4 | First substantive answer delay: passage accumulation and context/audio inference cost; verify the new bounded acknowledgement wait | Separate speech-end → final, final → text, text-wait → synthesis → playback. Compare a smaller natural opening only as an opt-in experiment; preserve Piper quality until Justin accepts it. Compare text-only vs tandem audio using actual recognition errors as well as latency. |
 | 5 | Sustained-call scheduling and cancellation under heat | Warm and later-in-call latency/accuracy distributions, memory bounded, no ASR backlog, no playback starvation, and prompt mic release after stop. Build 694 logged thermal level 4; isolated cool benchmarks cannot establish sustained throughput. |
 | 6 | Context and action continuity | Rap/story follow-up keeps the immediately preceding delivered answer; interrupted unplayed text excluded; final request authorizes tools once; long-turn seam corrections retained. New inclusion diagnostics distinguish missing prompt content from model reasoning errors. |
 | 7 | Full lifecycle/route acceptance | Screen-off/background wake, external recording/dictation handoff, Pause/Resume, rotation/process restart, phone speaker and supported Bluetooth/EYE VUE routes. AEC enabled flags alone are insufficient. |
@@ -47,4 +54,8 @@ The first short test after this build should use **Record and test recognition**
 
 ## Roadmap reconciliation
 
-Phases 1–2 have implementation and earlier CI evidence; lifecycle and playback-history phone acceptance remain partial. Phase 3 is implemented for bounded Moonshine probes but not accepted across both engines/routes. Phase 4 has segmentation and a turn-detector interface, with semantic endpoint evaluation still open. Phase 5 has work scheduling and comparisons, with selection/performance acceptance still open. Phase 6's current production concern is Piper's accepted voice versus passage latency; Paul's quality experiments are deferred. Phase 7 integrated acceptance remains open. Completing more checklist code does not replace proving these flows on the phone.
+Phases 1–2 have implementation and earlier CI evidence; lifecycle and playback-history phone acceptance remain partial. Phase 3 now has bounded probes for both engines, but is not accepted across engines/routes. Phase 4 has segmentation and a turn-detector interface, with semantic endpoint evaluation still open. Phase 5 has work scheduling and comparisons, with selection/performance acceptance still open. Phase 6's current production concern is Piper's accepted voice versus passage latency; Paul's quality experiments are deferred. Phase 7 integrated acceptance remains open. Completing more checklist code does not replace proving these flows on the phone.
+
+## Completion boundary
+
+Remaining engine selection, semantic endpoint-model adoption, shorter Piper opening selection and microphone/effect tuning are evidence-dependent decisions, not missing code that can safely be guessed. Keep current accepted voice settings until comparisons establish a better setting. Integrated phone acceptance still includes noisy-room recognition, a longer utterance, a correction during playback, stopping/ending, delivered-context follow-up, sustained warm calls and supported route/lifecycle transitions. Do not mark the entire roadmap complete before these checks pass.

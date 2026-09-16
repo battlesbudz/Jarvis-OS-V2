@@ -18,6 +18,7 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
             val confirmed = CompletableDeferred<Unit>()
             var naturalReference: String? = null
             var stopOnly = false
+            var endConversation = false
             fun confirm() {
                 trace?.mark(VoiceTurnTrace.Stage.INTERRUPTION_CONFIRMED)
                 trace?.mark(VoiceTurnTrace.Stage.PLAYBACK_STOP_REQUESTED)
@@ -25,26 +26,30 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 confirmed.complete(Unit)
                 onConfirmed()
             }
-            val gated: AudioInput = if (asrEngine == AsrEngine.MOONSHINE) {
-                NaturalBargeInAudioInput(input,
+            val gated: AudioInput = NaturalBargeInAudioInput(input,
                     createKeyword = { MicroInterruptionKeywords(context.assets) },
                     createVad = { SileroSpeechDetector.create(context.assets) },
                     createTranscriber = {
-                        check(MoonshineStreamingTranscriber.canReuseForProbe(asrDirectory, modelSession)) { "probe_model_not_warm" }
-                        MoonshineStreamingTranscriber(asrDirectory, modelSession = modelSession, reserveReplyProbes = false)
+                        when (asrEngine) {
+                            AsrEngine.MOONSHINE -> {
+                                check(MoonshineStreamingTranscriber.canReuseForProbe(asrDirectory, modelSession)) { "probe_model_not_warm" }
+                                MoonshineStreamingTranscriber(asrDirectory, modelSession = modelSession, reserveReplyProbes = false)
+                            }
+                            AsrEngine.WHISPER -> WhisperTranscriber(asrDirectory, live = false,
+                                log = log, modelSession = modelSession, warmProbe = true)
+                        }
                     },
                     playing = { output.isPlayingAudio }, reference = { output.recentSpokenText() },
                     hasPlaybackBudget = output::hasInterruptionBudget,
                     canContinuePlayback = output::canContinueInterruption,
                     onConfirmed = { natural, evidence ->
                         if (natural) naturalReference = evidence
-                        else stopOnly = evidence == "stop"
+                        else {
+                            stopOnly = evidence == "stop"
+                            endConversation = evidence == "stop listening"
+                        }
                         confirm()
                     }, log = log)
-            } else KeywordBargeInAudioInput(input,
-                createDetector = { MicroInterruptionKeywords(context.assets) },
-                onConfirmed = { keyword -> stopOnly = keyword == "stop"; confirm() },
-                allowKeyword = { keyword -> keyword != "stop" || !output.isPlayingAudio }, log = log)
             val capture = AudioTurnCapture(gated, this,
                 createDetector = { SileroSpeechDetector.create(context.assets) },
                 createTranscriber = { LazyStreamingTranscriber { asrEngine.create(asrDirectory, log = log, modelSession = modelSession) } }, log = log,
@@ -59,12 +64,12 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                     confirmed.onAwait { }
                     completion.onAwait { error("Interruption capture ended without confirmed speech") }
                 }
-                if (stopOnly) {
+                if (stopOnly || endConversation) {
                     // Stop is a control, not a request for an audio-model answer. The retained
                     // microphone hands subsequent speech to the ordinary follow-up listener.
-                    log("barge_stop_complete destination=followup_listening audio_fallback=false")
+                    log("barge_stop_complete destination=${if (endConversation) "end_conversation" else "followup_listening"} audio_fallback=false")
                     completion.cancel()
-                    return@supervisorScope CapturedVoiceTurn("", byteArrayOf())
+                    return@supervisorScope CapturedVoiceTurn(if (endConversation) "stop listening" else "", byteArrayOf())
                 }
                 withTimeout(130_000) { completion.await() }
                 val wav = capture.stop()

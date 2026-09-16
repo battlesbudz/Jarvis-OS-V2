@@ -7,6 +7,23 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class CallModelSlotTest {
+    @Test fun warmProbeIsExclusiveAndCannotLoadOrChangeModels() {
+        var releases = 0
+        val slot = CallModelSlot<Any>({ releases++ })
+        assertThrows(IllegalStateException::class.java) { slot.acquireWarm("whisper") }
+        val command = slot.acquire("whisper") { Any() }
+        assertThrows(IllegalStateException::class.java) { slot.acquireWarm("whisper") }
+        command.finish()
+        assertThrows(IllegalStateException::class.java) { slot.acquireWarm("other") }
+        val probe = slot.acquireWarm("whisper")
+        assertSame(command.value, probe.value)
+        assertThrows(IllegalStateException::class.java) { slot.acquireWarm("whisper") }
+        slot.close()
+        assertEquals(0, releases)
+        probe.finish()
+        assertEquals(1, releases)
+        assertThrows(IllegalStateException::class.java) { slot.acquireWarm("whisper") }
+    }
     @Test fun freshCommandDiscardsPriorProbeStateBeforeLoadingAndKeepsNextProbeWarm() {
         val released = mutableListOf<Any>()
         val slot = CallModelSlot<Any>({ released += it })

@@ -6,6 +6,7 @@ object StopKeywordEvidence {
         val heard = TranscriptContent.speech(transcript)
         val words = Regex("[\\p{L}\\p{N}']+").findAll(heard.lowercase(java.util.Locale.ROOT)).map { it.value }.toList()
         val echoedStop = Regex("\\bstop\\b", RegexOption.IGNORE_CASE).containsMatchIn(spokenReference)
-        return !echoedStop && "stop" in words && VoiceStopRequest.matches(heard)
+        return !echoedStop && "stop" in words &&
+            (VoiceStopRequest.matches(heard) || VoiceCallPolicy.isGoodbye(heard))
     }
 }
