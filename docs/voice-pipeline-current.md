@@ -6,9 +6,10 @@ Audited 16 September 2026 against builds 694–695 and the release-only branch h
 
 ASR: Moonshine or Whisper. AI: E2B or E4B. TTS: Piper Northern English Male only.
 Initial setup now installs Piper. Retired selections migrate; exact obsolete model
-files are cleaned on voice preparation, with saved Piper tuning/history retained.
-Piper generates its own cached acknowledgements. P1/P2 now use Piper and actual
-output sample rates; old reports remain historical. See [migration details](supported-model-stack.md).
+files are cleaned on voice preparation; saved calls/history are retained.
+Piper generates its own cached acknowledgements. Experimental tuning and benchmark
+routes are removed; fixed natural Piper settings now apply to every call.
+See [current settings and diagnostics](current-diagnostics.md). See [migration details](supported-model-stack.md).
 
 ## Current user goal and policies
 
@@ -46,7 +47,7 @@ Focused regression coverage: call calibration continuity/reset and playback excl
 - A ready answer no longer waits seconds for cached acknowledgement completion. A nearly finished cue may drain for 250 ms; otherwise a 40 ms fade precedes track release. Explicit stop still pauses immediately. `acknowledgement_answer_wait_ms` and `acknowledgement_yield` make the remaining wait visible. No default Piper passage, sentence-pause, speed or voice changes.
 - Regression coverage includes cold/busy/wrong-model rejection, release after active ownership, final-only probe budgets, non-echo stop, end-call intent with numeric artifacts, long-filler cancellation and cleanup before answer admission.
 
-- Added an opt-in **Piper · faster opening (compare)** profile: a complete sentence around 160 characters for the opening, then the existing 320-character target and 640-character cap. Native whole-passage synthesis and natural pauses remain enabled. It is available in voice comparison and only affects calls after explicitly applying that profile. Existing saved IDs and the default 320-character profile are unchanged. Regression tests verify sentence boundaries, complete text retention, return to longer passages and selectable-profile persistence.
+- Historical experiment (now removed from settings and calls): an opt-in **Piper · faster opening (compare)** profile: a complete sentence around 160 characters for the opening, then the existing 320-character target and 640-character cap. Native whole-passage synthesis and natural pauses remain enabled. The current cleanup fixes calls at 320 characters and removes profile selection. Passage-level tests retain boundary and text-retention coverage for development.
 
 ## Remaining work, in priority order
 
@@ -55,7 +56,7 @@ Focused regression coverage: call calibration continuity/reset and playback excl
 | 1 | Recognition and microphone quality on the Fold 6: onset, near/quiet speech, room noise, competing speaker, decoder-versus-microphone audio | One short recognition recording for the selected engine; compare heard words with transcript and gate decisions. Do not increase thresholds or change AEC modes blindly. If decoder input is clean but errors persist, compare the other engine on the same recording before selecting a model. |
 | 2 | Phone acceptance of the implemented shared interruption path; measure Whisper playback stop, natural corrections and echo probe cost | Early/late stop and a real correction during a long reply; echo alone does not interrupt, correction onset retained, playback stop time logged independently of native cleanup. Keep one ASR owner; do not simply enable continuous Whisper decoding. |
 | 3 | End-of-turn latency: speaker-check cost, pending decode/finalization, uncertain 1500 ms and hesitation 3500 ms waits | Matched normal, hesitant and resumed-speech clips. Reduce dead work while retaining 2–3-second thinking pauses and corrections. A local semantic turn model (Smart Turn) remains unevaluated, not a dependency already implemented. |
-| 4 | First substantive answer delay: passage accumulation and context/audio inference cost; verify the new bounded acknowledgement wait | Separate speech-end → final, final → text, text-wait → synthesis → playback. Compare the implemented 160-character natural-opening profile only as an opt-in experiment; preserve Piper quality until Justin accepts it. Compare text-only vs tandem audio using actual recognition errors as well as latency. |
+| 4 | First substantive answer delay: passage accumulation and context/audio inference cost; verify the new bounded acknowledgement wait | Separate speech-end → final, final → text, text-wait → synthesis → playback. Use the fixed 320-character natural-passage baseline; any future opening experiment needs a deliberate code change and phone acceptance. Compare text-only vs tandem audio using actual recognition errors as well as latency. |
 | 5 | Sustained-call scheduling and cancellation under heat | Warm and later-in-call latency/accuracy distributions, memory bounded, no ASR backlog, no playback starvation, and prompt mic release after stop. Build 694 logged thermal level 4; isolated cool benchmarks cannot establish sustained throughput. |
 | 6 | Context and action continuity | Rap/story follow-up keeps the immediately preceding delivered answer; interrupted unplayed text excluded; final request authorizes tools once; long-turn seam corrections retained. New inclusion diagnostics distinguish missing prompt content from model reasoning errors. |
 | 7 | Full lifecycle/route acceptance | Screen-off/background wake, external recording/dictation handoff, Pause/Resume, rotation/process restart, phone speaker and supported Bluetooth/EYE VUE routes. AEC enabled flags alone are insufficient. |

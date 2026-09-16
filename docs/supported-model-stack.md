@@ -10,8 +10,7 @@ Current as of 16 September 2026, on `audio-pr2` / existing PR #6.
 
 Kokoro and Pocket/Paul are retired. Their downloaders, synthesis branches, bundled
 Paul acknowledgements, Paul native patch/host experiments, dedicated comparison
-controls and Kokoro model publishing workflow have been removed. No new call or
-benchmark selects or downloads either retired voice. Their historical results and
+controls and Kokoro model publishing workflow have been removed. No call selects or downloads either retired voice. Their historical results and
 Voice Calls remain readable with their original identities.
 
 ## Upgrade and setup
@@ -19,10 +18,9 @@ Voice Calls remain readable with their original identities.
 - New installations download/install the selected Gemma, Piper and selected ASR.
   Kokoro is no longer a setup prerequisite. Piper is a pinned 67,210,490-byte
   archive; its file inventory and verification marker determine readiness.
-- Saved retired/unknown voice selections migrate to Piper. A saved Piper profile
-  is preserved; a retired voice's settings never become Piper settings. With no
-  Piper profile, calls retain 320-character passages, a 640-character cap,
-  natural sentence pauses and normal speed.
+- Saved retired/unknown voice selections migrate to Piper. Old experimental
+  profiles are ignored. Calls use four synthesis threads, 320-character passages,
+  a 640-character cap, natural sentence pauses and normal speed.
 - On voice preparation (setup or a call/test), remove only exact installer-owned
   retired model directories, staging files, partial archives and their nested
   filler caches. Gemma/ASR/Piper files and saved calls/diagnostics are preserved.
@@ -46,15 +44,13 @@ components. Removing these would break the retained assistant stack.
 
 ## Tests and acceptance
 
-P1/P2 now use versioned Piper test packs with a 4-thread, 320-character, 1.0x
-reference profile. Source capture/replay retains the actual synthesis sample rate
-(Piper is 22,050 Hz), rather than assuming Paul's former 24,000 Hz. Existing test
-reports are not relabeled. Piper profile comparison includes 24 profiles and 144
-runs (three texts, two passes); 0.85x remains separately selectable.
+Settings and retained development checks are described in [current diagnostics](current-diagnostics.md).
+The profile matrix, P1/P2 packs and obsolete Gemma/ASR comparison routes have been
+removed with their controllers. Historical saved evidence is not relabeled.
 
-Automated checks cover retired-selection migration, retained Piper settings and
-history, exact-path file cleanup, sample-rate handling, Piper configuration and
-profile persistence. CI also checks release tests, native dependency closure,
+Automated checks cover retired-selection migration, bounded call evidence and
+archived history, exact-path file cleanup, sample-rate handling, Piper passages
+and native configuration. CI also checks release tests, native dependency closure,
 Piper callback ABI, absence of Paul assets/native patch, and APK signing.
 
 Phone acceptance is still required: upgrade with an old voice selected, install

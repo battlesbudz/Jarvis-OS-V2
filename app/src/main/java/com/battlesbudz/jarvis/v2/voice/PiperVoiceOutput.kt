@@ -3,7 +3,6 @@ package com.battlesbudz.jarvis.v2.voice
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
-import android.media.PlaybackParams
 import android.os.Build
 import com.k2fsa.sherpa.onnx.GenerationConfig
 import com.k2fsa.sherpa.onnx.OfflineTts
@@ -14,23 +13,15 @@ import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.selects.onTimeout
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.Executors
 
 /** Local Jarvis voice output: Gemma text -> selected Sherpa model PCM -> Android audio route. */
 class PiperVoiceOutput internal constructor(
     private val modelDirectory: String,
     private val engine: TtsEngine = TtsEngine.PIPER_NORTHERN,
-    private val normalSpeed: Boolean = false,
-    private val fixedChunking: Boolean = false,
-    private val openingChars: Int = SpeechChunker.DEFAULT_OPENING_CHARS,
-    private val benchmarkProfile: TtsBenchmarkProfile? = null,
-    private val benchmarkRun: Boolean = false,
     private val modelSession: VoiceModelSession? = null,
     private val deliveryLedger: SpeechDeliveryLedger? = null,
     private val onPlaybackEnded: () -> Unit = {},
-    private val diagnosticReplay: SpeechAudio? = null,
-    private val diagnosticPcm: ((ShortArray, Int) -> Unit)? = null,
     private val acknowledgeDelays: Boolean = false,
     private val playbackVolume: () -> String = { "unavailable" },
     private val audioTrace: SpeechAudioTrace? = null,
@@ -38,15 +29,9 @@ class PiperVoiceOutput internal constructor(
     private val onPlayback: (VoicePlaybackFrame) -> Unit = {},
     private val onMetrics: (TtsSessionMetrics) -> Unit = {},
     private val speakerId: Int = engine.speaker,
-    private val numThreads: Int = Runtime.getRuntime().availableProcessors().coerceIn(2, 4),
     private val log: (String) -> Unit = {}
 ) : VoiceOutput {
-    init {
-        require(diagnosticReplay == null || (benchmarkRun && diagnosticReplay.pcm.isNotEmpty()))
-        require(diagnosticPcm == null || benchmarkRun)
-    }
-    private val piperWholePassage = engine == TtsEngine.PIPER_NORTHERN &&
-        (benchmarkProfile == null || benchmarkProfile.piperPassages || benchmarkProfile.fullText)
+    private val numThreads = 4
     @Volatile private var stopped = false
     @Volatile private var audioTrack: AudioTrack? = null
     private val speaking = AtomicBoolean(false)
@@ -66,7 +51,7 @@ class PiperVoiceOutput internal constructor(
         synchronized(playbackLock) { gapCuePlaying.set(true); applyPause() }
         try {
             VoiceCues.playAcknowledgement(audio, { stopped }, { interrupted }, log, playbackVolume(),
-                onStarted = { rememberPlayback(audio.text) }, speed = benchmarkProfile?.playbackSpeed ?: 1f)
+                onStarted = { rememberPlayback(audio.text) }, speed = 1f)
         } finally {
             synchronized(playbackLock) { gapCuePlaying.set(false); applyPause() }
             lastAudibleAt = System.nanoTime() / 1_000_000
@@ -74,10 +59,6 @@ class PiperVoiceOutput internal constructor(
     }
     @Volatile private var writtenFrames = 0L
     @Volatile private var lastAudibleAt = Long.MIN_VALUE / 2
-    private val preparedOpening = AtomicReference<PreparedSpeechOpening?>(null)
-    private val openingRequests = Channel<PreparedSpeechOpening>(Channel.CONFLATED,
-        onUndeliveredElement = { it.discard() })
-
     private val stoppedPlaybackHead = AtomicLong()
     private val acknowledgement = DelayedAcknowledgement(log)
     private val neutralFiller = FillerPhrases.INITIAL
@@ -93,14 +74,6 @@ class PiperVoiceOutput internal constructor(
         val acknowledgementCache = java.util.concurrent.ConcurrentHashMap<String, SpeechAudio>()
     }
 
-    /** Queues silent work on the SAME native owner used for live speech. */
-    fun prepareOpening(text: String): PreparedSpeechOpening? {
-        if (benchmarkProfile != null || piperWholePassage || stopped || text.isBlank() || text.length > 240) return null
-        val request = PreparedSpeechOpening(text)
-        preparedOpening.getAndSet(request)?.discard()
-        if (!openingRequests.trySend(request).isSuccess) { request.discard(); return null }
-        return request
-    }
     val isPlayingAudio: Boolean get() = synchronized(playbackLock) {
         val now = System.nanoTime() / 1_000_000
         val audible = !stopped && !interrupted && audioTrack?.let {
@@ -142,7 +115,6 @@ class PiperVoiceOutput internal constructor(
         val sampleRate: Int,
         val pcm: ShortArray,
         val startupWaitMs: Long,
-        val playbackSpeed: Float,
         val captionGroup: Int? = null,
         val sentenceEnd: Boolean = false
     )
@@ -182,8 +154,6 @@ class PiperVoiceOutput internal constructor(
         var firstTextToPlaybackMs: Long? = null
         val firstTextAt = AtomicLong()
         val firstAudibleFrame = AtomicLong(-1)
-        var preparedSynthesisMs = 0L
-        var preparedOpeningReused = false
         var inputChars = 0
         val textHash = java.security.MessageDigest.getInstance("SHA-256")
         val captions = SpokenCaptionTimeline()
@@ -195,19 +165,18 @@ class PiperVoiceOutput internal constructor(
         val streamingUnderruns = AtomicLong(0)
         val playbackStarvationMs = AtomicLong(0)
         val draining = AtomicBoolean(false)
-        var playbackSpeed = 1f
+        val playbackSpeed = 1f
         var estimatedGapMs = 0L
         var sourcePcmSummary: String? = null
-        val pcmDelivery = if (piperWholePassage) "piper_whole_passages_max640_v1" else "piper_buffered_phrases"
+        val pcmDelivery = "piper_whole_passages_max640_v1"
         // One owner creates, invokes and releases the native engine. Playback never owns it.
         // Bounded PCM backpressure prevents long answers from accumulating unlimited audio.
-        val audio = NativeAudioQueue<SynthesizedPhrase>(if (acknowledgeDelays && !benchmarkRun) 8 else 2) {
+        val audio = NativeAudioQueue<SynthesizedPhrase>(if (acknowledgeDelays) 8 else 2) {
             it.pcm.size * 1000L / it.sampleRate
         }
-        val piperOpening = benchmarkProfile?.takeIf { it.piperPassages }?.openingChars ?: PiperTextStream.TARGET_CHARS
-        val piperText = if (piperWholePassage) PiperTextStream(waitForEnd = benchmarkProfile?.fullText == true, openingTargetChars = piperOpening) else null
-        if (engine == TtsEngine.PIPER_NORTHERN) log("piper_text_policy version=whole-passages-v3 enabled=$piperWholePassage openingTargetChars=$piperOpening openingWaitMs=${if (piperOpening < 320 && benchmarkProfile?.fullText != true) PiperTextStream.OPENING_WAIT_MS else 0} targetChars=320 maxChars=640 nativeMaxNumSentences=${if (piperWholePassage) 0 else 1} silenceScale=1.0 waitForEnd=${benchmarkProfile?.fullText == true}")
-        val chunker = SpeechChunker(openingChars, fullText = benchmarkProfile?.fullText == true, minPhraseChars = 40)
+        val piperOpening = PiperTextStream.TARGET_CHARS
+        val piperText = PiperTextStream()
+        log("piper_text_policy version=natural-v1 targetChars=320 maxChars=640 nativeMaxNumSentences=0 speed=1.0 threads=4")
         val startupReady = CompletableDeferred<Unit>()
         val tokens = Channel<String>(64)
         val collectTokens = launch {
@@ -227,40 +196,16 @@ class PiperVoiceOutput internal constructor(
             var engineLease: CallModelSlot<OfflineTts>.Lease? = null
             var failure: Throwable? = null
             var index = 0
-            var previousChars = 0
-            var previousSynthesisMs = 0L
             val owner = currentCoroutineContext()
             try {
-                if (diagnosticReplay != null) {
-                    // Feed the ordinary queue/AudioTrack consumer without loading a native TTS model.
-                    onReady()
-                    val replayText = StringBuilder()
-                    for (token in tokens) {
-                        replayText.append(token)
-                        inputChars += token.length
-                        textHash.update(token.toByteArray(Charsets.UTF_8))
-                    }
-                    totalAudioMs = diagnosticReplay.pcm.size * 1000L / diagnosticReplay.sampleRate
-                    phraseCount = 1
-                    for (offset in diagnosticReplay.pcm.indices step (diagnosticReplay.sampleRate * 2 / 5)) {
-                        ensureActive()
-                        if (stopped) break
-                        audio.sendFromNative(SynthesizedPhrase(0, if (offset == 0) replayText.toString() else "",
-                            diagnosticReplay.sampleRate, diagnosticReplay.pcm.copyOfRange(offset,
-                                minOf(offset + diagnosticReplay.sampleRate * 2 / 5, diagnosticReplay.pcm.size)),
-                            0,
-                            benchmarkProfile?.playbackSpeed ?: 1f, captionGroup = 0))
-                    }
-                    return@launch
-                }
                 val loadStart = System.nanoTime()
                 log("tts_engine_preload_started")
-                val modelKey = "${this@PiperVoiceOutput.engine.id}:$modelDirectory:$numThreads:piperWholePassage=$piperWholePassage"
+                val modelKey = "${this@PiperVoiceOutput.engine.id}:$modelDirectory:$numThreads:natural-v1"
                 engineLease = modelSession?.tts?.acquire(modelKey) {
-                    OfflineTts(config = sherpaTtsConfig(this@PiperVoiceOutput.engine, modelDirectory, numThreads, piperWholePassage))
+                    OfflineTts(config = sherpaTtsConfig(this@PiperVoiceOutput.engine, modelDirectory, numThreads, piperWholePassage = true))
                 }
                 val tts = engineLease?.value ?: OfflineTts(config =
-                    sherpaTtsConfig(this@PiperVoiceOutput.engine, modelDirectory, numThreads, piperWholePassage))
+                    sherpaTtsConfig(this@PiperVoiceOutput.engine, modelDirectory, numThreads, piperWholePassage = true))
                 engine = tts
                 loadMs = elapsedMs(loadStart)
                 log("tts_engine_preload_finished loadMs=$loadMs reused=${engineLease?.reused == true}")
@@ -328,22 +273,18 @@ class PiperVoiceOutput internal constructor(
                 fun generate(text: String) {
                     owner.ensureActive()
                     if (stopped) return
-                    if (piperWholePassage) {
+                    run {
                         check(text.length <= PiperTextStream.MAX_CHARS)
                         log("piper_passage_submit index=$index chars=${text.length} nativeMaxNumSentences=0")
                         if (index == 0) log("piper_opening_wait_ms=${firstTextAt.get().takeIf { it != 0L }?.let(::elapsedMs)} chars=${text.length}")
                     }
-                    val candidate = preparedOpening.getAndSet(null)
-                    val cached = if (index == 0) candidate?.takeFor(text) else null
-                    candidate?.discard()
-                    val result = cached ?: synthesize(text)
+                    val result = synthesize(text)
                     if (stopped) return
                     val phraseIndex = index++
                     if (phraseIndex == 0) {
-                        preparedOpeningReused = cached != null
                         firstPcmMs = result.synthesisMs
                         firstTextToPcmMs = firstTextAt.get().takeIf { it != 0L }?.let(::elapsedMs)
-                        log("tts_opening_ready prepared=${cached != null} firstTextToPcmMs=$firstTextToPcmMs openingChars=${if (piperWholePassage) piperOpening else openingChars}")
+                        log("tts_opening_ready prepared=false firstTextToPcmMs=$firstTextToPcmMs openingChars=$piperOpening")
                     }
                     val rate = result.sampleRate
                     val frames = result.pcm.size.toLong()
@@ -351,11 +292,8 @@ class PiperVoiceOutput internal constructor(
                     deliveryLedger?.append(phraseIndex, text, result.pcm.size, rate)
                     deliveryLedger?.seal(phraseIndex)
                     audio.sendFromNative(SynthesizedPhrase(phraseIndex, text, rate, result.pcm,
-                        if (benchmarkProfile != null) 0 else PlaybackBufferPolicy.startupWaitMs(result.synthesisMs, frames * 1000 / rate),
-                        benchmarkProfile?.playbackSpeed ?: 1f))
+                        PlaybackBufferPolicy.startupWaitMs(result.synthesisMs, frames * 1000 / rate)))
                     if (phraseIndex == 1) startupReady.complete(Unit)
-                    previousChars = text.length
-                    previousSynthesisMs = result.synthesisMs
                     val queueWaitMs = elapsedMs(waitStart)
                     val synthesisMs = result.synthesisMs
                     val audioMs = frames * 1000 / rate
@@ -364,22 +302,10 @@ class PiperVoiceOutput internal constructor(
                     totalAudioMs += audioMs
                     totalQueueWaitMs += queueWaitMs
                     phraseCount++
-                    if (!fixedChunking) chunker.observe(rtf)
                     log("tts_generation_finished index=$phraseIndex synthesisMs=$synthesisMs queueWaitMs=$queueWaitMs " +
                         "audioDurationMs=$audioMs realtimeFactor=$rtf")
                 }
-                fun nextPhrase(final: Boolean = false): String? {
-                    if (piperText != null) return piperText.take(final)
-                    if (fixedChunking || index == 0) return chunker.take(final)
-                    val playedMs = synchronized(playbackLock) {
-                        audioTrack?.let { unsignedHead(it) * 1000 / it.sampleRate } ?: 0L
-                    }
-                    val queuedMs = (totalAudioMs - playedMs).coerceAtLeast(0)
-                    val limit = PlaybackBufferPolicy.nextChunkChars(queuedMs, previousChars, previousSynthesisMs)
-                    return chunker.take(final, maxChars = limit)?.also {
-                        log("audio_chunk_budget queuedMs=$queuedMs maxChars=$limit selectedChars=${it.length}")
-                    }
-                }
+                fun nextPhrase(final: Boolean = false): String? = piperText.take(final)
                 var ended = false
                 while (!ended && !stopped) {
                     owner.ensureActive()
@@ -392,7 +318,7 @@ class PiperVoiceOutput internal constructor(
                             else {
                                 inputChars += token.length
                                 textHash.update(token.toByteArray(Charsets.UTF_8))
-                                if (piperText != null) {
+                                run {
                                     piperText.append(token)
                                     while (true) {
                                         val queued = tokens.tryReceive()
@@ -402,11 +328,11 @@ class PiperVoiceOutput internal constructor(
                                         textHash.update(more.toByteArray(Charsets.UTF_8))
                                         piperText.append(more)
                                     }
-                                } else chunker.append(token)
+                                }
                                 while (true) generate(nextPhrase() ?: break)
                             }
                         }
-                        piperText?.openingWaitMs()?.let { remaining ->
+                        piperText.openingWaitMs()?.let { remaining ->
                             onTimeout(remaining) {
                                 while (true) generate(nextPhrase() ?: break)
                             }
@@ -415,21 +341,7 @@ class PiperVoiceOutput internal constructor(
                             // Native owns one stream, not a session map: never replace an active answer with filler.
                             if (index == 0 && acknowledgeDelays && firstTextAt.get() == 0L) prepareAcknowledgement(text)
                         }
-                        openingRequests.onReceive { request ->
-                            if (index == 0 && !request.isDiscarded() && preparedOpening.get() === request) {
-                                log("tts_opening_preparation_started chars=${request.text.length}")
-                                try {
-                                    val result = synthesize(request.text)
-                                    preparedSynthesisMs += result.synthesisMs
-                                    request.complete(result)
-                                    log("tts_opening_preparation_finished synthesisMs=${result.synthesisMs} discarded=${request.isDiscarded()}")
-                                } catch (cancelled: CancellationException) { throw cancelled }
-                                catch (error: Exception) {
-                                    request.discard()
-                                    log("tts_opening_preparation_failed reason=${error.message}")
-                                }
-                            } else request.discard()
-                        }
+
                     }
                 }
                 while (true) generate(nextPhrase(final = true) ?: break)
@@ -459,7 +371,7 @@ class PiperVoiceOutput internal constructor(
                 val gapWaiter = SentenceGapWaiter()
                 val gapAudio = acknowledgementCache[fillerCacheKey(FillerPhrases.RECOVERY)]
                 while (true) {
-                    val received = if (atSentenceBoundary && acknowledgeDelays && !benchmarkRun) {
+                    val received = if (atSentenceBoundary && acknowledgeDelays) {
                         gapWaiter.receive(audio.chunks, remainingMs = {
                             audioTrack?.let { track ->
                                 val frames = (writtenFrames - unsignedHead(track)).coerceAtLeast(0)
@@ -487,7 +399,6 @@ class PiperVoiceOutput internal constructor(
                     atSentenceBoundary = false
                     ensureActive()
                     if (stopped || phrase.pcm.isEmpty()) continue
-                    diagnosticPcm?.invoke(phrase.pcm, phrase.sampleRate)
                     outputSampleRate = phrase.sampleRate
                     if (first) {
                         // Small startup headroom; never hold a short, completed answer for this delay.
@@ -505,15 +416,7 @@ class PiperVoiceOutput internal constructor(
                     if (stopped) break
                     val track = audioTrack ?: createTrack(phrase.sampleRate, phrase.pcm.size).also {
                         synchronized(playbackLock) { audioTrack = it }
-                        // Stretch existing PCM instead of asking Piper to synthesize more samples.
-                        // Unsupported device routes retain normal-speed playback.
-                        runCatching {
-                            it.playbackParams = PlaybackParams().allowDefaults()
-                                .setAudioFallbackMode(PlaybackParams.AUDIO_FALLBACK_MODE_FAIL)
-                                .setPitch(1f).setSpeed(phrase.playbackSpeed)
-                        }.onFailure { error -> log("audio_pace_fallback reason=${error.message}") }
-                        playbackSpeed = it.playbackParams.speed
-                        log("audio_playback_pace speed=$playbackSpeed pitch=1.0")
+                        // Native sample-rate playback: no time stretching or experimental pace.
                         synchronized(playbackLock) { if (!interrupted && !stopped) it.play() }
                         val startedTrack = it
                         // A sibling of the IO writer: its infinite loop must not block the writer returning.
@@ -628,7 +531,6 @@ class PiperVoiceOutput internal constructor(
             withContext(NonCancellable) { acknowledgement.close() }
             audio.cancel()
             tokens.cancel()
-            preparedOpening.getAndSet(null)?.discard()
             withContext(NonCancellable) { playbackMonitor?.cancelAndJoin() }
             val playedFrames = synchronized(playbackLock) {
                 if (!completed) audioTrack?.let { runCatching { it.pause() } }
@@ -650,7 +552,6 @@ class PiperVoiceOutput internal constructor(
             }
             withContext(NonCancellable) { collectTokens.cancelAndJoin(); producer.cancelAndJoin() }
             acknowledgementRequests.cancel()
-            openingRequests.cancel()
             if (modelSession == null) nativeDispatcher.close()
             speaking.set(false)
             if (inputChars > 0 || failureMessage != null) runCatching {
@@ -659,8 +560,8 @@ class PiperVoiceOutput internal constructor(
                     inputChars, textHash.digest().joinToString("") { "%02x".format(it) }, numThreads,
                     completed && !wasStopped && failureMessage == null, failureMessage,
                     playbackConfirmed, playedFrames, framesWritten.toLong(), outputRoute,
-                    firstTextToPcmMs, firstTextToPlaybackMs, if (benchmarkProfile?.fullText == true) null else if (piperWholePassage) piperOpening else openingChars,
-                    preparedSynthesisMs, preparedOpeningReused, playbackStarvationMs.get(), sourcePcmSummary, pcmDelivery))
+                    firstTextToPcmMs, firstTextToPlaybackMs, piperOpening,
+                    0L, false, playbackStarvationMs.get(), sourcePcmSummary, pcmDelivery))
             }.onFailure { log("tts_metrics_failed reason=${it.message}") }
             log("tts_session_finished phrases=$phraseCount synthesisMs=$totalSynthesisMs " +
                 "audioDurationMs=$totalAudioMs queueWaitMs=$totalQueueWaitMs playbackSpeed=$playbackSpeed " +

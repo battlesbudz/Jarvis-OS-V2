@@ -1,4 +1,6 @@
-# Piper voice profile comparison
+# Historical Piper voice profile comparison
+
+> Retired on 16 September 2026. These controls, runners and profiles have been removed. Do not use the instructions below for the current app. See [current settings and diagnostics](current-diagnostics.md).
 
 Open **Voice and response speed**. Piper Northern English Male is the only voice.
 Choose 2/4 threads, 1.0/0.9/0.85x playback, and 40/60/90/160/320-character openings

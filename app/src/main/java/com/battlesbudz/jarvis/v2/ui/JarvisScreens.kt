@@ -2,17 +2,8 @@ package com.battlesbudz.jarvis.v2.ui
 
 import com.battlesbudz.jarvis.v2.*
 import com.battlesbudz.jarvis.v2.voice.VoiceCallRecord
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.content.ClipData
-import android.content.ClipboardManager
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,16 +11,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.Canvas
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -39,344 +26,30 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.lifecycleScope
-import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
-import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
-import com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext
-import com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor
-import com.battlesbudz.jarvis.v2.actions.MobileActionPipeline
-import com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions
 import com.battlesbudz.jarvis.v2.ai.ModelCatalog
 import com.battlesbudz.jarvis.v2.ai.ModelStore
-import com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.InputStream
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.collect
-import org.json.JSONObject
-import org.json.JSONArray
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.Collections
 import java.util.Date
 import java.text.DateFormat
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 
 
-private const val MAX_SAVED_DRAFT_CHARS = 16_000
-
-@Composable
-fun JarvisChat(
-    onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit, (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit) -> Unit,
-    onRunDirectAudioTest: ((String) -> Unit, (String) -> Unit) -> Unit,
-    onRunDirectAudioToolTest: ((String) -> Unit, (String) -> Unit) -> Unit,
-    onVoiceTurn: (Boolean, (String) -> Unit, (String) -> Unit) -> Unit,
-    onCopyDiagnostics: (List<ChatEntry>) -> Unit,
-    onMessagesChanged: (List<ChatEntry>) -> Unit,
-    onSendingChanged: (Boolean) -> Unit,
-    initialMessages: List<ChatEntry>
-) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    var prompt by rememberSaveable { mutableStateOf("") }
-    var messages by remember { mutableStateOf(initialMessages) }
-    var isSending by remember { mutableStateOf(false) }
-    var directAudioTestRunning by remember { mutableStateOf(false) }
-    var directAudioTestStatus by rememberSaveable { mutableStateOf("") }
-    var directAudioToolTestRunning by remember { mutableStateOf(false) }
-    var directAudioToolTestStatus by rememberSaveable { mutableStateOf("") }
-    var voiceTurnActive by remember { mutableStateOf(false) }
-    var voiceTurnStatus by rememberSaveable { mutableStateOf("") }
-    var attachedImageName by rememberSaveable { mutableStateOf<String?>(null) }
-    var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
-    val transcriptScrollState = rememberScrollState()
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        attachedImageUri = uri
-        attachedImageName = uri?.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
-            ?: if (uri != null) "selected image" else null
-    }
-
-    LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length) {
-        transcriptScrollState.scrollTo(transcriptScrollState.maxValue)
-    }
-
-    Column(
-        Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
-        verticalArrangement = Arrangement.Bottom
-    ) {
-        if (messages.isNotEmpty()) {
-            Column(
-                Modifier.weight(1f).fillMaxWidth().verticalScroll(transcriptScrollState).padding(bottom = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                messages.forEach { message ->
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp),
-                        horizontalAlignment = if (message.role == "You") {
-                            androidx.compose.ui.Alignment.End
-                        } else {
-                            androidx.compose.ui.Alignment.Start
-                        }
-                    ) {
-                        Text(
-                            message.role,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (message.role == "You") {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.secondary
-                            }
-                        )
-                        Surface(
-                            color = if (message.role == "You") {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant
-                            },
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
-                            modifier = Modifier.padding(top = 4.dp)
-                        ) {
-                            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                                message.imageUri?.let { imageUri ->
-                                    val bitmap by produceState<Bitmap?>(
-                                        initialValue = null,
-                                        key1 = imageUri
-                                    ) {
-                                        value = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                            runCatching {
-                                                openTranscriptImageStream(context, Uri.parse(imageUri))
-                                                    ?.use { BitmapFactory.decodeStream(it) }
-                                            }.getOrNull()
-                                        }
-                                    }
-                                    bitmap?.let {
-                                        Image(
-                                            bitmap = it.asImageBitmap(),
-                                            contentDescription = "Attached image",
-                                            contentScale = ContentScale.Fit,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .heightIn(max = 280.dp)
-                                                .padding(bottom = 8.dp)
-                                        )
-                                    }
-                                }
-                                Text(
-                                    message.text.ifBlank { "…" },
-                                    color = if (message.role == "You") {
-                                        MaterialTheme.colorScheme.onPrimaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                )
-                            }
-                        }
-                        if (message.role == "Jarvis") message.latency?.let { TurnLatencyFooter(it) }
-                    }
-                }
-            }
-        }
-        if (attachedImageName != null) {
-            Text(
-                "Attached: $attachedImageName",
-                color = MaterialTheme.colorScheme.secondary,
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.padding(bottom = 6.dp)
-            )
-        }
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = androidx.compose.ui.Alignment.Bottom
-        ) {
-            Button(
-                onClick = { imagePicker.launch("image/*") },
-                enabled = !isSending,
-                modifier = Modifier.padding(end = 8.dp)
-            ) {
-                Text("📎")
-            }
-            OutlinedTextField(
-                value = prompt,
-                onValueChange = { prompt = it.take(MAX_SAVED_DRAFT_CHARS) },
-                label = { Text("Message Jarvis") },
-                maxLines = 4,
-                modifier = Modifier.weight(1f)
-            )
-        }
-        Button(
-            onClick = {
-                val start = !voiceTurnActive
-                voiceTurnActive = start
-                onVoiceTurn(
-                    start,
-                    { status -> voiceTurnStatus = status },
-                    { result ->
-                        voiceTurnStatus = result
-                        voiceTurnActive = false
-                    }
-                )
-            },
-            enabled = !isSending && !directAudioTestRunning && !directAudioToolTestRunning,
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-        ) {
-            Text(if (voiceTurnActive) "Stop and send voice turn" else "Start Voice Call turn")
-        }
-        if (voiceTurnStatus.isNotBlank()) {
-            Text(
-                voiceTurnStatus,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            )
-        }
-        Button(
-            onClick = { onCopyDiagnostics(messages) },
-            enabled = messages.isNotEmpty() && !isSending,
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-        ) {
-            Text("Copy diagnostics")
-        }
-        Button(
-            onClick = {
-                directAudioTestRunning = true
-                directAudioTestStatus = "Requesting microphone…"
-                onRunDirectAudioTest(
-                    { status -> directAudioTestStatus = status },
-                    { result ->
-                        directAudioTestStatus = result
-                        directAudioTestRunning = false
-                    }
-                )
-            },
-            enabled = !isSending && !directAudioTestRunning,
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-        ) {
-            Text(if (directAudioTestRunning) "Recording / testing E2B audio…" else "Test 25-second E2B audio")
-        }
-        if (directAudioTestStatus.isNotBlank()) {
-            Text(
-                directAudioTestStatus,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            )
-        }
-        Button(
-            onClick = {
-                directAudioToolTestRunning = true
-                directAudioToolTestStatus = "Requesting microphone… Say: battery, volume, or open an app."
-                onRunDirectAudioToolTest(
-                    { status -> directAudioToolTestStatus = status },
-                    { result ->
-                        directAudioToolTestStatus = result
-                        directAudioToolTestRunning = false
-                    }
-                )
-            },
-            enabled = !isSending && !directAudioTestRunning && !directAudioToolTestRunning,
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-        ) {
-            Text(if (directAudioToolTestRunning) "Testing Gemma voice tool…" else "Test Gemma voice tool call")
-        }
-        if (directAudioToolTestStatus.isNotBlank()) {
-            Text(
-                directAudioToolTestStatus,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            )
-        }
-        Button(
-            onClick = {
-                val selectedImageUri = attachedImageUri
-                val submitted = buildString {
-                    append(prompt.trim())
-                    attachedImageName?.let {
-                        append("\n\n[Attached image: $it]")
-                    }
-                }.trim()
-                prompt = ""
-                attachedImageUri = null
-                attachedImageName = null
-                isSending = true
-                val updatedMessages = messages +
-                    ChatEntry("You", submitted, selectedImageUri?.toString()) +
-                    ChatEntry("Jarvis", "")
-                messages = updatedMessages
-                onMessagesChanged(updatedMessages)
-                onSendingChanged(true)
-                onSend(
-                    submitted,
-                    selectedImageUri,
-                    messages.dropLast(2),
-                    { token ->
-                        messages = messages.dropLast(1) +
-                            messages.last().copy(text = messages.last().text + token)
-                    },
-                    { result ->
-                        messages = messages.dropLast(1) + messages.last().copy(text = result)
-                        onMessagesChanged(messages)
-                        onSendingChanged(false)
-                        isSending = false
-                    },
-                    { latency ->
-                        messages = messages.dropLast(1) + messages.last().copy(latency = latency)
-                    }
-                )
-            },
-            enabled = prompt.isNotBlank() && !isSending,
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
-        ) {
-            Text(if (isSending) "Thinking…" else "Send")
-        }
-    }
-}
-
-private fun openTranscriptImageStream(
-    context: android.content.Context,
-    uri: Uri
-): InputStream? {
-    // Transcript rendering is independent of the raw bytes sent to Gemma.
-    return runCatching { context.contentResolver.openInputStream(uri) }.getOrNull()
-        ?: runCatching {
-            context.contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream()
-        }.getOrNull()
-}
-
 @Composable
 fun JarvisApp(
     store: ModelStore,
     onSelectModel: (com.battlesbudz.jarvis.v2.ai.LocalModelSpec) -> String?,
-    latencyBenchmarks: com.battlesbudz.jarvis.v2.voice.VoiceLatencyBenchmarkActions,
-    ttsComparisonStore: com.battlesbudz.jarvis.v2.voice.TtsComparisonStore,
-    onSelectTts: (com.battlesbudz.jarvis.v2.voice.TtsEngine) -> Boolean,
-    onTtsBenchmark: (com.battlesbudz.jarvis.v2.voice.TtsEngine?, com.battlesbudz.jarvis.v2.voice.TtsBenchmarkProfile, (String) -> Unit, () -> Unit) -> Unit,
-    onStopTtsBenchmark: () -> Unit,
     voicePlayback: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame>,
     voiceModelStore: com.battlesbudz.jarvis.v2.voice.TtsModelStore,
-    initialMessages: List<ChatEntry>,
     initialVoiceCalls: List<VoiceCallRecord>,
     onRunModelSmokeTest: ((String) -> Unit) -> Unit,
-    onRunDirectAudioTest: ((String) -> Unit, (String) -> Unit) -> Unit,
-    onRunDirectAudioToolTest: ((String) -> Unit, (String) -> Unit) -> Unit,
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
     onWakeTest: ((String) -> Unit, () -> Unit) -> Unit,
     onStopWakeTest: () -> Unit,
@@ -388,9 +61,6 @@ fun JarvisApp(
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onExportSpeechAudio: () -> Unit,
-    onMessagesChanged: (List<ChatEntry>) -> Unit,
-    onSendingChanged: (Boolean) -> Unit,
-    onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit, (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit) -> Unit
 ) {
     var selectedModel by remember { mutableStateOf(store.selectedModel()) }
     var selectionError by remember { mutableStateOf<String?>(null) }
@@ -548,13 +218,8 @@ fun JarvisApp(
                     )
                     else -> VoiceCallScreen(
                         modelSelector = modelSelector,
-                        latencyBenchmarks = latencyBenchmarks,
                         resumedCall = resumedVoiceCall,
                         onResumeConsumed = { resumedVoiceCall = null },
-                        ttsComparisonStore = ttsComparisonStore,
-                        onSelectTts = onSelectTts,
-                        onTtsBenchmark = onTtsBenchmark,
-                        onStopTtsBenchmark = onStopTtsBenchmark,
                         voicePlayback = voicePlayback,
                         onVoiceTurn = onVoiceTurn,
                         onWakeTest = onWakeTest,
@@ -621,13 +286,8 @@ fun JarvisApp(
 @Composable
 private fun VoiceCallScreen(
     modelSelector: @Composable (Boolean) -> Unit,
-    latencyBenchmarks: com.battlesbudz.jarvis.v2.voice.VoiceLatencyBenchmarkActions,
     resumedCall: VoiceCallRecord?,
     onResumeConsumed: () -> Unit,
-    ttsComparisonStore: com.battlesbudz.jarvis.v2.voice.TtsComparisonStore,
-    onSelectTts: (com.battlesbudz.jarvis.v2.voice.TtsEngine) -> Boolean,
-    onTtsBenchmark: (com.battlesbudz.jarvis.v2.voice.TtsEngine?, com.battlesbudz.jarvis.v2.voice.TtsBenchmarkProfile, (String) -> Unit, () -> Unit) -> Unit,
-    onStopTtsBenchmark: () -> Unit,
     voicePlayback: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame>,
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
     onWakeTest: ((String) -> Unit, () -> Unit) -> Unit,
@@ -660,9 +320,8 @@ private fun VoiceCallScreen(
     androidx.compose.runtime.DisposableEffect(Unit) {
         onDispose { onStopWakeTest() }
     }
+    var audioPathTesting by remember { mutableStateOf(false) }
     var inputTesting by remember { mutableStateOf(false) }
-    var ttsSettingsOpen by remember { mutableStateOf(false) }
-    var selectedTts by remember { mutableStateOf(ttsComparisonStore.selectedEngine()) }
     val playback by voicePlayback.collectAsState()
     var callStarted by remember { mutableStateOf(false) }
     var listening by remember { mutableStateOf(false) }
@@ -670,13 +329,6 @@ private fun VoiceCallScreen(
     var status by rememberSaveable { mutableStateOf("") }
     var turns by remember { mutableStateOf(resumedCall?.transcript.orEmpty().map { ChatEntry(it.role, it.text) }) }
     var provisionalUser by remember { mutableStateOf("") }
-    if (ttsSettingsOpen) TtsComparisonDialog(
-        latencyBenchmarks = latencyBenchmarks,
-        store = ttsComparisonStore, canChange = !callStarted && !turnInFlight && !wakeTesting,
-        onSelect = { engine -> onSelectTts(engine).also { if (it) selectedTts = engine } },
-        onBenchmark = onTtsBenchmark, onStop = onStopTtsBenchmark,
-        onDismiss = { ttsSettingsOpen = false }
-    )
     fun requestVoiceTurn(start: Boolean) {
         listening = false
         status = "Preparing microphone…"
@@ -777,7 +429,7 @@ private fun VoiceCallScreen(
         )
         if (!runtimeArmed) Button(
             onClick = { callStarted = true; requestVoiceTurn(start = true) },
-            enabled = !turnInFlight && !wakeTesting && !inputTesting,
+            enabled = !turnInFlight && !wakeTesting && !inputTesting && !audioPathTesting,
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
         ) { Text("Start Jarvis session") }
         if (runtimeArmed) {
@@ -822,14 +474,13 @@ private fun VoiceCallScreen(
             Text(visibleStatus, style = MaterialTheme.typography.bodySmall)
         }
     }
-    var audioPathTesting by remember { mutableStateOf(false) }
     if (settingsOpen) androidx.compose.material3.AlertDialog(
-        onDismissRequest = { settingsOpen = false },
+        onDismissRequest = { onStopWakeTest(); settingsOpen = false },
         title = { Text("Voice settings") },
-        confirmButton = { TextButton(onClick = { settingsOpen = false }) { Text("Done") } },
+        confirmButton = { TextButton(onClick = { onStopWakeTest(); settingsOpen = false }) { Text("Done") } },
         text = { Column(Modifier.verticalScroll(rememberScrollState())) {
+            Text("Voice: Piper Northern English", style = MaterialTheme.typography.bodyMedium)
             modelSelector(!runtimeArmed && !callStarted && !turnInFlight && !wakeTesting && !audioPathTesting && !inputTesting)
-            TextButton(onClick = { ttsSettingsOpen = true }, enabled = !wakeTesting && !audioPathTesting && !inputTesting) { Text("Voice: ${selectedTts.label}") }
         val assistantContext = androidx.compose.ui.platform.LocalContext.current
         VoiceInputSettings(enabled = !runtimeArmed && !callStarted && !turnInFlight && !wakeTesting && !audioPathTesting, onBusy = { inputTesting = it })
         var assistantSettingsMessage by remember { mutableStateOf(
@@ -867,8 +518,6 @@ private fun VoiceCallScreen(
         if (assistantSettingsMessage.isNotBlank()) {
             Text(assistantSettingsMessage, style = MaterialTheme.typography.bodySmall)
         }
-        AudioPathDiagnosticCard(enabled = !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting,
-            onBusyChanged = { audioPathTesting = it })
         Text("Automatic microphone handoff", style = MaterialTheme.typography.bodyMedium)
         Text("Jarvis releases its microphone for other recordings and automatically resumes your call or wake listening afterward.",
             style = MaterialTheme.typography.bodySmall)
@@ -884,21 +533,29 @@ private fun VoiceCallScreen(
             catch (_: Exception) { keyboardSetupError = "Open Android Settings → Accessibility → Installed apps → Jarvis keyboard microphone handoff." }
         }) { Text(if (helperConnected) "Keyboard handoff settings" else "Enable keyboard microphone handoff") }
         if (keyboardSetupError.isNotBlank()) Text(keyboardSetupError, style = MaterialTheme.typography.bodySmall)
-        TextButton(onClick = {
-            if (wakeTesting) onStopWakeTest()
-            else if (wakeContext.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startWakeTest()
-            else wakePermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-        }, enabled = !callStarted && !turnInFlight && !audioPathTesting && !inputTesting) {
-            Text(if (wakeTesting) "Stop wake test" else "Test wake word")
+        var diagnosticsOpen by remember { mutableStateOf(false) }
+        TextButton(onClick = { diagnosticsOpen = !diagnosticsOpen }, enabled = !wakeTesting && !audioPathTesting) {
+            Text(if (diagnosticsOpen) "Hide development diagnostics" else "Development diagnostics")
         }
-        if (wakeTestStatus.isNotBlank()) Text(wakeTestStatus, style = MaterialTheme.typography.bodySmall)
-        TextButton(
-            onClick = { onCopyDiagnostics(turns + if (provisionalUser.isNotBlank()) listOf(ChatEntry("You", provisionalUser)) else emptyList()) },
-            modifier = Modifier.padding(top = 4.dp)
-        ) {
-            Text("Copy diagnostics")
+        if (diagnosticsOpen) {
+            AudioPathDiagnosticCard(enabled = !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting,
+                onBusyChanged = { audioPathTesting = it })
+            TextButton(onClick = {
+                if (wakeTesting) onStopWakeTest()
+                else if (wakeContext.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startWakeTest()
+                else wakePermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            }, enabled = !callStarted && !turnInFlight && !audioPathTesting && !inputTesting) {
+                Text(if (wakeTesting) "Stop wake test" else "Test wake word")
+            }
+            if (wakeTestStatus.isNotBlank()) Text(wakeTestStatus, style = MaterialTheme.typography.bodySmall)
+            TextButton(
+                onClick = { onCopyDiagnostics(turns + if (provisionalUser.isNotBlank()) listOf(ChatEntry("You", provisionalUser)) else emptyList()) },
+                modifier = Modifier.padding(top = 4.dp)
+            ) {
+                Text("Copy diagnostics")
+            }
+            TextButton(onClick = onExportSpeechAudio) { Text("Save latest reply audio") }
         }
-        TextButton(onClick = onExportSpeechAudio) { Text("Save latest reply audio") }
         } }
     )
 }
@@ -1112,7 +769,7 @@ private fun ModelSetup(
             enabled = ready && !testing && !importing && !downloading,
             modifier = Modifier.fillMaxWidth().padding(top = 20.dp)
         ) {
-            Text(if (testing) "Preparing Gemma 4 E2B…" else "Test Gemma 4 E2B")
+            Text(if (testing) "Checking selected model…" else "Check selected model")
         }
     }
 }

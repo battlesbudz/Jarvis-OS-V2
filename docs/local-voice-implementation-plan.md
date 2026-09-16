@@ -1,5 +1,7 @@
 # Local voice implementation plan
 
+> Current cleanup: obsolete benchmark routes and profile controls have been removed; fixed natural Piper settings apply. See [current diagnostics](current-diagnostics.md) and [current acceptance status](voice-pipeline-current.md). Historical test-pack checklists below are not current UI requirements.
+
 ## Current status — 16 September 2026
 
 The [current pipeline audit and prioritized remaining work](voice-pipeline-current.md) supersedes the historical policy/status statements below. Justin now accepts Piper Northern English Male with whole passages and natural pauses. The immediate priority is recognition reliability, inspectable decoder audio, preserved recent context and response latency. Paul/Kokoro are retired and removed; Piper is the sole TTS. See [supported stack](supported-model-stack.md). This follow-up implements call-scoped acoustic calibration, an in-app recognition audio test, Whisper partial-work deferral, and newest-first voice context budgeting. Integrated recognition, interruption, latency and lifecycle acceptance remain open.

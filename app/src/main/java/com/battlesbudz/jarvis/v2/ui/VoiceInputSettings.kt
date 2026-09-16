@@ -18,19 +18,6 @@ internal fun VoiceInputSettings(enabled: Boolean, onBusy: (Boolean) -> Unit) {
     LaunchedEffect(busy) { onBusy(busy) }
     DisposableEffect(Unit) { onDispose { onBusy(false) } }
     var task by remember { mutableStateOf<Job?>(null) }
-    fun test() {
-        busy = true
-        task = scope.launch {
-            try { message = AsrRoomComparison.run(context) { value -> scope.launch { message = value } } }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Throwable) { message = error.message ?: "Voice input test failed" }
-            finally { busy = false }
-        }
-    }
-    val permission = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted && enabled && !busy) test() else if (!granted) message = "Microphone permission is required."
-    }
     Column {
         Text("Speech recognition: ${selected.label}")
         AsrEngine.entries.forEach { engine ->
@@ -49,17 +36,10 @@ internal fun VoiceInputSettings(enabled: Boolean, onBusy: (Boolean) -> Unit) {
         }
         Text("Moonshine shows words while you speak. Whisper base.en updates stable words in the background and confirms them when you finish. Both run on this phone.", style = MaterialTheme.typography.bodySmall)
         Text("Speaker preference learns automatically from consistent speech after separate activations. Short or uncertain samples stay permissive while it learns.", style = MaterialTheme.typography.bodySmall)
-        TextButton(enabled = enabled && !busy, onClick = { permission.launch(android.Manifest.permission.RECORD_AUDIO) }) { Text("Compare both on one 8-second recording") }
         TextButton(enabled = enabled && !busy, onClick = {
             context.getSharedPreferences("speaker_preference_v1", Context.MODE_PRIVATE).edit().clear().apply()
             message = "Learned voice preference cleared. It will learn again after your next activations."
         }) { Text("Reset learned voice preference") }
-        TextButton(enabled = !busy, onClick = {
-            val results = AsrComparisonStore(context.getSharedPreferences("asr_comparison", Context.MODE_PRIVATE)).snapshot()
-            context.getSystemService(android.content.ClipboardManager::class.java)
-                .setPrimaryClip(android.content.ClipData.newPlainText("Jarvis speech recognition comparison", results))
-            message = "Recognition results copied, including engine, transcript and timing."
-        }) { Text("Copy recognition results") }
         if (busy) TextButton(onClick = { task?.cancel(); message = "Stopped." }) { Text("Cancel") }
         if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
     }

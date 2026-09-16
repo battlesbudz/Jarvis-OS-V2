@@ -2,87 +2,32 @@ package com.battlesbudz.jarvis.v2
 
 import android.net.Uri
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
-import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
-import com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext
-import com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor
-import com.battlesbudz.jarvis.v2.actions.MobileActionPipeline
 import com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions
-import com.battlesbudz.jarvis.v2.ai.ModelStore
-import com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient
 import com.battlesbudz.jarvis.v2.ui.JarvisApp
-import com.battlesbudz.jarvis.v2.conversation.runConversationInternal
-import com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore
 import com.battlesbudz.jarvis.v2.voice.AndroidAudioInput
-import com.battlesbudz.jarvis.v2.voice.AsrModelStore
-import com.battlesbudz.jarvis.v2.voice.VoicePreparation
-import com.battlesbudz.jarvis.v2.voice.SileroSpeechDetector
-import com.battlesbudz.jarvis.v2.voice.Pcm16Signal
-import com.battlesbudz.jarvis.v2.voice.AudioTurnCapture
-import com.battlesbudz.jarvis.v2.voice.VoiceSessionController
-import com.battlesbudz.jarvis.v2.voice.VoiceSessionState
-import com.battlesbudz.jarvis.v2.voice.VoiceTurnCoordinator
-import com.battlesbudz.jarvis.v2.voice.TtsModelStore
-import com.battlesbudz.jarvis.v2.voice.PiperVoiceOutput
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.takeWhile
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.CompletableDeferred
 import org.json.JSONObject
 import org.json.JSONArray
 import java.util.concurrent.atomic.AtomicInteger
-import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 
 internal const val MAX_IMAGE_BYTES = 12 * 1024 * 1024
 
@@ -147,9 +92,6 @@ class MainActivity : ComponentActivity() {
     internal var sessionReport: (String) -> Unit
         get() = runtime.sessionReport
         set(value) { runtime.sessionReport = value }
-    private lateinit var ttsBenchmarks: com.battlesbudz.jarvis.v2.voice.TtsBenchmarkController
-    private lateinit var gemmaBenchmarks: com.battlesbudz.jarvis.v2.ai.GemmaBenchmarkController
-    private lateinit var latencyBenchmarks: com.battlesbudz.jarvis.v2.voice.VoiceLatencyBenchmarkActions
     private var notificationPermissionAsked = false
     private var pendingSpeechAudio: ByteArray? = null
     private val speechAudioExport = registerForActivityResult(ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
@@ -181,20 +123,6 @@ class MainActivity : ComponentActivity() {
         val onFinished: (String) -> Unit
     )
     private var pendingVoiceTurn: PendingVoiceTurn? = null
-    private var pendingVoiceTest: Pair<(String) -> Unit, (String) -> Unit>? = null
-    private val audioPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        val pending = pendingVoiceTest
-        pendingVoiceTest = null
-        if (pending == null) return@registerForActivityResult
-        if (granted) {
-            runDirectAudioSmokeTest(pending.first, pending.second)
-        } else {
-            pending.first("Microphone permission is required for the direct E2B audio test.")
-            pending.second("Microphone permission is required for the direct E2B audio test.")
-        }
-    }
     private val voicePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -212,46 +140,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        ttsBenchmarks = com.battlesbudz.jarvis.v2.voice.TtsBenchmarkController(
-            lifecycleScope, modelStore, ttsModels, ttsComparisonStore,
-            canStart = { voiceSessionController.currentCallId() == null && voiceTurnJob?.isCompleted != false && activeConversationJobs.get() == 0 },
-            log = { diagnosticRecorder.record("TTS benchmark: $it") },
-            thermalStatus = { getSystemService(android.os.PowerManager::class.java).currentThermalStatus },
-            traceDirectory = java.io.File(cacheDir, "voice-benchmarks"),
-            buildProvenance = mapOf("versionName" to BuildConfig.VERSION_NAME,
-                "versionCode" to BuildConfig.VERSION_CODE.toString(), "ciSourceCommit" to BuildConfig.SOURCE_COMMIT,
-                "device" to "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
-                "androidSdk" to android.os.Build.VERSION.SDK_INT.toString())
-        )
-        val gemmaResults = com.battlesbudz.jarvis.v2.ai.GemmaBenchmarkStore(
-            getSharedPreferences("gemma-acceleration-benchmarks", MODE_PRIVATE))
-        gemmaBenchmarks = com.battlesbudz.jarvis.v2.ai.GemmaBenchmarkController(
-            applicationContext, lifecycleScope, modelStore, gemmaResults,
-            canStart = { !voiceSessionArmed && voiceSessionController.currentCallId() == null &&
-                voiceTurnJob?.isCompleted != false && activeConversationJobs.get() == 0 && !ttsBenchmarks.running },
-            releaseIdleEngine = {
-                val previous = runtime.conversationEngine
-                runtime.conversationEngine = null
-                runtime.nativeConversationHasContext = false
-                runtime.conversationCharacters = 0
-                previous?.close()
-            }, log = { diagnosticRecorder.recordImportant(it) },
-            latencySample = { runtime.latestLatencySample })
-        latencyBenchmarks = com.battlesbudz.jarvis.v2.voice.VoiceLatencyBenchmarkActions(
-            gemmaResults, gemmaBenchmarks::startLatency, gemmaBenchmarks::start,
-            compareOpenings = { engine, status, finished ->
-                ttsBenchmarks.start(engine, status, finished, compareOpenings = true)
-            }, stop = { ttsBenchmarks.stop(); gemmaBenchmarks.stop() },
-            loadTests = com.battlesbudz.jarvis.v2.voice.VoiceLoadTestController(
-                applicationContext, lifecycleScope, modelStore, runtime.voiceTestSessions, ttsBenchmarks,
-                canStart = { !voiceSessionArmed && voiceSessionController.currentCallId() == null &&
-                    voiceTurnJob?.isCompleted != false && activeConversationJobs.get() == 0 &&
-                    !ttsBenchmarks.running && !gemmaBenchmarks.running }),
-            setupTests = com.battlesbudz.jarvis.v2.voice.VoiceTestSetupController(
-                applicationContext, lifecycleScope, modelStore, runtime.voiceTestSessions,
-                canStart = { !voiceSessionArmed && voiceSessionController.currentCallId() == null &&
-                    voiceTurnJob?.isCompleted != false && activeConversationJobs.get() == 0 &&
-                    !ttsBenchmarks.running && !gemmaBenchmarks.running }))
         val interruptedSession = sessionPreferences.getBoolean("sending", false)
         if (!voiceSessionArmed) shortTermContext.restoreSummary(
             if (interruptedSession) null else {
@@ -268,25 +156,10 @@ class MainActivity : ComponentActivity() {
             JarvisApp(
                 store = modelStore,
                 onSelectModel = ::selectAiModel,
-                ttsComparisonStore = ttsComparisonStore,
-                latencyBenchmarks = latencyBenchmarks,
-                onSelectTts = { engine ->
-                    if (voiceSessionController.currentCallId() != null || modelStore.isModelOperationActive() || ttsBenchmarks.running) false
-                    else { ttsComparisonStore.select(engine); true }
-                },
-                onTtsBenchmark = { engine, profile, status, finished -> ttsBenchmarks.start(engine, status, finished, profile = profile) },
-                onStopTtsBenchmark = { ttsBenchmarks.stop() },
                 voicePlayback = voicePlayback,
                 voiceModelStore = ttsModels,
-                initialMessages = restoreTranscript(),
                 initialVoiceCalls = voiceCallStore.list(),
                 onRunModelSmokeTest = { runModelSmokeTest(it) },
-                onRunDirectAudioTest = { report, onFinished ->
-                    runDirectAudioSmokeTest(report, onFinished)
-                },
-                onRunDirectAudioToolTest = { report, onFinished ->
-                    runDirectAudioToolSmokeTest(report, onFinished)
-                },
                 onVoiceTurn = { start, report, onTranscript, onFinished ->
                     com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
                     com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.report("Preparing microphone…")
@@ -329,11 +202,7 @@ class MainActivity : ComponentActivity() {
                 onImportModel = { uri, spec, report -> importModel(uri, spec, report) },
                 onCopyDiagnostics = { transcript -> copyDiagnostics(transcript) },
                 onExportSpeechAudio = { exportSpeechAudio() },
-                onMessagesChanged = { persistTranscript(it) },
-                onSendingChanged = { sessionPreferences.edit().putBoolean("sending", it).apply() },
-                onSend = { prompt, imageUri, history, onToken, onComplete, onLatency ->
-                    runConversation(prompt, history, imageUri, onToken, onComplete, onLatency)
-                }
+
             )
         }
     }
@@ -425,212 +294,6 @@ class MainActivity : ComponentActivity() {
         runtime.endVoiceCall(report)
     }
 
-    private fun runDirectAudioSmokeTest(
-        report: (String) -> Unit,
-        onFinished: (String) -> Unit
-    ) {
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            pendingVoiceTest = report to onFinished
-            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-            return
-        }
-        if (!modelStore.tryBeginModelOperation()) {
-            val message = "Another model operation is still finishing. Please try again in a moment."
-            report(message)
-            onFinished(message)
-            return
-        }
-        lifecycleScope.launch(Dispatchers.Default) {
-            var gemma: LiteRtLmEngine? = null
-            var finalMessage = "Direct E2B audio test failed."
-            try {
-                mainHandler.post { report("Recording a 25-second microphone sample…") }
-                val audioBytes = recordVoiceSample()
-                mainHandler.post { report("Loading ${modelStore.selectedModel().id} audio runtime…") }
-                check(modelStore.verifyIntegrity(modelStore.selectedModel())) {
-                    "The Gemma model file changed or failed integrity verification. Re-import it."
-                }
-                gemma = LiteRtLmEngine(
-                    modelId = modelStore.selectedModel().id,
-                    modelPath = modelStore.fileFor(modelStore.selectedModel()).path,
-                    cacheDir = cacheDir.path,
-                    useGpu = true,
-                    audioEnabled = true
-                )
-                gemma.initialize()
-                mainHandler.post { report("Sending audio directly to Gemma…") }
-                val streamedTranscript = StringBuilder()
-                val result = gemma.generateAudio(
-                    prompt = "Transcribe the following speech segment. Return only the words you heard, with no explanation.",
-                    audioBytes = audioBytes,
-                    onToken = { token ->
-                        streamedTranscript.append(token)
-                        mainHandler.post {
-                            report("Gemma transcript: ${streamedTranscript.toString().trim().takeLast(160)}")
-                        }
-                    }
-                )
-                val transcript = result.text.trim()
-                check(transcript.isNotBlank()) { "Gemma returned an empty transcription." }
-                finalMessage = "Direct E2B audio succeeded (${result.timeToFirstTokenMs} ms to first token). Transcript: $transcript"
-            } catch (error: Throwable) {
-                finalMessage = "Direct E2B audio test failed: ${error.message ?: "unknown error"}"
-            } finally {
-                gemma?.close()
-                modelStore.endModelOperation()
-                mainHandler.post {
-                    report(finalMessage)
-                    onFinished(finalMessage)
-                }
-            }
-        }
-    }
-
-    private fun runDirectAudioToolSmokeTest(
-        report: (String) -> Unit,
-        onFinished: (String) -> Unit
-    ) {
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            pendingVoiceTest = report to onFinished
-            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-            return
-        }
-        if (!modelStore.tryBeginModelOperation()) {
-            val message = "Another model operation is still finishing. Please try again in a moment."
-            report(message)
-            onFinished(message)
-            return
-        }
-        lifecycleScope.launch(Dispatchers.Default) {
-            var gemma: LiteRtLmEngine? = null
-            var finalMessage = "Direct E2B voice-tool test failed."
-            try {
-                mainHandler.post { report("Recording a 25-second voice command…") }
-                val audioBytes = recordVoiceSample()
-                mainHandler.post { report("Loading ${modelStore.selectedModel().id} with Jarvis tool schemas…") }
-                check(modelStore.verifyIntegrity(modelStore.selectedModel())) {
-                    "The Gemma model file changed or failed integrity verification. Re-import it."
-                }
-                gemma = LiteRtLmEngine(
-                    modelId = modelStore.selectedModel().id,
-                    modelPath = modelStore.fileFor(modelStore.selectedModel()).path,
-                    cacheDir = cacheDir.path,
-                    useGpu = true,
-                    tools = com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions.all(),
-                    audioEnabled = true
-                )
-                gemma.initialize()
-                mainHandler.post { report("Asking E2B to select a Jarvis tool…") }
-                val generated = gemma.generateAudio(
-                    prompt = """
-                        You are testing Jarvis voice tool calls. Listen to the user's spoken request.
-                        If it requests a phone action, call exactly one matching tool from the available tools.
-                        Use read_battery for battery questions, set_volume for media volume, and open_app for app launches.
-                        Do not invent a tool. Do not execute anything yourself. If the request is not one of those actions, answer briefly without a tool.
-                    """.trimIndent(),
-                    audioBytes = audioBytes,
-                    onToken = { token -> mainHandler.post { report("E2B response: ${token.trim()}") } }
-                )
-                val call = generated.toolCalls.singleOrNull()
-                if (call == null) {
-                    finalMessage = "No structured tool call detected. E2B text: ${generated.text.trim().ifBlank { "(empty)" }}"
-                } else {
-                    val simulatedResult = simulatedVoiceToolResult(call)
-                    mainHandler.post {
-                        report("Tool selected: ${call.name}\nArguments: ${call.arguments}\nSimulating result…")
-                    }
-                    val followUp = gemma.sendToolResult(
-                        call,
-                        simulatedResult,
-                        onToken = { token -> mainHandler.post { report("Final response: ${token.trim()}") } }
-                    )
-                    finalMessage = "Voice tool test succeeded. Tool: ${call.name}; arguments: ${call.arguments}; simulated result: $simulatedResult; final response: ${followUp.text.trim()}"
-                }
-            } catch (error: Throwable) {
-                finalMessage = "Direct E2B voice-tool test failed: ${error.message ?: "unknown error"}"
-            } finally {
-                gemma?.close()
-                modelStore.endModelOperation()
-                mainHandler.post {
-                    report(finalMessage)
-                    onFinished(finalMessage)
-                }
-            }
-        }
-    }
-
-    private fun simulatedVoiceToolResult(call: com.battlesbudz.jarvis.v2.ai.ToolCall): String = when (call.name) {
-        "read_battery" -> "{\"battery_percent\":87,\"charging\":false,\"status\":\"discharging\"}"
-        "set_volume" -> "{\"success\":true,\"level\":40,\"note\":\"Simulated only; phone volume was not changed.\"}"
-        "open_app" -> "{\"success\":true,\"app\":\"simulated\",\"note\":\"Simulated only; no application was opened.\"}"
-        else -> "{\"success\":false,\"error\":\"Tool is not allowed in this simulation.\"}"
-    }
-
-    private fun recordVoiceSample(): ByteArray {
-        val sampleRate = 16_000
-        // Keep this below Gemma 4's documented 30-second audio clip limit
-        // while allowing a realistic spoken batch for the first voice test.
-        val durationMs = 25_000
-        val samples = sampleRate * durationMs / 1_000
-        val minBuffer = AudioRecord.getMinBufferSize(
-            sampleRate,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
-        )
-        check(minBuffer > 0) { "The microphone could not be initialized." }
-        val bufferSize = maxOf(minBuffer, sampleRate / 2)
-        val pcm = ByteArray(samples * 2)
-        val recorder = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
-            sampleRate,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            bufferSize
-        )
-        check(recorder.state == AudioRecord.STATE_INITIALIZED) { "The microphone could not be initialized." }
-        try {
-            recorder.startRecording()
-            var offset = 0
-            while (offset < pcm.size) {
-                val count = recorder.read(pcm, offset, pcm.size - offset)
-                check(count > 0) { "The microphone stopped recording unexpectedly." }
-                offset += count
-            }
-        } finally {
-            runCatching { recorder.stop() }
-            recorder.release()
-        }
-        return com.battlesbudz.jarvis.v2.voice.WavEncoder.pcm16Mono(pcm, sampleRate)
-    }
-
-    private fun restoreTranscript(): List<ChatEntry> {
-        val stored = sessionPreferences.getString("transcript", null).orEmpty()
-        if (stored.isBlank()) return emptyList()
-        return runCatching {
-            val array = JSONArray(stored)
-            (0 until array.length()).mapNotNull { index ->
-                val item = array.optJSONObject(index) ?: return@mapNotNull null
-                val role = item.optString("role")
-                val text = item.optString("text")
-                val imageUri = item.optString("imageUri").takeIf { it.isNotBlank() }
-                if (role.isBlank() || text.isBlank()) null else ChatEntry(role, text, imageUri, com.battlesbudz.jarvis.v2.diagnostics.TurnLatency.read(item.optJSONObject("latency")))
-            }
-        }.getOrDefault(emptyList())
-    }
-
-    private fun persistTranscript(messages: List<ChatEntry>) {
-        val array = JSONArray()
-        messages.takeLast(100).forEach { entry ->
-            array.put(
-                JSONObject()
-                    .put("role", entry.role)
-                    .put("text", entry.text)
-                    .apply { entry.imageUri?.let { put("imageUri", it) }; entry.latency?.let { put("latency", it.json()) } }
-            )
-        }
-        sessionPreferences.edit().putString("transcript", array.toString()).apply()
-    }
-
     private fun startVoiceDiagnostics(label: String) = runtime.startVoiceDiagnostics(label)
 
     private fun exportSpeechAudio() {
@@ -694,7 +357,7 @@ class MainActivity : ComponentActivity() {
     private fun selectAiModel(spec: com.battlesbudz.jarvis.v2.ai.LocalModelSpec): String? {
         if (voiceSessionArmed || voiceSessionController.currentCallId() != null ||
             voiceTurnJob?.isCompleted == false || activeConversationJobs.get() != 0 ||
-            wakeTestJob?.isActive == true || ttsBenchmarks.running || gemmaBenchmarks.running) {
+            wakeTestJob?.isActive == true) {
             return "End the Jarvis session and any tests before switching AI models."
         }
         if (!modelStore.tryBeginModelOperation()) return "Wait for model setup or testing to finish."
@@ -868,30 +531,4 @@ class MainActivity : ComponentActivity() {
         .replace(Regex("(?m)^\\s*#+\\s*"), "")
         .replace(Regex("(?m)^\\s*[-•]\\s+"), "")
 
-    private data class CapturedAudioStats(
-        val durationMs: Long,
-        val rms: Int,
-        val peak: Int,
-        val activeSampleRatio: Double
-    )
-
-    private fun analyzeCapturedAudio(wav: ByteArray): CapturedAudioStats {
-        val pcmStart = 44.coerceAtMost(wav.size)
-        val signal = Pcm16Signal.measure(wav, pcmStart)
-        return CapturedAudioStats(
-            durationMs = signal.sampleCount * 1_000L / 16_000L,
-            rms = signal.rms.toInt(),
-            peak = signal.peak,
-            activeSampleRatio = signal.activeSampleRatio
-        )
-    }
-
-    private fun runConversation(
-        prompt: String,
-        history: List<ChatEntry>,
-        imageUri: Uri?,
-        onToken: (String) -> Unit,
-        onComplete: (String) -> Unit,
-        onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit
-    ) = runtime.runConversationInternal(prompt, history, imageUri, onToken, onComplete, onLatency = onLatency)
 }

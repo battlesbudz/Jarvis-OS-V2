@@ -60,7 +60,6 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     internal var conversationEngine: LiteRtLmEngine? = null
     internal var conversationJob: Job? = null
     internal var conversationCharacters = 0
-    @Volatile internal var latestLatencySample: com.battlesbudz.jarvis.v2.ai.GemmaLatencySample? = null
     // The full transcript and rolling summary live in the app. This flag only
     // describes whether the current native Conversation has received that
     // app-managed context capsule.
@@ -75,7 +74,6 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     internal lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
     internal lateinit var voiceCallStore: com.battlesbudz.jarvis.v2.voice.VoiceCallStore
     internal lateinit var voiceSessionController: VoiceSessionController
-    internal lateinit var voiceTestSessions: com.battlesbudz.jarvis.v2.voice.VoiceTestSessionStore
     internal lateinit var ttsComparisonStore: com.battlesbudz.jarvis.v2.voice.TtsComparisonStore
     internal lateinit var ttsModels: com.battlesbudz.jarvis.v2.voice.TtsModelStore
     internal val voicePlayback = kotlinx.coroutines.flow.MutableStateFlow(com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame())
@@ -101,14 +99,11 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         voiceSessionController = VoiceSessionController(voiceCallStore)
         asrComparisonStore = com.battlesbudz.jarvis.v2.voice.AsrComparisonStore(getSharedPreferences("asr_comparison", MODE_PRIVATE))
         ttsComparisonStore = com.battlesbudz.jarvis.v2.voice.TtsComparisonStore(getSharedPreferences("tts_comparison", MODE_PRIVATE))
-        voiceTestSessions = com.battlesbudz.jarvis.v2.voice.VoiceTestSessionStore(getSharedPreferences("voice_test_sessions", MODE_PRIVATE))
-        val testRecovery = runCatching { voiceTestSessions.recoverAfterProcessRestart() }
         ttsModels = com.battlesbudz.jarvis.v2.voice.TtsModelStore(applicationContext)
         val installedPackage = packageManager.getPackageInfo(packageName, 0)
         diagnosticRecorder = com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(sessionPreferences,
             "${installedPackage.versionName} (${installedPackage.longVersionCode})")
         diagnosticRecorder.restore()
-        testRecovery.exceptionOrNull()?.let { diagnosticRecorder.recordImportant("Test session recovery failed: ${it.javaClass.simpleName}") }
         diagnosticRecorder.recordPreviousProcessExit(applicationContext)
         shortTermContext.restoreSummary(sessionPreferences.getString(MainActivity.SHORT_TERM_SUMMARY_KEY, null))
         runtimeScope.launch {
@@ -197,7 +192,6 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         fun onFinished(message: String) { finishedListener(message) }
         val asrEngine = com.battlesbudz.jarvis.v2.voice.AsrEngine.selected(applicationContext)
         val ttsEngine = ttsComparisonStore.selectedEngine()
-        val callProfile = ttsComparisonStore.callProfile(ttsEngine)
         val asrTurnId = java.util.UUID.randomUUID().toString()
         val turnTrace = com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace(asrTurnId)
         val replyLatency = java.util.concurrent.atomic.AtomicReference<com.battlesbudz.jarvis.v2.diagnostics.TurnLatency?>(null)
@@ -298,7 +292,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 val models = requireNotNull(callModels)
                 val voiceHistory = voiceSessionController.conversationContext().map { ChatEntry(it.role, it.text) }
                 diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId engine=${ttsEngine.id} " +
-                    "callProfile=${callProfile?.id ?: "adaptive-default"}")
+                    "speechPolicy=piper-natural-v1")
                 val output = PiperVoiceOutput(ttsDirectory.path, engine = ttsEngine,
                     modelSession = models,
                     deliveryLedger = com.battlesbudz.jarvis.v2.voice.SpeechDeliveryLedger(asrTurnId) { delivery ->
@@ -309,10 +303,6 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             "playedFrames=${delivery.playedFrames} precision=segment_frames")
                     },
                     onPlaybackEnded = { followupAudioAfterMs.set(System.nanoTime() / 1_000_000) },
-                    normalSpeed = callProfile != null, fixedChunking = callProfile != null,
-                    openingChars = callProfile?.openingChars ?: com.battlesbudz.jarvis.v2.voice.SpeechChunker.DEFAULT_OPENING_CHARS,
-                    benchmarkProfile = callProfile,
-                    numThreads = callProfile?.threads ?: Runtime.getRuntime().availableProcessors().coerceIn(2, 4),
                     acknowledgeDelays = true,
                     playbackVolume = {
                         val manager = getSystemService(android.media.AudioManager::class.java)
@@ -377,7 +367,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     val prompt = promptBuilder.buildGemmaPrompt(partial, null, voiceHistory, seedContext = true, voice = true)
                     engine.generateAudio(prompt, audio, onToken)
                 }, log = { diagnosticRecorder.record("Voice preparation: $it") },
-                    prepareOpening = output::prepareOpening, speechText = ::cleanSpeechText,
+                    speechText = ::cleanSpeechText,
                     canPrepare = {
                         val thermal = if (android.os.Build.VERSION.SDK_INT >= 29)
                             getSystemService(android.os.PowerManager::class.java)?.currentThermalStatus ?: 0 else 0
@@ -553,9 +543,6 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     finalMessage = "Voice Call is listening — speak now."
                     return@launch
                 }
-                latestLatencySample = if (!audioIsComplete || recognitionIssue != null) null else com.battlesbudz.jarvis.v2.ai.GemmaLatencySample.capture(
-                    transcript, promptBuilder.buildGemmaPrompt(transcript, null, voiceHistory, seedContext = true, voice = true),
-                    audioBytes, asrTurnId, System.currentTimeMillis())
                 asrComparisonStore.update(asrTurnId, "prepared", draft != null)
                 if (draft == null) resetNativeConversation()
                 diagnosticRecorder.record("Voice ASR final\ntext=$transcript\naudioBytes=${audioBytes.size}\nprepared=${draft != null}")
@@ -831,7 +818,6 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     }
 
     internal fun startVoiceDiagnostics(label: String) {
-        latestLatencySample = null
         com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.clearDiagnostics()
         asrComparisonStore.clearDiagnostics()
         ttsComparisonStore.clearDiagnostics()
