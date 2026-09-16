@@ -36,8 +36,9 @@ Sherpa-ONNX 1.13.7 and its ONNX runtime are shared by Piper, Whisper, Silero VAD
 and speaker checks. Moonshine retains its separately namespaced matching ONNX
 runtime. Piper still requires VITS/espeak data and the archive extraction library.
 The official shared Sherpa SDK contains configuration types for other engines;
-these are SDK ABI, not selectable/downloadable Jarvis models. The build uses
-pinned upstream Sherpa without the Paul-specific native modification.
+these are SDK ABI, not selectable/downloadable Jarvis models. The build uses pinned upstream model implementations with an app-specific JNI
+source list; the Paul-specific streaming modification is removed. See the
+[APK size audit](apk-size-audit.md) for retained and excluded native interfaces.
 
 Silero, speaker checking and microWakeWord/stop keywords remain supporting audio
 components. Removing these would break the retained assistant stack.

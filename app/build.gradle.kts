@@ -22,6 +22,7 @@ val extractSherpa by tasks.registering(Exec::class) {
 }
 val buildSherpa by tasks.registering(Exec::class) {
     inputs.file(rootProject.file("scripts/build_sherpa.py"))
+    inputs.file(rootProject.file("scripts/sherpa_jni_profile.py"))
     outputs.dir(sherpaNativeDir.map { it.dir("jni") })
     doFirst {
         commandLine("python3", rootProject.file("scripts/build_sherpa.py"), "--output", sherpaNativeDir.get().asFile,
@@ -92,6 +93,10 @@ android {
         }
     }
     sourceSets.getByName("main").jniLibs.srcDir(moonshineDir.map { it.dir("jni") })
+    // Optional smaller sideload download. Android extracts these libraries at install;
+    // the normal artifact keeps direct APK loading and lower installed storage.
+    packaging.jniLibs.useLegacyPackaging = providers.gradleProperty("compactApk")
+        .map { it.toBooleanStrict() }.getOrElse(false)
     packaging.jniLibs.excludes += setOf("**/libsherpa-onnx-c-api.so", "**/libsherpa-onnx-cxx-api.so")
     buildFeatures { compose = true; buildConfig = true }
 }

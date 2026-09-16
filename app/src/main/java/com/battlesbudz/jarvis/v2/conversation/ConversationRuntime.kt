@@ -46,7 +46,7 @@ internal fun JarvisRuntime.runConversationInternal(
             finish("A voice or model operation is still active. Please finish it first.")
             return
         }
-        if (!MainActivity.activeConversationJobs.compareAndSet(0, 1)) {
+        if (!ConversationWork.activeJobs.compareAndSet(0, 1)) {
             finish("The previous response is still finishing. Please try again in a moment.")
             return
         }
@@ -61,7 +61,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 // Reject only an exceptionally large single message before
                 // routing or executing a phone side effect. Retained history is
                 // handled by compaction below and must not reject a short follow-up.
-                if (prompt.length > MainActivity.MAX_USER_PROMPT_CHARS) {
+                if (prompt.length > ConversationPolicy.MAX_USER_PROMPT_CHARS) {
                     diagnosticRecorder.record(
                         "Turn rejected before action routing\\n" +
                             "userLength=${prompt.length}\\n" +
@@ -190,8 +190,8 @@ internal fun JarvisRuntime.runConversationInternal(
                 ).length
                 val pendingRequestSize = maxOf(existingPromptSize, freshPromptSize) + referenceSize
                 var promptHistory = history
-                if (acceptedPreparation == null && conversationCharacters + pendingRequestSize + MainActivity.GENERATION_HEADROOM >
-                    MainActivity.CONVERSATION_COMPACTION_LIMIT
+                if (acceptedPreparation == null && conversationCharacters + pendingRequestSize + ConversationPolicy.GENERATION_HEADROOM >
+                    ConversationPolicy.CONVERSATION_COMPACTION_LIMIT
                 ) {
                     val compactedText = shortTermContext.compactSnapshot(
                         history.map { it.role to it.text }
@@ -199,7 +199,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     if (compactedText.isNotBlank()) {
                         shortTermContext.updateSummary(compactedText)
                         sessionPreferences.edit()
-                            .putString(MainActivity.SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
+                            .putString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
                             .apply()
                     }
                     // The compacted summary already contains the newest turns.
@@ -280,8 +280,8 @@ internal fun JarvisRuntime.runConversationInternal(
                     submittedPrompt += "\n\nResolved subject for this turn: " + it
                 }
                 submittedPrompt += referenceContext?.let { "\n\n$it" }.orEmpty()
-                if (submittedPrompt.length + MainActivity.GENERATION_HEADROOM >
-                    MainActivity.CONVERSATION_COMPACTION_LIMIT
+                if (submittedPrompt.length + ConversationPolicy.GENERATION_HEADROOM >
+                    ConversationPolicy.CONVERSATION_COMPACTION_LIMIT
                 ) {
                     // A compacted summary is useful background, but it must
                     // never crowd out the current request or retrieved image /
@@ -299,8 +299,8 @@ internal fun JarvisRuntime.runConversationInternal(
                     }
                     submittedPrompt += referenceContext?.let { "\n\n$it" }.orEmpty()
                 }
-                if (submittedPrompt.length + MainActivity.GENERATION_HEADROOM >
-                    MainActivity.CONVERSATION_COMPACTION_LIMIT
+                if (submittedPrompt.length + ConversationPolicy.GENERATION_HEADROOM >
+                    ConversationPolicy.CONVERSATION_COMPACTION_LIMIT
                 ) {
                     // Do not reject a valid user turn just because retained
                     // context is large. The prompt builder already removed
@@ -333,7 +333,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 val imageBytes = imageUri?.let { uri ->
                     openVisionInputStream(uri)?.use { input ->
                         input.readBytes().also { bytes ->
-                            check(bytes.size <= MAX_IMAGE_BYTES) {
+                            check(bytes.size <= ConversationPolicy.MAX_IMAGE_BYTES) {
                                 "The selected image is too large for safe local inference."
                             }
                         }
@@ -682,7 +682,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 mainHandler.post { finish("I could not load the local model: ${error.message ?: "unknown error"}") }
             }
         }
-        conversationJob?.invokeOnCompletion { MainActivity.activeConversationJobs.decrementAndGet() }
+        conversationJob?.invokeOnCompletion { ConversationWork.activeJobs.decrementAndGet() }
     }
 
 private fun JarvisRuntime.openVisionInputStream(uri: Uri): InputStream? {

@@ -1,5 +1,7 @@
 # Local voice implementation plan
 
+> Maintenance update: APK payload measurement, a reduced Sherpa JNI build profile, optional compact APK packaging and the first app modularization pass are documented in [APK size audit](apk-size-audit.md) and [component map](app-modularization.md). These changes do not close phone voice acceptance items.
+
 > Current cleanup: obsolete benchmark routes and profile controls have been removed; fixed natural Piper settings apply. See [current diagnostics](current-diagnostics.md) and [current acceptance status](voice-pipeline-current.md). Historical test-pack checklists below are not current UI requirements.
 
 ## Current status — 16 September 2026

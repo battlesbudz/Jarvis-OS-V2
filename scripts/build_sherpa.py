@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build pinned upstream Sherpa JNI for Piper, Whisper, VAD and speaker checks."""
+"""Build the pinned Sherpa app JNI profile for Piper, Whisper, VAD and speaker checks."""
 import argparse
 import hashlib
 import os
@@ -9,6 +9,8 @@ import subprocess
 import tarfile
 import urllib.request
 import zipfile
+
+from sherpa_jni_profile import configure
 
 ROOT = Path(__file__).resolve().parents[1]
 REV = '917bed95c8e5c7c18aa4d69fea42e9ef8ef0a60e'  # v1.13.7
@@ -36,7 +38,7 @@ def build(output, ndk=None):
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     source = output / 'source'
-    fingerprint = 'upstream-piper-v1'
+    fingerprint = 'app-jni-v1-' + hashlib.sha256((ROOT / 'scripts/sherpa_jni_profile.py').read_bytes()).hexdigest()
     stamp = output / 'source-version'
     if not stamp.exists() or stamp.read_text() != REV + fingerprint:
         shutil.rmtree(source, ignore_errors=True)
@@ -44,6 +46,8 @@ def build(output, ndk=None):
             archive.extractall(output, members=(m for m in archive if m.isfile() or m.isdir()), filter='data')
         (output / f'sherpa-onnx-{REV}').rename(source)
         stamp.write_text(REV + fingerprint)
+    if ndk:
+        configure(source)
     ort = output / ('ort-android' if ndk else 'ort-host')
     if not ort.exists():
         with zipfile.ZipFile(download(ORT_ANDROID if ndk else ORT_HOST, output)) as archive:
@@ -57,7 +61,9 @@ def build(output, ndk=None):
     env = dict(os.environ, SHERPA_ONNXRUNTIME_INCLUDE_DIR=str(include), SHERPA_ONNXRUNTIME_LIB_DIR=str(lib))
     cmake_dir = output / 'cmake'
     command = ['cmake', '-S', str(source), '-B', str(cmake_dir), '-DCMAKE_BUILD_TYPE=Release',
-               '-DBUILD_SHARED_LIBS=OFF', '-DSHERPA_ONNX_ENABLE_BINARY=OFF',
+               '-DBUILD_SHARED_LIBS=OFF', '-DCMAKE_C_FLAGS=-ffunction-sections -fdata-sections',
+               '-DCMAKE_CXX_FLAGS=-ffunction-sections -fdata-sections',
+               '-DCMAKE_SHARED_LINKER_FLAGS=-Wl,--gc-sections', '-DSHERPA_ONNX_ENABLE_BINARY=OFF',
                '-DSHERPA_ONNX_ENABLE_PORTAUDIO=OFF', '-DSHERPA_ONNX_ENABLE_WEBSOCKET=OFF',
                '-DSHERPA_ONNX_ENABLE_SPEAKER_DIARIZATION=OFF',
                '-DSHERPA_ONNX_ENABLE_C_API=' + ('OFF' if ndk else 'ON'),

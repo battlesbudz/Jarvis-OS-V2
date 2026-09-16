@@ -37,7 +37,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: app/build/sherpa-native
-          key: sherpa-arm64-137-${{ runner.os }}-${{ hashFiles('scripts/build_sherpa.py') }}
+          key: sherpa-arm64-137-${{ runner.os }}-${{ hashFiles('scripts/build_sherpa.py', 'scripts/sherpa_jni_profile.py') }}
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -51,7 +51,7 @@ jobs:
           python3 scripts/check_keyword_models.py /tmp/keyword-native/microwakeword_test
 
       - name: Verify native dependency helpers
-        run: python3 -m unittest discover -s scripts -p 'test_native_dependencies.py'
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
 
       - name: Prepare release signing key
         env:
@@ -75,6 +75,18 @@ jobs:
           ANDROID_VERSION_CODE: ${{ github.run_number }}
           ANDROID_VERSION_NAME: 0.1.0-build.${{ github.run_number }}
         run: gradle --no-daemon testReleaseUnitTest assembleRelease
+
+      - name: Report APK size against build 705
+        run: |
+          python3 scripts/apk_size_report.py app/build/outputs/apk/release/app-release.apk --output artifact/size --baseline docs/measurements/build-705-apk-size.json
+          cat artifact/size/apk-size.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload APK size report
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-os-v2-apk-size
+          path: artifact/size/
+          if-no-files-found: error
 
       - name: Verify ASR native packaging
         run: python3 scripts/check_asr_apk.py app/build/outputs/apk/release/app-release.apk
@@ -103,11 +115,37 @@ jobs:
           mkdir -p artifact
           cp app/build/outputs/apk/release/app-release.apk artifact/app-release.apk
 
+      - name: Build and verify compact APK
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ format('{0}/jarvis-release.keystore', runner.temp) }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_VERSION_CODE: ${{ github.run_number }}
+          ANDROID_VERSION_NAME: 0.1.0-build.${{ github.run_number }}
+        run: |
+          gradle --no-daemon -PcompactApk=true assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk artifact/app-compact.apk
+          python3 scripts/check_compact_apk.py artifact/app-release.apk artifact/app-compact.apk
+          python3 scripts/check_asr_apk.py artifact/app-compact.apk
+          python3 scripts/check_tts_callback.py artifact/app-compact.apk
+          APKSIGNER="$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --verbose artifact/app-compact.apk
+          python3 scripts/apk_size_report.py artifact/app-compact.apk --output artifact/compact-size --baseline docs/measurements/build-705-apk-size.json
+          cat artifact/compact-size/apk-size.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload compact APK size report
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-os-v2-compact-apk-size
+          path: artifact/compact-size/
+          if-no-files-found: error
+
       - name: Upload release APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: jarvis-os-v2-release-apk
-          path: artifact/app-release.apk
+          path: artifact/*.apk
           if-no-files-found: error
 
   publish:
@@ -134,7 +172,7 @@ jobs:
           target_commitish: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           name: Jarvis OS V2 ${{ github.event_name == 'pull_request' && 'Audio PR2' || 'test' }} build ${{ github.run_number }}
           generate_release_notes: true
-          files: dist/app-release.apk
+          files: dist/*.apk
 
   publish-pr-test:
     name: Publish permanent PR test APK
@@ -158,4 +196,4 @@ jobs:
           name: Jarvis OS V2 PR1 test build
           prerelease: true
           generate_release_notes: false
-          files: dist/app-release.apk
+          files: dist/*.apk

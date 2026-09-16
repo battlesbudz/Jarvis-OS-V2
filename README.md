@@ -1,5 +1,7 @@
 # Jarvis OS V2
 
+Development: [APK size audit](docs/apk-size-audit.md) · [component map and refactoring progress](docs/app-modularization.md).
+
 Current voice settings: Moonshine/Whisper, Gemma E2B/E4B, and fixed Piper Northern English. Experimental profile controls and old benchmark routes are removed. See [retained development diagnostics](docs/current-diagnostics.md).
 
 A native Android voice assistant built with Kotlin and Jetpack Compose. The core

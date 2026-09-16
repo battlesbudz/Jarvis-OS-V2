@@ -2,6 +2,9 @@
 """Verify Moonshine ASR and Sherpa TTS/VAD native packaging."""
 import argparse
 import hashlib
+import json
+
+from sherpa_jni_profile import REMOVED_CLASSES
 import re
 from pathlib import Path
 import subprocess
@@ -48,6 +51,13 @@ def check(apk):
             path = Path(temporary) / name
             path.write_bytes(archive.read(prefix + name))
             metadata[name] = subprocess.check_output(["readelf", "-d", "-V", str(path)], text=True)
+        sherpa = Path(temporary) / "libsherpa-onnx-jni.so"
+        exports = subprocess.check_output(["readelf", "--dyn-syms", "--wide", str(sherpa)], text=True)
+        expected = json.loads(Path(__file__).with_name("sherpa_required_symbols.json").read_text())
+        missing = [symbol for symbol in expected if not re.search(r"\b" + re.escape(symbol) + r"\b", exports)]
+        assert not missing, f"Required Sherpa JNI exports missing: {missing}"
+        for retired in REMOVED_CLASSES:
+            assert f"Java_com_k2fsa_sherpa_onnx_{retired}_" not in exports, f"Unused JNI wrapper retained: {retired}"
         check_dependencies(metadata)
         for name in ["libmoonshine.so", "libmoonshine-jni.so"]:
             assert "libms_ort_1232.so" in metadata[name], f"Missing Moonshine runtime dependency: {name}"

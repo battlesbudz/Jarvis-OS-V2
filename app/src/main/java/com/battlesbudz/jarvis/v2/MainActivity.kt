@@ -1,5 +1,7 @@
 package com.battlesbudz.jarvis.v2
 
+import com.battlesbudz.jarvis.v2.conversation.ConversationPolicy
+import com.battlesbudz.jarvis.v2.conversation.ConversationWork
 import android.net.Uri
 import android.os.Bundle
 import android.Manifest
@@ -27,29 +29,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import org.json.JSONObject
 import org.json.JSONArray
-import java.util.concurrent.atomic.AtomicInteger
-
-internal const val MAX_IMAGE_BYTES = 12 * 1024 * 1024
-
-data class ChatEntry(
-    val role: String,
-    val text: String,
-    val imageUri: String? = null,
-    val latency: com.battlesbudz.jarvis.v2.diagnostics.TurnLatency? = null
-)
 
 class MainActivity : ComponentActivity() {
-    internal companion object {
-        val activeConversationJobs = AtomicInteger(0)
-        internal const val SHORT_TERM_SUMMARY_KEY = "short_term_summary"
-        // This is an app-side character budget, not Gemma's advertised
-        // context maximum. It leaves room for a normal answer before the
-        // bounded native conversation is reset and reseeded from app context.
-        internal const val CONVERSATION_COMPACTION_LIMIT = 10_000
-        internal const val GENERATION_HEADROOM = 2_000
-        internal const val MAX_USER_PROMPT_CHARS = 12_000
-        internal const val INTERRUPTED_RESPONSE = "The previous response was interrupted. Please send that again."
-    }
 
     private val runtime get() = JarvisRuntime.get(applicationContext)
     internal val mainHandler get() = runtime.mainHandler
@@ -143,14 +124,14 @@ class MainActivity : ComponentActivity() {
         val interruptedSession = sessionPreferences.getBoolean("sending", false)
         if (!voiceSessionArmed) shortTermContext.restoreSummary(
             if (interruptedSession) null else {
-                savedInstanceState?.getString(SHORT_TERM_SUMMARY_KEY)
-                    ?: sessionPreferences.getString(SHORT_TERM_SUMMARY_KEY, null)
+                savedInstanceState?.getString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY)
+                    ?: sessionPreferences.getString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, null)
             }
         )
         if (interruptedSession) {
             // Do not reuse context captured while the native engine was being
             // torn down. The visible transcript remains recoverable.
-            sessionPreferences.edit().remove(SHORT_TERM_SUMMARY_KEY).apply()
+            sessionPreferences.edit().remove(ConversationPolicy.SHORT_TERM_SUMMARY_KEY).apply()
         }
         setContent {
             JarvisApp(
@@ -324,9 +305,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putString(SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
+        outState.putString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
         sessionPreferences.edit()
-            .putString(SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
+            .putString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
             .apply()
         super.onSaveInstanceState(outState)
     }
@@ -356,7 +337,7 @@ class MainActivity : ComponentActivity() {
 
     private fun selectAiModel(spec: com.battlesbudz.jarvis.v2.ai.LocalModelSpec): String? {
         if (voiceSessionArmed || voiceSessionController.currentCallId() != null ||
-            voiceTurnJob?.isCompleted == false || activeConversationJobs.get() != 0 ||
+            voiceTurnJob?.isCompleted == false || ConversationWork.activeJobs.get() != 0 ||
             wakeTestJob?.isActive == true) {
             return "End the Jarvis session and any tests before switching AI models."
         }
@@ -508,27 +489,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    internal fun cleanAssistantText(text: String): String {
-        val cleaned = text
-            .replace(
-                Regex("""(?s)(?:<\|)?tool_call>.*?(?:<\|tool_call\|>|$)"""),
-                ""
-            )
-            .replace(
-                Regex("""(?s)<start_function_call>.*?(?:<end_function_call>|$)"""),
-                ""
-            )
-            .replace(Regex("""(?i)<\|tool_call\|>|<end_function_call>|<\|end_function_call\|>"""), "")
-            .trim()
-        return cleaned
-    }
-
-    /** Removes visual Markdown syntax before text is sent to Piper. */
-    internal fun cleanSpeechText(text: String): String = text
-        .replace("*", "")
-        .replace("_", "")
-        .replace("`", "")
-        .replace(Regex("(?m)^\\s*#+\\s*"), "")
-        .replace(Regex("(?m)^\\s*[-•]\\s+"), "")
+    internal fun cleanSpeechText(text: String) = com.battlesbudz.jarvis.v2.chat.AssistantText.forSpeech(text)
+    internal fun cleanAssistantText(text: String) = com.battlesbudz.jarvis.v2.chat.AssistantText.forDisplay(text)
 
 }
