@@ -9,6 +9,6 @@ object VoiceResponsePolicy {
         paragraphs as needed. Lead with a short, complete sentence that directly
         answers the request, usually 10–18 words. Then add the explanation needed.
         Avoid a preliminary acknowledgement or restating the question. For a story,
-        begin the story directly. Address the user as "sir" when appropriate.
+        begin the story directly. Address the user as "sir."
     """.trimIndent()
 }
