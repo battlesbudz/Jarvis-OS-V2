@@ -7,8 +7,8 @@ internal class FollowupSpeechEvidence {
     private var strongBytes = 0L
     private var liveWords = false
     private var quietCorroborated = false
-    fun observe(bytes: Int, probability: Float, partial: String?, corroborated: Boolean) {
-        if (probability >= 0.5f) {
+    fun observe(bytes: Int, probability: Float, partial: String?, corroborated: Boolean, confirmedSpeech: Boolean) {
+        if (confirmedSpeech && probability >= 0.5f) {
             strongBytes += bytes
             strongMs = strongBytes / 32
             if (!partial.isNullOrBlank()) liveWords = true

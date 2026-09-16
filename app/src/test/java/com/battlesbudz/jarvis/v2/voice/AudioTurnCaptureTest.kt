@@ -112,9 +112,9 @@ class AudioTurnCaptureTest {
         assertFalse(completion.isCompleted)
         fixture.emit(1600, 2000, speech = true)
         assertEquals(1, fixture.resumed)
-        fixture.emit(5099, 0)
+        fixture.emit(3399, 0)
         assertFalse(completion.isCompleted)
-        fixture.emit(5100, 0)
+        fixture.emit(3400, 0)
         assertTrue(withTimeout(1000) { completion.await() })
         fixture.capture.stop()
     }
@@ -708,6 +708,70 @@ class AudioTurnCaptureTest {
             assertFalse(fixture.capture.hasSpeech)
             assertEquals("", fixture.capture.finalTranscript)
             assertTrue(fixture.events.any { "speaker_candidate_rejected" in it })
+        } finally { fixture.capture.stop() }
+    }
+
+    @Test fun nearFloorVadTailCannotKeepAnUtteranceAlive() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, FakeTranscriber("What time is it?", "What time is it?"))
+        fixture.capture.start()
+        try {
+            fixture.emit(0, 29, samples = 1600)
+            fixture.emit(100, 2000, speech = true, samples = 1600)
+            fixture.emit(600, 44, speech = true, probability = 0.525f, samples = 1600)
+            fixture.emit(1000, 44, speech = true, probability = 0.525f, samples = 1600)
+            fixture.emit(1300, 44, speech = true, probability = 0.525f, samples = 1600)
+            assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+            assertEquals(100L, fixture.capture.lastSpeechAtMs)
+            assertTrue(fixture.events.any { it.startsWith("capture_weak_noise_rejected") })
+        } finally { fixture.capture.stop() }
+    }
+
+    @Test fun isolatedVadSpikeDuringFinalizationDoesNotCreateRepeatedSegment() = runBlocking<Unit> {
+        lateinit var fixture: CaptureFixture
+        var loads = 0
+        val asr = object : StreamingTranscriber {
+            override fun accept(pcm: ByteArray) = "Open YouTube"
+            override fun finish(): String { fixture.bufferedMs = 100; return "Open YouTube" }
+            override fun close() {}
+        }
+        fixture = CaptureFixture(this, factory = { loads++; asr })
+        fixture.capture.start()
+        try {
+            fixture.emit(100, 2000, speech = true)
+            fixture.emit(1300, 0)
+            fixture.bufferedMs = 0
+            fixture.emit(1400, 1000, speech = false, probability = 0.7f)
+            fixture.emit(1500, 0)
+            assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+            assertEquals("Open YouTube", fixture.capture.finalTranscript)
+            assertEquals(1, loads)
+            assertFalse(fixture.events.any { "turn_endpoint_invalidated" in it })
+        } finally { fixture.capture.stop() }
+    }
+
+    @Test fun genuineOnsetDuringFinalizationGetsConfirmationAndPreservesPreRoll() = runBlocking<Unit> {
+        lateinit var fixture: CaptureFixture
+        var loads = 0
+        val first = object : StreamingTranscriber {
+            override fun accept(pcm: ByteArray) = "Open Facebook"
+            override fun finish(): String { fixture.bufferedMs = 100; return "Open Facebook" }
+            override fun close() {}
+        }
+        val next = FakeTranscriber("actually YouTube", "actually YouTube")
+        fixture = CaptureFixture(this, factory = { if (loads++ == 0) first else next })
+        fixture.capture.start()
+        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+        try {
+            fixture.emit(100, 2000, speech = true)
+            fixture.emit(1300, 0)
+            fixture.bufferedMs = 0
+            fixture.emit(1400, 1234, probability = 0.7f, samples = 512)
+            assertFalse(completion.isCompleted)
+            fixture.emit(1464, 2000, speech = true, samples = 1024)
+            fixture.emit(2664, 0)
+            assertTrue(withTimeout(1000) { completion.await() })
+            assertEquals("Open Facebook actually YouTube", fixture.capture.finalTranscript)
+            assertEquals(1234, next.receivedSamples.first())
         } finally { fixture.capture.stop() }
     }
 

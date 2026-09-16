@@ -94,9 +94,11 @@ class AudioTurnCapture(
         var lastSpeechAt = startedAt
         var lastLevelLogAt = startedAt
         var pendingEndpoint = false
+        var unconfirmedOnsetAt: Long? = null
         val followupEvidence = FollowupSpeechEvidence()
         val pendingAudio = RollingAudioBuffer(maxDurationMs = 1200)
         log("capture_started vad=silero threshold=0.5 speechConfirmationMs=96 " +
+            "speechGate=confirmed_acoustic_v2 weakNoiseRatio=1.8 strongVadBypass=0.8 " +
             "endpointing=${if (trailingSilenceMs == null) "adaptive" else "fixed"} " +
             "trailingSilenceMs=$trailingSilenceMs initialSilenceTimeoutMs=$initialSilenceTimeoutMs audioWindowMs=25000 maxTurnMs=120000")
         captureReadyMs = nowMs() - captureRequestedAt
@@ -113,9 +115,15 @@ class AudioTurnCapture(
                     val decision = frame.decision
                     val now = nowMs()
                     val audioAt = frame.capturedAtMs
+                    // Give a possible onset one confirmation window before sealing.
+                    // It cannot refresh lastSpeechAt or reopen ASR on its own.
+                    if (!decision.isSpeech && decision.probability >= 0.5f) {
+                        if (unconfirmedOnsetAt == null) unconfirmedOnsetAt = audioAt
+                    } else unconfirmedOnsetAt = null
+                    val awaitingConfirmation = unconfirmedOnsetAt?.let { audioAt - it < 96 } == true
                     var resumedAudio: ByteArray? = null
                     if (pendingEndpoint) pendingAudio.append(chunk)
-                    if (pendingEndpoint && (decision.isSpeech || decision.probability >= 0.5f)) {
+                    if (pendingEndpoint && decision.isSpeech) {
                         (transcriber as? SegmentedTranscriber)?.resumeAfterEndpoint()
                         pendingEndpoint = false
                         resumedAudio = pendingAudio.snapshot(); pendingAudio.clear()
@@ -137,7 +145,7 @@ class AudioTurnCapture(
                         } else {
                             preRoll.append(chunk)
                         }
-                        if (decision.isSpeech || (hasSpeech && decision.probability >= 0.5f)) {
+                        if (decision.isSpeech) {
                             if (hasSpeech && audioAt - lastSpeechAt >= 180) onSpeechResumed()
                             if (!hasSpeech) {
                                 firstSpeechAt = now
@@ -170,8 +178,8 @@ class AudioTurnCapture(
                     maxDecodeChunkMs = maxOf(maxDecodeChunkMs, chunkDecodeMs)
                     // Stable words corroborate weak whisper VAD; blank/noisy audio cannot
                     // qualify on amplitude alone. Strong VAD retains its existing fast path.
-                    val corroborated = quietEvidence.accept(partial.orEmpty(), decision.probability, nowMs(), hasSpeech)
-                    followupEvidence.observe(chunk.size, decision.probability, partial, corroborated)
+                    val corroborated = quietEvidence.accept(partial, decision.probability, audioAt, hasSpeech)
+                    followupEvidence.observe(chunk.size, decision.probability, partial, corroborated, decision.isSpeech)
                     if (hasSpeech && corroborated) {
                         if (audioAt - lastSpeechAt >= 180) onSpeechResumed()
                         lastSpeechAt = audioAt
@@ -198,7 +206,7 @@ class AudioTurnCapture(
                     var reason = when {
                         endRequested -> "explicit_stop"
                         hasSpeech && audioAt - lastSpeechAt >= endpoint.silenceMs &&
-                            speechQueue.bufferedAudioMs == 0L -> "trailing_silence"
+                            !awaitingConfirmation && speechQueue.bufferedAudioMs == 0L -> "trailing_silence"
                         hasSpeech && capturedPcmBytes >= 120L * 32_000 -> "utterance_capacity"
                         !hasSpeech && initialSilenceTimeoutMs != null && now - lastSpeechAt >= initialSilenceTimeoutMs -> "initial_silence"
                         else -> null
@@ -327,7 +335,7 @@ class AudioTurnCapture(
                             endpoint.silenceMs, endpoint.cue), finalTranscript)
                         log("capture_endpoint_timing reason=$reason " +
                             "speechEndToFinalMs=${lastSpeechAtMs?.let { (nowMs() - it).coerceAtLeast(0) }} " +
-                            "silenceDetectedToFinalMs=${speechQueue.latestSilenceDetectedAtMs?.let { (nowMs() - it).coerceAtLeast(0) }} " +
+                            "silenceDetectedToFinalMs=${speechQueue.latestSilenceDetectedAtMs?.takeIf { it >= lastSpeechAt }?.let { (nowMs() - it).coerceAtLeast(0) }} " +
                             "finalDecodeMs=$finalDecodeMs deferredPartialChunks=$deferredPartialChunks " +
                             "recognitionBacklogMs=${speechQueue.bufferedAudioMs}")
                         acceptedTurn = hasSpeech

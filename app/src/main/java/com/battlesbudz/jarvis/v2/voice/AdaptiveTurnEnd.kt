@@ -18,10 +18,13 @@ class AdaptiveTurnEnd : TurnEndDetector {
         val words = Regex("[\\p{L}\\p{N}']+").findAll(transcript).map { it.value }.toList()
         if (words.isEmpty()) return Decision(3000, "no_transcript")
         val last = words.last()
-        if (last in unfinished || transcript.endsWith("...") || transcript.endsWith("…") ||
-            Regex("(?:i mean|let me think|hold on|wait a second|you know|tell me|show me|give me)$")
+        if (last in setOf("um", "uh", "erm", "hmm") || transcript.endsWith("...") || transcript.endsWith("…") ||
+            Regex("(?:i mean|let me think|hold on|wait a second|you know)$")
                 .containsMatchIn(words.joinToString(" "))) {
-            return Decision(3500, "hesitation_or_unfinished")
+            return Decision(3500, "explicit_hesitation")
+        }
+        if (last in unfinished || Regex("(?:tell me|show me|give me)$").containsMatchIn(words.joinToString(" "))) {
+            return Decision(1800, "unfinished")
         }
         // Punctuation is only a cue: ASR can add a question mark to an unfinished fragment.
         val question = words.first() in questionStarts &&

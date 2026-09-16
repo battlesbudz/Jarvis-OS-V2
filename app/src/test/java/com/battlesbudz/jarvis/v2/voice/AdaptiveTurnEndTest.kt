@@ -28,15 +28,21 @@ class AdaptiveTurnEndTest {
         assertEquals(350, policy.decision(350).silenceMs.toInt())
     }
 
-    @Test fun hesitationAndUnfinishedQuestionGetTimeDespitePunctuation() {
-        for (text in listOf("What is the?", "Can you tell me?", "Tell me about...",
-            "Set the volume to", "What is the battery percentage, um", "No, I mean", "Hold on", "Do you know why?")) {
+    @Test fun explicitHesitationStillAllowsThinkingTime() {
+        for (text in listOf("Tell me about...", "What is the battery percentage, um", "No, I mean", "Hold on")) {
             val policy = AdaptiveTurnEnd()
             policy.update(text, 0)
             assertEquals(text, 3500, policy.decision(1000).silenceMs.toInt())
         }
     }
 
+    @Test fun uncertainLastWordDoesNotForceThreeAndAHalfSeconds() {
+        for (text in listOf("What is the?", "Can you tell me?", "Set the volume to", "Do you know why?")) {
+            val policy = AdaptiveTurnEnd()
+            policy.update(text, 0)
+            assertEquals(text, 1800, policy.decision(1000).silenceMs.toInt())
+        }
+    }
     @Test fun shortAnswersCanFinishButUnknownAndMissingTextStayConservative() {
         val policy = AdaptiveTurnEnd()
         assertEquals(3000, policy.decision(1000).silenceMs.toInt())

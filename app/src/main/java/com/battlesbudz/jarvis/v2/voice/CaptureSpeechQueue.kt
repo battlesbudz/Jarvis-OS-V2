@@ -30,13 +30,22 @@ internal class CaptureSpeechQueue(
         private set
 
     fun frames(): Flow<Frame> = flow {
+        val gate = CaptureSpeechGate()
+        var lastNoiseLogAt: Long? = null
         input.chunks().collect { pcm ->
             check(pendingBytes.addAndGet(pcm.size.toLong()) <= maxBytes) {
                 "Recognition queue exceeded 25 seconds; incomplete command must not be submitted"
             }
             val capturedAt = input.lastChunkCaptureTimeMs ?: nowMs()
-            val decision = detector.accept(pcm)
-            if (decision.isSpeech || decision.probability >= 0.5f) {
+            val raw = detector.accept(pcm)
+            val signal = Pcm16Signal.measure(pcm)
+            val decision = gate.accept(raw, signal.rms)
+            if (raw.probability >= 0.15f && decision.probability == 0f &&
+                (lastNoiseLogAt == null || capturedAt - lastNoiseLogAt!! >= 1000)) {
+                lastNoiseLogAt = capturedAt
+                log("capture_weak_noise_rejected probability=${raw.probability} rms=${signal.rms.toInt()} noiseFloorRms=${gate.noiseFloorRms.toInt()}")
+            }
+            if (decision.isSpeech) {
                 latestSpeechAtMs = capturedAt
                 latestSilenceDetectedAtMs = null
             } else {

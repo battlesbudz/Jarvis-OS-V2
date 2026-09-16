@@ -28,8 +28,23 @@ class QuietSpeechEvidenceTest {
         evidence.accept("what time", 0.23f, 0, false)
         assertFalse(evidence.accept("what time", 0.23f, 2000, false))
     }
+    @Test fun deferredDecodeAndPunctuationCannotRefreshCachedWords() {
+        val evidence = QuietSpeechEvidence()
+        evidence.accept("What time is it?", 0.95f, 100, true)
+        assertFalse(evidence.accept(null, 0.23f, 900, true))
+        assertFalse(evidence.accept("What time is it.", 0.23f, 1000, true))
+        assertFalse(evidence.accept("", 0.23f, 1200, true))
+        assertFalse(evidence.accept("What time is it?", 0.23f, 1400, true))
+    }
+    @Test fun newQuietWordsCanStillCorroborateAfterStrongSpeech() {
+        val evidence = QuietSpeechEvidence()
+        evidence.accept("Open", 0.95f, 100, true)
+        assertFalse(evidence.accept("Open YouTube", 0.23f, 200, true))
+        assertTrue(evidence.accept("Open YouTube", 0.23f, 400, true))
+        assertFalse(evidence.accept("Open YouTube", 0.23f, 1000, true))
+    }
     @Test fun singleProbabilitySpikeCannotBypassFrameConfirmation() {
         assertFalse(QuietSpeechEvidence().accept("yes", 0.8f, 0, false))
-        assertTrue(QuietSpeechEvidence().accept("yes", 0.8f, 0, true))
+        assertFalse(QuietSpeechEvidence().accept("yes", 0.8f, 0, true))
     }
 }
