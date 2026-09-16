@@ -12,6 +12,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.selects.onTimeout
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -157,6 +158,7 @@ class SherpaKokoroVoiceOutput(
         val sentenceEnd: Boolean = false
     )
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     override suspend fun speak(chunks: Flow<String>, onChunkStarted: (String) -> Unit) = coroutineScope {
         check(speaking.compareAndSet(false, true)) { "Voice output is already active." }
         stopped = false
@@ -220,7 +222,7 @@ class SherpaKokoroVoiceOutput(
         val pocketSentences = engine == TtsEngine.POCKET_PAUL && (benchmarkProfile?.nativeStreaming == true || !fixedChunking && benchmarkProfile == null)
         val piperOpening = benchmarkProfile?.takeIf { it.piperPassages }?.openingChars ?: PiperTextStream.TARGET_CHARS
         val piperText = if (piperWholePassage) PiperTextStream(waitForEnd = benchmarkProfile?.fullText == true, openingTargetChars = piperOpening) else null
-        if (engine == TtsEngine.PIPER_NORTHERN) log("piper_text_policy version=whole-passages-v2 enabled=$piperWholePassage openingTargetChars=$piperOpening targetChars=320 maxChars=640 nativeMaxNumSentences=${if (piperWholePassage) 0 else 1} silenceScale=1.0 waitForEnd=${benchmarkProfile?.fullText == true}")
+        if (engine == TtsEngine.PIPER_NORTHERN) log("piper_text_policy version=whole-passages-v3 enabled=$piperWholePassage openingTargetChars=$piperOpening openingWaitMs=${if (piperOpening < 320 && benchmarkProfile?.fullText != true) PiperTextStream.OPENING_WAIT_MS else 0} targetChars=320 maxChars=640 nativeMaxNumSentences=${if (piperWholePassage) 0 else 1} silenceScale=1.0 waitForEnd=${benchmarkProfile?.fullText == true}")
         val pocketText = if (pocketSentences) PocketTextStream() else null
         val isolationText = if (benchmarkSubmissions != null) StringBuilder() else null
         val chunker = SpeechChunker(openingChars, fullText = benchmarkProfile?.fullText == true, minPhraseChars = 40)
@@ -375,6 +377,7 @@ class SherpaKokoroVoiceOutput(
                     if (piperWholePassage) {
                         check(text.length <= PiperTextStream.MAX_CHARS)
                         log("piper_passage_submit index=$index chars=${text.length} nativeMaxNumSentences=0")
+                        if (index == 0) log("piper_opening_wait_ms=${firstTextAt.get().takeIf { it != 0L }?.let(::elapsedMs)} chars=${text.length}")
                     }
                     if (index > 0 && (pocketSentences || kokoroCallbacks && previousSentenceComplete) && acknowledgeDelays && !benchmarkRun) {
                         audio.sendFromNative(SynthesizedPhrase(index - 1, "", tts.sampleRate(), ShortArray(0),
@@ -567,6 +570,11 @@ class SherpaKokoroVoiceOutput(
                                         pocketText.append(more)
                                     }
                                 } else chunker.append(token)
+                                while (true) generate(nextPhrase() ?: break)
+                            }
+                        }
+                        piperText?.openingWaitMs()?.let { remaining ->
+                            onTimeout(remaining) {
                                 while (true) generate(nextPhrase() ?: break)
                             }
                         }

@@ -4,6 +4,57 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PiperTextStreamTest {
+    private val earlySentence = "A civilization capable of that would need to harness energy on a stellar scale."
+
+    @Test fun fasterOpeningReleasesCompletedSentenceAtDeadlineWithoutNewTokens() {
+        var clock = 0L
+        val stream = PiperTextStream(openingTargetChars = 160, nowMs = { clock })
+        stream.append("$earlySentence The next explanation")
+        assertNull(stream.take())
+        assertEquals(750L, stream.openingWaitMs())
+        clock = 749
+        assertNull(stream.take())
+        clock = 750
+        assertEquals(earlySentence, stream.take())
+        assertNull(stream.openingWaitMs())
+        stream.append(" continues here.")
+        clock = 5000
+        assertNull(stream.take()) // Later passages retain the 320-character policy.
+        assertEquals("The next explanation continues here.", stream.take(final = true))
+    }
+
+    @Test fun deadlineNeverReleasesAnIncompleteSentenceOrShortAcknowledgement() {
+        var clock = 0L
+        val stream = PiperTextStream(openingTargetChars = 160, nowMs = { clock })
+        stream.append("Yes, sir. " + "This explanation is not finished yet ".repeat(3))
+        clock = 5000
+        assertNull(stream.openingWaitMs())
+        assertNull(stream.take())
+        stream.append("and now it is. ")
+        assertNotNull(stream.take())
+    }
+
+    @Test fun deadlineDoesNotChangeDefaultOrFullReplyPolicies() {
+        var clock = 0L
+        val normal = PiperTextStream(nowMs = { clock })
+        val full = PiperTextStream(waitForEnd = true, openingTargetChars = 160, nowMs = { clock })
+        for (stream in listOf(normal, full)) stream.append("$earlySentence Another sentence is ready. ")
+        clock = 10_000
+        for (stream in listOf(normal, full)) {
+            assertNull(stream.openingWaitMs()); assertNull(stream.take())
+            assertEquals("$earlySentence Another sentence is ready.", stream.take(final = true))
+        }
+    }
+
+    @Test fun waitingForOpeningDoesNotMistakeAnAbbreviationForASentence() {
+        var clock = 0L
+        val stream = PiperTextStream(openingTargetChars = 160, nowMs = { clock })
+        stream.append("The physician who will explain all the details to you today is Dr. ")
+        clock = 1000
+        assertNull(stream.take()); assertNull(stream.openingWaitMs())
+        stream.append("Smith. ")
+        assertTrue(requireNotNull(stream.take()).endsWith("Dr. Smith."))
+    }
     @Test fun optionalSmallerOpeningReturnsToLongPassagesWithoutLosingWords() {
         val sentence = "We can continue with this explanation for a little longer. "
         val text = sentence.repeat(20).trim()

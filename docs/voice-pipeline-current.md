@@ -61,3 +61,14 @@ Phases 1–2 have implementation and earlier CI evidence; lifecycle and playback
 ## Completion boundary
 
 Remaining engine selection, semantic endpoint-model adoption, shorter Piper opening selection and microphone/effect tuning are evidence-dependent decisions, not missing code that can safely be guessed. Keep current accepted voice settings until comparisons establish a better setting. Integrated phone acceptance still includes noisy-room recognition, a longer utterance, a correction during playback, stopping/ending, delivered-context follow-up, sustained warm calls and supported route/lifecycle transitions. Do not mark the entire roadmap complete before these checks pass.
+
+## Response-latency follow-up after build 699
+
+User reports that build 699 feels faster and confirms the recorded stop keyword was **not** an attempted interruption. Its rejection is correct, not a missed command. Three completed replies measured 4.289, 4.424 and 5.528 seconds from detected speech end to substantive answer playback (4.747-second mean). Build 694's four retained replies averaged 7.658 seconds. This is not a matched benchmark: 699 used Moonshine, the 160-character opening, less context and thermal level 0; the earlier call used Whisper and reported thermal level 4. The acknowledgement added zero ready-answer wait in the detailed 699 turns.
+
+Latency-only changes following that baseline:
+
+- The explicitly selected faster Piper opening still targets 160 characters, but after 750 ms of text collection may release an already complete sentence of at least 60 characters. A timer wakes the same native owner when generation pauses; it does not require another token. No incomplete sentence is cut to meet the deadline, so 750 ms is not an end-to-end latency guarantee. Default 320-character and full-reply policies are unchanged; later passages retain 320/640 bounds.
+- Voice generation is asked to lead with a short direct complete sentence, usually 10–18 words, followed by the explanation needed. This adds no separate inference pass and does not truncate the generated answer.
+- `piper_opening_wait_ms` reports first incoming text to opening submission separately from synthesis. `whole-passages-v3` logs the applicable opening wait policy. Compare this against opening synthesis and first playback before claiming measured gains.
+- Tests cover a stalled text stream, incomplete sentences, short acknowledgements, abbreviations, unchanged default/full-reply policies and preserved continuation text. Voice consistency and actual latency require a new phone comparison; the deliberate interruption baseline remains build 699.
