@@ -39,7 +39,7 @@ internal class CaptureSpeechQueue(
             val capturedAt = input.lastChunkCaptureTimeMs ?: nowMs()
             val raw = detector.accept(pcm)
             val signal = Pcm16Signal.measure(pcm)
-            val decision = gate.accept(raw, signal.rms)
+            val decision = gate.accept(raw, signal.rms, capturedAt)
             if (raw.probability >= 0.15f && decision.probability == 0f &&
                 (lastNoiseLogAt == null || capturedAt - lastNoiseLogAt!! >= 1000)) {
                 lastNoiseLogAt = capturedAt

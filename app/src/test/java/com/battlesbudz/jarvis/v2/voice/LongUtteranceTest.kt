@@ -4,6 +4,43 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LongUtteranceTest {
+    @Test fun moonshineSizedSegmentsKeepThirtyAndSixtySecondsWithDeferredPartials() {
+        for (seconds in listOf(30, 60)) {
+            var loads = 0
+            var closes = 0
+            var bytes = 0
+            val events = mutableListOf<String>()
+            val recognizer = SegmentedTranscriber(create = {
+                assertEquals(loads, closes)
+                val index = loads++
+                object : StreamingTranscriber {
+                    override val segmentSoftLimitMs = 8_000L
+                    override val segmentHardLimitMs = 12_000L
+                    override fun accept(pcm: ByteArray): String = error("must retain the partial policy")
+                    override fun accept(pcm: ByteArray, allowPartial: Boolean): String {
+                        assertFalse(allowPartial)
+                        bytes += pcm.size
+                        return ""
+                    }
+                    override fun finish() = "marker $index marker ${index + 1}"
+                    override fun close() { closes++ }
+                }
+            }, log = events::add)
+            repeat(seconds * 10) {
+                recognizer.observeSpeech(true)
+                recognizer.accept(ByteArray(3200), false)
+            }
+            val final = recognizer.finish()
+            recognizer.close()
+            assertNull(recognizer.issue)
+            assertEquals(loads, closes)
+            assertEquals(seconds * 32000 + (loads - 1) * 38400, bytes)
+            assertEquals((0..loads).joinToString(" ") { "marker $it" }, final)
+            assertTrue(events.all { "hardLimitMs=12000" in it })
+            assertTrue(loads >= seconds / 12)
+        }
+    }
+
     @Test fun missingFinalCorrectionCannotDispatchOnlyCommittedPrefix() {
         val text = UtteranceAccumulator()
         text.commit("Open Facebook", nextOverlaps = false)

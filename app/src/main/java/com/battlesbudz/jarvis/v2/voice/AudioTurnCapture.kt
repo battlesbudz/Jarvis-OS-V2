@@ -91,6 +91,8 @@ class AudioTurnCapture(
         var emptyCandidates = 0
         var deferredPartialChunks = 0
         var finalDecodeMs = 0L
+        val recognitionBudget = CaptureRecognitionBudget()
+        var maxRecognitionBacklogMs = 0L
         var lastSpeechAt = startedAt
         var lastLevelLogAt = startedAt
         var pendingEndpoint = false
@@ -98,7 +100,7 @@ class AudioTurnCapture(
         val followupEvidence = FollowupSpeechEvidence()
         val pendingAudio = RollingAudioBuffer(maxDurationMs = 1200)
         log("capture_started vad=silero threshold=0.5 speechConfirmationMs=96 " +
-            "speechGate=confirmed_acoustic_v2 weakNoiseRatio=1.8 strongVadBypass=0.8 " +
+            "speechGate=confirmed_acoustic_v3 noiseWindowMs=3000 noiseCalibrationMs=200 weakNoiseRatio=1.8 strongVadBypass=0.8 partialPolicy=work_paced_v1 " +
             "endpointing=${if (trailingSilenceMs == null) "adaptive" else "fixed"} " +
             "trailingSilenceMs=$trailingSilenceMs initialSilenceTimeoutMs=$initialSilenceTimeoutMs audioWindowMs=25000 maxTurnMs=120000")
         captureReadyMs = nowMs() - captureRequestedAt
@@ -163,22 +165,27 @@ class AudioTurnCapture(
                     // submission and endpointing, not whether initial words reach the recognizer.
                     val decodeStartedAt = nowMs()
                     if (!pendingEndpoint) transcriber?.observeSpeech(hasSpeech && decision.probability >= 0.15f)
-                    val allowPartial = speechQueue.bufferedAudioMs < 200 &&
+                    val backlogMs = speechQueue.bufferedAudioMs
+                    maxRecognitionBacklogMs = maxOf(maxRecognitionBacklogMs, backlogMs)
+                    val allowPartial = recognitionBudget.allows(decodeStartedAt, backlogMs) &&
                         !(hasSpeech && decision.probability < 0.15f)
                     if (!pendingEndpoint && !allowPartial) deferredPartialChunks++
+                    val segmentsBefore = (transcriber as? SegmentedTranscriber)?.segments
                     val partial = if (pendingEndpoint) null else transcriber?.accept(resumedAudio ?: chunk, allowPartial)?.let {
                         // An unchanged cached hypothesis is not fresh evidence of speech
                         // in a queued or silent frame. Finalization still consumes all PCM.
-                        if (!allowPartial) null else if (TranscriptContent.isSoundOnly(it)) "" else TranscriptContent.speech(it)
+                        val committed = (transcriber as? SegmentedTranscriber)?.segments != segmentsBefore
+                        if (!allowPartial && !committed) null else if (TranscriptContent.isSoundOnly(it)) "" else TranscriptContent.speech(it)
                     }
                     currentCoroutineContext().ensureActive()
                     if (turnCompleted.isCompleted) return@collect
                     val chunkDecodeMs = nowMs() - decodeStartedAt
+                    if (!pendingEndpoint) recognitionBudget.completed(decodeStartedAt, nowMs())
                     decodeMs += chunkDecodeMs
                     maxDecodeChunkMs = maxOf(maxDecodeChunkMs, chunkDecodeMs)
                     // Stable words corroborate weak whisper VAD; blank/noisy audio cannot
                     // qualify on amplitude alone. Strong VAD retains its existing fast path.
-                    val corroborated = quietEvidence.accept(partial, decision.probability, audioAt, hasSpeech)
+                    val corroborated = quietEvidence.accept(if (allowPartial) partial else null, decision.probability, audioAt, hasSpeech)
                     followupEvidence.observe(chunk.size, decision.probability, partial, corroborated, decision.isSpeech)
                     if (hasSpeech && corroborated) {
                         if (audioAt - lastSpeechAt >= 180) onSpeechResumed()
@@ -337,6 +344,7 @@ class AudioTurnCapture(
                             "speechEndToFinalMs=${lastSpeechAtMs?.let { (nowMs() - it).coerceAtLeast(0) }} " +
                             "silenceDetectedToFinalMs=${speechQueue.latestSilenceDetectedAtMs?.takeIf { it >= lastSpeechAt }?.let { (nowMs() - it).coerceAtLeast(0) }} " +
                             "finalDecodeMs=$finalDecodeMs deferredPartialChunks=$deferredPartialChunks " +
+                            "maxRecognitionWorkMs=${recognitionBudget.largestWorkMs} maxRecognitionBacklogMs=$maxRecognitionBacklogMs " +
                             "recognitionBacklogMs=${speechQueue.bufferedAudioMs}")
                         acceptedTurn = hasSpeech
                         log("turn_endpoint reason=$reason elapsedMs=${now - startedAt} " +

@@ -12,6 +12,8 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
     // Avoid applying a second native speech gate to audio qualified by Jarvis VAD.
     // It could return an empty stream without ever invoking the speech decoder.
     private val speechGate = ExternalSpeechGate()
+    override val segmentSoftLimitMs: Long get() = 8_000
+    override val segmentHardLimitMs: Long get() = 12_000
     override fun observeSpeech(speech: Boolean) = speechGate.observe(speech)
     private fun createLoaded(): Transcriber {
         val created = Transcriber(listOf(

@@ -711,17 +711,49 @@ class AudioTurnCaptureTest {
         } finally { fixture.capture.stop() }
     }
 
+    @Test fun expensivePartialDefersOptionalWorkWithoutLosingPcmOrDelayingFinalization() = runBlocking<Unit> {
+        lateinit var fixture: CaptureFixture
+        val policies = mutableListOf<Boolean>()
+        var bytes = 0
+        var finishes = 0
+        val recognizer = object : StreamingTranscriber {
+            override fun accept(pcm: ByteArray): String = error("policy required")
+            override fun accept(pcm: ByteArray, allowPartial: Boolean): String {
+                bytes += pcm.size
+                policies += allowPartial
+                if (allowPartial) fixture.spend(1000)
+                return "What time is it?"
+            }
+            override fun finish(): String { finishes++; return "What time is it?" }
+            override fun close() {}
+        }
+        fixture = CaptureFixture(this, recognizer)
+        fixture.capture.start()
+        try {
+            fixture.emit(100, 2000, speech = true, samples = 1600)
+            fixture.emit(1200, 2000, speech = true, samples = 1600)
+            fixture.emit(2400, 0, samples = 1600)
+            assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+            assertEquals(listOf(true, false, false), policies)
+            assertEquals(9600, bytes)
+            assertEquals(1, finishes)
+            assertEquals("What time is it?", fixture.capture.finalTranscript)
+        } finally { fixture.capture.stop() }
+    }
+
     @Test fun nearFloorVadTailCannotKeepAnUtteranceAlive() = runBlocking<Unit> {
         val fixture = CaptureFixture(this, FakeTranscriber("What time is it?", "What time is it?"))
         fixture.capture.start()
         try {
             fixture.emit(0, 29, samples = 1600)
-            fixture.emit(100, 2000, speech = true, samples = 1600)
+            fixture.emit(100, 29, samples = 1600)
+            fixture.emit(200, 29, samples = 1600)
+            fixture.emit(300, 2000, speech = true, samples = 1600)
             fixture.emit(600, 44, speech = true, probability = 0.525f, samples = 1600)
             fixture.emit(1000, 44, speech = true, probability = 0.525f, samples = 1600)
-            fixture.emit(1300, 44, speech = true, probability = 0.525f, samples = 1600)
+            fixture.emit(1500, 44, speech = true, probability = 0.525f, samples = 1600)
             assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
-            assertEquals(100L, fixture.capture.lastSpeechAtMs)
+            assertEquals(300L, fixture.capture.lastSpeechAtMs)
             assertTrue(fixture.events.any { it.startsWith("capture_weak_noise_rejected") })
         } finally { fixture.capture.stop() }
     }
@@ -827,6 +859,7 @@ class AudioTurnCaptureTest {
         val recoveryStates = mutableListOf<Boolean>()
         val metrics = mutableListOf<Pair<AsrCaptureMetrics, String>>()
         private var clock = 0L
+        fun spend(ms: Long) { clock += ms }
         private val chunks = MutableSharedFlow<ByteArray>()
         val events = mutableListOf<String>()
         private val input = object : AudioInput {

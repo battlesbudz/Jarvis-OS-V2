@@ -39,8 +39,8 @@ class SegmentedTranscriber(
         silenceBytes = if (speech) 0 else silenceBytes + pcm.size
         val partial = engine.accept(pcm, allowPartial)
         last = text.partial(partial)
-        val quietBoundary = segmentBytes >= 15 * 32000 && silenceBytes >= 6400
-        val forcedBoundary = segmentBytes >= 22 * 32000
+        val quietBoundary = segmentBytes >= engine.segmentSoftLimitMs * 32 && silenceBytes >= 6400
+        val forcedBoundary = segmentBytes >= engine.segmentHardLimitMs * 32
         if (segmentHadSpeech && (quietBoundary || forcedBoundary)) {
             val finalized = engine.finish()
             val hard = !quietBoundary
@@ -51,6 +51,7 @@ class SegmentedTranscriber(
             overlap.clear(); silenceBytes = 0; segmentHadSpeech = false
             last = text.partial("")
             log("asr_segment_committed index=$segments chars=${last.length} overlapMs=${replay.size / 32} " +
+                "softLimitMs=${engine.segmentSoftLimitMs} hardLimitMs=${engine.segmentHardLimitMs} " +
                 "issue=$issue turnComplete=false")
         }
         return last
