@@ -746,3 +746,8 @@ Justin reports missed near-field speech, room speech/noise being accepted, numer
 - Separately, deterministic end-call recognition tolerates the exact reported “1. Stop listening. 2.”, “10. Stop listening.” and “Stop listening. Yeah” while retaining negation, reported-speech and quoted-example exclusions. This supplements the acoustic fixes; it is not a Gemma prompt workaround.
 
 Piper synthesis, passage sizes, speed and pauses are unchanged. Validate both selected ASR engines with normal-volume near-field questions, room silence, a nearby correction during finalization, and explicit end-call phrases. Diagnostics now report Moonshine input versus decoder audio duration and fresh command state. Actual transcription accuracy, competing speakers and device acoustics remain phone acceptance checks; no model switch or claim of perfect background rejection is made. This remains a bounded reliability repair in the existing implementation plan, not completion of outstanding duplex/device acceptance.
+
+
+## 2026-09-16 — Selectable E2B / E4B local AI
+
+Implemented persistent model selection in setup and Voice settings, routed inference and benchmarks through the selection, added a pinned E4B artifact, isolated caches and validation, and guarded switching during active work. Failed/interrupted native validation remains recoverable from setup. See [AI model switching](ai-model-switching.md) for the source, lifecycle behavior, and pending Fold 6 acceptance tests. Android CI validates compilation/unit tests; E4B phone memory and voice latency are not yet measured.

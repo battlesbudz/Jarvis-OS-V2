@@ -52,13 +52,14 @@ class GemmaBenchmarkController(
                 .put("runtime", "LiteRT-LM 0.12.0").put("backend", "GPU")
                 .put("version_name", com.battlesbudz.jarvis.v2.BuildConfig.VERSION_NAME)
                 .put("source_commit", com.battlesbudz.jarvis.v2.BuildConfig.SOURCE_COMMIT)
-                .put("model_sha256", ModelCatalog.gemma4E2b.expectedSha256)
+                .put("model_id", models.selectedModel().id)
+                .put("model_sha256", models.selectedModel().expectedSha256)
                 .put("mode", mode).put("sample", sample).put("repeat", repeat)
                 .put("thermal_status", context.getSystemService(PowerManager::class.java).currentThermalStatus)
             try {
                 check(models.tryBeginModelOperation()) { "Another model operation is still running." }
                 owned = true
-                check(models.verifyIntegrity(ModelCatalog.gemma4E2b)) { "Import the verified Gemma model first." }
+                check(models.verifyIntegrity(models.selectedModel())) { "Import the verified Gemma model first." }
                 // Avoid keeping a second multi-gigabyte Gemma instance resident during the test.
                 releaseIdleEngine()
                 if (sample != null) {
@@ -73,8 +74,8 @@ class GemmaBenchmarkController(
                     try {
                         report("$mode: loading Gemma…")
                         val initAt = System.nanoTime()
-                        val active = LiteRtLmEngine(ModelCatalog.gemma4E2b.id,
-                            models.fileFor(ModelCatalog.gemma4E2b).path, context.cacheDir.path,
+                        val active = LiteRtLmEngine(models.selectedModel().id,
+                            models.fileFor(models.selectedModel()).path, context.cacheDir.path,
                             useGpu = true, tools = MobileActionToolDefinitions.all(), audioEnabled = true,
                             speculativeDecoding = enabled)
                         engine = active

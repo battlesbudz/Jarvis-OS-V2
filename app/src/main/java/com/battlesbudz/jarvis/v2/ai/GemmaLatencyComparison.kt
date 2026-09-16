@@ -18,8 +18,8 @@ internal object GemmaLatencyComparison {
         try {
             report("Loading Gemma for the voice latency comparison…")
             val loadStarted = System.nanoTime()
-            val active = LiteRtLmEngine(ModelCatalog.gemma4E2b.id,
-                models.fileFor(ModelCatalog.gemma4E2b).path, context.cacheDir.path,
+            val active = LiteRtLmEngine(models.selectedModel().id,
+                models.fileFor(models.selectedModel()).path, context.cacheDir.path,
                 useGpu = true, visionEnabled = true, audioEnabled = true)
             engine = active
             active.initialize()

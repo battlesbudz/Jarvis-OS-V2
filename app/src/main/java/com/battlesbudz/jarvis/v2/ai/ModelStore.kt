@@ -43,16 +43,29 @@ class ModelStore(context: Context) {
         }
     }
 
+    fun selectedModel(): LocalModelSpec = ModelCatalog.resolve(preferences.getString("selected_model", null))
+
+    /** Caller owns the model-operation lock and has released the idle native engine. */
+    fun selectModel(spec: LocalModelSpec) {
+        require(ModelCatalog.find(spec.id) == spec) { "Unsupported model." }
+        check(isModelOperationActive()) { "Model selection requires exclusive ownership." }
+        check(preferences.edit().putString("selected_model", spec.id).commit()) {
+            "Could not save the selected model."
+        }
+    }
+
+    private fun smokeTestKey(spec: LocalModelSpec) = "smoke_test_passed_${spec.id}"
+
     fun fileFor(spec: LocalModelSpec): File = File(modelDirectory, spec.fileName)
 
     fun hasModel(spec: LocalModelSpec): Boolean =
         fileFor(spec).let { it.isFile && it.length() > 0L }
 
     fun isReady(): Boolean =
-        hasModel(ModelCatalog.gemma4E2b)
+        hasModel(selectedModel())
 
     fun isUsable(): Boolean {
-        val spec = ModelCatalog.gemma4E2b
+        val spec = selectedModel()
         val file = fileFor(spec)
         val key = fingerprintKey(spec)
         return isReady() &&
@@ -106,7 +119,22 @@ class ModelStore(context: Context) {
         return true
     }
 
-    fun smokeTestPassed(): Boolean = preferences.getBoolean("smoke_test_passed", false)
+    fun smokeTestPassed(): Boolean {
+        val spec = selectedModel()
+        return preferences.getBoolean(smokeTestKey(spec),
+            spec == ModelCatalog.gemma4E2b && preferences.getBoolean("smoke_test_passed", false))
+    }
+
+    fun smokeTestAttempted(): Boolean =
+        preferences.getBoolean("smoke_test_attempted_${selectedModel().id}", false)
+
+    // Persist before native initialization: a process death must leave setup recoverable.
+    fun markSmokeTestStarted() {
+        val spec = selectedModel()
+        check(preferences.edit()
+            .putBoolean("smoke_test_attempted_${spec.id}", true)
+            .putBoolean(smokeTestKey(spec), false).commit()) { "Could not save model test state." }
+    }
 
     fun importInProgress(): Boolean = preferences.getBoolean("import_in_progress", false)
 
@@ -186,7 +214,8 @@ class ModelStore(context: Context) {
                 .putLong("${key}_modified", destination.lastModified())
                 .putBoolean("${key}_invalid", false)
                 .putBoolean("${key}_enforce_catalog_hash", true)
-                .putBoolean("smoke_test_passed", false)
+                .putBoolean(smokeTestKey(spec), false)
+                .putBoolean("smoke_test_attempted_${spec.id}", false)
                 .apply()
             destination
         } finally {
@@ -565,7 +594,8 @@ class ModelStore(context: Context) {
                 .putLong("${key}_modified", destination.lastModified())
                 .putBoolean("${key}_invalid", false)
                 .putBoolean("${key}_enforce_catalog_hash", true)
-                .putBoolean("smoke_test_passed", false)
+                .putBoolean(smokeTestKey(spec), false)
+                .putBoolean("smoke_test_attempted_${spec.id}", false)
                 .apply()
             destination
         }.getOrNull().also {
@@ -573,12 +603,12 @@ class ModelStore(context: Context) {
         }
     }
 
-    fun markSmokeTestPassed() {
-        preferences.edit().putBoolean("smoke_test_passed", true).apply()
+    fun markSmokeTestPassed(spec: LocalModelSpec = selectedModel()) {
+        preferences.edit().putBoolean(smokeTestKey(spec), true).apply()
     }
 
     fun clearSmokeTest() {
-        preferences.edit().putBoolean("smoke_test_passed", false).apply()
+        preferences.edit().putBoolean(smokeTestKey(selectedModel()), false).apply()
     }
 
     suspend fun importModel(uri: Uri, spec: LocalModelSpec): Result<File> {
@@ -616,7 +646,7 @@ class ModelStore(context: Context) {
                 val actualSha256 = temporary.sha256()
                 // An explicitly selected model is validated by the native
                 // Gemma smoke test below, not forced to match the catalog's
-                // download hash. This makes “upload your own E2B” supported.
+                // download hash. This makes “import your own compatible Gemma” supported.
                 check(temporary.renameTo(destination)) { "Unable to finalize model file." }
                 val fingerprint = fingerprintKey(spec)
                 preferences.edit()
@@ -625,7 +655,8 @@ class ModelStore(context: Context) {
                     .putLong("${fingerprint}_modified", destination.lastModified())
                     .putBoolean("${fingerprint}_invalid", false)
                     .putBoolean("${fingerprint}_enforce_catalog_hash", false)
-                    .putBoolean("smoke_test_passed", false)
+                    .putBoolean(smokeTestKey(spec), false)
+                .putBoolean("smoke_test_attempted_${spec.id}", false)
                     .apply()
                 destination
             } finally {

@@ -19,4 +19,18 @@ object ModelCatalog {
         downloadUrl = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/6e5c4f1/gemma-4-E2B-it.litertlm?download=true"
     )
 
+    val gemma4E4b = LocalModelSpec(
+        id = "Gemma-4-E4B-it",
+        fileName = "gemma-4-E4B-it.litertlm",
+        expectedSha256 = "f335f2bfd1b758dc6476db16c0f41854bd6237e2658d604cbe566bcefd00a7bc",
+        recommendedGpu = true,
+        downloadUrl = "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/1fc8912676889ed3aeec478c92c1e239bed08928/gemma-4-E4B-it.litertlm?download=true"
+    )
+
+    val all = listOf(gemma4E2b, gemma4E4b)
+
+    fun find(id: String?): LocalModelSpec? = all.firstOrNull { it.id == id }
+
+    // Preserve existing installations and recover safely from a removed catalog entry.
+    fun resolve(id: String?): LocalModelSpec = find(id) ?: gemma4E2b
 }

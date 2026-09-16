@@ -31,7 +31,7 @@ class LiteRtLmEngine(
     private val engine = Engine(
         EngineConfig(
             modelPath = modelPath,
-            cacheDir = cacheDir,
+            cacheDir = java.io.File(cacheDir, modelId).apply { mkdirs() }.path,
             backend = if (useGpu) Backend.GPU() else Backend.CPU(),
             visionBackend = if (visionEnabled) Backend.GPU() else null,
             audioBackend = if (audioEnabled) Backend.CPU() else null,

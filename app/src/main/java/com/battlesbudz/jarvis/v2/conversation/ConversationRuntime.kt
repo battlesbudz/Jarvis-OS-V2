@@ -3,7 +3,6 @@ package com.battlesbudz.jarvis.v2.conversation
 import android.net.Uri
 import com.battlesbudz.jarvis.v2.*
 import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
-import com.battlesbudz.jarvis.v2.ai.ModelCatalog
 import androidx.lifecycle.lifecycleScope
 import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
 import kotlinx.coroutines.Dispatchers
@@ -53,7 +52,7 @@ internal fun JarvisRuntime.runConversationInternal(
         }
         conversationJob = runtimeScope.launch(Dispatchers.Default) {
             try {
-                if (!modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
+                if (!modelStore.verifyIntegrity(modelStore.selectedModel())) {
                     preparedVoice?.discard()
                     conversationEngine?.close()
                     conversationEngine = null
@@ -228,8 +227,8 @@ internal fun JarvisRuntime.runConversationInternal(
                 val loadingStarted = System.nanoTime()
                 val engineWasLoaded = conversationEngine != null
                 val engine = conversationEngine ?: LiteRtLmEngine(
-                    ModelCatalog.gemma4E2b.id,
-                    modelStore.fileFor(ModelCatalog.gemma4E2b).path,
+                    modelStore.selectedModel().id,
+                    modelStore.fileFor(modelStore.selectedModel()).path,
                     cacheDir.path,
                     useGpu = true,
                     tools = com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions.all(),

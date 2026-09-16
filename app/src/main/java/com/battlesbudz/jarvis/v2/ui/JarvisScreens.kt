@@ -72,6 +72,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.collect
 import org.json.JSONObject
 import org.json.JSONArray
 import java.util.concurrent.atomic.AtomicInteger
@@ -294,7 +295,7 @@ fun JarvisChat(
             enabled = !isSending && !directAudioTestRunning && !directAudioToolTestRunning,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
         ) {
-            Text(if (directAudioToolTestRunning) "Testing E2B voice tool…" else "Test E2B voice tool call")
+            Text(if (directAudioToolTestRunning) "Testing Gemma voice tool…" else "Test Gemma voice tool call")
         }
         if (directAudioToolTestStatus.isNotBlank()) {
             Text(
@@ -363,6 +364,7 @@ private fun openTranscriptImageStream(
 @Composable
 fun JarvisApp(
     store: ModelStore,
+    onSelectModel: (com.battlesbudz.jarvis.v2.ai.LocalModelSpec) -> String?,
     latencyBenchmarks: com.battlesbudz.jarvis.v2.voice.VoiceLatencyBenchmarkActions,
     ttsComparisonStore: com.battlesbudz.jarvis.v2.voice.TtsComparisonStore,
     onSelectTts: (com.battlesbudz.jarvis.v2.voice.TtsEngine) -> Boolean,
@@ -390,10 +392,16 @@ fun JarvisApp(
     onSendingChanged: (Boolean) -> Unit,
     onSend: (String, Uri?, List<ChatEntry>, (String) -> Unit, (String) -> Unit, (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit) -> Unit
 ) {
+    var selectedModel by remember { mutableStateOf(store.selectedModel()) }
+    var selectionError by remember { mutableStateOf<String?>(null) }
+    var pickerModelId by rememberSaveable { mutableStateOf<String?>(null) }
     val gemmaReady = store.isUsable()
     var modelsReady by remember { mutableStateOf(store.isUsable() && voiceModelStore.isReady()) }
     var smokeTestPassed by rememberSaveable { mutableStateOf(store.isUsable() && store.smokeTestPassed()) }
-    var setupStatus by rememberSaveable { mutableStateOf("") }
+    var setupStatus by rememberSaveable { mutableStateOf(
+        if (store.smokeTestAttempted() && !store.smokeTestPassed())
+            "The last model test did not pass or was interrupted. Retry the test or select another model."
+        else "") }
     var smokeTestRunning by remember { mutableStateOf(false) }
     var modelImportRunning by remember { mutableStateOf(store.importInProgress()) }
     var modelDownloadRunning by remember { mutableStateOf(false) }
@@ -405,6 +413,47 @@ fun JarvisApp(
     var voiceCalls by remember { mutableStateOf(initialVoiceCalls) }
     var selectedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
     var resumedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
+
+    val modelSelector: @Composable (Boolean) -> Unit = { enabled ->
+        Column {
+            Text("AI model", style = MaterialTheme.typography.titleMedium)
+            ModelCatalog.all.forEach { spec ->
+                OutlinedButton(
+                    enabled = enabled && !smokeTestRunning && !modelImportRunning && !modelDownloadRunning,
+                    onClick = {
+                        selectionError = onSelectModel(spec)
+                        if (selectionError == null) {
+                            selectedModel = store.selectedModel()
+                            modelsReady = store.isUsable() && voiceModelStore.isReady()
+                            smokeTestPassed = modelsReady && store.smokeTestPassed()
+                            automaticSmokeTestAttempted = false
+                            setupStatus = "Selected ${selectedModel.id}."
+                        }
+                    }, modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(spec.id + if (selectedModel.id == spec.id) " · Selected"
+                        else if (store.hasModel(spec)) " · Installed" else " · Not installed")
+                }
+            }
+            Text("E4B is larger and may respond more slowly. You can switch back to E2B without downloading it again.",
+                style = MaterialTheme.typography.bodySmall)
+            selectionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+    }
+
+    val setupContext = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) {
+        androidx.work.WorkManager.getInstance(setupContext)
+            .getWorkInfosForUniqueWorkFlow("jarvis-local-model-setup").collect { infos ->
+                val active = infos.firstOrNull { !it.state.isFinished }
+                modelDownloadRunning = active != null
+                if (active != null) {
+                    active.progress.getString("stage")?.let { setupStatus = it }
+                    downloadBytes = active.progress.getLong("downloaded", 0L)
+                    downloadTotalBytes = active.progress.getLong("total", -1L)
+                }
+            }
+    }
 
     LaunchedEffect(modelDownloadRunning) {
         if (!modelDownloadRunning) {
@@ -433,14 +482,14 @@ fun JarvisApp(
     LaunchedEffect(modelsReady, smokeTestPassed, modelDownloadRunning, smokeTestRunning) {
         if (!modelsReady) automaticSmokeTestAttempted = false
         if (modelsReady && !smokeTestPassed && !modelDownloadRunning &&
-            !smokeTestRunning && !automaticSmokeTestAttempted
+            !smokeTestRunning && !automaticSmokeTestAttempted && !store.smokeTestAttempted()
         ) {
             automaticSmokeTestAttempted = true
             smokeTestRunning = true
             onRunModelSmokeTest { result ->
                 smokeTestRunning = false
                 setupStatus = result
-                smokeTestPassed = result == "Gemma 4 E2B initialized successfully."
+                smokeTestPassed = store.isUsable() && store.smokeTestPassed()
             }
         }
     }
@@ -455,14 +504,14 @@ fun JarvisApp(
                 if (result == "Model imported successfully.") {
                     modelsReady = store.isUsable() && voiceModelStore.isReady()
                     if (!voiceModelStore.isReady()) {
-                        setupStatus = "Gemma E2B imported. Install the local voice model to continue."
+                        setupStatus = "${selectedModel.id} imported. Install the local voice model to continue."
                     }
                 }
             }
         }
     }
     val gemmaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        importModel(uri, ModelCatalog.gemma4E2b)
+        importModel(uri, ModelCatalog.resolve(pickerModelId))
     }
 
     MaterialTheme(
@@ -498,6 +547,7 @@ fun JarvisApp(
                         }
                     )
                     else -> VoiceCallScreen(
+                        modelSelector = modelSelector,
                         latencyBenchmarks = latencyBenchmarks,
                         resumedCall = resumedVoiceCall,
                         onResumeConsumed = { resumedVoiceCall = null },
@@ -520,6 +570,7 @@ fun JarvisApp(
                 }
             } else {
                 ModelSetup(
+                    modelSelector = modelSelector,
                     ready = modelsReady,
                     gemmaReady = gemmaReady,
                     testing = smokeTestRunning,
@@ -550,13 +601,13 @@ fun JarvisApp(
                             smokeTestPassed = modelsReady && store.smokeTestPassed()
                         }
                     },
-                    onPickGemma = { gemmaPicker.launch(arrayOf("*/*")) },
+                    onPickGemma = { pickerModelId = selectedModel.id; gemmaPicker.launch(arrayOf("*/*")) },
                     onTest = {
                         smokeTestRunning = true
                         onRunModelSmokeTest.invoke { result ->
                             smokeTestRunning = false
                             setupStatus = result
-                            if (result == "Gemma 4 E2B initialized successfully.") {
+                            if (store.isUsable() && store.smokeTestPassed()) {
                                 smokeTestPassed = true
                             }
                         }
@@ -569,6 +620,7 @@ fun JarvisApp(
 
 @Composable
 private fun VoiceCallScreen(
+    modelSelector: @Composable (Boolean) -> Unit,
     latencyBenchmarks: com.battlesbudz.jarvis.v2.voice.VoiceLatencyBenchmarkActions,
     resumedCall: VoiceCallRecord?,
     onResumeConsumed: () -> Unit,
@@ -776,6 +828,7 @@ private fun VoiceCallScreen(
         title = { Text("Voice settings") },
         confirmButton = { TextButton(onClick = { settingsOpen = false }) { Text("Done") } },
         text = { Column(Modifier.verticalScroll(rememberScrollState())) {
+            modelSelector(!runtimeArmed && !callStarted && !turnInFlight && !wakeTesting && !audioPathTesting && !inputTesting)
             TextButton(onClick = { ttsSettingsOpen = true }, enabled = !wakeTesting && !audioPathTesting && !inputTesting) { Text("Voice: ${selectedTts.label}") }
         val assistantContext = androidx.compose.ui.platform.LocalContext.current
         VoiceInputSettings(enabled = !runtimeArmed && !callStarted && !turnInFlight && !wakeTesting && !audioPathTesting, onBusy = { inputTesting = it })
@@ -975,6 +1028,7 @@ private fun VoiceCallDetailScreen(
 
 @Composable
 private fun ModelSetup(
+    modelSelector: @Composable (Boolean) -> Unit,
     ready: Boolean,
     gemmaReady: Boolean,
     testing: Boolean,
@@ -997,11 +1051,12 @@ private fun ModelSetup(
         verticalArrangement = Arrangement.Center
     ) {
         Text("Jarvis setup", style = MaterialTheme.typography.headlineMedium)
+        modelSelector(!testing && !importing && !downloading)
         Text(
             if (gemmaReady) {
-                "Gemma E2B is ready. Install the local Kokoro voice model to enable Jarvis speaking."
+                "The selected Gemma model is ready. Install the local Kokoro voice model to enable Jarvis speaking."
             } else {
-                "Jarvis runs privately on your phone. Install Gemma and the local Kokoro voice model, or choose your own compatible E2B file."
+                "Jarvis runs privately on your phone. Install Gemma and the local Kokoro voice model, or choose a compatible file for the selected model."
             },
             modifier = Modifier.padding(top = 12.dp, bottom = 20.dp)
         )
