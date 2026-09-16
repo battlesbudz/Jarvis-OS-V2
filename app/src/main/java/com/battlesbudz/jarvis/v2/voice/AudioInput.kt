@@ -9,6 +9,8 @@ interface AudioInput {
     /** Monotonic microphone-read time of the currently delivered chunk, when available. */
     val lastChunkCaptureTimeMs: Long? get() = null
     val bufferedAudioMs: Long get() = 0
+    /** Ordinary listening only; never learn a persistent room floor from assistant playback. */
+    val captureNoiseProfile: CaptureNoiseProfile? get() = null
     /** Optional session cursor: prefetch must not consume audio on behalf of the next reader. */
     val lastChunkSequence: Long? get() = null
     fun deferConsumptionAcknowledgement() {}

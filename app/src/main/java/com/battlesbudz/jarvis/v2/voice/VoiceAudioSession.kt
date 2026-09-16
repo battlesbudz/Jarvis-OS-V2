@@ -18,6 +18,7 @@ class VoiceAudioSession(
     private val lifecycle = Mutex()
     private val lock = Any()
     private val ring = ArrayDeque<Frame>()
+    private val noiseProfile = CaptureNoiseProfile()
     private var ringBytes = 0
     private var sequence = 0L
     private var cursor = 0L
@@ -62,6 +63,7 @@ class VoiceAudioSession(
     fun borrow(label: String, replayAfterMs: Long? = null): AudioInput = BorrowedInput(label, replayAfterMs)
 
     private inner class BorrowedInput(private val label: String, private val replayAfterMs: Long?) : AudioInput {
+        override val captureNoiseProfile get() = noiseProfile.takeIf { label == "command" }
         val channel = Channel<Frame>(64)
         private var started = false
         private var stopped = false

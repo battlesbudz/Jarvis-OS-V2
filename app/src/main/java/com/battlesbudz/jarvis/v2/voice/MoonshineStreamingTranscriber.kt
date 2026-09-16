@@ -7,7 +7,7 @@ import ai.moonshine.voice.TranscriptEvent
 import java.io.File
 
 /** Owns one utterance. Native calls are serialized by AudioTurnCapture's collector. */
-class MoonshineStreamingTranscriber(private val directory: File, private val updateIntervalSeconds: Double = DEFAULT_INTERVAL, modelSession: VoiceModelSession? = null, private val reserveReplyProbes: Boolean = true, private val log: (String) -> Unit = {}) : StreamingTranscriber {
+class MoonshineStreamingTranscriber(private val directory: File, private val updateIntervalSeconds: Double = DEFAULT_INTERVAL, modelSession: VoiceModelSession? = null, private val reserveReplyProbes: Boolean = true, private val log: (String) -> Unit = {}, private val audioEvidence: RecognitionAudioEvidence? = null) : StreamingTranscriber {
     private val lines = linkedMapOf<Long, String>()
     // Avoid applying a second native speech gate to audio qualified by Jarvis VAD.
     // It could return an empty stream without ever invoking the speech decoder.
@@ -95,6 +95,7 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
     }
 
     private fun acceptQualified(pcm: ByteArray): String {
+        if (pcm.isNotEmpty()) audioEvidence?.record(pcm, replace = false)
         val samples = FloatArray((pcm.size + if (lowByte != null) 1 else 0) / 2)
         var count = 0
         for (byte in pcm) {
@@ -123,6 +124,7 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
 
     override fun recover(pcm: ByteArray): String {
         check(!closed && finished)
+        audioEvidence?.record(pcm, replace = true)
         val samples = FloatArray(pcm.size / 2) { index ->
             val offset = index * 2
             ((pcm[offset].toInt() and 255) or ((pcm[offset + 1].toInt() and 255) shl 8)).toShort() / 32768f

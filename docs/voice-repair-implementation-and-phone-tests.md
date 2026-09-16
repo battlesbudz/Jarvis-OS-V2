@@ -1,5 +1,7 @@
 # Voice repair: bounded commits and phone test protocol
 
+> Historical implementation/evidence below. For current selected voices, ASR admission, gain, acknowledgement and interruption behavior, use [Current voice pipeline and remaining acceptance](voice-pipeline-current.md). Later user decisions supersede these experiments.
+
 Prepared: 12 September 2026. Branch: `audio-pr2`. Source baseline: `93a144c` (build 673 investigation). Status: **A1 accepted; A2/A3 partial; B1 is investigating true Paul LM-context appendability at Justin’s request; B2 awaits a verified quality winner. Kokoro performance work is paused. C1–C3 repairs remain partially accepted; D/E and integrated F acceptance remain open.**
 
 Companion: [research proposal](voice-repair-proposal-2026-09-12.md). Parent roadmap: [local voice implementation plan](local-voice-implementation-plan.md). Continue in the existing Audio PR2 PR; no merge without Justin's explicit approval. This document defines future code work; publishing it does not claim that work is implemented or tested.

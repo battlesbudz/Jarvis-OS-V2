@@ -37,7 +37,8 @@ class AudioTurnCapture(
     private val acceptCandidate: (ByteArray) -> Boolean = { true },
     private val onAcceptedCandidate: (String) -> Unit = {},
     private val turnEnd: TurnEndDetector = AdaptiveTurnEnd(),
-    private val captureDispatcher: CoroutineDispatcher = Dispatchers.Default
+    private val captureDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val onAcousticDecision: (ByteArray, SpeechDecision, SpeechDecision, Double) -> Unit = { _, _, _, _ -> }
 ) {
     private val pcm = RollingAudioBuffer(maxDurationMs = 25_000)
     private var capturedPcmBytes = 0L
@@ -83,7 +84,7 @@ class AudioTurnCapture(
         transcriber = newTranscriber()
         var modelLoadMs = nowMs() - loadStartedAt
         val startedAt = nowMs()
-        val speechQueue = CaptureSpeechQueue(input, activeDetector, nowMs, log, dispatcher = captureDispatcher)
+        val speechQueue = CaptureSpeechQueue(input, activeDetector, nowMs, log, dispatcher = captureDispatcher, onDecision = onAcousticDecision)
         speechQueue.targetSilenceMs = trailingSilenceMs ?: transcriber?.noTextSilenceMs ?: 3000L
         var audioBytes = 0L
         var decodeMs = 0L

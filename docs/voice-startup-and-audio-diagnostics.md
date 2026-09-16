@@ -1,5 +1,7 @@
 # Slow replies and speech diagnostics
 
+> Historical implementation/evidence below. For current selected voices, ASR admission, gain, acknowledgement and interruption behavior, use [Current voice pipeline and remaining acceptance](voice-pipeline-current.md). Later user decisions supersede these experiments.
+
 Build 602 call `252373d8-89cf-4e91-928a-0a99ddab78eb` took 19,748 ms from endpoint to accepted answer text. Gemma's initial first token was 5,155 ms; the repetition guard then blocked four sentences and made a second generation. Opening synthesis took 3,806 ms and startup buffering another 1,202 ms. Speech-end to actual playback was 26,355 ms. The end of that reply had a 366 ms estimated audio supply gap. Those events explain silence and a playback interruption, but cannot establish whether the generated voice itself was garbled. An underrun reported during terminal drain alone is not proof of an audible internal gap.
 
 This change builds on 603, which replaces full background ASR during replies with the bundled Hey Jarvis and stop keyword models. The supplied 602 logs do not test those changes.

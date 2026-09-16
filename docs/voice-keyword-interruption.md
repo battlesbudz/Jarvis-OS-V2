@@ -1,5 +1,7 @@
 # Keyword interruption and background speech
 
+> Historical implementation/evidence below. For current selected voices, ASR admission, gain, acknowledgement and interruption behavior, use [Current voice pipeline and remaining acceptance](voice-pipeline-current.md). Later user decisions supersede these experiments.
+
 Build 602 demonstrated a 7.349-second recognition call for 4.6 seconds of audio,
 followed by microphone-buffer overflow. The old listener then waited indefinitely.
 The live reply path now uses bundled microWakeWord models for **Hey Jarvis** and

@@ -19,13 +19,25 @@ class CompactVoiceContextTest {
         assertTrue(compact.contains("Important old detail."))
     }
 
-    @Test fun duplicateBeyondContextCapDoesNotRemoveVisibleAnchor() {
+    @Test fun newestRequestSurvivesAnOversizedSummaryAndOlderReplies() {
         val context = ShortTermConversationContext().apply { updateSummary("s".repeat(2_000)) }
         val history = listOf("You" to "Original dog topic.") +
             (1..7).map { "Jarvis" to "x".repeat(450) } + ("You" to "Original dog topic.")
         val compact = context.promptContext(history, compact = true)
-        assertTrue(compact.contains("Earlier topic:\nYou: Original dog topic."))
-        assertEquals(3_000, compact.length)
+        assertTrue(compact.endsWith("You: Original dog topic."))
+        assertTrue(compact.length <= 3_000)
+    }
+
+    @Test fun immediateRapExchangeSurvivesMaximalSummaryAndHistory() {
+        val context = ShortTermConversationContext().apply { updateSummary("s".repeat(2000)) }
+        val history = (1..6).map { "Jarvis" to "Old reply $it ${"x".repeat(450)}" } +
+            listOf("You" to "No, a text rap, like rap for me.",
+                "Jarvis" to "Yo, check the mic, one two, the flow is precise. A text-based rhythm, a story without end.")
+        val prompt = context.promptContext(history, compact = true)
+        assertTrue(prompt.contains("You: No, a text rap, like rap for me."))
+        assertTrue(prompt.endsWith("A text-based rhythm, a story without end."))
+        assertTrue(prompt.length <= 3000)
+        assertTrue(prompt.indexOf("You: No, a text rap") < prompt.indexOf("Jarvis: Yo, check"))
     }
 
     @Test fun oldAnchorOutsideRecentWindowAndSummaryArePreserved() {

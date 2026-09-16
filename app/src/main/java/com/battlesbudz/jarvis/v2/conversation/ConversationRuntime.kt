@@ -323,6 +323,13 @@ internal fun JarvisRuntime.runConversationInternal(
                         "baseAndRequestChars=${emptyContextPrompt.length} contextAndDialogueChars=$contextChars " +
                         "subjectChars=$subjectChars referenceChars=$referenceChars audioComplete=$voiceAudioIsComplete " +
                         "scope=assembled_answer_prompt prepared=${acceptedPreparation != null}")
+                    val latestReply = promptHistory.lastOrNull { it.role == "Jarvis" }?.text?.trim()?.take(450)
+                    val latestUser = promptHistory.lastOrNull { it.role == "You" }?.text?.trim()?.take(300)
+                    diagnosticRecorder.recordSummary("Voice context evidence policy=newest_first_v1 seeded=$seedContext " +
+                        "historyEntries=${promptHistory.size} " +
+                        "latestUserIncluded=${latestUser?.takeIf { it.isNotBlank() }?.let(submittedPrompt::contains)} " +
+                        "latestReplyIncluded=${latestReply?.takeIf { it.isNotBlank() }?.let(submittedPrompt::contains)} " +
+                        "latestReplyChars=${latestReply?.length ?: 0} scope=assembled_prompt nativeContext=$nativeConversationHasContext")
                 }
                 val imageBytes = imageUri?.let { uri ->
                     openVisionInputStream(uri)?.use { input ->

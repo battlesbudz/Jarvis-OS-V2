@@ -7,6 +7,19 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class AsyncWhisperSessionTest {
+    @Test fun deferredPartialsKeepEveryAudioByteForFinalDecode() {
+        val clips = mutableListOf<ByteArray>()
+        val s = AsyncWhisperSession({ pcm -> clips.add(pcm); "Complete question." }, {})
+        try {
+            s.observeSpeech(true)
+            val expected = ByteArray(96000) { (it % 127).toByte() }
+            expected.toList().chunked(3200).forEach { s.accept(it.toByteArray(), false) }
+            assertTrue(clips.isEmpty())
+            assertEquals("Complete question.", s.finish())
+            assertEquals(1, clips.size)
+            assertArrayEquals(expected, clips.single())
+        } finally { s.close() }
+    }
     @Test fun stableWordsRequireAgreementAndFinalIncludesTail() {
         val decoded = mutableListOf<Int>()
         val first = CountDownLatch(1); val second = CountDownLatch(1)

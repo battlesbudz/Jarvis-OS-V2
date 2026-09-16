@@ -2,6 +2,17 @@ package com.battlesbudz.jarvis.v2.voice
 import org.junit.Assert.*
 import org.junit.Test
 class CaptureSpeechGateTest {
+    @Test fun newTurnRetainsRoomCalibrationWithoutMutingImmediateRealSpeech() {
+        val profile = CaptureNoiseProfile()
+        val first = CaptureSpeechGate(profile)
+        repeat(3) { first.accept(SpeechDecision(false, .01f), 100.0, it * 100L) }
+        val followup = CaptureSpeechGate(profile)
+        assertFalse(followup.accept(SpeechDecision(true, .643f), 104.0, 20_000).isSpeech)
+        assertTrue(followup.accept(SpeechDecision(true, .89f), 643.0, 20_100).isSpeech)
+        followup.accept(SpeechDecision(false, .01f), 30.0, 20_200)
+        assertTrue(followup.accept(SpeechDecision(true, .6f), 70.0, 20_300).isSpeech)
+        assertEquals(30.0, profile.floorRms, .001)
+    }
     private fun calibrated(rms: Double) = CaptureSpeechGate().also { gate ->
         repeat(3) { gate.accept(SpeechDecision(false, .01f), rms, it * 100L) }
     }

@@ -1,5 +1,7 @@
 # Continuous reply listening and quiet speech
 
+> Historical implementation/evidence below. For current selected voices, ASR admission, gain, acknowledgement and interruption behavior, use [Current voice pipeline and remaining acceptance](voice-pipeline-current.md). Later user decisions supersede these experiments.
+
 **Current behavior:** keyword interruption supersedes the continuous-ASR experiment
 below. See [keyword interruption](voice-keyword-interruption.md).
 

@@ -7,6 +7,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class VoiceAudioSessionTest {
+    @Test fun calibrationBelongsToCallAndIsNotSharedWithPlaybackListener() = runBlocking {
+        val session = VoiceAudioSession(Source(), this)
+        try {
+            val first = QuietSpeechAudioInput(session.borrow("command"), maxGain = 1.0)
+            val gate = CaptureSpeechGate(first.captureNoiseProfile)
+            repeat(3) { gate.accept(SpeechDecision(false, .01f), 100.0, it * 100L) }
+            assertNull(session.borrow("reply").captureNoiseProfile)
+            val next = session.borrow("command")
+            assertEquals(100.0, next.captureNoiseProfile!!.floorRms, .001)
+            val newSession = VoiceAudioSession(Source(), this)
+            try { assertEquals(0.0, newSession.borrow("command").captureNoiseProfile!!.floorRms, .001) }
+            finally { newSession.close() }
+        } finally { session.close() }
+    }
     private class Source : AudioInput {
         private data class Packet(val pcm: ByteArray, val at: Long, val seen: CompletableDeferred<Unit>)
         private val packets = Channel<Packet>(Channel.UNLIMITED)

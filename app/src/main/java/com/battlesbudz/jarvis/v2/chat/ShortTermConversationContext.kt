@@ -11,6 +11,7 @@ class ShortTermConversationContext(
     private var summary: String? = null
 
     fun promptContext(history: List<Pair<String, String>>, compact: Boolean = false): String {
+        if (compact) return voiceContext(history)
         // Build a conversation capsule instead of slicing one large joined
         // transcript. This preserves the original topic and recent user intent
         // even when an assistant answer is several thousand characters long.
@@ -46,6 +47,27 @@ class ShortTermConversationContext(
                 append(recent)
             }
         }.take(3_000)
+    }
+
+    /** Budget newest exchanges first; an old summary must not truncate the last reply. */
+    private fun voiceContext(history: List<Pair<String, String>>): String {
+        val selected = ArrayDeque<String>()
+        var remaining = 3000 - "Recent dialogue:\n".length
+        for ((role, text) in history.takeLast(recentEntryLimit).asReversed()) {
+            val limit = if (role == "You") 300 else 450
+            val line = "$role: ${text.trim().take(limit)}"
+            if (line.length + 1 > remaining) break
+            selected.addFirst(line)
+            remaining -= line.length + 1
+        }
+        val recent = selected.joinToString("\n").let { if (it.isBlank()) "" else "Recent dialogue:\n$it" }
+        val anchor = history.firstOrNull { it.first == "You" }?.second?.trim()?.take(900)
+            ?.takeIf { it.isNotBlank() && selected.none { line -> line == "You: $it" } }
+        val background = listOfNotNull(
+            anchor?.let { "Earlier topic:\nYou: $it" },
+            summary?.takeIf { it.isNotBlank() }?.let { "Summary (background):\n$it" }
+        ).joinToString("\n\n").take((3000 - recent.length - 2).coerceAtLeast(0)).trim()
+        return listOf(background, recent).filter { it.isNotBlank() }.joinToString("\n\n")
     }
     fun updateSummary(newSummary: String) {
         summary = newSummary.trim().take(summaryCharacterLimit).ifBlank { null }

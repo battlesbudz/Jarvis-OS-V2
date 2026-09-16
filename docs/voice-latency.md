@@ -1,5 +1,7 @@
 # Voice latency on the existing stack
 
+> Historical implementation/evidence below. For current selected voices, ASR admission, gain, acknowledgement and interruption behavior, use [Current voice pipeline and remaining acceptance](voice-pipeline-current.md). Later user decisions supersede these experiments.
+
 The stack remains Moonshine Small Streaming, Gemma 4 E2B, and the selected
 Kokoro/Pocket Paul voice. No model weights or runtime dependency versions change.
 

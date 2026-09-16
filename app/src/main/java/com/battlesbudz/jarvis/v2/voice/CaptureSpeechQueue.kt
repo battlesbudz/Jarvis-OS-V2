@@ -17,7 +17,8 @@ internal class CaptureSpeechQueue(
     private val nowMs: () -> Long,
     private val log: (String) -> Unit,
     private val maxBytes: Long = 25 * 32_000L,
-    private val dispatcher: CoroutineDispatcher = Dispatchers.Default
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val onDecision: (ByteArray, SpeechDecision, SpeechDecision, Double) -> Unit = { _, _, _, _ -> }
 ) {
     data class Frame(val pcm: ByteArray, val decision: SpeechDecision, val capturedAtMs: Long, val sequence: Long?)
     init { input.deferConsumptionAcknowledgement() }
@@ -30,7 +31,8 @@ internal class CaptureSpeechQueue(
         private set
 
     fun frames(): Flow<Frame> = flow {
-        val gate = CaptureSpeechGate()
+        val gate = CaptureSpeechGate(input.captureNoiseProfile)
+        log("capture_noise_calibration source=${if (gate.noiseFloorRms > 0) "call_session" else "new"} floorRms=${gate.noiseFloorRms.toInt()}")
         var lastNoiseLogAt: Long? = null
         input.chunks().collect { pcm ->
             check(pendingBytes.addAndGet(pcm.size.toLong()) <= maxBytes) {
@@ -40,6 +42,7 @@ internal class CaptureSpeechQueue(
             val raw = detector.accept(pcm)
             val signal = Pcm16Signal.measure(pcm)
             val decision = gate.accept(raw, signal.rms, capturedAt)
+            onDecision(pcm, raw, decision, gate.noiseFloorRms)
             if (raw.probability >= 0.15f && decision.probability == 0f &&
                 (lastNoiseLogAt == null || capturedAt - lastNoiseLogAt!! >= 1000)) {
                 lastNoiseLogAt = capturedAt

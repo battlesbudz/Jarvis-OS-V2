@@ -29,11 +29,12 @@ internal class AsyncWhisperSession(
             audio.clear(); audio.append(tail); total = tail.size.toLong(); active = true
         }
     }
-    override fun accept(pcm: ByteArray): String {
+    override fun accept(pcm: ByteArray): String = accept(pcm, true)
+    override fun accept(pcm: ByteArray, allowPartial: Boolean): String {
         check(!closed && !sealed)
         failure?.let { throw IllegalStateException("Whisper background decoding failed", it) }
         audio.append(pcm); total += pcm.size
-        if (active && total >= 48000 && total - scheduled >= 38400 && inFlight?.isDone != false) {
+        if (allowPartial && active && total >= 48000 && total - scheduled >= 38400 && inFlight?.isDone != false) {
             val snapshot = audio.snapshot(); val end = total
             scheduled = end
             val queuedAt = System.nanoTime()
