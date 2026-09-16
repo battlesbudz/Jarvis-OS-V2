@@ -17,7 +17,6 @@ import com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext
 import com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor
 import com.battlesbudz.jarvis.v2.actions.MobileActionPipeline
 import com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions
-import com.battlesbudz.jarvis.v2.ai.ModelCatalog
 import com.battlesbudz.jarvis.v2.ai.ModelStore
 import com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient
 import com.battlesbudz.jarvis.v2.ui.JarvisApp
@@ -247,12 +246,12 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 val asrDirectory = asrEngine.prepare(applicationContext, ::status)
                 val speakerModel = com.battlesbudz.jarvis.v2.voice.RecognitionModelStore(applicationContext).speaker(::status)
                 diagnosticRecorder.record("Voice ASR selected engine=${asrEngine.id} model=${asrEngine.modelVersion} turn=$asrTurnId")
-                check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) { "The Gemma model failed integrity verification." }
+                check(modelStore.verifyIntegrity(modelStore.selectedModel())) { "The Gemma model failed integrity verification." }
                 if (conversationEngine?.audioEnabled != true) {
                     conversationEngine?.close()
                     conversationEngine = null
                     val created = LiteRtLmEngine(
-                        ModelCatalog.gemma4E2b.id, modelStore.fileFor(ModelCatalog.gemma4E2b).path,
+                        modelStore.selectedModel().id, modelStore.fileFor(modelStore.selectedModel()).path,
                         cacheDir.path, useGpu = true,
                         tools = MobileActionToolDefinitions.all(), audioEnabled = true
                     )

@@ -46,7 +46,6 @@ import com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext
 import com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor
 import com.battlesbudz.jarvis.v2.actions.MobileActionPipeline
 import com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions
-import com.battlesbudz.jarvis.v2.ai.ModelCatalog
 import com.battlesbudz.jarvis.v2.ai.ModelStore
 import com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient
 import com.battlesbudz.jarvis.v2.ui.JarvisApp
@@ -271,6 +270,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             JarvisApp(
                 store = modelStore,
+                onSelectModel = ::selectAiModel,
                 ttsComparisonStore = ttsComparisonStore,
                 latencyBenchmarks = latencyBenchmarks,
                 onSelectTts = { engine ->
@@ -449,13 +449,13 @@ class MainActivity : ComponentActivity() {
             try {
                 mainHandler.post { report("Recording a 25-second microphone sample…") }
                 val audioBytes = recordVoiceSample()
-                mainHandler.post { report("Loading Gemma 4 E2B audio runtime…") }
-                check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
+                mainHandler.post { report("Loading ${modelStore.selectedModel().id} audio runtime…") }
+                check(modelStore.verifyIntegrity(modelStore.selectedModel())) {
                     "The Gemma model file changed or failed integrity verification. Re-import it."
                 }
                 gemma = LiteRtLmEngine(
-                    modelId = ModelCatalog.gemma4E2b.id,
-                    modelPath = modelStore.fileFor(ModelCatalog.gemma4E2b).path,
+                    modelId = modelStore.selectedModel().id,
+                    modelPath = modelStore.fileFor(modelStore.selectedModel()).path,
                     cacheDir = cacheDir.path,
                     useGpu = true,
                     audioEnabled = true
@@ -510,13 +510,13 @@ class MainActivity : ComponentActivity() {
             try {
                 mainHandler.post { report("Recording a 25-second voice command…") }
                 val audioBytes = recordVoiceSample()
-                mainHandler.post { report("Loading E2B with Jarvis tool schemas…") }
-                check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
+                mainHandler.post { report("Loading ${modelStore.selectedModel().id} with Jarvis tool schemas…") }
+                check(modelStore.verifyIntegrity(modelStore.selectedModel())) {
                     "The Gemma model file changed or failed integrity verification. Re-import it."
                 }
                 gemma = LiteRtLmEngine(
-                    modelId = ModelCatalog.gemma4E2b.id,
-                    modelPath = modelStore.fileFor(ModelCatalog.gemma4E2b).path,
+                    modelId = modelStore.selectedModel().id,
+                    modelPath = modelStore.fileFor(modelStore.selectedModel()).path,
                     cacheDir = cacheDir.path,
                     useGpu = true,
                     tools = com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions.all(),
@@ -694,6 +694,28 @@ class MainActivity : ComponentActivity() {
         conversationCharacters = 0
     }
 
+    private fun selectAiModel(spec: com.battlesbudz.jarvis.v2.ai.LocalModelSpec): String? {
+        if (voiceSessionArmed || voiceSessionController.currentCallId() != null ||
+            voiceTurnJob?.isCompleted == false || activeConversationJobs.get() != 0 ||
+            wakeTestJob?.isActive == true || ttsBenchmarks.running || gemmaBenchmarks.running) {
+            return "End the Jarvis session and any tests before switching AI models."
+        }
+        if (!modelStore.tryBeginModelOperation()) return "Wait for model setup or testing to finish."
+        return try {
+            conversationEngine?.close()
+            conversationEngine = null
+            nativeConversationHasContext = false
+            conversationCharacters = 0
+            modelStore.selectModel(spec)
+            diagnosticRecorder.recordImportant("AI model selected: ${spec.id}")
+            null
+        } catch (error: Exception) {
+            "Could not switch models: ${error.message}"
+        } finally {
+            modelStore.endModelOperation()
+        }
+    }
+
     private fun runModelSmokeTest(
         report: (String) -> Unit,
         onFinished: ((String) -> Unit)? = null
@@ -704,24 +726,26 @@ class MainActivity : ComponentActivity() {
             return
         }
         val smokeTestJob = lifecycleScope.launch(Dispatchers.Default) {
-            mainHandler.post { report("Loading Gemma 4 E2B…") }
+            mainHandler.post { report("Loading ${modelStore.selectedModel().id}…") }
             var gemma: LiteRtLmEngine? = null
             var smokeTestSucceeded = false
             var finalMessage: String? = null
             try {
-                check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
+                modelStore.markSmokeTestStarted()
+                check(modelStore.verifyIntegrity(modelStore.selectedModel())) {
                     "The Gemma model file changed or failed integrity verification. Re-import it."
                 }
                 conversationEngine?.close()
                 conversationEngine = null
                 nativeConversationHasContext = false
                 gemma = LiteRtLmEngine(
-                    ModelCatalog.gemma4E2b.id,
-                    modelStore.fileFor(ModelCatalog.gemma4E2b).path,
+                    modelStore.selectedModel().id,
+                    modelStore.fileFor(modelStore.selectedModel()).path,
                     cacheDir.path,
                     useGpu = true,
                     tools = MobileActionToolDefinitions.all(),
-                    visionEnabled = true
+                    visionEnabled = true,
+                    audioEnabled = true
                 )
                 gemma.initialize()
                 val probe = gemma.generate(
@@ -738,7 +762,7 @@ class MainActivity : ComponentActivity() {
                 gemma?.close()
                 if (smokeTestSucceeded) {
                     modelStore.markSmokeTestPassed()
-                    finalMessage = "Gemma 4 E2B initialized successfully."
+                    finalMessage = "${modelStore.selectedModel().id} initialized successfully."
                 }
                 finalMessage?.let { message ->
                     mainHandler.post {
@@ -758,6 +782,7 @@ class MainActivity : ComponentActivity() {
     ) {
         val workName = "jarvis-local-model-setup"
         val request = OneTimeWorkRequestBuilder<com.battlesbudz.jarvis.v2.voice.JarvisModelSetupWorker>()
+            .setInputData(androidx.work.workDataOf("model_id" to modelStore.selectedModel().id))
             .addTag(workName)
             .build()
         val workManager = WorkManager.getInstance(applicationContext)
@@ -800,7 +825,7 @@ class MainActivity : ComponentActivity() {
         val importJob = lifecycleScope.launch(Dispatchers.IO) {
             val result = modelStore.importModel(uri, spec)
             withContext(Dispatchers.Main) {
-                if (result.isSuccess && spec.id == ModelCatalog.gemma4E2b.id) {
+                if (result.isSuccess && spec.id == modelStore.selectedModel().id) {
                     conversationEngine?.close()
                     conversationEngine = null
                     nativeConversationHasContext = false
@@ -814,7 +839,7 @@ class MainActivity : ComponentActivity() {
                 ))
             }
         }
-        if (spec.id == ModelCatalog.gemma4E2b.id) {
+        if (spec.id == modelStore.selectedModel().id) {
             importJob.invokeOnCompletion {
                 conversationEngine?.close()
                 conversationEngine = null

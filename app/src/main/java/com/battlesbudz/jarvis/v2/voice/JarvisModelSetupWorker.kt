@@ -28,6 +28,10 @@ class JarvisModelSetupWorker(
         setForeground(createForegroundInfo())
 
         val models = ModelStore(applicationContext)
+        // Capture the requested model, including when this work resumes after process death.
+        val requestedId = inputData.getString("model_id")
+        val spec = if (requestedId == null) models.selectedModel() else ModelCatalog.find(requestedId)
+            ?: return Result.failure(workDataOf("error" to "Unknown requested model."))
         val voice = KokoroModelStore(applicationContext)
         var downloaded = 0L
         var total = -1L
@@ -41,7 +45,7 @@ class JarvisModelSetupWorker(
             ))
         }
         val gemma = models.downloadOrReuse(
-            spec = ModelCatalog.gemma4E2b,
+            spec = spec,
             onProgress = { bytes, length ->
                 synchronized(progressLock) {
                     downloaded = bytes
