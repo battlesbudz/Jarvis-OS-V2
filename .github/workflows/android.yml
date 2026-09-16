@@ -10,10 +10,16 @@ permissions:
   contents: read
 
 jobs:
-  build-pr:
-    name: Build and test PR APK
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/PR1')
+  build-release:
+    name: Build signed release APK
+    if: >-
+      (github.event_name == 'push' &&
+       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/PR1')) ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -44,61 +50,8 @@ jobs:
           cmake --build /tmp/keyword-native --parallel 2
           python3 scripts/check_keyword_models.py /tmp/keyword-native/microwakeword_test
 
-      - name: Run unit tests and assemble APK
-        run: gradle --no-daemon testDebugUnitTest assembleDebug
-
-      - name: Verify ASR native packaging
-        run: |
-          python3 -m unittest discover -s scripts -p 'test_native_dependencies.py'
-          python3 scripts/check_asr_apk.py app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Verify Pocket callback ABI in APK
-        run: python3 scripts/check_tts_callback.py app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Stage debug APK
-        run: |
-          mkdir -p artifact
-          cp app/build/outputs/apk/debug/app-debug.apk artifact/app-debug.apk
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: jarvis-os-v2-debug-apk
-          path: artifact/app-debug.apk
-          if-no-files-found: error
-
-  build-release:
-    name: Build signed release APK
-    if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Install speech runtime NDK
-        run: '"${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018"'
-
-      - name: Cache patched speech runtime
-        uses: actions/cache@v4
-        with:
-          path: app/build/sherpa-native
-          key: sherpa-arm64-137-${{ runner.os }}-${{ hashFiles('scripts/build_sherpa.py', 'native/sherpa/pocket-streaming.patch') }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.10.2'
+      - name: Verify native dependency helpers
+        run: python3 -m unittest discover -s scripts -p 'test_native_dependencies.py'
 
       - name: Prepare release signing key
         env:
@@ -186,15 +139,15 @@ jobs:
   publish-pr-test:
     name: Publish permanent PR test APK
     if: github.event_name == 'push' && github.ref == 'refs/heads/PR1'
-    needs: build-pr
+    needs: build-release
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download debug APK
+      - name: Download release APK
         uses: actions/download-artifact@v4
         with:
-          name: jarvis-os-v2-debug-apk
+          name: jarvis-os-v2-release-apk
           path: dist
 
       - name: Publish permanent PR test release
@@ -205,4 +158,4 @@ jobs:
           name: Jarvis OS V2 PR1 test build
           prerelease: true
           generate_release_notes: false
-          files: dist/app-debug.apk
+          files: dist/app-release.apk
