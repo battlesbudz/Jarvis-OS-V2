@@ -21,7 +21,7 @@ class WhisperTranscriber(private val directory: File, live: Boolean = true, log:
     private val streaming = if (live) AsyncWhisperSession(::decode, ::releaseRecognizer, log) else null
     override val noTextSilenceMs: Long get() = 900
     override fun prepareForBoundedProbe(maxAudioMs: Long): String {
-        check(streaming == null && audio.sizeBytes() == 0)
+        check(streaming == null && audio.sizeBytes() == 0L)
         require(maxAudioMs in 1..4000)
         return "whisper_final_only_v1"
     }
