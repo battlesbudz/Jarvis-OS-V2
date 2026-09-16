@@ -7,6 +7,19 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class CallModelSlotTest {
+    @Test fun freshCommandDiscardsPriorProbeStateBeforeLoadingAndKeepsNextProbeWarm() {
+        val released = mutableListOf<Any>()
+        val slot = CallModelSlot<Any>({ released += it })
+        val old = slot.acquire("moonshine") { Any() }; old.finish()
+        val command = slot.acquire("moonshine", fresh = true) {
+            assertEquals(listOf(old.value), released)
+            Any()
+        }
+        assertFalse(command.reused); command.finish()
+        val probe = slot.acquire("moonshine") { error("Probe should use new command weights") }
+        assertSame(command.value, probe.value); probe.finish(); slot.close()
+        assertEquals(2, released.size)
+    }
     @Test fun normalUtterancesReuseWeightsAndEndReleasesExactlyOnce() {
         var loads = 0; var releases = 0
         val slot = CallModelSlot<Any>({ releases++ })

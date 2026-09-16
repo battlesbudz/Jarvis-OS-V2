@@ -15,7 +15,7 @@ class CaptureSpeechGateTest {
         val weak = SpeechDecision(false, .23f)
         assertEquals(weak, gate.accept(weak, 70.0, 300))
         val strong = SpeechDecision(true, .95f)
-        assertEquals(strong, gate.accept(strong, 20.0, 400))
+        assertEquals(strong, gate.accept(strong, 45.0, 400))
     }
     @Test fun singleLoudCalibrationFrameCannotSuppressOpeningSpeech() {
         val gate = CaptureSpeechGate()
@@ -29,12 +29,18 @@ class CaptureSpeechGateTest {
         assertEquals(30.0, gate.noiseFloorRms, .001)
         assertTrue(gate.accept(SpeechDecision(true, .6f), 70.0, 2400).isSpeech)
     }
-    @Test fun staleHighFloorExpiresEvenDuringContinuousSpeech() {
+    @Test fun calibratedRoomFloorSurvivesLongSpeechAndRejectsVadTailForEitherEngine() {
+        val gate = calibrated(131.0)
+        repeat(80) { gate.accept(SpeechDecision(true, .99f), 2000.0, 300L + it * 100) }
+        assertEquals(131.0, gate.noiseFloorRms, .001)
+        assertFalse(gate.accept(SpeechDecision(true, .806f), 132.0, 8400).isSpeech)
+        assertFalse(gate.accept(SpeechDecision(true, .596f), 141.0, 8500).isSpeech)
+        assertTrue(gate.accept(SpeechDecision(true, .99f), 2700.0, 8600).isSpeech)
+    }
+    @Test fun quieterRoomObservationImmediatelyLowersAnOldHighFloor() {
         val gate = calibrated(1694.0)
-        repeat(40) { gate.accept(SpeechDecision(true, .99f), 2000.0, 300L + it * 100) }
-        assertEquals(0.0, gate.noiseFloorRms, .001)
-        assertTrue(gate.accept(SpeechDecision(true, .79f), 491.0, 4400).isSpeech)
-        repeat(3) { gate.accept(SpeechDecision(false, .01f), 30.0, 4500L + it * 100) }
-        assertFalse(gate.accept(SpeechDecision(true, .525f), 44.0, 4800).isSpeech)
+        gate.accept(SpeechDecision(false, .01f), 130.0, 5000)
+        assertEquals(130.0, gate.noiseFloorRms, .001)
+        assertTrue(gate.accept(SpeechDecision(true, .79f), 491.0, 5100).isSpeech)
     }
 }

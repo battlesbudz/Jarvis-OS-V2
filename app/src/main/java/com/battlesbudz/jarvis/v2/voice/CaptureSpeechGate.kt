@@ -9,7 +9,7 @@ internal class CaptureSpeechGate {
 
     fun accept(decision: SpeechDecision, rms: Double, atMs: Long): SpeechDecision {
         // Age by captured audio time, even when no new low-VAD frames arrive.
-        // A loud startup sample cannot remain the floor through a long utterance.
+        // Old observations cannot outweigh a new quieter room observation.
         while (noise.isNotEmpty() && atMs - noise.first().atMs > 3000) noise.removeFirst()
         // Learn only from confidently non-speech frames. Speech must not raise its own floor.
         if (decision.probability < 0.15f) {
@@ -17,8 +17,13 @@ internal class CaptureSpeechGate {
             if (noise.size > 30) noise.removeFirst()
         }
         val calibrated = noise.size >= 3 && noise.last().atMs - noise.first().atMs >= 200
-        noiseFloorRms = if (calibrated) noise.map { it.rms }.sorted()[(noise.size - 1) / 5] else 0.0
-        val nearFloor = calibrated && rms <= noiseFloorRms.coerceAtLeast(1.0) * 1.8
-        return if (decision.probability < 0.8f && nearFloor) SpeechDecision(false, 0f) else decision
+        if (calibrated) noiseFloorRms = noise.map { it.rms }.sorted()[(noise.size - 1) / 5]
+        // Speech does not erase a calibrated room floor. Otherwise VAD's acoustic
+        // tail at the unchanged room level becomes a new utterance after 3 seconds.
+        // A quieter confident noise observation can lower an old floor immediately.
+        if (noiseFloorRms > 0 && decision.probability < .15f) noiseFloorRms = minOf(noiseFloorRms, rms)
+        val ratio = if (decision.probability >= .8f) 1.1 else 1.8
+        val nearFloor = noiseFloorRms > 0 && rms <= noiseFloorRms.coerceAtLeast(1.0) * ratio
+        return if (nearFloor) SpeechDecision(false, 0f) else decision
     }
 }

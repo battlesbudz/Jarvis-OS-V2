@@ -406,7 +406,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     log = { diagnosticRecorder.recordSummary("Voice input: $it") })
                 speakerGuard = preference
                 val activeCapture = AudioTurnCapture(
-                    com.battlesbudz.jarvis.v2.voice.QuietSpeechAudioInput(input, log = {
+                    com.battlesbudz.jarvis.v2.voice.QuietSpeechAudioInput(input, maxGain = 1.0, log = {
                         diagnosticRecorder.record("Voice input: $it")
                     }), this,
                     allowAudioOnlyTurns = true,

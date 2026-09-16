@@ -19,8 +19,8 @@ class VoiceTranscriptResolverTest {
     @Test fun usableAsrDoesNotRequireAnExtraRecognitionPass() = runBlocking {
         assertEquals("Hello", VoiceTranscriptResolver.resolve("Hello", byteArrayOf()) { error("Unexpected fallback") })
     }
-    @Test fun unintelligibleAudioGetsAnHonestPlaceholder() = runBlocking {
-        assertEquals(VoiceTranscriptResolver.UNTRANSCRIBED,
-            VoiceTranscriptResolver.resolve("", byteArrayOf()) { "[NO_SPEECH]" })
+    @Test fun explicitNoSpeechRemainsNonverbalAndCannotTriggerAnAnswer() = runBlocking {
+        val result = VoiceTranscriptResolver.resolve("", byteArrayOf()) { "[NO_SPEECH]" }
+        assertTrue(TranscriptContent.isSoundOnly(result))
     }
 }

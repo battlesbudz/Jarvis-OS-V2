@@ -741,6 +741,67 @@ class AudioTurnCaptureTest {
         } finally { fixture.capture.stop() }
     }
 
+    @Test fun fullRecordingRecoveryCanRescueAnEmptyTailButCannotClearFailureWithBlankText() = runBlocking<Unit> {
+        for (recovered in listOf("What is the capital of Idaho?", "")) {
+            lateinit var fixture: CaptureFixture
+            var loads = 0
+            var recoveredBytes = 0
+            fixture = CaptureFixture(this, factory = {
+                val first = loads++ == 0
+                object : StreamingTranscriber {
+                    override fun accept(pcm: ByteArray) = if (first) "What is the capital of Idaho?" else ""
+                    override fun finish(): String {
+                        if (first) fixture.bufferedMs = 200
+                        return if (first) "What is the capital of Idaho?" else ""
+                    }
+                    override fun recover(pcm: ByteArray): String { recoveredBytes = pcm.size; return recovered }
+                    override fun close() {}
+                }
+            })
+            fixture.capture.start()
+            try {
+                fixture.emit(100, 2000, speech = true, samples = 1600)
+                fixture.emit(1300, 0, samples = 1600)
+                fixture.bufferedMs = 0
+                fixture.emit(1400, 2000, speech = true, samples = 1600)
+                fixture.emit(2700, 0, samples = 1600)
+                assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+                assertEquals(12800, recoveredBytes)
+                assertEquals(if (recovered.isBlank()) "unrecognized_segment" else null, fixture.capture.recognitionIssue)
+                assertEquals("What is the capital of Idaho?", fixture.capture.finalTranscript)
+            } finally { fixture.capture.stop() }
+        }
+    }
+
+    @Test fun roomLevelVadTailCannotReopenACompletedWhisperOrMoonshineTurn() = runBlocking<Unit> {
+        lateinit var fixture: CaptureFixture
+        var loads = 0
+        val asr = object : StreamingTranscriber {
+            override fun accept(pcm: ByteArray) = "What is the capital of Idaho?"
+            override fun finish(): String { fixture.bufferedMs = 300; return "What is the capital of Idaho?" }
+            override fun close() {}
+        }
+        fixture = CaptureFixture(this, factory = { loads++; asr })
+        fixture.capture.start()
+        try {
+            repeat(3) { fixture.emit(it * 100L, 131, samples = 1600) }
+            fixture.emit(400, 2000, speech = true, samples = 1600)
+            fixture.emit(9000, 2000, speech = true, samples = 1600)
+            fixture.emit(10300, 131, samples = 1600)
+            fixture.bufferedMs = 200
+            fixture.emit(10400, 132, speech = true, probability = .806f, samples = 1600)
+            fixture.bufferedMs = 100
+            fixture.emit(10500, 141, speech = true, probability = .596f, samples = 1600)
+            fixture.bufferedMs = 0
+            fixture.emit(10600, 130, samples = 1600)
+            assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+            assertEquals(1, loads)
+            assertEquals(null, fixture.capture.recognitionIssue)
+            assertEquals("What is the capital of Idaho?", fixture.capture.finalTranscript)
+            assertFalse(fixture.events.any { "turn_endpoint_invalidated" in it })
+        } finally { fixture.capture.stop() }
+    }
+
     @Test fun nearFloorVadTailCannotKeepAnUtteranceAlive() = runBlocking<Unit> {
         val fixture = CaptureFixture(this, FakeTranscriber("What time is it?", "What time is it?"))
         fixture.capture.start()

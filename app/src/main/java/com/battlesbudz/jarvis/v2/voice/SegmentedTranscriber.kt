@@ -68,7 +68,13 @@ class SegmentedTranscriber(
         }
         return last
     }
-    override fun recover(pcm: ByteArray): String = if (segments == 0) current?.recover(pcm).orEmpty() else ""
+    override fun recover(pcm: ByteArray): String {
+        check(sealed && !closed)
+        // Caller must own the complete <=25 s recording. A truncated rolling tail
+        // must never replace the full request or authorize a partial command.
+        require(pcm.size <= 25 * 32_000)
+        return current?.recover(pcm).orEmpty()
+    }
     fun resumeAfterEndpoint() {
         check(sealed && !closed)
         val owned = current

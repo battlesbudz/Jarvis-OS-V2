@@ -41,6 +41,27 @@ class LongUtteranceTest {
         }
     }
 
+    @Test fun completeRecordingCanRecoverARecognizedQuestionAfterAnEmptyResumedSegment() {
+        var loads = 0
+        var recoveredBytes = 0
+        val recognizer = SegmentedTranscriber(create = {
+            val first = loads++ == 0
+            object : StreamingTranscriber {
+                override fun accept(pcm: ByteArray) = ""
+                override fun finish() = if (first) "What is the capital of Idaho?" else ""
+                override fun recover(pcm: ByteArray): String { recoveredBytes = pcm.size; return "What is the capital of Idaho?" }
+                override fun close() {}
+            }
+        })
+        recognizer.observeSpeech(true); recognizer.accept(ByteArray(3200)); recognizer.finish()
+        recognizer.resumeAfterEndpoint()
+        recognizer.observeSpeech(true); recognizer.accept(ByteArray(3200)); recognizer.finish()
+        assertEquals("unrecognized_segment", recognizer.issue)
+        assertEquals("What is the capital of Idaho?", recognizer.recover(ByteArray(6400)))
+        assertEquals(6400, recoveredBytes)
+        recognizer.close()
+    }
+
     @Test fun missingFinalCorrectionCannotDispatchOnlyCommittedPrefix() {
         val text = UtteranceAccumulator()
         text.commit("Open Facebook", nextOverlaps = false)

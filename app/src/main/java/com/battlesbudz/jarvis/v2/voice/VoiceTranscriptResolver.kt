@@ -13,9 +13,12 @@ object VoiceTranscriptResolver {
     suspend fun resolve(asr: String, wav: ByteArray, hearAudio: suspend (ByteArray) -> String): String {
         if (asr.isNotBlank()) return asr.trim()
         val heard = hearAudio(wav).trim()
+        // A positive no-speech result is not an invitation to invent a reply.
+        // Runtime recognizes this caption and keeps listening without answer generation.
+        if (heard.equals("[NO_SPEECH]", ignoreCase = true)) return "[NO_SPEECH]"
         // Preserve a truthful transcript placeholder; the response pass still
         // receives the original audio and can ask for clarification. This label
         // cannot authorize a tool through the existing final-transcript guard.
-        return heard.takeUnless { it.isBlank() || it == "[NO_SPEECH]" } ?: UNTRANSCRIBED
+        return heard.takeUnless { it.isBlank() } ?: UNTRANSCRIBED
     }
 }

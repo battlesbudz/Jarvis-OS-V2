@@ -7,13 +7,11 @@ import ai.moonshine.voice.TranscriptEvent
 import java.io.File
 
 /** Owns one utterance. Native calls are serialized by AudioTurnCapture's collector. */
-class MoonshineStreamingTranscriber(private val directory: File, private val updateIntervalSeconds: Double = DEFAULT_INTERVAL, modelSession: VoiceModelSession? = null, reserveReplyProbes: Boolean = true) : StreamingTranscriber {
+class MoonshineStreamingTranscriber(private val directory: File, private val updateIntervalSeconds: Double = DEFAULT_INTERVAL, modelSession: VoiceModelSession? = null, private val reserveReplyProbes: Boolean = true, private val log: (String) -> Unit = {}) : StreamingTranscriber {
     private val lines = linkedMapOf<Long, String>()
     // Avoid applying a second native speech gate to audio qualified by Jarvis VAD.
     // It could return an empty stream without ever invoking the speech decoder.
     private val speechGate = ExternalSpeechGate()
-    override val segmentSoftLimitMs: Long get() = 8_000
-    override val segmentHardLimitMs: Long get() = 12_000
     override fun observeSpeech(speech: Boolean) = speechGate.observe(speech)
     private fun createLoaded(): Transcriber {
         val created = Transcriber(listOf(
@@ -28,11 +26,12 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
             return created
         } catch (error: Throwable) { created.close(); throw error }
     }
-    // SDK 0.1.5 retains a private completed-line map. Rotate after eight streams
+    // Fresh command model state prevents prior probe/turn SDK bookkeeping from carrying over.
+    // SDK 0.1.5 retains a private completed-line map. Rotate after eight probe streams
     // to bound that bookkeeping. Commands rotate early when necessary to reserve
     // an initial reply allowance. Later probes may rotate a resident model on their sole worker.
     private val lease = modelSession?.moonshine?.acquire("${directory.path}:$updateIntervalSeconds", MAX_STREAMS,
-        requiredUses = if (reserveReplyProbes) 7 else 1, create = ::createLoaded)
+        requiredUses = if (reserveReplyProbes) 7 else 1, fresh = reserveReplyProbes, create = ::createLoaded)
     private var leased = lease != null
     private var transcriber = lease?.value ?: createLoaded()
     private var streamHandle = -1
@@ -56,6 +55,15 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
     init {
         try {
             transcriber.addListener { event ->
+                val eventStream = when (event) {
+                    is TranscriptEvent.LineStarted -> event.streamHandle
+                    is TranscriptEvent.LineUpdated -> event.streamHandle
+                    is TranscriptEvent.LineTextChanged -> event.streamHandle
+                    is TranscriptEvent.LineCompleted -> event.streamHandle
+                    is TranscriptEvent.Error -> throw event.cause
+                    else -> null
+                }
+                if (eventStream != streamHandle) return@addListener
                 val line = when (event) {
                     is TranscriptEvent.LineStarted -> event.line
                     is TranscriptEvent.LineUpdated -> event.line
@@ -81,8 +89,9 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
     override fun accept(pcm: ByteArray): String = accept(pcm, true)
     override fun accept(pcm: ByteArray, allowPartial: Boolean): String {
         check(!closed && !finished)
-        cadence.beforeAccept(pcm.size, allowPartial)
-        return acceptQualified(speechGate.accept(pcm))
+        val qualified = speechGate.accept(pcm)
+        cadence.beforeAccept(qualified.size, allowPartial)
+        return acceptQualified(qualified)
     }
 
     private fun acceptQualified(pcm: ByteArray): String {
@@ -105,6 +114,7 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
         if (!finished) {
             native { transcriber.stopStream(streamHandle) } // Forced final update includes the last, incomplete native line.
             finished = true
+            log("moonshine_input_policy version=bounded_acoustic_v2 nativeGate=bypassed freshCommand=$reserveReplyProbes inputMs=${speechGate.receivedBytes / 32} decoderMs=${speechGate.acceptedBytes / 32}")
         }
         return text()
     }

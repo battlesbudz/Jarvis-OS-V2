@@ -4,6 +4,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class VoiceCallPolicyTest {
+    @Test fun reportedRecognitionArtifactsDoNotHideAnExplicitEndRequest() {
+        for (text in listOf("1. Stop listening. 2.", "10. Stop listening.", "Stop listening. Yeah", "Goodbye. Thanks."))
+            assertTrue(text, VoiceCallPolicy.isGoodbye(text))
+        for (text in listOf("He said. Stop listening. Yeah", "List 1. Stop listening. 2. Open apps", "Don't stop listening. Yeah"))
+            assertFalse(text, VoiceCallPolicy.isGoodbye(text))
+    }
     @Test fun explicitWholeUtteranceGoodbyeEndsCall() {
         for (text in listOf("Goodbye!", "Goodbye, Jarvis.", "Stop listening", "Jarvis, stop listening.")) {
             assertTrue(text, VoiceCallPolicy.isGoodbye(text))

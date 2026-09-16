@@ -1,18 +1,37 @@
 package com.battlesbudz.jarvis.v2.voice
 
-/** Jarvis VAD owns live onset; retain consonants before confirmation, then the whole utterance.
- * Callers without live VAD (same-recording diagnostics) supply an already bounded recording.
+/** External VAD owns the decoder's acoustic window, not only its first onset.
+ * Preserve 240 ms before confirmed speech and 320 ms after it. Long quiet spans
+ * stay out of the ungated native decoder; original call audio is retained separately.
+ * Diagnostic recordings and final-only probes without VAD are already bounded.
  */
 class ExternalSpeechGate {
-    private val preRoll = RollingAudioBuffer(maxDurationMs = 1200)
+    private val preRoll = RollingAudioBuffer(maxDurationMs = 240)
     private var observed = false
-    private var opened = false
-    fun observe(speech: Boolean) { observed = true; if (speech) opened = true }
+    private var speech = false
+    private var tailBytes = 0
+    var acceptedBytes = 0L
+        private set
+    var receivedBytes = 0L
+        private set
+    fun observe(speech: Boolean) { observed = true; this.speech = speech }
     fun accept(pcm: ByteArray): ByteArray {
-        if (!observed) return pcm
-        if (!opened) { preRoll.append(pcm); return byteArrayOf() }
-        if (preRoll.sizeBytes() == 0L) return pcm
-        return (preRoll.snapshot() + pcm).also { preRoll.clear() }
+        receivedBytes += pcm.size
+        val result = when {
+            !observed -> pcm
+            speech -> {
+                tailBytes = 320 * 32
+                (preRoll.snapshot() + pcm).also { preRoll.clear() }
+            }
+            else -> {
+                val count = minOf(tailBytes, pcm.size)
+                tailBytes -= count
+                if (count < pcm.size) preRoll.append(pcm.copyOfRange(count, pcm.size))
+                pcm.copyOfRange(0, count)
+            }
+        }
+        acceptedBytes += result.size
+        return result
     }
-    fun clear() = preRoll.clear()
+    fun clear() { preRoll.clear(); observed = false; speech = false; tailBytes = 0 }
 }

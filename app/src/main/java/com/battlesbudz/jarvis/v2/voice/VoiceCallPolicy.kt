@@ -13,7 +13,8 @@ object VoiceCallPolicy {
         val words = transcript.lowercase(Locale.ROOT)
             .replace(Regex("[^\\p{L}\\p{N} ]"), " ").trim().replace(Regex("\\s+"), " ")
         val farewell = "(?:goodbye(?: jarvis)?|jarvis goodbye|stop listening(?: jarvis)?|jarvis stop listening)"
-        val polite = "(?:(?:uh|um|okay|ok|alright|well|no thank you|no thanks|thank you|thanks|please|sir|that s all|that is all) )*"
-        return Regex("^$polite$farewell(?: please)?$").matches(words)
+        val polite = "(?:(?:[0-9]+|uh|um|okay|ok|yeah|yes|alright|well|no thank you|no thanks|thank you|thanks|please|sir|that s all|that is all) )*"
+        val tail = "(?: (?:[0-9]+|yeah|yes|okay|ok|please|thanks|thank you|sir))*"
+        return Regex("^$polite$farewell$tail$").matches(words)
     }
 }

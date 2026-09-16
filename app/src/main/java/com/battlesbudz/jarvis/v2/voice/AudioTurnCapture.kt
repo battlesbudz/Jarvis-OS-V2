@@ -100,7 +100,7 @@ class AudioTurnCapture(
         val followupEvidence = FollowupSpeechEvidence()
         val pendingAudio = RollingAudioBuffer(maxDurationMs = 1200)
         log("capture_started vad=silero threshold=0.5 speechConfirmationMs=96 " +
-            "speechGate=confirmed_acoustic_v3 noiseWindowMs=3000 noiseCalibrationMs=200 weakNoiseRatio=1.8 strongVadBypass=0.8 partialPolicy=work_paced_v1 " +
+            "speechGate=confirmed_acoustic_v4 noiseWindowMs=3000 noiseCalibrationMs=200 weakNoiseRatio=1.8 strongNoiseRatio=1.1 partialPolicy=work_paced_v1 " +
             "endpointing=${if (trailingSilenceMs == null) "adaptive" else "fixed"} " +
             "trailingSilenceMs=$trailingSilenceMs initialSilenceTimeoutMs=$initialSilenceTimeoutMs audioWindowMs=25000 maxTurnMs=120000")
         captureReadyMs = nowMs() - captureRequestedAt
@@ -164,7 +164,7 @@ class AudioTurnCapture(
                     // ASR receives every frame from microphone startup. VAD controls
                     // submission and endpointing, not whether initial words reach the recognizer.
                     val decodeStartedAt = nowMs()
-                    if (!pendingEndpoint) transcriber?.observeSpeech(hasSpeech && decision.probability >= 0.15f)
+                    if (!pendingEndpoint) transcriber?.observeSpeech(decision.isSpeech)
                     val backlogMs = speechQueue.bufferedAudioMs
                     maxRecognitionBacklogMs = maxOf(maxRecognitionBacklogMs, backlogMs)
                     val allowPartial = recognitionBudget.allows(decodeStartedAt, backlogMs) &&
@@ -271,8 +271,22 @@ class AudioTurnCapture(
                                 pendingEndpoint = true
                                 return@collect
                             }
-                            val nonverbal = TranscriptContent.isSoundOnly(rawFinal)
-                            finalTranscript = if (nonverbal) "" else TranscriptContent.speech(rawFinal)
+                            var resolvedFinal = rawFinal
+                            if (audioIsComplete && recognitionIssue in setOf("unrecognized_segment", "segment_boundary_uncertain")) {
+                                val completePcm = synchronized(pcm) { pcm.snapshot() }
+                                log("asr_recovery_started reason=$recognitionIssue source=complete_turn audioMs=${completePcm.size / 32}")
+                                val recoveryStarted = nowMs()
+                                val recovered = transcriber?.recover(completePcm).orEmpty().trim()
+                                finalDecodeMs += nowMs() - recoveryStarted
+                                currentCoroutineContext().ensureActive()
+                                if (recovered.isNotBlank() && !TranscriptContent.isSoundOnly(recovered)) {
+                                    resolvedFinal = recovered
+                                    recognitionIssue = null
+                                    log("asr_recovery_finished source=complete_turn accepted=true chars=${recovered.length}")
+                                } else log("asr_recovery_finished source=complete_turn accepted=false")
+                            }
+                            val nonverbal = TranscriptContent.isSoundOnly(resolvedFinal)
+                            finalTranscript = if (nonverbal) "" else TranscriptContent.speech(resolvedFinal)
                             if (nonverbal) log("nonverbal_candidate ignored=true destination=none microphone=kept_open")
                             if (transcriber != null && finalTranscript.isBlank() && !allowAudioOnlyTurns && !nonverbal && recognitionIssue == null) {
                                 val candidate = recoveryAudio.snapshot()
