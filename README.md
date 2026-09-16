@@ -1,29 +1,33 @@
 # Jarvis OS V2
 
-A standalone native Android voice assistant prototype.
+A native Android voice assistant built with Kotlin and Jetpack Compose. The core
+assistant runs locally without a cloud backend.
 
-## Direction
+## Supported stack
 
-- Kotlin and Jetpack Compose
-- Local Gemma 4 E2B for conversation and reasoning
-- Gemma 4 E2B native tool calls for local mobile-action routing
-- Kotlin validates and executes typed actions
-- No cloud backend required for the core assistant loop
+- **Recognition:** Moonshine Small Streaming or Whisper base.en.
+- **Conversation and tools:** selectable Gemma-4-E2B-it or Gemma-4-E4B-it.
+- **Voice:** Piper Northern English Male medium.
+- Kotlin validates typed tool calls before executing phone actions.
 
-PR #1 includes the testable local assistant loop. Type a request such as
-“What is my battery level?” in the chat: Gemma 4 E2B emits the registered
-`read_battery` tool call, Kotlin validates it, and the Android executor returns
-the phone's live battery percentage.
-No cloud backend is required for this loop.
+See [supported models, upgrades and shared dependencies](docs/supported-model-stack.md)
+and [E2B/E4B switching](docs/ai-model-switching.md). Kokoro and Paul are retired;
+old diagnostic results retain their original labels.
 
-## Voice implementation plan
+## Voice implementation
 
-The [local voice implementation plan](docs/local-voice-implementation-plan.md)
-defines the proposed audio-pr2 work for continuous capture, natural interruptions,
-playback-aware memory, local turn detection, model reuse, and stable Paul speech.
-It includes dependencies, affected files, phone acceptance checks, and measurement
-goals. Implementation status is tracked in the plan.
+Work continues on `audio-pr2`, existing PR #6. The [current pipeline](docs/voice-pipeline-current.md)
+is the source for current behavior and remaining acceptance. The
+[implementation plan](docs/local-voice-implementation-plan.md) retains historical
+progress. Piper voice quality was accepted; recognition, interruptions, latency,
+sustained use and lifecycle acceptance remain open. E4B requires Fold 6 testing.
 
 ## APK signing
 
-When a commit reaches `main`—including after a PR is merged—GitHub Actions builds and publishes a fresh release APK. Release APKs are signed with the repository's permanent release key, and each build receives an increasing Android `versionCode`, so a new APK installs as an update instead of requiring the previous app to be deleted. The keystore is intentionally not committed. The repository Actions secrets required for this are `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`.
+GitHub Actions tests, builds and publishes signed release APKs for the existing
+PR and for pushes to `main`. Increasing version codes allow installation over an
+existing app signed with the same permanent key. The signing key is not committed.
+Required Actions secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`.
+
+Never create or merge a PR without Justin's explicit permission; see [AGENTS.md](AGENTS.md).

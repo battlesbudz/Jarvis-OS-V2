@@ -23,18 +23,20 @@ data class TtsSessionMetrics(
 class TtsComparisonStore(private val preferences: SharedPreferences) {
     @Synchronized fun clearDiagnostics() { preferences.edit().remove("results").remove("benchmark_results").apply() }
 
-    @Synchronized fun selectedEngine() = TtsEngine.fromId(preferences.getString("engine", null))
+    @Synchronized fun selectedEngine(): TtsEngine {
+        val saved = preferences.getString("engine", null)
+        val selected = TtsEngine.fromId(saved)
+        if (saved != selected.id) preferences.edit().putString("engine", selected.id).apply()
+        return selected
+    }
     @Synchronized fun select(engine: TtsEngine) { preferences.edit().putString("engine", engine.id).apply() }
     @Synchronized fun callProfile(engine: TtsEngine): TtsBenchmarkProfile? {
         val id = preferences.getString("call_profile_${engine.id}", null) ?: return null
         return TtsBenchmarkProfile.selectableProfiles.firstOrNull {
-            (it.id == id || it.legacyId == id) && (!it.nativeStreaming || engine == TtsEngine.POCKET_PAUL) &&
-                (!it.piperPassages || engine == TtsEngine.PIPER_NORTHERN)
+            it.id == id
         }
     }
     @Synchronized fun setCallProfile(engine: TtsEngine, profile: TtsBenchmarkProfile?) {
-        require(profile?.piperPassages != true || engine == TtsEngine.PIPER_NORTHERN)
-        require(profile?.nativeStreaming != true || engine == TtsEngine.POCKET_PAUL)
         preferences.edit().putString("call_profile_${engine.id}", profile?.id).apply()
     }
     private fun read(key: String, limit: Int): List<JSONObject> = runCatching {
@@ -69,18 +71,17 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
             .put("pcm_delivery", metrics.pcmDelivery ?: JSONObject.NULL)
         if (run != null) {
             item.put("audio_file", run.audioFile ?: JSONObject.NULL)
-                .put("paul_stability", if (engine == TtsEngine.POCKET_PAUL) run.profile.stabilityLabel else JSONObject.NULL)
                 .put("suite_id", run.suiteId).put("profile_id", run.profile.id).put("pass", run.pass)
                 .put("input_text", run.text).put("input_delivery", run.inputDelivery)
                 .put("planned_submissions", run.submissions?.let { JSONArray(it) } ?: JSONObject.NULL)
                 .put("provenance", JSONObject(run.provenance))
                 .put("first_intelligible_word_ms", JSONObject.NULL)
                 .put("intelligibility_assessment", "not_assessed")
-                .put("synthesis_mode", when { run.profile.piperPassages -> "piper-bounded-passages"; run.submissions != null -> "native-audio-stream-fixed-submissions"; run.profile.nativeStreaming -> "native-audio-stream-natural-sentences"; run.profile.fullText -> "full-text-before-playback"; else -> "streamed-phrases" })
+                .put("synthesis_mode", when { run.profile.piperPassages -> "piper-bounded-passages"; run.profile.fullText -> "full-text-before-playback"; else -> "streamed-phrases" })
                 .put("requested_playback_speed", run.profile.playbackSpeed.toDouble())
                 .put("playback_speed_applied", kotlin.math.abs(metrics.playbackSpeed - run.profile.playbackSpeed) < 0.001f)
                 .put("opening_target_chars", run.profile.openingChars ?: JSONObject.NULL)
-                .put("startup_buffer_target_ms", if (engine == TtsEngine.POCKET_PAUL && run.profile.nativeStreaming) run.profile.bufferMs else 0)
+                .put("startup_buffer_target_ms", 0)
                 .put("thermal_status_start", run.thermalStart).put("thermal_status_end", run.thermalEnd)
                 .put("thermal_limited", run.thermalStart >= 3 || run.thermalEnd >= 3)
                 .put("effective_rtf", if (metrics.audioMs > 0)
@@ -112,7 +113,7 @@ class TtsComparisonStore(private val preferences: SharedPreferences) {
             appendLine("suite_id=${item.optString("suite_id")}")
             appendLine("saved_runs=${runs.size}")
             if (runs.all { it.optString("source") == "paul-isolation-v1" }) {
-                val expected = PaulIsolationCases.all.size * 2
+                val expected = 14 // Historical immutable Paul suite size; no retired engine is loaded.
                 appendLine("expected_runs=$expected")
                 appendLine("all_runs_retained=${runs.mapNotNull { executionNumber(it) }.toSet() == (1..expected).toSet()}")
             }

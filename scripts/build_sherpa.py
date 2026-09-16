@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Build the pinned Sherpa JNI with Jarvis's Pocket streaming patch (or host C API).
-
-Only Pocket's opt-in callback path changes. Kokoro, VAD and ASR share Sherpa/ORT.
-No native binaries are checked into git. Archives are pinned and checked before use.
-"""
+"""Build pinned upstream Sherpa JNI for Piper, Whisper, VAD and speaker checks."""
 import argparse
 import hashlib
 import os
@@ -40,16 +36,13 @@ def build(output, ndk=None):
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     source = output / 'source'
-    patch = ROOT / 'native/sherpa/pocket-streaming.patch'
-    fingerprint = hashlib.sha256(patch.read_bytes()).hexdigest()
+    fingerprint = 'upstream-piper-v1'
     stamp = output / 'source-version'
     if not stamp.exists() or stamp.read_text() != REV + fingerprint:
         shutil.rmtree(source, ignore_errors=True)
         with tarfile.open(download(SOURCE, output)) as archive:
             archive.extractall(output, members=(m for m in archive if m.isfile() or m.isdir()), filter='data')
         (output / f'sherpa-onnx-{REV}').rename(source)
-        subprocess.run(['git', 'apply', '--check', str(patch)], cwd=source, check=True)
-        subprocess.run(['git', 'apply', str(patch)], cwd=source, check=True)
         stamp.write_text(REV + fingerprint)
     ort = output / ('ort-android' if ndk else 'ort-host')
     if not ort.exists():
@@ -63,11 +56,6 @@ def build(output, ndk=None):
         lib = next(ort.rglob('libonnxruntime.so')).parent
     env = dict(os.environ, SHERPA_ONNXRUNTIME_INCLUDE_DIR=str(include), SHERPA_ONNXRUNTIME_LIB_DIR=str(lib))
     cmake_dir = output / 'cmake'
-    if not ndk:
-        cmake_file = source / 'CMakeLists.txt'
-        include_test = f'\ninclude("{ROOT}/native/sherpa/host-check.cmake")\n'
-        if include_test not in cmake_file.read_text():
-            cmake_file.write_text(cmake_file.read_text() + include_test)
     command = ['cmake', '-S', str(source), '-B', str(cmake_dir), '-DCMAKE_BUILD_TYPE=Release',
                '-DBUILD_SHARED_LIBS=OFF', '-DSHERPA_ONNX_ENABLE_BINARY=OFF',
                '-DSHERPA_ONNX_ENABLE_PORTAUDIO=OFF', '-DSHERPA_ONNX_ENABLE_WEBSOCKET=OFF',
@@ -79,7 +67,7 @@ def build(output, ndk=None):
                     '-DANDROID_ABI=arm64-v8a', '-DANDROID_PLATFORM=android-29',
                     '-DANDROID_STL=c++_shared', '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON']
     subprocess.run(command, env=env, check=True)
-    target = 'sherpa-onnx-jni' if ndk else 'jarvis-pocket-stream-check'
+    target = 'sherpa-onnx-jni' if ndk else 'sherpa-onnx-c-api'
     subprocess.run(['cmake', '--build', str(cmake_dir), '--target', target,
                     '--parallel', os.environ.get('JARVIS_NATIVE_JOBS', '2')], env=env, check=True)
     if ndk:
@@ -94,7 +82,7 @@ def build(output, ndk=None):
         if len(runtimes) != 1:
             raise RuntimeError(f'Expected one ARM64 C++ runtime in {ndk}, found {len(runtimes)}')
         shutil.copy2(runtimes[0], native)
-    print(f'Patched Sherpa ready: {output}', flush=True)
+    print(f'Upstream Sherpa ready: {output}', flush=True)
 
 
 if __name__ == '__main__':

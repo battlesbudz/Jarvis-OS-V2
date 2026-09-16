@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Keep the official Kotlin ABI; JNI/ORT are built from the pinned, patched source.
-
-Deliberately never extract the AAR's old JNI library: it buffers whole sentence
-latents and would silently ignore the continuous-session generation option.
-"""
+"""Keep the official Kotlin ABI; build JNI/ORT from the same pinned upstream source."""
 import argparse
 from pathlib import Path
 import zipfile

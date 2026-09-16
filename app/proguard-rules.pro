@@ -18,5 +18,5 @@
 -keep class com.battlesbudz.jarvis.v2.voice.MicroWakeWord { *; }
 -keep class com.battlesbudz.jarvis.v2.voice.MicroWakeWord$Companion { *; }
 
-# Concrete callback signature used by Sherpa Pocket JNI. Kotlin lambdas are not ABI-stable.
+# Concrete callback signature used by Sherpa Piper JNI. Kotlin lambdas are not ABI-stable.
 -keep class com.battlesbudz.jarvis.v2.voice.SherpaPcmCallback { *; }

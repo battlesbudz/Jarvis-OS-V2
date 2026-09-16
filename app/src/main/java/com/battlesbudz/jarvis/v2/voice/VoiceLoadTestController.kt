@@ -66,14 +66,13 @@ class VoiceLoadTestController(
                     .put("volumeStep", audio.getStreamVolume(AudioManager.STREAM_MUSIC))
                     .put("volumeMax", audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)))
                 val runId = requireNotNull(id)
-                val directory = File(context.filesDir, "voice-models/${TtsEngine.POCKET_PAUL.directory}")
-                check((PocketVoiceSpec.files + (PocketVoiceSpec.PAUL_FILE to PocketVoiceSpec.PAUL_BYTES)).all {
+                val directory = File(context.filesDir, "voice-models/${TtsEngine.PIPER_NORTHERN.directory}")
+                check((NorthernPiperSpec.files).all {
                     (name, bytes) -> File(directory, name).length() == bytes
-                }) { "Install Paul in voice settings before P2. No download was started." }
+                }) { "Install Piper in voice settings before P2. No download was started." }
                 val asr = File(context.filesDir, "voice-models/moonshine-small-en-26-08-21")
                 check(asr.isDirectory) { "Install Moonshine before P2. No download was started." }
-                val provenance = BenchmarkProvenance.collect(TtsEngine.POCKET_PAUL, directory)
-                check(provenance["sha256.paul.wav"] == PocketVoiceSpec.PAUL_SHA256)
+                val provenance = BenchmarkProvenance.collect(TtsEngine.PIPER_NORTHERN, directory)
                 sessions.ready(runId, provenance)
                 evidence.put("inputDelivery", "fixed_text_upfront; Gemma bypassed")
                     .put("nativeLifecycle", "fresh_session_per_condition; file_cache_not_cold_after_hashing")
@@ -206,7 +205,7 @@ class VoiceLoadTestController(
                         item.put("state", if (confirmation && label == "E") "interrupted_as_requested" else "completed")
                         if (label != "E") check(metrics?.completed == true) { "Playback did not complete." }
                         if (label == "E") item.put("interruptionObserved", confirmation)
-                        if (pcm.frames > 0 && source == null) latestSource = SpeechAudio(inputText, 24000, pcm.snapshot(), 0)
+                        if (pcm.frames > 0 && source == null) latestSource = SpeechAudio(inputText, pcm.sampleRate, pcm.snapshot(), 0)
                     } catch (cancelled: CancellationException) { item.put("state", "cancelled"); throw cancelled }
                     catch (error: Throwable) { item.put("state", "failed").put("error", error.message); throw error }
                     finally {
@@ -226,7 +225,7 @@ class VoiceLoadTestController(
                     }
                     return item
                 }
-                waitForNext("Ready to prepare the comparison audio. Tap Continue and listen to Paul.")
+                waitForNext("Ready to prepare the comparison audio. Tap Continue and listen to Piper.")
                 runCase("preparation")
                 val reference = checkNotNull(latestSource)
                 val pass = preferences.getInt("passes", 0)
@@ -245,7 +244,7 @@ class VoiceLoadTestController(
                             val item = runCase("B")
                             val m = item.getJSONObject("metrics")
                             check(m.getBoolean("completed")) { "Long narration ended before playback completed." }
-                            playedMs += (m.getLong("playedFrames") * 1000.0 / 24000 / m.getDouble("speed")).toLong()
+                            playedMs += (m.getLong("playedFrames") * 1000.0 / reference.sampleRate / m.getDouble("speed")).toLong()
                             item.put("longTrial", trial + 1).put("intentionalFixtureCycle", ++cycle)
                                 .put("cumulativePlayedMs", playedMs)
                             save()
@@ -260,7 +259,7 @@ class VoiceLoadTestController(
                         "B" -> "generate the same passage, microphone off."
                         "C" -> "generate with live keyword and speech detection. Read only at the cue."
                         "D" -> "generate with bounded recognition of your recorded phrase. Playback will continue even if recognized."
-                        else -> "ordinary reply playback and interruption capture. Read the correction at the cue; check whether Paul stops."
+                        else -> "ordinary reply playback and interruption capture. Read the correction at the cue; check whether Piper stops."
                     })
                     if (label == "A") latestSource = reference
                     val item = runCase(label, if (label == "E") VoiceInterruptionTest.passage else text,

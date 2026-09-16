@@ -1,51 +1,28 @@
-# Voice profile comparison
+# Piper voice profile comparison
 
-Open **Voice and response speed** and select a profile: 2 or 4 threads,
-1.0× or 0.9× playback, and a 40-, 60-, or 90-character opening or full-text
-synthesis. **Compare all voices · this profile** runs the same short reply,
-paragraph, and story through Kokoro and Pocket Paul, twice. The all-profiles button runs
-all 16 common combinations plus Paul’s 4 native streaming profiles (216 text runs). Individual voice tests use the same inputs.
+Open **Voice and response speed**. Piper Northern English Male is the only voice.
+Choose 2/4 threads, 1.0/0.9/0.85x playback, and 40/60/90/160/320-character openings
+or full-reply buffering. **Test selected voice** runs three fixed texts twice.
+**Compare Piper profiles** runs 24 profiles at 1.0/0.9x: 144 runs including repeats.
+The 0.85x profiles are individually selectable. Tests never change saved call
+settings; explicitly choose **Apply to voice calls** to save a profile.
 
-Each input delivers four characters every 32 ms after the model reports ready.
-Loading and downloads are outside the text-to-audio timer; the first synthesis
-after loading is included. All voices receive identical text and input pacing.
-Opening sizes are natural-boundary targets, not exact cuts through words.
-Full-text mode waits for the input to end and calls non-callback synthesis once,
-then plays the resulting complete audio. It may still contain pauses generated
-by the model. There is no deliberate startup buffering in these profiles.
-Playback at 0.9× stretches PCM with pitch held at 1.0; synthesis speed itself
-does not change. These settings never alter live-call settings.
+The default call profile uses natural passages around 320 characters, capped at
+640. Faster opening targets 160, with the existing complete-sentence release after
+750 ms and at least 60 characters. Later passages use 320/640. Full-reply mode
+waits for input completion but retains the 640-character synthesis cap.
 
-Voices alternate for each sample/profile; pass two reverses the complete order.
-Start/end thermal states remain in each record; results that reach severe or
-higher are flagged for interpretation. Thermal status never pauses, rejects, or
-stops a test. There is no battery-level gate. The Stop button remains available.
+Input arrives four characters per 32 ms after model readiness. Loading/downloading
+is outside response timing. The second pass reverses case order. Playback speed
+changes preserve pitch. Thermal status is recorded but never stops tests.
 
+Each run saves exact text/hash, model, profile, suite/pass, provenance, timings,
+requested/actual speed and failure details. **Copy this text run** exports one
+immutable run; **Copy whole suite** exports its saved suite. Browse saved runs to
+inspect older Kokoro/Paul measurements, which retain retired labels. Keep 624
+benchmark records separately from 40 recent call measurements.
 
-Every text run has its own result UUID, suite UUID, profile ID, sample ID, pass,
-exact input text and input hash. The displayed result's **Copy this text run**
-exports only that immutable result. It never attaches current voice selection,
-old calls, other samples, or Gemma results. Gemma has a separate per-text-run copy.
-Starting a test clears the visible list; finishing shows only newly recorded
-results. Use **Browse saved text runs** to deliberately view older results.
-Benchmark history retains 576 records (two complete all-voice comparisons) separately from the 40 recent call records.
-
-Compare completed runs of the same sample, profile, and pass, checking requested
-versus actual playback speed and thermal flags first. Prioritize low estimated
-supply gaps, then low first-text-to-playback time. Effective RTF multiplies raw
-RTF by actual playback speed: below 1 means generation can keep up on average.
-Full-text buffering may avoid supply gaps even when this value is above 1.
-First-text-to-playback detects the playback head passing the first non-silent
-PCM frame; it is not an external microphone measurement of a recognized word.
-Underruns include startup/drain events, and supply gaps are estimates. Listen
-to the whole output to judge unnatural pauses, pronunciation and voice quality.
-
-Phone acceptance checks: compare 4-thread 60-character profiles at both speeds;
-listen for unchanged pitch and slower cadence at 0.9×; run full-text on the story
-and verify one phrase; stop during synthesis and restart; copy an older
-result after changing voice/profile and confirm its original IDs/settings remain.
-
-Paul also has four native audio streaming profiles (2/4 threads × 1.0/0.9 speed).
-They use natural sentence input and reuse the cached voice prompt and preserve decoder/sampling state across the answer, matching
-live calls. The full-text profile remains a buffered baseline. Miro is retired; its
-stored results retain their old voice label and installed files are removed on preparation.
+P1/P2 use versioned Piper packs and sample-rate-correct capture/replay; see
+[supported stack](supported-model-stack.md). Compare matching text/profile/build
+and thermal conditions. Underruns include drain events; software timing and RTF
+do not prove acoustic intelligibility, accent consistency or successful barge-in.

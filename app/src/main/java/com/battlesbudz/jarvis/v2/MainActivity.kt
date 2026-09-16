@@ -60,8 +60,8 @@ import com.battlesbudz.jarvis.v2.voice.AudioTurnCapture
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionController
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionState
 import com.battlesbudz.jarvis.v2.voice.VoiceTurnCoordinator
-import com.battlesbudz.jarvis.v2.voice.KokoroModelStore
-import com.battlesbudz.jarvis.v2.voice.SherpaKokoroVoiceOutput
+import com.battlesbudz.jarvis.v2.voice.TtsModelStore
+import com.battlesbudz.jarvis.v2.voice.PiperVoiceOutput
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.takeWhile
@@ -109,7 +109,6 @@ class MainActivity : ComponentActivity() {
     private val runtime get() = JarvisRuntime.get(applicationContext)
     internal val mainHandler get() = runtime.mainHandler
     internal val modelStore get() = runtime.modelStore
-    internal val kokoroModelStore get() = runtime.kokoroModelStore
     internal val shortTermContext get() = runtime.shortTermContext
     internal val referenceGrounding get() = runtime.referenceGrounding
     internal val factualityVerifier get() = runtime.factualityVerifier
@@ -242,8 +241,6 @@ class MainActivity : ComponentActivity() {
             gemmaResults, gemmaBenchmarks::startLatency, gemmaBenchmarks::start,
             compareOpenings = { engine, status, finished ->
                 ttsBenchmarks.start(engine, status, finished, compareOpenings = true)
-            }, comparePaulIsolation = { status, finished ->
-                ttsBenchmarks.start(com.battlesbudz.jarvis.v2.voice.TtsEngine.POCKET_PAUL, status, finished, paulIsolation = true)
             }, stop = { ttsBenchmarks.stop(); gemmaBenchmarks.stop() },
             loadTests = com.battlesbudz.jarvis.v2.voice.VoiceLoadTestController(
                 applicationContext, lifecycleScope, modelStore, runtime.voiceTestSessions, ttsBenchmarks,
@@ -280,7 +277,7 @@ class MainActivity : ComponentActivity() {
                 onTtsBenchmark = { engine, profile, status, finished -> ttsBenchmarks.start(engine, status, finished, profile = profile) },
                 onStopTtsBenchmark = { ttsBenchmarks.stop() },
                 voicePlayback = voicePlayback,
-                voiceModelStore = kokoroModelStore,
+                voiceModelStore = ttsModels,
                 initialMessages = restoreTranscript(),
                 initialVoiceCalls = voiceCallStore.list(),
                 onRunModelSmokeTest = { runModelSmokeTest(it) },
@@ -863,7 +860,7 @@ class MainActivity : ComponentActivity() {
         return cleaned
     }
 
-    /** Removes visual Markdown syntax before text is sent to Kokoro. */
+    /** Removes visual Markdown syntax before text is sent to Piper. */
     internal fun cleanSpeechText(text: String): String = text
         .replace("*", "")
         .replace("_", "")

@@ -1,5 +1,7 @@
 # Fixed Paul cues: opening v2, prolonged recovery v3
 
+> Historical reference: Kokoro and Paul were removed on 16 September 2026. Their commands, setup steps and experiment plans below are superseded by the [supported stack](supported-model-stack.md) and current pipeline. Retained measurements are historical evidence.
+
 Replaces the old edited hum. Generate with `scripts/generate_paul_cues.py`, using
 sherpa-onnx 1.13.7 CPU, two threads, Pocket int8 2026-01-26, seed 42,
 temperature 0.7, five steps and the pinned Kyutai Paul/VCTK p259 reference in

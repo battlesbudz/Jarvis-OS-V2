@@ -36,7 +36,7 @@ class VoiceTestSetupController(
         }
         val completion = CompletableDeferred<String>()
         decision = completion
-        mutableState.value = State(busy = true, message = "Verifying installed Paul files…", report = sessions.report())
+        mutableState.value = State(busy = true, message = "Verifying installed Piper files…", report = sessions.report())
         job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             var id: String? = null
             var outcome = "cancelled"
@@ -73,18 +73,17 @@ class VoiceTestSetupController(
                             java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
                         }))
                     id = sessions.begin(VoiceTestPacks.SETUP, saved, meta)
-                    val dir = File(context.filesDir, "voice-models/${TtsEngine.POCKET_PAUL.directory}")
-                    val expected = PocketVoiceSpec.files + (PocketVoiceSpec.PAUL_FILE to PocketVoiceSpec.PAUL_BYTES)
+                    val dir = File(context.filesDir, "voice-models/${TtsEngine.PIPER_NORTHERN.directory}")
+                    val expected = NorthernPiperSpec.files
                     check(expected.all { (name, bytes) -> File(dir, name).length() == bytes }) {
-                        "Paul model files are missing or incomplete. Install Paul using the existing voice settings, then retry. No download was started."
+                        "Piper model files are missing or incomplete. Install Piper using the existing voice settings, then retry. No download was started."
                     }
-                    val provenance = BenchmarkProvenance.collect(TtsEngine.POCKET_PAUL, dir) +
+                    val provenance = BenchmarkProvenance.collect(TtsEngine.PIPER_NORTHERN, dir) +
                         mapOf("modelLifecycle" to "no_native_model_loaded_in_P1", "audioRun" to "false")
-                    check(provenance["sha256.${PocketVoiceSpec.PAUL_FILE}"] == PocketVoiceSpec.PAUL_SHA256) { "Paul reference verification failed." }
                     ensureActive()
                     sessions.ready(requireNotNull(id), provenance)
                 }
-                mutableState.value = State(true, true, "P1 ready. Temporary B673 profile is locked to this test session. Complete or cancel to discard it; saved calls keep their original settings.", sessions.report())
+                mutableState.value = State(true, true, "P1 ready. Temporary Piper profile is locked to this test session. Complete or cancel to discard it; saved calls keep their original settings.", sessions.report())
                 outcome = completion.await()
                 detail = "Setup $outcome; temporary profile discarded. No audio was tested."
             } catch (cancelled: CancellationException) { throw cancelled }

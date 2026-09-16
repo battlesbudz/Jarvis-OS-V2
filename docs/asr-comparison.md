@@ -1,5 +1,7 @@
 # Speech recognition diagnostics
 
+> Historical reference: Kokoro and Paul were removed on 16 September 2026. Their commands, setup steps and experiment plans below are superseded by the [supported stack](supported-model-stack.md) and current pipeline. Retained measurements are historical evidence.
+
 Moonshine Small Streaming is the sole recognizer. Its first use downloads 142.3 MB;
 eight runtime files are pinned to the 2026-08-21 English quantization, with length
 and SHA-256 verification before loading. Subsequent use is offline.

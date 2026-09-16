@@ -1,5 +1,7 @@
 # Response latency follow-up
 
+> Historical reference: Kokoro and Paul were removed on 16 September 2026. Their commands, setup steps and experiment plans below are superseded by the [supported stack](supported-model-stack.md) and current pipeline. Retained measurements are historical evidence.
+
 > Historical implementation/evidence below. For current selected voices, ASR admission, gain, acknowledgement and interruption behavior, use [Current voice pipeline and remaining acceptance](voice-pipeline-current.md). Later user decisions supersede these experiments.
 
 The build-607 story took 397 ms to endpoint and 7,475 ms from the detector's last speech frame to confirmed answer playback. Cached acknowledgement playback began earlier. These are software timestamps, not microphone measurements of speaker output.

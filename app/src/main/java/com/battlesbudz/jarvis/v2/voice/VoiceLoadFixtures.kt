@@ -6,12 +6,14 @@ import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.flow.flow
 
 /** Bounded source capture: overflow fails a trial instead of silently truncating its evidence. */
-internal class VoiceLoadPcm(private val maxFrames: Int = 24000 * 240) {
+internal class VoiceLoadPcm(private val maxFrames: Int = 48000 * 240) {
     private val chunks = mutableListOf<ShortArray>()
     var frames = 0; private set
+    var sampleRate = 0; private set
     fun append(pcm: ShortArray, rate: Int) {
-        require(rate == 24000)
-        check(frames + pcm.size <= maxFrames) { "Source exceeded the four-minute diagnostic limit." }
+        require(rate in 8000..48000 && (sampleRate == 0 || sampleRate == rate))
+        sampleRate = rate
+        check(frames + pcm.size <= minOf(maxFrames, rate * 240)) { "Source exceeded the four-minute diagnostic limit." }
         chunks += pcm.copyOf(); frames += pcm.size
     }
     fun snapshot(): ShortArray = ShortArray(frames).also { out ->

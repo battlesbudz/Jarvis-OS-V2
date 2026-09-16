@@ -1,5 +1,7 @@
 # Passive Jarvis sessions
 
+> Historical reference: Kokoro and Paul were removed on 16 September 2026. Their commands, setup steps and experiment plans below are superseded by the [supported stack](supported-model-stack.md) and current pipeline. Retained measurements are historical evidence.
+
 Current microphone ownership, background lifetime, and keyboard handoff behavior is
 documented in [voice microphone interruptions](voice-microphone-interruptions.md).
 That document supersedes the historical handoff and Activity-lifetime notes below.

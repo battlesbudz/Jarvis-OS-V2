@@ -18,8 +18,8 @@ class VoiceTestSessionStore(private val preferences: SharedPreferences) {
         val record = JSONObject().put("id", id).put("pack", pack).put("case", if (pack == VoiceTestPacks.SETUP) "profile-lifecycle-v1" else "fixed-source-load-v1")
             .put("repetition", 1).put("startedAtMs", System.currentTimeMillis()).put("state", "preparing")
             .put("savedSettings", savedSettings).put("metadata", metadata)
-            .put("temporaryProfile", VoiceTestPacks.reference.id).put("temporaryVoice", TtsEngine.POCKET_PAUL.id)
-            .put("temporaryAsr", "moonshine_small").put("profileVersion", "B673-reference-v1")
+            .put("temporaryProfile", VoiceTestPacks.reference.id).put("temporaryVoice", TtsEngine.PIPER_NORTHERN.id)
+            .put("temporaryAsr", "moonshine_small").put("profileVersion", "Piper-reference-v1")
             .put("settingsScope", "test_session_only; production preferences unchanged")
             .put("audioRun", pack == VoiceTestPacks.LOAD).put("physicalTiming", "not_measured")
         check(preferences.edit().putString("active", record.toString()).commit()) { "Cannot save test session." }
@@ -69,10 +69,9 @@ class VoiceTestSessionStore(private val preferences: SharedPreferences) {
 }
 
 object VoiceTestPacks {
-    const val SETUP = "P1-setup-v1"
-    const val LOAD = "P2-load-v1"
-    val reference = TtsBenchmarkProfile(4, null, 0.9f, nativeStreaming = true,
-        resetDecoder = true, leadingPeriod = true, bufferMs = 200)
+    const val SETUP = "P1-setup-piper-v2"
+    const val LOAD = "P2-load-piper-v2"
+    val reference = TtsBenchmarkProfile(4, 320, 1f)
     val planned = listOf("P3-quality-v1", "P4-interruption-v1", "P5-acoustic-v1", "P6-handoff-v1", "P7-acceptance-v1")
     val scripts = linkedMapOf("H-v1" to "Hey Jarvis", "S-v1" to "Stop",
         "N-v1" to "Actually, tell me what two plus two is.", "G-v1" to "Goodbye Jarvis")

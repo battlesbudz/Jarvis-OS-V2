@@ -31,8 +31,8 @@ import com.battlesbudz.jarvis.v2.voice.AudioTurnCapture
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionController
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionState
 import com.battlesbudz.jarvis.v2.voice.VoiceTurnCoordinator
-import com.battlesbudz.jarvis.v2.voice.KokoroModelStore
-import com.battlesbudz.jarvis.v2.voice.SherpaKokoroVoiceOutput
+import com.battlesbudz.jarvis.v2.voice.TtsModelStore
+import com.battlesbudz.jarvis.v2.voice.PiperVoiceOutput
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.takeWhile
@@ -57,7 +57,6 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     internal val mainHandler = Handler(Looper.getMainLooper())
     internal val runtimeScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     internal lateinit var modelStore: ModelStore
-    internal lateinit var kokoroModelStore: KokoroModelStore
     internal var conversationEngine: LiteRtLmEngine? = null
     internal var conversationJob: Job? = null
     internal var conversationCharacters = 0
@@ -92,10 +91,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         }
     @Volatile internal var sessionReport: (String) -> Unit = {}
 
-    @Volatile internal var activeVoiceOutput: SherpaKokoroVoiceOutput? = null
+    @Volatile internal var activeVoiceOutput: PiperVoiceOutput? = null
     init {
         modelStore = ModelStore(applicationContext)
-        kokoroModelStore = KokoroModelStore(applicationContext)
         sessionPreferences = getSharedPreferences("chat_session", MODE_PRIVATE)
         voiceCallStore = com.battlesbudz.jarvis.v2.voice.CoalescingVoiceCallStore(
             SharedPreferencesVoiceCallStore(getSharedPreferences("voice_calls", MODE_PRIVATE)),
@@ -105,7 +103,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         ttsComparisonStore = com.battlesbudz.jarvis.v2.voice.TtsComparisonStore(getSharedPreferences("tts_comparison", MODE_PRIVATE))
         voiceTestSessions = com.battlesbudz.jarvis.v2.voice.VoiceTestSessionStore(getSharedPreferences("voice_test_sessions", MODE_PRIVATE))
         val testRecovery = runCatching { voiceTestSessions.recoverAfterProcessRestart() }
-        ttsModels = com.battlesbudz.jarvis.v2.voice.TtsModelStore(applicationContext, kokoroModelStore)
+        ttsModels = com.battlesbudz.jarvis.v2.voice.TtsModelStore(applicationContext)
         val installedPackage = packageManager.getPackageInfo(packageName, 0)
         diagnosticRecorder = com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(sessionPreferences,
             "${installedPackage.versionName} (${installedPackage.longVersionCode})")
@@ -216,7 +214,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             var microphone: com.battlesbudz.jarvis.v2.voice.AudioInput? = null
             var expectedResourceCall: String? = null
             var preserveCaptureOnCancellation = false
-            var voiceOutput: SherpaKokoroVoiceOutput? = null
+            var voiceOutput: PiperVoiceOutput? = null
             val finalSpeechDelivery = java.util.concurrent.atomic.AtomicReference<com.battlesbudz.jarvis.v2.voice.SpeechDelivery?>(null)
             val speechChunks = Channel<String>(Channel.UNLIMITED)
             var speechJob: Job? = null
@@ -301,7 +299,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 val voiceHistory = voiceSessionController.conversationContext().map { ChatEntry(it.role, it.text) }
                 diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId engine=${ttsEngine.id} " +
                     "callProfile=${callProfile?.id ?: "adaptive-default"}")
-                val output = SherpaKokoroVoiceOutput(ttsDirectory.path, engine = ttsEngine,
+                val output = PiperVoiceOutput(ttsDirectory.path, engine = ttsEngine,
                     modelSession = models,
                     deliveryLedger = com.battlesbudz.jarvis.v2.voice.SpeechDeliveryLedger(asrTurnId) { delivery ->
                         finalSpeechDelivery.set(delivery)
@@ -314,13 +312,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     normalSpeed = callProfile != null, fixedChunking = callProfile != null,
                     openingChars = callProfile?.openingChars ?: com.battlesbudz.jarvis.v2.voice.SpeechChunker.DEFAULT_OPENING_CHARS,
                     benchmarkProfile = callProfile,
-                    numThreads = callProfile?.threads ?: if (ttsEngine == com.battlesbudz.jarvis.v2.voice.TtsEngine.POCKET_PAUL)
-                        2 else Runtime.getRuntime().availableProcessors().coerceIn(2, 4),
+                    numThreads = callProfile?.threads ?: Runtime.getRuntime().availableProcessors().coerceIn(2, 4),
                     acknowledgeDelays = true,
-                    openingPcm = if (ttsEngine == com.battlesbudz.jarvis.v2.voice.TtsEngine.POCKET_PAUL)
-                        com.battlesbudz.jarvis.v2.voice.PaulOpeningAudio.load(assets) else null,
-                    recoveryPcm = if (ttsEngine == com.battlesbudz.jarvis.v2.voice.TtsEngine.POCKET_PAUL)
-                        com.battlesbudz.jarvis.v2.voice.PaulOpeningAudio.loadRecovery(assets) else null,
                     playbackVolume = {
                         val manager = getSystemService(android.media.AudioManager::class.java)
                         val stream = android.media.AudioManager.STREAM_MUSIC
@@ -341,10 +334,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             "underruns=${it.underruns}")
                     },
                     log = {
-                        if (it.startsWith("tts_session_finished") || it.startsWith("pocket_stream_trace event=summary"))
+                        if (it.startsWith("tts_session_finished"))
                             diagnosticRecorder.recordTurnEvidence(asrTurnId, if (it.startsWith("tts_session")) "supply" else "pcm", it)
-                        if (it.startsWith("acknowledgement_") || it.startsWith("pocket_voice_policy") ||
-                            it.startsWith("pocket_stream_trace") || it.startsWith("audio_underrun") ||
+                        if (it.startsWith("acknowledgement_") ||
+                            it.startsWith("audio_underrun") ||
                             it.startsWith("audio_supply_gap")) diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId: $it")
                         if (it.startsWith("audio_underrun") || it.startsWith("audio_supply_gap") ||
                             it.startsWith("audio_startup_buffer")) diagnosticRecorder.recordImportant("Voice TTS: $it")
@@ -353,7 +346,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 voiceOutput = output
                 activeVoiceOutput = output
                 output.setInterrupted(com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.interrupted.value)
-                // Preload Kokoro while listening; this channel stays empty until final validation.
+                // Preload Piper while listening; this channel stays empty until final validation.
                 speechJob = launch(Dispatchers.Default) {
                     try {
                         output.speak(speechChunks.receiveAsFlow()) {
@@ -385,7 +378,6 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     engine.generateAudio(prompt, audio, onToken)
                 }, log = { diagnosticRecorder.record("Voice preparation: $it") },
                     prepareOpening = output::prepareOpening, speechText = ::cleanSpeechText,
-                    sentenceOpenings = ttsEngine == com.battlesbudz.jarvis.v2.voice.TtsEngine.POCKET_PAUL,
                     canPrepare = {
                         val thermal = if (android.os.Build.VERSION.SDK_INT >= 29)
                             getSystemService(android.os.PowerManager::class.java)?.currentThermalStatus ?: 0 else 0

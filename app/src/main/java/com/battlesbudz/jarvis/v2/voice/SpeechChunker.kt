@@ -61,7 +61,7 @@ class SpeechChunker(private val openingChars: Int = DEFAULT_OPENING_CHARS,
         return result
     }
 
-    /** Pocket restarts acoustic generation per request: do not manufacture short clauses. */
+    /** Keep sentence-only preparation at natural boundaries. */
     private fun takeSentence(final: Boolean): String? {
         val limit = SENTENCE_LIMIT
         var boundary = -1

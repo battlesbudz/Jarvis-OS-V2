@@ -1,5 +1,7 @@
 # Streaming voice and speculative preparation
 
+> Historical reference: Kokoro and Paul were removed on 16 September 2026. Their commands, setup steps and experiment plans below are superseded by the [supported stack](supported-model-stack.md) and current pipeline. Retained measurements are historical evidence.
+
 > Historical implementation/evidence below. For current selected voices, ASR admission, gain, acknowledgement and interruption behavior, use [Current voice pipeline and remaining acceptance](voice-pipeline-current.md). Later user decisions supersede these experiments.
 
 Voice calls now use streaming English ASR through Sherpa-ONNX. Gemma receives changing transcript snapshots plus corresponding captured audio while the user is still speaking. Gemma remains the reasoning and tool-selection model; Kokoro remains the speech output model.

@@ -1,5 +1,7 @@
 # Voice repair: bounded commits and phone test protocol
 
+> Historical reference: Kokoro and Paul were removed on 16 September 2026. Their commands, setup steps and experiment plans below are superseded by the [supported stack](supported-model-stack.md) and current pipeline. Retained measurements are historical evidence.
+
 > Historical implementation/evidence below. For current selected voices, ASR admission, gain, acknowledgement and interruption behavior, use [Current voice pipeline and remaining acceptance](voice-pipeline-current.md). Later user decisions supersede these experiments.
 
 Prepared: 12 September 2026. Branch: `audio-pr2`. Source baseline: `93a144c` (build 673 investigation). Status: **A1 accepted; A2/A3 partial; B1 is investigating true Paul LM-context appendability at Justin’s request; B2 awaits a verified quality winner. Kokoro performance work is paused. C1–C3 repairs remain partially accepted; D/E and integrated F acceptance remain open.**
@@ -992,7 +994,7 @@ Phone screen: retain the already-running old-build suite as a baseline and copy 
 
 Justin prioritized Paul's voice consistency over latency and rejected the retained
 Mimi/RNG test despite its healthy supply metrics. The isolated host probe in
-[experiments/pocket-append](../experiments/pocket-append/RESULTS.md) inserts text into
+the retired `experiments/pocket-append` probe (available in Git history) inserts text into
 the currently generating LM cache, retaining decoder, RNG and current latent.
 Nine hash-matched model cases established mechanical insertion but failed content
 completion for mid-generation/word-wise input. Full-text controls transcribed

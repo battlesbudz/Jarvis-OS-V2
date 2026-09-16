@@ -4,6 +4,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TtsBenchmarkProfileTest {
+    @Test fun comparisonIncludesOnlyPiperAndBothPassageOpenings() {
+        assertEquals(listOf(TtsEngine.PIPER_NORTHERN), TtsBenchmarkProfile.comparisonEngines)
+        assertEquals(24, TtsBenchmarkProfile.comparisonProfiles.map { it.id }.toSet().size)
+        assertEquals(144, TtsBenchmarkProfile.comparisonRunCount)
+        assertTrue(TtsBenchmarkProfile.comparisonProfiles.any { it.openingChars == 160 })
+        assertTrue(TtsBenchmarkProfile.comparisonProfiles.any { it.openingChars == 320 })
+    }
+
     @Test fun fasterPiperOpeningIsSelectableWithoutChangingExistingProfileIds() {
         val faster = TtsBenchmarkProfile(2, 160)
         assertTrue(faster.piperPassages)
@@ -11,7 +19,7 @@ class TtsBenchmarkProfileTest {
         assertEquals("threads-2-opening-320-speed-1.0", TtsBenchmarkProfile(2, 320).id)
     }
     @org.junit.Test fun slowerProfileCanBePersistedWithoutChangingOldIds() {
-        val slow = TtsBenchmarkProfile(4, null, 0.85f, nativeStreaming = true)
+        val slow = TtsBenchmarkProfile(4, null, 0.85f)
         org.junit.Assert.assertTrue(slow.id.contains("speed-0.85"))
         org.junit.Assert.assertEquals(slow, TtsBenchmarkProfile.selectableProfiles.single { it.id == slow.id })
         org.junit.Assert.assertTrue(TtsBenchmarkProfile(playbackSpeed = 0.9f).id.endsWith("speed-0.9"))
@@ -28,14 +36,7 @@ class TtsBenchmarkProfileTest {
         assertEquals(TtsEngine.entries.toList(), TtsBenchmarkProfile.comparisonEngines)
     }
 
-    @Test fun nativeAudioProfilesAreDistinctFromTheBufferedBaseline() {
-        val native = TtsBenchmarkProfile.nativeProfiles
-        assertEquals(4, native.size)
-        assertTrue(native.all { it.nativeStreaming && !it.fullText && it.openingChars == null })
-        assertEquals(20, (TtsBenchmarkProfile.all + native).map { it.id }.toSet().size)
-        assertEquals(312, TtsBenchmarkProfile.comparisonRunCount)
-        assertTrue(TtsBenchmarkProfile.historyLimit >= TtsBenchmarkProfile.comparisonRunCount * 2)
-    }
+
 
     @Test fun fullTextWaitsForEndAndKeepsAllSentencesInOneSynthesisRequest() {
         for (text in TtsBenchmarkSamples.all.values) {

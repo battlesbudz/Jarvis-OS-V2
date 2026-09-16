@@ -1,5 +1,7 @@
 # Voice comparison
 
+> Historical reference: Kokoro and Paul were removed on 16 September 2026. Their commands, setup steps and experiment plans below are superseded by the [supported stack](supported-model-stack.md) and current pipeline. Retained measurements are historical evidence.
+
 The current voices are **Kokoro original** and **Pocket TTS — Paul**. Miro is removed
 from selection, downloads and benchmarks. Its dedicated VITS configuration and pinned
 archive manifest are gone. The next voice-model preparation removes its installed

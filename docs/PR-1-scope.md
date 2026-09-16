@@ -1,5 +1,7 @@
 # PR 1: Local two-model Android foundation
 
+> Historical reference: Kokoro and Paul were removed on 16 September 2026. Their commands, setup steps and experiment plans below are superseded by the [supported stack](supported-model-stack.md) and current pipeline. Retained measurements are historical evidence.
+
 ## Scope
 
 This PR establishes the native Android shell and the first real local inference

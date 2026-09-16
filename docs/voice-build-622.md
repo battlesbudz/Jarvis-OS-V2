@@ -1,5 +1,7 @@
 # Voice follow-up to build 621
 
+> Historical reference: Kokoro and Paul were removed on 16 September 2026. Their commands, setup steps and experiment plans below are superseded by the [supported stack](supported-model-stack.md) and current pipeline. Retained measurements are historical evidence.
+
 Whisper live capture uses one background native worker and overlapping, growing utterance windows. It begins after 1.5 seconds of speech-context audio and schedules the newest snapshot after at least 1.2 seconds of new audio. A busy decoder never queues intermediate snapshots or blocks microphone ingestion. Two successive hypotheses must agree before words become a partial. The final decode includes every captured byte; it reuses a result only when its sample end matches exactly. Windows retain at most 25 seconds. This is incremental use of an offline recognizer, not a native streaming Whisper model. Same-recording benchmarks deliberately remain offline for comparability.
 
 The no-transcript silence target for Whisper is 900 ms. Existing incomplete-sentence hesitation handling, microphone backlog protection, speaker preference checks and action validation remain active. Diagnostics report partial decode duration and final queue wait separately. More concurrent CPU work and final decoding still need Fold 6 timing checks; no fixed latency improvement is promised.

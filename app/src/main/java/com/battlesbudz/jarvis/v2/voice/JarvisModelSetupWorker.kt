@@ -32,7 +32,7 @@ class JarvisModelSetupWorker(
         val requestedId = inputData.getString("model_id")
         val spec = if (requestedId == null) models.selectedModel() else ModelCatalog.find(requestedId)
             ?: return Result.failure(workDataOf("error" to "Unknown requested model."))
-        val voice = KokoroModelStore(applicationContext)
+        val voice = TtsModelStore(applicationContext)
         var downloaded = 0L
         var total = -1L
         var stage = "Preparing local Jarvis…"
@@ -66,32 +66,17 @@ class JarvisModelSetupWorker(
             return Result.failure(workDataOf("error" to (error.message ?: "Gemma setup failed.")))
         }
         check(gemma.isFile) { "Gemma setup did not produce a model file." }
-        val kokoro = voice.downloadOrReuse(
-            onProgress = { bytes, length ->
-                synchronized(progressLock) {
-                    val unpacking = stage.contains("Installing Kokoro", ignoreCase = true)
-                    downloaded = bytes
-                    total = length
-                    stage = if (unpacking) "Kokoro unpacking" else "Kokoro voice"
-                    publishProgress()
-                }
-            },
-            onStatus = { status ->
-                synchronized(progressLock) {
-                    stage = status
-                    if (status.contains("Installing Kokoro", ignoreCase = true)) {
-                        downloaded = 0L
-                        total = -1L
-                    }
-                    publishProgress()
-                }
+        try {
+            val piper = voice.ensureReady(TtsEngine.PIPER_NORTHERN) { status ->
+                synchronized(progressLock) { stage = status; downloaded = 0L; total = -1L; publishProgress() }
             }
-        ).getOrElse { error ->
+            check(piper.isDirectory) { "Piper setup did not produce a model directory." }
+        } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
             return Result.failure(workDataOf("error" to (error.message ?: "Voice model setup failed.")))
         }
-        check(kokoro.isDirectory) { "Kokoro setup did not produce a model directory." }
         try {
-            AsrModelStore(applicationContext).ensureReady { status ->
+            AsrEngine.selected(applicationContext).prepare(applicationContext) { status ->
                 synchronized(progressLock) { stage = status; publishProgress() }
             }
         } catch (error: Exception) {

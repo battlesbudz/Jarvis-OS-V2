@@ -6,13 +6,29 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TtsComparisonStoreTest {
+    @Test fun retiredSelectionsMigrateWithoutChangingSavedPiperTuningOrHistory() {
+        for (retired in listOf("kokoro", "pocket_paul")) {
+            val prefs = preferences()
+            val history = """[{"engine":"$retired","atMs":1,"model":"historical"}]"""
+            prefs.edit().putString("engine", retired).putString("results", history)
+                .putString("call_profile_$retired", "threads-2-native-stream-speed-0.9")
+                .putString("call_profile_piper_northern_english_male_medium", "threads-2-opening-160-speed-0.9").apply()
+            val store = TtsComparisonStore(prefs)
+            assertEquals(TtsEngine.PIPER_NORTHERN, store.selectedEngine())
+            assertEquals(TtsEngine.PIPER_NORTHERN.id, prefs.getString("engine", null))
+            assertEquals(TtsBenchmarkProfile(2, 160, 0.9f), store.callProfile(TtsEngine.PIPER_NORTHERN))
+            assertEquals(history, prefs.getString("results", null))
+            assertTrue(store.snapshot().contains(TtsEngine.diagnosticLabel(retired)))
+        }
+    }
+
     @Test fun kokoroSourceAndPlaybackEvidenceSurvivesSavingAndWholeSuiteExport() {
         val prefs = preferences()
         val store = TtsComparisonStore(prefs)
         val metrics = TtsSessionMetrics(10, 20, 50, 80, 0, 1f, 0, 1, 1, 3, "hash", 2, true, null,
             observedPlaybackStarvationMs = 0, sourcePcmSummary = "event=source_summary nearSilentFrames=2400",
             pcmDelivery = "kokoro_sentence_callbacks_v1")
-        store.add(TtsEngine.KOKORO, "test", "short", metrics,
+        store.add(TtsEngine.PIPER_NORTHERN, "test", "short", metrics,
             TtsBenchmarkRun("kokoro-suite", TtsBenchmarkProfile(), 1, "Hello.", 0, 0,
                 audioFile = "kokoro-suite-1.wav"))
         val restored = TtsComparisonStore(prefs)
@@ -25,17 +41,17 @@ class TtsComparisonStoreTest {
     @Test fun wholeSuiteSurvivesRestartOrdersRunsAndKeepsFailuresWithoutMixingSuites() {
         val prefs = preferences()
         val store = TtsComparisonStore(prefs)
-        val profile = TtsBenchmarkProfile(2, null, 1f, nativeStreaming = true)
+        val profile = TtsBenchmarkProfile(2, null, 1f)
         val metrics = TtsSessionMetrics(10, 20, 50, 80, 0, 1f, 0, 0, 1, 3, "hash", 2, true, null)
         // Deliberately save out of order: the original execution number wins over storage order.
         for (number in listOf(14, 5, 10, 1)) {
-            store.add(TtsEngine.POCKET_PAUL, "paul-isolation-v1", "case-$number",
+            store.add(TtsEngine.PIPER_NORTHERN, "paul-isolation-v1", "case-$number",
                 metrics.copy(completed = number != 10, error = if (number == 10) "stopped" else null),
                 TtsBenchmarkRun("suite-a", profile, if (number > 7) 2 else 1, "Text $number", 0, 3,
                     audioFile = "suite-a-$number.wav"))
         }
         val selected = store.records().first()
-        store.add(TtsEngine.POCKET_PAUL, "paul-isolation-v1", "unrelated", metrics,
+        store.add(TtsEngine.PIPER_NORTHERN, "paul-isolation-v1", "unrelated", metrics,
             TtsBenchmarkRun("suite-b", profile, 1, "Unrelated", 0, 0))
         val restored = TtsComparisonStore(prefs)
         val report = restored.suiteDiagnosticReport(selected)
@@ -53,11 +69,11 @@ class TtsComparisonStoreTest {
 
     @Test fun isolatedRunExportsItsOwnDeliveryAndProvenanceWithoutChangingCallProfile() {
         val store = TtsComparisonStore(preferences())
-        val profile = TtsBenchmarkProfile(2, null, 1f, nativeStreaming = true)
-        store.setCallProfile(TtsEngine.POCKET_PAUL, profile)
+        val profile = TtsBenchmarkProfile(2, null, 1f)
+        store.setCallProfile(TtsEngine.PIPER_NORTHERN, profile)
         val metrics = TtsSessionMetrics(10, 20, 50, 80, 0, 1f, 0, 0, 2, 3, "hash", 2, true, null)
-        store.add(TtsEngine.POCKET_PAUL, "paul-isolation-v1", "case", metrics,
-            TtsBenchmarkRun("suite", profile.copy(resetDecoder = false), 1, "A. B.", 0, 4,
+        store.add(TtsEngine.PIPER_NORTHERN, "paul-isolation-v1", "case", metrics,
+            TtsBenchmarkRun("suite", profile.copy(threads = 4), 1, "A. B.", 0, 4,
                 inputDelivery = "all text upfront after model ready", submissions = listOf("A.", "B."),
                 provenance = mapOf("versionCode" to "123", "ciSourceCommit" to "commit")))
         val saved = store.records().single()
@@ -67,33 +83,17 @@ class TtsComparisonStoreTest {
         assertTrue(saved.isNull("first_intelligible_word_ms"))
         assertEquals("not_assessed", saved.getString("intelligibility_assessment"))
         assertTrue(saved.getBoolean("thermal_limited"))
-        assertEquals(profile, store.callProfile(TtsEngine.POCKET_PAUL))
+        assertEquals(profile, store.callProfile(TtsEngine.PIPER_NORTHERN))
         assertTrue(TtsComparisonStore.describe(saved).contains("first_intelligible_word_ms=unavailable"))
     }
 
-    @Test fun appliedCallProfilesPersistPerVoiceAndResetIndependently() {
-        val prefs = preferences()
-        val store = TtsComparisonStore(prefs)
-        assertNull(store.callProfile(TtsEngine.KOKORO))
-        assertNull(store.callProfile(TtsEngine.POCKET_PAUL))
-        val kokoro = TtsBenchmarkProfile(2, 90, 0.9f)
-        val paul = TtsBenchmarkProfile(4, null, 1f, nativeStreaming = true)
-        store.setCallProfile(TtsEngine.KOKORO, kokoro)
-        store.setCallProfile(TtsEngine.POCKET_PAUL, paul)
-        val restored = TtsComparisonStore(prefs)
-        assertEquals(kokoro, restored.callProfile(TtsEngine.KOKORO))
-        assertEquals(paul, restored.callProfile(TtsEngine.POCKET_PAUL))
-        restored.setCallProfile(TtsEngine.KOKORO, null)
-        assertNull(store.callProfile(TtsEngine.KOKORO))
-        assertEquals(paul, store.callProfile(TtsEngine.POCKET_PAUL))
-    }
+
 
     @Test fun everyApplicableProfileRoundTripsAndUnknownSettingsFallBackToDefaults() {
         val prefs = preferences()
         val store = TtsComparisonStore(prefs)
         for (engine in TtsEngine.entries) {
             for (profile in TtsBenchmarkProfile.selectableProfiles) {
-                if (profile.nativeStreaming && engine != TtsEngine.POCKET_PAUL) continue
                 if (profile.piperPassages && engine != TtsEngine.PIPER_NORTHERN) continue
                 store.setCallProfile(engine, profile)
                 assertEquals(profile, TtsComparisonStore(prefs).callProfile(engine))
@@ -103,12 +103,10 @@ class TtsComparisonStoreTest {
         }
     }
 
-    @Test(expected = IllegalArgumentException::class) fun rejectsPaulsNativeProfileForKokoro() {
-        TtsComparisonStore(preferences()).setCallProfile(TtsEngine.KOKORO, TtsBenchmarkProfile.nativeProfiles.first())
-    }
+
 
     @Test fun miroSelectionRetiresWithoutRelabelingItsMeasurements() {
-        assertEquals(TtsEngine.KOKORO, TtsEngine.fromId("piper_miro_high"))
+        assertEquals(TtsEngine.PIPER_NORTHERN, TtsEngine.fromId("piper_miro_high"))
         assertEquals("Piper Miro High (British) (retired)", TtsEngine.diagnosticLabel("piper_miro_high"))
         assertFalse(TtsEngine.entries.any { it.id == "piper_miro_high" })
     }
@@ -117,12 +115,12 @@ class TtsComparisonStoreTest {
         val store = TtsComparisonStore(preferences())
         val profile = TtsBenchmarkProfile(playbackSpeed = 0.9f, openingChars = 60)
         val metrics = TtsSessionMetrics(100, 200, 1100, 1000, 0, 0.9f, 0, 1, 1, 5, "abc", 4, true, null)
-        store.add(TtsEngine.KOKORO, "voice-profiles-v3", "short-v1", metrics,
+        store.add(TtsEngine.PIPER_NORTHERN, "voice-profiles-v3", "short-v1", metrics,
             TtsBenchmarkRun("suite-a", profile, 1, "First text.", 0, 0))
         val displayed = store.records().single()
         val original = TtsComparisonStore.diagnosticReport(displayed)
-        store.select(TtsEngine.POCKET_PAUL)
-        store.add(TtsEngine.POCKET_PAUL, "voice-profiles-v3", "story-v1", metrics,
+        store.select(TtsEngine.PIPER_NORTHERN)
+        store.add(TtsEngine.PIPER_NORTHERN, "voice-profiles-v3", "story-v1", metrics,
             TtsBenchmarkRun("suite-b", profile, 2, "Unrelated later text.", 0, 4))
         assertEquals(original, TtsComparisonStore.diagnosticReport(displayed))
         assertTrue(original.contains("suite_id=suite-a"))
@@ -141,10 +139,10 @@ class TtsComparisonStoreTest {
         val store = TtsComparisonStore(prefs)
         val metrics = TtsSessionMetrics(100, 200, 400, 2000, 0, 1f, 0, 1, 1, 50, "abc", 4, true, null)
         repeat(TtsBenchmarkProfile.comparisonRunCount) {
-            store.add(TtsEngine.KOKORO, "voice-profiles-v3", "short-v1", metrics,
+            store.add(TtsEngine.PIPER_NORTHERN, "voice-profiles-v3", "short-v1", metrics,
                 TtsBenchmarkRun("complete-suite", TtsBenchmarkProfile(), 1, "Text $it", 0, 0))
         }
-        repeat(45) { store.add(TtsEngine.POCKET_PAUL, "voice-call", "$it", metrics) }
+        repeat(45) { store.add(TtsEngine.PIPER_NORTHERN, "voice-call", "$it", metrics) }
         val restored = TtsComparisonStore(prefs)
         assertEquals(TtsBenchmarkProfile.comparisonRunCount, restored.records().count { it.optString("suite_id") == "complete-suite" })
         assertEquals(40, restored.records().count { it.optString("source") == "voice-call" })
@@ -153,7 +151,7 @@ class TtsComparisonStoreTest {
     @Test fun unsupportedSlowPlaybackIsMarkedInsteadOfClaimingPointNineWorked() {
         val store = TtsComparisonStore(preferences())
         val metrics = TtsSessionMetrics(100, 200, 400, 2000, 0, 1f, 0, 1, 1, 50, "abc", 4, true, null)
-        store.add(TtsEngine.KOKORO, "voice-profiles-v3", "short-v1", metrics,
+        store.add(TtsEngine.PIPER_NORTHERN, "voice-profiles-v3", "short-v1", metrics,
             TtsBenchmarkRun("suite", TtsBenchmarkProfile(openingChars = null, playbackSpeed = 0.9f), 1, "Text", 0, 0))
         val record = store.records().single()
         assertFalse(record.getBoolean("playback_speed_applied"))
@@ -164,16 +162,16 @@ class TtsComparisonStoreTest {
     @Test fun selectionsAndResultsSurviveRestartWithoutMixingModels() {
         val prefs = preferences()
         val store = TtsComparisonStore(prefs)
-        store.select(TtsEngine.POCKET_PAUL)
+        store.select(TtsEngine.PIPER_NORTHERN)
         val metrics = TtsSessionMetrics(100, 200, 400, 2000, 20, 1f, 0, 1, 2, 50, "abc", 4, true, null)
-        store.add(TtsEngine.KOKORO, "benchmark-v1", "short-v1", metrics)
+        store.add(TtsEngine.PIPER_NORTHERN, "benchmark-v1", "short-v1", metrics)
         val restored = TtsComparisonStore(prefs)
-        assertEquals(TtsEngine.POCKET_PAUL, restored.selectedEngine())
+        assertEquals(TtsEngine.PIPER_NORTHERN, restored.selectedEngine())
         val entry = restored.records().single()
-        assertEquals(TtsEngine.KOKORO.id, entry.getString("engine"))
+        assertEquals(TtsEngine.PIPER_NORTHERN.id, entry.getString("engine"))
         assertEquals(0.2, entry.getDouble("rtf"), 0.0001)
         assertTrue(entry.getBoolean("completed"))
-        repeat(45) { restored.add(TtsEngine.POCKET_PAUL, "voice-call", "$it", metrics.copy(completed = false, error = "stopped")) }
+        repeat(45) { restored.add(TtsEngine.PIPER_NORTHERN, "voice-call", "$it", metrics.copy(completed = false, error = "stopped")) }
         assertEquals(40, restored.records().size)
         assertFalse(restored.records().last().getBoolean("completed"))
         assertTrue(restored.snapshot().contains("error=stopped"))
@@ -183,17 +181,17 @@ class TtsComparisonStoreTest {
         prefs.edit().putString("engine", "kokoro_int8")
             .putString("results", """[{"engine":"kokoro_int8","model":"kokoro-int8-en-v0_19","atMs":1}]""").apply()
         val restored = TtsComparisonStore(prefs)
-        assertEquals(TtsEngine.KOKORO, restored.selectedEngine())
+        assertEquals(TtsEngine.PIPER_NORTHERN, restored.selectedEngine())
         assertFalse(TtsEngine.entries.any { it.id == "kokoro_int8" })
         assertTrue(restored.snapshot().contains("TTS Kokoro INT8 (retired)"))
         assertTrue(restored.snapshot().contains("model=kokoro-int8-en-v0_19"))
         for (id in listOf("piper", "piper_alan", "piper_ryan_high")) {
             prefs.edit().putString("engine", id).apply()
-            assertEquals(TtsEngine.KOKORO, restored.selectedEngine())
+            assertEquals(TtsEngine.PIPER_NORTHERN, restored.selectedEngine())
             assertTrue(TtsEngine.diagnosticLabel(id).endsWith("(retired)"))
             assertFalse(TtsEngine.diagnosticLabel(id).startsWith("Kokoro"))
         }
-        assertEquals(setOf(TtsEngine.KOKORO, TtsEngine.POCKET_PAUL, TtsEngine.PIPER_NORTHERN), TtsEngine.entries.toSet())
+        assertEquals(setOf(TtsEngine.PIPER_NORTHERN), TtsEngine.entries.toSet())
         assertEquals("future_voice", TtsEngine.diagnosticLabel("future_voice"))
     }
 
@@ -203,16 +201,11 @@ class TtsComparisonStoreTest {
         val profile = TtsBenchmarkProfile(openingChars = 320)
         store.setCallProfile(TtsEngine.PIPER_NORTHERN, profile)
         assertEquals(profile, TtsComparisonStore(prefs).callProfile(TtsEngine.PIPER_NORTHERN))
-        assertNull(TtsComparisonStore(prefs).callProfile(TtsEngine.POCKET_PAUL))
         assertFalse(profile.fullText)
-        assertFalse(profile.nativeStreaming)
         assertTrue(profile.piperPassages)
     }
 
-    @Test(expected = IllegalArgumentException::class)
-    fun piperPassagesCannotBeAppliedToKokoro() {
-        TtsComparisonStore(preferences()).setCallProfile(TtsEngine.KOKORO, TtsBenchmarkProfile(openingChars = 320))
-    }
+
 
     @Test fun northernPiperSelectionSurvivesRestart() {
         val prefs = preferences()
@@ -220,12 +213,7 @@ class TtsComparisonStoreTest {
         assertEquals(TtsEngine.PIPER_NORTHERN, TtsComparisonStore(prefs).selectedEngine())
     }
 
-    @Test fun paulSelectionSurvivesRestartAndIsNotPiper() {
-        val prefs = preferences()
-        TtsComparisonStore(prefs).select(TtsEngine.POCKET_PAUL)
-        assertEquals(TtsEngine.POCKET_PAUL, TtsComparisonStore(prefs).selectedEngine())
-        assertTrue(TtsEngine.POCKET_PAUL.version.contains("Paul-p259"))
-    }
+
 
     private fun preferences(): SharedPreferences {
         val data = mutableMapOf<String, String?>()

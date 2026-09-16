@@ -12,26 +12,22 @@ import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 
-/** The model-operation gate serializes callers. New models never replace the original voice. */
-class TtsModelStore(context: Context, private val original: KokoroModelStore) {
+/** Installs the pinned Northern English Piper voice under the model-operation gate. */
+class TtsModelStore(context: Context) {
     private val root = File(context.filesDir, "voice-models")
 
-    suspend fun ensureReady(engine: TtsEngine, status: (String) -> Unit): File = withContext(Dispatchers.IO) {
-        // Called under the model-operation gate, before any selected native engine loads.
-        // Remove only the retired model's installer-owned files; keep saved measurements.
-        listOf("kokoro-int8-en-v0_19", "vits-piper-en_US-lessac-medium",
-            "vits-piper-en_GB-alan-medium", "vits-piper-en_US-ryan-high",
-            "vits-piper-en_GB-miro-high").forEach { retired ->
-            listOf(retired, "$retired.staging", "$retired.tar.bz2.part")
-                .forEach { File(root, it).deleteRecursively() }
-        }
-        if (engine == TtsEngine.KOKORO) return@withContext original.downloadOrReuse(onStatus = status).getOrThrow()
+    fun isReady(): Boolean {
+        val engine = TtsEngine.PIPER_NORTHERN
         val directory = File(root, engine.directory)
-        val pocket = engine == TtsEngine.POCKET_PAUL
-        val verification = engine.archiveSha256 + if (pocket) ":${PocketVoiceSpec.PAUL_SHA256}" else ""
-        fun ready(dir: File) = if (pocket) PocketVoiceSpec.files.all { (name, bytes) -> File(dir, name).length() == bytes } &&
-            File(dir, PocketVoiceSpec.PAUL_FILE).length() == PocketVoiceSpec.PAUL_BYTES
-        else NorthernPiperSpec.files.all { (name, bytes) -> File(dir, name).isFile && File(dir, name).length() == bytes }
+        return NorthernPiperSpec.files.all { (name, bytes) -> File(directory, name).isFile && File(directory, name).length() == bytes } &&
+            File(directory, ".verified").takeIf { it.isFile }?.readText() == engine.archiveSha256
+    }
+
+    suspend fun ensureReady(engine: TtsEngine, status: (String) -> Unit): File = withContext(Dispatchers.IO) {
+        RetiredVoiceFiles.remove(root)
+        val directory = File(root, engine.directory)
+        val verification = engine.archiveSha256
+        fun ready(dir: File) = NorthernPiperSpec.files.all { (name, bytes) -> File(dir, name).isFile && File(dir, name).length() == bytes }
         if (ready(directory) && File(directory, ".verified").takeIf { it.isFile }?.readText() == verification)
             return@withContext directory
         root.mkdirs()
@@ -84,7 +80,7 @@ class TtsModelStore(context: Context, private val original: KokoroModelStore) {
                         "Voice archive contained an unexpected entry."
                     }
                     val relative = entry.name.removePrefix(engine.directory + "/")
-                    // Demo speakers are not Paul's voice and are never installed or used.
+                    // Exclude archive demo recordings.
                     if (relative == "test_wavs" || relative.startsWith("test_wavs/")) continue
                     val target = File(staging, relative)
                     check(target.canonicalPath.startsWith(staging.canonicalPath + File.separator)) { "Unsafe voice archive path." }
@@ -106,38 +102,11 @@ class TtsModelStore(context: Context, private val original: KokoroModelStore) {
                     }
                 }
             }
-            if (pocket) {
-                status("Downloading Paul’s voice reference…")
-                downloadPaul(File(staging, PocketVoiceSpec.PAUL_FILE))
-            }
             check(ready(staging)) { "The voice archive is incomplete." }
             File(staging, ".verified").writeText(verification)
             directory.deleteRecursively()
             check(staging.renameTo(directory)) { "Could not finish installing the voice model." }
             directory
         } finally { archive.delete(); staging.deleteRecursively() }
-    }
-    private suspend fun downloadPaul(target: File) {
-        val connection = (URL(PocketVoiceSpec.PAUL_URL).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 30_000; readTimeout = 30_000; instanceFollowRedirects = true
-        }
-        try {
-            check(connection.responseCode in 200..299) { "Paul reference download failed: HTTP ${connection.responseCode}" }
-            val hash = MessageDigest.getInstance("SHA-256"); var count = 0L
-            connection.inputStream.use { input -> target.outputStream().use { output ->
-                val buffer = ByteArray(32 * 1024)
-                while (true) {
-                    currentCoroutineContext().ensureActive()
-                    val n = input.read(buffer); if (n < 0) break
-                    count += n; check(count <= PocketVoiceSpec.PAUL_BYTES) { "Paul reference exceeds expected size" }
-                    hash.update(buffer, 0, n); output.write(buffer, 0, n)
-                }
-                output.fd.sync()
-            } }
-            check(count == PocketVoiceSpec.PAUL_BYTES &&
-                hash.digest().joinToString("") { "%02x".format(it) } == PocketVoiceSpec.PAUL_SHA256) {
-                "Paul voice reference checksum did not match. Please retry."
-            }
-        } finally { connection.disconnect() }
     }
 }

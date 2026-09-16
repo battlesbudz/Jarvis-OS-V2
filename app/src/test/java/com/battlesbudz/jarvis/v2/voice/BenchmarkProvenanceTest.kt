@@ -9,12 +9,12 @@ class BenchmarkProvenanceTest {
     @Test fun hashesActualInstalledFilesAndMarksUnmeasuredParity() = runBlocking {
         val directory = Files.createTempDirectory("voice-provenance").toFile()
         try {
-            (PocketVoiceSpec.files.keys + PocketVoiceSpec.PAUL_FILE).forEach { directory.resolve(it).writeText("abc") }
-            val result = BenchmarkProvenance.collect(TtsEngine.POCKET_PAUL, directory)
-            assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", result["sha256.paul.wav"])
-            assertEquals("not_assessed", result["upstreamParity"])
-            directory.resolve("paul.wav").writeText("changed")
-            assertNotEquals(result["sha256.paul.wav"], BenchmarkProvenance.collect(TtsEngine.POCKET_PAUL, directory)["sha256.paul.wav"])
+            NorthernPiperSpec.files.keys.forEach { directory.resolve(it).also { file -> file.parentFile?.mkdirs(); file.writeText("abc") } }
+            val result = BenchmarkProvenance.collect(TtsEngine.PIPER_NORTHERN, directory)
+            assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", result["sha256.${TtsEngine.PIPER_NORTHERN.modelFile}"])
+            assertEquals("upstream_sherpa_vits", result["nativePath"])
+            directory.resolve(TtsEngine.PIPER_NORTHERN.modelFile).writeText("changed")
+            assertNotEquals(result["sha256.${TtsEngine.PIPER_NORTHERN.modelFile}"], BenchmarkProvenance.collect(TtsEngine.PIPER_NORTHERN, directory)["sha256.${TtsEngine.PIPER_NORTHERN.modelFile}"])
         } finally { directory.deleteRecursively() }
     }
 
@@ -22,20 +22,19 @@ class BenchmarkProvenanceTest {
         val directory = Files.createTempDirectory("voice-missing").toFile()
         try {
             try {
-                BenchmarkProvenance.collect(TtsEngine.POCKET_PAUL, directory)
+                BenchmarkProvenance.collect(TtsEngine.PIPER_NORTHERN, directory)
                 fail("Missing artifact must fail the requested benchmark")
             } catch (_: java.io.FileNotFoundException) { }
-            assertEquals("not_collected", BenchmarkProvenance.collect(TtsEngine.KOKORO, directory)["artifactHashStatus"])
         } finally { directory.deleteRecursively() }
     }
 
     @Test fun cancelledSuiteStopsHashing() = runBlocking {
         val directory = Files.createTempDirectory("voice-cancel").toFile()
         try {
-            directory.resolve(PocketVoiceSpec.files.keys.first()).writeBytes(ByteArray(128 * 1024))
+            directory.resolve(NorthernPiperSpec.files.keys.first()).writeBytes(ByteArray(128 * 1024))
             val job = Job().also { it.cancel() }
             try {
-                withContext(job) { BenchmarkProvenance.collect(TtsEngine.POCKET_PAUL, directory) }
+                withContext(job) { BenchmarkProvenance.collect(TtsEngine.PIPER_NORTHERN, directory) }
                 fail("Cancelled suite must stop")
             } catch (_: CancellationException) { }
         } finally { directory.deleteRecursively() }

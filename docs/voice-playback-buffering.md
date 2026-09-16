@@ -1,5 +1,7 @@
 # Kokoro playback queue
 
+> Historical reference: Kokoro and Paul were removed on 16 September 2026. Their commands, setup steps and experiment plans below are superseded by the [supported stack](supported-model-stack.md) and current pipeline. Retained measurements are historical evidence.
+
 The previous implementation loaded a native engine for every phrase and ran two
 four-thread synthesis jobs concurrently. A phone trace showed 19.2 seconds to
 produce 11.1 seconds of audio and a 9.6-second wait at playback. That measurement

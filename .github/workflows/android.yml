@@ -33,11 +33,11 @@ jobs:
       - name: Install speech runtime NDK
         run: '"${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018"'
 
-      - name: Cache patched speech runtime
+      - name: Cache shared speech runtime
         uses: actions/cache@v4
         with:
           path: app/build/sherpa-native
-          key: sherpa-arm64-137-${{ runner.os }}-${{ hashFiles('scripts/build_sherpa.py', 'native/sherpa/pocket-streaming.patch') }}
+          key: sherpa-arm64-137-${{ runner.os }}-${{ hashFiles('scripts/build_sherpa.py') }}
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -79,7 +79,7 @@ jobs:
       - name: Verify ASR native packaging
         run: python3 scripts/check_asr_apk.py app/build/outputs/apk/release/app-release.apk
 
-      - name: Verify Pocket callback ABI in APK
+      - name: Verify Piper callback ABI and retired assets in APK
         run: python3 scripts/check_tts_callback.py app/build/outputs/apk/release/app-release.apk
 
       - name: Verify signed release APK

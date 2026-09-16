@@ -2,9 +2,17 @@
 
 Audited 16 September 2026 against builds 694–695 and the release-only branch head `dbc43d17ef60d25b4234eb83bca7979c1f712fe0`; updated with the interruption/answer-priority implementation below. This document is the current policy summary; dated experiments in the older guides are historical. Work stays on `audio-pr2` / PR 6; publishing an APK does not authorize merging it.
 
+## Supported-stack update — 16 September 2026
+
+ASR: Moonshine or Whisper. AI: E2B or E4B. TTS: Piper Northern English Male only.
+Initial setup now installs Piper. Retired selections migrate; exact obsolete model
+files are cleaned on voice preparation, with saved Piper tuning/history retained.
+Piper generates its own cached acknowledgements. P1/P2 now use Piper and actual
+output sample rates; old reports remain historical. See [migration details](supported-model-stack.md).
+
 ## Current user goal and policies
 
-Justin accepts Piper Northern English Male's voice and accent consistency. Preserve its 320-character passage target, 640-character cap, native whole-passage synthesis, natural sentence pauses, normal speed, and current speaker. Paul continuous-state and Kokoro comparisons are optional experiments, not prerequisites for a working Piper voice call.
+Justin accepts Piper Northern English Male's voice and accent consistency. Preserve its 320-character passage target, 640-character cap, native whole-passage synthesis, natural sentence pauses, normal speed, and current speaker. Piper is now the only supported speech output. Kokoro/Paul implementations and experiments have been removed; see [supported stack and upgrade behavior](supported-model-stack.md).
 
 - One call-owned microphone remains open across command/reply handoffs. The read cursor preserves unconsumed onset audio. External-microphone priority, explicit End/Pause and foreground/background eligibility remain authoritative.
 - Ordinary listening uses Android-requested AEC/noise suppression and no additional software gain (`maxGain=1`). Enabled effects do not prove acoustic effectiveness. Silero confirmation, room-floor admission, and ASR are separate decisions. Neither VAD nor volume distinguishes Justin from another person speaking.
@@ -56,7 +64,7 @@ The first short test after this build should use **Record and test recognition**
 
 ## Roadmap reconciliation
 
-Phases 1–2 have implementation and earlier CI evidence; lifecycle and playback-history phone acceptance remain partial. Phase 3 now has bounded probes for both engines, but is not accepted across engines/routes. Phase 4 has segmentation and a turn-detector interface, with semantic endpoint evaluation still open. Phase 5 has work scheduling and comparisons, with selection/performance acceptance still open. Phase 6's current production concern is Piper's accepted voice versus passage latency; Paul's quality experiments are deferred. Phase 7 integrated acceptance remains open. Completing more checklist code does not replace proving these flows on the phone.
+Phases 1–2 have implementation and earlier CI evidence; lifecycle and playback-history phone acceptance remain partial. Phase 3 now has bounded probes for both engines, but is not accepted across engines/routes. Phase 4 has segmentation and a turn-detector interface, with semantic endpoint evaluation still open. Phase 5 has work scheduling and comparisons, with selection/performance acceptance still open. Phase 6's current production concern is Piper's accepted voice versus passage latency; Paul/Kokoro are retired, and their experiments are no longer roadmap dependencies. Phase 7 integrated acceptance remains open. Completing more checklist code does not replace proving these flows on the phone.
 
 ## Completion boundary
 

@@ -371,7 +371,7 @@ fun JarvisApp(
     onTtsBenchmark: (com.battlesbudz.jarvis.v2.voice.TtsEngine?, com.battlesbudz.jarvis.v2.voice.TtsBenchmarkProfile, (String) -> Unit, () -> Unit) -> Unit,
     onStopTtsBenchmark: () -> Unit,
     voicePlayback: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame>,
-    voiceModelStore: com.battlesbudz.jarvis.v2.voice.KokoroModelStore,
+    voiceModelStore: com.battlesbudz.jarvis.v2.voice.TtsModelStore,
     initialMessages: List<ChatEntry>,
     initialVoiceCalls: List<VoiceCallRecord>,
     onRunModelSmokeTest: ((String) -> Unit) -> Unit,
@@ -1054,9 +1054,9 @@ private fun ModelSetup(
         modelSelector(!testing && !importing && !downloading)
         Text(
             if (gemmaReady) {
-                "The selected Gemma model is ready. Install the local Kokoro voice model to enable Jarvis speaking."
+                "The selected Gemma model is ready. Install the local Piper voice model to enable Jarvis speaking."
             } else {
-                "Jarvis runs privately on your phone. Install Gemma and the local Kokoro voice model, or choose a compatible file for the selected model."
+                "Jarvis runs privately on your phone. Install Gemma and the local Piper voice model, or choose a compatible file for the selected model."
             },
             modifier = Modifier.padding(top = 12.dp, bottom = 20.dp)
         )
@@ -1126,9 +1126,9 @@ private fun setupPhase(status: String): String = when {
     status.contains("Loading Gemma", ignoreCase = true) || status.contains("initializing", ignoreCase = true) ->
         "Step 5 of 5: initializing Gemma"
     status.contains("Downloading the local Jarvis voice model", ignoreCase = true) ->
-        "Step 2 of 5: downloading Kokoro"
-    status.contains("Installing Kokoro", ignoreCase = true) || status.contains("Kokoro unpack", ignoreCase = true) ->
-        "Step 3 of 5: unpacking Kokoro"
+        "Step 2 of 5: downloading Piper"
+    status.contains("Installing Piper", ignoreCase = true) || status.contains("Piper unpack", ignoreCase = true) ->
+        "Step 3 of 5: unpacking Piper"
     else -> "Preparing Jarvis"
 }
 

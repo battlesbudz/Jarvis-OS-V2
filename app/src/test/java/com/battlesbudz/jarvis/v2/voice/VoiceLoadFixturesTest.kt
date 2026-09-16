@@ -7,6 +7,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 class VoiceLoadFixturesTest {
+    @org.junit.Test fun piperSampleRateIsRetainedAndMixedRatesAreRejected() {
+        val pcm = VoiceLoadPcm()
+        pcm.append(shortArrayOf(1, 2), 22050)
+        org.junit.Assert.assertEquals(22050, pcm.sampleRate)
+        try { pcm.append(shortArrayOf(3), 24000); org.junit.Assert.fail("Mixed rates must fail") }
+        catch (_: IllegalArgumentException) { }
+        org.junit.Assert.assertArrayEquals(shortArrayOf(1, 2), pcm.snapshot())
+    }
+
     @Test fun capturedCallbacksAppearExactlyOnceAndDoNotAliasNativeMemory() {
         val buffer = VoiceLoadPcm(6)
         val callback = shortArrayOf(1, 2, 3)
@@ -19,7 +28,7 @@ class VoiceLoadFixturesTest {
         assertEquals(5, buffer.frames)
     }
     @Test fun rejectsWrongSourceRateAndInvalidMicrophoneFixtures() {
-        assertThrows(IllegalArgumentException::class.java) { VoiceLoadPcm().append(shortArrayOf(1), 16000) }
+        assertThrows(IllegalArgumentException::class.java) { VoiceLoadPcm().append(shortArrayOf(1), 0) }
         assertThrows(IllegalArgumentException::class.java) { VoiceLoadReplay(byteArrayOf()) }
         assertThrows(IllegalArgumentException::class.java) { VoiceLoadReplay(byteArrayOf(1)) }
         assertThrows(IllegalArgumentException::class.java) { VoiceLoadReplay(ByteArray(256002)) }

@@ -2,7 +2,7 @@
 
 ## Current status — 16 September 2026
 
-The [current pipeline audit and prioritized remaining work](voice-pipeline-current.md) supersedes the historical policy/status statements below. Justin now accepts Piper Northern English Male with whole passages and natural pauses. The immediate priority is recognition reliability, inspectable decoder audio, preserved recent context and response latency. Paul/Kokoro tuning is deferred, not required for Piper acceptance. This follow-up implements call-scoped acoustic calibration, an in-app recognition audio test, Whisper partial-work deferral, and newest-first voice context budgeting. Integrated recognition, interruption, latency and lifecycle acceptance remain open.
+The [current pipeline audit and prioritized remaining work](voice-pipeline-current.md) supersedes the historical policy/status statements below. Justin now accepts Piper Northern English Male with whole passages and natural pauses. The immediate priority is recognition reliability, inspectable decoder audio, preserved recent context and response latency. Paul/Kokoro are retired and removed; Piper is the sole TTS. See [supported stack](supported-model-stack.md). This follow-up implements call-scoped acoustic calibration, an in-app recognition audio test, Whisper partial-work deferral, and newest-first voice context budgeting. Integrated recognition, interruption, latency and lifecycle acceptance remain open.
 
 ## Build 673 repair and structured phone testing
 
@@ -126,13 +126,13 @@ Each phase is a reviewable change set on the existing branch. Check a phase comp
 | Phase | Deliverable | Depends on | Status |
 | --- | --- | --- | --- |
 | 0 | Baseline measurements and efficient checkpoints | Audited head verified | In progress — checkpointing and initial timeline implemented; device baseline pending |
-| 6A | Early Paul source-audio and submission comparisons | 0 — comparable TTS baseline and required export fields | In progress — fixed-submission runner and source exports implemented; phone comparisons and listening pending |
+| 6A | Early Paul source-audio and submission comparisons | 0 — comparable TTS baseline and required export fields | Retired Paul work; Piper profile/source comparisons remain available |
 | 1 | Call-scoped microphone and model ownership | 0 | Implemented; sustained lifecycle acceptance partial; Moonshine command reset has load cost |
 | 2 | Playback-aware history and cancellation | 1 | Implemented; context budget repaired in latest follow-up; phone acceptance partial |
-| 3 | Natural interruptions and seamless follow-up capture | 1, 2 | Partial — bounded Moonshine probes; Whisper playback interruption remains incomplete |
+| 3 | Natural interruptions and seamless follow-up capture | 1, 2 | Implemented bounded probes for both engines; phone interruption acceptance remains open |
 | 4 | Local turn completion and long-utterance segmentation | 1, 3 | Segmentation/interface implemented; semantic detector evaluation and device acceptance open |
 | 5 | Measured ASR policy and bounded speculative work | 0, 1, 4 | Scheduling/comparisons implemented; accuracy and sustained performance acceptance open |
-| 6B | Integrated speech quality and audio supply | 6A, 0, 1, 2, 5 | Piper quality accepted by user; passage latency open; Paul experiments deferred |
+| 6B | Integrated speech quality and audio supply | 6A, 0, 1, 2, 5 | Piper quality accepted by user; passage latency and integrated acceptance open; Paul/Kokoro removed |
 | 7 | Integrated phone acceptance and documentation reconciliation | 0–5, 6A, 6B | Current policy/audit reconciled; full phone acceptance remains open |
 
 Phase 6A runs early once its Phase 0 measurement prerequisites are available; it does not wait for natural interruptions, a new turn detector, or long-utterance support. Preserve the correctness dependencies among Phases 1–5. Repeat Paul tuning under concurrent recognition in Phase 6B before selecting integrated defaults.
@@ -751,3 +751,24 @@ Piper synthesis, passage sizes, speed and pauses are unchanged. Validate both se
 ## 2026-09-16 — Selectable E2B / E4B local AI
 
 Implemented persistent model selection in setup and Voice settings, routed inference and benchmarks through the selection, added a pinned E4B artifact, isolated caches and validation, and guarded switching during active work. Failed/interrupted native validation remains recoverable from setup. See [AI model switching](ai-model-switching.md) for the source, lifecycle behavior, and pending Fold 6 acceptance tests. Android CI validates compilation/unit tests; E4B phone memory and voice latency are not yet measured.
+
+
+## 2026-09-16 — Piper-only output and dependency retirement
+
+Removed Kokoro/Paul model installers and selection, dedicated native synthesis
+branches and Paul patch, bundled Paul recordings, retired-only host experiments,
+Paul profile controls/tests and Kokoro publishing. Kept shared Sherpa/ONNX,
+Moonshine, Whisper, E2B/E4B, Piper VITS/espeak, VAD, speaker checks and wake/stop.
+Setup requires Piper; retired settings migrate without overwriting saved Piper
+profiles. Exact retired installer paths are removed on voice preparation.
+Historical calls/results remain readable.
+
+P1/P2 now use Piper with versioned pack IDs and actual output sample-rate replay.
+The full Piper comparison includes both 160/320-character openings. Release
+verification still checks shared JNI callback ABI and now rejects retired Paul
+assets/patch. See [supported stack and acceptance](supported-model-stack.md).
+
+This retires Paul-specific Phase 6A/B work, not the remaining acoustic,
+interruption, latency, context, lifecycle or E4B device acceptance gates.
+
+Validation before CI: 239 local Kotlin/JUnit tests passed, including Piper profiles/configuration, retired preference migration and file cleanup, PCM sample-rate handling and existing capture/interruption regressions. Four native-dependency helper tests passed. Piper output/model setup and benchmark core compiled against Android 35 and the pinned Sherpa/Moonshine SDK classes. Signed Android CI and phone upgrade/duplex checks remain release and device gates respectively.

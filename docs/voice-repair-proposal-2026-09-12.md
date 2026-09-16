@@ -1,5 +1,7 @@
 # Jarvis OS V2 — voice repair proposal
 
+> Historical reference: Kokoro and Paul were removed on 16 September 2026. Their commands, setup steps and experiment plans below are superseded by the [supported stack](supported-model-stack.md) and current pipeline. Retained measurements are historical evidence.
+
 Prepared 12 September 2026. Status: proposal only; no application changes, commits, or dependency upgrades. ECG supplied the evidence-first workflow. Baseline inspected: `audio-pr2`, commit `93a144c`. Implementation must recheck the branch head and reconcile later changes.
 
 ## Recommendation

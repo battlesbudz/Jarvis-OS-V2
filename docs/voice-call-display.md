@@ -1,5 +1,7 @@
 # Live voice display
 
+> Historical reference: Kokoro and Paul were removed on 16 September 2026. Their commands, setup steps and experiment plans below are superseded by the [supported stack](supported-model-stack.md) and current pipeline. Retained measurements are historical evidence.
+
 The call screen has a circular waveform and a rolling caption, rather than the
 full response transcript. The ASR menu is removed; Moonshine is the sole ASR.
 Call histories and Copy diagnostics retain full transcripts and measurements.

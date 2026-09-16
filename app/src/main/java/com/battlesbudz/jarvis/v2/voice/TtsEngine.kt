@@ -5,25 +5,19 @@ enum class TtsEngine(
     val id: String, val label: String, val directory: String, val modelFile: String,
     val speaker: Int, val archiveBytes: Long, val archiveSha256: String
 ) {
-    KOKORO("kokoro", "Kokoro original", "kokoro-en-v0_19", "model.onnx", 10, 0, ""),
     PIPER_NORTHERN("piper_northern_english_male_medium", "Piper — Northern English Male",
         "vits-piper-en_GB-northern_english_male-medium", "en_GB-northern_english_male-medium.onnx", 0,
-        67210490, "2bb2c1e709f58c11f17c693b3b38f500e110e7f54f2651774ec48b8d41f12c55"),
-    POCKET_PAUL("pocket_paul", "Pocket TTS — Paul", "sherpa-onnx-pocket-tts-int8-2026-01-26", "lm_main.int8.onnx", 0,
-        98336520, "2f3b88823cbbb9bf0b2477ec8ae7b3fec417b3a87b6bb5f256dba66f2ad967cb");
+        67210490, "2bb2c1e709f58c11f17c693b3b38f500e110e7f54f2651774ec48b8d41f12c55");
 
-    val modelBytes: Long get() = when (this) {
-        KOKORO -> 0L
-        PIPER_NORTHERN -> 63201430L
-        POCKET_PAUL -> 76341079L
-    }
-    val version: String get() = "$directory / speaker=${if (this == POCKET_PAUL) "Paul-p259" else speaker} / sherpa-1.13.7" +
-        if (this == POCKET_PAUL) " / ${PocketSpeechPolicy.VERSION}" else ""
+    val modelBytes: Long get() = 63201430L
+    val version: String get() = "$directory / speaker=$speaker / sherpa-1.13.7"
     val archiveUrl: String get() = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/$directory.tar.bz2"
     companion object {
         // Historical diagnostics retain retired IDs rather than being relabeled as the fallback.
         fun diagnosticLabel(id: String) = entries.firstOrNull { it.id == id }?.label
             ?: when (id) {
+                "kokoro" -> "Kokoro original (retired)"
+                "pocket_paul" -> "Pocket TTS — Paul (retired)"
                 "piper_miro_high" -> "Piper Miro High (British) (retired)"
                 "kokoro_int8" -> "Kokoro INT8 (retired)"
                 "piper" -> "Piper Lessac (US) (retired)"
@@ -31,6 +25,6 @@ enum class TtsEngine(
                 "piper_ryan_high" -> "Piper Ryan High (US) (retired)"
                 else -> id.ifBlank { "Unknown voice" }
             }
-        fun fromId(id: String?) = entries.firstOrNull { it.id == id } ?: KOKORO
+        fun fromId(id: String?) = entries.firstOrNull { it.id == id } ?: PIPER_NORTHERN
     }
 }

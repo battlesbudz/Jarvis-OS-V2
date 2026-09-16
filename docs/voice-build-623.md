@@ -1,5 +1,7 @@
 # Voice follow-up to build 622
 
+> Historical reference: Kokoro and Paul were removed on 16 September 2026. Their commands, setup steps and experiment plans below are superseded by the [supported stack](supported-model-stack.md) and current pipeline. Retained measurements are historical evidence.
+
 - Retain background Whisper decoding and its 900 ms no-transcript endpoint target from 622, including the lazy recognizer after an interruption. Intentional unfinished-sentence pauses retain their longer target. Interruption captures now forward background Whisper timing logs too.
 - Filter explicit known sound captions from ASR partials/finals. A sound-only candidate such as `(crying)` or `[music]` is discarded without an answer, lookup, tool, audio-model fallback or speaker-profile training. The microphone stays open for real words; repeated captions cannot extend the ordinary 20-second initial listening deadline. Actual words around captions are preserved. Plain spoken `crying`, requests about music, and unknown bracketed words are preserved. Caption-only audio-model fallback results also rearm listening without a reply.
 - Show final ASR text before joining speculative answer work. This affects display timing, not recognition accuracy.

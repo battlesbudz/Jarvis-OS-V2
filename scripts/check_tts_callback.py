@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the exact Pocket callback JNI method in packaged DEX, including R8 releases."""
+"""Verify the exact Piper callback JNI method in packaged DEX, including R8 releases."""
 import struct
 import sys
 import zipfile
@@ -44,8 +44,8 @@ def has_callback(data):
 if __name__ == '__main__':
     with zipfile.ZipFile(sys.argv[1]) as apk:
         assert any(has_callback(apk.read(n)) for n in apk.namelist()
-                   if n.startswith('classes') and n.endswith('.dex')), 'Pocket callback JNI signature missing after packaging'
+                   if n.startswith('classes') and n.endswith('.dex')), 'Piper callback JNI signature missing after packaging'
         native = apk.read('lib/arm64-v8a/libsherpa-onnx-jni.so')
-        assert b'jarvis_session' in native and b'first_chunk_size' in native, 'Unpatched Pocket runtime packaged'
-        assert 'assets/licenses/pocket-tts-paul-NOTICE.txt' in apk.namelist()
-    print('Pocket streaming runtime, boxed callback ABI and attribution verified in APK.')
+        assert b'jarvis_session' not in native, 'Retired Paul native patch packaged'
+        assert not any(n.startswith('assets/voice/paul-') or n.startswith('assets/licenses/pocket-tts') for n in apk.namelist()), 'Retired Paul assets packaged'
+    print('Piper boxed callback ABI and retired-asset removal verified in APK.')

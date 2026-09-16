@@ -18,12 +18,11 @@ class TtsBenchmarkController(
     private val buildProvenance: Map<String, String> = emptyMap()
 ) {
     private var job: Job? = null
-    @Volatile private var output: SherpaKokoroVoiceOutput? = null
+    @Volatile private var output: PiperVoiceOutput? = null
     val running: Boolean get() = job?.isCompleted == false
 
     fun start(selected: TtsEngine?, status: (String) -> Unit, finished: () -> Unit,
-              compareOpenings: Boolean = false, profile: TtsBenchmarkProfile = TtsBenchmarkProfile(),
-              paulIsolation: Boolean = false) {
+              compareOpenings: Boolean = false, profile: TtsBenchmarkProfile = TtsBenchmarkProfile(openingChars = 320)) {
         if (running || !canStart()) {
             status("End the call and wait for audio to finish before benchmarking.")
             finished()
@@ -37,27 +36,15 @@ class TtsBenchmarkController(
                 check(gate.tryBeginModelOperation()) { "Another model operation is still running." }
                 owned = true
                 val suiteId = UUID.randomUUID().toString()
-                val comparePaul = !paulIsolation && selected == null && profile.nativeStreaming && !compareOpenings
-                val engines = if (paulIsolation) listOf(TtsEngine.POCKET_PAUL) else if (comparePaul) listOf(TtsEngine.POCKET_PAUL) else if (compareOpenings || selected == null) TtsBenchmarkProfile.comparisonEngines
-                    else listOf(selected)
+                val engines = listOf(TtsEngine.PIPER_NORTHERN)
                 val directories = engines.associateWith { models.ensureReady(it, ::report) }
                 val provenance = directories.mapValues { (engine, directory) ->
                     buildProvenance + BenchmarkProvenance.collect(engine, directory)
                 }
-                val profiles = if (compareOpenings) TtsBenchmarkProfile.all + TtsBenchmarkProfile.nativeProfiles else if (comparePaul)
-                    listOf(profile.copy(leadingPeriod = false), profile.copy(leadingPeriod = true)) else listOf(profile)
-                val cases = if (paulIsolation) PaulIsolationCases.all.map { test ->
-                    Case(TtsEngine.POCKET_PAUL, TtsBenchmarkProfile(threads = 2, openingChars = null,
-                        nativeStreaming = true, resetDecoder = test.reset, leadingPeriod = false, bufferMs = 200),
-                        test.id, test.text, test.submissions)
-                } else profiles.flatMap { setting ->
-                    TtsBenchmarkSamples.all.flatMap { (sample, text) ->
-                        engines.filter { (!setting.nativeStreaming || it == TtsEngine.POCKET_PAUL) &&
-                            (!setting.piperPassages || it == TtsEngine.PIPER_NORTHERN) }
-                            .map { engine -> Case(engine, setting, sample, text) }
-                    }
+                val profiles = if (compareOpenings) TtsBenchmarkProfile.comparisonProfiles else listOf(profile)
+                val cases = profiles.flatMap { setting ->
+                    TtsBenchmarkSamples.all.map { (sample, text) -> Case(TtsEngine.PIPER_NORTHERN, setting, sample, text) }
                 }
-                check(cases.isNotEmpty()) { "Native audio streaming profiles are available for Paul." }
                 // Interleave voices for each identical input; reverse ALL cases on pass two.
                 val passes = listOf(cases, cases.reversed())
                 var done = 0
@@ -75,14 +62,14 @@ class TtsBenchmarkController(
                         dir.listFiles()?.filter { it.extension in listOf("wav", "txt") }
                             ?.sortedByDescending { it.lastModified() }?.drop(46)?.forEach { it.delete() }
                         java.io.File(dir, "$traceName.txt").also {
-                            it.writeText("engine=${engine.id} reference=${if (engine == TtsEngine.POCKET_PAUL) PocketVoiceSpec.PAUL_SHA256 else "speaker-${engine.speaker}"}\n" +
+                            it.writeText("engine=${engine.id} reference=speaker-${engine.speaker}\n" +
                                 "profile=${setting.id}\nprovenance=${org.json.JSONObject(provenance.getValue(engine))}\n" +
-                                "inputDelivery=${if (paulIsolation) "all_text_upfront" else "paced_4_chars_32ms"} submissions=${case.submissions}\ntext=$text\nRecording retains up to 180 seconds; see startFrame in trace. PCM offsets exclude playback gaps and speed changes.\n")
+                                "inputDelivery=paced_4_chars_32ms submissions=${case.submissions}\ntext=$text\nRecording retains up to 180 seconds; see startFrame in trace. PCM offsets exclude playback gaps and speed changes.\n")
                         }
                     }
                     val runLog: (String) -> Unit = { event ->
                         log(event)
-                        if (event.startsWith("piper_passage_submit") || event.startsWith("piper_text_policy") || event.startsWith("pocket_stream_trace") || event.startsWith("pocket_source_pcm") || event.startsWith("audio_underrun") ||
+                        if (event.startsWith("piper_passage_submit") || event.startsWith("piper_text_policy") || event.startsWith("audio_underrun") ||
                             event.startsWith("audio_supply_gap") || event.startsWith("speech_audio_trace") ||
                             event.startsWith("audio_playback_pace") || event.startsWith("audio_startup_buffer")) {
                             traceFile?.let { synchronized(it) { it.appendText("atMs=${System.currentTimeMillis()} $event\n") } }
@@ -90,23 +77,23 @@ class TtsBenchmarkController(
                     }
                     val trace = traceDirectory?.let { SpeechAudioTrace(java.io.File(it, "$traceName.wav"),
                         traceName, seconds = 180, log = runLog) }
-                    val speaker = SherpaKokoroVoiceOutput(directories.getValue(engine).path, engine = engine,
+                    val speaker = PiperVoiceOutput(directories.getValue(engine).path, engine = engine,
                         normalSpeed = true, fixedChunking = true,
                         openingChars = setting.openingChars ?: SpeechChunker.DEFAULT_OPENING_CHARS,
                         numThreads = setting.threads, benchmarkProfile = setting, benchmarkRun = true,
-                        audioTrace = trace, benchmarkSubmissions = case.submissions,
+                        audioTrace = trace,
                         onReady = { ready.complete(Unit) },
                         onMetrics = { metrics ->
-                            results.add(engine, if (paulIsolation) "paul-isolation-v1" else "voice-profiles-v4", sample, metrics,
+                            results.add(engine, "piper-profiles-v1", sample, metrics,
                                 TtsBenchmarkRun(suiteId, setting, pass + 1, text, startThermal, thermalStatus(), traceFile?.let { "$traceName.wav" },
-                                    inputDelivery = if (paulIsolation) "all text upfront after model ready" else "4 characters every 32 ms after model ready",
+                                    inputDelivery = "4 characters every 32 ms after model ready",
                                     submissions = case.submissions, provenance = provenance.getValue(engine)))
                         }, log = runLog)
                     output = speaker
                     try {
                         speaker.speak(flow {
                             ready.await() // Model load/download are separate from response timing.
-                            if (paulIsolation) emit(text) else for (token in text.chunked(4)) { emit(token); delay(32) }
+                            for (token in text.chunked(4)) { emit(token); delay(32) }
                         }) {}
                     } finally { output = null }
                 }
@@ -132,10 +119,10 @@ class TtsBenchmarkController(
     internal suspend fun fixedRun(directory: java.io.File, text: String, session: VoiceModelSession,
                          replay: SpeechAudio? = null, pcm: (ShortArray, Int) -> Unit,
                          metrics: (TtsSessionMetrics) -> Unit, events: (String) -> Unit,
-                         alongside: suspend CoroutineScope.(SherpaKokoroVoiceOutput) -> Job?) = coroutineScope {
-        val speaker = SherpaKokoroVoiceOutput(directory.path, engine = TtsEngine.POCKET_PAUL,
+                         alongside: suspend CoroutineScope.(PiperVoiceOutput) -> Job?) = coroutineScope {
+        val speaker = PiperVoiceOutput(directory.path, engine = TtsEngine.PIPER_NORTHERN,
             numThreads = 4, benchmarkProfile = VoiceTestPacks.reference, benchmarkRun = true,
-            modelSession = session, diagnosticReplay = replay?.pcm, diagnosticPcm = pcm,
+            modelSession = session, diagnosticReplay = replay, diagnosticPcm = pcm,
             onMetrics = metrics, log = events)
         val listener = alongside(speaker)
         try { speaker.speak(flow { emit(text) }) {} }

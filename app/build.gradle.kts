@@ -21,7 +21,7 @@ val extractSherpa by tasks.registering(Exec::class) {
     }
 }
 val buildSherpa by tasks.registering(Exec::class) {
-    inputs.files(rootProject.file("scripts/build_sherpa.py"), rootProject.file("native/sherpa/pocket-streaming.patch"))
+    inputs.file(rootProject.file("scripts/build_sherpa.py"))
     outputs.dir(sherpaNativeDir.map { it.dir("jni") })
     doFirst {
         commandLine("python3", rootProject.file("scripts/build_sherpa.py"), "--output", sherpaNativeDir.get().asFile,

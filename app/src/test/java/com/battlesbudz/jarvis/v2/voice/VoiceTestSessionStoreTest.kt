@@ -103,6 +103,6 @@ class VoiceTestSessionStoreTest {
         for (pack in VoiceTestPacks.planned) assertThrows(IllegalArgumentException::class.java) {
             store.begin(pack, JSONObject(), JSONObject())
         }
-        assertEquals("threads-4-native-stream-speed-0.9-reset-true-period-true-buffer-200", VoiceTestPacks.reference.id)
+        assertEquals("threads-4-opening-320-speed-1.0", VoiceTestPacks.reference.id)
     }
 }
