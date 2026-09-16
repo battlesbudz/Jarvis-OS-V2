@@ -4,6 +4,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TtsBenchmarkProfileTest {
+    @Test fun fasterPiperOpeningIsSelectableWithoutChangingExistingProfileIds() {
+        val faster = TtsBenchmarkProfile(2, 160)
+        assertTrue(faster.piperPassages)
+        assertEquals(faster, TtsBenchmarkProfile.selectableProfiles.single { it.id == faster.id })
+        assertEquals("threads-2-opening-320-speed-1.0", TtsBenchmarkProfile(2, 320).id)
+    }
     @org.junit.Test fun slowerProfileCanBePersistedWithoutChangingOldIds() {
         val slow = TtsBenchmarkProfile(4, null, 0.85f, nativeStreaming = true)
         org.junit.Assert.assertTrue(slow.id.contains("speed-0.85"))

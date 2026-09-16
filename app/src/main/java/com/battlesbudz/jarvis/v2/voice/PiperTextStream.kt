@@ -1,8 +1,10 @@
 package com.battlesbudz.jarvis.v2.voice
 
 /** Longer linguistic context, with a hard bound before a single VITS model invocation. */
-internal class PiperTextStream(private val waitForEnd: Boolean = false) {
+internal class PiperTextStream(private val waitForEnd: Boolean = false, private val openingTargetChars: Int = TARGET_CHARS) {
+    init { require(openingTargetChars in 1..TARGET_CHARS) }
     private val buffer = StringBuilder()
+    private var opening = true
     fun append(text: String) { buffer.append(text) }
 
     fun take(final: Boolean = false): String? {
@@ -19,7 +21,7 @@ internal class PiperTextStream(private val waitForEnd: Boolean = false) {
             val word = buffer.substring(0, i).takeLastWhile { !it.isWhitespace() }.lowercase()
             if (buffer[i] == '.' && (word in ABBREVIATIONS || word.length == 1 && word[0].isLetter())) continue
             lastSentence = end
-            if (!waitForEnd && end >= TARGET_CHARS) return release(end)
+            if (!waitForEnd && end >= if (opening) openingTargetChars else TARGET_CHARS) return release(end)
         }
         if (buffer.length < MAX_CHARS) return null
         // Prefer a complete sentence, then a word boundary; never drop a run-on suffix.
@@ -29,6 +31,7 @@ internal class PiperTextStream(private val waitForEnd: Boolean = false) {
     }
 
     private fun release(end: Int): String {
+        opening = false
         val text = buffer.substring(0, end).trim()
         buffer.delete(0, end)
         while (buffer.isNotEmpty() && buffer[0].isWhitespace()) buffer.deleteCharAt(0)

@@ -218,8 +218,9 @@ class SherpaKokoroVoiceOutput(
             it.pcm.size * 1000L / it.sampleRate
         }
         val pocketSentences = engine == TtsEngine.POCKET_PAUL && (benchmarkProfile?.nativeStreaming == true || !fixedChunking && benchmarkProfile == null)
-        val piperText = if (piperWholePassage) PiperTextStream(waitForEnd = benchmarkProfile?.fullText == true) else null
-        if (engine == TtsEngine.PIPER_NORTHERN) log("piper_text_policy version=whole-passages-v1 enabled=$piperWholePassage targetChars=320 maxChars=640 nativeMaxNumSentences=${if (piperWholePassage) 0 else 1} silenceScale=1.0 waitForEnd=${benchmarkProfile?.fullText == true}")
+        val piperOpening = benchmarkProfile?.takeIf { it.piperPassages }?.openingChars ?: PiperTextStream.TARGET_CHARS
+        val piperText = if (piperWholePassage) PiperTextStream(waitForEnd = benchmarkProfile?.fullText == true, openingTargetChars = piperOpening) else null
+        if (engine == TtsEngine.PIPER_NORTHERN) log("piper_text_policy version=whole-passages-v2 enabled=$piperWholePassage openingTargetChars=$piperOpening targetChars=320 maxChars=640 nativeMaxNumSentences=${if (piperWholePassage) 0 else 1} silenceScale=1.0 waitForEnd=${benchmarkProfile?.fullText == true}")
         val pocketText = if (pocketSentences) PocketTextStream() else null
         val isolationText = if (benchmarkSubmissions != null) StringBuilder() else null
         val chunker = SpeechChunker(openingChars, fullText = benchmarkProfile?.fullText == true, minPhraseChars = 40)
@@ -490,7 +491,7 @@ class SherpaKokoroVoiceOutput(
                         preparedOpeningReused = cached != null
                         firstPcmMs = result.synthesisMs
                         firstTextToPcmMs = firstTextAt.get().takeIf { it != 0L }?.let(::elapsedMs)
-                        log("tts_opening_ready prepared=${cached != null} firstTextToPcmMs=$firstTextToPcmMs openingChars=$openingChars")
+                        log("tts_opening_ready prepared=${cached != null} firstTextToPcmMs=$firstTextToPcmMs openingChars=${if (piperWholePassage) piperOpening else openingChars}")
                     }
                     val rate = result.sampleRate
                     val frames = result.pcm.size.toLong()
@@ -834,7 +835,7 @@ class SherpaKokoroVoiceOutput(
                     inputChars, textHash.digest().joinToString("") { "%02x".format(it) }, numThreads,
                     completed && !wasStopped && failureMessage == null, failureMessage,
                     playbackConfirmed, playedFrames, framesWritten.toLong(), outputRoute,
-                    firstTextToPcmMs, firstTextToPlaybackMs, if (pocketSentences || benchmarkProfile?.fullText == true) null else openingChars,
+                    firstTextToPcmMs, firstTextToPlaybackMs, if (pocketSentences || benchmarkProfile?.fullText == true) null else if (piperWholePassage) piperOpening else openingChars,
                     preparedSynthesisMs, preparedOpeningReused, playbackStarvationMs.get(), sourcePcmSummary, pcmDelivery))
             }.onFailure { log("tts_metrics_failed reason=${it.message}") }
             log("tts_session_finished phrases=$phraseCount synthesisMs=$totalSynthesisMs " +

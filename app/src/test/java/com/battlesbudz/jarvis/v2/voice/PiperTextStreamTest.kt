@@ -4,6 +4,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PiperTextStreamTest {
+    @Test fun optionalSmallerOpeningReturnsToLongPassagesWithoutLosingWords() {
+        val sentence = "We can continue with this explanation for a little longer. "
+        val text = sentence.repeat(20).trim()
+        val stream = PiperTextStream(openingTargetChars = 160)
+        val parts = mutableListOf<String>()
+        text.chunked(4).forEach { stream.append(it); while (true) parts += stream.take() ?: break }
+        while (true) parts += stream.take(final = true) ?: break
+        assertEquals(text, parts.joinToString(" "))
+        assertTrue(parts.first().length in 160 until 320)
+        assertTrue(parts[1].length in 320..640)
+        assertTrue(parts.all { it.endsWith(".") && it.length <= 640 })
+    }
     @Test fun shortRepliesStayTogetherUntilGemmaFinishes() {
         val text = "Good evening, sir. Your appointment begins in twenty minutes. There is time for tea."
         val stream = PiperTextStream()

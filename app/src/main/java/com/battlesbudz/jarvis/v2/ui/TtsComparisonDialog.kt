@@ -153,9 +153,13 @@ internal fun TtsComparisonDialog(
                     }
                 }
                 if (selected == TtsEngine.PIPER_NORTHERN) {
-                    FilterChip(selected = profile.piperPassages, enabled = !running,
+                    FilterChip(selected = profile.piperPassages && profile.openingChars == 320, enabled = !running,
                         onClick = { profile = profile.copy(openingChars = 320, nativeStreaming = false, resetDecoder = true, leadingPeriod = true, bufferMs = 200) },
                         label = { Text("Piper · longer passages") })
+                    FilterChip(selected = profile.piperPassages && profile.openingChars == 160, enabled = !running,
+                        onClick = { profile = profile.copy(openingChars = 160, nativeStreaming = false, resetDecoder = true, leadingPeriod = true, bufferMs = 200) },
+                        label = { Text("Piper · faster opening (compare)") })
+                    Text("Faster opening starts at a complete sentence around 160 characters, then uses longer passages. Test the voice before applying it to calls; your saved setting stays unchanged.")
                     Text("Keeps short replies together and groups longer replies at sentence boundaries around 320 characters, up to 640 per generation. Piper processes each passage together. More text context can delay the start; listen for voice consistency. Choose Test selected voice, then Apply to voice calls if you prefer it.")
                 }
                 listOf<Int?>(40, 60, 90, null).forEach { opening ->
