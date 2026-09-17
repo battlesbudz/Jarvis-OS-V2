@@ -3,16 +3,33 @@
 ## Phase D acoustic evidence
 
 With the call and wake listening stopped, open **Voice Call settings → Development diagnostics →
-Echo test — Phase D**. Run **Jarvis alone** while completely silent, **Your voice alone**, then
-**Both voices**. For the latter two say slowly “No. Yes. I. Stop. Hey Jarvis.” Follow the on-screen
-listening instruction; preparing/downloading models is not part of the capture. A test deliberately
-does not interrupt Piper. Keep volume and phone position constant. Save one ZIP, then repeat
-with headphones and save another. Run in the foreground; Stop/backgrounding cancels and releases
-capture/playback. Native model operations finish cleanup before the busy state is released.
+Echo test — Phase D**. Choose **Communication phone speaker** for the D2 candidate (Android
+12+), or **Current media route** for the D1 baseline. D2 explicitly selects the built-in speaker;
+disconnect headphones/Bluetooth audio first. D2 uses call volume; baseline uses media volume.
+Keep phone placement and perceived loudness comparable and inspect the recorded volume values.
+
+Run **Jarvis alone** while completely silent, **Your voice alone**, then **Both voices**. For the
+latter two say slowly “No. Yes. I. Stop. Hey Jarvis.” Follow the on-screen listening instruction;
+preparing/downloading models is not part of capture. The diagnostic deliberately does not
+interrupt Piper on those words: it records their recognition. Use **Stop echo test** to cancel.
+Each completed test has **Save ZIP: …**; a combined archive remains available. Save before
+clearing recordings to change routes. Leave and reopen after saving if the document picker has
+cleared the in-memory results. Run in the foreground; Stop/backgrounding releases capture,
+playback, and the D2 route. Native model cleanup finishes before busy state is released.
+
+D2 pairs `VOICE_COMMUNICATION` capture with `USAGE_VOICE_COMMUNICATION`,
+`MODE_IN_COMMUNICATION`, explicit speaker selection, and transient communication focus.
+The scoped owner is recognized by the microphone-priority policy so our own mode does not
+self-suspend. Outside recorders, Android silencing/mute, calls, dictation requests, focus loss,
+and selected-route loss still interrupt the test. Route loss cancels instead of silently
+continuing on headphones/Bluetooth. The test withdraws its own mode/device/focus requests
+before offline recognition, on failure, and on cancellation; Android chooses the next route.
+It does not force a formerly observed device over another app's new routing decision.
+Normal calls retain their current route while D2 phone acceptance is pending.
 
 Each ZIP scenario includes `report.txt`, `timeline.csv`, `microphone.wav`, optional
 `piper-reference.wav`, and available `decoder-input.wav`. Reports include build/commit/device,
-route IDs, volume, AEC availability/control/implementation, capture statistics, transcript and
+selected route profile, route acquire/release evidence, actual route IDs, volume, AEC availability/control/implementation, capture statistics, transcript and
 keyword scores/hits every 100 ms of replay. The timeline keeps microphone read frame ranges,
 playback head observations and hardware timestamps on the same monotonic clock. Empty hardware
 fields mean unavailable; read delivery time is not acoustic onset. Audio is bounded in memory
@@ -26,7 +43,9 @@ full synthesis text can extend past that clip. Recognition uses the selected ada
 whole captured clip **after** recording without VAD filtering; keyword replay also runs afterward.
 These results isolate acoustics and model responses, not live CPU scheduling, automatic stopping,
 or owner verification. A quiet transcript is not alone proof of effective echo cancellation;
-compare the recorded audio as well. This is D1 evidence, not a production route change or D3 AEC.
+compare the recorded audio as well. This is a D1/D2 controlled comparison, not D3 software AEC. Tests run independently of
+Gemma, live interruption gating, and speaker verification. An empty Moonshine transcript in
+the original D1 voice-only recording remains a separate unresolved diagnostic finding.
 
 
 Current on `audio-pr2` / PR #6, 17 September 2026.

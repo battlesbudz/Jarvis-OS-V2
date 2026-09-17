@@ -31,6 +31,7 @@ class AndroidAudioInput(
     private val noiseSuppression: Boolean = false,
     private val onLevel: (Float) -> Unit = {},
     private val evidence: DuplexAudioEvidence? = null,
+    private val communicationInput: Boolean = false,
     private val log: (String) -> Unit = {}
 ) : AudioInput {
     override val sampleRateHz: Int = format.sampleRateHz
@@ -81,7 +82,7 @@ class AndroidAudioInput(
         check(minBuffer > 0) { "The microphone could not be initialized." }
         val bufferSize = maxOf(minBuffer, format.sampleRateHz * 2)
         val builder = AudioRecord.Builder()
-            .setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
+            .setAudioSource(if (communicationInput) MediaRecorder.AudioSource.VOICE_COMMUNICATION else MediaRecorder.AudioSource.VOICE_RECOGNITION)
             .setAudioFormat(AndroidAudioFormat.Builder().setSampleRate(format.sampleRateHz)
                 .setChannelMask(AndroidAudioFormat.CHANNEL_IN_MONO)
                 .setEncoding(AndroidAudioFormat.ENCODING_PCM_16BIT).build())
@@ -146,7 +147,7 @@ class AndroidAudioInput(
             }
             throw error
         }
-        log("capture_open source=VOICE_RECOGNITION routeType=${created.routedDevice?.type} routeId=${created.routedDevice?.id} session=${created.audioSessionId} silenced=${created.activeRecordingConfiguration?.isClientSilenced}")
+        log("capture_open source=${if (communicationInput) "VOICE_COMMUNICATION" else "VOICE_RECOGNITION"} routeType=${created.routedDevice?.type} routeId=${created.routedDevice?.id} session=${created.audioSessionId} silenced=${created.activeRecordingConfiguration?.isClientSilenced}")
         val ready = CompletableDeferred<Unit>()
         recorder = created
         ownsRecorder = true
@@ -219,8 +220,7 @@ class AndroidAudioInput(
             manager.activeRecordingConfigurations.size,
             record?.recordingState == AudioRecord.RECORDSTATE_RECORDING,
             record?.activeRecordingConfiguration?.isClientSilenced == true,
-            manager.mode == android.media.AudioManager.MODE_IN_CALL ||
-                manager.mode == android.media.AudioManager.MODE_IN_COMMUNICATION || manager.isMicrophoneMute)
+            MicrophonePolicy.externalCommunication(manager.mode, CommunicationAudioSession.ownsMode()) || manager.isMicrophoneMute)
         if (occupied && !dictation) MicrophoneHandoff.requestInterruption("capture_detected_contention")
         occupied
     }

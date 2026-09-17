@@ -29,6 +29,7 @@ fun DuplexEchoDiagnosticCard(enabled: Boolean, onBusyChanged: (Boolean) -> Unit)
     var results by remember { mutableStateOf(listOf<DuplexAudioEvidence.Result>()) }
     var pendingExport by remember { mutableStateOf(listOf<DuplexAudioEvidence.Result>()) }
     var requested by remember { mutableStateOf(DuplexEchoDiagnostic.Scenario.JARVIS_ONLY) }
+    var profile by remember { mutableStateOf(DuplexEchoDiagnostic.RouteProfile.COMMUNICATION_SPEAKER) }
     val busy = job?.isActive == true
     fun runTest() {
         if (!enabled || job?.isActive == true) return
@@ -37,7 +38,7 @@ fun DuplexEchoDiagnosticCard(enabled: Boolean, onBusyChanged: (Boolean) -> Unit)
             onBusyChanged(true)
             results = results.filterNot { it.scenario == scenario.id }
             try {
-                val result = DuplexEchoDiagnostic.run(context, scenario) { message -> scope.launch { status = message } }
+                val result = DuplexEchoDiagnostic.run(context, scenario, profile) { message -> scope.launch { status = message } }
                 results = results + result
                 status = "${scenario.label} finished. You can play the microphone recording or save the evidence."
             } catch (cancelled: CancellationException) { status = "Echo test stopped."; throw cancelled }
@@ -80,7 +81,20 @@ fun DuplexEchoDiagnosticCard(enabled: Boolean, onBusyChanged: (Boolean) -> Unit)
     Text("Echo test — Phase D")
     Text("Run these three 10-second tests at your normal call volume. Keep the phone in the same place. " +
         "Audio stays in memory until you choose Save; leaving this screen clears it. " +
-        "Repeat with headphones and save a separate ZIP to compare routes.")
+        "Save each test as a ZIP before changing routes. Spoken Stop and Hey Jarvis are recorded for analysis; " +
+        "use Stop echo test below to cancel this fixed recording.")
+    Text("Route: ${profile.label}")
+    DuplexEchoDiagnostic.RouteProfile.entries.forEach { option ->
+        TextButton(onClick = { profile = option }, enabled = enabled && !busy && results.isEmpty() &&
+            (option != DuplexEchoDiagnostic.RouteProfile.COMMUNICATION_SPEAKER || android.os.Build.VERSION.SDK_INT >= 31)) {
+            Text(option.label)
+        }
+    }
+    Text(if (profile == DuplexEchoDiagnostic.RouteProfile.COMMUNICATION_SPEAKER)
+        "D2 uses the phone speaker and call volume. Disconnect headphones and Bluetooth audio for this comparison. " +
+            "The test releases its route afterward; normal calls still use the current route."
+    else "D1 baseline uses the current media route and media volume. Keep placement and perceived volume comparable.")
+    if (results.isNotEmpty()) Text("Save the evidence, then clear it to select another route.")
     DuplexEchoDiagnostic.Scenario.entries.forEach { scenario ->
         TextButton(onClick = {
             requested = scenario
@@ -90,6 +104,10 @@ fun DuplexEchoDiagnosticCard(enabled: Boolean, onBusyChanged: (Boolean) -> Unit)
         Text(scenario.instruction)
     }
     results.forEach { result ->
+        TextButton(onClick = {
+            pendingExport = listOf(result)
+            save.launch("jarvis-echo-${profile.id}-${result.scenario}-${System.currentTimeMillis()}.zip")
+        }, enabled = enabled && !busy) { Text("Save ZIP: ${result.scenario.replace('_', ' ')}") }
         TextButton(onClick = {
             job = scope.launch {
                 onBusyChanged(true)
@@ -108,9 +126,11 @@ fun DuplexEchoDiagnosticCard(enabled: Boolean, onBusyChanged: (Boolean) -> Unit)
         }, enabled = !busy) { Text("Copy echo diagnostics") }
         TextButton(onClick = {
             pendingExport = results.toList()
-            save.launch("jarvis-echo-${System.currentTimeMillis()}.zip")
+            save.launch("jarvis-echo-${profile.id}-${System.currentTimeMillis()}.zip")
         }, enabled = enabled && !busy) { Text("Save echo recordings and diagnostics") }
     }
+    if (results.isNotEmpty()) TextButton(onClick = { results = emptyList(); status = "Echo recordings cleared." },
+        enabled = enabled && !busy) { Text("Clear echo recordings") }
     if (busy) TextButton(onClick = { job?.cancel() }) { Text("Stop echo test") }
     if (status.isNotBlank()) Text(status)
 }

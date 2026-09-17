@@ -42,7 +42,7 @@ class MicrophoneInterruptionMonitor(context: Context, private val changed: (Bool
             val recordings = audio.activeRecordingConfigurations.size
             val own = MicrophoneHandoff.recordingCount()
             val external = (recordings - own).coerceAtLeast(0)
-            val communication = audio.mode == AudioManager.MODE_IN_CALL || audio.mode == AudioManager.MODE_IN_COMMUNICATION
+            val communication = MicrophonePolicy.externalCommunication(audio.mode, CommunicationAudioSession.ownsMode())
             val muted = audio.isMicrophoneMute
             val requested = MicrophoneHandoff.consumeRequest()
             val busy = external > 0 || communication || muted || MicrophoneHandoff.dictationRequested || MicrophoneHandoff.ownRecorderSilenced

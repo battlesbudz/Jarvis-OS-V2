@@ -1,32 +1,46 @@
 # Voice repair: bounded commits and phone test protocol
 
-## Phase D started — acoustic evidence candidate (2026-09-17)
+## Phase D2 — communication route candidate (2026-09-17)
 
-D1 now has an opt-in **Echo test — Phase D** in Voice Call settings → Development diagnostics.
-It captures three separately selected conditions: Jarvis alone (Justin silent), Justin alone,
-and double-talk. Each run retains approximately ten seconds of microphone PCM after platform
-processing, the exact eight-second Piper reference where applicable, observed playback heads,
-and hardware capture/playback timestamps when available. Save produces one ZIP with separate
-WAV streams, a timeline, recognizer input, final transcript, route/AEC control details, and
-100 ms keyword replay scores. No audio is uploaded; leaving settings discards unsaved evidence.
+D1's build 713 phone ZIP (`jarvis-echo-1789683528887.zip`) contains all three scenarios on
+Samsung SM-F956U / SDK 36, speaker output, `VOICE_RECOGNITION` / media playback in normal
+mode, volume 15/15. Platform AEC reports enabled and controlled, but Jarvis-only and double-talk
+Moonshine transcripts reproduce Piper. The microphone signal clips about 0.58% and 0.54% of
+samples respectively. Voice-only produces an empty Moonshine transcript while offline Stop
+and Hey Jarvis keyword detections succeed. Microphone and decoder WAV payloads are identical
+in all three scenarios. These are PCM/log observations, not a subjective listening assessment
+or proof of before/after cancellation effectiveness. The empty voice-only transcript remains
+unresolved; do not attribute every recognition failure to echo.
 
-Build 710's “And she's” interruption occurred while Justin was completely silent. That is a
-confirmed false interruption. Build 711 improves the playback reference used for speaker
-comparison; it is not acoustic echo cancellation and has not established phone acceptance.
+**D1 status:** first speaker evidence received and supports testing a different duplex route.
+Headphone comparison and owner speech preservation remain phone gates.
 
-**D1 status:** implementation available for phone measurement; acoustic gate still pending.
-The test keeps the existing VOICE_RECOGNITION / USAGE_MEDIA route and requested platform
-AEC/noise suppression. Recognition and keyword analysis run after capture to isolate the
-acoustic path; this is not a reproduction of live barge scheduling or speaker verification.
-The captured input is not raw pre-hardware-AEC audio. Enabled/control flags do not establish
-cancellation effectiveness. The reference is submitted PCM, not a recording of the loudspeaker.
+**D2 implemented candidate:** the existing Echo test now offers baseline media routing and an
+Android 12+ communication phone-speaker profile. The candidate pairs communication capture,
+playback usage, audio mode and explicit built-in speaker selection. A scoped route owner shares
+`MicrophoneHandoff`'s lifecycle lock with `AndroidAudioInput` and the priority monitor. Own
+communication mode is exempted; outside recording, silencing, calls and dictation still win.
+Focus loss or selected-route loss cancels the test. Capture/playback cleanup withdraws our
+mode/device/focus requests before offline recognition, including failures and cancellation.
+Android resolves the next route rather than us forcing a stale previously observed device.
+The existing `VoiceAudioSession` production path is unchanged until the candidate passes P5/P6.
 
-**Next gate:** save the three speaker tests and repeat with headphones at ordinary call volume.
-Listen for Piper in `jarvis_only/microphone.wav`, compare owner intelligibility between
-`user_only` and `double_talk`, and inspect timing/route/effect evidence. Then select a controlled
-D2 communication-route comparison with explicit ownership if supported by these observations.
-D3 WebRTC APM remains conditional on insufficient measured platform cancellation. Do not mark
-D2, D3, or milestone D accepted from JVM/CI tests.
+Every completed scenario has its own ZIP export, and a combined ZIP remains available. Reports
+include profile, actual routes, volume stream, AEC control details and route release evidence.
+No PCM is uploaded automatically or added to normal-call logs. Controlled tests still play a
+fixed eight-second reference without live barge-in, Gemma or speaker verification.
+
+**Next phone gate (P5/P6):** run all three communication-speaker tests, saving each ZIP. Match
+phone position and perceived volume to the baseline (call and media volume scales differ).
+Compare assistant-only residual playback, owner-only intelligibility, double-talk and keyword
+hits. Also cancel a test, background it, and check another microphone user can take over and
+that a subsequent test/normal call starts without a stuck communication route. Actual incoming
+calls and device disconnects require phone screening; JVM tests cannot establish these.
+
+D2 is **not acoustically accepted** and does not change normal-call routing yet. D3 WebRTC APM
+remains conditional on insufficient measured platform cancellation. No threshold changes or
+acoustic-only pauses are introduced. Build 710's silent “And she's” interruption remains the
+regression scenario; the route experiment must fix the underlying input rather than hide it.
 
 **Current interruption requirement overrides the old Phase E wording:** acoustic activity,
 noise, coughs, or loudness alone must never pause or stop output. A recognized owner word is
@@ -464,8 +478,8 @@ Update this table after each actual delivery. `Planned` is deliberately not `imp
 | C1 | First repair delivered; phone interruption failed; renewal scheduling remains | 3509b4b; build 678 | 52 focused JVM tests and Android CI passed | Failure record below |
 | C2 | Partial repairs delivered; not accepted | Final-only probes and later scheduling repairs | Self-playback still triggers costly probes | Genuine interruption acceptance pending |
 | C3 | Partial playback repairs; Kokoro callbacks in current commit | Builds 683–684 buffering/cues; current Kokoro delivery change | One cohesive 684 call, no observed starvation; sustained gate not met | P2 extended/P3 remain |
-| D1 | Acoustic evidence test implemented; phone gate pending | Phase D1 evidence candidate | Bounded PCM/timeline/archive tests; CI | P5 pending |
-| D2 | Conditional on route evidence | — | — | P5/P6 — |
+| D1 | Speaker evidence received; residual playback demonstrated | Build 713 ZIP | Bounded PCM/timeline/archive tests; CI | Headphone/owner preservation pending |
+| D2 | Communication speaker comparison implemented; normal route unchanged | D2 candidate, per-test ZIPs | Lease/priority regression tests; Android CI | P5/P6 pending |
 | D3 | Conditional on insufficient platform AEC | — | — | P5/P2 — |
 | E1 | Planned | — | — | P4/P5 screen — |
 | E2 | Planned | — | — | P4 full/P6 — |

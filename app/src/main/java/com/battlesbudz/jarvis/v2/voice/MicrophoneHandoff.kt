@@ -46,6 +46,7 @@ object MicrophoneHandoff {
         // Stop hardware capture immediately. Its read job remains the sole release owner.
         // Do not wait for ASR/TTS teardown or a main-thread runtime callback.
         recorders.values.forEach { it.stop() }
+        CommunicationAudioSession.releaseForInterruption()
         record("priority_request reason=$reason own=${recorders.size}")
         refresh?.invoke()
     }
