@@ -41,6 +41,14 @@ class LiteRtLmEngine(
     private var conversation: com.google.ai.edge.litertlm.Conversation? = null
     private val closed = AtomicBoolean(false)
 
+    /** Reports actual submissions, including speculative drafts, retries and recognition fallback. */
+    var onPromptSubmitted: (String, Int) -> Unit = { _, _ -> }
+
+    private var nativeSession = 0L
+    private var nativeSubmissions = 0
+    fun inputContextDescription(): String =
+        "nativeSession=$nativeSession nativePriorSubmissions=$nativeSubmissions toolsEnabled=$toolsEnabled"
+
     private var toolsEnabled = true
     suspend fun setToolsEnabled(enabled: Boolean): Boolean {
         if (toolsEnabled == enabled) return false
@@ -76,6 +84,8 @@ class LiteRtLmEngine(
     }
 
     suspend fun resetConversation() {
+        nativeSession++
+        nativeSubmissions = 0
         conversation?.close()
         conversation = createConversation()
     }
@@ -83,7 +93,10 @@ class LiteRtLmEngine(
     override suspend fun generate(
         prompt: String,
         onToken: (String) -> Unit
-    ): GenerationResult = generateWithContents(Contents.of(prompt), onToken)
+    ): GenerationResult {
+        onPromptSubmitted(prompt, 0)
+        return generateWithContents(Contents.of(prompt), onToken)
+    }
 
     suspend fun generate(
         prompt: String,
@@ -103,10 +116,10 @@ class LiteRtLmEngine(
         prompt: String,
         audioBytes: ByteArray,
         onToken: (String) -> Unit
-    ): GenerationResult = generateWithContents(
-        Contents.of(Content.AudioBytes(audioBytes), Content.Text(prompt)),
-        onToken
-    )
+    ): GenerationResult {
+        onPromptSubmitted(prompt, audioBytes.size)
+        return generateWithContents(Contents.of(Content.AudioBytes(audioBytes), Content.Text(prompt)), onToken)
+    }
 
     private suspend fun generateWithContents(
         contents: Contents,
@@ -126,6 +139,7 @@ class LiteRtLmEngine(
         message: Message,
         onToken: (String) -> Unit
     ): GenerationResult {
+        nativeSubmissions++
         if (conversation == null && !closed.get()) conversation = createConversation()
         val activeConversation = requireNotNull(conversation) {
             "LiteRT-LM engine must be initialized before generation."

@@ -11,10 +11,10 @@ class BargeInDiagnosticEvidenceTest {
         gate.update(true, true, 0, reference, reference)
         evidence.record("1", 1, 10, gate.reason, reference, reference, gate, true)
         assertTrue(evidence.entries().single().contains("echoMatchedWords=5"))
-        assertTrue(evidence.entries().single().contains("reason=no_new_request_in_mixed_transcript"))
+        assertTrue(evidence.entries().single().contains("reason=no_new_speech_in_mixed_transcript"))
         gate.update(true, true, 100, "$reference. Actually open settings", reference)
         assertEquals("actually open settings", gate.selectedRequest)
-        assertTrue(gate.examinedFragments.single().startsWith("intent:"))
+        assertTrue(gate.examinedFragments.single().startsWith("speech:"))
         assertEquals(BargeInGate.Action.CONFIRM,
             gate.update(true, true, 400, "$reference. Actually open settings", reference))
         evidence.record("2", 2, 20, gate.reason, "$reference. Actually open settings", reference, gate, true)

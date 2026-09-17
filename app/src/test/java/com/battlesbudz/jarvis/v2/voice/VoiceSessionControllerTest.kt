@@ -19,7 +19,7 @@ class VoiceSessionControllerTest {
     }
 
     @Test
-    fun immediateNewCallCanRecallPreviousReplyWithoutResumingTask() {
+    fun immediateNewCallDoesNotImportPreviousStoryOrTask() {
         val store = MemoryStore()
         var now = 1000L
         val controller = VoiceSessionController(store) { now }
@@ -32,10 +32,11 @@ class VoiceSessionControllerTest {
         val next = controller.beginCall()
         assertTrue(next.transcript.isEmpty())
         assertEquals(null, next.taskStatus)
-        assertEquals("The astronauts discovered a hidden laboratory.", controller.conversationContext().last().text)
+        assertTrue(controller.conversationContext().isEmpty())
+        assertTrue(controller.contextProvenance().contains("automaticPriorCalls=false"))
         controller.appendTranscript("You", "What did you say?")
         assertEquals(1, controller.currentTranscript().size)
-        assertEquals(3, controller.conversationContext().size)
+        assertEquals(1, controller.conversationContext().size)
     }
 
     @Test
@@ -56,16 +57,20 @@ class VoiceSessionControllerTest {
     }
 
     @Test
-    fun restartedControllerUsesSavedRecentDialogueButNotUnfinishedDrafts() {
+    fun restartedControllerOnlyUsesSavedDialogueOnExplicitResume() {
         val store = MemoryStore()
         val first = VoiceSessionController(store) { 1000L }
         first.beginCall()
         first.appendTranscript("Jarvis", "Last complete reply")
         first.appendTranscript("Jarvis", "An unfinished draft", complete = false)
-        first.end()
+        val saved = first.end()
         val restarted = VoiceSessionController(store) { 2000L }
         restarted.beginCall()
+        assertTrue(restarted.conversationContext().isEmpty())
+        restarted.end()
+        restarted.resumeCall(saved)
         assertEquals(listOf("Last complete reply"), restarted.conversationContext().map { it.text })
+        assertTrue(restarted.contextProvenance().contains("resumedFromCallId=${saved.id}"))
     }
 
     private class MemoryStore : VoiceCallStore {

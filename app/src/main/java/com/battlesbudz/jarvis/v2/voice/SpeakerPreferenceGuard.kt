@@ -27,6 +27,23 @@ class SpeakerPreferenceGuard(context: Context, model: File, private val activati
         log("speaker_preference decision=${if (reject) "reject" else "accept_or_uncertain"} learned=${state.preferred != null} scores=${scores.joinToString(",")} voicedMs=${pcm.size / 32} computeMs=${(System.nanoTime()-began)/1_000_000}")
         return !reject
     }
+    /** Does not train or overwrite the final-turn training windows. */
+    fun acceptInterruption(pcm: ByteArray): Boolean {
+        val began = System.nanoTime()
+        val scores = if (state.preferred == null || pcm.size < 8000) emptyList() else {
+            val bounded = pcm.copyOfRange((pcm.size - 96000).coerceAtLeast(0), pcm.size)
+            val windows = if (bounded.size <= 48000) listOf(bounded)
+                else listOf(bounded, bounded.copyOfRange(bounded.size - 48000, bounded.size))
+            windows.mapNotNull(::embedding).mapNotNull(state::score)
+        }
+        val decision = InterruptionSpeakerPolicy.decide(state.preferred != null, scores)
+        log("speaker_interruption decision=$decision learned=${state.preferred != null} " +
+            "scores=${scores.joinToString(",")} audioMs=${pcm.size / 32} " +
+            "computeMs=${(System.nanoTime() - began) / 1_000_000} " +
+            "beforePlaybackStop=true identity=learned_preference")
+        return decision == InterruptionSpeakerPolicy.Decision.MATCH
+    }
+
     fun accepted(text: String) {
         if (!learnFromActivation || text.trim().split(Regex("\\s+")).size < 3 || seconds !in 3f..12f || vectors.size != 2) return
         if (PreferredSpeaker.cosine(vectors[0], vectors[1]) < 0.65f) { log("speaker_preference training=skipped reason=inconsistent_windows"); return }

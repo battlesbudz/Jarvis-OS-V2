@@ -17,16 +17,12 @@ class VoiceSessionController(
     val state: StateFlow<VoiceSessionState> = _state.asStateFlow()
 
     private var activeCall: VoiceCallRecord? = null
-    private var recentCallContext: List<TranscriptEntry> = emptyList()
+    private var resumedFromCallId: String? = null
 
     @Synchronized fun beginCall(): VoiceCallRecord {
         check(activeCall == null) { "A Voice Call is already active." }
         val now = nowMs()
-        recentCallContext = store.list().filter { call ->
-            call.transcript.any { it.complete } &&
-                call.endedAtMs?.let { now - it in 0..(15 * 60 * 1000L) } == true
-        }.maxByOrNull { it.endedAtMs ?: 0 }?.transcript.orEmpty()
-            .filter { it.complete || (it.role == "Jarvis" && it.forConversation() != null) }.takeLast(6)
+        resumedFromCallId = null
         return VoiceCallRecord(UUID.randomUUID().toString(), now).also {
             activeCall = it
             _state.value = VoiceSessionState.ACTIVELY_LISTENING
@@ -109,14 +105,24 @@ class VoiceSessionController(
 
     @Synchronized fun currentTranscript(): List<TranscriptEntry> = activeCall?.transcript.orEmpty()
 
-    /** Background dialogue only: never imports task state or appends old entries to the new call. */
+    /** Only this call, or the explicitly resumed transcript, supplies dialogue. */
     @Synchronized fun conversationContext(): List<TranscriptEntry> =
-        (recentCallContext + currentTranscript()).mapNotNull { it.forConversation() }.takeLast(8)
+        currentTranscript().mapNotNull { it.forConversation() }.takeLast(8)
+
+    @Synchronized fun contextProvenance(): String {
+        val selected = conversationContext()
+        return "callId=${activeCall?.id} callStartedAtMs=${activeCall?.startedAtMs} " +
+            "historySource=${if (resumedFromCallId == null) "current_call" else "explicit_resume"} " +
+            "resumedFromCallId=$resumedFromCallId automaticPriorCalls=false " +
+            "storedEntries=${currentTranscript().size} selectedEntries=${selected.size} entryLimit=8 " +
+            "oldestEntryAtMs=${selected.firstOrNull()?.timestampMs} newestEntryAtMs=${selected.lastOrNull()?.timestampMs} " +
+            "perEntryPromptLimitUser=300 perEntryPromptLimitAssistant=450 contextBudgetChars=3000"
+    }
 
     /** Starts a new linked session with the prior call's transcript as context. */
     @Synchronized fun resumeCall(call: VoiceCallRecord): VoiceCallRecord {
         check(activeCall == null) { "A Voice Call is already active." }
-        recentCallContext = emptyList()
+        resumedFromCallId = call.id
         val latest = store.list().firstOrNull { it.id == call.id } ?: call
         return VoiceCallRecord(
             id = UUID.randomUUID().toString(),

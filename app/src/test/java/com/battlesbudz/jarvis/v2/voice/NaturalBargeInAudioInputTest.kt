@@ -18,7 +18,7 @@ class NaturalBargeInAudioInputTest {
                      dispatcher: CoroutineDispatcher = Dispatchers.Unconfined, beforeFrame: (Int) -> Unit = {},
                      acceptAction: () -> Unit = {}, loadAction: () -> Unit = {}, speechNow: () -> Boolean = { speech },
                      budgetNow: () -> Boolean = { budget }, backlogNow: () -> Long = { 0L }, onConfirmation: (Boolean) -> Unit = {},
-                     onEvidence: (String) -> Unit = {}): NaturalBargeInAudioInput {
+                     onEvidence: (String) -> Unit = {}, speakerMatches: (() -> Boolean)? = null, minimumProbeMs: Int = 1000): NaturalBargeInAudioInput {
         val input = object : AudioInput {
             override val sampleRateHz = 16000
             override val channelCount = 1
@@ -56,7 +56,31 @@ class NaturalBargeInAudioInputTest {
                 if (natural) assertEquals(models, closedModels)
                 onConfirmation(natural)
                 confirmed++
-            }, log = logs::add, nowMs = { clock }, dispatcher = dispatcher)
+            }, log = logs::add, nowMs = { clock }, dispatcher = dispatcher,
+            minimumProbeAudioMs = minimumProbeMs, checkSpeaker = speakerMatches?.let { check -> { _: ByteArray -> check() } })
+    }
+    @Test fun briefNoIsCheckedWithoutOneOrThreeSecondsOfSpeech() = runBlocking {
+        gate(text = "No", minimumProbeMs = 250, speechNow = { clock <= 300 },
+            speakerMatches = { true }, chunks = 15).chunks().toList()
+        assertEquals(1, confirmed)
+        assertTrue(logs.any { "barge_probe_started" in it && "preRollMs=300" in it })
+        assertTrue(logs.any { "minimumProbeAudioMs=250" in it && "extraWordWaitMs=0" in it })
+    }
+    @Test fun ownerSingleWordChecksSpeakerBeforeStopping() = runBlocking {
+        var checked = false
+        gate(text = "I", reference = "I will tell you a story", speakerMatches = {
+            assertEquals(0, confirmed); checked = true; true
+        }).chunks().toList()
+        assertTrue(checked); assertEquals(1, confirmed)
+    }
+    @Test fun backgroundSpeakerCannotInterruptEvenWithClearWords() = runBlocking {
+        val delivered = gate(text = "No", speakerMatches = { false }).chunks().toList()
+        assertEquals(0, confirmed); assertTrue(delivered.isEmpty())
+        assertTrue(logs.any { "barge_speaker_rejected_or_uncertain" in it })
+    }
+    @Test fun ownerFilterDoesNotRemoveHeyJarvisKeywordPath() = runBlocking {
+        gate(budget = false, keywordAt = 10, speakerMatches = { false }).chunks().toList()
+        assertEquals(1, confirmed); assertEquals(0, models)
     }
     @Test fun sirMistakenForStopDoesNotCutOffPlayback() = runBlocking {
         val audio = gate(text = "Sir, I apologize for the interruption", reference = "Sir, I apologize for the interruption",
@@ -110,15 +134,15 @@ class NaturalBargeInAudioInputTest {
         assertTrue(logs.any { it.startsWith("barge_evidence_") && "transcript=\"Actually open settings\"" in it &&
             "reason=confirmed_new_request" in it })
     }
-    @Test fun fullCorrectionAfterTwoIncompleteProbesRetainsEveryAudioChunk() = runBlocking {
+    @Test fun aSingleWordInTheSecondProbeAlreadyHandsOverTheFloor() = runBlocking {
         val delivered = gate(chunks = 45, textNow = {
             when (models) { 1 -> ""; 2 -> "Actually"; else -> "Actually tell me what two plus two is" }
         }).chunks().toList()
-        assertEquals(1, confirmed); assertEquals(3, models); assertEquals(models, closedModels)
+        assertEquals(1, confirmed); assertEquals(2, models); assertEquals(models, closedModels)
         val bytes = delivered.flatMap { it.toList() }.toByteArray()
         val expected = ByteArray(45 * 3200) { (it / 3200 + 1).toByte() }
         assertArrayEquals(expected, bytes)
-        assertTrue(logs.any { "reason=confirmed_new_request" in it && "probes=3" in it })
+        assertTrue(logs.any { "reason=confirmed_new_request" in it && "probes=2" in it })
     }
     @Test fun pendingResultCanSettleAfterCandidateInputDeadline() = runBlocking {
         var firstAccept = true
@@ -138,8 +162,8 @@ class NaturalBargeInAudioInputTest {
         assertTrue(delivered.isEmpty()); assertEquals(0, confirmed); assertEquals(models, closedModels)
         assertTrue(logs.any { "barge_candidate_rejected reason=window_limit" in it })
     }
-    @Test fun echoAndBackchannelsNeverPauseOrConfirm() = runBlocking {
-        for (text in listOf("Can you open settings", "mm hmm", "okay", "The sky is blue")) {
+    @Test fun echoNeverPausesOrConfirms() = runBlocking {
+        for (text in listOf("Can you open settings", "The sky is blue")) {
             assertTrue(gate(text = text, reference = "Can you open settings? The sky is blue").chunks().toList().isEmpty())
         }
         assertEquals(0, confirmed); assertEquals(models, closedModels)

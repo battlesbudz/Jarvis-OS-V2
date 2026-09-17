@@ -16,7 +16,9 @@ class NaturalBargeInAudioInput(
     private val log: (String) -> Unit = {},
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 },
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
-    private val canContinuePlayback: () -> Boolean = hasPlaybackBudget
+    private val canContinuePlayback: () -> Boolean = hasPlaybackBudget,
+    private val checkSpeaker: ((ByteArray) -> Boolean)? = null,
+    private val minimumProbeAudioMs: Int = 250
 ) : AudioInput {
     init { require(input.sampleRateHz == 16_000 && input.channelCount == 1) }
     override val sampleRateHz get() = input.sampleRateHz
@@ -62,7 +64,11 @@ class NaturalBargeInAudioInput(
             var candidateAt = 0L
             var cooldownUntil = 0L
             var hypothesis: BoundedInterruptionRecognizer.Result? = null
-            var gate = BargeInGate()
+            var submittedAudio = byteArrayOf()
+            var hypothesisAudio = byteArrayOf()
+            var gate = BargeInGate(stableMs = if (checkSpeaker != null) 0 else 300, allowShortEchoOverlap = checkSpeaker != null)
+            var speakerCheck: Deferred<Boolean>? = null
+            var speakerWorker: Deferred<Boolean>? = null
             var keywordReady = false
             var lastKeywordReport = 0L
             var backlogSuspended = false
@@ -75,7 +81,8 @@ class NaturalBargeInAudioInput(
             val diagnosticEvidence = BargeInDiagnosticEvidence()
             fun reset() {
                 active = false; submitted = false; submittedBytes = 0; candidateProbes = 0; hypothesis = null
-                candidate.clear(); gate = BargeInGate(); retryAt = 0; lastGateDecision = ""; revision++
+                submittedAudio = byteArrayOf(); hypothesisAudio = byteArrayOf()
+                candidate.clear(); gate = BargeInGate(stableMs = if (checkSpeaker != null) 0 else 300, allowShortEchoOverlap = checkSpeaker != null); speakerCheck?.cancel(); speakerCheck = null; retryAt = 0; lastGateDecision = ""; revision++
             }
             fun disable(reason: String) {
                 if (!disabled) {
@@ -163,6 +170,7 @@ class NaturalBargeInAudioInput(
                     polled?.let { result ->
                         if (result.revision == revision && now - result.audioAtMs <= InterruptionTiming.RESULT_AGE_MS) {
                             hypothesis = result
+                            hypothesisAudio = submittedAudio
                             log("barge_natural_ready scope=candidate revision=$revision resultAgeMs=${now - result.audioAtMs}")
                         } else {
                             staleResults++
@@ -224,12 +232,41 @@ class NaturalBargeInAudioInput(
                         }
                     }
                     if (action == BargeInGate.Action.CONFIRM) {
+                        if (checkSpeaker != null) {
+                            if (speakerCheck == null) {
+                                if (speakerWorker?.isCompleted == false) return@collect
+                                val audio = hypothesisAudio
+                                speakerCheck = async(dispatcher) {
+                                    try { checkSpeaker.invoke(audio) }
+                                    catch (cancelled: CancellationException) { throw cancelled }
+                                    catch (error: Exception) {
+                                        log("barge_speaker_check unavailable=${error.javaClass.simpleName} playback_uninterrupted=true")
+                                        false
+                                    }
+                                }
+                                speakerWorker = speakerCheck
+                            }
+                            val verification = requireNotNull(speakerCheck)
+                            if (!verification.isCompleted) return@collect
+                            if (!verification.await()) {
+                                log("barge_speaker_rejected_or_uncertain playback_uninterrupted=true")
+                                reset(); cooldownUntil = now + 500
+                                return@collect
+                            }
+                            // A slow speaker check cannot authorize stale buffered speech.
+                            if (now - lastSpeechAt > InterruptionTiming.CONFIRM_AGE_MS) {
+                                reset(); cooldownUntil = now + 500
+                                return@collect
+                            }
+                        }
                         delivered = true
                         finalReason = "natural_confirmed"
                         val echo = reference()
                         onConfirmed(true, echo)
                         worker.close() // Final-turn ASR must never overlap the probe lease.
-                        log("barge_speech_confirmed method=bounded_candidate preRollMs=${candidate.sizeBytes() / 32}")
+                        log("barge_speech_confirmed method=bounded_candidate preRollMs=${candidate.sizeBytes() / 32} " +
+                            "speechOnsetToStopRequestMs=${now - candidateAt} minimumProbeAudioMs=$minimumProbeAudioMs " +
+                            "speakerMatched=${checkSpeaker != null} extraWordWaitMs=0")
                         emit(candidate.snapshot())
                         candidate.clear(); onset.clear()
                     } else if ((heard != null && now - heard.audioAtMs > InterruptionTiming.CONFIRM_AGE_MS) ||
@@ -248,15 +285,17 @@ class NaturalBargeInAudioInput(
                     }
                     if (!hasPlaybackBudget()) pressureFrames++
                     if (candidateProbes < 3 && now >= retryAt &&
-                        (!submitted || (hypothesis != null && gate.reason != "words_settling" && candidate.sizeBytes() >= submittedBytes + 32_000)) &&
-                        candidate.sizeBytes() in 32_000..128_000 && hasPlaybackBudget()) {
+                        (!submitted || (hypothesis != null && gate.reason != "words_settling" && candidate.sizeBytes() >= submittedBytes + minimumProbeAudioMs * 32)) &&
+                        at - candidateAt >= 200 && candidate.sizeBytes() in (minimumProbeAudioMs * 32)..128_000 && hasPlaybackBudget()) {
                         if (!workBudget.available(now)) {
                             budgetDeferrals++
                             if (budgetDeferrals == 1 || budgetDeferrals % 50 == 0)
                                 log("barge_probe_deferred reason=rolling_work_budget retryable=true")
                             return@collect
                         }
-                        if (worker.submit(revision, candidate.snapshot(), at)) {
+                        val probeAudio = candidate.snapshot()
+                        if (worker.submit(revision, probeAudio, at)) {
+                            submittedAudio = probeAudio
                             workBudget.record(now)
                             submitted = true; submittedBytes = candidate.sizeBytes(); candidateProbes++; probes++
                             hypothesis = null // Preserve lexical stability across growing probes.
@@ -265,6 +304,8 @@ class NaturalBargeInAudioInput(
                     }
                 }
             } finally {
+                // Native embedding work must finish before its shared extractor is released.
+                withContext(NonCancellable) { speakerWorker?.cancelAndJoin() }
                 worker.close()
                 try { vad?.close() } finally {
                     keyword.close(); onset.clear(); candidate.clear(); stopAudio.clear()

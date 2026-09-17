@@ -20,6 +20,12 @@ class TurnOrchestrator(
     private var activeSubjectQuestion: String? = null
     private var activeSubject: String? = null
 
+    fun reset() {
+        pendingLookupSubject = null
+        activeSubjectQuestion = null
+        activeSubject = null
+    }
+
     fun plan(prompt: String, history: List<Pair<String, String>> = emptyList()): TurnPlan {
         val confirmation = grounding.isLookupConfirmation(prompt)
         val explicit = grounding.isExplicitLookupRequest(prompt)
@@ -63,9 +69,8 @@ class TurnOrchestrator(
                 normalized.contains(" her ") ||
                 normalized.contains(" his ") ||
                 normalized.contains(" their ")
-            if (namedEntity != null) {
-                activeSubject = namedEntity
-            }
+            // A new request or correction must not inherit an unrelated subject.
+            if (!isFollowUp || namedEntity != null) activeSubject = namedEntity
             activeSubjectQuestion = if (isFollowUp && activeSubjectQuestion != null) {
                 activeSubjectQuestion + "\nFollow-up: " + prompt
             } else {

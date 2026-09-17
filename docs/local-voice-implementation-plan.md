@@ -1,5 +1,7 @@
 # Local voice implementation plan
 
+> 17 September follow-up: new calls now isolate history/summary/subject; exact model inputs are retained. Natural single-word interruption requires a positive learned-speaker match before stopping, with 250 ms probe eligibility and no extra word-stability delay. Stop/Hey Jarvis are retained. See [current diagnostics](current-diagnostics.md).
+
 > Maintenance update: APK payload measurement, a reduced Sherpa JNI build profile, optional compact APK packaging and the first app modularization pass are documented in [APK size audit](apk-size-audit.md) and [component map](app-modularization.md). These changes do not close phone voice acceptance items.
 
 > Current cleanup: obsolete benchmark routes and profile controls have been removed; fixed natural Piper settings apply. See [current diagnostics](current-diagnostics.md) and [current acceptance status](voice-pipeline-current.md). Historical test-pack checklists below are not current UI requirements.
@@ -776,3 +778,28 @@ This retires Paul-specific Phase 6A/B work, not the remaining acoustic,
 interruption, latency, context, lifecycle or E4B device acceptance gates.
 
 Validation before CI: 239 local Kotlin/JUnit tests passed, including Piper profiles/configuration, retired preference migration and file cleanup, PCM sample-rate handling and existing capture/interruption regressions. Four native-dependency helper tests passed. Piper output/model setup and benchmark core compiled against Android 35 and the pinned Sherpa/Moonshine SDK classes. Signed Android CI and phone upgrade/duplex checks remain release and device gates respectively.
+
+
+## Build 705 context and short-interruption repair — 17 September
+
+Confirmed code defects: fresh calls imported six entries from a recent call within
+15 minutes; runtime summaries/subjects outlived calls; natural interruption rejected
+bare No as no_intent. Speaker preference ran downstream of playback stop and accepted
+clips shorter than three seconds as uncertain, so it was not an owner gate for stopping.
+
+Implemented clean new-call context with explicit Resume retained, stale-subject reset,
+correction-priority voice instructions, exact submitted-prompt/history provenance retention,
+any-word natural floor-taking with speaker confirmation before stop, earlier bounded probes,
+and listening-only handling of isolated interruption words. Existing keyword controls and
+final tool validation remain. Build 706's test compilation blocker was separately repaired:
+its local download fixture now uses portable ServerSocket instead of com.sun HttpServer.
+
+Validation: 77 focused Kotlin/JUnit checks pass, including short No, owner/background
+speaker admission, preserved Hey Jarvis/stop, echo rejection, final correction integrity,
+new-call isolation/explicit resume, prompt persistence/truncation/retention and download
+resume/200-response fallback. Full signed Android CI is the remaining build gate.
+Phone acceptance: owner says No/Yes/I once while generating and speaking; another speaker
+and TV speech should not interrupt; owner keywords still work; new calls must not inherit
+MVP/squirrel content while explicitly resumed calls can. Inspect speaker scores and
+speechOnsetToStopRequestMs. No sub-300-ms stop latency or reliable short-clip biometric
+matching is claimed without device evidence. Phase 3/latency acceptance remains open.

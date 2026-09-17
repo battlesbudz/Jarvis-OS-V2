@@ -8,7 +8,7 @@ import kotlinx.coroutines.*
 /** Local speech capture alongside generation/playback, with the ordinary mic-priority contract. */
 class ReplyVoiceCapture(private val context: Context, private val log: (String) -> Unit) {
     suspend fun listen(output: PiperVoiceOutput, asrDirectory: File,
-                       onConfirmed: () -> Unit, asrEngine: AsrEngine = AsrEngine.MOONSHINE, acceptCandidate: (ByteArray) -> Boolean = { true }, onPartialTranscript: (String) -> Unit = {}, trace: VoiceTurnTrace? = null,
+                       onConfirmed: () -> Unit, asrEngine: AsrEngine = AsrEngine.MOONSHINE, acceptCandidate: (ByteArray) -> Boolean = { true }, acceptInterruptionSpeaker: (ByteArray) -> Boolean = { false }, onPartialTranscript: (String) -> Unit = {}, trace: VoiceTurnTrace? = null,
                        inputFactory: (suspend () -> AudioInput)? = null, modelSession: VoiceModelSession? = null): CapturedVoiceTurn = recoverReplyListener(log) {
         supervisorScope {
             MicrophoneInterruptionMonitor.awaitAvailable()
@@ -42,6 +42,7 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                     playing = { output.isPlayingAudio }, reference = { output.recentSpokenText() },
                     hasPlaybackBudget = output::hasInterruptionBudget,
                     canContinuePlayback = output::canContinueInterruption,
+                    checkSpeaker = acceptInterruptionSpeaker,
                     onConfirmed = { natural, evidence ->
                         if (natural) naturalReference = evidence
                         else {
@@ -80,9 +81,13 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 val echo = naturalReference
                 if (echo != null) {
                     // Recheck the final recognition: provisional words never authorize actions.
-                    val checked = NaturalCorrectionText.resolve(finalText, echo)
+                    val checked = NaturalCorrectionText.resolve(finalText, echo, speakerMatched = true)
                     if (checked == null) {
                         log("barge_correction_discarded reason=final_request_not_confirmed")
+                        return@supervisorScope CapturedVoiceTurn("", byteArrayOf())
+                    }
+                    if (NaturalCorrectionText.isFloorOnly(checked)) {
+                        log("barge_floor_handoff text=$checked destination=followup_listening modelAnswer=false")
                         return@supervisorScope CapturedVoiceTurn("", byteArrayOf())
                     }
                     return@supervisorScope CapturedVoiceTurn(checked, wav, capture.audioIsComplete, capture.recognitionIssue)

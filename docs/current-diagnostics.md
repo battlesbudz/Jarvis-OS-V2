@@ -1,6 +1,6 @@
 # Current settings and development diagnostics
 
-Current on `audio-pr2` / PR #6, 16 September 2026.
+Current on `audio-pr2` / PR #6, 17 September 2026.
 
 ## Everyday settings
 
@@ -37,7 +37,7 @@ the installed model can initialize and answer before calls become available.
 Automatic call diagnostics retain useful timing, playback starvation, cancellation,
 thermal/scheduling and crash evidence. Thread counts and thermal state may still
 appear as measured context in developer logs; they are not user tuning controls.
-Saved Voice Calls and their resume/history behavior are unchanged.
+Saved Voice Calls remain available; only explicit Resume imports their transcript. New calls no longer import recent calls automatically.
 
 ## Removed routes
 
@@ -61,3 +61,48 @@ Piper playback, exercise E2B/E4B and both recognizers, check stop/correction/goo
 and inspect/export a real call. Confirm diagnostics release the microphone on
 cancel or leaving settings. E4B memory/latency, acoustic performance and sustained
 call interruption acceptance remain open in [the current pipeline](voice-pipeline-current.md).
+
+## Exact model input and call boundaries (build 705 follow-up)
+
+Copy diagnostics retains the latest 24 actual Gemma text-prompt submissions separately
+from timing chatter, without the former 1,200/1,500-character truncation. This includes
+speculative drafts, final inference, transcription fallback and text retries. Each entry
+has turn/submission IDs, model ID, audio/text mode and byte count, native-session/prior-
+submission counters, tool-enable state, and the exact submitted text. A consumed draft
+has already been recorded at its actual submission; it is not another inference.
+These are app-submitted prompts, not a dump of the SDK's internal chat template.
+
+History provenance identifies the current call or explicitly resumed call, total and
+selected entry counts, and oldest/newest selected timestamps. The exact prompt shows
+which content survived the newest-eight-entry, 300-character user/450-character assistant,
+3,000-character context budget, plus any summary and resolved subject. New call IDs clear
+summary and subject state. An unrelated current request clears a stale resolved subject.
+Prompt snapshots clear at the next diagnostic session and remain app-private until copied.
+
+`audio_text` means Gemma was sent both audio and text; it does **not** count corrections
+of Moonshine. `audioCorrectionCount=not_observable` states this explicitly. Recognition
+text evidence separately retains ASR/resolved text and the transcription-fallback flag.
+
+## Short interruptions and speaker preference
+
+Stop and Hey Jarvis keyword paths remain. Natural interruption no longer requires a
+command, question or minimum word count. A brief word can take the floor, including
+No, Yes or I; a lone floor-taking word returns to listening without asking Gemma to
+answer it. Echo-only clauses are removed from the captured correction.
+
+The first natural probe can start from 250 ms of buffered PCM after 200 ms from the
+VAD candidate onset. There is no three-second speech prerequisite and no extra lexical
+stability wait on the speaker-verified path. Buffer age, ASR, speaker embedding and
+playback-stop processing still add latency. `speechOnsetToStopRequestMs` measures the
+VAD-candidate-to-stop-request interval, not the acoustic first phoneme or final audible
+frame. Device measurement is still required.
+
+Before natural interruption stops playback, the same PCM clip used by ASR must positively
+match the learned speaker preference (cosine >= 0.65 in an available embedding window).
+A missing profile, insufficient embedding or uncertain score leaves playback running;
+keywords remain available. Speaker extraction runs off the capture loop and is joined
+before releasing its native owner. Logs report MATCH/DIFFERENT/UNCERTAIN, scores, clip
+length and compute time. This is a learned voice preference, not verified owner identity.
+The existing preference needs consistent speech over at least three distinct activations;
+its training-duration rules are not a per-interruption waiting period. Reliable matching
+of a 270 ms word amid speaker echo remains a Fold acceptance test, not a guaranteed result.

@@ -3,7 +3,7 @@ package com.battlesbudz.jarvis.v2.voice
 import java.util.Locale
 
 /** Confirm new user words without pausing the speaker to test for echo. */
-class BargeInGate(private val stableMs: Long = 300) {
+class BargeInGate(private val stableMs: Long = 300, private val allowShortEchoOverlap: Boolean = false) {
     enum class Action { WAIT, CONFIRM }
     private var candidate = ""
     private var candidateAt = 0L
@@ -31,23 +31,17 @@ class BargeInGate(private val stableMs: Long = 300) {
         // Playback may underrun while its echo is still in ASR's rolling transcript.
         // Keep the reference in both phases and inspect clauses, not just the last words.
         val echoWords = words(spokenText)
-        val echo = echoWords.toSet()
         if (transcript != lastTranscript || spokenText != lastReference) {
             cachedRequest = requestWords(transcript, echoWords)
             lastTranscript = transcript
             lastReference = spokenText
         }
         val heard = cachedRequest
-        val novel = heard.filter { it !in echo }
-        val command = heard.firstOrNull() in controls && heard.size <= 3 && novel.isNotEmpty()
-        val requested = hasRequestIntent(heard)
-        val credible = heard.isNotEmpty() && requested && (command ||
-            (novel.distinct().size >= 2 && novel.size * 2 >= heard.size))
-        if (!credible || speechAt?.let { nowMs - it > 1000 } != false) {
+        // Interruption is a floor handoff, not authorization of a command.
+        // A single non-echo word is enough; the complete request is captured after stopping.
+        if (heard.isEmpty() || speechAt?.let { nowMs - it > 1000 } != false) {
             reason = when {
-                heard.isEmpty() -> if (transcript.isBlank()) "no_words" else "no_new_request_in_mixed_transcript"
-                !requested -> "no_request_or_correction"
-                !credible -> "echo_or_insufficient_new_words"
+                heard.isEmpty() -> if (transcript.isBlank()) "no_words" else "no_new_speech_in_mixed_transcript"
                 else -> "no_recent_speech"
             }
             candidate = ""; return Action.WAIT
@@ -57,7 +51,7 @@ class BargeInGate(private val stableMs: Long = 300) {
         if (key != candidate) {
             val extendsCandidate = candidate.isNotEmpty() && key.startsWith("$candidate ")
             candidate = key
-            if (!extendsCandidate) { candidateAt = nowMs; return Action.WAIT }
+            if (!extendsCandidate) { candidateAt = nowMs; if (stableMs > 0) return Action.WAIT }
         }
         if (nowMs - candidateAt < stableMs) return Action.WAIT
         reason = "confirmed_new_request"
@@ -86,40 +80,23 @@ class BargeInGate(private val stableMs: Long = 300) {
                 if (matched[i]) { i++; continue }
                 val start = i
                 while (i < tokens.size && !matched[i]) i++
-                val run = tokens.subList(start, i).dropWhile { it in setOf("please", "hey") }
+                val run = tokens.subList(start, i)
+                val novel = run.filter { it !in echo }
+                // Short literal echo and isolated ASR substitutions inside an echoed
+                // sentence are still playback, not a user taking the floor.
+                val internalSubstitution = start > 0 && i < tokens.size && run.size == 1
+                val nearEcho = run.size >= 3 && novel.size * 2 < run.size
+                val shortOwnerCandidate = allowShortEchoOverlap && run.size in 1..2
+                val userSpeech = run.isNotEmpty() && (novel.isNotEmpty() || shortOwnerCandidate) && !internalSubstitution && !nearEcho
                 if (examinedFragments.size < 4) examinedFragments = examinedFragments +
-                    "${if (hasRequestIntent(run)) "intent" else "no_intent"}:${run.joinToString(" ").take(160)}"
-                // Only clause/echo boundaries start a request: "I can tell them" is incidental.
-                if (hasRequestIntent(run)) {
-                    val novel = run.filter { it !in echo }
-                    val control = run.firstOrNull() in controls && run.size <= 3 && novel.isNotEmpty()
-                    if (control || (novel.distinct().size >= 2 && novel.size * 2 >= run.size)) {
-                        selectedRequest = run.joinToString(" ")
-                        return run
-                    }
+                    "${if (userSpeech) "speech" else "echo"}:${run.joinToString(" ").take(160)}"
+                if (userSpeech) {
+                    selectedRequest = run.joinToString(" ")
+                    return run
                 }
             }
         }
         return emptyList()
-    }
-
-    private fun hasRequestIntent(words: List<String>): Boolean {
-        val content = words.dropWhile { it in setOf("please", "hey") }
-        val first = content.firstOrNull() ?: return false
-        if (first in controls) return true
-        if (first in setOf("actually", "instead", "no")) return content.size >= 2
-        if (content.take(2) in listOf(listOf("i", "mean"), listOf("i", "meant"), listOf("that's", "wrong"))) return true
-        if (first in requests) return content.size >= 2
-        return first in questions && content.size >= 3
-    }
-
-    private companion object {
-        val controls = setOf("stop", "pause", "cancel", "wait", "jarvis", "jervis", "goodbye")
-        val requests = setOf("open", "set", "turn", "tell", "show", "find", "search", "read", "explain",
-            "give", "play", "call", "message", "send", "navigate", "take", "check", "look", "help",
-            "switch", "close", "launch", "repeat", "continue")
-        val questions = setOf("what", "what's", "where", "where's", "when", "why", "who", "who's",
-            "which", "how", "how's", "is", "are", "do", "does", "did", "can", "could", "would", "will")
     }
 
     private fun words(text: String) = Regex("[\\p{L}\\p{N}']+")

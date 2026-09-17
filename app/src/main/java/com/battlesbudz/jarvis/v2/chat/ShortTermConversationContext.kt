@@ -69,6 +69,8 @@ class ShortTermConversationContext(
         ).joinToString("\n\n").take((3000 - recent.length - 2).coerceAtLeast(0)).trim()
         return listOf(background, recent).filter { it.isNotBlank() }.joinToString("\n\n")
     }
+    fun clear() { summary = null }
+
     fun updateSummary(newSummary: String) {
         summary = newSummary.trim().take(summaryCharacterLimit).ifBlank { null }
     }

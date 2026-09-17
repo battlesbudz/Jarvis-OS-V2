@@ -7,10 +7,19 @@ class DiagnosticRecorder(
     private val preferences: SharedPreferences,
     private val buildLabel: String = "unknown"
 ) {
+    private val inferencePrompts = ArrayDeque<String>()
     private val entries = mutableListOf<String>()
     private val important = mutableListOf<String>()
     private val summaries = mutableListOf<String>()
     private val turnEvidence = linkedMapOf<String, String>()
+
+    /** Separate retention: timing chatter cannot evict or truncate the model input. */
+    fun recordInferencePrompt(entry: String) = synchronized(entries) {
+        inferencePrompts.addLast("atMs=${System.currentTimeMillis()}\n$entry")
+        while (inferencePrompts.size > 24) inferencePrompts.removeFirst()
+        preferences.edit().putString("diagnostics_inference_prompts",
+            JSONArray().also { array -> inferencePrompts.forEach(array::put) }.toString()).apply()
+    }
 
     fun recordTurnEvidence(turn: String, category: String, entry: String) = synchronized(entries) {
         turnEvidence["$turn/$category"] = "turn=$turn $category atMs=${System.currentTimeMillis()}\n${entry.take(1500)}"
@@ -26,11 +35,12 @@ class DiagnosticRecorder(
     fun startSession(label: String) {
         synchronized(entries) {
             sessionLabel = "$label recordedByBuild=$buildLabel startedAtMs=${System.currentTimeMillis()}"
+            inferencePrompts.clear()
             entries.clear()
             important.clear()
             summaries.clear()
             turnEvidence.clear()
-            preferences.edit().remove("diagnostics_turn_evidence").remove("diagnostics_summaries").remove("diagnostics_important").putString("diagnostics_session", sessionLabel)
+            preferences.edit().remove("diagnostics_inference_prompts").remove("diagnostics_turn_evidence").remove("diagnostics_summaries").remove("diagnostics_important").putString("diagnostics_session", sessionLabel)
                 .putString("diagnostics", "[]").apply()
         }
     }
@@ -51,6 +61,11 @@ class DiagnosticRecorder(
             }
         }
         synchronized(entries) {
+            inferencePrompts.clear()
+            runCatching {
+                val saved = JSONArray(preferences.getString("diagnostics_inference_prompts", "[]"))
+                ((saved.length() - 24).coerceAtLeast(0) until saved.length()).forEach { inferencePrompts.addLast(saved.getString(it)) }
+            }
             sessionLabel = preferences.getString("diagnostics_session", null) ?: sessionLabel
             entries.clear()
             entries.addAll(restored)
@@ -79,7 +94,7 @@ class DiagnosticRecorder(
 
     fun snapshot(): String {
         return synchronized(entries) {
-            "Running build: $buildLabel\n$sessionLabel\n\nRetained turn evidence (up to 12 turns):\n${turnEvidence.values.joinToString("\n\n")}\n\nTiming and recognition summaries:\n${summaries.joinToString("\n\n")}\n\nCall actions and turns:\n${important.joinToString("\n\n")}\n\nRecent audio events:\n" + entries.takeLast(100).joinToString("\n\n")
+            "Running build: $buildLabel\n$sessionLabel\n\nExact Gemma prompt submissions (latest 24; includes drafts and retries):\n${inferencePrompts.joinToString("\n\n")}\n\nRetained turn evidence (up to 12 turns):\n${turnEvidence.values.joinToString("\n\n")}\n\nTiming and recognition summaries:\n${summaries.joinToString("\n\n")}\n\nCall actions and turns:\n${important.joinToString("\n\n")}\n\nRecent audio events:\n" + entries.takeLast(100).joinToString("\n\n")
                 .ifBlank { "No runtime events in this session yet." }
         }
     }

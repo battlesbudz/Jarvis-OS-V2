@@ -1,5 +1,7 @@
 # Current voice pipeline and remaining acceptance
 
+> 17 September update: the build-705 context/short-interruption repair supersedes earlier cross-call carryover and multiword admission policies. New calls start clean; explicit Resume retains saved dialogue. Exact prompts and speaker-before-stop diagnostics are described in [current diagnostics](current-diagnostics.md). Phone acceptance remains open.
+
 Audited 16 September 2026 against builds 694–695 and the release-only branch head `dbc43d17ef60d25b4234eb83bca7979c1f712fe0`; updated with the interruption/answer-priority implementation below. This document is the current policy summary; dated experiments in the older guides are historical. Work stays on `audio-pr2` / PR 6; publishing an APK does not authorize merging it.
 
 ## Supported-stack update — 16 September 2026

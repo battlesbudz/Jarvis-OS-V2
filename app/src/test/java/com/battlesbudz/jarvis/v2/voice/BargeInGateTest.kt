@@ -11,12 +11,23 @@ class BargeInGateTest {
             assertFalse(gate.confirmed)
         }
     }
-    @Test fun incidentalWordsDoNotCancelReply() {
+    @Test fun anyUserWordsTakeTheFloor() {
         for (playing in listOf(false, true)) {
-            for (text in listOf("It is", "That's what we need", "I can tell them", "I can ask that", "We should know")) {
+            for (text in listOf("No", "Yes", "I", "squirrel", "It is", "That's what we need", "I can tell them", "I can ask that", "We should know")) {
                 val gate = BargeInGate()
-                repeat(20) { assertEquals(text, BargeInGate.Action.WAIT, gate.update(true, playing, it * 100L, text)) }
+                assertEquals(BargeInGate.Action.WAIT, gate.update(true, playing, 0, text))
+                assertEquals(text, BargeInGate.Action.CONFIRM, gate.update(true, playing, 300, text))
             }
+        }
+    }
+    @Test fun singleNoSurvivesAcknowledgementEcho() {
+        for (word in listOf("No", "Yes", "I")) {
+            val gate = BargeInGate()
+            val mixed = "$word. One moment, please, sir."
+            val reference = "One moment, please, sir. A brave squirrel found a lost acorn."
+            gate.update(true, true, 0, mixed, reference)
+            assertEquals(BargeInGate.Action.CONFIRM, gate.update(true, true, 300, mixed, reference))
+            assertEquals(word.lowercase(), gate.requestText)
         }
     }
     @Test fun deliberateCorrectionsAndQuestionsWorkInBothPhases() {

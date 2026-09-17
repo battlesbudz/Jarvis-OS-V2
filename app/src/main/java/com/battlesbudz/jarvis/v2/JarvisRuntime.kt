@@ -65,6 +65,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     // describes whether the current native Conversation has received that
     // app-managed context capsule.
     internal var nativeConversationHasContext = false
+    private var contextCallId: String? = null
     internal val shortTermContext = ShortTermConversationContext()
     internal val referenceGrounding = ReferenceGroundingClient()
     internal val factualityVerifier = com.battlesbudz.jarvis.v2.ai.FactualityVerifier()
@@ -277,6 +278,23 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 expectedResourceCall = expectedCallId
                 val resourceKey = "$expectedCallId:${asrEngine.id}:${ttsEngine.id}"
                 val models = callResources.modelsFor(resourceKey)
+                if (contextCallId != expectedCallId) {
+                    shortTermContext.clear()
+                    turnOrchestrator.reset()
+                    sessionPreferences.edit().remove(ConversationPolicy.SHORT_TERM_SUMMARY_KEY).apply()
+                    contextCallId = expectedCallId
+                    diagnosticRecorder.recordImportant("Voice context boundary: call=$expectedCallId summary=cleared subject=cleared nativeConversation=fresh")
+                }
+                val provenance = voiceSessionController.contextProvenance()
+                var submissionIndex = 0
+                engine.onPromptSubmitted = { submitted, audioSize ->
+                    diagnosticRecorder.recordInferencePrompt(
+                        "turn=$asrTurnId submission=${++submissionIndex} model=${engine.modelId} " +
+                            "mode=${if (audioSize > 0) "audio_text" else "text"} audioBytes=$audioSize " +
+                            "audioCorrectionCount=not_observable promptChars=${submitted.length}\n" +
+                            provenance + "\n${engine.inputContextDescription()}\nsummaryChars=${shortTermContext.summaryForDiagnostics()?.length ?: 0}\n" +
+                            "--- Exact submitted text begins ---\n$submitted\n--- Exact submitted text ends ---")
+                }
                 val voiceHistory = voiceSessionController.conversationContext().map { ChatEntry(it.role, it.text) }
                 diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId engine=${ttsEngine.id} " +
                     "speechPolicy=piper-natural-v1")
@@ -510,6 +528,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     return@launch
                 }
                 val transcript = com.battlesbudz.jarvis.v2.voice.TranscriptContent.speech(resolvedTranscript)
+                diagnosticRecorder.recordTurnEvidence(asrTurnId, "recognition_text",
+                    "engine=${asrEngine.id} transcriptionFallback=${asrTranscript.isBlank()} audioComplete=$audioIsComplete\n" +
+                        "asr=$asrTranscript\nresolved=$transcript")
                 if (asrTranscript.isBlank()) {
                     diagnosticRecorder.recordImportant("Voice audio fallback finished: chars=${transcript.length} source=gemma")
                 }
@@ -626,7 +647,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             if (it.startsWith("barge_natural_summary") || it.startsWith("barge_keyword_summary") || it.startsWith("barge_evidence_"))
                                 diagnosticRecorder.recordTurnEvidence(asrTurnId, it.substringBefore(" "), it)
                         }.listen(output, asrDirectory, confirmed,
-                            asrEngine = asrEngine, acceptCandidate = preference::accept, trace = turnTrace,
+                            asrEngine = asrEngine, acceptCandidate = preference::accept, acceptInterruptionSpeaker = preference::acceptInterruption, trace = turnTrace,
                             inputFactory = { callResources.borrowMicrophone("reply") }, modelSession = models, onPartialTranscript = { text ->
                             mainHandler.post {
                                 if (activeVoiceOutput === output && voiceSessionArmed) onTranscript("You", text, false)
@@ -705,6 +726,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         runCatching { speakerGuard?.close() }
                         runCatching { microphone?.stop() }
                         preparation?.close()
+                        conversationEngine?.onPromptSubmitted = { _, _ -> }
                     } finally {
                         speechChunks.close()
                         runCatching { voiceOutput?.stopSpeaking() }

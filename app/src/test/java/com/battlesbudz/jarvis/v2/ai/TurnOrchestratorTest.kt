@@ -5,6 +5,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TurnOrchestratorTest {
+    @Test fun newQuestionAndCorrectionCannotInheritMvpSubject() {
+        val turns = TurnOrchestrator(ReferenceGroundingClient())
+        assertEquals("MVP", turns.plan("What is MVP?").activeSubject)
+        assertEquals(null, turns.plan("You're not repeating the right information?").activeSubject)
+        turns.plan("What is MVP?")
+        turns.reset()
+        assertEquals(null, turns.plan("What about that?").activeSubject)
+    }
+
     @Test fun unspokenLookupOfferCannotArmConfirmation() {
         val turns = TurnOrchestrator(ReferenceGroundingClient())
         val plan = turns.plan("Who is Jack Herer?")

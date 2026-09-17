@@ -4,6 +4,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NaturalCorrectionTextTest {
+    @Test fun interruptionWordDoesNotBecomeAFreshQuestionOrIncludeTrailingEcho() {
+        for (word in listOf("No", "Yes", "I")) {
+            val text = NaturalCorrectionText.resolve("$word. One moment, please, sir.",
+                "One moment, please, sir. A brave squirrel found an acorn.")!!
+            assertEquals("$word.", text)
+            assertTrue(NaturalCorrectionText.isFloorOnly(text))
+        }
+        assertFalse(NaturalCorrectionText.isFloorOnly("Goodbye"))
+        assertFalse(NaturalCorrectionText.isFloorOnly("No, explain MVP instead"))
+    }
     @Test fun retainsFinalAppCorrectionAfterRemovingLeadingEcho() {
         val text = NaturalCorrectionText.resolve(
             "The sky is blue. Open YouTube. Actually open Settings.", "The sky is blue.")!!
@@ -19,7 +29,7 @@ class NaturalCorrectionTextTest {
     @Test fun echoOnlyOrEmptyFinalCannotDispatchProvisionalRequest() {
         assertNull(NaturalCorrectionText.resolve("Can you open Settings?", "Can you open Settings?"))
         assertNull(NaturalCorrectionText.resolve("", "The sky is blue"))
-        assertNull(NaturalCorrectionText.resolve("mm hmm", "The sky is blue"))
+        assertEquals("mm hmm", NaturalCorrectionText.resolve("mm hmm", "The sky is blue"))
     }
     @Test fun punctuationAndNamesRemainIntact() {
         assertEquals("Actually, tell me about New York.",
