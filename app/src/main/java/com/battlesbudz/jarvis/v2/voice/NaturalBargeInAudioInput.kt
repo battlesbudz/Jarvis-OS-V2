@@ -250,6 +250,8 @@ class NaturalBargeInAudioInput(
                             if (!verification.isCompleted) return@collect
                             if (!verification.await()) {
                                 log("barge_speaker_rejected_or_uncertain playback_uninterrupted=true")
+                                if (heard != null) diagnosticEvidence.record("${heard.revision}/${heard.audioAtMs}", revision,
+                                    now - heard.audioAtMs, "speaker_rejected_or_uncertain", heard.text, decisionReference, gate, true)
                                 reset(); cooldownUntil = now + 500
                                 return@collect
                             }
@@ -266,7 +268,7 @@ class NaturalBargeInAudioInput(
                         worker.close() // Final-turn ASR must never overlap the probe lease.
                         log("barge_speech_confirmed method=bounded_candidate preRollMs=${candidate.sizeBytes() / 32} " +
                             "speechOnsetToStopRequestMs=${now - candidateAt} minimumProbeAudioMs=$minimumProbeAudioMs " +
-                            "speakerMatched=${checkSpeaker != null} extraWordWaitMs=0")
+                            "speakerMatched=${checkSpeaker != null} extraWordWaitMs=0 recognizedWords=\"${gate.requestText.take(120)}\" acousticOnly=false")
                         emit(candidate.snapshot())
                         candidate.clear(); onset.clear()
                     } else if ((heard != null && now - heard.audioAtMs > InterruptionTiming.CONFIRM_AGE_MS) ||

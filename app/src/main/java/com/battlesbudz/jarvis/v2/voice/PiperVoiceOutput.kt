@@ -42,6 +42,8 @@ class PiperVoiceOutput internal constructor(
     private val deliveryFailed = AtomicBoolean(false)
     private val playbackClock = PlaybackClock()
     private val spokenReference = StringBuilder()
+    @Volatile private var playbackSpeakerReference: PlaybackSpeakerReference? = null
+    fun speakerReference(): PlaybackSpeakerReference? = playbackSpeakerReference
     fun recentSpokenText(): String = synchronized(spokenReference) { spokenReference.toString() }
     private fun rememberPlayback(text: String) = synchronized(spokenReference) {
         if (text.isNotBlank()) spokenReference.append(" ").append(text)
@@ -51,7 +53,10 @@ class PiperVoiceOutput internal constructor(
         synchronized(playbackLock) { gapCuePlaying.set(true); applyPause() }
         try {
             VoiceCues.playAcknowledgement(audio, { stopped }, { interrupted }, log, playbackVolume(),
-                onStarted = { rememberPlayback(audio.text) }, speed = 1f)
+                onStarted = {
+                    playbackSpeakerReference = PlaybackSpeakerReference.fromPcm(audio.pcm, audio.sampleRate)
+                    rememberPlayback(audio.text)
+                }, speed = 1f)
         } finally {
             synchronized(playbackLock) { gapCuePlaying.set(false); applyPause() }
             lastAudibleAt = System.nanoTime() / 1_000_000
@@ -463,6 +468,7 @@ class PiperVoiceOutput internal constructor(
                         val audible = phrase.pcm.indexOfFirst { kotlin.math.abs(it.toInt()) >= 64 }
                         if (audible >= 0) firstAudibleFrame.set(framesWritten.toLong() + audible)
                     }
+                    playbackSpeakerReference = PlaybackSpeakerReference.fromPcm(phrase.pcm, phrase.sampleRate)
                     rememberPlayback(phrase.text)
                     captions.append(framesWritten.toLong(), phrase.sampleRate, phrase.pcm, phrase.text, phrase.captionGroup)
                     val start = System.nanoTime()

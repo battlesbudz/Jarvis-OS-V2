@@ -4,6 +4,23 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BargeInGateTest {
+    @Test fun soundCaptionsAndPunctuationNeverBecomeWordsEvenWithOwnerOverlapEnabled() {
+        for (text in listOf("[cough]", "(sneezing)", "[wind]", "[car noise]", "[yelling]", "...", "'''", "♪")) {
+            val gate = BargeInGate(stableMs = 0, allowShortEchoOverlap = true)
+            repeat(20) { assertEquals(text, BargeInGate.Action.WAIT, gate.update(true, true, it * 100L, text, "The sky is blue")) }
+        }
+    }
+    @Test fun build709PlaybackSubstitutionsCannotBecomeNewUserWords() {
+        val reference = "One moment please sir. The sky appears blue because of Rayleigh scattering of sunlight. " +
+            "This phenomenon occurs when sunlight interacts with the Earth's atmosphere. " +
+            "The shorter blue wavelengths of light are scattered more effectively by the tiny molecules of air."
+        for (text in listOf("tracks with the Earth's atmosphere. The shorter, blue wavelengths of light.",
+            "This guy is blue due to Rayleigh'", "The sky at the")) {
+            val ref = if (text.startsWith("This guy")) "The sky is blue due to Rayleigh scattering of sunlight." else reference
+            val gate = BargeInGate(stableMs = 0, allowShortEchoOverlap = true)
+            repeat(5) { assertEquals(text, BargeInGate.Action.WAIT, gate.update(true, true, it * 100L, text, ref)) }
+        }
+    }
     @Test fun acousticNoiseAloneNeverCancelsPreparingOrPlayingReply() {
         for (playing in listOf(false, true)) {
             val gate = BargeInGate()

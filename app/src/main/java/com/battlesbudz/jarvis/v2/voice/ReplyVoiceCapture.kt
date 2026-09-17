@@ -8,7 +8,7 @@ import kotlinx.coroutines.*
 /** Local speech capture alongside generation/playback, with the ordinary mic-priority contract. */
 class ReplyVoiceCapture(private val context: Context, private val log: (String) -> Unit) {
     suspend fun listen(output: PiperVoiceOutput, asrDirectory: File,
-                       onConfirmed: () -> Unit, asrEngine: AsrEngine = AsrEngine.MOONSHINE, acceptCandidate: (ByteArray) -> Boolean = { true }, acceptInterruptionSpeaker: (ByteArray) -> Boolean = { false }, onPartialTranscript: (String) -> Unit = {}, trace: VoiceTurnTrace? = null,
+                       onConfirmed: () -> Unit, asrEngine: AsrEngine = AsrEngine.MOONSHINE, acceptCandidate: (ByteArray) -> Boolean = { true }, acceptInterruptionSpeaker: (ByteArray, PlaybackSpeakerReference?) -> Boolean = { _, _ -> false }, onPartialTranscript: (String) -> Unit = {}, trace: VoiceTurnTrace? = null,
                        inputFactory: (suspend () -> AudioInput)? = null, modelSession: VoiceModelSession? = null): CapturedVoiceTurn = recoverReplyListener(log) {
         supervisorScope {
             MicrophoneInterruptionMonitor.awaitAvailable()
@@ -42,7 +42,7 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                     playing = { output.isPlayingAudio }, reference = { output.recentSpokenText() },
                     hasPlaybackBudget = output::hasInterruptionBudget,
                     canContinuePlayback = output::canContinueInterruption,
-                    checkSpeaker = acceptInterruptionSpeaker,
+                    checkSpeaker = { pcm -> acceptInterruptionSpeaker(pcm, output.speakerReference()) },
                     onConfirmed = { natural, evidence ->
                         if (natural) naturalReference = evidence
                         else {

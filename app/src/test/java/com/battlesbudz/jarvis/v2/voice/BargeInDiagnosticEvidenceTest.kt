@@ -14,7 +14,8 @@ class BargeInDiagnosticEvidenceTest {
         assertTrue(evidence.entries().single().contains("reason=no_new_speech_in_mixed_transcript"))
         gate.update(true, true, 100, "$reference. Actually open settings", reference)
         assertEquals("actually open settings", gate.selectedRequest)
-        assertTrue(gate.examinedFragments.single().startsWith("speech:"))
+        assertTrue(gate.examinedFragments.any { it.startsWith("near_echo:") })
+        assertEquals(1, gate.examinedFragments.count { it.startsWith("speech:") })
         assertEquals(BargeInGate.Action.CONFIRM,
             gate.update(true, true, 400, "$reference. Actually open settings", reference))
         evidence.record("2", 2, 20, gate.reason, "$reference. Actually open settings", reference, gate, true)

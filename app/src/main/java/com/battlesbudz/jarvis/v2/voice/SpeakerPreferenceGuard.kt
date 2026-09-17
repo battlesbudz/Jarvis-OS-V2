@@ -16,6 +16,8 @@ class SpeakerPreferenceGuard(context: Context, model: File, private val activati
     private val extractor = SpeakerEmbeddingExtractor(config = SpeakerEmbeddingExtractorConfig(model = model.path, numThreads = 1))
     private var vectors = emptyList<FloatArray>()
     private var seconds = 0f
+    private var lastPlaybackReference: PlaybackSpeakerReference? = null
+    private var playbackVectors = emptyList<FloatArray>()
     fun accept(pcm: ByteArray): Boolean {
         vectors = emptyList(); seconds = pcm.size / 32000f
         // Two separate windows avoid rejecting the owner based on one mixed/short fragment.
@@ -28,17 +30,27 @@ class SpeakerPreferenceGuard(context: Context, model: File, private val activati
         return !reject
     }
     /** Does not train or overwrite the final-turn training windows. */
-    fun acceptInterruption(pcm: ByteArray): Boolean {
+    fun acceptInterruption(pcm: ByteArray, playback: PlaybackSpeakerReference?): Boolean {
         val began = System.nanoTime()
-        val scores = if (state.preferred == null || pcm.size < 8000) emptyList() else {
+        if (playback !== lastPlaybackReference) {
+            playbackVectors = playback?.windows?.mapNotNull(::embeddingSamples).orEmpty()
+            lastPlaybackReference = playback
+        }
+        val candidateVectors = if (state.preferred == null || pcm.size < 8000) emptyList() else {
             val bounded = pcm.copyOfRange((pcm.size - 96000).coerceAtLeast(0), pcm.size)
             val windows = if (bounded.size <= 48000) listOf(bounded)
                 else listOf(bounded, bounded.copyOfRange(bounded.size - 48000, bounded.size))
-            windows.mapNotNull(::embedding).mapNotNull(state::score)
+            windows.mapNotNull(::embedding)
         }
-        val decision = InterruptionSpeakerPolicy.decide(state.preferred != null, scores)
+        val scores = candidateVectors.mapNotNull(state::score)
+        val playbackScores = candidateVectors.mapNotNull { candidate ->
+            playbackVectors.maxOfOrNull { PreferredSpeaker.cosine(candidate, it) }
+        }
+        val decision = InterruptionSpeakerPolicy.decide(state.preferred != null, scores, playbackScores,
+            playbackReferenceRequired = playback != null)
         log("speaker_interruption decision=$decision learned=${state.preferred != null} " +
-            "scores=${scores.joinToString(",")} audioMs=${pcm.size / 32} " +
+            "scores=${scores.joinToString(",")} playbackScores=${playbackScores.joinToString(",")} " +
+            "playbackReference=${playback != null} minimumOwnerMargin=0.08 audioMs=${pcm.size / 32} " +
             "computeMs=${(System.nanoTime() - began) / 1_000_000} " +
             "beforePlaybackStop=true identity=learned_preference")
         return decision == InterruptionSpeakerPolicy.Decision.MATCH
@@ -56,9 +68,12 @@ class SpeakerPreferenceGuard(context: Context, model: File, private val activati
         log("speaker_preference training=observed learned=${state.preferred != null} candidates=${state.candidates.size}")
     }
     private fun embedding(pcm: ByteArray): FloatArray? {
+        return embeddingSamples(pcmFloats(pcm))
+    }
+    private fun embeddingSamples(samples: FloatArray): FloatArray? {
         val stream = extractor.createStream()
         return try {
-            stream.acceptWaveform(pcmFloats(pcm), 16000); stream.inputFinished()
+            stream.acceptWaveform(samples, 16000); stream.inputFinished()
             if (extractor.isReady(stream)) extractor.compute(stream).takeIf { v -> v.size == extractor.dim() && v.all { it.isFinite() } } else null
         } finally { stream.release() }
     }

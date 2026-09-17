@@ -78,6 +78,22 @@ class NaturalBargeInAudioInputTest {
         assertEquals(0, confirmed); assertTrue(delivered.isEmpty())
         assertTrue(logs.any { "barge_speaker_rejected_or_uncertain" in it })
     }
+    @Test fun noiseAndSoundCaptionsNeverReachSpeakerConfirmation() = runBlocking {
+        for (text in listOf("", "[cough]", "[sneezing]", "[wind]", "[yelling]", "...")) {
+            val audio = gate(text = text, minimumProbeMs = 250, speakerMatches = {
+                fail("Sound-only candidate must not reach speaker confirmation: $text"); true
+            }).chunks().toList()
+            assertTrue(audio.isEmpty())
+            assertEquals(0, confirmed)
+        }
+    }
+    @Test fun misrecognizedPiperWordsCannotStopPlaybackWhenVoiceComparisonRejectsThem() = runBlocking {
+        val audio = gate(text = "is brilliant.", reference = "The sky is blue due to Rayleigh scattering",
+            minimumProbeMs = 250, speakerMatches = {
+                InterruptionSpeakerPolicy.decide(true, listOf(.85f), listOf(.9f), true) == InterruptionSpeakerPolicy.Decision.MATCH
+            }).chunks().toList()
+        assertTrue(audio.isEmpty()); assertEquals(0, confirmed)
+    }
     @Test fun ownerFilterDoesNotRemoveHeyJarvisKeywordPath() = runBlocking {
         gate(budget = false, keywordAt = 10, speakerMatches = { false }).chunks().toList()
         assertEquals(1, confirmed); assertEquals(0, models)

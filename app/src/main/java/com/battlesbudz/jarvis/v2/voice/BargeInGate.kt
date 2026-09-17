@@ -1,7 +1,5 @@
 package com.battlesbudz.jarvis.v2.voice
 
-import java.util.Locale
-
 /** Confirm new user words without pausing the speaker to test for echo. */
 class BargeInGate(private val stableMs: Long = 300, private val allowShortEchoOverlap: Boolean = false) {
     enum class Action { WAIT, CONFIRM }
@@ -64,8 +62,13 @@ class BargeInGate(private val stableMs: Long = 300, private val allowShortEchoOv
         echoMatchedWords = 0
         examinedFragments = emptyList()
         selectedRequest = ""
-        for (clause in transcript.takeLast(1200).split(Regex("[.!?;\\n]+"))) {
+        for (clause in TranscriptContent.speech(transcript).takeLast(1200).split(Regex("[.!?;\\n]+"))) {
             val tokens = words(clause)
+            if (PlaybackEchoText.resemblesPlayback(tokens, echo)) {
+                echoMatchedWords += tokens.size
+                if (examinedFragments.size < 4) examinedFragments += "near_echo:${tokens.joinToString(" ").take(160)}"
+                continue
+            }
             val matched = BooleanArray(tokens.size)
             // Remove contiguous echoed phrases, not a bag of common English words.
             for (i in tokens.indices) for (j in echo.indices) {
@@ -99,6 +102,5 @@ class BargeInGate(private val stableMs: Long = 300, private val allowShortEchoOv
         return emptyList()
     }
 
-    private fun words(text: String) = Regex("[\\p{L}\\p{N}']+")
-        .findAll(text.lowercase(Locale.ROOT)).map { it.value }.toList()
+    private fun words(text: String) = PlaybackEchoText.words(text)
 }

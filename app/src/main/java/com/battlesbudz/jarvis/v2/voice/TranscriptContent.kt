@@ -6,7 +6,8 @@ internal object TranscriptContent {
     private val sounds = setOf("crying", "sobbing", "laughing", "laughter", "chuckling", "sigh", "sighing", "sighs",
         "breathing", "heavy breathing", "applause", "clapping", "music", "dramatic music", "background music",
         "instrumental music", "tense music", "eerie music", "singing", "noise", "background noise", "static",
-        "silence", "inaudible", "unintelligible", "no speech", "blank audio", "coughing", "coughs")
+        "silence", "inaudible", "unintelligible", "no speech", "blank audio", "cough", "coughing", "coughs",
+        "sneeze", "sneezing", "sneezes", "yelling", "screaming", "wind", "wind noise", "traffic", "car noise", "engine noise")
     fun speech(text: String): String = captions.replace(text) { match ->
         val label = match.value.trim('(', ')', '[', ']').lowercase().replace('_', ' ').trim()
         if (label in sounds || match.value.all { it == '♪' || it == '♫' }) " " else match.value

@@ -27,7 +27,8 @@ object NaturalCorrectionText {
                     .filter { clause ->
                         val normalized = Regex("[\\p{L}\\p{N}']+").findAll(clause.lowercase(Locale.ROOT))
                             .joinToString(" ") { it.value }
-                        normalized.isNotBlank() && ((speakerMatched && normalized.split(' ').size <= 2) || !(" $echo ").contains(" $normalized "))
+                        normalized.isNotBlank() && !PlaybackEchoText.resemblesPlayback(normalized, echo) &&
+                            ((speakerMatched && normalized.split(' ').size <= 2) || !(" $echo ").contains(" $normalized "))
                     }.joinToString(" ").ifBlank { null }
             }
         }

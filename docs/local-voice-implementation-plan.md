@@ -1,5 +1,7 @@
 # Local voice implementation plan
 
+> Build 709 phone follow-up: text-only generation now works, but misrecognized Piper echo triggered false natural interruptions and contaminated subsequent user messages. The repair adds whole-clause near-echo filtering, sound-caption exclusion and candidate comparison against actual Piper voice samples as well as the learned owner. Single words and Stop/Hey Jarvis remain supported. See [evidence, implementation and acceptance limits](voice-interruption-echo-repair.md).
+
 > Build 708 phone repair: fixed an empty-input native streaming submission, added prefill on the first partial for fixed context, and stopped interpreting ASR ellipses as spoken hesitation. A pre-output incremental failure retries once with final text on the loaded engine. See [failure evidence and repair](voice-incremental-input.md#build-708-phone-failure-and-repair). Natural owner-matched interruption was observed at 890 ms; repaired generation still needs phone verification.
 
 > 17 September incremental-input implementation: replaced throwaway voice drafts with persistent text prefill; normal replies no longer re-submit microphone audio. Emergency-only thermal admission (5/6), no draft cooldown, and separate listening/final prefill diagnostics are implemented. See [current architecture and phone acceptance](voice-incremental-input.md). This replaces the historical speculation architecture below; device latency/recognition acceptance remains open.

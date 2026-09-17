@@ -2,6 +2,16 @@
 
 Current on `audio-pr2` / PR #6, 17 September 2026.
 
+## False interruption investigation (build 709 follow-up)
+
+`speaker_interruption` now includes `playbackScores`, `playbackReference` and
+`minimumOwnerMargin`, alongside owner `scores`. A high owner score alone is not
+proof that the user spoke. `PLAYBACK_ECHO` rejects candidates insufficiently
+distinct from actual Piper audio; missing required embeddings are uncertain.
+`barge_evidence` retains `near_echo` fragments and final speaker rejection reasons.
+Successful natural stops log `recognizedWords` and `acousticOnly=false`.
+Sound or VAD alone must never stop output. See [repair and phone acceptance](voice-interruption-echo-repair.md).
+
 ## Everyday settings
 
 - AI model: Gemma 4 E2B or E4B, using the existing verified installer and model readiness check.
