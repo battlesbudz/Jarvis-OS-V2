@@ -51,6 +51,7 @@ class SpeakerPreferenceGuard(context: Context, model: File, private val activati
         log("speaker_interruption decision=$decision learned=${state.preferred != null} " +
             "scores=${scores.joinToString(",")} playbackScores=${playbackScores.joinToString(",")} " +
             "playbackReference=${playback != null} minimumOwnerMargin=0.08 audioMs=${pcm.size / 32} " +
+            "referenceSource=${playback?.description ?: "none"} " +
             "computeMs=${(System.nanoTime() - began) / 1_000_000} " +
             "beforePlaybackStop=true identity=learned_preference")
         return decision == InterruptionSpeakerPolicy.Decision.MATCH

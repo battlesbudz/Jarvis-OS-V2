@@ -18,7 +18,8 @@ class NaturalBargeInAudioInputTest {
                      dispatcher: CoroutineDispatcher = Dispatchers.Unconfined, beforeFrame: (Int) -> Unit = {},
                      acceptAction: () -> Unit = {}, loadAction: () -> Unit = {}, speechNow: () -> Boolean = { speech },
                      budgetNow: () -> Boolean = { budget }, backlogNow: () -> Long = { 0L }, onConfirmation: (Boolean) -> Unit = {},
-                     onEvidence: (String) -> Unit = {}, speakerMatches: (() -> Boolean)? = null, minimumProbeMs: Int = 1000): NaturalBargeInAudioInput {
+                     onEvidence: (String) -> Unit = {}, speakerMatches: (() -> Boolean)? = null, minimumProbeMs: Int = 1000,
+                     onSpeakerAudio: (ByteArray, Long) -> Unit = { _, _ -> }): NaturalBargeInAudioInput {
         val input = object : AudioInput {
             override val sampleRateHz = 16000
             override val channelCount = 1
@@ -57,7 +58,19 @@ class NaturalBargeInAudioInputTest {
                 onConfirmation(natural)
                 confirmed++
             }, log = logs::add, nowMs = { clock }, dispatcher = dispatcher,
-            minimumProbeAudioMs = minimumProbeMs, checkSpeaker = speakerMatches?.let { check -> { _: ByteArray -> check() } })
+            minimumProbeAudioMs = minimumProbeMs, checkSpeaker = speakerMatches?.let { check -> { pcm: ByteArray, at: Long ->
+                onSpeakerAudio(pcm, at); check()
+            } })
+    }
+    @Test fun speakerCheckReceivesProbeCaptureTimestampInsteadOfCurrentClock() = runBlocking {
+        var checked = false
+        gate(text = "No", minimumProbeMs = 250, speakerMatches = { true }, onSpeakerAudio = { pcm, at ->
+            checked = true
+            assertTrue(at < clock)
+            assertEquals(300L, at)
+            assertEquals(300, pcm.size / 32)
+        }).chunks().toList()
+        assertTrue(checked); assertEquals(1, confirmed)
     }
     @Test fun briefNoIsCheckedWithoutOneOrThreeSecondsOfSpeech() = runBlocking {
         gate(text = "No", minimumProbeMs = 250, speechNow = { clock <= 300 },

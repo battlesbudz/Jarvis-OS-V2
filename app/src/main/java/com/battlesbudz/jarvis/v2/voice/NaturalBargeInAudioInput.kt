@@ -17,7 +17,7 @@ class NaturalBargeInAudioInput(
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 },
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val canContinuePlayback: () -> Boolean = hasPlaybackBudget,
-    private val checkSpeaker: ((ByteArray) -> Boolean)? = null,
+    private val checkSpeaker: ((ByteArray, Long) -> Boolean)? = null,
     private val minimumProbeAudioMs: Int = 250
 ) : AudioInput {
     init { require(input.sampleRateHz == 16_000 && input.channelCount == 1) }
@@ -236,8 +236,9 @@ class NaturalBargeInAudioInput(
                             if (speakerCheck == null) {
                                 if (speakerWorker?.isCompleted == false) return@collect
                                 val audio = hypothesisAudio
+                                val captureEndMs = requireNotNull(heard).audioAtMs
                                 speakerCheck = async(dispatcher) {
-                                    try { checkSpeaker.invoke(audio) }
+                                    try { checkSpeaker.invoke(audio, captureEndMs) }
                                     catch (cancelled: CancellationException) { throw cancelled }
                                     catch (error: Exception) {
                                         log("barge_speaker_check unavailable=${error.javaClass.simpleName} playback_uninterrupted=true")

@@ -42,7 +42,9 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                     playing = { output.isPlayingAudio }, reference = { output.recentSpokenText() },
                     hasPlaybackBudget = output::hasInterruptionBudget,
                     canContinuePlayback = output::canContinueInterruption,
-                    checkSpeaker = { pcm -> acceptInterruptionSpeaker(pcm, output.speakerReference()) },
+                    checkSpeaker = { pcm, captureEndMs ->
+                        acceptInterruptionSpeaker(pcm, output.speakerReference(captureEndMs, pcm.size / 32))
+                    },
                     onConfirmed = { natural, evidence ->
                         if (natural) naturalReference = evidence
                         else {

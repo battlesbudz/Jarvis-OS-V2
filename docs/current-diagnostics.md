@@ -12,6 +12,12 @@ distinct from actual Piper audio; missing required embeddings are uncertain.
 Successful natural stops log `recognizedWords` and `acousticOnly=false`.
 Sound or VAD alone must never stop output. See [repair and phone acceptance](voice-interruption-echo-repair.md).
 
+The build 710 follow-up adds `referenceSource=playback_head`, `startFrame`,
+`endFrame`, `capturePositionAgeMs` and `referenceAudioMs`. These identify the
+actual played samples selected for the candidate's capture timestamp. An
+`unavailable:*` reference fails closed; passage-opening samples are no longer
+reused for interruptions occurring later in a long answer.
+
 ## Everyday settings
 
 - AI model: Gemma 4 E2B or E4B, using the existing verified installer and model readiness check.
