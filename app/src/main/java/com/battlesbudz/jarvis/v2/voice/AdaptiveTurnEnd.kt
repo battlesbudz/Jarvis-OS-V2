@@ -18,7 +18,9 @@ class AdaptiveTurnEnd : TurnEndDetector {
         val words = Regex("[\\p{L}\\p{N}']+").findAll(transcript).map { it.value }.toList()
         if (words.isEmpty()) return Decision(3000, "no_transcript")
         val last = words.last()
-        if (last in setOf("um", "uh", "erm", "hmm") || transcript.endsWith("...") || transcript.endsWith("…") ||
+        // Ellipses are generated ASR punctuation, not evidence the speaker asked
+        // us to wait. Only actual hesitation words extend the thinking allowance.
+        if (last in setOf("um", "uh", "erm", "hmm") ||
             Regex("(?:i mean|let me think|hold on|wait a second|you know)$")
                 .containsMatchIn(words.joinToString(" "))) {
             return Decision(3500, "explicit_hesitation")

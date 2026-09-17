@@ -29,10 +29,19 @@ class AdaptiveTurnEndTest {
     }
 
     @Test fun explicitHesitationStillAllowsThinkingTime() {
-        for (text in listOf("Tell me about...", "What is the battery percentage, um", "No, I mean", "Hold on")) {
+        for (text in listOf("Tell me about, um...", "What is the battery percentage, um", "No, I mean", "Hold on")) {
             val policy = AdaptiveTurnEnd()
             policy.update(text, 0)
             assertEquals(text, 3500, policy.decision(1000).silenceMs.toInt())
+        }
+    }
+
+    @Test fun asrEllipsisDoesNotInventAnExplicitHesitation() {
+        for (text in listOf("What does...", "What does…", "Tell me about...")) {
+            val policy = AdaptiveTurnEnd()
+            policy.update(text, 0)
+            assertEquals(text, "unfinished", policy.decision(1000).cue)
+            assertEquals(1800, policy.decision(1000).silenceMs.toInt())
         }
     }
 

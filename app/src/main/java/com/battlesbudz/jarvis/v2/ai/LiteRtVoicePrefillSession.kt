@@ -1,9 +1,6 @@
 package com.battlesbudz.jarvis.v2.ai
 
 import com.battlesbudz.jarvis.v2.voice.VoicePrefillSession
-import com.google.ai.edge.litertlm.InputData
-import com.google.ai.edge.litertlm.ResponseCallback
-import com.google.ai.edge.litertlm.Session
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 
@@ -13,19 +10,33 @@ import kotlinx.coroutines.channels.Channel
  * Session prompt affixes. Session adds BOS; we supply the no-tool turn delimiters.
  * Recheck this contract before changing models or SDK (see voice pipeline docs).
  */
-internal class LiteRtVoicePrefillSession(private val session: Session) : VoicePrefillSession {
+internal interface VoiceNativeCallback {
+    fun onNext(response: String)
+    fun onDone()
+    fun onError(throwable: Throwable)
+}
+
+internal interface VoiceNativeSession : AutoCloseable {
+    fun runPrefill(input: List<String>)
+    fun generateContentStream(input: List<String>, callback: VoiceNativeCallback)
+    fun cancelProcess()
+}
+
+internal class LiteRtVoicePrefillSession(private val session: VoiceNativeSession) : VoicePrefillSession {
     private var started = false
     private var closed = false
     override fun append(text: String) {
         check(!closed)
         val chunk = (if (!started) "<|turn>user\n" else "") + text
-        session.runPrefill(listOf(InputData.Text(chunk)))
+        session.runPrefill(listOf(chunk))
         started = true
     }
     override suspend fun decode(onToken: (String) -> Unit): GenerationResult {
         check(started && !closed)
-        // Official Gemma 4 no-tool template: end user turn, then open model turn.
-        session.runPrefill(listOf(InputData.Text("<turn|>\n<|turn>model\n")))
+        // Native v0.12.0 GenerateContentStream calls RunPrefillAsync, which rejects
+        // an empty input list. Submit the final turn boundary through that call,
+        // exactly once, instead of prefilling it and requesting an empty decode.
+        val finalInput = listOf("<turn|>\n<|turn>model\n")
         val began = System.nanoTime()
         val tokens = Channel<String>(Channel.UNLIMITED)
         val terminal = CompletableDeferred<Unit>()
@@ -36,7 +47,7 @@ internal class LiteRtVoicePrefillSession(private val session: Session) : VoicePr
         val visible = GemmaSessionText { chunk -> text.append(chunk); onToken(chunk) }
         try {
             try {
-                session.generateContentStream(emptyList(), object : ResponseCallback {
+                session.generateContentStream(finalInput, object : VoiceNativeCallback {
                     override fun onNext(response: String) { tokens.trySend(response) }
                     override fun onDone() { terminal.complete(Unit); tokens.close() }
                     override fun onError(throwable: Throwable) { terminal.complete(Unit); tokens.close(throwable) }

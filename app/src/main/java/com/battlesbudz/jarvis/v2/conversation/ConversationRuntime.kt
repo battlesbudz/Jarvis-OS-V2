@@ -363,10 +363,15 @@ internal fun JarvisRuntime.runConversationInternal(
                         else if (imageBytes != null) "image_text" else "text") +
                     " audioBytes=0 retainedAudioBytes=${voiceAudio?.size ?: 0} promptChars=${submittedPrompt.length}" +
                     " nativeAudioEncodeMs=not_used queueMs=unavailable")
+                var incrementalFallbackUsed = false
                 var generated = if (textInput != null) {
                     engine.onPromptSubmitted(submittedPrompt, 0)
-                    try { textInput.answer(submittedPrompt, acceptVoiceToken) }
-                    finally { textInput.close() }
+                    textInput.answerWithTextFallback(submittedPrompt, acceptVoiceToken) { error ->
+                        diagnosticRecorder.recordSummary("Voice incremental fallback: reason=${error.javaClass.simpleName} " +
+                            "message=${error.message?.take(300)} policy=final_text_once audioBytes=0")
+                        incrementalFallbackUsed = true
+                        engine.generate(submittedPrompt, acceptVoiceToken)
+                    }
                 } else if (voiceAudio != null) {
                     engine.generate(prompt = submittedPrompt, onToken = acceptVoiceToken)
                 } else if (imageBytes != null) {
@@ -382,7 +387,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     )
                 }
                 recordInference("answer", generated)
-                var nativeConversationContainsCurrentTurn = textInput == null
+                var nativeConversationContainsCurrentTurn = textInput == null || incrementalFallbackUsed
                 val candidateCall = generated.toolCalls.singleOrNull()
                 // Gemma can occasionally emit a tool call copied from the
                 // previous turn while answering a normal question. Never let

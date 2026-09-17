@@ -1,5 +1,7 @@
 # Local voice implementation plan
 
+> Build 708 phone repair: fixed an empty-input native streaming submission, added prefill on the first partial for fixed context, and stopped interpreting ASR ellipses as spoken hesitation. A pre-output incremental failure retries once with final text on the loaded engine. See [failure evidence and repair](voice-incremental-input.md#build-708-phone-failure-and-repair). Natural owner-matched interruption was observed at 890 ms; repaired generation still needs phone verification.
+
 > 17 September incremental-input implementation: replaced throwaway voice drafts with persistent text prefill; normal replies no longer re-submit microphone audio. Emergency-only thermal admission (5/6), no draft cooldown, and separate listening/final prefill diagnostics are implemented. See [current architecture and phone acceptance](voice-incremental-input.md). This replaces the historical speculation architecture below; device latency/recognition acceptance remains open.
 
 > 17 September follow-up: new calls now isolate history/summary/subject; exact model inputs are retained. Natural single-word interruption requires a positive learned-speaker match before stopping, with 250 ms probe eligibility and no extra word-stability delay. Stop/Hey Jarvis are retained. See [current diagnostics](current-diagnostics.md).

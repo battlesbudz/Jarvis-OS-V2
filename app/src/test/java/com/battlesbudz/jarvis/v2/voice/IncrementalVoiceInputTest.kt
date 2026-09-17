@@ -25,6 +25,67 @@ class IncrementalVoiceInputTest {
         while (true) if (receive().startsWith(prefix)) break
     }
 
+    @Test fun fallbackClosesFailedSessionAndRunsOnceOnlyBeforeOutput() = runBlocking {
+        for (emitFirst in listOf(false, true)) {
+            var closed = false
+            var retries = 0
+            val track = IncrementalVoiceInput(this, "User: ", {
+                object : VoicePrefillSession {
+                    override fun append(text: String) {}
+                    override suspend fun decode(onToken: (String) -> Unit): GenerationResult {
+                        if (emitFirst) onToken("Already spoken.")
+                        error("native failure")
+                    }
+                    override fun close() { closed = true }
+                }
+            })
+            try {
+                val result = track.answerWithTextFallback("User: Hello", {}) {
+                    assertTrue(closed)
+                    retries++
+                    GenerationResult("Recovered", 0, null)
+                }
+                assertFalse(emitFirst)
+                assertEquals("Recovered", result.text)
+            } catch (expected: IllegalStateException) {
+                assertTrue(emitFirst)
+                assertEquals("native failure", expected.message)
+            }
+            assertTrue(closed)
+            assertEquals(if (emitFirst) 0 else 1, retries)
+        }
+    }
+
+    @Test fun cancellationNeverRetries() = runBlocking {
+        var closed = false
+        val track = IncrementalVoiceInput(this, "User: ", {
+            object : VoicePrefillSession {
+                override fun append(text: String) {}
+                override suspend fun decode(onToken: (String) -> Unit): GenerationResult = throw CancellationException("stop")
+                override fun close() { closed = true }
+            }
+        })
+        try {
+            track.answerWithTextFallback("User: Hello", {}) { error("must not retry") }
+            fail("expected cancellation")
+        } catch (expected: CancellationException) { assertEquals("stop", expected.message) }
+        assertTrue(closed)
+    }
+
+    @Test fun onePartialPrefillsOnlyContextAndReusesItForTheFinalTranscript() = runBlocking {
+        val native = Native()
+        val events = Channel<String>(Channel.UNLIMITED)
+        val track = IncrementalVoiceInput(this, "Context\nUser: ", { native }, log = { events.trySend(it) })
+        track.submit("What does...")
+        events.awaitEvent("input_context_prefilled")
+        assertEquals("Context\nUser: ", native.input.toString())
+        assertEquals(0, native.decodes)
+        track.answer("Context\nUser: What does that mean?") {}
+        assertEquals("Context\nUser: What does that mean?", native.input.toString())
+        assertEquals(0, native.closes)
+        track.close()
+    }
+
     @Test fun appendedSpeechKeepsOneSessionAndDecodesOnlyAtFinal() = runBlocking {
         val sessions = mutableListOf<Native>()
         val events = Channel<String>(Channel.UNLIMITED)

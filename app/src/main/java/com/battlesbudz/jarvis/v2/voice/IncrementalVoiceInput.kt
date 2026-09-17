@@ -31,7 +31,7 @@ class IncrementalVoiceInput(
     private val worker = scope.launch(Dispatchers.Default) {
         for (text in updates) {
             log("input_partial chars=${text.length}")
-            if (revised || failure != null || text.length > 12_000) continue
+            if (revised || failure != null || text.isBlank() || text.length > 12_000) continue
             if (!text.startsWith(committed)) {
                 revised = true
                 log("input_revision committedChars=${committed.length} policy=rebuild_once_at_final")
@@ -42,16 +42,20 @@ class IncrementalVoiceInput(
             // ASR can revise its newest word. Commit only complete words shared by
             // consecutive hypotheses; neither speech resumption nor appended words reset KV state.
             val stable = common.substring(0, (common.lastIndexOf(' ') + 1).coerceAtLeast(0))
-            if (stable.length <= committed.length || !canPrefill()) continue
+            if ((stable.length <= committed.length && session != null) || !canPrefill()) continue
             try {
                 val began = System.nanoTime()
                 val native = session ?: create().also { session = it; it.append(prefix) }
                 ensureActive()
-                native.append(stable.substring(committed.length))
-                committed = stable
-                chunks++
+                val appendedWords = stable.length > committed.length
+                if (appendedWords) {
+                    native.append(stable.substring(committed.length))
+                    committed = stable
+                    chunks++
+                }
                 prefillMs += (System.nanoTime() - began) / 1_000_000
-                log("input_prefilled chunks=$chunks committedChars=${committed.length} prefillMs=$prefillMs mode=text decodeStarted=false")
+                val event = if (appendedWords) "input_prefilled" else "input_context_prefilled"
+                log("$event chunks=$chunks contextChars=${prefix.length} committedChars=${committed.length} prefillMs=$prefillMs mode=text decodeStarted=false")
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
                 failure = error
@@ -90,6 +94,26 @@ class IncrementalVoiceInput(
         if (remaining.isNotEmpty()) native.append(remaining)
         log("input_final_prefill remainingChars=${remaining.length} finalPrefillMs=${(System.nanoTime() - finalStarted) / 1_000_000}")
         return native.decode(onToken)
+    }
+
+    /** Recovery is permitted only before user-visible output; never swallow cancellation. */
+    suspend fun answerWithTextFallback(
+        finalPrompt: String,
+        onToken: (String) -> Unit,
+        retry: suspend (Exception) -> GenerationResult
+    ): GenerationResult {
+        var outputStarted = false
+        try {
+            return answer(finalPrompt) { token ->
+                if (token.isNotBlank()) outputStarted = true
+                onToken(token)
+            }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            close()
+            if (outputStarted) throw error
+            return retry(error)
+        } finally { close() }
     }
 
     suspend fun close() = withContext(NonCancellable) {

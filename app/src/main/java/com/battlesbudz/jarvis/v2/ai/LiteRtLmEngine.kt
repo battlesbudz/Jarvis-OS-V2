@@ -54,7 +54,7 @@ class LiteRtLmEngine(
         // Voice owns this engine exclusively. Do not allocate a second idle KV cache.
         conversation?.close()
         conversation = null
-        return LiteRtVoicePrefillSession(engine.createSession())
+        return LiteRtVoicePrefillSession(LiteRtNativeVoiceSession(engine.createSession()))
     }
 
     private var toolsEnabled = true

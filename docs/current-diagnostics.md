@@ -133,3 +133,12 @@ prefill while recognition catches up. No cooldown is carried from failed drafts.
 Decode TTFT starts after final explicit prefill. Use `finalPrefillMs` and the
 end-to-end pipeline timestamps as well; a reduced decode TTFT alone is not proof
 of reduced user-visible latency. See the [phone checks](voice-incremental-input.md).
+
+Build 708 repair adds `input_context_prefilled`: fixed context was processed,
+possibly with `chunks=0` because no user words were yet stable. `reuse=true`
+can therefore mean context-only reuse; use `committedChars` to distinguish it.
+`Voice incremental fallback` records a one-time final-text retry before any
+output, without audio submission or unloading the engine. The streaming TTFT now
+includes its small final turn-boundary prefill; logical remaining prompt prefill
+is still reported separately. ASR ellipses alone no longer produce
+`explicit_hesitation`; spoken hesitation words still can.
