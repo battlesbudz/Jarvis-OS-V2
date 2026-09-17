@@ -2,22 +2,13 @@ package com.battlesbudz.jarvis.v2.voice
 import org.junit.Assert.*
 import org.junit.Test
 class VoiceWorkSchedulerTest {
- @Test fun resourcePressureAndRestartChurnSuppressOnlyOptionalWork() {
+ @Test fun incrementalInputAllowsAllNonEmergencyThermalLevelsWithoutCooldown() {
   val scheduler = VoiceWorkScheduler()
-  assertFalse(scheduler.admit(0, 500, 0, 0))
-  assertFalse(scheduler.admit(0, 0, 200, 0))
-  assertFalse(scheduler.admit(0, 0, 0, 2))
-  assertTrue(scheduler.admit(0, 0, 0, 0))
-  assertFalse(scheduler.admit(100, 0, 0, 0))
-  assertTrue(scheduler.admit(2000, 0, 0, 0))
- }
- @Test fun poorReuseAndSlowCancellationHaveRenewableCooldowns() {
-  val scheduler = VoiceWorkScheduler()
-  repeat(3) { scheduler.outcome(it * 2000L, false, 0) }
-  assertFalse(scheduler.admit(6000, 0, 0, 0))
-  assertTrue(scheduler.admit(19000, 0, 0, 0))
-  scheduler.outcome(20000, true, 900)
-  assertFalse(scheduler.admit(49999, 0, 0, 0))
-  assertTrue(scheduler.admit(50000, 0, 0, 0))
+  for (level in 0..4) repeat(3) { assertTrue(scheduler.admitPrefill(0, level)) }
+  for (level in 5..6) assertFalse(scheduler.admitPrefill(0, level))
+  assertEquals("thermal_emergency", scheduler.reason)
+  assertFalse(scheduler.admitPrefill(201, 0))
+  assertEquals("asr_backlog", scheduler.reason)
+  assertTrue(scheduler.admitPrefill(0, 3))
  }
 }

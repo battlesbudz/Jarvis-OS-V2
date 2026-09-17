@@ -20,6 +20,7 @@ boundaries before introducing independently built libraries or changing lifecycl
 | Model hashing | `ai/storage/ModelFileHash.kt` | Streaming SHA-256 and bounded progress callbacks |
 | Call audio resources | `voice/VoiceCallResources.kt` | Serialized microphone ownership, replay boundary and resident model identity |
 | Native resource leases | `voice/VoiceModelSession.kt`, `CallModelSlot.kt` | Native borrowers, owner dispatchers and release after borrowers join |
+| Incremental voice input | `voice/IncrementalVoiceInput.kt`, `ai/LiteRtVoicePrefillSession.kt`, `ai/GemmaSessionText.kt` | ASR text stability, native prefill/decode lifecycle and raw-channel filtering; no tool execution or playback permission |
 | Conversation admission and policy | `conversation/ConversationWork.kt`, `ConversationPolicy.kt` | Shared job admission and budgets; no dependency on the activity |
 | Shared transcript / formatting | `ChatEntry.kt`, `chat/AssistantText.kt` | Transcript value type and display/speech formatting, independent of Android activity |
 | Playback | `voice/PiperVoiceOutput.kt` and existing queue/ledger/clock helpers | PCM generation, delivery, cancellation and playback evidence |

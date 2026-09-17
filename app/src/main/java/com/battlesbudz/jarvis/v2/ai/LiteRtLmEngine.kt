@@ -41,13 +41,21 @@ class LiteRtLmEngine(
     private var conversation: com.google.ai.edge.litertlm.Conversation? = null
     private val closed = AtomicBoolean(false)
 
-    /** Reports actual submissions, including speculative drafts, retries and recognition fallback. */
+    /** Reports actual submissions, including incremental input, retries and recognition fallback. */
     var onPromptSubmitted: (String, Int) -> Unit = { _, _ -> }
 
     private var nativeSession = 0L
     private var nativeSubmissions = 0
     fun inputContextDescription(): String =
         "nativeSession=$nativeSession nativePriorSubmissions=$nativeSubmissions toolsEnabled=$toolsEnabled"
+
+    internal fun createVoicePrefillSession(): com.battlesbudz.jarvis.v2.voice.VoicePrefillSession {
+        check(!closed.get())
+        // Voice owns this engine exclusively. Do not allocate a second idle KV cache.
+        conversation?.close()
+        conversation = null
+        return LiteRtVoicePrefillSession(engine.createSession())
+    }
 
     private var toolsEnabled = true
     suspend fun setToolsEnabled(enabled: Boolean): Boolean {
@@ -87,7 +95,8 @@ class LiteRtLmEngine(
         nativeSession++
         nativeSubmissions = 0
         conversation?.close()
-        conversation = createConversation()
+        // generateWithMessage recreates it when needed. Incremental voice uses its own Session.
+        conversation = null
     }
 
     override suspend fun generate(

@@ -55,7 +55,7 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 createDetector = { SileroSpeechDetector.create(context.assets) },
                 createTranscriber = { LazyStreamingTranscriber { asrEngine.create(asrDirectory, log = log, modelSession = modelSession) } }, log = log,
                 allowAudioOnlyTurns = true, acceptCandidate = acceptCandidate,
-                onPartialTranscript = { text, _ -> onPartialTranscript(text) })
+                onPartialTranscript = { text -> onPartialTranscript(text) })
             try {
                 capture.start(initialSilenceTimeoutMs = null)
                 log("barge_capture_ready keywordReadiness=reported_separately naturalSpeechReady=false")

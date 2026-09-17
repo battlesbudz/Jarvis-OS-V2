@@ -933,7 +933,7 @@ class AudioTurnCaptureTest {
         }
         val detector = FakeDetector()
         val capture = AudioTurnCapture(input, scope, captureDispatcher = Dispatchers.Unconfined, createDetector = { detector }, nowMs = { clock }, log = events::add,
-            createTranscriber = factory, onPartialTranscript = { text, _ -> partials.add(text) },
+            createTranscriber = factory, onPartialTranscript = { text -> partials.add(text) },
             onMetrics = { stats, text -> metrics.add(stats to text) }, trailingSilenceMs = trailingSilenceMs,
             onRecognitionRecovery = recoveryStates::add, allowAudioOnlyTurns = allowAudioOnlyTurns,
             guardFollowupSpeech = guardFollowupSpeech, onSpeechResumed = { resumed++ }, acceptCandidate = acceptCandidate)

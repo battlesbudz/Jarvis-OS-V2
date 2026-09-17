@@ -33,7 +33,7 @@ class CaptureSpeechQueueTest {
         }
         val capture = AudioTurnCapture(input, CoroutineScope(Dispatchers.Default),
             createDetector = { detector }, createTranscriber = { asr },
-            onPartialTranscript = { text, _ -> partials.add(text) })
+            onPartialTranscript = { text -> partials.add(text) })
         try {
             capture.start(); input.send(100, 1)
             assertTrue(withContext(Dispatchers.IO) { entered.await(3, TimeUnit.SECONDS) })

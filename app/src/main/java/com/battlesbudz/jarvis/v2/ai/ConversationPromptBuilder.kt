@@ -25,8 +25,8 @@ class ConversationPromptBuilder(
         } else ""
         if (voice) return listOf(
             com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions,
-            sessionContext.trim(), dialogueInstruction,
-            "Current user message:\n$userPrompt", actionContext.trim()
+            sessionContext.trim(),
+            "Current user message:\n$userPrompt", dialogueInstruction, actionContext.trim()
         ).filter { it.isNotBlank() }.joinToString("\n\n")
         return """
             You are Jarvis, a private local assistant. Answer the current
@@ -59,6 +59,11 @@ class ConversationPromptBuilder(
             $actionContext
         """.trimIndent()
     }
+
+    fun voiceInputPrefix(history: List<ChatEntry>): String = listOf(
+        com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions,
+        shortTermContext.promptContext(history.map { it.role to it.text }, compact = true)
+    ).filter { it.isNotBlank() }.joinToString("\n\n") + "\n\nCurrent user message:\n"
 
     fun buildToolResultContext(
         userPrompt: String,

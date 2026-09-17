@@ -1,5 +1,7 @@
 # Local voice implementation plan
 
+> 17 September incremental-input implementation: replaced throwaway voice drafts with persistent text prefill; normal replies no longer re-submit microphone audio. Emergency-only thermal admission (5/6), no draft cooldown, and separate listening/final prefill diagnostics are implemented. See [current architecture and phone acceptance](voice-incremental-input.md). This replaces the historical speculation architecture below; device latency/recognition acceptance remains open.
+
 > 17 September follow-up: new calls now isolate history/summary/subject; exact model inputs are retained. Natural single-word interruption requires a positive learned-speaker match before stopping, with 250 ms probe eligibility and no extra word-stability delay. Stop/Hey Jarvis are retained. See [current diagnostics](current-diagnostics.md).
 
 > Maintenance update: APK payload measurement, a reduced Sherpa JNI build profile, optional compact APK packaging and the first app modularization pass are documented in [APK size audit](apk-size-audit.md) and [component map](app-modularization.md). These changes do not close phone voice acceptance items.

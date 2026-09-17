@@ -106,3 +106,30 @@ length and compute time. This is a learned voice preference, not verified owner 
 The existing preference needs consistent speech over at least three distinct activations;
 its training-duration rules are not a per-interruption waiting period. Reliable matching
 of a 270 ms word amid speaker echo remains a Fold acceptance test, not a guaranteed result.
+
+## Incremental text input (17 September follow-up)
+
+Ordinary voice answers log `mode=incremental_text` (or `voice_text` for a final-only
+text path), `audioBytes=0`, and `retainedAudioBytes` separately. Keeping a recording
+for recovery does not mean it was submitted to Gemma. Explicit empty-ASR recovery
+still records its own audio submission and fallback decision.
+
+The retained per-turn `input_finalized` record reports `reuse`, input chunks,
+retained characters, full prompt length and `listeningPrefillMs`.
+`input_final_prefill` reports remaining characters and `finalPrefillMs`.
+Recent `asr_partial` events now include the actual hypothesis (up to 900 characters,
+with an explicit truncation flag), rather than character counts alone.
+The full assembled final prompt remains in the independent exact-prompt retention.
+It is the concatenated logical text input; Gemma turn delimiters are specified in
+[the adapter contract](voice-incremental-input.md). These records cannot prove
+what the speaker physically said without comparing microphone audio.
+
+`input_revision` means Moonshine/Whisper revised text already processed by Gemma;
+the input is rebuilt once at final validation, never restarted after every new word.
+`thermal_emergency` applies only at Android status 5/6; ordinary throttling no
+longer disables input preparation. `asr_backlog` can temporarily defer optional
+prefill while recognition catches up. No cooldown is carried from failed drafts.
+
+Decode TTFT starts after final explicit prefill. Use `finalPrefillMs` and the
+end-to-end pipeline timestamps as well; a reduced decode TTFT alone is not proof
+of reduced user-visible latency. See the [phone checks](voice-incremental-input.md).

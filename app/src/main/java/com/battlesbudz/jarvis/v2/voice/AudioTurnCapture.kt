@@ -27,7 +27,7 @@ class AudioTurnCapture(
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
     private val log: (String) -> Unit = {},
     private val createTranscriber: (() -> StreamingTranscriber)? = null,
-    private val onPartialTranscript: (String, ByteArray) -> Unit = { _, _ -> },
+    private val onPartialTranscript: (String) -> Unit = {},
     private val onMetrics: (AsrCaptureMetrics, String) -> Unit = { _, _ -> },
     private val trailingSilenceMs: Long? = null,
     private val onRecognitionRecovery: (Boolean) -> Unit = {},
@@ -427,10 +427,8 @@ class AudioTurnCapture(
             if (firstPartialAfterSpeechMs == null) {
                 firstPartialAfterSpeechMs = firstSpeechAt?.let { (nowMs() - it).coerceAtLeast(0) }
             }
-            log("asr_partial chars=${partial.length}")
-            onPartialTranscript(partial, if (audioIsComplete) synchronized(pcm) {
-                WavEncoder.pcm16Mono(pcm.snapshot(), input.sampleRateHz)
-            } else byteArrayOf())
+            log("asr_partial chars=${partial.length} truncated=${partial.length > 900} text=${partial.take(900)}")
+            onPartialTranscript(partial)
         }
     }
 

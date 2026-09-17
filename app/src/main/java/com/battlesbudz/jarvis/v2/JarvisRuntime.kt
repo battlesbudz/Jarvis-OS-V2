@@ -26,7 +26,6 @@ import com.battlesbudz.jarvis.v2.conversation.runConversationInternal
 import com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore
 import com.battlesbudz.jarvis.v2.voice.AndroidAudioInput
 import com.battlesbudz.jarvis.v2.voice.AsrModelStore
-import com.battlesbudz.jarvis.v2.voice.VoicePreparation
 import com.battlesbudz.jarvis.v2.voice.SileroSpeechDetector
 import com.battlesbudz.jarvis.v2.voice.Pcm16Signal
 import com.battlesbudz.jarvis.v2.voice.AudioTurnCapture
@@ -197,7 +196,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         val firstPlayback = java.util.concurrent.atomic.AtomicBoolean(true)
         voiceTurnJob = runtimeScope.launch(Dispatchers.Default) {
             var operationOwned = false
-            var preparation: VoicePreparation? = null
+            var preparation: com.battlesbudz.jarvis.v2.voice.IncrementalVoiceInput? = null
             var capture: AudioTurnCapture? = null
             var speakerGuard: com.battlesbudz.jarvis.v2.voice.SpeakerPreferenceGuard? = null
             var microphone: com.battlesbudz.jarvis.v2.voice.AudioInput? = null
@@ -364,29 +363,21 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         status("Voice playback failed: ${error.message}")
                     }
                 }
-                var draftStarts = 0
-                val speculative = VoicePreparation(this, generate = { partial, audio, onToken ->
-                    resetNativeConversation()
-                    conversationCharacters = 0
-                    engine.setToolsEnabled(actionIntentRouter.classifyActionIntent(partial, voiceHistory) != null)
-                    val prompt = promptBuilder.buildGemmaPrompt(partial, null, voiceHistory, seedContext = true, voice = true)
-                    engine.generateAudio(prompt, audio, onToken)
-                }, log = { diagnosticRecorder.record("Voice preparation: $it") },
-                    speechText = ::cleanSpeechText,
-                    canPrepare = {
+                val incremental = com.battlesbudz.jarvis.v2.voice.IncrementalVoiceInput(
+                    this, promptBuilder.voiceInputPrefix(voiceHistory), engine::createVoicePrefillSession,
+                    canPrefill = {
                         val thermal = if (android.os.Build.VERSION.SDK_INT >= 29)
                             getSystemService(android.os.PowerManager::class.java)?.currentThermalStatus ?: 0 else 0
-                        val allowed = draftStarts < 2 && models.workScheduler.admit(System.nanoTime() / 1_000_000,
-                            input.bufferedAudioMs, output.queuedPlaybackMs() ?: 0, thermal)
-                        if (allowed) draftStarts++
-                        diagnosticRecorder.record("Voice preparation scheduler: allowed=$allowed starts=$draftStarts " +
-                            "reason=${if (draftStarts >= 2 && !allowed) "turn_limit" else models.workScheduler.reason} thermal=$thermal backlogMs=${input.bufferedAudioMs}")
+                        val allowed = models.workScheduler.admitPrefill(input.bufferedAudioMs, thermal)
+                        diagnosticRecorder.record("Voice input scheduler: allowed=$allowed reason=${models.workScheduler.reason} " +
+                            "thermal=$thermal cutoff=5 backlogMs=${input.bufferedAudioMs}")
                         allowed
-                    }, onOutcome = { reused, cancelMs ->
-                        models.workScheduler.outcome(System.nanoTime() / 1_000_000, reused, cancelMs)
-                        diagnosticRecorder.recordSummary("Voice preparation outcome turn=$asrTurnId reused=$reused cancellationWaitMs=$cancelMs")
+                    }, log = {
+                        diagnosticRecorder.recordSummary("Voice incremental turn=$asrTurnId $it")
+                        if (it.startsWith("input_final"))
+                            diagnosticRecorder.recordTurnEvidence(asrTurnId, it.substringBefore(' '), it)
                     })
-                preparation = speculative
+                preparation = incremental
                 val preference = com.battlesbudz.jarvis.v2.voice.SpeakerPreferenceGuard(applicationContext,
                     speakerModel, asrTurnId, learnFromActivation = wokeThisTurn || !hadActiveCall,
                     log = { diagnosticRecorder.recordSummary("Voice input: $it") })
@@ -425,10 +416,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             "partials=${metrics.partialUpdates} firstPartialMs=${metrics.firstPartialAfterSpeechMs} " +
                             "endpointMs=${metrics.endpointDetectionMs}")
                     },
-                    onSpeechResumed = speculative::speechResumed,
-                    onPartialTranscript = { text, audio ->
-                        if (audio.isNotEmpty()) speculative.submit(text, audio)
-                        else speculative.speechResumed() // Long turns cannot pair their full text with a truncated WAV.
+                    onPartialTranscript = { text ->
+                        incremental.submit(text)
                         mainHandler.post {
                             if (activeVoiceCapture === capture) onTranscript("You", text, false)
                         }
@@ -472,22 +461,24 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " no recognized speech for 20 seconds."
                     return@launch
                 }
-                // Final ASR text belongs on screen immediately, before speculative work is joined.
+                // Final ASR text belongs on screen immediately, before pending input processing is joined.
                 if (asrTranscript.isNotBlank()) mainHandler.post {
                     if (voiceSessionController.currentCallId() == expectedCallId) onTranscript("You", asrTranscript, true)
                 }
                 diagnosticRecorder.recordSummary("Voice recognition turn=$asrTurnId path=${if (correction == null) "normal" else "after_keyword"} " +
                     "engine=${asrEngine.id} asrChars=${asrTranscript.length} gemmaTranscriptionFallback=${asrTranscript.isBlank()} " +
                     "speechGate=${if (asrEngine == com.battlesbudz.jarvis.v2.voice.AsrEngine.MOONSHINE) "jarvis_vad_native_gate_bypassed_v1" else "engine_default"}")
-                // The turn is already confirmed. Play cached PCM while obsolete speculative
-                // work is joined/reset; it needs neither Gemma nor tool execution permission.
+                // The turn is confirmed. Cached acknowledgement can play while queued input
+                // prefill finishes; it needs neither Gemma nor tool execution permission.
                 if (asrTranscript.isNotBlank() &&
                     !com.battlesbudz.jarvis.v2.voice.VoiceStopRequest.matches(asrTranscript) &&
                     !com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.isGoodbye(asrTranscript)) {
                     output.acknowledgeConfirmedTurn()
                 }
                 val sealStarted = System.nanoTime()
-                val draft = speculative.seal(asrTranscript)
+                incremental.seal()
+                val preparedText = incremental.takeIf { asrTranscript.isNotBlank() && recognitionIssue == null }
+                if (preparedText == null) incremental.close()
                 turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.PREPARATION_SEALED)
                 diagnosticRecorder.recordSummary("Voice pipeline turn=$asrTurnId stage=preparation_sealed " +
                     "workMs=${(System.nanoTime() - sealStarted) / 1_000_000} " +
@@ -522,7 +513,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     }
                 }
                 if (com.battlesbudz.jarvis.v2.voice.TranscriptContent.isSoundOnly(resolvedTranscript)) {
-                    speculative.close()
+                    incremental.close()
                     diagnosticRecorder.recordImportant("Voice input: nonverbal_candidate ignored=true source=audio_fallback destination=none")
                     finalMessage = "Voice Call is listening — speak now."
                     return@launch
@@ -535,7 +526,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     diagnosticRecorder.recordImportant("Voice audio fallback finished: chars=${transcript.length} source=gemma")
                 }
                 if (recognitionIssue == null && com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.isGoodbye(transcript)) {
-                    speculative.close()
+                    incremental.close()
                     voiceSessionController.appendTranscript("You", transcript)
                     voiceSessionController.end()
                     if (transcript != asrTranscript) mainHandler.post { onTranscript("You", transcript, true) }
@@ -544,16 +535,16 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     return@launch
                 }
                 if (recognitionIssue == null && com.battlesbudz.jarvis.v2.voice.VoiceStopRequest.matches(transcript)) {
-                    speculative.close()
+                    incremental.close()
                     voiceSessionController.appendTranscript("You", transcript)
                     resetNativeConversation()
                     diagnosticRecorder.recordImportant("Voice control: stop_reply source=final_transcript call_remains_active=true")
                     finalMessage = "Voice Call is listening — speak now."
                     return@launch
                 }
-                asrComparisonStore.update(asrTurnId, "prepared", draft != null)
-                if (draft == null) resetNativeConversation()
-                diagnosticRecorder.record("Voice ASR final\ntext=$transcript\naudioBytes=${audioBytes.size}\nprepared=${draft != null}")
+                asrComparisonStore.update(asrTurnId, "prepared", false)
+                diagnosticRecorder.record("Voice ASR final\ntext=$transcript\naudioBytes=${audioBytes.size}\n" +
+                    "prepared=false inputMode=incremental_text audioForAnswer=false")
                 if (transcript != asrTranscript) mainHandler.post {
                     if (voiceSessionController.currentCallId() == expectedCallId) onTranscript("You", transcript, true)
                 }
@@ -583,7 +574,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             }
                             val interruptionTest = com.battlesbudz.jarvis.v2.voice.VoiceInterruptionTest.requested(transcript)
                             if (recognitionIssue != null) {
-                                speculative.close()
+                                incremental.close()
                                 val clarification = if (recognitionIssue == "audio_fallback_timeout")
                                     "I couldn't make out that request, sir. Please say it again."
                                 else "I couldn't retain that whole request reliably. Please repeat it in shorter parts, sir."
@@ -593,7 +584,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                 speechChunks.trySend(clarification)
                                 completed.complete(clarification)
                             } else if (interruptionTest) {
-                                speculative.close()
+                                incremental.close()
                                 val passage = com.battlesbudz.jarvis.v2.voice.VoiceInterruptionTest.passage
                                 diagnosticRecorder.recordImportant("Voice interruption test: started source=local_passage normal_call_pipeline=true")
                                 recordFirstText(passage)
@@ -602,7 +593,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                 completed.complete(passage)
                             } else runConversationInternal(
                                 prompt = transcript, history = voiceHistory, imageUri = null,
-                                preparedVoice = draft, voiceAudio = audioBytes, voiceAudioIsComplete = audioIsComplete,
+                                incrementalVoice = preparedText, voiceAudio = audioBytes, voiceAudioIsComplete = audioIsComplete,
                                 onLatency = { replyLatency.set(it) },
                                 onActionResult = { name, message, succeeded ->
                                     voiceSessionController.recordReplyAction(expectedCallId, asrTurnId,

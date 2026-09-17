@@ -15,7 +15,7 @@ internal fun JarvisRuntime.runConversationInternal(
         imageUri: Uri?,
         onToken: (String) -> Unit,
         onComplete: (String) -> Unit,
-        preparedVoice: com.battlesbudz.jarvis.v2.voice.PreparedVoiceDraft? = null,
+        incrementalVoice: com.battlesbudz.jarvis.v2.voice.IncrementalVoiceInput? = null,
         voiceAudio: ByteArray? = null,
         voiceAudioIsComplete: Boolean = true,
         onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit = {},
@@ -53,7 +53,7 @@ internal fun JarvisRuntime.runConversationInternal(
         conversationJob = runtimeScope.launch(Dispatchers.Default) {
             try {
                 if (!modelStore.verifyIntegrity(modelStore.selectedModel())) {
-                    preparedVoice?.discard()
+                    incrementalVoice?.close()
                     conversationEngine?.close()
                     conversationEngine = null
                     error("The Gemma model file changed or failed integrity verification. Re-import it.")
@@ -87,25 +87,17 @@ internal fun JarvisRuntime.runConversationInternal(
                 if (repeatReply != null) {
                     // Speculation may have guessed an older reply. The saved visible
                     // answer is authoritative; repeating it never reruns a phone tool.
-                    preparedVoice?.discard()
                     resetNativeConversation()
                     turnOrchestrator.recordResponse(prompt, repeatReply, turnPlan)
                     diagnosticRecorder.record("Dialogue recall: source=latest_visible_reply chars=${repeatReply.length}")
                     mainHandler.post { finish(repeatReply) }
                     return@launch
                 }
-                val acceptedPreparation = preparedVoice?.takeIf {
-                    voiceAudioIsComplete && imageUri == null && turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT &&
-                        it.matches(prompt) && !it.failed
-                }
-                if (acceptedPreparation == null && preparedVoice != null) {
-                    preparedVoice.discard()
-                    resetNativeConversation()
-                }
                 // A final, explicit app command does not depend on the model emitting a tool call.
+                val textInput = incrementalVoice?.takeIf { imageUri == null && actionIntentRouter.classifyActionIntent(prompt, history) == null }
+                if (textInput == null) incrementalVoice?.close()
                 val directRequest = com.battlesbudz.jarvis.v2.actions.DirectAppCommand.parse(prompt)
                 if (directRequest != null) {
-                    preparedVoice?.discard()
                     resetNativeConversation()
                     val result = kotlinx.coroutines.withContext(Dispatchers.Main) {
                         com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
@@ -190,7 +182,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 ).length
                 val pendingRequestSize = maxOf(existingPromptSize, freshPromptSize) + referenceSize
                 var promptHistory = history
-                if (acceptedPreparation == null && conversationCharacters + pendingRequestSize + ConversationPolicy.GENERATION_HEADROOM >
+                if (conversationCharacters + pendingRequestSize + ConversationPolicy.GENERATION_HEADROOM >
                     ConversationPolicy.CONVERSATION_COMPACTION_LIMIT
                 ) {
                     val compactedText = shortTermContext.compactSnapshot(
@@ -242,7 +234,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 }
                 if (!engineWasLoaded) loadMs += (System.nanoTime() - loadingStarted) / 1_000_000
                 val allowTools = actionIntentRouter.classifyActionIntent(prompt, history) != null
-                if (acceptedPreparation == null && engine.setToolsEnabled(allowTools)) {
+                if (engine.setToolsEnabled(allowTools)) {
                     nativeConversationHasContext = false
                     conversationCharacters = 0
                 }
@@ -321,7 +313,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     diagnosticRecorder.recordSummary("Voice prompt parts totalChars=${submittedPrompt.length} " +
                         "baseAndRequestChars=${emptyContextPrompt.length} contextAndDialogueChars=$contextChars " +
                         "subjectChars=$subjectChars referenceChars=$referenceChars audioComplete=$voiceAudioIsComplete " +
-                        "scope=assembled_answer_prompt prepared=${acceptedPreparation != null}")
+                        "scope=assembled_answer_prompt prepared=false")
                     val latestReply = promptHistory.lastOrNull { it.role == "Jarvis" }?.text?.trim()?.take(450)
                     val latestUser = promptHistory.lastOrNull { it.role == "You" }?.text?.trim()?.take(300)
                     diagnosticRecorder.recordSummary("Voice context evidence policy=newest_first_v1 seeded=$seedContext " +
@@ -341,7 +333,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 }
                 fun recordInference(label: String, result: com.battlesbudz.jarvis.v2.ai.GenerationResult) {
                     inferencePasses += com.battlesbudz.jarvis.v2.diagnostics.InferenceTiming.from(
-                        label, result, prepared = label == "answer" && acceptedPreparation != null)
+                        label, result, prepared = false)
                     diagnosticRecorder.recordSummary(
                         "Inference\n" +
                             "stage=$label\n" +
@@ -361,25 +353,22 @@ internal fun JarvisRuntime.runConversationInternal(
                         rawVoiceTokenSeen = true
                         diagnosticRecorder.recordSummary("Voice generation: first_raw_token_ms=" +
                             ((System.nanoTime() - voiceGenerationStarted) / 1_000_000) +
-                            " source=" + if (acceptedPreparation != null) "prepared" else "live")
+                            " source=" + if (textInput != null) "incremental_text" else "live_text")
                     }
                     streamFilter.accept(token)
                 }
                 diagnosticRecorder.recordSummary("Inference input: mode=" +
-                    (if (acceptedPreparation != null) "prepared_audio_text" else if (voiceAudio != null && voiceAudioIsComplete) "audio_text"
-                        else if (voiceAudio != null) "text_long_utterance"
+                    (if (textInput != null) "incremental_text"
+                        else if (voiceAudio != null) "voice_text"
                         else if (imageBytes != null) "image_text" else "text") +
-                    " audioBytes=${voiceAudio?.size ?: 0} promptChars=${submittedPrompt.length}" +
-                    " nativeAudioEncodeMs=unavailable queueMs=unavailable")
-                var generated = if (acceptedPreparation != null) {
-                    diagnosticRecorder.record("Voice preparation: consuming_validated_draft")
-                    acceptedPreparation.consume(acceptVoiceToken)
-                } else if (voiceAudio != null && voiceAudioIsComplete) {
-                    engine.generateAudio(
-                        prompt = submittedPrompt,
-                        audioBytes = voiceAudio,
-                        onToken = acceptVoiceToken
-                    )
+                    " audioBytes=0 retainedAudioBytes=${voiceAudio?.size ?: 0} promptChars=${submittedPrompt.length}" +
+                    " nativeAudioEncodeMs=not_used queueMs=unavailable")
+                var generated = if (textInput != null) {
+                    engine.onPromptSubmitted(submittedPrompt, 0)
+                    try { textInput.answer(submittedPrompt, acceptVoiceToken) }
+                    finally { textInput.close() }
+                } else if (voiceAudio != null) {
+                    engine.generate(prompt = submittedPrompt, onToken = acceptVoiceToken)
                 } else if (imageBytes != null) {
                     engine.generate(
                         prompt = submittedPrompt,
@@ -393,7 +382,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     )
                 }
                 recordInference("answer", generated)
-                var nativeConversationContainsCurrentTurn = true
+                var nativeConversationContainsCurrentTurn = textInput == null
                 val candidateCall = generated.toolCalls.singleOrNull()
                 // Gemma can occasionally emit a tool call copied from the
                 // previous turn while answering a normal question. Never let
@@ -666,7 +655,7 @@ internal fun JarvisRuntime.runConversationInternal(
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                preparedVoice?.discard()
+                incrementalVoice?.close()
                 // Leave the next turn with a fresh native session after any
                 // recoverable generation failure.
                 conversationEngine?.close()
@@ -680,6 +669,8 @@ internal fun JarvisRuntime.runConversationInternal(
                         "error=${error.stackTraceToString().take(4_000)}"
                 )
                 mainHandler.post { finish("I could not load the local model: ${error.message ?: "unknown error"}") }
+            } finally {
+                incrementalVoice?.close()
             }
         }
         conversationJob?.invokeOnCompletion { ConversationWork.activeJobs.decrementAndGet() }

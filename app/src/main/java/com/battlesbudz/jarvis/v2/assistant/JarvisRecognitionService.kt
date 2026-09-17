@@ -30,7 +30,7 @@ class JarvisRecognitionService : RecognitionService() {
                 activeCapture = AudioTurnCapture(AndroidAudioInput(this, audioManager = manager, dictation = true), this,
                     createDetector = { SileroSpeechDetector.create(assets) },
                     createTranscriber = { MoonshineStreamingTranscriber(directory) },
-                    onPartialTranscript = { text, _ ->
+                    onPartialTranscript = { text ->
                         if (intent?.getBooleanExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, false) == true) {
                             handler.post { callback.partialResults(Bundle().apply {
                                 putStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION, arrayListOf(text))
