@@ -287,7 +287,9 @@ internal fun VoiceCallScreen(
             Text(if (diagnosticsOpen) "Hide development diagnostics" else "Development diagnostics")
         }
         if (diagnosticsOpen) {
-            AudioPathDiagnosticCard(enabled = !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting,
+            AudioPathDiagnosticCard(enabled = !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting,
+                onBusyChanged = { audioPathTesting = it })
+            DuplexEchoDiagnosticCard(enabled = !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting,
                 onBusyChanged = { audioPathTesting = it })
             TextButton(onClick = {
                 if (wakeTesting) onStopWakeTest()

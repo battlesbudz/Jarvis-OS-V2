@@ -1,5 +1,40 @@
 # Voice repair: bounded commits and phone test protocol
 
+## Phase D started — acoustic evidence candidate (2026-09-17)
+
+D1 now has an opt-in **Echo test — Phase D** in Voice Call settings → Development diagnostics.
+It captures three separately selected conditions: Jarvis alone (Justin silent), Justin alone,
+and double-talk. Each run retains approximately ten seconds of microphone PCM after platform
+processing, the exact eight-second Piper reference where applicable, observed playback heads,
+and hardware capture/playback timestamps when available. Save produces one ZIP with separate
+WAV streams, a timeline, recognizer input, final transcript, route/AEC control details, and
+100 ms keyword replay scores. No audio is uploaded; leaving settings discards unsaved evidence.
+
+Build 710's “And she's” interruption occurred while Justin was completely silent. That is a
+confirmed false interruption. Build 711 improves the playback reference used for speaker
+comparison; it is not acoustic echo cancellation and has not established phone acceptance.
+
+**D1 status:** implementation available for phone measurement; acoustic gate still pending.
+The test keeps the existing VOICE_RECOGNITION / USAGE_MEDIA route and requested platform
+AEC/noise suppression. Recognition and keyword analysis run after capture to isolate the
+acoustic path; this is not a reproduction of live barge scheduling or speaker verification.
+The captured input is not raw pre-hardware-AEC audio. Enabled/control flags do not establish
+cancellation effectiveness. The reference is submitted PCM, not a recording of the loudspeaker.
+
+**Next gate:** save the three speaker tests and repeat with headphones at ordinary call volume.
+Listen for Piper in `jarvis_only/microphone.wav`, compare owner intelligibility between
+`user_only` and `double_talk`, and inspect timing/route/effect evidence. Then select a controlled
+D2 communication-route comparison with explicit ownership if supported by these observations.
+D3 WebRTC APM remains conditional on insufficient measured platform cancellation. Do not mark
+D2, D3, or milestone D accepted from JVM/CI tests.
+
+**Current interruption requirement overrides the old Phase E wording:** acoustic activity,
+noise, coughs, or loudness alone must never pause or stop output. A recognized owner word is
+required, with playback-echo rejection; single words remain eligible. Stop and Hey Jarvis stay
+supported. Any future reversible candidate pause must follow lexical confirmation, not VAD
+onset. Retired Paul/Kokoro work in this historical ledger is not part of the current stack.
+
+
 > Historical reference: Kokoro and Paul were removed on 16 September 2026. Their commands, setup steps and experiment plans below are superseded by the [supported stack](supported-model-stack.md) and current pipeline. Retained measurements are historical evidence.
 
 > Historical implementation/evidence below. For current selected voices, ASR admission, gain, acknowledgement and interruption behavior, use [Current voice pipeline and remaining acceptance](voice-pipeline-current.md). Later user decisions supersede these experiments.
@@ -429,7 +464,7 @@ Update this table after each actual delivery. `Planned` is deliberately not `imp
 | C1 | First repair delivered; phone interruption failed; renewal scheduling remains | 3509b4b; build 678 | 52 focused JVM tests and Android CI passed | Failure record below |
 | C2 | Partial repairs delivered; not accepted | Final-only probes and later scheduling repairs | Self-playback still triggers costly probes | Genuine interruption acceptance pending |
 | C3 | Partial playback repairs; Kokoro callbacks in current commit | Builds 683–684 buffering/cues; current Kokoro delivery change | One cohesive 684 call, no observed starvation; sustained gate not met | P2 extended/P3 remain |
-| D1 | Planned; measure early | — | — | P5 — |
+| D1 | Acoustic evidence test implemented; phone gate pending | Phase D1 evidence candidate | Bounded PCM/timeline/archive tests; CI | P5 pending |
 | D2 | Conditional on route evidence | — | — | P5/P6 — |
 | D3 | Conditional on insufficient platform AEC | — | — | P5/P2 — |
 | E1 | Planned | — | — | P4/P5 screen — |

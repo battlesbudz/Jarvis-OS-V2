@@ -30,6 +30,7 @@ class AndroidAudioInput(
     private val echoCancellation: Boolean = false,
     private val noiseSuppression: Boolean = false,
     private val onLevel: (Float) -> Unit = {},
+    private val evidence: DuplexAudioEvidence? = null,
     private val log: (String) -> Unit = {}
 ) : AudioInput {
     override val sampleRateHz: Int = format.sampleRateHz
@@ -95,12 +96,23 @@ class AndroidAudioInput(
             runCatching { android.media.audiofx.AcousticEchoCanceler.create(created.audioSessionId) }.getOrNull()
                 ?.also { runCatching { it.enabled = true } }
         } else null
+        log("capture_effects session=${created.audioSessionId} " +
+            "aecAvailable=${android.media.audiofx.AcousticEchoCanceler.isAvailable()} " +
+            "aecControl=${runCatching { aec?.hasControl() }.getOrNull()} " +
+            "aecId=${runCatching { aec?.id }.getOrNull()} " +
+            "aecImplementation=${runCatching { aec?.descriptor?.implementor }.getOrNull()} " +
+            "aecUuid=${runCatching { aec?.descriptor?.uuid }.getOrNull()} " +
+            "preHardwarePcm=unavailable effectiveness=unmeasured")
         log("capture_aec requested=$echoCancellation enabled=${runCatching { aec?.enabled == true }.getOrDefault(false)}")
         val suppressor = if (noiseSuppression && android.media.audiofx.NoiseSuppressor.isAvailable()) {
             runCatching { android.media.audiofx.NoiseSuppressor.create(created.audioSessionId) }.getOrNull()
                 ?.also { runCatching { it.enabled = true } }
         } else null
         log("capture_noise_suppression requested=$noiseSuppression enabled=${runCatching { suppressor?.enabled == true }.getOrDefault(false)}")
+        if (evidence != null) {
+            aec?.setControlStatusListener { _, granted -> log("capture_aec_control granted=$granted") }
+            aec?.setEnableStatusListener { _, enabled -> log("capture_aec_state enabled=$enabled") }
+        }
         val callback = object : android.media.AudioManager.AudioRecordingCallback() {
             override fun onRecordingConfigChanged(configs: MutableList<android.media.AudioRecordingConfiguration>?) {
                 val config = created.activeRecordingConfiguration
@@ -144,12 +156,18 @@ class AndroidAudioInput(
                     val pcm = ByteArray(chunkSamples * 2)
                     val assembler = PcmChunkAssembler(pcm.size)
                     var capturedBytes = 0
+                    val timestamp = if (evidence != null) android.media.AudioTimestamp() else null
                     while (isActive) {
                         if (busy(created)) throw MicrophoneBusyException()
                         val count = created.read(pcm, 0, pcm.size, AudioRecord.READ_NON_BLOCKING)
                         if (busy(created)) throw MicrophoneBusyException()
                         if (count == 0) { kotlinx.coroutines.delay(20); continue }
                         if (count > 0) {
+                            if (evidence != null && timestamp != null) {
+                                val observed = System.nanoTime()
+                                val valid = runCatching { created.getTimestamp(timestamp, android.media.AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS }.getOrDefault(false)
+                                evidence.capture(pcm, count, observed, timestamp.framePosition.takeIf { valid }, timestamp.nanoTime.takeIf { valid })
+                            }
                             var squares = 0.0
                             for (i in 0 until count - 1 step 2) {
                                 val sample = ((pcm[i].toInt() and 255) or (pcm[i + 1].toInt() shl 8)).toShort().toDouble()

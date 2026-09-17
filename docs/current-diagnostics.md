@@ -1,5 +1,34 @@
 # Current settings and development diagnostics
 
+## Phase D acoustic evidence
+
+With the call and wake listening stopped, open **Voice Call settings → Development diagnostics →
+Echo test — Phase D**. Run **Jarvis alone** while completely silent, **Your voice alone**, then
+**Both voices**. For the latter two say slowly “No. Yes. I. Stop. Hey Jarvis.” Follow the on-screen
+listening instruction; preparing/downloading models is not part of the capture. A test deliberately
+does not interrupt Piper. Keep volume and phone position constant. Save one ZIP, then repeat
+with headphones and save another. Run in the foreground; Stop/backgrounding cancels and releases
+capture/playback. Native model operations finish cleanup before the busy state is released.
+
+Each ZIP scenario includes `report.txt`, `timeline.csv`, `microphone.wav`, optional
+`piper-reference.wav`, and available `decoder-input.wav`. Reports include build/commit/device,
+route IDs, volume, AEC availability/control/implementation, capture statistics, transcript and
+keyword scores/hits every 100 ms of replay. The timeline keeps microphone read frame ranges,
+playback head observations and hardware timestamps on the same monotonic clock. Empty hardware
+fields mean unavailable; read delivery time is not acoustic onset. Audio is bounded in memory
+(12 seconds of capture maximum, 1,200 timing rows); truncation is reported. Save is explicit and
+uses Android's document picker. No automatic disk recording or upload is added to normal calls.
+
+Limitations: microphone PCM is **after Android processing**; pre-effect PCM is unavailable.
+AEC enabled is not measured effectiveness. Piper reference is exactly the submitted eight-second
+clip at 22,050 Hz / 1.0x, with observed played positions, not acoustic loudspeaker output. The
+full synthesis text can extend past that clip. Recognition uses the selected adapter on the
+whole captured clip **after** recording without VAD filtering; keyword replay also runs afterward.
+These results isolate acoustics and model responses, not live CPU scheduling, automatic stopping,
+or owner verification. A quiet transcript is not alone proof of effective echo cancellation;
+compare the recorded audio as well. This is D1 evidence, not a production route change or D3 AEC.
+
+
 Current on `audio-pr2` / PR #6, 17 September 2026.
 
 ## False interruption investigation (build 709 follow-up)
