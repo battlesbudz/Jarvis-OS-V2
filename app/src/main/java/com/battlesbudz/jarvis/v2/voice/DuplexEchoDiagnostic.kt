@@ -111,16 +111,7 @@ object DuplexEchoDiagnostic {
 
     private suspend fun decode(engine: AsrEngine, directory: File, pcm: ByteArray,
                                evidence: RecognitionAudioEvidence, log: (String) -> Unit): String {
-        val transcriber = engine.create(directory, live = false, audioEvidence = evidence, log = log)
-        try {
-            transcriber.prepareForBoundedProbe(pcm.size / 32L)
-            for (offset in pcm.indices step 3200) {
-                currentCoroutineContext().ensureActive()
-                transcriber.accept(pcm.copyOfRange(offset, minOf(offset + 3200, pcm.size)), allowPartial = false)
-            }
-            currentCoroutineContext().ensureActive()
-            return transcriber.finish()
-        } finally { transcriber.close() }
+        return recognizeDiagnosticClip(engine.create(directory, live = false, audioEvidence = evidence, log = log), pcm)
     }
 
     private suspend fun playReference(pcm: ByteArray, evidence: DuplexAudioEvidence, log: (String) -> Unit): Long = coroutineScope {
