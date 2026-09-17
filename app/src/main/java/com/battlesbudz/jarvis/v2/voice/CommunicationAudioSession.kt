@@ -21,14 +21,14 @@ internal class CommunicationAudioSession private constructor(
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
         .setOnAudioFocusChangeListener({ change ->
             if (change < 0) MicrophoneHandoff.withRecorderLock {
-                if (current === this) MicrophoneHandoff.requestInterruption("duplex_audio_focus_lost")
+                if (current === this@CommunicationAudioSession) MicrophoneHandoff.requestInterruption("duplex_audio_focus_lost")
             }
         }, Handler(Looper.getMainLooper())).build()
 
-    val valid: Boolean get() = MicrophoneHandoff.withRecorderLock { current === this && lease.valid }
+    val valid: Boolean get() = MicrophoneHandoff.withRecorderLock { current === this@CommunicationAudioSession && lease.valid }
     suspend fun awaitReady() = withTimeout(2000) {
         while (!valid) {
-            check(MicrophoneHandoff.withRecorderLock { current === this } && !MicrophoneHandoff.shouldYield) {
+            check(MicrophoneHandoff.withRecorderLock { current === this@CommunicationAudioSession } && !MicrophoneHandoff.shouldYield) {
                 "Communication route ownership was lost."
             }
             delay(25)
@@ -37,7 +37,7 @@ internal class CommunicationAudioSession private constructor(
     }
 
     override fun close() = MicrophoneHandoff.withRecorderLock {
-        if (current === this) {
+        if (current === this@CommunicationAudioSession) {
             current = null // Focus callbacks cannot recursively release this owner.
             try {
                 lease.close()
