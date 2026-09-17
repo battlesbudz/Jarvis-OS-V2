@@ -29,7 +29,10 @@ fun DuplexEchoDiagnosticCard(enabled: Boolean, onBusyChanged: (Boolean) -> Unit)
     var results by remember { mutableStateOf(listOf<DuplexAudioEvidence.Result>()) }
     var pendingExport by remember { mutableStateOf(listOf<DuplexAudioEvidence.Result>()) }
     var requested by remember { mutableStateOf(DuplexEchoDiagnostic.Scenario.JARVIS_ONLY) }
-    var profile by remember { mutableStateOf(DuplexEchoDiagnostic.RouteProfile.COMMUNICATION_SPEAKER) }
+    var profile by remember {
+        mutableStateOf(if (android.os.Build.VERSION.SDK_INT >= 31)
+            DuplexEchoDiagnostic.RouteProfile.COMMUNICATION_SPEAKER else DuplexEchoDiagnostic.RouteProfile.CURRENT_MEDIA)
+    }
     val busy = job?.isActive == true
     fun runTest() {
         if (!enabled || job?.isActive == true) return
