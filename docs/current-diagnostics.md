@@ -1,5 +1,33 @@
 # Current settings and development diagnostics
 
+## Build-720 comparison fixes (2026-09-18)
+
+The uploaded Gemma-transcription trial returned no usable transcript; the old path
+submitted a placeholder as a text request and counted the resulting clarification
+as a complete benchmark. This is now rejected before answer generation. Audio
+transcription explicitly disables tools, uses a fresh conversation, and retries
+missing output once using the same original audio within the existing 12-second
+budget. Explicit no-speech results are not retried. Each attempt retains raw text,
+stream-event count, tool-call count and duration in its comparison ZIP. Cancellation
+still propagates and native conversation cleanup remains serialized.
+
+Failed recognition cannot produce a valid comparison or WER score. Missing
+transcripts remain missing; direct audio answers do not claim a transcript-final
+timestamp. The original empty native output's precise cause is not established by
+the old ZIP; phone verification of recovery is required.
+
+Whisper's explicit `(buzzer)` / `(buzzing)` captions (and beep/ringing captions) are
+removed before word-based interruption decisions. Plain spoken words and words
+alongside captions, including No/Yes/I/Stop, remain eligible. Communication routing,
+AEC ownership and speaker checks are unchanged.
+
+Phone follow-up: run only the Gemma transcription comparison again and export each
+of its three ZIPs, including failures. There is no need to repeat the nine completed
+Moonshine/Whisper/direct-audio comparisons. For the caption fix, use Whisper in a
+separate call: non-speech during playback must not interrupt; a spoken No must still
+interrupt. Save that call's test ZIP. Automated regression tests cover retry bounds,
+no-speech/cancellation, invalid scoring and the caption/word gate.
+
 ## Phase D2 — live-call communication route integration (2026-09-18)
 
 Implemented the D2 phone-speaker profile in real Voice Calls on Android 12+:

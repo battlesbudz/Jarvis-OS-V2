@@ -2,6 +2,7 @@ package com.battlesbudz.jarvis.v2.voice.comparison
 
 import com.battlesbudz.jarvis.v2.voice.AsrEngine
 import com.battlesbudz.jarvis.v2.voice.WordErrorRate
+import com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONObject
 import java.io.OutputStream
@@ -66,15 +67,19 @@ internal object LiveComparison {
             duration("asr_submit_to_first_token_ms", "asr_submit", "asr_first_token")
             duration("speech_end_to_final_transcript_ms", "speech_end", "transcript_final")
             duration("speech_end_to_asr_first_partial_ms", "speech_end", "asr_first_partial")
-            json.put("complete_trial", details["turn_completed"] == true && details["interrupted"] != true &&
+            val transcript = details["resolved_transcript"] as? String
+            val recognitionOk = (details["recognition_issue"] == null || details["recognition_issue"] == "none") &&
+                (request.path == Path.GEMMA_DIRECT || (transcript != null && VoiceTranscriptResolver.hasTranscript(transcript)))
+            json.put("recognition_valid", recognitionOk)
+            if (!recognitionOk) json.put("invalid_reason", details["recognition_issue"]?.takeUnless { it == "none" } ?: "missing_usable_transcript")
+            json.put("complete_trial", recognitionOk && details["turn_completed"] == true && details["interrupted"] != true &&
                 details["input_is_interruption_correction"] != true && !details.containsKey("generation_error") &&
                 !details.containsKey("tts_error") && events.containsKey("answer_first_token") && events.containsKey("answer_audio"))
             json.put("answer_audio_observed", events.containsKey("answer_audio"))
             json.put("barge_keyword_ready_observed", logs.any { it.startsWith("barge barge_keyword_ready") })
             json.put("prefill_observed", logs.any { it.startsWith("incremental input_prefilled") })
             if (request.path != Path.GEMMA_DIRECT) {
-                val transcript = details["resolved_transcript"] as? String
-                val score = transcript?.let { WordErrorRate.score(request.reference, it) }
+                val score = transcript?.takeIf { recognitionOk }?.let { WordErrorRate.score(request.reference, it) }
                 json.put("word_error_rate_percent", score?.percent ?: JSONObject.NULL)
             } else json.put("word_error_rate_percent", JSONObject.NULL).put("accuracy", "direct_answer_requires_human_correctness_review")
             return json.toString(2) + "\n\n" + logs.joinToString("\n")

@@ -5,9 +5,17 @@ import org.junit.Test
 
 class BargeInGateTest {
     @Test fun soundCaptionsAndPunctuationNeverBecomeWordsEvenWithOwnerOverlapEnabled() {
-        for (text in listOf("[cough]", "(sneezing)", "[wind]", "[car noise]", "[yelling]", "...", "'''", "♪")) {
+        for (text in listOf("(buzzer)", "(buzzing)", "[beeping]", "[cough]", "(sneezing)", "[wind]", "[car noise]", "[yelling]", "...", "'''", "♪")) {
             val gate = BargeInGate(stableMs = 0, allowShortEchoOverlap = true)
             repeat(20) { assertEquals(text, BargeInGate.Action.WAIT, gate.update(true, true, it * 100L, text, "The sky is blue")) }
+        }
+    }
+    @Test fun wordsBesideBuzzingCaptionsStillInterrupt() {
+        for (word in listOf("No", "Yes", "I", "stop", "buzzing")) {
+            val gate = BargeInGate(stableMs = 0, allowShortEchoOverlap = true)
+            assertEquals(word, BargeInGate.Action.CONFIRM,
+                gate.update(true, true, 0, "(buzzing) $word", "The sky is blue"))
+            assertEquals(word.lowercase(), gate.requestText)
         }
     }
     @Test fun build709PlaybackSubstitutionsCannotBecomeNewUserWords() {

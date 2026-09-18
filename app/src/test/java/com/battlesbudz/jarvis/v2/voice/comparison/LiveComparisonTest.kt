@@ -28,10 +28,31 @@ class LiveComparisonTest {
     }
     @Test fun failedOrInterruptedPlaybackCannotCountAsCompleteTrial() {
         val t = LiveComparison.Trial("x", LiveComparison.Request(LiveComparison.Path.MOONSHINE, "hello", 1))
+        t.put("resolved_transcript", "hello")
         t.put("turn_completed", true); t.mark("answer_first_token"); t.mark("answer_audio")
         assertTrue(JSONObject(t.report().substringBefore("\n\n")).getBoolean("complete_trial"))
         t.put("generation_error", "failed after first token")
         assertFalse(JSONObject(t.report().substringBefore("\n\n")).getBoolean("complete_trial"))
+    }
+    @Test fun clarificationAfterFailedRecognitionIsNotASuccessOrAnAccuracyScore() {
+        for (transcript in listOf("", "[Voice message — transcription unavailable]", "(buzzing)")) {
+            val t = LiveComparison.Trial("x", LiveComparison.Request(LiveComparison.Path.GEMMA_ASR, "hello", 1))
+            t.put("resolved_transcript", transcript)
+            t.put("turn_completed", true); t.mark("answer_first_token"); t.mark("answer_audio")
+            val r = JSONObject(t.report().substringBefore("\n\n"))
+            assertFalse(r.getBoolean("complete_trial"))
+            assertFalse(r.getBoolean("recognition_valid"))
+            assertTrue(r.isNull("word_error_rate_percent"))
+        }
+    }
+    @Test fun recognitionFailureInvalidatesEvenANonemptyTranscript() {
+        val t = LiveComparison.Trial("x", LiveComparison.Request(LiveComparison.Path.GEMMA_ASR, "hello", 1))
+        t.put("resolved_transcript", "hello"); t.put("recognition_issue", "audio_fallback_timeout")
+        t.put("turn_completed", true); t.mark("answer_first_token"); t.mark("answer_audio")
+        val r = JSONObject(t.report().substringBefore("\n\n"))
+        assertFalse(r.getBoolean("complete_trial"))
+        assertEquals("audio_fallback_timeout", r.getString("invalid_reason"))
+        assertTrue(r.isNull("word_error_rate_percent"))
     }
     @Test fun archiveHasIndependentInputAndReport() {
         val t = LiveComparison.Trial("x", LiveComparison.Request(LiveComparison.Path.WHISPER, "hello", 2))

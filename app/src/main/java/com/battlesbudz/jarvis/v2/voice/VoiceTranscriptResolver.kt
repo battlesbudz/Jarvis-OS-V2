@@ -1,6 +1,6 @@
 package com.battlesbudz.jarvis.v2.voice
 
-/** ASR assists the audio model; an empty ASR result never vetoes confirmed speech. */
+/** Resolve recognition without turning failed transcription into a user message. */
 object VoiceTranscriptResolver {
     const val UNTRANSCRIBED = "[Voice message — transcription unavailable]"
     val instructions = """
@@ -16,9 +16,18 @@ object VoiceTranscriptResolver {
         // A positive no-speech result is not an invitation to invent a reply.
         // Runtime recognizes this caption and keeps listening without answer generation.
         if (heard.equals("[NO_SPEECH]", ignoreCase = true)) return "[NO_SPEECH]"
-        // Preserve a truthful transcript placeholder; the response pass still
-        // receives the original audio and can ask for clarification. This label
-        // cannot authorize a tool through the existing final-transcript guard.
-        return heard.takeUnless { it.isBlank() } ?: UNTRANSCRIBED
+        return heard.takeUnless { it == UNTRANSCRIBED } ?: ""
     }
+
+    /** Retry only missing output, never an explicit no-speech result. Caller owns the overall deadline. */
+    internal suspend fun retryEmptyAudio(attempt: suspend (Int) -> String): String {
+        repeat(2) { index ->
+            val text = attempt(index + 1).trim()
+            if (text.isNotEmpty() && text != UNTRANSCRIBED) return text
+        }
+        return ""
+    }
+
+    internal fun hasTranscript(text: String): Boolean = text != UNTRANSCRIBED &&
+        TranscriptContent.speech(text).any { it.isLetterOrDigit() }
 }

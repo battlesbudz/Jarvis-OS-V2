@@ -23,4 +23,32 @@ class VoiceTranscriptResolverTest {
         val result = VoiceTranscriptResolver.resolve("", byteArrayOf()) { "[NO_SPEECH]" }
         assertTrue(TranscriptContent.isSoundOnly(result))
     }
+    @Test fun emptyAudioRetriesOnceAndCanRecover() = runBlocking {
+        val attempts = mutableListOf<Int>()
+        val text = VoiceTranscriptResolver.retryEmptyAudio { attempt ->
+            attempts += attempt
+            if (attempt == 1) " " else "Turn on the light"
+        }
+        assertEquals(listOf(1, 2), attempts)
+        assertEquals("Turn on the light", text)
+    }
+    @Test fun exhaustedAttemptsNeverBecomeAUserMessage() = runBlocking {
+        var calls = 0
+        val text = VoiceTranscriptResolver.resolve("", byteArrayOf()) {
+            VoiceTranscriptResolver.retryEmptyAudio { calls++; "" }
+        }
+        assertEquals(2, calls)
+        assertEquals("", text)
+        assertFalse(VoiceTranscriptResolver.hasTranscript(text))
+        assertFalse(VoiceTranscriptResolver.hasTranscript(VoiceTranscriptResolver.UNTRANSCRIBED))
+    }
+    @Test fun noSpeechIsNotRetriedAndExceptionsAreNotSwallowed() = runBlocking {
+        var calls = 0
+        assertEquals("[NO_SPEECH]", VoiceTranscriptResolver.retryEmptyAudio { calls++; "[NO_SPEECH]" })
+        assertEquals(1, calls)
+        try {
+            VoiceTranscriptResolver.retryEmptyAudio { throw kotlinx.coroutines.CancellationException("cancel") }
+            fail("Cancellation must propagate")
+        } catch (_: kotlinx.coroutines.CancellationException) { }
+    }
 }

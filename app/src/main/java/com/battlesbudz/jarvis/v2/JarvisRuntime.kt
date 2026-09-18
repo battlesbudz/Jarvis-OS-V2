@@ -564,15 +564,26 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     diagnosticRecorder.recordImportant("Voice audio fallback: ${asrEngine.label} empty; Gemma receiving ${audio.size} bytes")
                     try {
                         kotlinx.coroutines.withTimeout(12_000L) {
-                            resetNativeConversation()
-                            diagnosticRecorder.recordImportant("Voice audio fallback: stage=submit deadlineMs=12000")
-                            comparison?.mark("asr_submit")
-                            val heard = engine.generateAudio(
-                                com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.instructions, audio, { token ->
-                                    if (token.isNotBlank()) comparison?.mark("asr_first_token")
-                                })
-                            // Recognition never dispatches tools or speaks model output.
-                            if (heard.toolCalls.isEmpty()) heard.text else ""
+                            engine.setToolsEnabled(false)
+                            com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.retryEmptyAudio { attempt ->
+                                resetNativeConversation()
+                                diagnosticRecorder.recordImportant("Voice audio fallback: stage=submit attempt=$attempt deadlineMs=12000 toolsEnabled=false")
+                                comparison?.put("asr_attempts", attempt)
+                                comparison?.mark("asr_submit")
+                                val heard = engine.generateAudio(
+                                    com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.instructions, audio, { token ->
+                                        if (token.isNotBlank()) comparison?.mark("asr_first_token")
+                                    })
+                                comparison?.put("asr_attempt_${attempt}_text", heard.text)
+                                comparison?.put("asr_attempt_${attempt}_stream_events", heard.streamEvents)
+                                comparison?.put("asr_attempt_${attempt}_tool_calls", heard.toolCalls.size)
+                                comparison?.put("asr_attempt_${attempt}_duration_ms", heard.totalGenerationTimeMs)
+                                diagnosticRecorder.recordImportant("Voice audio fallback: attempt=$attempt chars=${heard.text.length} " +
+                                    "streamEvents=${heard.streamEvents} toolCalls=${heard.toolCalls.size} durationMs=${heard.totalGenerationTimeMs} " +
+                                    "text=${heard.text.take(1000)}")
+                                // Recognition never dispatches tools or speaks model output.
+                                if (heard.toolCalls.isEmpty()) heard.text else ""
+                            }
                         }
                     } catch (timeout: kotlinx.coroutines.TimeoutCancellationException) {
                         kotlin.coroutines.coroutineContext.ensureActive()
@@ -587,6 +598,14 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.AUDIO_FALLBACK_FINISHED)
                     }
                 }
+                if (recognitionIssue == null &&
+                    !com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.hasTranscript(resolvedTranscript) &&
+                    !com.battlesbudz.jarvis.v2.voice.TranscriptContent.isSoundOnly(resolvedTranscript)) {
+                    recognitionIssue = "audio_fallback_empty"
+                    diagnosticRecorder.recordImportant("Voice audio fallback: result=empty action=clarify answer_generation=false")
+                }
+                comparison?.put("recognition_issue", recognitionIssue ?: "none")
+                comparison?.put("resolved_transcript", resolvedTranscript)
                 if (com.battlesbudz.jarvis.v2.voice.TranscriptContent.isSoundOnly(resolvedTranscript)) {
                     incremental.close()
                     diagnosticRecorder.recordImportant("Voice input: nonverbal_candidate ignored=true source=audio_fallback destination=none")
@@ -594,7 +613,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     return@launch
                 }
                 val transcript = com.battlesbudz.jarvis.v2.voice.TranscriptContent.speech(resolvedTranscript)
-                comparison?.mark("transcript_final")
+                if (recognitionIssue == null && comparison?.request?.path != com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.Path.GEMMA_DIRECT &&
+                    com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.hasTranscript(transcript)) comparison?.mark("transcript_final")
                 comparison?.put("resolved_transcript", transcript)
                 comparison?.put("raw_asr", asrTranscript)
                 comparison?.put("recognition_issue", recognitionIssue ?: "none")
@@ -654,7 +674,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             val interruptionTest = com.battlesbudz.jarvis.v2.voice.VoiceInterruptionTest.requested(transcript)
                             if (recognitionIssue != null) {
                                 incremental.close()
-                                val clarification = if (recognitionIssue == "audio_fallback_timeout" || recognitionIssue == "selected_model_has_no_audio_fallback")
+                                val clarification = if (recognitionIssue == "audio_fallback_timeout" || recognitionIssue == "audio_fallback_empty" || recognitionIssue == "selected_model_has_no_audio_fallback")
                                     "I couldn't make out that request, sir. Please say it again."
                                 else "I couldn't retain that whole request reliably. Please repeat it in shorter parts, sir."
                                 diagnosticRecorder.recordImportant("Voice input rejected reason=$recognitionIssue action=clarify tools=disabled")
