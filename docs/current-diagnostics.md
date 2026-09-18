@@ -1,5 +1,65 @@
 # Current settings and development diagnostics
 
+## Live-call recognition and response comparison (2026-09-18)
+
+Build 717's three Android replay ZIPs confirmed the D2 raw-input fix and the host
+replay results. Those completed tests do not need repeating. The new **Live
+voice-call comparison** card measures the production call pipeline rather than
+using the saved-clip replay elapsed time as a latency benchmark.
+
+Choose one path in the diagnostic, arm three turns, then start a fresh Voice Call.
+Read the reference question once per listening turn and allow the answer to finish.
+End the call after the third answer and save **one ZIP per turn**. Repeat for the
+other paths with the same selected Gemma model, question, phone position and volume.
+This does not change the saved ASR selection or the model selector. Model downloads
+must be ready; setup/reuse is reported separately and the first trial is not assumed
+cold. Results remain in memory (latest 12) until exported or the process ends.
+
+| Diagnostic path | Request recognition | Answer and playback |
+| --- | --- | --- |
+| Moonshine | Normal live Moonshine partials and finalization | Incremental Gemma text, Piper |
+| Whisper | Normal live Whisper partials and finalization | Incremental Gemma text, Piper |
+| Gemma transcription | Capture VAD, then Gemma audio transcription | Gemma text answer, Piper |
+| Gemma direct audio | Capture VAD, no separate transcription | Gemma audio answer, Piper |
+
+These are real microphone turns using normal model ownership, recognition
+scheduling, capture endpointing, Piper preload/filler/output and reply interruption
+monitoring. Gemma-only **request recognition** still uses the normal Moonshine
+interruption listener during the reply. The separate Gemma transcription stage
+precedes reply monitoring, as in the normal fallback path. No artificial CPU stress
+is added. Fresh prompt context and disabled lookups/device actions control the
+comparison; the reference is used only for scoring, never supplied to inference.
+The normal call microphone route is retained; this does not promote the D2
+communication-speaker diagnostic route into calls.
+
+Each ZIP contains `input.wav` when captured and `report.txt`: final/partial
+recognition, declared reference and word-error percentage, model/build identifiers,
+model setup/reuse, thermal state, capture/TTS metrics, incremental-prefill and
+barge-listener evidence, final status and answer. Bounded log entries are marked
+when truncated. Separate live readings are **not identical waveforms**; listen to
+the recording before treating the declared reference as ground truth. Direct audio
+answers have no invented transcript/WER and require answer-correctness review.
+
+Timing uses a monotonic clock and separates:
+
+- Gemma answer submission to first nonblank streamed token; also capture VAD
+  speech end to that token, including endpointing and any transcription work.
+- Gemma transcription submission to its first token, when that path is used.
+  Moonshine/Whisper partial hypotheses are labelled partials, not native tokens.
+- Capture VAD speech end to the first non-silent **answer** PCM frame passed by the
+  AudioTrack playback head. This is the on-device proxy for first audible word,
+  not an external acoustic or word-alignment measurement. Filler is excluded.
+
+Missing timings remain null. Interrupted, failed, correction-input or inaudible
+trials are marked incomplete; do not average them as successful responses.
+`barge_keyword_ready_observed` and prefill/log evidence show which concurrent call
+work actually ran. Thermal conditions and recognition paths can differ naturally;
+compare those fields alongside speed and accuracy instead of declaring a winner
+from one isolated number.
+
+This diagnostic extends D2 measurement. Full-call P5/P6 route acceptance and the
+conditional D3 software-AEC decision remain separate gates in the 16-part plan.
+
 ## D2 saved-audio recognition comparison (2026-09-18)
 
 The three build-716 communication-speaker ZIPs were replayed locally with the

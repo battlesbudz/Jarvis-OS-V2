@@ -18,6 +18,7 @@ internal fun JarvisRuntime.runConversationInternal(
         incrementalVoice: com.battlesbudz.jarvis.v2.voice.IncrementalVoiceInput? = null,
         voiceAudio: ByteArray? = null,
         voiceAudioIsComplete: Boolean = true,
+        comparison: com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.Trial? = null,
         onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit = {},
         onActionResult: (String, String, Boolean) -> Unit = { _, _, _ -> }
     ) {
@@ -45,6 +46,7 @@ internal fun JarvisRuntime.runConversationInternal(
             if (firstVisibleMs == null && text.isNotBlank()) firstVisibleMs = elapsed()
             onLatency(com.battlesbudz.jarvis.v2.diagnostics.TurnLatency(latencyId, elapsed(),
                 firstVisibleMs, loadMs, lookupMs, inferencePasses.toList()))
+            comparison?.put("answer", text)
             onComplete(text)
         }
         if (voiceAudio == null && modelStore.isModelOperationActive()) {
@@ -84,7 +86,8 @@ internal fun JarvisRuntime.runConversationInternal(
                 var actionResultForGemma: String? = null
                 var actionResultMessage: String? = null
                 var actionName: String? = null
-                val turnPlan = turnOrchestrator.plan(prompt, history.map { it.role to it.text })
+                val turnPlan = if (comparison != null) com.battlesbudz.jarvis.v2.ai.TurnPlan(com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT)
+                    else turnOrchestrator.plan(prompt, history.map { it.role to it.text })
                 if (voiceAudio != null && turnPlan.lookupQuery == null) activeVoiceOutput?.acknowledgeConfirmedTurn()
                 val repeatReply = if (imageUri == null && voiceAudio == null) com.battlesbudz.jarvis.v2.ai.LastReplyRecall.resolve(
                     prompt, history.map { it.role to it.text }
@@ -101,7 +104,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 // A final, explicit app command does not depend on the model emitting a tool call.
                 val textInput = incrementalVoice?.takeIf { imageUri == null && actionIntentRouter.classifyActionIntent(prompt, history) == null }
                 if (textInput == null) incrementalVoice?.close()
-                val directRequest = com.battlesbudz.jarvis.v2.actions.DirectAppCommand.parse(prompt)
+                val directRequest = if (comparison != null) null else com.battlesbudz.jarvis.v2.actions.DirectAppCommand.parse(prompt)
                 if (directRequest != null) {
                     resetNativeConversation()
                     val result = kotlinx.coroutines.withContext(Dispatchers.Main) {
@@ -242,7 +245,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     conversationCharacters = 0
                 }
                 if (!engineWasLoaded) loadMs += (System.nanoTime() - loadingStarted) / 1_000_000
-                val allowTools = modelStore.selectedModel().supportsTools && actionIntentRouter.classifyActionIntent(prompt, history) != null
+                val allowTools = comparison == null && modelStore.selectedModel().supportsTools && actionIntentRouter.classifyActionIntent(prompt, history) != null
                 if (engine.setToolsEnabled(allowTools)) {
                     nativeConversationHasContext = false
                     conversationCharacters = 0
@@ -344,6 +347,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     } ?: error("The selected image could not be read.")
                 }
                 fun recordInference(label: String, result: com.battlesbudz.jarvis.v2.ai.GenerationResult) {
+                    comparison?.put("inference_" + label, "nativeTTFTMs=${result.timeToFirstTokenMs} totalMs=${result.totalGenerationTimeMs} nativeSubmitMs=${result.nativeSubmitMs} firstCallbackMs=${result.firstCallbackMs}")
                     inferencePasses += com.battlesbudz.jarvis.v2.diagnostics.InferenceTiming.from(
                         label, result, prepared = false)
                     diagnosticRecorder.recordSummary(
@@ -358,10 +362,13 @@ internal fun JarvisRuntime.runConversationInternal(
                             "decodeTokensPerSecondEstimated=${result.decodeTokensPerSecond ?: -1.0}"
                     )
                 }
+                val directAudioComparison = comparison?.request?.path == com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.Path.GEMMA_DIRECT
+                comparison?.mark("answer_submit")
                 val voiceGenerationStarted = System.nanoTime()
                 var rawVoiceTokenSeen = false
                 val acceptVoiceToken: (String) -> Unit = { token ->
                     if (!rawVoiceTokenSeen && token.isNotBlank()) {
+                        comparison?.mark("answer_first_token")
                         rawVoiceTokenSeen = true
                         diagnosticRecorder.recordSummary("Voice generation: first_raw_token_ms=" +
                             ((System.nanoTime() - voiceGenerationStarted) / 1_000_000) +
@@ -370,13 +377,15 @@ internal fun JarvisRuntime.runConversationInternal(
                     streamFilter.accept(token)
                 }
                 diagnosticRecorder.recordSummary("Inference input: mode=" +
-                    (if (textInput != null) "incremental_text"
+                    (if (directAudioComparison) "diagnostic_direct_audio" else if (textInput != null) "incremental_text"
                         else if (voiceAudio != null) "voice_text"
                         else if (imageBytes != null) "image_text" else "text") +
-                    " audioBytes=0 retainedAudioBytes=${voiceAudio?.size ?: 0} promptChars=${submittedPrompt.length}" +
-                    " nativeAudioEncodeMs=not_used queueMs=unavailable")
+                    " audioBytes=${if (directAudioComparison) voiceAudio?.size ?: 0 else 0} retainedAudioBytes=${voiceAudio?.size ?: 0} promptChars=${submittedPrompt.length}" +
+                    " nativeAudioEncodeMs=${if (directAudioComparison) "unavailable" else "not_used"} queueMs=unavailable")
                 var incrementalFallbackUsed = false
-                var generated = if (textInput != null) {
+                var generated = if (directAudioComparison) {
+                    engine.generateAudio(submittedPrompt, requireNotNull(voiceAudio), acceptVoiceToken)
+                } else if (textInput != null) {
                     engine.onPromptSubmitted(submittedPrompt, 0)
                     textInput.answerWithTextFallback(submittedPrompt, acceptVoiceToken) { error ->
                         diagnosticRecorder.recordSummary("Voice incremental fallback: reason=${error.javaClass.simpleName} " +
@@ -405,7 +414,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 // previous turn while answering a normal question. Never let
                 // that stale call cause a phone side effect.
                 val proposedCall = candidateCall?.takeIf {
-                    actionIntentRouter.toolMatchesUserIntent(prompt, history, it) &&
+                    comparison == null && actionIntentRouter.toolMatchesUserIntent(prompt, history, it) &&
                         (voiceAudio == null || com.battlesbudz.jarvis.v2.actions.NativeActionDecoder.decode(it)?.let { request ->
                             com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard.allows(prompt, request.name, request.arguments)
                         } == true)
@@ -672,6 +681,7 @@ internal fun JarvisRuntime.runConversationInternal(
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
+                comparison?.put("generation_error", error.message ?: error.javaClass.simpleName)
                 incrementalVoice?.close()
                 // Leave the next turn with a fresh native session after any
                 // recoverable generation failure.
