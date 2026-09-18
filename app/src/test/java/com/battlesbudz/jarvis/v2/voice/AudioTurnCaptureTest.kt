@@ -585,25 +585,6 @@ class AudioTurnCaptureTest {
         fixture.capture.stop()
     }
 
-    @Test fun rejectedSpeakerDoesNotFinishAsrAndMicrophoneAcceptsNextSpeaker() = runBlocking<Unit> {
-        var accept = false
-        val asr = FakeTranscriber()
-        val fixture = CaptureFixture(this, asr, acceptCandidate = { accept })
-        fixture.capture.start()
-        fixture.emit(100, 2000, speech = true)
-        fixture.emit(1400, 0)
-        assertFalse(fixture.capture.hasSpeech)
-        assertEquals(0, asr.finishes)
-        assertEquals(0, fixture.microphoneStops)
-        assertTrue(fixture.events.any { "speaker_candidate_rejected" in it })
-        accept = true
-        fixture.emit(1500, 2000, speech = true)
-        fixture.emit(2800, 0)
-        assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
-        assertEquals(1, asr.finishes)
-        fixture.capture.stop()
-    }
-
     @Test fun speechArrivingDuringFinalizationInvalidatesEndpoint() = runBlocking<Unit> {
         lateinit var fixture: CaptureFixture
         var finishes = 0
@@ -652,63 +633,6 @@ class AudioTurnCaptureTest {
         assertEquals(1, finishes)
         assertEquals("Tell me a story", fixture.capture.finalTranscript)
         fixture.capture.stop()
-    }
-
-    @Test fun slowSpeakerCheckCannotKeepRecreatingSilentBacklog() = runBlocking<Unit> {
-        lateinit var fixture: CaptureFixture
-        var speakerChecks = 0
-        val asr = FakeTranscriber("How are you?", "How are you?")
-        fixture = CaptureFixture(this, asr, acceptCandidate = {
-            speakerChecks++
-            // The real speaker embedding takes ~300 ms while the microphone keeps recording.
-            fixture.bufferedMs = 300
-            true
-        })
-        fixture.capture.start()
-        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
-        fixture.emit(100, 2000, speech = true)
-        fixture.emit(1300, 0)
-        assertFalse(completion.isCompleted)
-        assertEquals(1, speakerChecks)
-        fixture.bufferedMs = 200
-        fixture.emit(1400, 0)
-        fixture.bufferedMs = 100
-        fixture.emit(1500, 0)
-        fixture.bufferedMs = 0
-        fixture.emit(1600, 0)
-        try {
-            assertTrue("Silent backlog must drain without another speaker embedding", withTimeout(1000) { completion.await() })
-            assertEquals(1, speakerChecks)
-            assertEquals(1, asr.finishes)
-            assertTrue(completion.await())
-        } finally { fixture.capture.stop() }
-    }
-
-    @Test fun resumedSpeechRequiresFreshSpeakerDecisionBeforeFinalSubmission() = runBlocking<Unit> {
-        lateinit var fixture: CaptureFixture
-        var speakerChecks = 0
-        var loads = 0
-        fixture = CaptureFixture(this,
-            factory = { loads++; FakeTranscriber("Open Facebook", "Open Facebook") },
-            acceptCandidate = {
-                speakerChecks++
-                fixture.bufferedMs = 300
-                speakerChecks == 1 // The resumed candidate is rejected by speaker preference.
-            })
-        fixture.capture.start()
-        val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
-        fixture.emit(100, 2000, speech = true)
-        fixture.emit(1300, 0)
-        fixture.bufferedMs = 0
-        fixture.emit(1400, 2000, speech = true)
-        fixture.emit(2600, 0)
-        try {
-            assertEquals(2, speakerChecks)
-            assertFalse(completion.isCompleted)
-            assertFalse(fixture.capture.hasSpeech)
-            assertEquals("", fixture.capture.finalTranscript)
-            assertTrue(fixture.events.any { "speaker_candidate_rejected" in it })
-        } finally { fixture.capture.stop() }
     }
 
     @Test fun expensivePartialDefersOptionalWorkWithoutLosingPcmOrDelayingFinalization() = runBlocking<Unit> {
@@ -909,8 +833,7 @@ class AudioTurnCaptureTest {
         factory: (() -> StreamingTranscriber)? = transcriber?.let { { it } },
         trailingSilenceMs: Long? = 1200L,
         allowAudioOnlyTurns: Boolean = false,
-        guardFollowupSpeech: Boolean = false,
-        acceptCandidate: (ByteArray) -> Boolean = { true }
+        guardFollowupSpeech: Boolean = false
     ) {
         var microphoneStarts = 0
         var microphoneStops = 0
@@ -936,7 +859,7 @@ class AudioTurnCaptureTest {
             createTranscriber = factory, onPartialTranscript = { text -> partials.add(text) },
             onMetrics = { stats, text -> metrics.add(stats to text) }, trailingSilenceMs = trailingSilenceMs,
             onRecognitionRecovery = recoveryStates::add, allowAudioOnlyTurns = allowAudioOnlyTurns,
-            guardFollowupSpeech = guardFollowupSpeech, onSpeechResumed = { resumed++ }, acceptCandidate = acceptCandidate)
+            guardFollowupSpeech = guardFollowupSpeech, onSpeechResumed = { resumed++ })
 
         suspend fun emit(atMs: Long, sample: Int, speech: Boolean = false, samples: Int = 1, probability: Float = if (speech) 0.95f else 0.01f) {
             clock = atMs

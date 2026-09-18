@@ -16,7 +16,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
 
 /** Captures one speech turn, with bounded idle pre-roll and no raw audio on disk. */
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -34,8 +33,6 @@ class AudioTurnCapture(
     private val allowAudioOnlyTurns: Boolean = false,
     private val guardFollowupSpeech: Boolean = false,
     private val onSpeechResumed: () -> Unit = {},
-    private val acceptCandidate: (ByteArray) -> Boolean = { true },
-    private val onAcceptedCandidate: (String) -> Unit = {},
     private val turnEnd: TurnEndDetector = AdaptiveTurnEnd(),
     private val captureDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val onAcousticDecision: (ByteArray, SpeechDecision, SpeechDecision, Double) -> Unit = { _, _, _, _ -> }
@@ -45,7 +42,6 @@ class AudioTurnCapture(
     val audioIsComplete: Boolean get() = capturedPcmBytes <= MAX_TURN_BYTES
     @Volatile var recognitionIssue: String? = null
         private set
-    private val speakerPcm = ByteArrayOutputStream()
     private val preRoll = RollingAudioBuffer(AudioFormat(input.sampleRateHz), maxDurationMs = 1200)
     private val recoveryAudio = RollingAudioBuffer(AudioFormat(input.sampleRateHz), maxDurationMs = 25_000)
     private val lifecycle = Mutex()
@@ -133,9 +129,6 @@ class AudioTurnCapture(
                         onSpeechResumed()
                         log("turn_endpoint_invalidated reason=resumed_speech")
                     }
-                    if (decision.isSpeech && speakerPcm.size() < MAX_TURN_BYTES) {
-                        speakerPcm.write(chunk, 0, minOf(chunk.size, MAX_TURN_BYTES - speakerPcm.size()))
-                    }
                     synchronized(pcm) {
                         if (hasSpeech) {
                             pcm.append(chunk)
@@ -221,24 +214,19 @@ class AudioTurnCapture(
                     }
                     if (reason != null && !turnCompleted.isCompleted) {
                         val finalizeStartedAt = nowMs()
-                        // The pending endpoint already passed speaker preference. Repeating
-                        // its ~300 ms embedding while draining silence recreates microphone
-                        // backlog on every retry and prevents the turn from ever completing.
-                        // Resumed speech clears pendingEndpoint above, requiring a fresh check.
                         val acousticAccepted = !guardFollowupSpeech || !hasSpeech || followupEvidence.accepts()
                         if (guardFollowupSpeech && hasSpeech && !pendingEndpoint) {
                             log("followup_speech_evidence accepted=$acousticAccepted ${followupEvidence.diagnostic()}")
                         }
-                        val speakerAccepted = acousticAccepted && (!hasSpeech || pendingEndpoint || acceptCandidate(speakerPcm.toByteArray()))
                         currentCoroutineContext().ensureActive()
                         if (turnCompleted.isCompleted) return@collect
-                        if (!speakerAccepted) {
-                            log("${if (acousticAccepted) "speaker_candidate_rejected" else "followup_candidate_rejected"} microphone=kept_open elapsedMs=${now - startedAt}")
+                        if (!acousticAccepted) {
+                            log("followup_candidate_rejected microphone=kept_open elapsedMs=${now - startedAt}")
                             onSpeechResumed()
                             hasSpeech = false
                             finalTranscript = ""
                             synchronized(pcm) { pcm.clear(); capturedPcmBytes = 0; preRoll.clear() }
-                            speakerPcm.reset(); followupEvidence.reset(); recoveryAudio.clear()
+                            followupEvidence.reset(); recoveryAudio.clear()
                             pendingEndpoint = false; pendingAudio.clear(); recognitionIssue = null
                             firstSpeechAt = null; firstPartialAfterSpeechMs = null; lastPartial = ""
                             quietEvidence.reset(); turnEnd.reset()
@@ -267,7 +255,7 @@ class AudioTurnCapture(
                             if (reason == "trailing_silence" && speechQueue.bufferedAudioMs > 0 && transcriber is SegmentedTranscriber) {
                                 if (!pendingEndpoint) {
                                     pendingAudio.clear()
-                                    log("turn_endpoint_deferred reason=audio_arrived_during_finalization speakerCheck=reused_until_speech")
+                                    log("turn_endpoint_deferred reason=audio_arrived_during_finalization")
                                 }
                                 pendingEndpoint = true
                                 return@collect
@@ -319,7 +307,6 @@ class AudioTurnCapture(
                                 lastPartial = ""
                                 pendingEndpoint = false
                                 turnEnd.reset()
-                                speakerPcm.reset()
                                 followupEvidence.reset()
                                 quietEvidence.reset()
                                 onSpeechResumed()
@@ -346,7 +333,6 @@ class AudioTurnCapture(
                             }
                             // The owner seals against finalTranscript. Sending it as a new
                             // partial would cancel a matching draft immediately before seal.
-                            if (hasSpeech) onAcceptedCandidate(finalTranscript)
                             log("asr_final chars=${finalTranscript.length} segments=${(transcriber as? SegmentedTranscriber)?.segments} " +
                                 "audioComplete=$audioIsComplete issue=$recognitionIssue")
                         }
@@ -408,7 +394,6 @@ class AudioTurnCapture(
                     transcriber = null
                     detector = null
                     recoveryAudio.clear()
-                    speakerPcm.reset()
                     log("capture_stopped speechDetected=$hasSpeech")
                 }
             }
