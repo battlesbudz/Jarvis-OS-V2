@@ -16,7 +16,7 @@ object VoiceCues {
     suspend fun play(cue: Cue, log: (String) -> Unit = {}) = playback.withLock {
         var tone: ToneGenerator? = null
         try {
-            tone = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
+            tone = ToneGenerator(CallAudioRouting.stream, 100)
             val type = if (cue == Cue.COMMAND_READY) ToneGenerator.TONE_PROP_ACK else ToneGenerator.TONE_PROP_NACK
             // ACK: two bright pulses. NACK: a single lower, rounded tone.
             val duration = if (cue == Cue.COMMAND_READY) 320 else 280
@@ -37,7 +37,7 @@ object VoiceCues {
             check(firstSpeechFrame >= 0) { "Cached acknowledgement contains silence." }
             track = android.media.AudioTrack.Builder()
                 .setAudioAttributes(android.media.AudioAttributes.Builder()
-                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setUsage(CallAudioRouting.usage)
                     .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
                 .setAudioFormat(android.media.AudioFormat.Builder().setSampleRate(audio.sampleRate)
                     .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO)
@@ -51,7 +51,7 @@ object VoiceCues {
             onStarted()
             track.play()
             log("acknowledgement_playback_started text=${audio.text} separateFromAnswer=true " +
-                "usage=media speed=${track.playbackParams.speed} pitch=1.0 volume=$mediaVolume rms=${FillerPcm.rms(audio.pcm)} firstSpeechFrame=$firstSpeechFrame")
+                "usage=${track.audioAttributes.usage} speed=${track.playbackParams.speed} pitch=1.0 volume=$mediaVolume rms=${FillerPcm.rms(audio.pcm)} firstSpeechFrame=$firstSpeechFrame")
             val started = System.nanoTime()
             var confirmed = false
             while (!stopped() && !paused() && track.playbackHeadPosition.toLong() < audio.pcm.size &&
@@ -60,7 +60,7 @@ object VoiceCues {
                     confirmed = true
                     log("acknowledgement_speech_frames_rendered playbackHead=${track.playbackHeadPosition} " +
                         "routeType=${track.routedDevice?.type} routeId=${track.routedDevice?.id} " +
-                        "usage=media separateFromAnswer=true acousticAudibility=not_measured")
+                        "usage=${track.audioAttributes.usage} separateFromAnswer=true acousticAudibility=not_measured")
                 }
                 delay(15)
             }

@@ -10,7 +10,7 @@ import android.os.Looper
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 
-/** D2 candidate ownership, serialized with microphone priority and recorder creation. */
+/** Communication speaker ownership, serialized with microphone priority and recorder creation. */
 internal class CommunicationAudioSession private constructor(
     private val audio: AudioManager, private val log: (String) -> Unit
 ) : AutoCloseable {
@@ -60,7 +60,7 @@ internal class CommunicationAudioSession private constructor(
             check(Build.VERSION.SDK_INT >= 31) { "Communication route comparison requires Android 12 or later." }
             check(current == null && !MicrophoneHandoff.shouldYield && !audio.isMicrophoneMute &&
                 audio.activeRecordingConfigurations.isEmpty() && MicrophoneHandoff.backgroundRecorders.get() == 0) {
-                "Stop other microphone users before running the communication test."
+                "Another microphone user has priority over the communication route."
             }
             val speaker = audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
                 ?: error("No communication speaker is available.")

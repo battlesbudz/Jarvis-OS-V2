@@ -1,5 +1,56 @@
 # Current settings and development diagnostics
 
+## Phase D2 — live-call communication route integration (2026-09-18)
+
+Implemented the D2 phone-speaker profile in real Voice Calls on Android 12+:
+`MODE_IN_COMMUNICATION`, built-in communication speaker, `VOICE_COMMUNICATION`
+capture with platform AEC/NS requested, and `USAGE_VOICE_COMMUNICATION` for both
+Piper answers and cached filler. Cues follow the owned route too. Call volume now
+controls playback; no volume is forced. Android 10/11 retain the legacy media route.
+This iteration targets the phone speaker, not Bluetooth/headset route selection.
+
+The route belongs to the hardware capture session and survives command/reply/
+follow-up handoffs. Passive wake stays on the recognition route; wake-to-call changes
+recorder once before the command-ready cue. Pause/end/error/external microphone
+handoff releases the route, and resumed calls reacquire it. Failed route acquisition
+fails the turn rather than silently claiming echo cancellation on the media path.
+Single-word barge, stop and Hey Jarvis gates remain unchanged: no acoustic-only stop.
+
+Evidence reviewed: build-716 D2 communication-speaker user-only PCM rms 2417,
+double-talk rms 2300, Jarvis-only PCM all zero with playback rendered. Build-717
+replays confirmed owner words survive, including double-talk. All-zero PCM alone
+is not proof of effective AEC; D2 full-call acceptance is still pending below.
+No need to repeat completed 717 replay tests. D3 WebRTC APM remains conditional on
+these real-call results; no software echo canceller was added in this iteration.
+
+### New phone acceptance checks — one ZIP per call
+
+Use the phone speaker, no headphones. Adjust **call volume while the call is active**.
+Run separate calls and stop the session before saving each result in Voice Call →
+Development diagnostics → **Save latest call test ZIP**. Save before starting the
+next call. ZIP contains retained logs, exact prompts, route and interruption evidence;
+it does not contain microphone PCM or measure acoustic echo attenuation.
+
+1. Ask for a long story; remain silent through the filler and entire answer. Must not
+   stop itself. In another call, cough/rustle during playback without speaking;
+   non-speech must not interrupt. Save each call separately.
+2. During an answer, say a single **No**. Repeat in separate calls with **Stop** and
+   **Hey Jarvis**. Must stop promptly and retain the beginning of your next request.
+3. After an answer finishes, ask a follow-up. Then test keyboard dictation handoff:
+   Jarvis yields, dictation works, and Jarvis resumes on the communication route.
+   Finally end the call and confirm ordinary phone audio works. Save the ZIP.
+
+These gates check effectiveness AND preserved owner speech. The existing deterministic
+“Start interruption test” command can isolate acoustic behavior if a model will not
+produce a long answer; at least one ordinary generated answer is also required to
+exercise inference load. Do not alter capability prompts or the model selector.
+
+Validation: route lifetime tests cover turn continuity, wake-to-call replacement,
+recorder startup failure and cancellation; Android CI runs release tests and signed
+APK assembly. Device acoustic effectiveness and external-call priority require phone
+validation; an enabled AEC flag is not a pass.
+
+
 ## Live-call recognition and response comparison (2026-09-18)
 
 Build 717's three Android replay ZIPs confirmed the D2 raw-input fix and the host
@@ -29,8 +80,9 @@ interruption listener during the reply. The separate Gemma transcription stage
 precedes reply monitoring, as in the normal fallback path. No artificial CPU stress
 is added. Fresh prompt context and disabled lookups/device actions control the
 comparison; the reference is used only for scoring, never supplied to inference.
-The normal call microphone route is retained; this does not promote the D2
-communication-speaker diagnostic route into calls.
+At introduction (build 719), this comparison retained the legacy call route.
+The subsequent D2 integration above now applies the communication speaker route
+to ordinary calls and these comparison turns alike.
 
 Each ZIP contains `input.wav` when captured and `report.txt`: final/partial
 recognition, declared reference and word-error percentage, model/build identifiers,

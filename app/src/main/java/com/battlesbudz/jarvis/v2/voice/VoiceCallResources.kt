@@ -11,11 +11,12 @@ import java.util.concurrent.atomic.AtomicLong
  * and closeModels must run after all native borrowers have joined.
  */
 internal class VoiceCallResources(
-    private val createAudio: () -> VoiceAudioSession,
+    private val createAudio: (Boolean) -> VoiceAudioSession,
     private val createModels: () -> VoiceModelSession
 ) {
     private val audioLock = Mutex()
     private var audio: VoiceAudioSession? = null
+    private var communication = false
     private var models: VoiceModelSession? = null
     private var modelsKey: String? = null
     private val playbackEndedAt = AtomicLong(0)
@@ -23,12 +24,13 @@ internal class VoiceCallResources(
     fun playbackEnded(atMs: Long) { playbackEndedAt.set(atMs) }
     fun consumeFollowupBoundary(): Long? = playbackEndedAt.getAndSet(0).takeIf { it > 0 }
 
-    suspend fun borrowMicrophone(label: String, replayAfterMs: Long? = null): AudioInput = audioLock.withLock {
-        val reused = audio?.usable == true
+    suspend fun borrowMicrophone(label: String, replayAfterMs: Long? = null, communication: Boolean = false): AudioInput = audioLock.withLock {
+        val reused = audio?.usable == true && this.communication == communication
         if (!reused) {
             audio?.close()
             playbackEndedAt.set(0)
-            audio = createAudio()
+            audio = createAudio(communication)
+            this.communication = communication
         }
         requireNotNull(audio).borrow(label, if (reused) replayAfterMs else null)
     }

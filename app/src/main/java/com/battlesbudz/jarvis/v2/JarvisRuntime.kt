@@ -142,12 +142,25 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     }
     private val callResources by lazy {
         com.battlesbudz.jarvis.v2.voice.VoiceCallResources(
-            createAudio = {
+            createAudio = { communication ->
+                val useCommunication = communication && android.os.Build.VERSION.SDK_INT >= 31
+                val manager = getSystemService(android.media.AudioManager::class.java)
+                val input = AndroidAudioInput(runtimeScope, echoCancellation = true, noiseSuppression = true,
+                    communicationInput = useCommunication, audioManager = manager,
+                    onLevel = { com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.level.value = it },
+                    log = { diagnosticRecorder.recordImportant("Microphone: $it") })
+                val source = if (useCommunication) com.battlesbudz.jarvis.v2.voice.RoutedAudioInput(input, acquire = {
+                    val route = com.battlesbudz.jarvis.v2.voice.CommunicationAudioSession.openSpeaker(manager) {
+                        diagnosticRecorder.recordImportant("Voice call route: $it")
+                    }
+                    try {
+                        route.awaitReady()
+                        diagnosticRecorder.recordImportant("Voice call route: policy=communication_speaker_v1 source=VOICE_COMMUNICATION usage=VOICE_COMMUNICATION")
+                        route
+                    } catch (error: Throwable) { route.close(); throw error }
+                }) else input
                 com.battlesbudz.jarvis.v2.voice.VoiceAudioSession(
-                    AndroidAudioInput(runtimeScope, echoCancellation = true, noiseSuppression = true,
-                        audioManager = getSystemService(android.media.AudioManager::class.java),
-                        onLevel = { com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.level.value = it },
-                        log = { diagnosticRecorder.recordImportant("Microphone: $it") }), runtimeScope,
+                    source, runtimeScope,
                     log = { diagnosticRecorder.recordImportant("Voice capture ownership: $it") })
             },
             createModels = {
@@ -260,12 +273,6 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 comparison?.put("thermal_before", getSystemService(android.os.PowerManager::class.java).currentThermalStatus)
                 comparison?.put("media_volume", getSystemService(android.media.AudioManager::class.java).getStreamVolume(android.media.AudioManager.STREAM_MUSIC))
                 comparison?.put("audio_mode", getSystemService(android.media.AudioManager::class.java).mode)
-                if (comparison != null) {
-                    val manager = getSystemService(android.media.AudioManager::class.java)
-                    check(!manager.isStreamMute(android.media.AudioManager.STREAM_MUSIC) && manager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) > 0) {
-                        "Unmute media audio before comparing audible response timing."
-                    }
-                }
                 comparison?.put("context_policy", "fresh_prompt_each_trial_models_retained_by_normal_call_ownership")
                 if (comparison?.request?.path?.usesAudio == true) check(engine.modelId.startsWith("Gemma", ignoreCase = true) && engine.audioEnabled) {
                     "Choose an audio-capable Gemma model before testing Gemma ASR."
@@ -274,7 +281,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 conversationCharacters = 0
                 val ttsDirectory = ttsModels.ensureReady(ttsEngine, ::status)
                 val followupBoundary = callResources.consumeFollowupBoundary()
-                val input = callResources.borrowMicrophone("command", followupBoundary)
+                var input = callResources.borrowMicrophone("command", followupBoundary,
+                    communication = voiceSessionController.currentCallId() != null)
                 microphone = input
                 if (voiceSessionController.currentCallId() == null) {
                     val wakeDirectory = com.battlesbudz.jarvis.v2.voice.WakeWordModelStore(applicationContext).ensureReady(::status)
@@ -293,6 +301,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         wake.awaitWake(input)
                     }
                     voiceSessionController.beginCall().also { startVoiceDiagnostics("Voice Call ${it.id}") }
+                    input.stop()
+                    input = callResources.borrowMicrophone("command", communication = true)
+                    microphone = input
                     diagnosticRecorder.recordImportant("Wake word detected: Hey Jarvis. ASR and call audio start now.")
                     wokeThisTurn = true
                     status("Hey Jarvis detected — getting ready to listen…")
@@ -339,7 +350,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     acknowledgeDelays = true,
                     playbackVolume = {
                         val manager = getSystemService(android.media.AudioManager::class.java)
-                        val stream = android.media.AudioManager.STREAM_MUSIC
+                        val stream = com.battlesbudz.jarvis.v2.voice.CallAudioRouting.stream
                         "${manager.getStreamVolume(stream)}/${manager.getStreamMaxVolume(stream)} muted=${manager.isStreamMute(stream)}"
                     },
                     audioTrace = com.battlesbudz.jarvis.v2.voice.SpeechAudioTrace(
@@ -469,6 +480,17 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 comparison?.mark("capture_start")
                 if (correction == null) activeCapture.start()
                 if (correction == null) turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.MICROPHONE_READY)
+                val callAudioManager = getSystemService(android.media.AudioManager::class.java)
+                val callStream = com.battlesbudz.jarvis.v2.voice.CallAudioRouting.stream
+                diagnosticRecorder.recordImportant("Voice call route: turn=$asrTurnId mode=${callAudioManager.mode} " +
+                    "usage=${com.battlesbudz.jarvis.v2.voice.CallAudioRouting.usage} stream=$callStream " +
+                    "volume=${callAudioManager.getStreamVolume(callStream)}/${callAudioManager.getStreamMaxVolume(callStream)}")
+                comparison?.put("audio_mode", callAudioManager.mode)
+                comparison?.put("playback_stream", callStream)
+                comparison?.put("playback_volume", callAudioManager.getStreamVolume(callStream))
+                if (comparison != null) check(!callAudioManager.isStreamMute(callStream) && callAudioManager.getStreamVolume(callStream) > 0) {
+                    "Unmute call audio before comparing audible response timing."
+                }
                 kotlin.coroutines.coroutineContext.ensureActive()
                 if (!voiceSessionController.setStateIfCurrent(expectedCallId, VoiceSessionState.ACTIVELY_LISTENING)) {
                     throw kotlinx.coroutines.CancellationException("voice_call_ended_during_capture_start")
@@ -698,7 +720,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                 diagnosticRecorder.recordTurnEvidence(asrTurnId, it.substringBefore(" "), it)
                         }.listen(output, asrDirectory, confirmed,
                             asrEngine = asrEngine, acceptCandidate = preference::accept, acceptInterruptionSpeaker = preference::acceptInterruption, trace = turnTrace,
-                            inputFactory = { callResources.borrowMicrophone("reply") }, modelSession = models, onPartialTranscript = { text ->
+                            inputFactory = { callResources.borrowMicrophone("reply", communication = true) }, modelSession = models, onPartialTranscript = { text ->
                             mainHandler.post {
                                 if (activeVoiceOutput === output && voiceSessionArmed) onTranscript("You", text, false)
                             }

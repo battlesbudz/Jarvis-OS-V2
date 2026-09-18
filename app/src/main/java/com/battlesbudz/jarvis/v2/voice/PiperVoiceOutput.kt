@@ -609,7 +609,7 @@ class PiperVoiceOutput internal constructor(
     }
 
     private fun createTrack(sampleRate: Int, firstPhraseFrames: Int): AudioTrack {
-        log("audio_track_create sampleRate=$sampleRate")
+        log("audio_track_create sampleRate=$sampleRate usage=${CallAudioRouting.usage}")
         val minBuffer = AudioTrack.getMinBufferSize(
             sampleRate,
             AudioFormat.CHANNEL_OUT_MONO,
@@ -622,7 +622,7 @@ class PiperVoiceOutput internal constructor(
         return AudioTrack.Builder()
             .setAudioAttributes(
                     AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setUsage(CallAudioRouting.usage)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )

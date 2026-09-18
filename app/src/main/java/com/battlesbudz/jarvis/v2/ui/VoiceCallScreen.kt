@@ -287,6 +287,7 @@ internal fun VoiceCallScreen(
             Text(if (diagnosticsOpen) "Hide development diagnostics" else "Development diagnostics")
         }
         if (diagnosticsOpen) {
+            CallEvidenceExport(enabled = !runtimeArmed && !turnInFlight)
             LiveComparisonCard(enabled = !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting)
             AudioPathDiagnosticCard(enabled = !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting,
                 onBusyChanged = { audioPathTesting = it })
