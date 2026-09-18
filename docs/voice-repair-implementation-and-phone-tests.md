@@ -1,5 +1,46 @@
 # Voice repair: bounded commits and phone test protocol
 
+## D2 saved-audio recognition comparison (2026-09-18)
+
+The three build-716 communication-speaker ZIPs were replayed locally with the
+pinned Moonshine 0.1.5 SMALL_STREAMING and sherpa-onnx 1.13.7 Whisper base.en int8
+models. Model artifacts were SHA256-verified. This is Linux adapter evidence,
+**not phone timing or full-call acceptance**. See [raw results](measurements/d2-asr-replay.json)
+and [reproduction instructions](../scripts/d2-replay/README.md).
+
+| Input path | Owner only | Owner during Piper | Jarvis only |
+| --- | --- | --- | --- |
+| Old raw diagnostic, native VAD bypassed | Empty | Empty | Empty |
+| Call input gates, native VAD bypassed | No, yes, I, stop, Hey Jarvis | No, yes, I, stop, Hey jogger | Empty |
+| Raw diagnostic, native VAD enabled | No, yes, I, stop, Hey Jarvis | No, yes, bye, stop, Hey John | Empty |
+| Whisper control | No, yes, I, stop, Hey Jarvis | No, yes, I, stop, Hey Joseph | `(buzzing)` |
+
+Punctuation is normalized in this table; the JSON retains exact output. Changing
+only partial-update cadence did not fix the blank raw diagnostic. Its integration
+bug was using the call's native-VAD-bypassed configuration on a full recording,
+without the call's external speech-window gates. Raw diagnostics now use a fresh
+Moonshine instance with native threshold 0.5. Normal call and bounded barge-probe
+configuration remains unchanged. Do not preserve stale partials as final speech:
+the old raw path produced transient words on all-zero audio before clearing them.
+
+The Jarvis-only recording contains all-zero PCM; user-only and overlap retain
+speech. This is promising route evidence but does not establish acoustic fidelity
+or reliable owner interruption. Names remain inaccurate during overlap. Whisper's
+silence hallucination must never become an interruption.
+
+**Next phone check:** in the existing Echo test, choose **Replay saved echo ZIP —
+Moonshine and Whisper**, import each existing D2 ZIP, then **Save ZIP** for each
+result. Missing models download first. No new recording or microphone permission
+is needed. Four fresh, sequential paths run: old raw bypass, actual call input gates,
+corrected raw diagnostic, and Whisper. Reports include path, raw transcript, decoder
+input hash/length, build and original evidence. Playback, call history, ASR selection,
+and live interruption decisions are untouched. Offline adapter replay does not
+exercise live endpointing, scheduler pressure, or recovery.
+
+D2 acoustic/ownership P5/P6 acceptance remains open. Do not promote its route to
+normal calls or start conditional D3 software AEC solely from these ASR results.
+
+
 ## Phase D2 — communication route candidate (2026-09-17)
 
 D1's build 713 phone ZIP (`jarvis-echo-1789683528887.zip`) contains all three scenarios on
@@ -479,7 +520,7 @@ Update this table after each actual delivery. `Planned` is deliberately not `imp
 | C2 | Partial repairs delivered; not accepted | Final-only probes and later scheduling repairs | Self-playback still triggers costly probes | Genuine interruption acceptance pending |
 | C3 | Partial playback repairs; Kokoro callbacks in current commit | Builds 683–684 buffering/cues; current Kokoro delivery change | One cohesive 684 call, no observed starvation; sustained gate not met | P2 extended/P3 remain |
 | D1 | Speaker evidence received; residual playback demonstrated | Build 713 ZIP | Bounded PCM/timeline/archive tests; CI | Headphone/owner preservation pending |
-| D2 | Communication speaker comparison implemented; normal route unchanged | D2 candidate, per-test ZIPs | Lease/priority regression tests; Android CI | P5/P6 pending |
+| D2 | Communication speaker candidate; raw-ASR diagnostic fixed; saved-ZIP replay added | D2 candidate, per-test and replay ZIPs | 43 focused host tests; Linux ASR replay; Android CI | Android replay and P5/P6 pending |
 | D3 | Conditional on insufficient platform AEC | — | — | P5/P2 — |
 | E1 | Planned | — | — | P4/P5 screen — |
 | E2 | Planned | — | — | P4 full/P6 — |

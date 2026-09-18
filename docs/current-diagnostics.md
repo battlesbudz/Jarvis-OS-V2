@@ -1,5 +1,46 @@
 # Current settings and development diagnostics
 
+## D2 saved-audio recognition comparison (2026-09-18)
+
+The three build-716 communication-speaker ZIPs were replayed locally with the
+pinned Moonshine 0.1.5 SMALL_STREAMING and sherpa-onnx 1.13.7 Whisper base.en int8
+models. Model artifacts were SHA256-verified. This is Linux adapter evidence,
+**not phone timing or full-call acceptance**. See [raw results](measurements/d2-asr-replay.json)
+and [reproduction instructions](../scripts/d2-replay/README.md).
+
+| Input path | Owner only | Owner during Piper | Jarvis only |
+| --- | --- | --- | --- |
+| Old raw diagnostic, native VAD bypassed | Empty | Empty | Empty |
+| Call input gates, native VAD bypassed | No, yes, I, stop, Hey Jarvis | No, yes, I, stop, Hey jogger | Empty |
+| Raw diagnostic, native VAD enabled | No, yes, I, stop, Hey Jarvis | No, yes, bye, stop, Hey John | Empty |
+| Whisper control | No, yes, I, stop, Hey Jarvis | No, yes, I, stop, Hey Joseph | `(buzzing)` |
+
+Punctuation is normalized in this table; the JSON retains exact output. Changing
+only partial-update cadence did not fix the blank raw diagnostic. Its integration
+bug was using the call's native-VAD-bypassed configuration on a full recording,
+without the call's external speech-window gates. Raw diagnostics now use a fresh
+Moonshine instance with native threshold 0.5. Normal call and bounded barge-probe
+configuration remains unchanged. Do not preserve stale partials as final speech:
+the old raw path produced transient words on all-zero audio before clearing them.
+
+The Jarvis-only recording contains all-zero PCM; user-only and overlap retain
+speech. This is promising route evidence but does not establish acoustic fidelity
+or reliable owner interruption. Names remain inaccurate during overlap. Whisper's
+silence hallucination must never become an interruption.
+
+**Next phone check:** in the existing Echo test, choose **Replay saved echo ZIP —
+Moonshine and Whisper**, import each existing D2 ZIP, then **Save ZIP** for each
+result. Missing models download first. No new recording or microphone permission
+is needed. Four fresh, sequential paths run: old raw bypass, actual call input gates,
+corrected raw diagnostic, and Whisper. Reports include path, raw transcript, decoder
+input hash/length, build and original evidence. Playback, call history, ASR selection,
+and live interruption decisions are untouched. Offline adapter replay does not
+exercise live endpointing, scheduler pressure, or recovery.
+
+D2 acoustic/ownership P5/P6 acceptance remains open. Do not promote its route to
+normal calls or start conditional D3 software AEC solely from these ASR results.
+
+
 ## Phase D acoustic evidence
 
 With the call and wake listening stopped, open **Voice Call settings → Development diagnostics →

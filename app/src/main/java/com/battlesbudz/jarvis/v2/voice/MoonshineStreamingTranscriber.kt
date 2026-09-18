@@ -7,7 +7,8 @@ import ai.moonshine.voice.TranscriptEvent
 import java.io.File
 
 /** Owns one utterance. Native calls are serialized by AudioTurnCapture's collector. */
-class MoonshineStreamingTranscriber(private val directory: File, private val updateIntervalSeconds: Double = DEFAULT_INTERVAL, modelSession: VoiceModelSession? = null, private val reserveReplyProbes: Boolean = true, private val log: (String) -> Unit = {}, private val audioEvidence: RecognitionAudioEvidence? = null) : StreamingTranscriber {
+class MoonshineStreamingTranscriber(private val directory: File, private val updateIntervalSeconds: Double = DEFAULT_INTERVAL, modelSession: VoiceModelSession? = null, private val reserveReplyProbes: Boolean = true, private val log: (String) -> Unit = {}, private val audioEvidence: RecognitionAudioEvidence? = null, private val inputMode: MoonshineInputMode = MoonshineInputMode.CALL_FILTERED) : StreamingTranscriber {
+    init { require(inputMode == MoonshineInputMode.CALL_FILTERED || modelSession == null) { "Raw diagnostics must not borrow call models." } }
     private val lines = linkedMapOf<Long, String>()
     // Avoid applying a second native speech gate to audio qualified by Jarvis VAD.
     // It could return an empty stream without ever invoking the speech decoder.
@@ -16,7 +17,7 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
     private fun createLoaded(): Transcriber {
         val created = Transcriber(listOf(
             TranscriberOption("transcription_interval", updateIntervalSeconds.toString()),
-            TranscriberOption("vad_threshold", "0.0"),
+            TranscriberOption("vad_threshold", inputMode.nativeThreshold),
             TranscriberOption("identify_speakers", "false"),
             TranscriberOption("return_audio_data", "false")
         ))
@@ -115,7 +116,7 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
         if (!finished) {
             native { transcriber.stopStream(streamHandle) } // Forced final update includes the last, incomplete native line.
             finished = true
-            log("moonshine_input_policy version=bounded_acoustic_v2 nativeGate=bypassed freshCommand=$reserveReplyProbes inputMs=${speechGate.receivedBytes / 32} decoderMs=${speechGate.acceptedBytes / 32}")
+            log("moonshine_input_policy version=bounded_acoustic_v2 nativeGate=${inputMode.diagnosticName} freshCommand=$reserveReplyProbes inputMs=${speechGate.receivedBytes / 32} decoderMs=${speechGate.acceptedBytes / 32}")
         }
         return text()
     }
@@ -138,7 +139,7 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
         transcriber.freeStream(streamHandle); streamHandle = -1
         if (leased) { lease!!.finish(healthy = false); leased = false } else transcriber.close()
         transcriber = Transcriber(listOf(
-            TranscriberOption("vad_threshold", "0.0"),
+            TranscriberOption("vad_threshold", inputMode.nativeThreshold),
             TranscriberOption("identify_speakers", "false"),
             TranscriberOption("return_audio_data", "false")
         ))

@@ -13,6 +13,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.battlesbudz.jarvis.v2.voice.EchoArchiveReader
+import com.battlesbudz.jarvis.v2.voice.EchoRecognitionReplay
 import com.battlesbudz.jarvis.v2.voice.AudioPathDiagnostic
 import com.battlesbudz.jarvis.v2.voice.DuplexAudioEvidence
 import com.battlesbudz.jarvis.v2.voice.DuplexEchoDiagnostic
@@ -33,13 +35,16 @@ fun DuplexEchoDiagnosticCard(enabled: Boolean, onBusyChanged: (Boolean) -> Unit)
         mutableStateOf(if (android.os.Build.VERSION.SDK_INT >= 31)
             DuplexEchoDiagnostic.RouteProfile.COMMUNICATION_SPEAKER else DuplexEchoDiagnostic.RouteProfile.CURRENT_MEDIA)
     }
+    var replayed by remember { mutableStateOf(false) }
+    val archiveLabel = if (replayed) "asr-replay" else profile.id
     val busy = job?.isActive == true
     fun runTest() {
         if (!enabled || job?.isActive == true) return
         val scenario = requested
         job = scope.launch {
             onBusyChanged(true)
-            results = results.filterNot { it.scenario == scenario.id }
+            results = if (replayed) emptyList() else results.filterNot { it.scenario == scenario.id }
+            replayed = false
             try {
                 val result = DuplexEchoDiagnostic.run(context, scenario, profile) { message -> scope.launch { status = message } }
                 results = results + result
@@ -70,6 +75,24 @@ fun DuplexEchoDiagnosticCard(enabled: Boolean, onBusyChanged: (Boolean) -> Unit)
             }
         }
     }
+    val replay = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null && enabled && job?.isActive != true) {
+            job = scope.launch {
+                onBusyChanged(true)
+                results = emptyList()
+                replayed = true
+                try {
+                    val recordings = withContext(Dispatchers.IO) {
+                        EchoArchiveReader.read(checkNotNull(context.contentResolver.openInputStream(uri)))
+                    }
+                    results = EchoRecognitionReplay.run(context, recordings) { message -> scope.launch { status = message } }
+                    status = "Saved audio compared. Save the replay ZIP or copy its diagnostics. No new recording was made."
+                } catch (cancelled: CancellationException) { status = "Replay stopped."; throw cancelled }
+                catch (error: Exception) { status = "Replay failed: ${error.message}" }
+                finally { onBusyChanged(false); job = null }
+            }
+        }
+    }
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
@@ -86,6 +109,10 @@ fun DuplexEchoDiagnosticCard(enabled: Boolean, onBusyChanged: (Boolean) -> Unit)
         "Audio stays in memory until you choose Save; leaving this screen clears it. " +
         "Save each test as a ZIP before changing routes. Spoken Stop and Hey Jarvis are recorded for analysis; " +
         "use Stop echo test below to cancel this fixed recording.")
+    TextButton(onClick = { replay.launch(arrayOf("application/zip", "application/octet-stream")) },
+        enabled = enabled && !busy && results.isEmpty()) { Text("Replay saved echo ZIP — Moonshine and Whisper") }
+    Text("Replay uses saved audio without the microphone. It compares the old diagnostic path, call input gates, " +
+        "corrected Moonshine diagnostic path, and Whisper. Missing recognition models download first.")
     Text("Route: ${profile.label}")
     DuplexEchoDiagnostic.RouteProfile.entries.forEach { option ->
         TextButton(onClick = { profile = option }, enabled = enabled && !busy && results.isEmpty() &&
@@ -109,7 +136,7 @@ fun DuplexEchoDiagnosticCard(enabled: Boolean, onBusyChanged: (Boolean) -> Unit)
     results.forEach { result ->
         TextButton(onClick = {
             pendingExport = listOf(result)
-            save.launch("jarvis-echo-${profile.id}-${result.scenario}-${System.currentTimeMillis()}.zip")
+            save.launch("jarvis-echo-${archiveLabel}-${result.scenario}-${System.currentTimeMillis()}.zip")
         }, enabled = enabled && !busy) { Text("Save ZIP: ${result.scenario.replace('_', ' ')}") }
         TextButton(onClick = {
             job = scope.launch {
@@ -129,7 +156,7 @@ fun DuplexEchoDiagnosticCard(enabled: Boolean, onBusyChanged: (Boolean) -> Unit)
         }, enabled = !busy) { Text("Copy echo diagnostics") }
         TextButton(onClick = {
             pendingExport = results.toList()
-            save.launch("jarvis-echo-${profile.id}-${System.currentTimeMillis()}.zip")
+            save.launch("jarvis-echo-${archiveLabel}-${System.currentTimeMillis()}.zip")
         }, enabled = enabled && !busy) { Text("Save echo recordings and diagnostics") }
     }
     if (results.isNotEmpty()) TextButton(onClick = { results = emptyList(); status = "Echo recordings cleared." },

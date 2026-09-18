@@ -112,7 +112,7 @@ object DuplexEchoDiagnostic {
                 microphoneScope=AudioRecord_after_platform_effects preHardwarePcm=unavailable
                 referenceScope=PCM_submitted_to_AudioTrack renderedPositions=timeline.csv acousticOutput=not_measured
                 playbackPolicy=fixed_8s_stream speed=1.0 generation=completed_before_capture liveCallLoad=not_reproduced
-                recognitionScope=offline_full_clip_after_capture noVadFiltering=true liveBargeScheduler=false speakerVerification=false
+                recognitionScope=offline_full_clip_after_capture jarvisVadFiltering=false moonshineNativeGate=${if (engine == AsrEngine.MOONSHINE) "enabled_0.5" else "not_applicable"} liveBargeScheduler=false speakerVerification=false
                 keywordScope=offline_100ms_replay readiness_and_hits_are_observations_not_interruptions
                 gemma=false tools=false automaticInterruption=false routeChanged=$communication
                 AEC enabled/control state is not proof of effective cancellation. No ERLE or before/after claim is possible without pre-effect PCM.
@@ -141,7 +141,7 @@ object DuplexEchoDiagnostic {
 
     private suspend fun decode(engine: AsrEngine, directory: File, pcm: ByteArray,
                                evidence: RecognitionAudioEvidence, log: (String) -> Unit): String {
-        return recognizeDiagnosticClip(engine.create(directory, live = false, audioEvidence = evidence, log = log), pcm)
+        return recognizeDiagnosticClip(engine.createDiagnostic(directory, audioEvidence = evidence, log = log), pcm)
     }
 
     private suspend fun playReference(pcm: ByteArray, evidence: DuplexAudioEvidence, profile: RouteProfile, log: (String) -> Unit): Long = coroutineScope {

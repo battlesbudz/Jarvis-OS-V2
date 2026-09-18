@@ -3,7 +3,7 @@ package com.battlesbudz.jarvis.v2.voice
 /** External VAD owns the decoder's acoustic window, not only its first onset.
  * Preserve 240 ms before confirmed speech and 320 ms after it. Long quiet spans
  * stay out of the ungated native decoder; original call audio is retained separately.
- * Diagnostic recordings and final-only probes without VAD are already bounded.
+ * Raw diagnostic recordings use native VAD; short final-only probes remain bounded.
  */
 class ExternalSpeechGate {
     private val preRoll = RollingAudioBuffer(maxDurationMs = 240)

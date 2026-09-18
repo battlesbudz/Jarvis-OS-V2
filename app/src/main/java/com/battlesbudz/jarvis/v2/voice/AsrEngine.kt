@@ -12,6 +12,13 @@ enum class AsrEngine(val id: String, val label: String, val modelVersion: String
         MOONSHINE -> MoonshineStreamingTranscriber(directory, modelSession = modelSession, log = log, audioEvidence = audioEvidence)
         WHISPER -> WhisperTranscriber(directory, live, log, modelSession, audioEvidence)
     }
+    /** Fresh, full-clip diagnostic models never share a call's VAD-bypassed Moonshine lease. */
+    fun createDiagnostic(directory: File, log: (String) -> Unit = {},
+                         audioEvidence: RecognitionAudioEvidence? = null): StreamingTranscriber = when (this) {
+        MOONSHINE -> MoonshineStreamingTranscriber(directory, log = log, audioEvidence = audioEvidence,
+            inputMode = MoonshineInputMode.RAW_DIAGNOSTIC)
+        WHISPER -> WhisperTranscriber(directory, live = false, log = log, audioEvidence = audioEvidence)
+    }
     suspend fun prepare(context: Context, status: (String) -> Unit): File = when (this) {
         MOONSHINE -> AsrModelStore(context).ensureReady(status)
         WHISPER -> RecognitionModelStore(context).whisper(status)
