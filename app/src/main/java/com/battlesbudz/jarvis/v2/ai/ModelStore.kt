@@ -168,12 +168,12 @@ class ModelStore(context: Context) {
             }
             if (exactDownload != null) {
                 onStatus("Found ${spec.fileName} in Downloads. Verifying that exact file…")
-                onStatus("Importing the existing Gemma model from Downloads…")
+                onStatus("Importing the existing AI model from Downloads…")
                 val imported = importExactDownloadedModel(exactDownload, spec, onProgress, onStatus)
                 if (imported != null) return@runCatching imported
             }
             onStatus("No exact ${spec.fileName} file was found in Downloads. Starting the verified download…")
-            onStatus("Downloading Gemma from the verified model source…")
+            onStatus("Downloading the selected AI model from the verified model source…")
             val url = requireNotNull(spec.downloadUrl) { "No automatic download is configured for ${spec.id}." }
             val destination = fileFor(spec)
             val temporary = File(modelDirectory, "${spec.fileName}.part")
@@ -184,7 +184,7 @@ class ModelStore(context: Context) {
                 onStatus = onStatus
             )
             check(temporary.isFile && temporary.length() > 0L) { "The downloaded model is empty." }
-            onStatus("Verifying the downloaded Gemma model…")
+            onStatus("Verifying the downloaded AI model…")
             val actualSha256 = temporary.sha256(onProgress)
             spec.expectedSha256?.let { expected ->
                 check(actualSha256.equals(expected, ignoreCase = true)) {
@@ -243,7 +243,7 @@ class ModelStore(context: Context) {
                 }
             } ?: return@runCatching null
             if (!temporary.isFile || temporary.length() == 0L) return@runCatching null
-            onStatus("Verifying the Gemma model copied from Downloads…")
+            onStatus("Verifying the selected AI model copied from Downloads…")
             val actualSha256 = temporary.sha256(onProgress)
             if (spec.expectedSha256 != null &&
                 !actualSha256.equals(spec.expectedSha256, ignoreCase = true)

@@ -51,7 +51,7 @@ class JarvisModelSetupWorker(
                     downloaded = bytes
                     total = length
                     if (!stage.contains("resumable parts", ignoreCase = true)) {
-                        stage = "Gemma"
+                        stage = spec.id
                     }
                     publishProgress()
                 }
@@ -63,9 +63,9 @@ class JarvisModelSetupWorker(
                 }
             }
         ).getOrElse { error ->
-            return Result.failure(workDataOf("error" to (error.message ?: "Gemma setup failed.")))
+            return Result.failure(workDataOf("error" to (error.message ?: "AI model setup failed.")))
         }
-        check(gemma.isFile) { "Gemma setup did not produce a model file." }
+        check(gemma.isFile) { "AI model setup did not produce a model file." }
         try {
             val piper = voice.ensureReady(TtsEngine.PIPER_NORTHERN) { status ->
                 synchronized(progressLock) { stage = status; downloaded = 0L; total = -1L; publishProgress() }

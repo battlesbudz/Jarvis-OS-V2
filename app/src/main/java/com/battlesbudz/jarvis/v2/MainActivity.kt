@@ -374,7 +374,7 @@ class MainActivity : ComponentActivity() {
             try {
                 modelStore.markSmokeTestStarted()
                 check(modelStore.verifyIntegrity(modelStore.selectedModel())) {
-                    "The Gemma model file changed or failed integrity verification. Re-import it."
+                    "The selected model file changed or failed integrity verification. Re-import it."
                 }
                 conversationEngine?.close()
                 conversationEngine = null
@@ -383,10 +383,10 @@ class MainActivity : ComponentActivity() {
                     modelStore.selectedModel().id,
                     modelStore.fileFor(modelStore.selectedModel()).path,
                     cacheDir.path,
-                    useGpu = true,
-                    tools = MobileActionToolDefinitions.all(),
-                    visionEnabled = true,
-                    audioEnabled = true
+                    useGpu = modelStore.selectedModel().recommendedGpu,
+                    tools = if (modelStore.selectedModel().supportsTools) MobileActionToolDefinitions.all() else emptyList(),
+                    visionEnabled = modelStore.selectedModel().supportsVision,
+                    audioEnabled = modelStore.selectedModel().supportsAudio
                 )
                 gemma.initialize()
                 val probe = gemma.generate(
@@ -394,11 +394,11 @@ class MainActivity : ComponentActivity() {
                     onToken = {}
                 )
                 check(probe.text.trim() == "GEMMA_PR1_OK") {
-                    "The selected Gemma file did not pass its identity probe."
+                    "The selected model file did not pass its identity probe."
                 }
                 smokeTestSucceeded = true
             } catch (error: Throwable) {
-                finalMessage = "Gemma model test failed: ${error.message ?: "unknown error"}"
+                finalMessage = "Selected model test failed: ${error.message ?: "unknown error"}"
             } finally {
                 gemma?.close()
                 if (smokeTestSucceeded) {

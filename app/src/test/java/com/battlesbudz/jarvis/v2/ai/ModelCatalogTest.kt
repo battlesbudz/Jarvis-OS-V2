@@ -25,7 +25,25 @@ class ModelCatalogTest {
             assertTrue(spec.expectedSha256!!.matches(Regex("[a-f0-9]{64}")))
             assertTrue(spec.downloadUrl!!.startsWith("https://huggingface.co/"))
             assertFalse(spec.downloadUrl.contains("/resolve/main/"))
-            assertTrue(spec.downloadUrl.endsWith("/${spec.fileName}?download=true"))
+            assertTrue(spec.downloadUrl.substringBefore('?').endsWith(".litertlm"))
         }
+    }
+
+    @Test fun qwenSelectionsDoNotEnableGemmaOnlyPaths() {
+        assertEquals(15, ModelCatalog.qwen.size)
+        ModelCatalog.qwen.forEach { spec ->
+            assertEquals(spec, ModelCatalog.resolve(spec.id))
+            assertFalse(spec.supportsAudio)
+            assertFalse(spec.supportsTools)
+            assertFalse(spec.incrementalGemmaInput)
+            assertTrue(spec.downloadBytes!! > 0)
+            assertTrue(spec.contextTokens!! in 2048..4096)
+        }
+        assertTrue(ModelCatalog.gemma4E2b.incrementalGemmaInput)
+        assertTrue(ModelCatalog.gemma4E4b.supportsAudio)
+        assertEquals(listOf("Qwen2-VL-2B"), ModelCatalog.qwen.filter { it.supportsVision }.map { it.id })
+        assertFalse(ModelCatalog.find("Qwen3.5-4B")!!.recommendedGpu)
+        assertNotNull(ModelCatalog.find("Qwen2.5-Coder-1.5B-Instruct"))
+        assertNotNull(ModelCatalog.find("Qwen2.5-Coder-3B-Instruct"))
     }
 }

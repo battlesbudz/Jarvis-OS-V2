@@ -25,6 +25,11 @@ internal fun JarvisRuntime.runConversationInternal(
                             history: List<ChatEntry>, seedContext: Boolean): String =
             promptBuilder.buildGemmaPrompt(userPrompt, actionResultContext, history, seedContext,
                 voice = voiceAudio != null)
+        // Smaller Qwen exports have a real 2K/4K cache, not the upstream model's advertised context.
+        // Character budgeting remains conservative/approximate; native token limits are authoritative.
+        val contextLimit = modelStore.selectedModel().contextTokens?.let {
+            minOf(ConversationPolicy.CONVERSATION_COMPACTION_LIMIT, it * 3 - if (imageUri != null) 1800 else 0)
+        } ?: ConversationPolicy.CONVERSATION_COMPACTION_LIMIT
         val latencyStarted = System.nanoTime()
         val latencyId = java.util.UUID.randomUUID().toString()
         var loadMs = 0L
@@ -56,7 +61,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     incrementalVoice?.close()
                     conversationEngine?.close()
                     conversationEngine = null
-                    error("The Gemma model file changed or failed integrity verification. Re-import it.")
+                    error("The selected model file changed or failed integrity verification. Re-import it.")
                 }
                 // Reject only an exceptionally large single message before
                 // routing or executing a phone side effect. Retained history is
@@ -183,7 +188,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 val pendingRequestSize = maxOf(existingPromptSize, freshPromptSize) + referenceSize
                 var promptHistory = history
                 if (conversationCharacters + pendingRequestSize + ConversationPolicy.GENERATION_HEADROOM >
-                    ConversationPolicy.CONVERSATION_COMPACTION_LIMIT
+                    contextLimit
                 ) {
                     val compactedText = shortTermContext.compactSnapshot(
                         history.map { it.role to it.text }
@@ -205,6 +210,9 @@ internal fun JarvisRuntime.runConversationInternal(
                 // native conversation. Keep the app transcript/history intact
                 // and reseed that history into the fresh conversation below.
                 if (imageUri != null) {
+                    check(modelStore.selectedModel().supportsVision) {
+                        "${modelStore.selectedModel().id} is text-only. Select Gemma or Qwen2-VL for images."
+                    }
                     if (conversationEngine?.visionEnabled != true) {
                         conversationEngine?.close()
                         conversationEngine = null
@@ -222,10 +230,11 @@ internal fun JarvisRuntime.runConversationInternal(
                     modelStore.selectedModel().id,
                     modelStore.fileFor(modelStore.selectedModel()).path,
                     cacheDir.path,
-                    useGpu = true,
-                    tools = com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions.all(),
-                    visionEnabled = true,
-                    audioEnabled = voiceAudio != null
+                    useGpu = modelStore.selectedModel().recommendedGpu,
+                    tools = if (modelStore.selectedModel().supportsTools)
+                        com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions.all() else emptyList(),
+                    visionEnabled = modelStore.selectedModel().supportsVision,
+                    audioEnabled = voiceAudio != null && modelStore.selectedModel().supportsAudio
                 ).also {
                     it.initialize()
                     conversationEngine = it
@@ -233,7 +242,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     conversationCharacters = 0
                 }
                 if (!engineWasLoaded) loadMs += (System.nanoTime() - loadingStarted) / 1_000_000
-                val allowTools = actionIntentRouter.classifyActionIntent(prompt, history) != null
+                val allowTools = modelStore.selectedModel().supportsTools && actionIntentRouter.classifyActionIntent(prompt, history) != null
                 if (engine.setToolsEnabled(allowTools)) {
                     nativeConversationHasContext = false
                     conversationCharacters = 0
@@ -273,7 +282,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 }
                 submittedPrompt += referenceContext?.let { "\n\n$it" }.orEmpty()
                 if (submittedPrompt.length + ConversationPolicy.GENERATION_HEADROOM >
-                    ConversationPolicy.CONVERSATION_COMPACTION_LIMIT
+                    contextLimit
                 ) {
                     // A compacted summary is useful background, but it must
                     // never crowd out the current request or retrieved image /
@@ -292,8 +301,11 @@ internal fun JarvisRuntime.runConversationInternal(
                     submittedPrompt += referenceContext?.let { "\n\n$it" }.orEmpty()
                 }
                 if (submittedPrompt.length + ConversationPolicy.GENERATION_HEADROOM >
-                    ConversationPolicy.CONVERSATION_COMPACTION_LIMIT
+                    contextLimit
                 ) {
+                    check(modelStore.selectedModel().contextTokens == null) {
+                        "This request exceeds ${modelStore.selectedModel().id}'s small context budget. Please send a shorter request."
+                    }
                     // Do not reject a valid user turn just because retained
                     // context is large. The prompt builder already removed
                     // stale history; let the model answer as concisely as it

@@ -1,3 +1,5 @@
+> Qwen update: [15 selectable LiteRT-LM Qwen models](qwen-model-selection.md), using LiteRT-LM 0.16.0. See capabilities and pending Fold 6 acceptance there.
+
 # Switch the local Gemma model
 
 Open Voice settings → AI model after ending the Jarvis session. Select Gemma-4-E4B-it, then use Download and Install or choose `gemma-4-E4B-it.litertlm` from Downloads. The same selector is available during initial setup and after a failed model test. Setup checks the file and initializes the selected model before enabling calls.

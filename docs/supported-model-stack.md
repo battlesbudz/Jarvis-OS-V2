@@ -1,3 +1,5 @@
+> Qwen update: [15 selectable LiteRT-LM Qwen models](qwen-model-selection.md), using LiteRT-LM 0.16.0. See capabilities and pending Fold 6 acceptance there.
+
 # Supported local model stack
 
 Current as of 16 September 2026, on `audio-pr2` / existing PR #6.

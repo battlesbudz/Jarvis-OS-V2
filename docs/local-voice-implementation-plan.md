@@ -1,3 +1,7 @@
+## 2026-09-18 — Selectable Qwen models (existing PR #6)
+
+Implemented 15 pinned Qwen candidates with per-model backends/capabilities, template-aware final-input voice generation, no unsupported audio fallback, bounded context and thought-channel handling. LiteRT-LM upgraded to 0.16.0 for Qwen3.5. Local adapter/regression checks pass; Android CI and Fold 6 acceptance tracked in [Qwen model selection](qwen-model-selection.md). This does not complete duplex/barge-in acceptance or add GitHub coding tools. User reports E4B ~30 seconds to audible reply; TTFT unknown.
+
 # Local voice implementation plan
 
 > Build 710 follow-up: playback comparisons rejected two fragments but accepted another late in a long answer. Fixed the negative reference using passage-opening PCM instead of the candidate's actual playback interval. The speaker check now selects samples by microphone capture timestamp and observed playback head, and fails closed on missing/stale reference data. See [evidence and remaining phone acceptance](voice-interruption-echo-repair.md#build-710-follow-up-compare-the-correct-playback-interval).

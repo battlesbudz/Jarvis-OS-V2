@@ -112,7 +112,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.12.0")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.16.0")
     sherpaSdk("com.github.k2-fsa.sherpa-onnx:sherpa-onnx:v1.13.7@aar")
     implementation(files(sherpaDir.map { it.file("classes.jar") }).builtBy(extractSherpa))
     implementation("org.apache.commons:commons-compress:1.27.1")

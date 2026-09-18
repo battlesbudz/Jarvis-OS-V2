@@ -232,14 +232,17 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 val asrDirectory = asrEngine.prepare(applicationContext, ::status)
                 val speakerModel = com.battlesbudz.jarvis.v2.voice.RecognitionModelStore(applicationContext).speaker(::status)
                 diagnosticRecorder.record("Voice ASR selected engine=${asrEngine.id} model=${asrEngine.modelVersion} turn=$asrTurnId")
-                check(modelStore.verifyIntegrity(modelStore.selectedModel())) { "The Gemma model failed integrity verification." }
-                if (conversationEngine?.audioEnabled != true) {
+                check(modelStore.verifyIntegrity(modelStore.selectedModel())) { "The selected model failed integrity verification." }
+                val selectedSpec = modelStore.selectedModel()
+                if (conversationEngine == null || conversationEngine?.modelId != selectedSpec.id ||
+                    conversationEngine?.audioEnabled != selectedSpec.supportsAudio) {
                     conversationEngine?.close()
                     conversationEngine = null
                     val created = LiteRtLmEngine(
                         modelStore.selectedModel().id, modelStore.fileFor(modelStore.selectedModel()).path,
-                        cacheDir.path, useGpu = true,
-                        tools = MobileActionToolDefinitions.all(), audioEnabled = true
+                        cacheDir.path, useGpu = selectedSpec.recommendedGpu,
+                        tools = if (selectedSpec.supportsTools) MobileActionToolDefinitions.all() else emptyList(),
+                        audioEnabled = selectedSpec.supportsAudio
                     )
                     try { created.initialize() } catch (error: Throwable) { created.close(); throw error }
                     conversationEngine = created
@@ -368,7 +371,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     canPrefill = {
                         val thermal = if (android.os.Build.VERSION.SDK_INT >= 29)
                             getSystemService(android.os.PowerManager::class.java)?.currentThermalStatus ?: 0 else 0
-                        val allowed = models.workScheduler.admitPrefill(input.bufferedAudioMs, thermal)
+                        val allowed = selectedSpec.incrementalGemmaInput && models.workScheduler.admitPrefill(input.bufferedAudioMs, thermal)
                         diagnosticRecorder.record("Voice input scheduler: allowed=$allowed reason=${models.workScheduler.reason} " +
                             "thermal=$thermal cutoff=5 backlogMs=${input.bufferedAudioMs}")
                         allowed
@@ -483,6 +486,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 diagnosticRecorder.recordSummary("Voice pipeline turn=$asrTurnId stage=preparation_sealed " +
                     "workMs=${(System.nanoTime() - sealStarted) / 1_000_000} " +
                     "sinceEndpointMs=${(System.nanoTime() - endpointAt) / 1_000_000}")
+                if (asrTranscript.isBlank() && !engine.audioEnabled && recognitionIssue == null) {
+                    recognitionIssue = "selected_model_has_no_audio_fallback"
+                    diagnosticRecorder.recordImportant("Voice recognition empty: model=${engine.modelId} action=clarify no_audio_submission=true")
+                }
                 val resolvedTranscript = if (recognitionIssue != null) asrTranscript else com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.resolve(
                     asrTranscript, audioBytes
                 ) { audio ->
@@ -575,7 +582,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             val interruptionTest = com.battlesbudz.jarvis.v2.voice.VoiceInterruptionTest.requested(transcript)
                             if (recognitionIssue != null) {
                                 incremental.close()
-                                val clarification = if (recognitionIssue == "audio_fallback_timeout")
+                                val clarification = if (recognitionIssue == "audio_fallback_timeout" || recognitionIssue == "selected_model_has_no_audio_fallback")
                                     "I couldn't make out that request, sir. Please say it again."
                                 else "I couldn't retain that whole request reliably. Please repeat it in shorter parts, sir."
                                 diagnosticRecorder.recordImportant("Voice input rejected reason=$recognitionIssue action=clarify tools=disabled")

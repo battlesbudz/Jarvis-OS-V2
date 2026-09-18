@@ -28,6 +28,7 @@ class LiteRtLmEngine(
     private val speculativeDecoding: Boolean? = null
 ) : LocalModelEngine, Closeable {
     private companion object { val initializationLock = Any() }
+    private val modelSpec = ModelCatalog.resolve(modelId)
     private val engine = Engine(
         EngineConfig(
             modelPath = modelPath,
@@ -35,7 +36,8 @@ class LiteRtLmEngine(
             backend = if (useGpu) Backend.GPU() else Backend.CPU(),
             visionBackend = if (visionEnabled) Backend.GPU() else null,
             audioBackend = if (audioEnabled) Backend.CPU() else null,
-            maxNumImages = if (visionEnabled) 1 else null
+            maxNumImages = if (visionEnabled) 1 else null,
+            maxNumTokens = modelSpec.contextTokens
         )
     )
     private var conversation: com.google.ai.edge.litertlm.Conversation? = null
@@ -51,6 +53,13 @@ class LiteRtLmEngine(
 
     internal fun createVoicePrefillSession(): com.battlesbudz.jarvis.v2.voice.VoicePrefillSession {
         check(!closed.get())
+        if (!modelSpec.incrementalGemmaInput) {
+            return TemplateVoiceSession { prompt, onToken ->
+                setToolsEnabled(false)
+                resetConversation()
+                generate(prompt, onToken)
+            }
+        }
         // Voice owns this engine exclusively. Do not allocate a second idle KV cache.
         conversation?.close()
         conversation = null
@@ -66,7 +75,17 @@ class LiteRtLmEngine(
     }
 
     private fun createConversation() =
-        if (tools.isEmpty() || !toolsEnabled) {
+        if (!modelSpec.incrementalGemmaInput) {
+            engine.createConversation(ConversationConfig(
+                // Community Qwen bundles do not share Gemma's native tool protocol.
+                automaticToolCalling = false,
+                channels = listOf(com.google.ai.edge.litertlm.Channel("thought", "<think>", "</think>")),
+                maxOutputToken = 512,
+                thinkingConfig = ThinkingConfig(
+                    enableThinking = modelId.contains("Thinking"), thinkingTokenBudget = 256
+                )
+            ))
+        } else if (tools.isEmpty() || !toolsEnabled) {
             engine.createConversation()
         } else {
             engine.createConversation(
@@ -111,10 +130,10 @@ class LiteRtLmEngine(
         prompt: String,
         imageBytes: ByteArray,
         onToken: (String) -> Unit
-    ): GenerationResult = generateWithContents(
-        Contents.of(Content.ImageBytes(imageBytes), Content.Text(prompt)),
-        onToken
-    )
+    ): GenerationResult {
+        require(visionEnabled && modelSpec.supportsVision) { "$modelId does not support image input. Select a vision model." }
+        return generateWithContents(Contents.of(Content.ImageBytes(imageBytes), Content.Text(prompt)), onToken)
+    }
 
     /**
      * Sends audio directly to the multimodal Gemma conversation.
@@ -126,6 +145,7 @@ class LiteRtLmEngine(
         audioBytes: ByteArray,
         onToken: (String) -> Unit
     ): GenerationResult {
+        require(audioEnabled && modelSpec.supportsAudio) { "$modelId requires Moonshine or Whisper for speech recognition." }
         onPromptSubmitted(prompt, audioBytes.size)
         return generateWithContents(Contents.of(Content.AudioBytes(audioBytes), Content.Text(prompt)), onToken)
     }

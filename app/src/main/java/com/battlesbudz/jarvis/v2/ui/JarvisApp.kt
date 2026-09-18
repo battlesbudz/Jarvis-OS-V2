@@ -92,7 +92,12 @@ fun JarvisApp(
                         else if (store.hasModel(spec)) " · Installed" else " · Not installed")
                 }
             }
-            Text("E4B is larger and may respond more slowly. You can switch back to E2B without downloading it again.",
+            Text(selectedModel.description +
+                (selectedModel.downloadBytes?.let { " · Download: %.2f GB".format(java.util.Locale.US, it / 1_000_000_000.0) } ?: "") +
+                " · " + (if (selectedModel.recommendedGpu) "GPU" else "CPU") +
+                (selectedModel.contextTokens?.let { " · $it-token context" } ?: "") +
+                (if (!selectedModel.supportsAudio) " · Voice uses Moonshine/Whisper; no direct audio fallback." else "") +
+                " Switch back to an installed model without downloading it again. Qwen models require testing on your phone.",
                 style = MaterialTheme.typography.bodySmall)
             selectionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }

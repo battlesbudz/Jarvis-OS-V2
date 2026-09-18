@@ -1,3 +1,5 @@
+> Qwen update: [15 selectable LiteRT-LM Qwen models](docs/qwen-model-selection.md), using LiteRT-LM 0.16.0. See capabilities and pending Fold 6 acceptance there.
+
 # Jarvis OS V2
 
 Development: [APK size audit](docs/apk-size-audit.md) · [component map and refactoring progress](docs/app-modularization.md).
