@@ -42,10 +42,6 @@ class PiperVoiceOutput internal constructor(
     private val deliveryFailed = AtomicBoolean(false)
     private val playbackClock = PlaybackClock()
     private val spokenReference = StringBuilder()
-    @Volatile private var playbackSpeakerReference: PlaybackSpeakerReference? = null
-    private val speakerTimeline = PlaybackSpeakerTimeline()
-    fun speakerReference(captureEndMs: Long, audioMs: Int): PlaybackSpeakerReference? =
-        speakerTimeline.reference(captureEndMs, audioMs) ?: playbackSpeakerReference
     fun recentSpokenText(): String = synchronized(spokenReference) { spokenReference.toString() }
     private fun rememberPlayback(text: String) = synchronized(spokenReference) {
         if (text.isNotBlank()) spokenReference.append(" ").append(text)
@@ -56,7 +52,6 @@ class PiperVoiceOutput internal constructor(
         try {
             VoiceCues.playAcknowledgement(audio, { stopped }, { interrupted }, log, playbackVolume(),
                 onStarted = {
-                    playbackSpeakerReference = PlaybackSpeakerReference.fromPcm(audio.pcm, audio.sampleRate)
                     rememberPlayback(audio.text)
                 }, speed = 1f)
         } finally {
@@ -433,7 +428,6 @@ class PiperVoiceOutput internal constructor(
                             var wasStarved = false
                             while (isActive && !stopped) {
                                 val head = unsignedHead(startedTrack)
-                                speakerTimeline.observe(System.nanoTime() / 1_000_000, head)
                                 val underruns = startedTrack.underrunCount
                                 val poll = System.nanoTime() / 1_000_000
                                 val starved = !draining.get() && !interrupted && !gapCuePlaying.get() && !sentenceRefilling.get() && writtenFrames > 0 && head >= writtenFrames
@@ -471,7 +465,6 @@ class PiperVoiceOutput internal constructor(
                         val audible = phrase.pcm.indexOfFirst { kotlin.math.abs(it.toInt()) >= 64 }
                         if (audible >= 0) firstAudibleFrame.set(framesWritten.toLong() + audible)
                     }
-                    speakerTimeline.append(framesWritten.toLong(), phrase.pcm, phrase.sampleRate)
                     rememberPlayback(phrase.text)
                     captions.append(framesWritten.toLong(), phrase.sampleRate, phrase.pcm, phrase.text, phrase.captionGroup)
                     val start = System.nanoTime()

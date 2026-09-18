@@ -212,7 +212,6 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             var operationOwned = false
             var preparation: com.battlesbudz.jarvis.v2.voice.IncrementalVoiceInput? = null
             var capture: AudioTurnCapture? = null
-            var speakerGuard: com.battlesbudz.jarvis.v2.voice.SpeakerPreferenceGuard? = null
             var microphone: com.battlesbudz.jarvis.v2.voice.AudioInput? = null
             var expectedResourceCall: String? = null
             var preserveCaptureOnCancellation = false
@@ -244,7 +243,6 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 voicePlayback.value = com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame()
                 status("Preparing speech recognition…")
                 val asrDirectory = asrEngine.prepare(applicationContext, ::status)
-                val speakerModel = com.battlesbudz.jarvis.v2.voice.RecognitionModelStore(applicationContext).speaker(::status)
                 diagnosticRecorder.record("Voice ASR selected engine=${asrEngine.id} model=${asrEngine.modelVersion} turn=$asrTurnId")
                 check(modelStore.verifyIntegrity(modelStore.selectedModel())) { "The selected model failed integrity verification." }
                 val selectedSpec = modelStore.selectedModel()
@@ -423,18 +421,13 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             diagnosticRecorder.recordTurnEvidence(asrTurnId, it.substringBefore(' '), it)
                     })
                 preparation = incremental
-                val preference = com.battlesbudz.jarvis.v2.voice.SpeakerPreferenceGuard(applicationContext,
-                    speakerModel, asrTurnId, learnFromActivation = wokeThisTurn || !hadActiveCall,
-                    log = { diagnosticRecorder.recordSummary("Voice input: $it") })
-                speakerGuard = preference
+                diagnosticRecorder.recordSummary("Voice input: speaker_identity=disabled interruption_policy=recognized_non_echo_words")
                 val activeCapture = AudioTurnCapture(
                     com.battlesbudz.jarvis.v2.voice.QuietSpeechAudioInput(input, maxGain = 1.0, log = {
                         diagnosticRecorder.record("Voice input: $it")
                     }), this,
                     allowAudioOnlyTurns = true,
                     guardFollowupSpeech = followupBoundary != null,
-                    acceptCandidate = preference::accept,
-                    onAcceptedCandidate = preference::accepted,
                     createDetector = { SileroSpeechDetector.create(assets) },
                     log = {
                         comparison?.log("capture $it")
@@ -738,8 +731,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             diagnosticRecorder.recordImportant("Voice interruption: $it")
                             if (it.startsWith("barge_natural_summary") || it.startsWith("barge_keyword_summary") || it.startsWith("barge_evidence_"))
                                 diagnosticRecorder.recordTurnEvidence(asrTurnId, it.substringBefore(" "), it)
-                        }.listen(output, asrDirectory, confirmed,
-                            asrEngine = asrEngine, acceptCandidate = preference::accept, acceptInterruptionSpeaker = preference::acceptInterruption, trace = turnTrace,
+                        }.listen(output, asrDirectory, confirmed, asrEngine = asrEngine, trace = turnTrace,
                             inputFactory = { callResources.borrowMicrophone("reply", communication = true) }, modelSession = models, onPartialTranscript = { text ->
                             mainHandler.post {
                                 if (activeVoiceOutput === output && voiceSessionArmed) onTranscript("You", text, false)
@@ -816,7 +808,6 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     if (cancelled) { conversationJob?.cancel(); conversationJob?.join() }
                     try {
                         runCatching { capture?.stop() }
-                        runCatching { speakerGuard?.close() }
                         runCatching { microphone?.stop() }
                         preparation?.close()
                         conversationEngine?.onPromptSubmitted = { _, _ -> }

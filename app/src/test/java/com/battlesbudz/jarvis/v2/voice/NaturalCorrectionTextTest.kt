@@ -7,8 +7,8 @@ class NaturalCorrectionTextTest {
     @Test fun build709MisheardPlaybackIsNotSubmittedAsACorrection() {
         val reference = "This phenomenon occurs when sunlight interacts with the Earth's atmosphere. " +
             "The shorter blue wavelengths of light are scattered more effectively by the tiny molecules of air."
-        assertNull(NaturalCorrectionText.resolve("tracks with the Earth's atmosphere. To shorter, blue wavelengths of light are scattered more effectively by the tiny molecules of", reference, true))
-        assertEquals("No.", NaturalCorrectionText.resolve("No. tracks with the Earth's atmosphere.", reference, true))
+        assertNull(NaturalCorrectionText.resolve("tracks with the Earth's atmosphere. To shorter, blue wavelengths of light are scattered more effectively by the tiny molecules of", reference))
+        assertEquals("No.", NaturalCorrectionText.resolve("No. tracks with the Earth's atmosphere.", reference))
     }
     @Test fun interruptionWordDoesNotBecomeAFreshQuestionOrIncludeTrailingEcho() {
         for (word in listOf("No", "Yes", "I")) {

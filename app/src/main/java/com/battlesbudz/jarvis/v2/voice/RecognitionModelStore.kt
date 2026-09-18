@@ -14,20 +14,6 @@ import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 /** Pinned files, bounded downloads and atomic installs. No models enlarge the APK. */
 class RecognitionModelStore(context: Context) {
     private val root = File(context.filesDir, "voice-models")
-    suspend fun speaker(status: (String) -> Unit): File = withContext(Dispatchers.IO) {
-        lock.withLock {
-            root.mkdirs()
-            val target = File(root, SPEAKER.name)
-            if (!valid(target, SPEAKER)) {
-                val part = File(root, SPEAKER.name + ".part")
-                try {
-                    download("https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/${SPEAKER.name}", part, SPEAKER.bytes, SPEAKER.hash, status)
-                    check(part.renameTo(target)) { "Cannot install speaker model" }
-                } finally { part.delete() }
-            }
-            target
-        }
-    }
     suspend fun whisper(status: (String) -> Unit): File = withContext(Dispatchers.IO) {
         lock.withLock {
             val dir = File(root, "sherpa-onnx-whisper-base.en")
@@ -95,7 +81,6 @@ class RecognitionModelStore(context: Context) {
     companion object {
         private val lock = Mutex()
         private val verified = mutableMapOf<String, String>()
-        private val SPEAKER = Spec("wespeaker_en_voxceleb_resnet34_LM.onnx", 26530550, "e9848563da86f263117134dfd7ad63c92355b37de492b55e325400c9d9c39012")
         private val WHISPER = listOf(
             Spec("base.en-encoder.int8.onnx", 29120534, "ef6b936f4c9b1d90a3b68634b60c4ed8576b26172b33c2535ec0e933c9edb823"),
             Spec("base.en-decoder.int8.onnx", 130669978, "f7162ad6db2dbef16cfaeaa7f945b9d7dd9c1b8d472f6aca82f2273d185e4d41"),

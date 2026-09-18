@@ -1,5 +1,31 @@
 # Voice repair: bounded commits and phone test protocol
 
+## Remove speaker identity from voice calls (2026-09-19)
+
+User decision: no learned voiceprint or owner-identity requirement in the call path.
+Removed speaker-model download/load, enrollment, candidate identity rejection,
+interruption identity scoring and its playback-embedding buffers. Previously stored
+voiceprints are no longer read. Moonshine/Whisper ASR, platform communication-route
+AEC/NS, word-based echo rejection and keyword interruption remain in place.
+Natural interruptions use the existing 300 ms lexical stability gate, with no
+speaker worker, matching score or enrollment prerequisite. Final correction text
+uses the same ordinary non-echo gate, without pretending an identity match occurred.
+No new echo algorithm or replacement identity model was added.
+
+Evidence: build-720 mixed call a05f53d0 retained five playback stops and nine speech
+candidates rejected/uncertain at the speaker check. Those counts are not a measured
+success rate and the report contains no microphone recording. Removing the identity
+gate requires phone verification that the working communication-route AEC continues
+to suppress playback echo. Any person's recognizable non-echo speech can now take
+the floor; this is intentional.
+
+Phone check: use Moonshine in one ordinary call. Let an answer play while silent,
+then cough/rustle, then interrupt later answers with No, Yes, Stop, Hey Jarvis and a
+normal sentence. Record which attempts failed, stop the session, and save its call
+test ZIP. One mixed call is useful; separate calls are not required for this check.
+Regression tests cover no-enrollment single words, short speech, retained onset,
+non-speech captions, playback echo, keyword fallback and final correction filtering.
+
 ## Build-720 comparison fixes (2026-09-18)
 
 The uploaded Gemma-transcription trial returned no usable transcript; the old path

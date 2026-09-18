@@ -18,8 +18,7 @@ class NaturalBargeInAudioInputTest {
                      dispatcher: CoroutineDispatcher = Dispatchers.Unconfined, beforeFrame: (Int) -> Unit = {},
                      acceptAction: () -> Unit = {}, loadAction: () -> Unit = {}, speechNow: () -> Boolean = { speech },
                      budgetNow: () -> Boolean = { budget }, backlogNow: () -> Long = { 0L }, onConfirmation: (Boolean) -> Unit = {},
-                     onEvidence: (String) -> Unit = {}, speakerMatches: (() -> Boolean)? = null, minimumProbeMs: Int = 1000,
-                     onSpeakerAudio: (ByteArray, Long) -> Unit = { _, _ -> }): NaturalBargeInAudioInput {
+                     onEvidence: (String) -> Unit = {}, minimumProbeMs: Int = 1000): NaturalBargeInAudioInput {
         val input = object : AudioInput {
             override val sampleRateHz = 16000
             override val channelCount = 1
@@ -58,57 +57,29 @@ class NaturalBargeInAudioInputTest {
                 onConfirmation(natural)
                 confirmed++
             }, log = logs::add, nowMs = { clock }, dispatcher = dispatcher,
-            minimumProbeAudioMs = minimumProbeMs, checkSpeaker = speakerMatches?.let { check -> { pcm: ByteArray, at: Long ->
-                onSpeakerAudio(pcm, at); check()
-            } })
+            minimumProbeAudioMs = minimumProbeMs)
     }
-    @Test fun speakerCheckReceivesProbeCaptureTimestampInsteadOfCurrentClock() = runBlocking {
-        var checked = false
-        gate(text = "No", minimumProbeMs = 250, speakerMatches = { true }, onSpeakerAudio = { pcm, at ->
-            checked = true
-            assertTrue(at < clock)
-            assertEquals(300L, at)
-            assertEquals(300, pcm.size / 32)
-        }).chunks().toList()
-        assertTrue(checked); assertEquals(1, confirmed)
-    }
-    @Test fun briefNoIsCheckedWithoutOneOrThreeSecondsOfSpeech() = runBlocking {
-        gate(text = "No", minimumProbeMs = 250, speechNow = { clock <= 300 },
-            speakerMatches = { true }, chunks = 15).chunks().toList()
+    @Test fun briefNoInterruptsWithoutAnEnrolledVoice() = runBlocking {
+        gate(text = "No", minimumProbeMs = 250, speechNow = { clock <= 300 }, chunks = 15).chunks().toList()
         assertEquals(1, confirmed)
         assertTrue(logs.any { "barge_probe_started" in it && "preRollMs=300" in it })
-        assertTrue(logs.any { "minimumProbeAudioMs=250" in it && "extraWordWaitMs=0" in it })
+        assertTrue(logs.any { "speakerIdentity=disabled" in it && "acousticOnly=false" in it })
     }
-    @Test fun ownerSingleWordChecksSpeakerBeforeStopping() = runBlocking {
-        var checked = false
-        gate(text = "I", reference = "I will tell you a story", speakerMatches = {
-            assertEquals(0, confirmed); checked = true; true
-        }).chunks().toList()
-        assertTrue(checked); assertEquals(1, confirmed)
-    }
-    @Test fun backgroundSpeakerCannotInterruptEvenWithClearWords() = runBlocking {
-        val delivered = gate(text = "No", speakerMatches = { false }).chunks().toList()
-        assertEquals(0, confirmed); assertTrue(delivered.isEmpty())
-        assertTrue(logs.any { "barge_speaker_rejected_or_uncertain" in it })
-    }
-    @Test fun noiseAndSoundCaptionsNeverReachSpeakerConfirmation() = runBlocking {
-        for (text in listOf("", "[cough]", "[sneezing]", "[wind]", "[yelling]", "...")) {
-            val audio = gate(text = text, minimumProbeMs = 250, speakerMatches = {
-                fail("Sound-only candidate must not reach speaker confirmation: $text"); true
-            }).chunks().toList()
-            assertTrue(audio.isEmpty())
-            assertEquals(0, confirmed)
+    @Test fun recognizedWordsInterruptWithoutIdentityScoring() = runBlocking {
+        for (text in listOf("No", "Yes", "I", "Can you move?", "You know, I was")) {
+            confirmed = 0
+            gate(text = text, minimumProbeMs = 250).chunks().toList()
+            assertEquals(text, 1, confirmed)
         }
     }
-    @Test fun misrecognizedPiperWordsCannotStopPlaybackWhenVoiceComparisonRejectsThem() = runBlocking {
-        val audio = gate(text = "is brilliant.", reference = "The sky is blue due to Rayleigh scattering",
-            minimumProbeMs = 250, speakerMatches = {
-                InterruptionSpeakerPolicy.decide(true, listOf(.85f), listOf(.9f), true) == InterruptionSpeakerPolicy.Decision.MATCH
-            }).chunks().toList()
-        assertTrue(audio.isEmpty()); assertEquals(0, confirmed)
+    @Test fun noiseCaptionsAndPlaybackEchoDoNotInterrupt() = runBlocking {
+        for (text in listOf("", "[cough]", "(buzzing)", "[wind]", "...", "The sky is blue")) {
+            assertTrue(gate(text = text, minimumProbeMs = 250).chunks().toList().isEmpty())
+            assertEquals(text, 0, confirmed)
+        }
     }
-    @Test fun ownerFilterDoesNotRemoveHeyJarvisKeywordPath() = runBlocking {
-        gate(budget = false, keywordAt = 10, speakerMatches = { false }).chunks().toList()
+    @Test fun heyJarvisStillWorksWithoutNaturalRecognitionBudget() = runBlocking {
+        gate(budget = false, keywordAt = 10).chunks().toList()
         assertEquals(1, confirmed); assertEquals(0, models)
     }
     @Test fun sirMistakenForStopDoesNotCutOffPlayback() = runBlocking {

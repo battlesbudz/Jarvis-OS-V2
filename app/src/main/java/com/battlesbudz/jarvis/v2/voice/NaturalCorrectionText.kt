@@ -10,8 +10,8 @@ object NaturalCorrectionText {
         return words.isNotEmpty() && (words.size == 1 || words.all { it in setOf("no", "yes", "yeah", "yep", "i", "wait", "stop", "mm", "hmm") })
     }
 
-    fun resolve(finalText: String, reference: String, speakerMatched: Boolean = false): String? {
-        val gate = BargeInGate(allowShortEchoOverlap = speakerMatched)
+    fun resolve(finalText: String, reference: String): String? {
+        val gate = BargeInGate()
         gate.update(true, false, 0, finalText, reference)
         if (gate.update(true, false, 300, finalText, reference) != BargeInGate.Action.CONFIRM) return null
         val tokens = Regex("[\\p{L}\\p{N}']+").findAll(finalText).toList()
@@ -28,7 +28,7 @@ object NaturalCorrectionText {
                         val normalized = Regex("[\\p{L}\\p{N}']+").findAll(clause.lowercase(Locale.ROOT))
                             .joinToString(" ") { it.value }
                         normalized.isNotBlank() && !PlaybackEchoText.resemblesPlayback(normalized, echo) &&
-                            ((speakerMatched && normalized.split(' ').size <= 2) || !(" $echo ").contains(" $normalized "))
+                            !(" $echo ").contains(" $normalized ")
                     }.joinToString(" ").ifBlank { null }
             }
         }
