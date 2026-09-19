@@ -101,8 +101,9 @@ internal fun ModelBrowser(
                                     if (purpose.caveat.isNotBlank()) Text(purpose.caveat, style = MaterialTheme.typography.bodySmall)
                                     Text("Download: " + (spec.downloadBytes?.let(ModelGuidance::gb) ?: "Unknown"),
                                         style = MaterialTheme.typography.labelLarge)
-                                    Text("Memory: ${fit.label}", color = if (fit.memoryRisk >= 2) MaterialTheme.colorScheme.error
+                                    Text(fit.displayLabel, color = if (fit.memoryRisk >= 2 || fit.startupFailure != null) MaterialTheme.colorScheme.error
                                         else MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.labelLarge)
+                                    fit.startupFailure?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                                     Text("Response demand: ${fit.workload}" + if (ModelGuide.canThink(spec)) " · Can think longer" else "",
                                         style = MaterialTheme.typography.labelLarge)
                                     if (startingPoint?.id == spec.id) Text("Everyday starting option · lower demand, general chat",
@@ -117,8 +118,9 @@ internal fun ModelBrowser(
                                     }
                                     if (detailId == spec.id) {
                                         HorizontalDivider()
+                                        if (fit.startupFailure != null) Text("Memory-only estimate below; it does not establish that this model can start.", style = MaterialTheme.typography.labelMedium)
                                         Text(fit.explanation, style = MaterialTheme.typography.bodySmall)
-                                        Text(fit.workloadExplanation, style = MaterialTheme.typography.bodySmall)
+                                        if (fit.startupFailure == null) Text(fit.workloadExplanation, style = MaterialTheme.typography.bodySmall)
                                         fit.deviceExperience?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                                         Text("Phone chip: ${phone.chip}. No device benchmark is inferred from this name. A short reply test checks loading, not sustained speed or heat.",
                                             style = MaterialTheme.typography.bodySmall)

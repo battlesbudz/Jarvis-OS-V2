@@ -14,8 +14,12 @@ data class ModelFit(
     val workload: String,
     val workloadExplanation: String,
     val memoryRisk: Int,
-    val deviceExperience: String? = null
-)
+    val deviceExperience: String? = null,
+    val startupFailure: String? = null
+) {
+    val displayLabel: String get() = if (startupFailure != null) "Not recommended · reported startup failure" else "Memory: $label"
+    val startingOption: Boolean get() = memoryRisk <= 1 && startupFailure == null
+}
 
 object ModelGuidance {
     fun gb(bytes: Long): String = "%.2f GB".format(Locale.US, bytes / 1_000_000_000.0)
@@ -77,7 +81,14 @@ object ModelGuidance {
             "Gemma-4-E4B-it" -> "Reported Fold6 experience: E4B runs, but audible replies have taken around 30 seconds. It remains an option for patient text use."
             else -> null
         } else null
-        return ModelFit(label, explanation, workload, workloadExplanation, risk, experience)
+        // User-reported device evidence is independent of downloaded/tested status. Bind it
+        // to the affected catalog artifact/backend so a replacement doesn't inherit it silently.
+        val startupFailure = if (phone.arm64 && phone.model.startsWith("SM-F956", true) &&
+            spec.id == "Qwen3-8B" && spec.recommendedGpu &&
+            spec.expectedSha256 == "cb4e6d0de4bbf6656d177812cf0c6a983967dedd17e7f88e84b901c3a9862a42")
+            "This Qwen3-8B bundle was reported unable to start on a Galaxy Z Fold6. That result takes precedence over the size estimate. The cause is not yet confirmed; choose another model for normal use. It remains selectable for troubleshooting."
+        else null
+        return ModelFit(label, explanation, workload, workloadExplanation, risk, experience, startupFailure)
     }
 
     fun storageNotice(spec: LocalModelSpec, phone: PhoneProfile, installed: Boolean): String? {

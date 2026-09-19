@@ -17,8 +17,26 @@ class ModelGuidanceTest {
         assertEquals("Moderate workload", e4b.workload)
         assertTrue(e4b.deviceExperience!!.contains("runs"))
         assertEquals("Heavy workload", qwen8.workload)
-        assertTrue(qwen8.memoryRisk <= 1)
+        assertTrue(qwen8.memoryRisk <= 1) // File-size screen alone misses the observed startup failure.
+        assertFalse(qwen8.startingOption)
+        assertNotNull(qwen8.startupFailure)
         assertTrue(ModelCatalog.all.count { ModelGuidance.assess(it, phone).memoryRisk <= 1 } >= 85)
+    }
+
+    @Test fun qwen8FailureOverridesPositivePresentationOnlyForReportedArtifactAndDevice() {
+        val spec = ModelCatalog.find("Qwen3-8B")!!
+        val failed = ModelGuidance.assess(spec, phone)
+        assertEquals("Not recommended · reported startup failure", failed.displayLabel)
+        assertTrue(failed.startupFailure!!.contains("cause is not yet confirmed"))
+        assertEquals(failed, ModelGuidance.assess(spec, phone.copy(availableRamBytes = 1, freeStorageBytes = 1)))
+        assertNotNull(ModelGuidance.assess(spec, phone.copy(totalRamBytes = 24*gib)).startupFailure)
+        assertNotNull(ModelGuidance.assess(spec, phone.copy(model = "sm-f956b")).startupFailure)
+        assertNull(ModelGuidance.assess(spec, phone.copy(model = "Other phone")).startupFailure)
+        assertNull(ModelGuidance.assess(spec.copy(expectedSha256 = "replacement"), phone).startupFailure)
+        assertNull(ModelGuidance.assess(spec.copy(recommendedGpu = false), phone).startupFailure)
+        assertNull(ModelGuidance.assess(ModelCatalog.find("Qwen3-4B")!!, phone).startupFailure)
+        assertNull(ModelGuidance.assess(ModelCatalog.gemma4E2b, phone).startupFailure)
+        assertTrue(ModelGuide.families()["Qwen"]!!.contains(spec))
     }
 
     @Test fun transientFreeRamStorageAndInstallationCannotChangeSuitabilityOrFamilyOrder() {

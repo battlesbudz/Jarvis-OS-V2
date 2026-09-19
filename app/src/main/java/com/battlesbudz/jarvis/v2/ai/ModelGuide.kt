@@ -115,7 +115,7 @@ object ModelGuide {
     fun startingPoint(specs: List<LocalModelSpec>, phone: PhoneProfile): LocalModelSpec? {
         val candidates = specs.filter {
             val p = purpose(it)
-            ModelGuidance.assess(it, phone).memoryRisk <= 1 &&
+            ModelGuidance.assess(it, phone).startingOption &&
                 "Chat" in p.tags && !it.reasoning && (parametersB(it) ?: 99.0) in 0.5..4.0
         }
         return candidates.firstOrNull { it.id == "Gemma-4-E2B-it" }

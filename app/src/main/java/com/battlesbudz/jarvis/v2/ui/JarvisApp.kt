@@ -162,10 +162,10 @@ fun JarvisApp(
                 Text("Download: %.2f GB".format(java.util.Locale.US, it / 1_000_000_000.0), style = MaterialTheme.typography.bodySmall)
             }
             val fit = com.battlesbudz.jarvis.v2.ai.ModelGuidance.assess(selectedModel, phone)
-            Text("Memory: ${fit.label}", color = MaterialTheme.colorScheme.primary)
+            Text(fit.displayLabel, color = if (fit.startupFailure != null || fit.memoryRisk >= 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
             Text("Response demand: ${fit.workload}", style = MaterialTheme.typography.bodySmall)
-            Text(fit.explanation, style = MaterialTheme.typography.bodySmall)
-            Text(fit.workloadExplanation, style = MaterialTheme.typography.bodySmall)
+            Text(fit.startupFailure ?: fit.explanation, style = MaterialTheme.typography.bodySmall)
+            if (fit.startupFailure == null) Text(fit.workloadExplanation, style = MaterialTheme.typography.bodySmall)
             fit.deviceExperience?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             com.battlesbudz.jarvis.v2.ai.ModelGuidance.storageNotice(selectedModel, phone, store.hasModel(selectedModel))?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             Text("${phone.name} · %.1f GB RAM · %.1f GB free storage".format(java.util.Locale.US,
