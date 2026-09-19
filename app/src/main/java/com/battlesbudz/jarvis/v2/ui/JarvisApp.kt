@@ -5,6 +5,8 @@ import com.battlesbudz.jarvis.v2.voice.VoiceCallRecord
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,6 +35,7 @@ import androidx.compose.foundation.lazy.items
 fun JarvisApp(
     store: ModelStore,
     onSelectModel: (com.battlesbudz.jarvis.v2.ai.LocalModelSpec) -> String?,
+    onDeleteModel: (com.battlesbudz.jarvis.v2.ai.LocalModelSpec) -> String?,
     voicePlayback: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame>,
     voiceModelStore: com.battlesbudz.jarvis.v2.voice.TtsModelStore,
     initialVoiceCalls: List<VoiceCallRecord>,
@@ -74,23 +77,71 @@ fun JarvisApp(
     val modelSelector: @Composable (Boolean) -> Unit = { enabled ->
         Column {
             Text("AI model", style = MaterialTheme.typography.titleMedium)
-            ModelCatalog.all.forEach { spec ->
+            var expanded by remember { mutableStateOf(false) }
+            var confirmingDelete by remember { mutableStateOf(false) }
+            var storageRevision by remember { mutableStateOf(0) }
+            val canManage = enabled && !smokeTestRunning && !modelImportRunning && !modelDownloadRunning
+            val storedBytes = remember(selectedModel, storageRevision, modelImportRunning, modelDownloadRunning) {
+                store.storedBytes(selectedModel)
+            }
+            LaunchedEffect(canManage) {
+                if (!canManage) { expanded = false; confirmingDelete = false }
+            }
+            androidx.compose.foundation.layout.Box {
                 OutlinedButton(
-                    enabled = enabled && !smokeTestRunning && !modelImportRunning && !modelDownloadRunning,
-                    onClick = {
-                        selectionError = onSelectModel(spec)
-                        if (selectionError == null) {
-                            selectedModel = store.selectedModel()
+                    enabled = canManage,
+                    onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()
+                ) { Text("${selectedModel.id} ▾") }
+                androidx.compose.material3.DropdownMenu(
+                    expanded = expanded && canManage,
+                    onDismissRequest = { expanded = false },
+                    modifier = Modifier.heightIn(max = 360.dp)
+                ) {
+                    ModelCatalog.all.forEach { spec ->
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text(spec.id + if (selectedModel.id == spec.id) " · Selected"
+                                else if (store.hasModel(spec)) " · Installed" else " · Not installed") },
+                            onClick = {
+                                expanded = false
+                                selectionError = onSelectModel(spec)
+                                if (selectionError == null) {
+                                    selectedModel = store.selectedModel()
+                                    modelsReady = store.isUsable() && voiceModelStore.isReady()
+                                    smokeTestPassed = modelsReady && store.smokeTestPassed()
+                                    automaticSmokeTestAttempted = false
+                                    setupStatus = "Selected ${selectedModel.id}."
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+            Text(if (store.hasModel(selectedModel)) "Installed" else "Not installed")
+            if (storedBytes > 0L) {
+                OutlinedButton(enabled = canManage, onClick = { confirmingDelete = true }) {
+                    Text("Delete downloaded model · %.2f GB".format(java.util.Locale.US, storedBytes / 1_000_000_000.0))
+                }
+            }
+            if (confirmingDelete && canManage) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { confirmingDelete = false },
+                    title = { Text("Delete ${selectedModel.id}?") },
+                    text = { Text("Remove this model and its cache from Jarvis to free phone storage. You can download it again later. Any original file in Downloads stays there.") },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(onClick = {
+                            confirmingDelete = false
+                            selectionError = onDeleteModel(selectedModel)
+                            storageRevision++
                             modelsReady = store.isUsable() && voiceModelStore.isReady()
                             smokeTestPassed = modelsReady && store.smokeTestPassed()
                             automaticSmokeTestAttempted = false
-                            setupStatus = "Selected ${selectedModel.id}."
-                        }
-                    }, modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(spec.id + if (selectedModel.id == spec.id) " · Selected"
-                        else if (store.hasModel(spec)) " · Installed" else " · Not installed")
-                }
+                            if (selectionError == null) setupStatus = "${selectedModel.id} deleted. Choose an installed model or download one."
+                        }) { Text("Delete") }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(onClick = { confirmingDelete = false }) { Text("Cancel") }
+                    }
+                )
             }
             Text(selectedModel.description +
                 (selectedModel.downloadBytes?.let { " · Download: %.2f GB".format(java.util.Locale.US, it / 1_000_000_000.0) } ?: "") +

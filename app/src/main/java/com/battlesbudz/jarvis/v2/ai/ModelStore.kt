@@ -1,5 +1,7 @@
 package com.battlesbudz.jarvis.v2.ai
 
+import com.battlesbudz.jarvis.v2.ai.storage.modelFiles
+import com.battlesbudz.jarvis.v2.ai.storage.removeModelFiles
 import com.battlesbudz.jarvis.v2.ai.storage.ModelDownloader
 import com.battlesbudz.jarvis.v2.ai.storage.DownloadedModelLookup
 import com.battlesbudz.jarvis.v2.ai.storage.sha256
@@ -45,6 +47,25 @@ class ModelStore(context: Context) {
     private fun smokeTestKey(spec: LocalModelSpec) = "smoke_test_passed_${spec.id}"
 
     fun fileFor(spec: LocalModelSpec): File = File(modelDirectory, spec.fileName)
+
+    /** Caller holds the model-operation lock and has closed the idle engine. */
+    fun deleteModel(spec: LocalModelSpec) {
+        require(ModelCatalog.find(spec.id) == spec) { "Unsupported model." }
+        check(isModelOperationActive()) { "Model deletion requires exclusive ownership." }
+        removeModelFiles(modelDirectory, spec.fileName, File(context.cacheDir, spec.id))
+        val key = fingerprintKey(spec)
+        val editor = preferences.edit()
+        listOf(key, "${key}_length", "${key}_modified", "${key}_invalid",
+            "${key}_enforce_catalog_hash", smokeTestKey(spec), "smoke_test_attempted_${spec.id}")
+            .forEach { editor.remove(it) }
+        if (spec == ModelCatalog.gemma4E2b) editor.remove("smoke_test_passed")
+        check(editor.commit()) { "Model removed, but its test state could not be cleared." }
+    }
+
+    fun storedBytes(spec: LocalModelSpec): Long = modelFiles(modelDirectory, spec.fileName)
+        .sumOf { it.length() } + File(context.cacheDir, spec.id).let { cache ->
+            if (cache.exists()) cache.walkTopDown().filter { it.isFile }.sumOf { it.length() } else 0L
+        }
 
     fun hasModel(spec: LocalModelSpec): Boolean =
         fileFor(spec).let { it.isFile && it.length() > 0L }

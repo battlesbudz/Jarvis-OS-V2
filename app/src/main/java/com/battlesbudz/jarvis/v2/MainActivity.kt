@@ -137,6 +137,7 @@ class MainActivity : ComponentActivity() {
             JarvisApp(
                 store = modelStore,
                 onSelectModel = ::selectAiModel,
+                onDeleteModel = ::deleteAiModel,
                 voicePlayback = voicePlayback,
                 voiceModelStore = ttsModels,
                 initialVoiceCalls = voiceCallStore.list(),
@@ -352,6 +353,28 @@ class MainActivity : ComponentActivity() {
             null
         } catch (error: Exception) {
             "Could not switch models: ${error.message}"
+        } finally {
+            modelStore.endModelOperation()
+        }
+    }
+
+    private fun deleteAiModel(spec: com.battlesbudz.jarvis.v2.ai.LocalModelSpec): String? {
+        if (voiceSessionArmed || voiceSessionController.currentCallId() != null ||
+            voiceTurnJob?.isCompleted == false || ConversationWork.activeJobs.get() != 0 ||
+            wakeTestJob?.isActive == true) {
+            return "End the Jarvis session and any tests before deleting AI models."
+        }
+        if (!modelStore.tryBeginModelOperation()) return "Wait for model setup or testing to finish."
+        return try {
+            conversationEngine?.close()
+            conversationEngine = null
+            nativeConversationHasContext = false
+            conversationCharacters = 0
+            modelStore.deleteModel(spec)
+            diagnosticRecorder.recordImportant("AI model deleted: ${spec.id}")
+            null
+        } catch (error: Exception) {
+            "Could not delete model: ${error.message}"
         } finally {
             modelStore.endModelOperation()
         }
