@@ -19,11 +19,11 @@ class VoiceSessionController(
     private var activeCall: VoiceCallRecord? = null
     private var resumedFromCallId: String? = null
 
-    @Synchronized fun beginCall(): VoiceCallRecord {
+    @Synchronized fun beginCall(conversationId: String? = null): VoiceCallRecord {
         check(activeCall == null) { "A Voice Call is already active." }
         val now = nowMs()
         resumedFromCallId = null
-        return VoiceCallRecord(UUID.randomUUID().toString(), now).also {
+        return VoiceCallRecord(UUID.randomUUID().toString(), now, conversationId = conversationId).also {
             activeCall = it
             _state.value = VoiceSessionState.ACTIVELY_LISTENING
             checkpoint()
@@ -132,12 +132,19 @@ class VoiceSessionController(
                     entry.copy(delivery = it.copy(state = SpeechDeliveryState.INTERRUPTED), complete = false)
                 } ?: entry
             },
-            taskStatus = latest.taskStatus
+            taskStatus = latest.taskStatus,
+            conversationId = null
         ).also {
             activeCall = it
             _state.value = VoiceSessionState.ACTIVELY_LISTENING
             checkpoint()
         }
+    }
+
+    /** The shared thread already holds the resumed call; start a fresh call segment. */
+    @Synchronized fun linkConversation(conversationId: String) {
+        activeCall = requireActiveCall().copy(conversationId = conversationId, transcript = emptyList())
+        checkpoint()
     }
 
     /** An asynchronous model load may finish after Stop or after another call starts. */

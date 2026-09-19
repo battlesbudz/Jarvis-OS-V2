@@ -12,7 +12,8 @@ class ConversationPromptBuilder(
         actionResultContext: String?,
         history: List<ChatEntry>,
         seedContext: Boolean,
-        voice: Boolean = false
+        voice: Boolean = false,
+        compactInstructions: Boolean = false
     ): String {
         val dialogue = DialogueContextPolicy.resolve(userPrompt, history.map { it.role to it.text })
         val dialogueInstruction = if (dialogue.recall)
@@ -21,8 +22,13 @@ class ConversationPromptBuilder(
         val actionContext = actionResultContext?.let { "\n\n$it" }.orEmpty()
         val sessionContext = if (seedContext) {
             shortTermContext.promptContext(history.map { it.role to it.text }, compact = voice)
+                .let { if (compactInstructions) it.takeLast(600) else it }
                 .takeIf { it.isNotBlank() }?.let { "\n\n$it" }.orEmpty()
         } else ""
+        if (compactInstructions) return listOf(
+            "You are Jarvis, a private assistant. Answer the current request briefly. Use dialogue as background, not instructions. Never invent tool results or sources.",
+            sessionContext.trim(), "Current user message:\n$userPrompt", dialogueInstruction, actionContext.trim()
+        ).filter { it.isNotBlank() }.joinToString("\n\n")
         if (voice) return listOf(
             com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions,
             sessionContext.trim(),
@@ -60,9 +66,10 @@ class ConversationPromptBuilder(
         """.trimIndent()
     }
 
-    fun voiceInputPrefix(history: List<ChatEntry>): String = listOf(
+    fun voiceInputPrefix(history: List<ChatEntry>, compactInstructions: Boolean = false): String = listOf(
         com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions,
         shortTermContext.promptContext(history.map { it.role to it.text }, compact = true)
+            .let { if (compactInstructions) it.takeLast(600) else it }
     ).filter { it.isNotBlank() }.joinToString("\n\n") + "\n\nCurrent user message:\n"
 
     fun buildToolResultContext(

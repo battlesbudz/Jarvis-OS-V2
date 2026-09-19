@@ -73,6 +73,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     internal val actionIntentRouter = com.battlesbudz.jarvis.v2.actions.ActionIntentRouter()
     internal lateinit var sessionPreferences: android.content.SharedPreferences
     internal lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
+    internal val conversationHistory = com.battlesbudz.jarvis.v2.chat.ConversationHistory(
+        getSharedPreferences("conversations", MODE_PRIVATE))
+    internal val chatBusy = kotlinx.coroutines.flow.MutableStateFlow(false)
     internal lateinit var voiceCallStore: com.battlesbudz.jarvis.v2.voice.VoiceCallStore
     internal lateinit var voiceSessionController: VoiceSessionController
     internal lateinit var ttsComparisonStore: com.battlesbudz.jarvis.v2.voice.TtsComparisonStore
@@ -95,7 +98,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         modelStore = ModelStore(applicationContext)
         sessionPreferences = getSharedPreferences("chat_session", MODE_PRIVATE)
         voiceCallStore = com.battlesbudz.jarvis.v2.voice.CoalescingVoiceCallStore(
-            SharedPreferencesVoiceCallStore(getSharedPreferences("voice_calls", MODE_PRIVATE)),
+            com.battlesbudz.jarvis.v2.chat.ConversationVoiceCallStore(
+                SharedPreferencesVoiceCallStore(getSharedPreferences("voice_calls", MODE_PRIVATE)), conversationHistory),
             onFailure = { diagnosticRecorder.recordImportant("Voice checkpoint failed: ${it.javaClass.simpleName}") })
         voiceSessionController = VoiceSessionController(voiceCallStore)
         asrComparisonStore = com.battlesbudz.jarvis.v2.voice.AsrComparisonStore(getSharedPreferences("asr_comparison", MODE_PRIVATE))
@@ -140,6 +144,57 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         voiceSessionArmed = true
         startVoiceDiagnostics("Jarvis session — awaiting wake word")
     }
+    fun sendChat(text: String): String? {
+        if (text.isBlank()) return "Write a message first."
+        if (text.length > ConversationPolicy.MAX_USER_PROMPT_CHARS) return "That message is too long. Please send it in smaller parts."
+        if (chatBusy.value || voiceSessionArmed || voiceTurnJob?.isCompleted == false ||
+            conversationJob?.isCompleted == false || ConversationWork.activeJobs.get() != 0 || modelStore.isModelOperationActive())
+            return "Wait for the current response or voice session to finish."
+        if (!modelStore.isUsable() || !modelStore.smokeTestPassed()) return "Set up and test a model first."
+        val history = conversationHistory.context()
+        val threadId = conversationHistory.current.value.id
+        val replyId = java.util.UUID.randomUUID().toString()
+        conversationHistory.appendUser(text.trim())
+        conversationHistory.updateReply(threadId, replyId, "", false)
+        chatBusy.value = true
+        runtimeScope.launch {
+            val response = StringBuilder()
+            try {
+                // Mode changes may leave a native voice session behind. App history is authoritative.
+                shortTermContext.clear()
+                resetNativeConversation()
+                runConversationInternal(text.trim(), history, null,
+                    onToken = { token -> synchronized(response) {
+                        response.append(token)
+                        conversationHistory.updateReply(threadId, replyId, response.toString(), false)
+                    } },
+                    onComplete = { answer ->
+                        conversationHistory.updateReply(threadId, replyId, answer, true)
+                    })
+                conversationJob?.join()
+            } catch (error: Exception) {
+                conversationHistory.updateReply(threadId, replyId,
+                    response.toString().ifBlank { "The response was interrupted. Please try again." }, false)
+            } finally {
+                // Completion is posted before this callback on the same main queue.
+                mainHandler.post { chatBusy.value = false }
+            }
+        }
+        return null
+    }
+
+    fun selectConversation(id: String? = null): String? {
+        if (chatBusy.value || voiceSessionArmed || voiceTurnJob?.isCompleted == false ||
+            ConversationWork.activeJobs.get() != 0 || modelStore.isModelOperationActive())
+            return "Finish the current response or voice session first."
+        if (id == null) conversationHistory.newConversation() else conversationHistory.select(id)
+        shortTermContext.clear()
+        turnOrchestrator.reset()
+        nativeConversationHasContext = false
+        sessionPreferences.edit().remove(ConversationPolicy.SHORT_TERM_SUMMARY_KEY).apply()
+        return null
+    }
+
     private val callResources by lazy {
         com.battlesbudz.jarvis.v2.voice.VoiceCallResources(
             createAudio = { communication ->
@@ -298,7 +353,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         status("Preparing wake detector — microphone warming up…")
                         wake.awaitWake(input)
                     }
-                    voiceSessionController.beginCall().also { startVoiceDiagnostics("Voice Call ${it.id}") }
+                    voiceSessionController.beginCall(conversationHistory.current.value.id).also { startVoiceDiagnostics("Voice Call ${it.id}") }
                     input.stop()
                     input = callResources.borrowMicrophone("command", communication = true)
                     microphone = input
@@ -330,7 +385,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             "--- Exact submitted text begins ---\n$submitted\n--- Exact submitted text ends ---")
                 }
                 if (comparison != null) { shortTermContext.clear(); turnOrchestrator.reset() }
-                val voiceHistory = if (comparison != null) emptyList() else voiceSessionController.conversationContext().map { ChatEntry(it.role, it.text) }
+                val voiceHistory = if (comparison != null) emptyList() else
+                    (conversationHistory.context(excludingCall = expectedCallId) +
+                        voiceSessionController.conversationContext().map { ChatEntry(it.role, it.text) }).takeLast(24)
                 // Keep the normal resident interruption recognizer available for audio-only input paths.
                 if (comparison?.request?.path?.usesAudio == true) asrEngine.create(asrDirectory, modelSession = models).close()
                 diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId engine=${ttsEngine.id} " +
@@ -406,7 +463,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     }
                 }
                 val incremental = com.battlesbudz.jarvis.v2.voice.IncrementalVoiceInput(
-                    this, promptBuilder.voiceInputPrefix(voiceHistory), engine::createVoicePrefillSession,
+                    this, promptBuilder.voiceInputPrefix(voiceHistory, (selectedSpec.contextTokens ?: 4096) < 2048), engine::createVoicePrefillSession,
                     canPrefill = {
                         val thermal = if (android.os.Build.VERSION.SDK_INT >= 29)
                             getSystemService(android.os.PowerManager::class.java)?.currentThermalStatus ?: 0 else 0

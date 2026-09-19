@@ -34,6 +34,10 @@ import androidx.compose.foundation.lazy.items
 @Composable
 fun JarvisApp(
     store: ModelStore,
+    conversationHistory: com.battlesbudz.jarvis.v2.chat.ConversationHistory,
+    chatBusy: kotlinx.coroutines.flow.StateFlow<Boolean>,
+    onSendChat: (String) -> String?,
+    onSelectConversation: (String?) -> String?,
     onSelectModel: (com.battlesbudz.jarvis.v2.ai.LocalModelSpec) -> String?,
     onDeleteModel: (com.battlesbudz.jarvis.v2.ai.LocalModelSpec) -> String?,
     voicePlayback: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame>,
@@ -56,7 +60,7 @@ fun JarvisApp(
     var selectionError by remember { mutableStateOf<String?>(null) }
     var pickerModelId by rememberSaveable { mutableStateOf<String?>(null) }
     val gemmaReady = store.isUsable()
-    var modelsReady by remember { mutableStateOf(store.isUsable() && voiceModelStore.isReady()) }
+    var modelsReady by remember { mutableStateOf(store.isUsable()) }
     var smokeTestPassed by rememberSaveable { mutableStateOf(store.isUsable() && store.smokeTestPassed()) }
     var setupStatus by rememberSaveable { mutableStateOf(
         if (store.smokeTestAttempted() && !store.smokeTestPassed())
@@ -74,9 +78,13 @@ fun JarvisApp(
     var selectedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
     var resumedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
 
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    val phoneContext = androidx.compose.ui.platform.LocalContext.current
+    var phone by remember { mutableStateOf(com.battlesbudz.jarvis.v2.ai.PhoneCheck.read(phoneContext)) }
     val modelSelector: @Composable (Boolean) -> Unit = { enabled ->
         Column {
             Text("AI model", style = MaterialTheme.typography.titleMedium)
+            var query by remember { mutableStateOf("") }
             var expanded by remember { mutableStateOf(false) }
             var confirmingDelete by remember { mutableStateOf(false) }
             var storageRevision by remember { mutableStateOf(0) }
@@ -90,29 +98,45 @@ fun JarvisApp(
             androidx.compose.foundation.layout.Box {
                 OutlinedButton(
                     enabled = canManage,
-                    onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()
+                    onClick = { phone = com.battlesbudz.jarvis.v2.ai.PhoneCheck.read(phoneContext); expanded = true }, modifier = Modifier.fillMaxWidth()
                 ) { Text("${selectedModel.id} ▾") }
                 androidx.compose.material3.DropdownMenu(
                     expanded = expanded && canManage,
                     onDismissRequest = { expanded = false },
                     modifier = Modifier.heightIn(max = 360.dp)
                 ) {
-                    ModelCatalog.all.forEach { spec ->
+                    androidx.compose.material3.OutlinedTextField(
+                        value = query, onValueChange = { query = it }, singleLine = true,
+                        placeholder = { Text("Search name or purpose") },
+                        modifier = Modifier.fillMaxWidth())
+                    ModelCatalog.all.filter { query.isBlank() ||
+                        "${it.id} ${it.provider} ${it.description}".contains(query, ignoreCase = true) }
+                        .groupBy { it.provider }.toSortedMap().forEach { (provider, specs) ->
                         androidx.compose.material3.DropdownMenuItem(
-                            text = { Text(spec.id + if (selectedModel.id == spec.id) " · Selected"
-                                else if (store.hasModel(spec)) " · Installed" else " · Not installed") },
-                            onClick = {
-                                expanded = false
-                                selectionError = onSelectModel(spec)
-                                if (selectionError == null) {
-                                    selectedModel = store.selectedModel()
-                                    modelsReady = store.isUsable() && voiceModelStore.isReady()
-                                    smokeTestPassed = modelsReady && store.smokeTestPassed()
-                                    automaticSmokeTestAttempted = false
-                                    setupStatus = "Selected ${selectedModel.id}."
+                            text = { Text(provider, style = MaterialTheme.typography.titleSmall) },
+                            enabled = false, onClick = {})
+                        specs.forEach { spec ->
+                            val fit = com.battlesbudz.jarvis.v2.ai.ModelGuidance.assess(spec, phone, store.hasModel(spec))
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Column {
+                                    Text(spec.id + if (selectedModel.id == spec.id) " · Selected"
+                                        else if (store.hasModel(spec)) " · Installed" else "")
+                                    Text(fit.label, style = MaterialTheme.typography.labelSmall,
+                                        color = if (fit.recommended) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                                } },
+                                onClick = {
+                                    expanded = false
+                                    selectionError = onSelectModel(spec)
+                                    if (selectionError == null) {
+                                        selectedModel = store.selectedModel()
+                                        modelsReady = store.isUsable()
+                                        smokeTestPassed = store.isUsable() && store.smokeTestPassed()
+                                        automaticSmokeTestAttempted = false
+                                        setupStatus = "Selected ${selectedModel.id}."
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -132,7 +156,7 @@ fun JarvisApp(
                             confirmingDelete = false
                             selectionError = onDeleteModel(selectedModel)
                             storageRevision++
-                            modelsReady = store.isUsable() && voiceModelStore.isReady()
+                            modelsReady = store.isUsable()
                             smokeTestPassed = modelsReady && store.smokeTestPassed()
                             automaticSmokeTestAttempted = false
                             if (selectionError == null) setupStatus = "${selectedModel.id} deleted. Choose an installed model or download one."
@@ -143,12 +167,30 @@ fun JarvisApp(
                     }
                 )
             }
-            Text(selectedModel.description +
-                (selectedModel.downloadBytes?.let { " · Download: %.2f GB".format(java.util.Locale.US, it / 1_000_000_000.0) } ?: "") +
-                " · " + (if (selectedModel.recommendedGpu) "GPU" else "CPU") +
-                (selectedModel.contextTokens?.let { " · $it-token context" } ?: "") +
-                (if (!selectedModel.supportsAudio) " · Voice uses Moonshine/Whisper; no direct audio fallback." else "") +
-                " Switch back to an installed model without downloading it again. Qwen models require testing on your phone.",
+            if (selectedModel.requiresAccess) {
+                Text("Publisher approval required. Accept the model terms in your browser, download its file, then use Import below.",
+                    style = MaterialTheme.typography.bodySmall)
+                androidx.compose.material3.TextButton(onClick = {
+                    selectedModel.downloadUrl?.substringBefore("/resolve/")?.let { url ->
+                        runCatching { uriHandler.openUri(url) }.onFailure { selectionError = "Could not open the publisher page." }
+                    }
+                }) { Text("Open publisher page") }
+            }
+            Text(selectedModel.description, style = MaterialTheme.typography.bodyMedium)
+            selectedModel.downloadBytes?.let {
+                Text("Download: %.2f GB".format(java.util.Locale.US, it / 1_000_000_000.0), style = MaterialTheme.typography.bodySmall)
+            }
+            val fit = com.battlesbudz.jarvis.v2.ai.ModelGuidance.assess(selectedModel, phone, store.hasModel(selectedModel))
+            Text(fit.label, color = MaterialTheme.colorScheme.primary)
+            Text(fit.explanation, style = MaterialTheme.typography.bodySmall)
+            Text("${phone.name} · %.1f GB RAM · %.1f GB free storage".format(java.util.Locale.US,
+                phone.totalRamBytes / 1_000_000_000.0, phone.freeStorageBytes / 1_000_000_000.0),
+                style = MaterialTheme.typography.bodySmall)
+            Text("Phone check stays on your device. Recommendations are estimates, not speed tests.",
+                style = MaterialTheme.typography.bodySmall)
+            if (selectedModel.experimental) Text("Community model · test required on your phone",
+                style = MaterialTheme.typography.labelSmall)
+            Text("All models can use voice through speech recognition. No model download happens until you choose Download.",
                 style = MaterialTheme.typography.bodySmall)
             selectionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
@@ -186,7 +228,7 @@ fun JarvisApp(
     LaunchedEffect(Unit) {
         while (true) {
             delay(500)
-            modelsReady = store.isUsable() && voiceModelStore.isReady()
+            modelsReady = store.isUsable()
             modelImportRunning = store.importInProgress()
             smokeTestPassed = modelsReady && store.smokeTestPassed()
         }
@@ -215,10 +257,8 @@ fun JarvisApp(
                 modelImportRunning = false
                 setupStatus = result
                 if (result == "Model imported successfully.") {
-                    modelsReady = store.isUsable() && voiceModelStore.isReady()
-                    if (!voiceModelStore.isReady()) {
-                        setupStatus = "${selectedModel.id} imported. Install the local voice model to continue."
-                    }
+                    modelsReady = store.isUsable()
+                    setupStatus = "${selectedModel.id} imported. Test it to start chatting."
                 }
             }
         }
@@ -238,6 +278,12 @@ fun JarvisApp(
                         VoiceCallDetailScreen(
                             call = selected,
                             onBack = { selectedVoiceCall = null },
+                            onContinueChat = {
+                                conversationHistory.openCall(selected)
+                                onSelectConversation(conversationHistory.current.value.id)
+                                selectedVoiceCall = null
+                                showingVoiceCalls = false
+                            },
                             onResume = { done ->
                                 onResumeVoiceCall(selected) { error ->
                                     done(error)
@@ -259,7 +305,11 @@ fun JarvisApp(
                             voiceCalls = onRefreshVoiceCalls()
                         }
                     )
-                    else -> VoiceCallScreen(
+                    else -> ConversationScreen(
+                        history = conversationHistory, busy = chatBusy, onSend = onSendChat,
+                        onSelectConversation = onSelectConversation, onEndVoice = onEndVoiceCall,
+                        modelSelector = modelSelector, resumedVoice = resumedVoiceCall != null
+                    ) { VoiceCallScreen(
                         modelSelector = modelSelector,
                         resumedCall = resumedVoiceCall,
                         onResumeConsumed = { resumedVoiceCall = null },
@@ -274,13 +324,14 @@ fun JarvisApp(
                         },
                         onCopyDiagnostics = onCopyDiagnostics,
                         onExportSpeechAudio = onExportSpeechAudio
-                    )
+                    ) }
                 }
             } else {
                 ModelSetup(
                     modelSelector = modelSelector,
                     ready = modelsReady,
                     gemmaReady = gemmaReady,
+                    downloadAvailable = !selectedModel.requiresAccess,
                     testing = smokeTestRunning,
                     importing = modelImportRunning,
                     downloading = modelDownloadRunning,
@@ -305,7 +356,7 @@ fun JarvisApp(
                             }
                             modelDownloadRunning = false
                             setupStatus = result
-                            modelsReady = store.isUsable() && voiceModelStore.isReady()
+                            modelsReady = store.isUsable()
                             smokeTestPassed = modelsReady && store.smokeTestPassed()
                         }
                     },

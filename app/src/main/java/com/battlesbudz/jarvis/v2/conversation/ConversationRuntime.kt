@@ -25,7 +25,7 @@ internal fun JarvisRuntime.runConversationInternal(
         fun buildTurnPrompt(userPrompt: String, actionResultContext: String?,
                             history: List<ChatEntry>, seedContext: Boolean): String =
             promptBuilder.buildGemmaPrompt(userPrompt, actionResultContext, history, seedContext,
-                voice = voiceAudio != null)
+                voice = voiceAudio != null, compactInstructions = (modelStore.selectedModel().contextTokens ?: 4096) < 2048)
         // Smaller Qwen exports have a real 2K/4K cache, not the upstream model's advertised context.
         // Character budgeting remains conservative/approximate; native token limits are authoritative.
         val contextLimit = modelStore.selectedModel().contextTokens?.let {
@@ -236,7 +236,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     useGpu = modelStore.selectedModel().recommendedGpu,
                     tools = if (modelStore.selectedModel().supportsTools)
                         com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions.all() else emptyList(),
-                    visionEnabled = modelStore.selectedModel().supportsVision,
+                    visionEnabled = imageUri != null && modelStore.selectedModel().supportsVision,
                     audioEnabled = voiceAudio != null && modelStore.selectedModel().supportsAudio
                 ).also {
                     it.initialize()

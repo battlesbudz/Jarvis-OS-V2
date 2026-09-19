@@ -82,7 +82,7 @@ class LiteRtLmEngine(
                 channels = listOf(com.google.ai.edge.litertlm.Channel("thought", "<think>", "</think>")),
                 maxOutputToken = 512,
                 thinkingConfig = ThinkingConfig(
-                    enableThinking = modelId.contains("Thinking"), thinkingTokenBudget = 256
+                    enableThinking = modelSpec.reasoning, thinkingTokenBudget = 256
                 )
             ))
         } else if (tools.isEmpty() || !toolsEnabled) {

@@ -35,6 +35,7 @@ class SharedPreferencesVoiceCallStore(
                 array.put(JSONObject().apply {
                     put("id", call.id)
                     put("startedAtMs", call.startedAtMs)
+                    call.conversationId?.let { put("conversationId", it) }
                     call.endedAtMs?.let { put("endedAtMs", it) }
                     call.title?.let { put("title", it) }
                     put("transcript", JSONArray().also { entries ->
@@ -108,7 +109,8 @@ class SharedPreferencesVoiceCallStore(
                         endedAtMs = item.optLong("endedAtMs").takeIf { item.has("endedAtMs") },
                         title = item.optString("title").takeIf { it.isNotBlank() },
                         transcript = transcript,
-                        taskStatus = task
+                        taskStatus = task,
+                        conversationId = item.optString("conversationId").takeIf { it.isNotBlank() }
                     )
                 }
             }.getOrDefault(emptyList())

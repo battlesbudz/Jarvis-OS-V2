@@ -26,6 +26,7 @@ internal fun ModelSetup(
     modelSelector: @Composable (Boolean) -> Unit,
     ready: Boolean,
     gemmaReady: Boolean,
+    downloadAvailable: Boolean,
     testing: Boolean,
     importing: Boolean,
     downloading: Boolean,
@@ -49,22 +50,23 @@ internal fun ModelSetup(
         modelSelector(!testing && !importing && !downloading)
         Text(
             if (gemmaReady) {
-                "The selected AI model is ready. Install the local Piper voice model to enable Jarvis speaking."
+                "The selected AI model is installed. Check it below to start chatting."
             } else {
-                "Jarvis runs privately on your phone. Install an AI model and the local Piper voice model, or choose a compatible file for the selected model."
+                "Choose an AI model to use on your phone. Download it here or import its file. Voice prepares its speech models separately."
             },
             modifier = Modifier.padding(top = 12.dp, bottom = 20.dp)
         )
         Button(
             onClick = onDownload,
             modifier = Modifier.fillMaxWidth(),
-            enabled = !testing && !importing && !downloading
+            enabled = downloadAvailable && !gemmaReady && !testing && !importing && !downloading
         ) {
             Text(
                 when {
                     downloading -> "Downloading and installing…"
-                    gemmaReady -> "Install voice model"
-                    else -> "Download and install Jarvis"
+                    !downloadAvailable -> "Use publisher download and import"
+                    gemmaReady -> "Model installed"
+                    else -> "Download selected model and voice setup"
                 }
             )
         }
@@ -100,7 +102,7 @@ internal fun ModelSetup(
             enabled = !testing && !importing && !downloading,
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
         ) {
-            Text("Already downloaded — choose the model")
+            Text("Import downloaded model")
         }
         Button(
             onClick = onTest,

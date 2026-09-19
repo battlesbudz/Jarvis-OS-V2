@@ -12,7 +12,11 @@ data class LocalModelSpec(
     val incrementalGemmaInput: Boolean = false,
     val contextTokens: Int? = null,
     val downloadBytes: Long? = null,
-    val description: String = ""
+    val description: String = "",
+    val provider: String = if (id.startsWith("Qwen")) "Alibaba · Qwen" else "Google",
+    val reasoning: Boolean = id.contains("Thinking"),
+    val experimental: Boolean = true,
+    val requiresAccess: Boolean = false
 )
 
 object ModelCatalog {
@@ -21,7 +25,9 @@ object ModelCatalog {
         fileName = "gemma-4-E2B-it.litertlm",
         expectedSha256 = "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
         recommendedGpu = true, supportsVision = true, supportsAudio = true,
+        experimental = false,
         supportsTools = true, incrementalGemmaInput = true,
+        downloadBytes = 2588147712L, description = "Everyday conversation and voice · balanced size",
         // Pin the download to the exact Hugging Face revision used by PR1.
         // Updating the model requires an intentional catalog change.
         downloadUrl = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/6e5c4f1/gemma-4-E2B-it.litertlm?download=true"
@@ -32,7 +38,9 @@ object ModelCatalog {
         fileName = "gemma-4-E4B-it.litertlm",
         expectedSha256 = "f335f2bfd1b758dc6476db16c0f41854bd6237e2658d604cbe566bcefd00a7bc",
         recommendedGpu = true, supportsVision = true, supportsAudio = true,
+        experimental = false,
         supportsTools = true, incrementalGemmaInput = true,
+        downloadBytes = 3659530240L, description = "Larger assistant · more memory and longer waits",
         downloadUrl = "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/1fc8912676889ed3aeec478c92c1e239bed08928/gemma-4-E4B-it.litertlm?download=true"
     )
 
@@ -160,7 +168,7 @@ object ModelCatalog {
         )
     )
 
-    val all = listOf(gemma4E2b, gemma4E4b) + qwen
+    val all = listOf(gemma4E2b, gemma4E4b) + qwen + CommunityModels.all
 
     fun find(id: String?): LocalModelSpec? = all.firstOrNull { it.id == id }
 

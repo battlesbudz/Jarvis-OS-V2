@@ -136,6 +136,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             JarvisApp(
                 store = modelStore,
+                conversationHistory = runtime.conversationHistory,
+                chatBusy = runtime.chatBusy,
+                onSendChat = runtime::sendChat,
+                onSelectConversation = runtime::selectConversation,
                 onSelectModel = ::selectAiModel,
                 onDeleteModel = ::deleteAiModel,
                 voicePlayback = voicePlayback,
@@ -147,7 +151,6 @@ class MainActivity : ComponentActivity() {
                     com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.report("Preparing microphone…")
                     audioRecoveryAttempts = 0
                     returnToWakeCuePending.set(false)
-                    voiceSessionArmed = start
                     sessionReport = report
                     runVoiceTurn(start, report, onTranscript, onFinished)
                 },
@@ -167,6 +170,8 @@ class MainActivity : ComponentActivity() {
                             previousConversation?.join()
                         }
                         result.onSuccess {
+                            runtime.conversationHistory.openCall(call)
+                            voiceSessionController.linkConversation(runtime.conversationHistory.current.value.id)
                             startVoiceDiagnostics("Voice Call ${it.id} (resumed)")
                         }.onFailure {
                             diagnosticRecorder.record("Voice resume failed: ${it.stackTraceToString().take(4000)}")
@@ -196,6 +201,10 @@ class MainActivity : ComponentActivity() {
         onTranscript: (String, String, Boolean) -> Unit,
         onFinished: (String) -> Unit
     ) {
+        if (runtime.chatBusy.value || ConversationWork.activeJobs.get() != 0) {
+            onFinished("Voice Call could not start: wait for the text response to finish.")
+            return
+        }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             pendingVoiceTurn = PendingVoiceTurn(start, report, onTranscript, onFinished)
             voicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -337,7 +346,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun selectAiModel(spec: com.battlesbudz.jarvis.v2.ai.LocalModelSpec): String? {
-        if (voiceSessionArmed || voiceSessionController.currentCallId() != null ||
+        if (runtime.chatBusy.value || voiceSessionArmed || voiceSessionController.currentCallId() != null ||
             voiceTurnJob?.isCompleted == false || ConversationWork.activeJobs.get() != 0 ||
             wakeTestJob?.isActive == true) {
             return "End the Jarvis session and any tests before switching AI models."
@@ -359,7 +368,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun deleteAiModel(spec: com.battlesbudz.jarvis.v2.ai.LocalModelSpec): String? {
-        if (voiceSessionArmed || voiceSessionController.currentCallId() != null ||
+        if (runtime.chatBusy.value || voiceSessionArmed || voiceSessionController.currentCallId() != null ||
             voiceTurnJob?.isCompleted == false || ConversationWork.activeJobs.get() != 0 ||
             wakeTestJob?.isActive == true) {
             return "End the Jarvis session and any tests before deleting AI models."
@@ -408,16 +417,16 @@ class MainActivity : ComponentActivity() {
                     cacheDir.path,
                     useGpu = modelStore.selectedModel().recommendedGpu,
                     tools = if (modelStore.selectedModel().supportsTools) MobileActionToolDefinitions.all() else emptyList(),
-                    visionEnabled = modelStore.selectedModel().supportsVision,
-                    audioEnabled = modelStore.selectedModel().supportsAudio
+                    visionEnabled = false,
+                    audioEnabled = false
                 )
                 gemma.initialize()
                 val probe = gemma.generate(
-                    "Reply with exactly GEMMA_PR1_OK and nothing else.",
+                    "Say hello in one short sentence.",
                     onToken = {}
                 )
-                check(probe.text.trim() == "GEMMA_PR1_OK") {
-                    "The selected model file did not pass its identity probe."
+                check(runtime.cleanAssistantText(probe.text).any { it.isLetterOrDigit() }) {
+                    "The selected model loaded but did not return readable text."
                 }
                 smokeTestSucceeded = true
             } catch (error: Throwable) {

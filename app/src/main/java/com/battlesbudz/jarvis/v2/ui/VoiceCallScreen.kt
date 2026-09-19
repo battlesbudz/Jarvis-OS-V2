@@ -171,16 +171,11 @@ internal fun VoiceCallScreen(
         VoiceOrb(phase, if (runtimeArmed) {
             if (runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING) playback.level else microphoneLevel
         } else 0f)
-        VoiceCaption(
-            if (isListening) provisionalUser.trim().split(Regex("\\s+")).takeLast(32).joinToString(" ")
-            else if (callStarted) playback.caption else "",
-            if (isListening) "You" else "Jarvis"
-        )
         if (!runtimeArmed) Button(
             onClick = { callStarted = true; requestVoiceTurn(start = true) },
             enabled = !turnInFlight && !wakeTesting && !inputTesting && !audioPathTesting,
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
-        ) { Text("Start Jarvis session") }
+        ) { Text("Start voice session") }
         if (runtimeArmed) {
             if (runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING ||
                 runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.THINKING) {
@@ -215,7 +210,7 @@ internal fun VoiceCallScreen(
                 },
                 modifier = Modifier.padding(top = 4.dp)
             ) {
-                Text("Stop Jarvis session")
+                Text("End call · return to chat")
             }
         }
         val visibleStatus = if (runtimeArmed) runtimeStatus else status

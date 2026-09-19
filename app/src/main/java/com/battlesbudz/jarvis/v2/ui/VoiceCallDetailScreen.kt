@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.items
 internal fun VoiceCallDetailScreen(
     call: VoiceCallRecord,
     onBack: () -> Unit,
+    onContinueChat: () -> Unit,
     onResume: ((String?) -> Unit) -> Unit
 ) {
     var resuming by remember(call.id) { mutableStateOf(false) }
@@ -59,6 +60,7 @@ internal fun VoiceCallDetailScreen(
                     entry.delivery.state != com.battlesbudz.jarvis.v2.voice.SpeechDeliveryState.COMPLETED) "Jarvis (generated)" else entry.role
                 Text(
                     "$label: ${entry.text}",
+                    fontStyle = if (entry.role == "You") androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal,
                     color = if (entry.role == "You") MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -81,6 +83,7 @@ internal fun VoiceCallDetailScreen(
                 task.pendingSteps.forEach { Text("○ $it", style = MaterialTheme.typography.bodySmall) }
             }
         }
+        TextButton(onClick = onContinueChat, enabled = !resuming) { Text("Continue in chat") }
         resumeError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Button(onClick = {
             if (!resuming) {

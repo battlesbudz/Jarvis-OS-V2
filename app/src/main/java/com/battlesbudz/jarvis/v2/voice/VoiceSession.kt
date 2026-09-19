@@ -25,7 +25,8 @@ data class VoiceCallRecord(
     val endedAtMs: Long? = null,
     val title: String? = null,
     val transcript: List<TranscriptEntry> = emptyList(),
-    val taskStatus: VoiceTaskStatus? = null
+    val taskStatus: VoiceTaskStatus? = null,
+    val conversationId: String? = null
 )
 
 data class TranscriptEntry(
