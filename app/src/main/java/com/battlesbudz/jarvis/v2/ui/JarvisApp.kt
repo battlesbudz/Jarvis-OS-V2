@@ -36,6 +36,7 @@ fun JarvisApp(
     store: ModelStore,
     conversationHistory: com.battlesbudz.jarvis.v2.chat.ConversationHistory,
     chatBusy: kotlinx.coroutines.flow.StateFlow<Boolean>,
+    callState: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.voice.VoiceSessionState>,
     onSendChat: (String) -> String?,
     onSelectConversation: (String?) -> String?,
     onSelectModel: (com.battlesbudz.jarvis.v2.ai.LocalModelSpec) -> String?,
@@ -306,7 +307,7 @@ fun JarvisApp(
                         }
                     )
                     else -> ConversationScreen(
-                        history = conversationHistory, busy = chatBusy, onSend = onSendChat,
+                        history = conversationHistory, busy = chatBusy, callState = callState, onSend = onSendChat,
                         onSelectConversation = onSelectConversation, onEndVoice = onEndVoiceCall,
                         modelSelector = modelSelector, resumedVoice = resumedVoiceCall != null
                     ) { VoiceCallScreen(

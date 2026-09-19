@@ -88,6 +88,12 @@ class ConversationHistory(private val preferences: SharedPreferences) {
         syncCall(call.copy(conversationId = id))
         persist()
     }
+    @Synchronized fun removeCall(callId: String) {
+        threads.values.toList().forEach { thread ->
+            if (thread.messages.any { it.callId == callId })
+                replace(thread.copy(messages = thread.messages.filterNot { it.callId == callId }))
+        }
+    }
     @Synchronized fun context(excludingCall: String? = null): List<ChatEntry> =
         _current.value.messages.filter { (excludingCall == null || it.callId != excludingCall) && it.contextText.isNotBlank() }
             .takeLast(24).map { ChatEntry(it.role, it.contextText) }
@@ -115,5 +121,5 @@ class ConversationHistory(private val preferences: SharedPreferences) {
 class ConversationVoiceCallStore(private val delegate: VoiceCallStore, private val history: ConversationHistory) : VoiceCallStore {
     override fun list() = delegate.list()
     override fun save(call: VoiceCallRecord) { delegate.save(call); history.syncCall(call) }
-    override fun delete(callId: String) = delegate.delete(callId)
+    override fun delete(callId: String) { delegate.delete(callId); history.removeCall(callId) }
 }

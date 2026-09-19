@@ -4,8 +4,9 @@ The Chat and Voice tabs now use one app-private conversation history. The applic
 
 - Type in Chat or start the existing hands-free session in Voice. Starting Voice still waits for Hey Jarvis.
 - Voice shows the orb and call controls, without live user captions or assistant captions.
-- End call returns to Chat. Selecting Chat also stops the voice session. Wait for native audio/model cleanup if Send reports that work is still finishing.
+- End call, End conversation, and a recognized goodbye return to Chat while the conversation screen is open. Selecting Chat also stops the voice session. Wait for native audio/model cleanup if Send reports that work is still finishing.
 - Spoken user messages are italicized and labeled “Spoken transcript.” Only final recognized input is retained; provisional ASR text is not a user message.
+- Deleting a saved call also removes its linked transcript segment from chat.
 - Calls remain available in the existing call history. “Continue in chat” imports legacy calls explicitly; resuming voice adds a new segment to the selected shared thread without copying old messages twice.
 - Generated assistant text is visible for review. For a voice interruption, model context uses the existing delivery ledger (actually spoken words and action receipts), not unsaid generated text. Unfinished typed replies remain visible but are excluded from subsequent context.
 - New starts a separate thread. Conversations reopens saved threads. Selecting a model changes the engine but keeps the thread. Native context remains bounded; the full displayed history is not an unlimited model memory.
@@ -41,4 +42,4 @@ Manufacturer/model, chip, ARM64 support, total/free RAM and free internal storag
 
 ## Validation
 
-Focused JVM tests cover catalog pinning/provider coverage, Fold6 and low-resource guidance, text→voice→text persistence, repeated call snapshots, late receipts, partial assistant context, legacy calls and linked-call serialization/resumption. Android release compilation, the full JVM suite, native packaging, signing and APK assembly run in the existing PR workflow. Physical audio, model speed, UI rendering and every newly listed model still require device testing.
+37 focused JVM tests passed locally. These cover catalog pinning/provider coverage, Fold6 and low-resource guidance, text→voice→text persistence, repeated call snapshots, late receipts, partial assistant context, legacy calls and linked-call serialization/resumption. Android release compilation, the full JVM suite, native packaging, signing and APK assembly run in the existing PR workflow. Physical audio, model speed, UI rendering and every newly listed model still require device testing.

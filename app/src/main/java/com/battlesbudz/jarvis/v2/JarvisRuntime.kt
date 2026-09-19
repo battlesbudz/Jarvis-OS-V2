@@ -373,7 +373,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     contextCallId = expectedCallId
                     diagnosticRecorder.recordImportant("Voice context boundary: call=$expectedCallId summary=cleared subject=cleared nativeConversation=fresh")
                 }
-                val provenance = voiceSessionController.contextProvenance()
+                val provenance = voiceSessionController.contextProvenance() +
+                    " sharedConversationId=${conversationHistory.current.value.id} sharedThreadEntries=${conversationHistory.current.value.messages.size}"
                 var submissionIndex = 0
                 engine.onPromptSubmitted = { submitted, audioSize ->
                     comparison?.log("prompt audioBytes=$audioSize text=$submitted")

@@ -138,6 +138,7 @@ class MainActivity : ComponentActivity() {
                 store = modelStore,
                 conversationHistory = runtime.conversationHistory,
                 chatBusy = runtime.chatBusy,
+                callState = voiceSessionController.state,
                 onSendChat = runtime::sendChat,
                 onSelectConversation = runtime::selectConversation,
                 onSelectModel = ::selectAiModel,

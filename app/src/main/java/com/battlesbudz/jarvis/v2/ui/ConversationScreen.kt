@@ -1,6 +1,8 @@
 package com.battlesbudz.jarvis.v2.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -19,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 internal fun ConversationScreen(
     history: ConversationHistory,
     busy: StateFlow<Boolean>,
+    callState: StateFlow<com.battlesbudz.jarvis.v2.voice.VoiceSessionState>,
     onSend: (String) -> String?,
     onSelectConversation: (String?) -> String?,
     onEndVoice: ((String) -> Unit) -> Unit,
@@ -29,6 +32,8 @@ internal fun ConversationScreen(
     val thread by history.current.collectAsState()
     val sending by busy.collectAsState()
     val armed by VoiceSessionUi.armed.collectAsState()
+    val voiceState by callState.collectAsState()
+    var hadCall by remember { mutableStateOf(false) }
     var mode by rememberSaveable { mutableStateOf("Chat") }
     var wasArmed by remember { mutableStateOf(armed) }
     var settings by remember { mutableStateOf(false) }
@@ -36,6 +41,14 @@ internal fun ConversationScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var draft by rememberSaveable(thread.id) { mutableStateOf("") }
     val listState = rememberLazyListState()
+    LaunchedEffect(voiceState) {
+        if (voiceState != com.battlesbudz.jarvis.v2.voice.VoiceSessionState.PASSIVE_LISTENING) hadCall = true
+        else if (hadCall) {
+            hadCall = false
+            onEndVoice { }
+            mode = "Chat"
+        }
+    }
     LaunchedEffect(resumedVoice) { if (resumedVoice) mode = "Voice" }
     LaunchedEffect(armed) {
         if (armed) mode = "Voice"
@@ -93,7 +106,7 @@ internal fun ConversationScreen(
         }
     }
     if (settings) AlertDialog(onDismissRequest = { settings = false }, title = { Text("Choose your AI") },
-        text = { modelSelector(!sending && !armed) },
+        text = { Column(Modifier.verticalScroll(rememberScrollState())) { modelSelector(!sending && !armed) } },
         confirmButton = { TextButton(onClick = { settings = false }) { Text("Done") } })
     if (showHistory) AlertDialog(onDismissRequest = { showHistory = false }, title = { Text("Conversations") },
         text = { LazyColumn(Modifier.heightIn(max = 400.dp)) {

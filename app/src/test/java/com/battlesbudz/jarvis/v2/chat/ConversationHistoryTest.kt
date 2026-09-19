@@ -77,6 +77,16 @@ class ConversationHistoryTest {
         assertEquals(call.conversationId, history.current.value.id)
     }
 
+    @Test fun deletingCallRemovesItsChatSegmentButKeepsTypedMessages() {
+        val history = ConversationHistory(preferences())
+        val store = ConversationVoiceCallStore(SharedPreferencesVoiceCallStore(preferences()), history)
+        history.appendUser("Typed message")
+        store.save(VoiceCallRecord("call", 1, conversationId = history.current.value.id,
+            transcript = listOf(TranscriptEntry("You", "Spoken message"))))
+        store.delete("call")
+        assertEquals(listOf("Typed message"), history.current.value.messages.map { it.text })
+    }
+
     private fun preferences(): SharedPreferences {
         val values = mutableMapOf<String, Any?>()
         lateinit var editor: SharedPreferences.Editor

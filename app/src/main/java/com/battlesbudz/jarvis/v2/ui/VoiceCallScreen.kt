@@ -192,7 +192,7 @@ internal fun VoiceCallScreen(
                 runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.THINKING ||
                 runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING) {
                 TextButton(onClick = { runtime.controls.trySend(com.battlesbudz.jarvis.v2.voice.VoiceControl.END_CONVERSATION) }) {
-                    Text("End conversation — keep Hey Jarvis on")
+                    Text("End conversation")
                 }
             }
         }
