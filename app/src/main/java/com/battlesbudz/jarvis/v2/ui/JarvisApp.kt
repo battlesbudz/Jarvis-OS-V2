@@ -85,7 +85,6 @@ fun JarvisApp(
     val modelSelector: @Composable (Boolean) -> Unit = { enabled ->
         Column {
             Text("AI model", style = MaterialTheme.typography.titleMedium)
-            var query by remember { mutableStateOf("") }
             var expanded by remember { mutableStateOf(false) }
             var confirmingDelete by remember { mutableStateOf(false) }
             var storageRevision by remember { mutableStateOf(0) }
@@ -96,52 +95,29 @@ fun JarvisApp(
             LaunchedEffect(canManage) {
                 if (!canManage) { expanded = false; confirmingDelete = false }
             }
-            androidx.compose.foundation.layout.Box {
-                OutlinedButton(
-                    enabled = canManage,
-                    onClick = { phone = com.battlesbudz.jarvis.v2.ai.PhoneCheck.read(phoneContext); expanded = true }, modifier = Modifier.fillMaxWidth()
-                ) { Text("${selectedModel.id} ▾") }
-                androidx.compose.material3.DropdownMenu(
-                    expanded = expanded && canManage,
-                    onDismissRequest = { expanded = false },
-                    modifier = Modifier.heightIn(max = 360.dp)
-                ) {
-                    androidx.compose.material3.OutlinedTextField(
-                        value = query, onValueChange = { query = it }, singleLine = true,
-                        placeholder = { Text("Search name or purpose") },
-                        modifier = Modifier.fillMaxWidth())
-                    ModelCatalog.all.filter { query.isBlank() ||
-                        "${it.id} ${it.provider} ${it.description}".contains(query, ignoreCase = true) }
-                        .groupBy { it.provider }.toSortedMap().forEach { (provider, specs) ->
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { Text(provider, style = MaterialTheme.typography.titleSmall) },
-                            enabled = false, onClick = {})
-                        specs.forEach { spec ->
-                            val fit = com.battlesbudz.jarvis.v2.ai.ModelGuidance.assess(spec, phone, store.hasModel(spec),
-                                testPassed = store.isUsable(spec) && store.smokeTestPassed(spec))
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Column {
-                                    Text(spec.id + if (selectedModel.id == spec.id) " · Selected"
-                                        else if (store.hasModel(spec)) " · Installed" else "")
-                                    Text(fit.label + if (fit.storageNotice != null) " · Storage needed" else "", style = MaterialTheme.typography.labelSmall,
-                                        color = if (fit.recommended) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                                } },
-                                onClick = {
-                                    expanded = false
-                                    selectionError = onSelectModel(spec)
-                                    if (selectionError == null) {
-                                        selectedModel = store.selectedModel()
-                                        modelsReady = store.isUsable()
-                                        smokeTestPassed = store.isUsable() && store.smokeTestPassed()
-                                        automaticSmokeTestAttempted = false
-                                        setupStatus = "Selected ${selectedModel.id}."
-                                    }
-                                }
-                            )
-                        }
+            OutlinedButton(
+                enabled = canManage,
+                onClick = { phone = com.battlesbudz.jarvis.v2.ai.PhoneCheck.read(phoneContext); expanded = true },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Browse model families · ${com.battlesbudz.jarvis.v2.ai.ModelGuide.family(selectedModel)}") }
+            Text(selectedModel.id, style = MaterialTheme.typography.titleSmall)
+            if (expanded && canManage) ModelBrowser(
+                phone = phone, selectedId = selectedModel.id,
+                isInstalled = { store.hasModel(it) },
+                isTested = { store.isUsable(it) && store.smokeTestPassed(it) },
+                onDismiss = { expanded = false },
+                onSelect = { spec ->
+                    selectionError = onSelectModel(spec)
+                    if (selectionError == null) {
+                        selectedModel = store.selectedModel()
+                        modelsReady = store.isUsable()
+                        smokeTestPassed = store.isUsable() && store.smokeTestPassed()
+                        automaticSmokeTestAttempted = false
+                        setupStatus = "Selected ${selectedModel.id}."
                     }
+                    selectionError
                 }
-            }
+            )
             Text(if (store.hasModel(selectedModel)) "Installed" else "Not installed")
             if (storedBytes > 0L) {
                 OutlinedButton(enabled = canManage, onClick = { confirmingDelete = true }) {
@@ -178,19 +154,24 @@ fun JarvisApp(
                     }
                 }) { Text("Open publisher page") }
             }
-            Text(selectedModel.description, style = MaterialTheme.typography.bodyMedium)
+            val purpose = com.battlesbudz.jarvis.v2.ai.ModelGuide.purpose(selectedModel)
+            Text("Good for: " + purpose.tags.joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+            Text(purpose.description, style = MaterialTheme.typography.bodySmall)
+            if (purpose.caveat.isNotBlank()) Text(purpose.caveat, style = MaterialTheme.typography.bodySmall)
             selectedModel.downloadBytes?.let {
                 Text("Download: %.2f GB".format(java.util.Locale.US, it / 1_000_000_000.0), style = MaterialTheme.typography.bodySmall)
             }
-            val fit = com.battlesbudz.jarvis.v2.ai.ModelGuidance.assess(selectedModel, phone, store.hasModel(selectedModel),
-                testPassed = store.isUsable(selectedModel) && store.smokeTestPassed(selectedModel))
-            Text(fit.label, color = MaterialTheme.colorScheme.primary)
+            val fit = com.battlesbudz.jarvis.v2.ai.ModelGuidance.assess(selectedModel, phone)
+            Text("Memory: ${fit.label}", color = MaterialTheme.colorScheme.primary)
+            Text("Response demand: ${fit.workload}", style = MaterialTheme.typography.bodySmall)
             Text(fit.explanation, style = MaterialTheme.typography.bodySmall)
-            fit.storageNotice?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            Text(fit.workloadExplanation, style = MaterialTheme.typography.bodySmall)
+            fit.deviceExperience?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            com.battlesbudz.jarvis.v2.ai.ModelGuidance.storageNotice(selectedModel, phone, store.hasModel(selectedModel))?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             Text("${phone.name} · %.1f GB RAM · %.1f GB free storage".format(java.util.Locale.US,
                 phone.totalRamBytes / 1_000_000_000.0, phone.freeStorageBytes / 1_000_000_000.0),
                 style = MaterialTheme.typography.bodySmall)
-            Text("Phone check stays on your device. Passed model tests take priority over size estimates. Free RAM changes as Android manages apps.",
+            Text("Phone check stays on your device. Download size is not measured RAM usage. Installed status and reply tests do not change these ratings.",
                 style = MaterialTheme.typography.bodySmall)
             if (selectedModel.experimental) Text(if (store.isUsable(selectedModel) && store.smokeTestPassed(selectedModel))
                 "Community model · reply test passed" else "Community model · test required on your phone",
