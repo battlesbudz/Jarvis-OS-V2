@@ -8,7 +8,7 @@ import org.junit.Test
 class CompactChatPromptTest {
     @Test fun smallCachePreservesCurrentRequestAndNewestDialogue() {
         val builder = ConversationPromptBuilder(ShortTermConversationContext())
-        val history = (1..8).map { ChatEntry(if (it % 2 == 0) "Jarvis" else "You", "Earlier text ".repeat(40)) } +
+        val history = (1..8).map { ChatEntry(if (it % 2 == 0) "Jarvis" else "You", "Earlier text ".repeat(100)) } +
             listOf(ChatEntry("You", "My dog is Luna"), ChatEntry("Jarvis", "Luna is a lovely name"))
         val prompt = builder.buildGemmaPrompt("What is her name?", null, history, true, compactInstructions = true)
         assertTrue(prompt.contains("What is her name?"))

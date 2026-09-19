@@ -21,7 +21,7 @@ class ConversationPromptBuilder(
         else dialogue.storyInstruction.orEmpty()
         val actionContext = actionResultContext?.let { "\n\n$it" }.orEmpty()
         val sessionContext = if (seedContext) {
-            shortTermContext.promptContext(history.map { it.role to it.text }, compact = voice)
+            shortTermContext.promptContext(history.map { it.role to it.text }, compact = voice || compactInstructions)
                 .let { if (compactInstructions) it.takeLast(600) else it }
                 .takeIf { it.isNotBlank() }?.let { "\n\n$it" }.orEmpty()
         } else ""

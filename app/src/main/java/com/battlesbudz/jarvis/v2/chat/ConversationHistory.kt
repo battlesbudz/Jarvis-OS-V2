@@ -83,9 +83,12 @@ class ConversationHistory(private val preferences: SharedPreferences) {
     /** Older calls have no thread ID; import once when explicitly opened for text continuation. */
     @Synchronized fun openCall(call: VoiceCallRecord) {
         val id = call.conversationId ?: "legacy:${call.id}"
-        if (!threads.containsKey(id)) threads[id] = ConversationThread(id)
+        val existing = threads.containsKey(id)
+        if (!existing) threads[id] = ConversationThread(id)
         _current.value = threads.getValue(id)
-        syncCall(call.copy(conversationId = id))
+        // Existing linked threads already receive authoritative store snapshots. A stale
+        // history-screen selection must not roll back a late playback receipt.
+        if (!existing) syncCall(call.copy(conversationId = id))
         persist()
     }
     @Synchronized fun removeCall(callId: String) {

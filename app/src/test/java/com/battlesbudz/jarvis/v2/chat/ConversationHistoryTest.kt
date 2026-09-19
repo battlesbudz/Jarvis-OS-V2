@@ -87,6 +87,16 @@ class ConversationHistoryTest {
         assertEquals(listOf("Typed message"), history.current.value.messages.map { it.text })
     }
 
+    @Test fun openingStaleCallDoesNotRollBackTheLatestSavedReply() {
+        val history = ConversationHistory(preferences())
+        val stale = VoiceCallRecord("call", 1, conversationId = history.current.value.id,
+            transcript = listOf(TranscriptEntry("Jarvis", "Draft", complete = false)))
+        history.syncCall(stale)
+        history.syncCall(stale.copy(transcript = listOf(TranscriptEntry("Jarvis", "Finished reply"))))
+        history.openCall(stale)
+        assertEquals("Finished reply", history.context().single().text)
+    }
+
     private fun preferences(): SharedPreferences {
         val values = mutableMapOf<String, Any?>()
         lateinit var editor: SharedPreferences.Editor

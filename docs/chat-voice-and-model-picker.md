@@ -42,4 +42,4 @@ Manufacturer/model, chip, ARM64 support, total/free RAM and free internal storag
 
 ## Validation
 
-37 focused JVM tests passed locally. These cover catalog pinning/provider coverage, Fold6 and low-resource guidance, text→voice→text persistence, repeated call snapshots, late receipts, partial assistant context, legacy calls and linked-call serialization/resumption. Android release compilation, the full JVM suite, native packaging, signing and APK assembly run in the existing PR workflow. Physical audio, model speed, UI rendering and every newly listed model still require device testing.
+38 focused JVM tests passed locally. These cover catalog pinning/provider coverage, Fold6 and low-resource guidance, text→voice→text persistence, repeated call snapshots, late receipts, partial assistant context, legacy calls and linked-call serialization/resumption. Android release compilation, the full JVM suite, native packaging, signing and APK assembly run in the existing PR workflow. Physical audio, model speed, UI rendering and every newly listed model still require device testing.
