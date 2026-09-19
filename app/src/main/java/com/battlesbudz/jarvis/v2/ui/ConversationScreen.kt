@@ -1,0 +1,144 @@
+package com.battlesbudz.jarvis.v2.ui
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.unit.dp
+import com.battlesbudz.jarvis.v2.chat.ConversationHistory
+import com.battlesbudz.jarvis.v2.voice.VoiceSessionState
+import com.battlesbudz.jarvis.v2.voice.VoiceSessionUi
+import kotlinx.coroutines.flow.StateFlow
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ConversationScreen(
+    history: ConversationHistory,
+    busy: StateFlow<Boolean>,
+    callState: StateFlow<VoiceSessionState>,
+    onSend: (String) -> String?,
+    onSelectConversation: (String?) -> String?,
+    onEndVoice: ((String) -> Unit) -> Unit,
+    onOpenVoiceCalls: () -> Unit,
+    resumedVoice: Boolean,
+    voiceContent: @Composable (visible: Boolean, settingsOpen: Boolean, dismissSettings: () -> Unit, returnToChat: () -> Unit) -> Unit
+) {
+    val thread by history.current.collectAsState()
+    val sending by busy.collectAsState()
+    val armed by VoiceSessionUi.armed.collectAsState()
+    val voiceState by callState.collectAsState()
+    var hadCall by remember { mutableStateOf(false) }
+    var voiceVisible by rememberSaveable { mutableStateOf(false) }
+    var wasArmed by remember { mutableStateOf(armed) }
+    var settings by remember { mutableStateOf(false) }
+    var showHistory by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var draft by rememberSaveable(thread.id) { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    fun returnToChat() {
+        onEndVoice { }
+        voiceVisible = false
+    }
+    BackHandler(enabled = voiceVisible && !settings && !showHistory) { returnToChat() }
+    LaunchedEffect(voiceState) {
+        if (voiceState != VoiceSessionState.PASSIVE_LISTENING) hadCall = true
+        else if (hadCall) {
+            hadCall = false
+            returnToChat()
+        }
+    }
+    LaunchedEffect(resumedVoice) { if (resumedVoice) voiceVisible = true }
+    LaunchedEffect(armed) {
+        if (armed) voiceVisible = true
+        else if (wasArmed) voiceVisible = false
+        wasArmed = armed
+    }
+    LaunchedEffect(voiceVisible) {
+        if (voiceVisible) {
+            focusManager.clearFocus(force = true)
+            keyboard?.hide()
+        }
+    }
+    LaunchedEffect(thread.id, thread.messages.lastOrNull()?.text) {
+        if (thread.messages.isNotEmpty()) listState.animateScrollToItem(thread.messages.lastIndex)
+    }
+    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("JARVIS", style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+            TextButton(onClick = { settings = true }) { Text("Settings") }
+        }
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            SegmentedButton(selected = !voiceVisible, onClick = { returnToChat() },
+                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)) { Text("Chat") }
+            SegmentedButton(selected = voiceVisible, enabled = !sending, onClick = { voiceVisible = true },
+                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)) { Text("Voice call") }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(onClick = { showHistory = true }, enabled = !sending && !armed) { Text("Conversations") }
+            TextButton(onClick = { error = onSelectConversation(null) }, enabled = !sending && !armed) { Text("New") }
+        }
+        // The conversation stays mounted beneath the voice surface: same draft, list and thread.
+        // Hidden transcript nodes must not remain readable by accessibility services during a call.
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            Column(Modifier.fillMaxSize().alpha(if (voiceVisible) 0f else 1f)
+                .then(if (voiceVisible) Modifier.clearAndSetSemantics { } else Modifier)) {
+                if (thread.messages.isEmpty()) Text("Type a message or switch to Voice call. It's all one conversation.",
+                    modifier = Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(thread.messages, key = { it.id }) { message ->
+                        Surface(color = if (message.role == "You") MaterialTheme.colorScheme.secondaryContainer
+                            else MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium) {
+                            Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                                Text(message.role + if (message.spoken) " · Spoken transcript" else "",
+                                    style = MaterialTheme.typography.labelMedium)
+                                SelectionContainer {
+                                    Text(message.text.ifBlank { if (sending) "Thinking…" else "No reply was saved." },
+                                        fontStyle = if (message.spoken) FontStyle.Italic else FontStyle.Normal,
+                                        modifier = Modifier.padding(top = 6.dp))
+                                }
+                                if (!message.complete && message.role == "Jarvis" && message.text.isNotBlank() && !sending)
+                                    Text("Reply interrupted or not fully spoken", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp)) }
+                Row(Modifier.fillMaxWidth().imePadding().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = draft, onValueChange = { draft = it }, placeholder = { Text("Message Jarvis") },
+                        modifier = Modifier.weight(1f), maxLines = 5, enabled = !armed && !voiceVisible)
+                    Button(enabled = draft.isNotBlank() && !sending && !armed && !voiceVisible, onClick = {
+                        error = onSend(draft)
+                        if (error == null) draft = ""
+                    }) { Text(if (sending) "Thinking…" else "Send") }
+                }
+            }
+            // Keep the voice controller and shared Settings alive in both modes.
+            voiceContent(voiceVisible, settings, { settings = false }, { voiceVisible = false })
+        }
+    }
+    if (showHistory) AlertDialog(onDismissRequest = { showHistory = false }, title = { Text("Conversations") },
+        text = { LazyColumn(Modifier.heightIn(max = 400.dp)) {
+            items(history.list(), key = { it.id }) { saved ->
+                TextButton(onClick = { error = onSelectConversation(saved.id); if (error == null) showHistory = false }) {
+                    Text(saved.title)
+                }
+            }
+            item { TextButton(onClick = { showHistory = false; onOpenVoiceCalls() }) { Text("Saved voice calls") } }
+        } }, confirmButton = { TextButton(onClick = { showHistory = false }) { Text("Done") } })
+}

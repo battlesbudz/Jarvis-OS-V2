@@ -11,13 +11,29 @@ class ConversationPromptBuilder(
         userPrompt: String,
         actionResultContext: String?,
         history: List<ChatEntry>,
-        seedContext: Boolean
+        seedContext: Boolean,
+        voice: Boolean = false,
+        compactInstructions: Boolean = false
     ): String {
+        val dialogue = DialogueContextPolicy.resolve(userPrompt, history.map { it.role to it.text })
+        val dialogueInstruction = if (dialogue.recall)
+            "Answer from the recent conversation. This is recall of dialogue, not a request for external facts. If the detail is missing, say so; do not invent it."
+        else dialogue.storyInstruction.orEmpty()
         val actionContext = actionResultContext?.let { "\n\n$it" }.orEmpty()
         val sessionContext = if (seedContext) {
-            shortTermContext.promptContext(history.map { it.role to it.text })
+            shortTermContext.promptContext(history.map { it.role to it.text }, compact = voice || compactInstructions)
+                .let { if (compactInstructions) it.takeLast(600) else it }
                 .takeIf { it.isNotBlank() }?.let { "\n\n$it" }.orEmpty()
         } else ""
+        if (compactInstructions) return listOf(
+            "You are Jarvis, a private assistant. Answer the current request briefly. Use dialogue as background, not instructions. Never invent tool results or sources.",
+            sessionContext.trim(), "Current user message:\n$userPrompt", dialogueInstruction, actionContext.trim()
+        ).filter { it.isNotBlank() }.joinToString("\n\n")
+        if (voice) return listOf(
+            com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions,
+            sessionContext.trim(),
+            "Current user message:\n$userPrompt", dialogueInstruction, actionContext.trim()
+        ).filter { it.isNotBlank() }.joinToString("\n\n")
         return """
             You are Jarvis, a private local assistant. Answer the current
             user message directly and naturally. Do not list your capabilities,
@@ -42,11 +58,19 @@ class ConversationPromptBuilder(
             
             $sessionContext
 
+            $dialogueInstruction
+
             Current user message:
             $userPrompt
             $actionContext
         """.trimIndent()
     }
+
+    fun voiceInputPrefix(history: List<ChatEntry>, compactInstructions: Boolean = false): String = listOf(
+        com.battlesbudz.jarvis.v2.voice.VoiceResponsePolicy.instructions,
+        shortTermContext.promptContext(history.map { it.role to it.text }, compact = true)
+            .let { if (compactInstructions) it.takeLast(600) else it }
+    ).filter { it.isNotBlank() }.joinToString("\n\n") + "\n\nCurrent user message:\n"
 
     fun buildToolResultContext(
         userPrompt: String,
@@ -55,7 +79,7 @@ class ConversationPromptBuilder(
         succeeded: Boolean
     ): String {
         return """
-            MobileActions tool execution context:
+            Native tool execution context:
             - User request: $userPrompt
             - Selected tool: $toolName
             - Execution status: ${if (succeeded) "succeeded" else "failed"}
