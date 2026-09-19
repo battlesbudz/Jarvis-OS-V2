@@ -2,15 +2,11 @@ package com.battlesbudz.jarvis.v2.ui
 
 import com.battlesbudz.jarvis.v2.*
 import com.battlesbudz.jarvis.v2.voice.VoiceCallRecord
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -28,12 +24,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
-import androidx.compose.foundation.lazy.items
 
 
 @Composable
 internal fun VoiceCallScreen(
+    visible: Boolean,
+    settingsOpen: Boolean,
+    onDismissSettings: () -> Unit,
+    onReturnToChat: () -> Unit,
+    chatBusy: kotlinx.coroutines.flow.StateFlow<Boolean>,
     modelSelector: @Composable (Boolean) -> Unit,
     resumedCall: VoiceCallRecord?,
     onResumeConsumed: () -> Unit,
@@ -42,7 +41,6 @@ internal fun VoiceCallScreen(
     onWakeTest: ((String) -> Unit, () -> Unit) -> Unit,
     onStopWakeTest: () -> Unit,
     onEndVoiceCall: ((String) -> Unit) -> Unit,
-    onOpenVoiceCalls: () -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onExportSpeechAudio: () -> Unit
 ) {
@@ -52,7 +50,7 @@ internal fun VoiceCallScreen(
     val runtimeArmed by runtime.armed.collectAsState()
     val microphonePaused by runtime.paused.collectAsState()
     val microphoneLevel by runtime.level.collectAsState()
-    var settingsOpen by remember { mutableStateOf(false) }
+    val chatSending by chatBusy.collectAsState()
     var wakeTesting by remember { mutableStateOf(false) }
     var wakeTestStatus by remember { mutableStateOf("") }
     val wakeContext = androidx.compose.ui.platform.LocalContext.current
@@ -137,96 +135,83 @@ internal fun VoiceCallScreen(
         callStarted = runtimeArmed
         if (!runtimeArmed) { listening = false; turnInFlight = false }
     }
-    Column(
-        Modifier
-            .fillMaxSize()
-            .safeDrawingPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 28.dp, vertical = 24.dp),
-        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Top
+    androidx.compose.animation.AnimatedVisibility(
+        visible = visible,
+        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = .96f),
+        exit = androidx.compose.animation.fadeOut(),
+        modifier = Modifier.fillMaxSize()
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            androidx.compose.material3.IconButton(
-                onClick = onOpenVoiceCalls, enabled = !callStarted && !listening
+        androidx.compose.material3.Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 28.dp, vertical = 24.dp),
+                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Top
             ) {
-                androidx.compose.material3.Icon(
-                    androidx.compose.ui.res.painterResource(com.battlesbudz.jarvis.v2.R.drawable.ic_voice_history),
-                    contentDescription = "Voice calls", tint = MaterialTheme.colorScheme.primary)
-            }
-            Column(Modifier.weight(1f), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
-                Text("JARVIS", style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.primary)
-                Text("Voice Call", style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = 4.dp))
-            }
-            androidx.compose.material3.IconButton(onClick = { settingsOpen = true }) {
-                androidx.compose.material3.Icon(
-                    androidx.compose.ui.res.painterResource(com.battlesbudz.jarvis.v2.R.drawable.ic_voice_settings),
-                    contentDescription = "Voice settings", tint = MaterialTheme.colorScheme.primary)
-            }
-        }
-        val phase = if (runtimeArmed) runtimePhase.label else "Ready"
-        val isListening = runtimeArmed && runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.LISTENING
-        VoiceOrb(phase, if (runtimeArmed) {
-            if (runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING) playback.level else microphoneLevel
-        } else 0f)
-        if (!runtimeArmed) Button(
-            onClick = { callStarted = true; requestVoiceTurn(start = true) },
-            enabled = !turnInFlight && !wakeTesting && !inputTesting && !audioPathTesting,
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
-        ) { Text("Start voice session") }
-        if (runtimeArmed) {
-            if (runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING ||
-                runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.THINKING) {
-                Button(onClick = { runtime.controls.trySend(com.battlesbudz.jarvis.v2.voice.VoiceControl.STOP_REPLY) },
-                    modifier = Modifier.fillMaxWidth()) { Text("Stop reply — listen to me") }
-            }
-            OutlinedButton(onClick = {
-                runtime.controls.trySend(if (microphonePaused) com.battlesbudz.jarvis.v2.voice.VoiceControl.RESUME
-                    else com.battlesbudz.jarvis.v2.voice.VoiceControl.PAUSE)
-            }, modifier = Modifier.fillMaxWidth()) {
-                Text(if (microphonePaused) "Resume microphone" else "Pause microphone")
-            }
-            if (runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.LISTENING ||
-                runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.THINKING ||
-                runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING) {
-                TextButton(onClick = { runtime.controls.trySend(com.battlesbudz.jarvis.v2.voice.VoiceControl.END_CONVERSATION) }) {
-                    Text("End conversation")
+                Text("One conversation, out loud", style = MaterialTheme.typography.titleMedium)
+                Text("Your words are saved in chat. End the call to read or keep typing.",
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(top = 8.dp))
+                val phase = if (runtimeArmed) runtimePhase.label else "Ready"
+                VoiceOrb(phase, if (runtimeArmed) {
+                    if (runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING) playback.level else microphoneLevel
+                } else 0f)
+                if (!runtimeArmed) Button(
+                    onClick = { callStarted = true; requestVoiceTurn(start = true) },
+                    enabled = !chatSending && !turnInFlight && !wakeTesting && !inputTesting && !audioPathTesting,
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+                ) { Text("Start voice session") }
+                if (runtimeArmed) {
+                    if (runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING ||
+                        runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.THINKING) {
+                        Button(onClick = { runtime.controls.trySend(com.battlesbudz.jarvis.v2.voice.VoiceControl.STOP_REPLY) },
+                            modifier = Modifier.fillMaxWidth()) { Text("Stop reply — listen to me") }
+                    }
+                    OutlinedButton(onClick = {
+                        runtime.controls.trySend(if (microphonePaused) com.battlesbudz.jarvis.v2.voice.VoiceControl.RESUME
+                            else com.battlesbudz.jarvis.v2.voice.VoiceControl.PAUSE)
+                    }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (microphonePaused) "Resume microphone" else "Pause microphone")
+                    }
+                }
+                if (callStarted) {
+                    TextButton(
+                        onClick = {
+                            // Prevent the completion callback from arming another
+                            // microphone turn after the user explicitly ends the call.
+                            callStarted = false
+                            listening = false
+                            turnInFlight = false
+                            onEndVoiceCall { result -> status = result }
+                            onReturnToChat()
+                        },
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Text("End call · return to chat")
+                    }
+                }
+                val visibleStatus = if (runtimeArmed) runtimeStatus else status
+                if (visibleStatus.isNotBlank() && !visibleStatus.startsWith("Voice Call turn complete")) {
+                    Text(visibleStatus, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
-        if (callStarted) {
-            TextButton(
-                onClick = {
-                    // Prevent the completion callback from arming another
-                    // microphone turn after the user explicitly ends the call.
-                    callStarted = false
-                    listening = false
-                    turnInFlight = false
-                    onEndVoiceCall { result ->
-                        status = result
-                    }
-                },
-                modifier = Modifier.padding(top = 4.dp)
-            ) {
-                Text("End call · return to chat")
-            }
-        }
-        val visibleStatus = if (runtimeArmed) runtimeStatus else status
-        if (visibleStatus.isNotBlank() && !visibleStatus.startsWith("Voice Call turn complete")) {
-            Text(visibleStatus, style = MaterialTheme.typography.bodySmall)
-        }
     }
     if (settingsOpen) androidx.compose.material3.AlertDialog(
-        onDismissRequest = { onStopWakeTest(); settingsOpen = false },
-        title = { Text("Voice settings") },
-        confirmButton = { TextButton(onClick = { onStopWakeTest(); settingsOpen = false }) { Text("Done") } },
+        onDismissRequest = { onStopWakeTest(); onDismissSettings() },
+        title = { Text("Settings") },
+        confirmButton = { TextButton(onClick = { onStopWakeTest(); onDismissSettings() }) { Text("Done") } },
         text = { Column(Modifier.verticalScroll(rememberScrollState())) {
-            Text("Voice: Piper Northern English", style = MaterialTheme.typography.bodyMedium)
-            modelSelector(!runtimeArmed && !callStarted && !turnInFlight && !wakeTesting && !audioPathTesting && !inputTesting)
+            Text("One model for chat and voice", style = MaterialTheme.typography.bodySmall)
+            modelSelector(!chatSending && !runtimeArmed && !callStarted && !turnInFlight && !wakeTesting && !audioPathTesting && !inputTesting)
+        androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 16.dp))
+        Text("Voice & microphone", style = MaterialTheme.typography.titleMedium)
+        Text("Voice: Piper Northern English", style = MaterialTheme.typography.bodyMedium)
         val assistantContext = androidx.compose.ui.platform.LocalContext.current
-        VoiceInputSettings(enabled = !runtimeArmed && !callStarted && !turnInFlight && !wakeTesting && !audioPathTesting, onBusy = { inputTesting = it })
+        VoiceInputSettings(enabled = !chatSending && !runtimeArmed && !callStarted && !turnInFlight && !wakeTesting && !audioPathTesting, onBusy = { inputTesting = it })
         var assistantSettingsMessage by remember { mutableStateOf(
             if (assistantContext.getSystemService(android.app.role.RoleManager::class.java)
                 .isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT)) "Jarvis is your default assistant."
@@ -282,17 +267,17 @@ internal fun VoiceCallScreen(
             Text(if (diagnosticsOpen) "Hide development diagnostics" else "Development diagnostics")
         }
         if (diagnosticsOpen) {
-            CallEvidenceExport(enabled = !runtimeArmed && !turnInFlight)
-            LiveComparisonCard(enabled = !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting)
-            AudioPathDiagnosticCard(enabled = !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting,
+            CallEvidenceExport(enabled = !chatSending && !runtimeArmed && !turnInFlight)
+            LiveComparisonCard(enabled = !chatSending && !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting)
+            AudioPathDiagnosticCard(enabled = !chatSending && !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting,
                 onBusyChanged = { audioPathTesting = it })
-            DuplexEchoDiagnosticCard(enabled = !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting,
+            DuplexEchoDiagnosticCard(enabled = !chatSending && !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting,
                 onBusyChanged = { audioPathTesting = it })
             TextButton(onClick = {
                 if (wakeTesting) onStopWakeTest()
                 else if (wakeContext.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startWakeTest()
                 else wakePermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-            }, enabled = !callStarted && !turnInFlight && !audioPathTesting && !inputTesting) {
+            }, enabled = !chatSending && !runtimeArmed && !callStarted && !turnInFlight && !audioPathTesting && !inputTesting) {
                 Text(if (wakeTesting) "Stop wake test" else "Test wake word")
             }
             if (wakeTestStatus.isNotBlank()) Text(wakeTestStatus, style = MaterialTheme.typography.bodySmall)

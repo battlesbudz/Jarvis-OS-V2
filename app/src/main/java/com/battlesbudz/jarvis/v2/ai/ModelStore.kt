@@ -73,11 +73,10 @@ class ModelStore(context: Context) {
     fun isReady(): Boolean =
         hasModel(selectedModel())
 
-    fun isUsable(): Boolean {
-        val spec = selectedModel()
+    fun isUsable(spec: LocalModelSpec = selectedModel()): Boolean {
         val file = fileFor(spec)
         val key = fingerprintKey(spec)
-        return isReady() &&
+        return hasModel(spec) &&
             !preferences.getBoolean("${key}_invalid", false) &&
             preferences.contains(key) &&
             preferences.getLong("${key}_length", -1L) == file.length() &&
@@ -128,8 +127,7 @@ class ModelStore(context: Context) {
         return true
     }
 
-    fun smokeTestPassed(): Boolean {
-        val spec = selectedModel()
+    fun smokeTestPassed(spec: LocalModelSpec = selectedModel()): Boolean {
         return preferences.getBoolean(smokeTestKey(spec),
             spec == ModelCatalog.gemma4E2b && preferences.getBoolean("smoke_test_passed", false))
     }

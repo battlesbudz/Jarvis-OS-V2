@@ -117,12 +117,13 @@ fun JarvisApp(
                             text = { Text(provider, style = MaterialTheme.typography.titleSmall) },
                             enabled = false, onClick = {})
                         specs.forEach { spec ->
-                            val fit = com.battlesbudz.jarvis.v2.ai.ModelGuidance.assess(spec, phone, store.hasModel(spec))
+                            val fit = com.battlesbudz.jarvis.v2.ai.ModelGuidance.assess(spec, phone, store.hasModel(spec),
+                                testPassed = store.isUsable(spec) && store.smokeTestPassed(spec))
                             androidx.compose.material3.DropdownMenuItem(
                                 text = { Column {
                                     Text(spec.id + if (selectedModel.id == spec.id) " · Selected"
                                         else if (store.hasModel(spec)) " · Installed" else "")
-                                    Text(fit.label, style = MaterialTheme.typography.labelSmall,
+                                    Text(fit.label + if (fit.storageNotice != null) " · Storage needed" else "", style = MaterialTheme.typography.labelSmall,
                                         color = if (fit.recommended) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                                 } },
                                 onClick = {
@@ -181,15 +182,18 @@ fun JarvisApp(
             selectedModel.downloadBytes?.let {
                 Text("Download: %.2f GB".format(java.util.Locale.US, it / 1_000_000_000.0), style = MaterialTheme.typography.bodySmall)
             }
-            val fit = com.battlesbudz.jarvis.v2.ai.ModelGuidance.assess(selectedModel, phone, store.hasModel(selectedModel))
+            val fit = com.battlesbudz.jarvis.v2.ai.ModelGuidance.assess(selectedModel, phone, store.hasModel(selectedModel),
+                testPassed = store.isUsable(selectedModel) && store.smokeTestPassed(selectedModel))
             Text(fit.label, color = MaterialTheme.colorScheme.primary)
             Text(fit.explanation, style = MaterialTheme.typography.bodySmall)
+            fit.storageNotice?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             Text("${phone.name} · %.1f GB RAM · %.1f GB free storage".format(java.util.Locale.US,
                 phone.totalRamBytes / 1_000_000_000.0, phone.freeStorageBytes / 1_000_000_000.0),
                 style = MaterialTheme.typography.bodySmall)
-            Text("Phone check stays on your device. Recommendations are estimates, not speed tests.",
+            Text("Phone check stays on your device. Passed model tests take priority over size estimates. Free RAM changes as Android manages apps.",
                 style = MaterialTheme.typography.bodySmall)
-            if (selectedModel.experimental) Text("Community model · test required on your phone",
+            if (selectedModel.experimental) Text(if (store.isUsable(selectedModel) && store.smokeTestPassed(selectedModel))
+                "Community model · reply test passed" else "Community model · test required on your phone",
                 style = MaterialTheme.typography.labelSmall)
             Text("All models can use voice through speech recognition. No model download happens until you choose Download.",
                 style = MaterialTheme.typography.bodySmall)
@@ -309,9 +313,15 @@ fun JarvisApp(
                     else -> ConversationScreen(
                         history = conversationHistory, busy = chatBusy, callState = callState, onSend = onSendChat,
                         onSelectConversation = onSelectConversation, onEndVoice = onEndVoiceCall,
-                        modelSelector = modelSelector, resumedVoice = resumedVoiceCall != null
-                    ) { VoiceCallScreen(
-                        modelSelector = modelSelector,
+                        onOpenVoiceCalls = {
+                            voiceCalls = onRefreshVoiceCalls()
+                            showingVoiceCalls = true
+                        },
+                        resumedVoice = resumedVoiceCall != null
+                    ) { visible, settingsOpen, dismissSettings, returnToChat -> VoiceCallScreen(
+                        visible = visible, settingsOpen = settingsOpen,
+                        onDismissSettings = dismissSettings, onReturnToChat = returnToChat,
+                        chatBusy = chatBusy, modelSelector = modelSelector,
                         resumedCall = resumedVoiceCall,
                         onResumeConsumed = { resumedVoiceCall = null },
                         voicePlayback = voicePlayback,
@@ -319,10 +329,6 @@ fun JarvisApp(
                         onWakeTest = onWakeTest,
                         onStopWakeTest = onStopWakeTest,
                         onEndVoiceCall = onEndVoiceCall,
-                        onOpenVoiceCalls = {
-                            voiceCalls = onRefreshVoiceCalls()
-                            showingVoiceCalls = true
-                        },
                         onCopyDiagnostics = onCopyDiagnostics,
                         onExportSpeechAudio = onExportSpeechAudio
                     ) }
