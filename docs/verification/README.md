@@ -14,6 +14,8 @@ Each same-repository PR update triggers the existing `Android APK` workflow:
 
 No production signing secrets are passed to the emulator job. It consumes already signed artifacts. Evidence expires after 14 days; download it from the run when keeping a long-lived investigation. Test reports and APKs are associated with the same workflow run. `source_commit` is GitHub's tested PR merge commit; `pr_head` identifies the contributor branch revision. Both are intentional, not interchangeable.
 
+The release runner shares the app's class loader. `app/proguard-rules.pro` preserves the shared Kotlin/Lifecycle runtime ABI and the action contract used by the integration tests. Without these rules, separate shrinking can remove methods needed only by the runner and crash before tests start. The same rules apply to the shipped APK; ordinary app optimization remains enabled and the existing size reports record the tradeoff.
+
 ## Persistent agent workflow
 
 The repository skill is `.agents/skills/jarvis-verify/SKILL.md`; `AGENTS.md` points agents to it. Codex can invoke `$jarvis-verify`. In a Work session using a connected repository, ask it to read that skill and the current PR before implementing a feature. This repository skill is not a globally installed personal Work plugin.
