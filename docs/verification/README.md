@@ -47,6 +47,8 @@ python3 scripts/verification/android.py run \
 
 The full run clears Jarvis data and refuses non-emulators. Never point this workflow at a personal phone with conversations/models. Interactive control does not clear data. Each run requires a new directory so failures are not overwritten by later success.
 
+Instrumentation exports its screenshots and UI XML through Android's Downloads API into a unique `Download/jarvis-verification-<run>` directory. This works with Android 11 scoped storage without rooting the emulator or changing app permissions. The controller requires one valid PNG and XML per scenario before reporting success. These exports live only in the disposable test device and its retained evidence artifact.
+
 ## Bounded local repair loop
 
 With an emulator already booted and the signing variables configured, this runs the release gate. If it fails, an already installed/authenticated Codex CLI can diagnose evidence, edit application code and trigger another full gate:

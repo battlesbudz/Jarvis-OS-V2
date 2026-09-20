@@ -1,8 +1,10 @@
 package com.battlesbudz.jarvis.v2.verification
 
 import android.content.Intent
+import android.content.ContentValues
 import android.media.AudioManager
 import android.os.BatteryManager
+import android.provider.MediaStore
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -39,10 +41,33 @@ class ReleaseJourneyTest {
 
     @After fun close() {
         try {
-            val directory = File(context.getExternalFilesDir(null), "verification").apply { mkdirs() }
-            assertTrue("Screenshot capture failed", device.takeScreenshot(File(directory, "${testName.methodName}.png")))
-            device.dumpWindowHierarchy(File(directory, "${testName.methodName}.xml"))
+            val directory = File(context.cacheDir, "verification").apply { mkdirs() }
+            val screenshot = File(directory, "${testName.methodName}.png")
+            val hierarchy = File(directory, "${testName.methodName}.xml")
+            assertTrue("Screenshot capture failed", device.takeScreenshot(screenshot))
+            device.dumpWindowHierarchy(hierarchy)
+            exportEvidence(screenshot, "image/png")
+            exportEvidence(hierarchy, "application/xml")
         } finally { if (::activity.isInitialized) activity.close() }
+    }
+
+    private fun exportEvidence(file: File, mime: String) {
+        val folder = InstrumentationRegistry.getArguments().getString("jarvisEvidenceDir")
+            ?: error("The verification controller must supply a unique evidence directory")
+        require(folder.matches(Regex("jarvis-verification-[0-9]+")))
+        // Android 11 blocks adb shell from app-specific external storage. Publish
+        // these test-owned files through Downloads instead; no storage grant/root
+        // is needed, and this export exists only in the instrumentation APK.
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+            put(MediaStore.MediaColumns.MIME_TYPE, mime)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/$folder")
+        }
+        val resolver = context.contentResolver
+        val uri = checkNotNull(resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
+        checkNotNull(resolver.openOutputStream(uri)).use { output ->
+            file.inputStream().use { input -> input.copyTo(output) }
+        }
     }
 
     private fun find(selector: BySelector): UiObject2 =

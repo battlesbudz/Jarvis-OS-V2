@@ -87,11 +87,24 @@ def verify(args):
     out.mkdir(parents=True, exist_ok=False)
     device = Device(args.serial, out, args.adb)
     scenarios = json.loads(SCENARIOS.read_text())
+    evidence_folder = f"jarvis-verification-{time.time_ns()}"
     report = {"schema": 1, "passed": False, "source_commit": args.source_commit,
               "pr_head": args.pr_head, "run_url": os.getenv("GITHUB_SERVER_URL", "https://github.com") + "/" +
               os.getenv("GITHUB_REPOSITORY", "") + "/actions/runs/" + os.getenv("GITHUB_RUN_ID", ""),
               "coverage": "release UI + Android actions; no model inference",
-              "not_covered": scenarios["not_covered"], "errors": []}
+              "not_covered": scenarios["not_covered"], "device_evidence_folder": evidence_folder, "errors": []}
+
+    def collect_test_evidence():
+        device.run("pull", f"/sdcard/Download/{evidence_folder}", str(out / "tests"))
+        for name in scenarios["tests"]:
+            for extension in ("png", "xml"):
+                files = list((out / "tests").rglob(f"{name}.{extension}"))
+                if len(files) != 1 or files[0].stat().st_size == 0:
+                    raise RuntimeError(f"Missing or duplicate evidence for {name}.{extension}")
+                if extension == "xml":
+                    ET.parse(files[0])
+                elif not files[0].read_bytes().startswith(b"\x89PNG\r\n\x1a\n"):
+                    raise RuntimeError(f"Invalid screenshot for {name}")
     try:
         # Reset is intentionally restricted to an emulator; never clear a user's phone.
         if not args.allow_emulator_reset or device.shell("getprop", "ro.kernel.qemu").strip() != "1":
@@ -117,7 +130,8 @@ def verify(args):
         device.shell("am", "start", "-W", "-n", ACTIVITY)
         device.snapshot("first-launch")
         try:
-            output = device.shell("am", "instrument", "-w", "-r", "-e", "class", scenarios["class"], RUNNER, timeout=600)
+            output = device.shell("am", "instrument", "-w", "-r", "-e", "class", scenarios["class"],
+                                  "-e", "jarvisEvidenceDir", evidence_folder, RUNNER, timeout=600)
         except subprocess.TimeoutExpired as error:
             (out / "instrumentation.txt").write_bytes(error.stdout or b"")
             raise RuntimeError("Instrumentation exceeded the 10-minute limit") from error
@@ -143,7 +157,7 @@ def verify(args):
         for name, collect in (
             ("final screenshot", lambda: device.snapshot("final")),
             ("logcat", lambda: (out / "logcat.txt").write_text(device.run("logcat", "-d", "-v", "threadtime", timeout=30))),
-            ("per-test evidence", lambda: device.run("pull", f"/sdcard/Android/data/{PACKAGE}/files/verification", str(out / "tests"))),
+            ("per-test evidence", collect_test_evidence),
             ("package metadata", lambda: (out / "package.txt").write_text(device.shell("dumpsys", "package", PACKAGE))),
         ):
             try:
