@@ -4,6 +4,33 @@ Implemented 15 pinned Qwen candidates with per-model backends/capabilities, temp
 
 # Local voice implementation plan
 
+## 2026-09-20 — Build 728 false-trigger follow-up (current priority)
+
+The [build-728 reconciliation and bounded D/E/F follow-up](voice-repair-implementation-and-phone-tests.md#build-728-false-trigger-follow-up-and-plan-reconciliation-2026-09-20)
+records encouraging intentional barge-in evidence alongside unresolved false
+interruptions and falsely accepted follow-up text. This is planned hardening
+within Phase 3 and Phase 7 / repair phases D–F, not a new voice architecture or a
+claim that the fixes have shipped.
+
+Existing scope already covers D1 audio/echo evidence, D2 communication-route
+effectiveness, conditional D3 software AEC, E1/E2 interruption/final-input handling,
+and F1/F2 regression acceptance. Added detail: bounded live-call candidate evidence
+where missing, selective fresh-audio confirmation for uncertain detections,
+acoustically supported final admission before history/Gemma/tools, and build-728
+false-stop/false-user-turn fixtures. Audit existing code and evidence before
+choosing thresholds or adding processing.
+
+The 19 September removal of speaker identity supersedes historical voiceprint and
+owner-match requirements below. Communication-route AEC/NS, external speech gates,
+recognized-word/echo checks and short-word/Stop/Hey Jarvis support remain.
+No noise-only pause, blanket phrase blacklist, mandatory wake phrase or automatic
+software-AEC adoption is planned. D2/E/F phone acceptance remains open; positive
+intentional-interruption observations do not prove false-trigger rejection.
+Current shared Chat/Voice history must be evaluated under its own contract, not
+automatically treated as unintended prior-call carryover. Work stays on
+`audio-pr2` / existing PR #6. This documentation change requires no new APK or
+phone test; future code delivery uses release APKs only.
+
 > Build 710 follow-up: playback comparisons rejected two fragments but accepted another late in a long answer. Fixed the negative reference using passage-opening PCM instead of the candidate's actual playback interval. The speaker check now selects samples by microphone capture timestamp and observed playback head, and fails closed on missing/stale reference data. See [evidence and remaining phone acceptance](voice-interruption-echo-repair.md#build-710-follow-up-compare-the-correct-playback-interval).
 
 > Build 709 phone follow-up: text-only generation now works, but misrecognized Piper echo triggered false natural interruptions and contaminated subsequent user messages. The repair adds whole-clause near-echo filtering, sound-caption exclusion and candidate comparison against actual Piper voice samples as well as the learned owner. Single words and Stop/Hey Jarvis remain supported. See [evidence, implementation and acceptance limits](voice-interruption-echo-repair.md).
