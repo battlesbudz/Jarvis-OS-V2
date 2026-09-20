@@ -1,5 +1,124 @@
 # Voice repair: bounded commits and phone test protocol
 
+## Build 728 false-trigger follow-up and plan reconciliation (2026-09-20)
+
+Status: **planned refinements to D/E/F; no runtime change or new phone acceptance claimed.**
+Reviewed the current plan on `audio-pr2` at `ec33fe47de225618f6705152d0137737b7a719d0`
+and Justin's two build-728 call reports. Continue under existing PR #6. The
+19 September removal of speaker identity remains authoritative over historical
+owner/voiceprint requirements below. Preserve Moonshine/Whisper selection, Piper,
+single-word interruption and Stop/Hey Jarvis behavior. Release APKs only.
+
+### Evidence and completion boundary
+
+- Call `94d11fc0-3ec5-4d08-971f-d0ae70976b6d` records three natural confirmations
+  ("Actually", "Tell me, ah", "Thank you"), with prompt redirection after the first
+  two. The last reports 895 ms from detected onset to stop request. Justin reports
+  high intentional-interruption success and consistently working Stop. These are
+  positive observations, not a counted 99% reliability result or dedicated keyword
+  acceptance; the exported natural summaries show zero stop hits.
+- Call `fe81f371-1396-41ef-9ee1-42680d72ad8a` records "You" and "Thank you"
+  accepted after one probe each; "Thank you" became a subsequent Gemma request.
+  "All right" remained at words_settling when the UI/service ended the call; it
+  must not be counted as a third confirmed natural interruption.
+- Justin reports non-speech/possible self-playback pickup. These reports contain
+  no microphone PCM, so the physical source of each suspect transcription is
+  unresolved. `echoMatchedWords=0` establishes no textual match, not absence of
+  acoustic echo. `floorRms=0` warrants inspection but may reflect suppressed
+  input; it is not by itself proof of a broken gate. Native Moonshine VAD bypass
+  does not mean the external Silero/acoustic gate is absent.
+- Intentional barge-in has encouraging phone evidence. D2 effectiveness, E false
+  interruption/recovery and F integrated acceptance remain open. AEC enabled
+  flags and a successful intentional interruption cannot close false-trigger gates.
+
+### Existing scope versus additional detail
+
+| Proposed work | Existing plan coverage | Incremental work |
+| --- | --- | --- |
+| Inspect microphone/decoder/rendered audio and AEC effectiveness | A2/A3, D1; existing isolated echo/recognition diagnostics | Extend/reuse bounded evidence for the actual live-call candidate interval, including filler and inference load, if current tools cannot capture it. |
+| Audit noise calibration, external speech gate and communication route | C recognition repairs, D1/D2; communication route already integrated on 18 September | Reproduce build-728 zero-floor and suspect-input cases; fix only demonstrated defects. Do not rebuild routing or blindly toggle native VAD. |
+| Fresh evidence before accepting uncertain words | E1/E2 admission and recovery; current 300 ms lexical settling | Explicit new refinement: conditionally obtain another bounded decode using newly arrived audio for uncertain candidates. A timer on one hypothesis is not another observation. |
+| Prevent false final transcripts from entering conversation | E2 final request validation and existing final non-echo filtering | Strengthen/test the existing validation contract against acoustic evidence for the final input, covering ordinary follow-ups as well as interruption corrections. |
+| Preserve genuine interruptions while measuring false triggers | P4/P5, F1/F2 | Add build-728 regression cases and separate false accepted turns from false playback stops. Keep existing acceptance counts/latency reporting. |
+| Software echo cancellation | D3, already conditional | No automatic new dependency. Evaluate only if measured D1/D2 results demonstrate insufficient platform cancellation. |
+
+This is mostly completion/hardening of the existing D/E/F scope, not another
+architecture or a replacement plan. The explicit new behavior is selective fresh
+confirmation of uncertain candidates; the other additions make evidence and final
+admission requirements more precise. Exact coding effort remains unknown until
+the affected current source and captured failure audio are inspected.
+
+### Bounded implementation increments within the existing phases
+
+1. **D1/D2 follow-up — reproduce before changing thresholds.** Audit effect
+   attachment/control on the active AudioRecord session, actual communication
+   capture/playback routes, and calibrated versus uncalibrated/suppressed floor
+   handling. Reuse existing diagnostics; add only missing bounded, user-initiated
+   live-call capture of microphone input, actual ASR input, rendered-reference
+   timing and gate decisions for candidate windows. Include filler, answer and
+   reply-to-listening boundaries, route, volume, model/build and thermal state.
+   Where Android does not expose pre-effect PCM, label microphone input as
+   post-platform-processing; never invent a before/after AEC recording. No default
+   raw-microphone export or automatic upload. Preserve failing clips when explicitly
+   exported. Gate: distinguish echo, non-speech decoding and pipeline admission
+   defects, or clearly retain unresolved source attribution.
+2. **E1/E2 follow-up — conditional fresh confirmation.** Inspect the current
+   candidate state machine before implementation. For candidates with uncertain
+   acoustic/echo support, require a fresh result that includes newly captured
+   audio before irreversible interruption. Re-decoding the identical clip or
+   merely aging its text cannot count as independent corroboration; overlapping
+   decodes are supporting evidence, not statistical independence. Keep the work
+   bounded by existing freshness, ownership and scheduling contracts; preserve
+   onset pre-roll. Define timeout/rejection behavior explicitly. Clear short
+   speech and verified Stop/Hey Jarvis retain their fast paths. Do not impose
+   two probes on every request, blacklist "you"/"thank you", require a wake phrase,
+   add speaker identity, or pause on VAD/noise alone. Any reversible pause still
+   follows lexical confirmation under the 17 September override.
+3. **E2 follow-up — validate before dispatch/persistence.** Apply existing final
+   correction checks to the actual final speech interval and retained evidence,
+   not merely nonblank text or agreement with an earlier suspect hypothesis.
+   Inspect both interruption handoff and ordinary follow-up paths. A rejected
+   noise/echo transcript must not become a user-history entry, Gemma submission,
+   filler response or tool action. Preserve real single-word input. If a candidate
+   was only provisionally paused, resume retained audio through E1; a confirmed
+   user Stop must never auto-resume the old answer. Validate late-result and
+   cancellation races. This is a strengthened existing contract, not a claim
+   that final filtering was previously absent.
+4. **F1/F2 follow-up — acceptance evidence.** Add deterministic tests for
+   one-hypothesis timeout versus fresh corroboration, zero/suppressed calibration,
+   non-speech/echo transcripts and final admission, plus short genuine words,
+   overlapping speech, onset retention and no late dispatch. Add real audio
+   regression fixtures only when their recording/ground truth is available;
+   do not manufacture waveforms from text logs. Test affected code and release
+   packaging/signing before handing over an APK. A docs-only update needs no APK
+   or repeat phone test.
+
+### Focused phone card after the relevant code increment
+
+Use the existing normal-call and diagnostic controls; add no promised UI until
+implemented. Keep route, phone position, selected ASR, Piper and volume fixed.
+
+- Jarvis-only: remain silent through filler, answer and the follow-up listening
+  period. Count both false playback stops and false new user turns.
+- Non-speech: controlled cough/rustle and ordinary ambient noise, with event times.
+  No noise-only candidate may stop output or generate a user request.
+- Genuine speech: No, Yes, Stop, Hey Jarvis, and a normal correction, including
+  early/late overlap and a quiet utterance. Record attempts, misses, retained
+  first words and stop-request timing separately from actual acoustic silence.
+- Nearby conversation: label as competing real speech, not non-speech failure.
+  With identity disabled, do not promise owner-only floor-taking.
+- Begin with a short screening card. Only at the acceptance milestone run the
+  existing P4 counts and P5 ten-minute false-trigger gate; extend P5's zero-false-
+  cancellation criterion to zero falsely dispatched user turns as well. Compare
+  matched success and latency against the working baseline and report added
+  confirmation cost. Do not claim 90–99% from an uncounted mixed session.
+
+Keep D3 conditional; first determine whether residual playback persists despite
+correct D2 configuration. Keep answer-startup latency and shared-conversation
+provenance review separate from acoustic fixes. Build 728 intentionally introduced
+shared Chat/Voice history, so older entries alone do not establish a new-call
+regression; reconcile the intended shared-thread contract before changing it.
+
 ## Remove speaker identity from voice calls (2026-09-19)
 
 User decision: no learned voiceprint or owner-identity requirement in the call path.
