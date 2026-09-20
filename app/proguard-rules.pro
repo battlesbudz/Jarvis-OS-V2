@@ -27,7 +27,14 @@
 # producing NoSuchMethodError before any test starts. The rest of the app and
 # AndroidX remain optimized; these rules also apply to the APK we actually ship.
 -keep class kotlin.** { *; }
+-keep class kotlinx.coroutines.** { *; }
 -keep class androidx.lifecycle.Lifecycle** { *; }
+# AndroidX Test core/runner also calls these shared dependencies directly.
+# Audited against the release test DEX's external method and field owners.
+-keep class androidx.tracing.** { *; }
+-keep class androidx.concurrent.futures.** { *; }
+-keep class androidx.annotation.** { *; }
+-keep class com.google.common.util.concurrent.ListenableFuture { *; }
 
 # Explicit application boundary exercised by the release integration tests.
 -keep class com.battlesbudz.jarvis.v2.actions.MobileAction** { *; }
