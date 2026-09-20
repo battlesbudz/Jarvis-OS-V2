@@ -20,7 +20,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.battlesbudz.jarvis.v2.ai.*
 
 /** Family first, then a bounded lazy list of model cards. Browsing never selects/downloads a model. */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 internal fun ModelBrowser(
     phone: PhoneProfile,

@@ -69,7 +69,6 @@ class ReleaseJourneyTest {
     @Test fun test02_searchHasAnHonestEmptyState() {
         openBrowser()
         find(By.res("model_search")).text = "no-such-jarvis-model-8429"
-        device.pressBack() // dismiss the keyboard
         assertNotNull(find(By.textStartsWith("No matching models.")))
         find(By.text("Done")).click()
     }
@@ -78,7 +77,6 @@ class ReleaseJourneyTest {
         assertNotNull(find(By.text("Gemma-4-E2B-it")))
         openBrowser()
         find(By.res("model_search")).text = "Gemma-4-E4B-it"
-        device.pressBack()
         find(By.res("model_family_Gemma")).click()
         find(By.text("Done")).click()
         assertNotNull(find(By.text("Gemma-4-E2B-it")))
@@ -117,7 +115,6 @@ class ReleaseJourneyTest {
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()
         find(By.res("model_search")).text = "Gemma-4-E4B-it"
-        device.pressBack()
         find(By.res("model_family_Gemma")).click()
         scrollTo(By.res("model_choose_Gemma-4-E4B-it")).click()
         assertNotNull(find(By.text("Gemma-4-E4B-it")))

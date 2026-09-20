@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.collect
 import androidx.compose.foundation.lazy.items
 
 
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun JarvisApp(
     store: ModelStore,
