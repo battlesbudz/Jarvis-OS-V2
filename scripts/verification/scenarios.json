@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "class": "com.battlesbudz.jarvis.v2.verification.ReleaseJourneyTest",
+  "tests": [
+    "test01_setupRequiresAnInstalledModel",
+    "test02_searchHasAnHonestEmptyState",
+    "test03_browsingDoesNotChangeTheSelectedModel",
+    "test04_batteryToolReadsAndroid",
+    "test05_volumeToolChangesAndroidAndRejectsBadInput",
+    "test06_missingAppReturnsFailure",
+    "test90_modelSelectionPersistsAcrossRecreation"
+  ],
+  "restart_model": "Gemma-4-E4B-it",
+  "not_covered": [
+    "Real-model inference and model-generated tool selection",
+    "Microphone, speaker, Bluetooth and acoustic interruption behavior",
+    "Physical-device GPU/NPU compatibility, thermal behavior and latency",
+    "Successful multi-gigabyte model download/import"
+  ]
+}

@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.lazy.items
 
@@ -107,7 +108,7 @@ internal fun ModelSetup(
         Button(
             onClick = onTest,
             enabled = ready && !testing && !importing && !downloading,
-            modifier = Modifier.fillMaxWidth().padding(top = 20.dp)
+            modifier = Modifier.fillMaxWidth().padding(top = 20.dp).testTag("model_check")
         ) {
             Text(if (testing) "Checking selected model…" else "Check selected model")
         }

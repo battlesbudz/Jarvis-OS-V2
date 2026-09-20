@@ -23,6 +23,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import com.battlesbudz.jarvis.v2.ai.ModelCatalog
 import com.battlesbudz.jarvis.v2.ai.ModelStore
 import kotlinx.coroutines.delay
@@ -98,7 +101,7 @@ fun JarvisApp(
             OutlinedButton(
                 enabled = canManage,
                 onClick = { phone = com.battlesbudz.jarvis.v2.ai.PhoneCheck.read(phoneContext); expanded = true },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().testTag("model_browse")
             ) { Text("Browse model families · ${com.battlesbudz.jarvis.v2.ai.ModelGuide.family(selectedModel)}") }
             Text(selectedModel.id, style = MaterialTheme.typography.titleSmall)
             if (expanded && canManage) ModelBrowser(
@@ -256,7 +259,7 @@ fun JarvisApp(
     MaterialTheme(
         colorScheme = darkColorScheme()
     ) {
-        Surface(modifier = Modifier.fillMaxSize()) {
+        Surface(modifier = Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
             if (modelsReady && smokeTestPassed) {
                 when {
                     selectedVoiceCall != null -> {

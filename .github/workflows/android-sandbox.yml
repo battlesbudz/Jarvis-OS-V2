@@ -1,0 +1,66 @@
+name: Android sandbox
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Release journeys / API ${{ matrix.api }} / ${{ matrix.apk }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api: 30
+            apk: app-release
+          - api: 35
+            apk: app-compact
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: jarvis-os-v2-release-apk
+          path: inputs
+      - uses: actions/download-artifact@v4
+        with:
+          name: jarvis-verification-test-apk
+          path: inputs
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-jarvis-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify release on a disposable Android device
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 4096M
+          heap-size: 512M
+          disk-size: 4096M
+          disable-animations: true
+          emulator-boot-timeout: 300
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: python3 scripts/verification/android.py run --apk inputs/${{ matrix.apk }}.apk --test-apk inputs/app-release-androidTest.apk --out verification-evidence --source-commit "${{ github.sha }}" --pr-head "${{ github.event.pull_request.head.sha }}" --allow-emulator-reset
+      - name: Retain evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-verification-api-${{ matrix.api }}-${{ matrix.apk }}
+          path: verification-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Add verification summary
+        if: always()
+        run: |
+          if [ -f verification-evidence/summary.md ]; then
+            cat verification-evidence/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'FAIL: emulator infrastructure did not produce a verification report.' >> "$GITHUB_STEP_SUMMARY"
+          fi

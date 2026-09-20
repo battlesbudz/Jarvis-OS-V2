@@ -9,6 +9,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,7 +40,7 @@ internal fun ModelBrowser(
     fun goBack() { if (family != null) { family = null; detailId = null } else onDismiss() }
     Dialog(onDismissRequest = { goBack() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         BackHandler { goBack() }
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }, color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween) {
@@ -50,7 +53,7 @@ internal fun ModelBrowser(
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                 OutlinedTextField(value = query, onValueChange = { query = it; detailId = null }, singleLine = true,
                     placeholder = { Text("Search families, models or uses") },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp))
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag("model_search"))
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp)) }
                 if (family == null) {
                     LazyColumn(state = familyListState, modifier = Modifier.weight(1f),
@@ -61,7 +64,7 @@ internal fun ModelBrowser(
                         }
                         if (families.isEmpty()) item { Text("No matching models. Try a different name or use, such as coding.") }
                         items(families.entries.toList(), key = { it.key }) { (name, specs) ->
-                            OutlinedCard(onClick = { family = name; detailId = null; error = null }, modifier = Modifier.fillMaxWidth()) {
+                            OutlinedCard(onClick = { family = name; detailId = null; error = null }, modifier = Modifier.fillMaxWidth().testTag("model_family_$name")) {
                                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Text("$name  ›", style = MaterialTheme.typography.titleMedium)
                                     Text(specs.map { it.provider }.distinct().joinToString(), style = MaterialTheme.typography.labelSmall)
@@ -136,7 +139,7 @@ internal fun ModelBrowser(
                                         TextButton(onClick = { detailId = if (detailId == spec.id) null else spec.id }) {
                                             Text(if (detailId == spec.id) "Less detail" else "Why this rating?")
                                         }
-                                        Button(onClick = { error = onSelect(spec); if (error == null) onDismiss() }) {
+                                        Button(modifier = Modifier.testTag("model_choose_${spec.id}"), onClick = { error = onSelect(spec); if (error == null) onDismiss() }) {
                                             Text(if (spec.id == selectedId) "Selected" else "Choose")
                                         }
                                     }

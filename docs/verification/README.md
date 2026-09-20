@@ -1,0 +1,77 @@
+# Jarvis development sandbox
+
+This implements phases 1–5 of the development workflow: persistent Codex instructions, disposable Android execution, app controls and evidence, regression scenarios, and bounded repair/retest. It runs outside Jarvis. The release artifact remains the existing signed ARM64 app.
+
+## What runs automatically
+
+Each same-repository PR update triggers the existing `Android APK` workflow:
+
+1. Build native keyword checks, Python harness checks, all release JVM tests, the signed/minified release APK and its instrumentation APK.
+2. Build the compact release APK and compare native/DEX/assets with the normal variant.
+3. Run `android-sandbox.yml` on fresh GitHub Ubuntu runners with KVM. API 30 tests the normal APK; API 35 tests the compact APK. Google APIs x86_64 images supply ARM translation; the controller requires `arm64-v8a` in the runtime ABI list and fails if the image cannot run the shipping APK.
+4. Execute seven named release instrumentation scenarios, then kill/relaunch Jarvis in a separate process to check persisted selection. Retain screenshots, UI hierarchy, Android logs, test output, package metadata, APK hashes, source SHA and PR head.
+5. Allow the existing publication jobs only after the build and both sandbox jobs pass. This creates a candidate for Justin's signoff; passing automation does not merge the PR or constitute product acceptance.
+
+No production signing secrets are passed to the emulator job. It consumes already signed artifacts. Evidence expires after 14 days; download it from the run when keeping a long-lived investigation. Test reports and APKs are associated with the same workflow run. `source_commit` is GitHub's tested PR merge commit; `pr_head` identifies the contributor branch revision. Both are intentional, not interchangeable.
+
+## Persistent agent workflow
+
+The repository skill is `.agents/skills/jarvis-verify/SKILL.md`; `AGENTS.md` points agents to it. Codex can invoke `$jarvis-verify`. In a Work session using a connected repository, ask it to read that skill and the current PR before implementing a feature. This repository skill is not a globally installed personal Work plugin.
+
+The feature map describes coverage and gaps. Future features extend that map and add executable acceptance scenarios. No test-only menu, fake-model mode or remote command endpoint is added to the shipping app. Compose resource tags expose stable UI selectors without changing visible text.
+
+## Local device control
+
+Prerequisites: Python 3.10+, Java 17, Gradle 8.10.2, Android SDK/platform 35, NDK 27.2.12479018, CMake 3.22.1, adb, a compatible disposable emulator, and the existing release-signing environment. This Work container may lack SDK/KVM; the hosted runner is the default execution path.
+
+```bash
+python3 scripts/verification/android.py --serial emulator-5554 control launch --out verification-runs/explore
+python3 scripts/verification/android.py --serial emulator-5554 control snapshot --out verification-runs/explore
+python3 scripts/verification/android.py --serial emulator-5554 control tap 250 400 --out verification-runs/explore
+python3 scripts/verification/android.py --serial emulator-5554 control swipe 250 800 250 300 400 --out verification-runs/explore
+python3 scripts/verification/android.py --serial emulator-5554 control text 'Gemma' --out verification-runs/explore
+python3 scripts/verification/android.py --serial emulator-5554 control back --out verification-runs/explore
+```
+
+For a full run, supply the two APK paths and a new evidence directory:
+
+```bash
+python3 scripts/verification/android.py run \
+  --apk app/build/outputs/apk/release/app-release.apk \
+  --test-apk app/build/outputs/apk/androidTest/release/app-release-androidTest.apk \
+  --out verification-runs/manual/device \
+  --source-commit "$(git rev-parse HEAD)" --allow-emulator-reset
+```
+
+The full run clears Jarvis data and refuses non-emulators. Never point this workflow at a personal phone with conversations/models. Interactive control does not clear data. Each run requires a new directory so failures are not overwritten by later success.
+
+## Bounded local repair loop
+
+With an emulator already booted and the signing variables configured, this runs the release gate. If it fails, an already installed/authenticated Codex CLI can diagnose evidence, edit application code and trigger another full gate:
+
+```bash
+python3 scripts/verification/repair.py \
+  --out verification-runs/feature-001 \
+  --gate-command '["python3","scripts/verification/local_gate.py"]' \
+  --repair-command '["codex","exec","--sandbox","workspace-write","Read AGENTS.md and the file named by JARVIS_FAILURE_REPORT. Diagnose gate.log and evidence, fix application code only, and preserve all acceptance criteria. Do not publish, push or merge."]'
+```
+
+Commands are argv arrays, not shell expressions. `JARVIS_ATTEMPT_DIR`, `JARVIS_SOURCE_COMMIT` and `JARVIS_FAILURE_REPORT` are supplied to the subprocess. Default limits are three attempts, 60 minutes overall, and 20 minutes per command. Both a successful exit and a fresh report for the source commit are required. The source digest records uncommitted repairs and detects source changes during verification. A repair that changes tests, workflows, harnesses, build configuration or agent instructions stops for review; changes are left visible for diagnosis, not silently reverted. Missing reports, skipped tests, crashes and no-progress repairs fail closed. Time limits terminate the subprocess group.
+
+For hosted CI, the same bounded policy is followed by the active Codex/Work session using GitHub run logs and artifacts. There is no always-on paid AI service or new credential dependency. Finishing a conversation does not leave an autonomous repair agent running in Actions.
+
+## Coverage boundaries
+
+The emulator exercises the actual release UI and Android action executor. It does not download gigabytes of model weights, invoke the real language model, or test acoustic behavior. Existing JVM tests use deliberate fake backends for many conversation/audio state machines. Those are logic coverage, not device evidence. Future real-model/GPU/audio tests need a separately provisioned suitable device runner and explicit scenarios; their absence is reported in every sandbox result.
+
+The harness's own failure-injection tests run with:
+
+```bash
+python3 -m unittest discover -s scripts -p 'test_*.py'
+```
+
+They demonstrate broken → repaired → retested, reject skipped/crashed/missing/duplicate instrumentation results, and stop attempts to weaken the gate or change source during a run.
+
+## Design references
+
+This is an original Jarvis-specific implementation of the persistent verification workflow described by [pstack](https://github.com/cursor/plugins/tree/main/pstack), adapted to Codex and Android. It does not require Cursor or copy the plugin's source. It uses [UI Automator](https://developer.android.com/training/testing/other-components/ui-automator), Android's [release test variant support](https://developer.android.com/studio/test/advanced-test-setup), and the [Android emulator runner](https://github.com/ReactiveCircus/android-emulator-runner). ARM translation is documented by [Android](https://android-developers.googleblog.com/2020/03/run-arm-apps-on-android-emulator.html); physical-device performance still needs its own measurement.

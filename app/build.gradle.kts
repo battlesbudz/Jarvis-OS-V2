@@ -75,6 +75,8 @@ android {
         buildConfigField("String", "SOURCE_COMMIT", "\"$sourceCommit\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    // Exercise the same signed, shrunk variant delivered to the user.
+    testBuildType = "release"
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -116,6 +118,10 @@ dependencies {
     sherpaSdk("com.github.k2-fsa.sherpa-onnx:sherpa-onnx:v1.13.7@aar")
     implementation(files(sherpaDir.map { it.file("classes.jar") }).builtBy(extractSherpa))
     implementation("org.apache.commons:commons-compress:1.27.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }
