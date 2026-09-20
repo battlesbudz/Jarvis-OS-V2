@@ -5,8 +5,8 @@ Update this file when adding a feature or learning a reproducible regression. A 
 | Area | Existing logic checks | Release emulator checks | Remaining device/model checks |
 | --- | --- | --- | --- |
 | Setup and model browsing | ModelCatalog, ModelGuide and ModelGuidance JVM tests | First-run setup, disabled model check, empty search, browse/cancel without selection | Successful download/import and real model load |
-| Model selection | ModelSelection and model-switch JVM tests | Choose another model, Activity recreation, separate-process restart | Switching between loaded engines |
-| Tool calling | ActionIntentRouter, NativeActionDecoder, MobileActionValidator and MobileActionPipeline JVM tests | Battery equals Android state; valid volume changes Android; invalid input preserves volume; missing app reports failure | Real model emits correct calls; successful app-launch flow; ambiguous apps/permission combinations |
+| Model selection | Catalog resolution/compatibility logic; persistence tested on the emulator | Choose another model, Activity recreation, separate-process restart | Switching between loaded engines |
+| Tool calling | ActionIntentRouter, NativeToolJourney, MobileActionValidator and MobileActionPipeline JVM tests | Battery equals Android state; valid volume changes Android; invalid input preserves volume; missing app reports failure | Real model emits correct calls; successful app-launch flow; ambiguous apps/permission combinations |
 | Conversations | ConversationHistory, context and policy JVM tests | Not yet exercised through UI: chat is gated by installed/tested weights | Multi-turn generation, durable chat UI and cancellation |
 | Voice lifecycle | VoiceSessionController and playback/ASR policy JVM tests; native keyword fixtures | Startup without microphone permission; no claim of microphone capture | Microphone routing, Bluetooth, interruptions, speaker feedback, timing and thermal behavior |
 | Packaging | Native ABI, Piper callback, compact APK equivalence checks | Signed normal and compact variants installed/launched | Device GPU/NPU compatibility and resource limits |

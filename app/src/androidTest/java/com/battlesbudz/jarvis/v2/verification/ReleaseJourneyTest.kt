@@ -40,7 +40,7 @@ class ReleaseJourneyTest {
     @After fun close() {
         try {
             val directory = File(context.getExternalFilesDir(null), "verification").apply { mkdirs() }
-            device.takeScreenshot(File(directory, "${testName.methodName}.png"))
+            assertTrue("Screenshot capture failed", device.takeScreenshot(File(directory, "${testName.methodName}.png")))
             device.dumpWindowHierarchy(File(directory, "${testName.methodName}.xml"))
         } finally { if (::activity.isInitialized) activity.close() }
     }
