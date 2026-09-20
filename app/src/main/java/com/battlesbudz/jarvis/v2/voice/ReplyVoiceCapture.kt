@@ -17,6 +17,7 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 echoCancellation = true, noiseSuppression = true, log = log)
             val confirmed = CompletableDeferred<Unit>()
             var naturalReference: String? = null
+            var confirmedNaturalText = ""
             var stopOnly = false
             var endConversation = false
             fun confirm() {
@@ -42,6 +43,7 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                     playing = { output.isPlayingAudio }, reference = { output.recentSpokenText() },
                     hasPlaybackBudget = output::hasInterruptionBudget,
                     canContinuePlayback = output::canContinueInterruption,
+                    onNaturalTextConfirmed = { confirmedNaturalText = it },
                     onConfirmed = { natural, evidence ->
                         if (natural) naturalReference = evidence
                         else {
@@ -54,6 +56,8 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 createDetector = { SileroSpeechDetector.create(context.assets) },
                 createTranscriber = { LazyStreamingTranscriber { asrEngine.create(asrDirectory, log = log, modelSession = modelSession) } }, log = log,
                 allowAudioOnlyTurns = true,
+                guardFollowupSpeech = true,
+                initialConfirmedSpeech = { confirmedNaturalText },
                 onPartialTranscript = { text -> onPartialTranscript(text) })
             try {
                 capture.start(initialSilenceTimeoutMs = null)

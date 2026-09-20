@@ -28,9 +28,9 @@ internal class CaptureSpeechGate(private val profile: CaptureNoiseProfile? = nul
         // tail at the unchanged room level becomes a new utterance after 3 seconds.
         // A quieter confident noise observation can lower an old floor immediately.
         if (noiseFloorRms > 0 && decision.probability < .15f) noiseFloorRms = minOf(noiseFloorRms, rms)
-        if (noiseFloorRms > 0) profile?.floorRms = noiseFloorRms
+        profile?.floorRms = noiseFloorRms
         val ratio = if (decision.probability >= .8f) 1.1 else 1.8
         val nearFloor = noiseFloorRms > 0 && rms <= noiseFloorRms.coerceAtLeast(1.0) * ratio
-        return if (nearFloor) SpeechDecision(false, 0f) else decision
+        return if (rms == 0.0 || nearFloor) SpeechDecision(false, 0f) else decision
     }
 }

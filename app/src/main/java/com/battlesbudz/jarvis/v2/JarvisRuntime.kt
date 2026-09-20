@@ -120,6 +120,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     if (control == com.battlesbudz.jarvis.v2.voice.VoiceControl.PAUSE) ui.paused.value = true
                     if (control == com.battlesbudz.jarvis.v2.voice.VoiceControl.PAUSE ||
                         control == com.battlesbudz.jarvis.v2.voice.VoiceControl.END_CONVERSATION) {
+                        com.battlesbudz.jarvis.v2.voice.LiveCallAudioEvidence.finish()
                         runtimeScope.launch { callResources.closeMicrophone() }
                     }
                     activeVoiceOutput?.stopSpeaking()
@@ -887,6 +888,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             if (callEnded || com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value ||
                                 cancelled && !preserveCaptureOnCancellation) callResources.closeMicrophone()
                             if (callEnded) {
+                                com.battlesbudz.jarvis.v2.voice.LiveCallAudioEvidence.finish()
                                 callResources.closeModels()
                             }
                         } finally { if (operationOwned) modelStore.endModelOperation() }
@@ -977,6 +979,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     }
 
     internal fun startVoiceDiagnostics(label: String) {
+        if (label.startsWith("Voice Call ")) com.battlesbudz.jarvis.v2.voice.LiveCallAudioEvidence.begin(label)
         com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.clearDiagnostics()
         asrComparisonStore.clearDiagnostics()
         ttsComparisonStore.clearDiagnostics()
@@ -984,6 +987,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     }
 
     private fun stopVoiceService() {
+        com.battlesbudz.jarvis.v2.voice.LiveCallAudioEvidence.finish()
         stopService(android.content.Intent(this, com.battlesbudz.jarvis.v2.voice.VoiceCallService::class.java))
     }
 

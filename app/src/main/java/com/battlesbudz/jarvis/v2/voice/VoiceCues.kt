@@ -31,6 +31,7 @@ object VoiceCues {
                                     paused: () -> Boolean, log: (String) -> Unit, mediaVolume: String = "unavailable",
                                     onStarted: () -> Unit = {}, speed: Float = 1f) {
         var track: android.media.AudioTrack? = null
+        val evidenceStream = LiveCallAudioEvidence.newStream("filler")
         try {
             if (stopped() || paused()) return
             val firstSpeechFrame = FillerPcm.firstSpeechFrame(audio.pcm)
@@ -45,6 +46,7 @@ object VoiceCues {
                 .setTransferMode(android.media.AudioTrack.MODE_STATIC)
                 .setBufferSizeInBytes(audio.pcm.size * 2).build()
             check(track.write(audio.pcm, 0, audio.pcm.size) == audio.pcm.size)
+            LiveCallAudioEvidence.recordOutput(evidenceStream, audio.pcm, 0, audio.pcm.size, audio.sampleRate)
             if (stopped() || paused()) return
             track.playbackParams = android.media.PlaybackParams().allowDefaults().setPitch(1f).setSpeed(speed)
             track.setVolume(1f)
@@ -62,6 +64,7 @@ object VoiceCues {
                         "routeType=${track.routedDevice?.type} routeId=${track.routedDevice?.id} " +
                         "usage=${track.audioAttributes.usage} separateFromAnswer=true acousticAudibility=not_measured")
                 }
+                LiveCallAudioEvidence.event("playback stream=$evidenceStream head=${track.playbackHeadPosition} state=${track.playState}")
                 delay(15)
             }
             log("acknowledgement_playback_finished frames=${track.playbackHeadPosition}")

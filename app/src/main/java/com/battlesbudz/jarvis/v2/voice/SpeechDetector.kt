@@ -1,7 +1,8 @@
 package com.battlesbudz.jarvis.v2.voice
 
 /** Classification of audio content; loudness is only diagnostic information. */
-data class SpeechDecision(val isSpeech: Boolean, val probability: Float)
+data class SpeechDecision(val isSpeech: Boolean, val probability: Float,
+    val speechSamples: Int? = null, val strongSpeechSamples: Int? = null)
 
 interface SpeechDetector : AutoCloseable {
     fun accept(pcm: ByteArray): SpeechDecision
@@ -17,11 +18,14 @@ class FrameSpeechDetector(
     private var lowByte: Int? = null
     private var consecutiveSpeechFrames = 0
     private var lastProbability = 0f
+    private var consecutiveStrongFrames = 0
     private var closed = false
 
     override fun accept(pcm: ByteArray): SpeechDecision {
         check(!closed) { "Speech detector has been released." }
         var confirmedSpeech = false
+        var speechSamples = 0
+        var strongSamples = 0
         var maxProbability = 0f
         var computed = false
         for (byte in pcm) {
@@ -41,15 +45,23 @@ class FrameSpeechDetector(
                 lastProbability = probability
                 maxProbability = maxOf(maxProbability, probability)
                 computed = true
+                val previouslyConfirmed = consecutiveSpeechFrames >= 3
+                consecutiveStrongFrames = if (probability >= .8f) (consecutiveStrongFrames + 1).coerceAtMost(3) else 0
                 consecutiveSpeechFrames = if (probability >= 0.5f) {
                     (consecutiveSpeechFrames + 1).coerceAtMost(3)
                 } else 0
                 // Three 32 ms frames confirm speech. Pre-roll preserves onset.
                 confirmedSpeech = confirmedSpeech || consecutiveSpeechFrames >= 3
+                if (consecutiveSpeechFrames >= 3) {
+                    // Credit the two onset frames once, when the third confirms them.
+                    speechSamples += if (previouslyConfirmed) 512 else 1536
+                    strongSamples += if (previouslyConfirmed) { if (probability >= .8f) 512 else 0 }
+                        else consecutiveStrongFrames * 512
+                }
                 frameSize = 0
             }
         }
-        return SpeechDecision(confirmedSpeech, if (computed) maxProbability else lastProbability)
+        return SpeechDecision(confirmedSpeech, if (computed) maxProbability else lastProbability, speechSamples, strongSamples)
     }
 
     override fun close() {

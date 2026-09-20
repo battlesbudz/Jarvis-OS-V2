@@ -13,6 +13,29 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioTurnCaptureTest {
+    @Test fun acousticallyConfirmedShortCorrectionSurvivesFinalOnlyRecognition() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, FakeTranscriber("", "No"), allowAudioOnlyTurns = true,
+            guardFollowupSpeech = true, initialConfirmedSpeech = { "No" })
+        fixture.capture.start()
+        try {
+            val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+            fixture.emit(100, 1500, speech = true, samples = 1600)
+            fixture.emit(1400, 0, samples = 1600)
+            assertTrue(withTimeout(1000) { completion.await() })
+            assertEquals("No", fixture.capture.finalTranscript)
+        } finally { fixture.capture.stop() }
+    }
+    @Test fun confirmedProbeTextWithoutSpeechCannotSubmitARequest() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, FakeTranscriber("", "Thank you"), allowAudioOnlyTurns = true,
+            guardFollowupSpeech = true, initialConfirmedSpeech = { "Thank you" })
+        fixture.capture.start(initialSilenceTimeoutMs = 1000)
+        try {
+            val completion = async(start = CoroutineStart.UNDISPATCHED) { fixture.capture.awaitTurnCompletion() }
+            fixture.emit(1100, 0, samples = 1600)
+            assertFalse(withTimeout(1000) { completion.await() })
+            assertEquals("", fixture.capture.finalTranscript)
+        } finally { fixture.capture.stop() }
+    }
     @Test fun isolatedFollowupSoundCannotSubmitHallucinatedThanksAndNextSpeechSurvives() = runBlocking<Unit> {
         val noise = FakeTranscriber("", "Thank you.")
         val real = FakeTranscriber("Yes", "Yes")
@@ -833,7 +856,8 @@ class AudioTurnCaptureTest {
         factory: (() -> StreamingTranscriber)? = transcriber?.let { { it } },
         trailingSilenceMs: Long? = 1200L,
         allowAudioOnlyTurns: Boolean = false,
-        guardFollowupSpeech: Boolean = false
+        guardFollowupSpeech: Boolean = false,
+        initialConfirmedSpeech: () -> String = { "" }
     ) {
         var microphoneStarts = 0
         var microphoneStops = 0
@@ -859,7 +883,7 @@ class AudioTurnCaptureTest {
             createTranscriber = factory, onPartialTranscript = { text -> partials.add(text) },
             onMetrics = { stats, text -> metrics.add(stats to text) }, trailingSilenceMs = trailingSilenceMs,
             onRecognitionRecovery = recoveryStates::add, allowAudioOnlyTurns = allowAudioOnlyTurns,
-            guardFollowupSpeech = guardFollowupSpeech, onSpeechResumed = { resumed++ })
+            guardFollowupSpeech = guardFollowupSpeech, initialConfirmedSpeech = initialConfirmedSpeech, onSpeechResumed = { resumed++ })
 
         suspend fun emit(atMs: Long, sample: Int, speech: Boolean = false, samples: Int = 1, probability: Float = if (speech) 0.95f else 0.01f) {
             clock = atMs

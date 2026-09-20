@@ -1,5 +1,69 @@
 # Voice repair: bounded commits and phone test protocol
 
+## D1/E2 implementation after build 728 (2026-09-20)
+
+Implemented within existing PR #6; phone effectiveness remains unaccepted.
+
+- D1: added explicitly armed **Record next call audio for diagnosis** beside the
+  existing call ZIP export. It captures post-platform microphone PCM, exact natural
+  probe submissions, written Piper answer/filler reference PCM and monotonic
+  playback-head events. Retention is RAM-only, capped at 4 MB of PCM, 800 KB per
+  stream, 16 streams and 1500 timing events. Trimming is reported with frame offsets.
+  Export writes WAVs and `audio-evidence.txt` only on the user's save action. Default
+  calls retain no audio through this diagnostic. Pause/end/failure stops capture;
+  a later call clears old evidence and requires rearming. Clear disarms and erases
+  retained audio. Tone cues, volume/fades, pre-platform PCM and calibrated acoustic
+  latency are explicitly not captured. This is an input/source comparison, not a
+  measured AEC attenuation result. Existing AndroidAudioInput already attaches AEC
+  to the active AudioRecord session and logs availability, control and enabled state.
+- D/E admission: the natural interruption listener previously used Silero directly,
+  bypassing the room-floor gate used by ordinary capture. It now uses a local
+  CaptureSpeechGate, without modifying the ordinary-listening noise profile. Exact
+  digital zero cannot pass a stale VAD decision. A calibrated floor reduced to zero
+  is now persisted; previously the shared profile retained its old nonzero value.
+- E2: a probe with at least 240 ms of strong confirmed VAD speech retains the
+  existing one-probe lexical settling path. Uncertain candidates require at least
+  96 ms admitted speech plus agreeing/extended words from a subsequent probe with
+  at least 250 ms additional PCM and a newer capture timestamp. Silence/no budget,
+  disagreement, stale results or merely waiting do not confirm it. Work remains
+  bounded by the existing three-probe candidate limit, rolling quota and native
+  ownership. These are initial engineering criteria, not device-tuned guarantees.
+  Short words are not blacklisted; Stop/Hey Jarvis verification is unchanged.
+- E2: final correction capture now enables the existing acoustic follow-up guard.
+  A validated initial natural probe can corroborate a short correction only when
+  the final capture also contains confirmed speech; it is not substituted for the
+  final transcript. Rejected candidates clear that corroboration. Existing final
+  non-echo text validation and floor-only handling still run before dispatch.
+- Speech evidence now counts confirmed 32 ms VAD frames (onset credited once), not
+  the entire retained PCM chunk. A long pre-roll with only 96 ms speech cannot be
+  misreported as a second of strong speech. This accounting applies to both probe
+  support and final follow-up admission.
+
+Developer validation: focused JVM tests cover fresh-input agreement, unchanged
+hypotheses, disagreement/empty results, keyword controls, preserved onset, short
+corrections, capture rejection/recovery, VAD duration, zero-floor state, bounded
+exports and disarming. Full release CI, native packaging and signing are required
+before an APK is described as ready. No claim of reduced false-trigger rate yet.
+
+### Next phone card (after release CI passes)
+
+Keep E2B, Moonshine, Piper, phone position and call volume as in build 728. No model
+redownload or settings reset. In Development diagnostics, tap **Record next call audio for diagnosis**, then start a normal call. This
+records nearby speech too; only export a call intended for diagnosis.
+
+1. Ask for an explanation or story and remain silent through filler and playback.
+2. During later answers, make a controlled cough/rustle, then separately say No,
+   Stop and a normal correction. Note what you actually said and any false stops.
+3. Remain silent briefly after an answer; verify no invented next request.
+4. End the session, then **Save latest call test ZIP** before starting another.
+   The ZIP should contain `report.txt`, `audio-evidence.txt` and available WAVs.
+   Export promptly because PCM is rolling and earlier intervals may be trimmed.
+
+D2 acoustic acceptance still needs this live-call evidence. D3 software AEC remains
+conditional. E1 reversible playback is not introduced by this increment; ambiguous
+candidates leave output running. F1/F2 full P4/P5/P6 acceptance remains open. Do not
+repeat previously completed isolated D2 replay tests or retired voice suites.
+
 ## Build 728 false-trigger follow-up and plan reconciliation (2026-09-20)
 
 Status: **planned refinements to D/E/F; no runtime change or new phone acceptance claimed.**

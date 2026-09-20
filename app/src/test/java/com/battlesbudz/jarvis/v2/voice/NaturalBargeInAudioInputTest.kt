@@ -18,7 +18,7 @@ class NaturalBargeInAudioInputTest {
                      dispatcher: CoroutineDispatcher = Dispatchers.Unconfined, beforeFrame: (Int) -> Unit = {},
                      acceptAction: () -> Unit = {}, loadAction: () -> Unit = {}, speechNow: () -> Boolean = { speech },
                      budgetNow: () -> Boolean = { budget }, backlogNow: () -> Long = { 0L }, onConfirmation: (Boolean) -> Unit = {},
-                     onEvidence: (String) -> Unit = {}, minimumProbeMs: Int = 1000): NaturalBargeInAudioInput {
+                     onEvidence: (String) -> Unit = {}, minimumProbeMs: Int = 1000, probability: Float = .99f): NaturalBargeInAudioInput {
         val input = object : AudioInput {
             override val sampleRateHz = 16000
             override val channelCount = 1
@@ -39,7 +39,7 @@ class NaturalBargeInAudioInputTest {
                 override fun close() {}
             } },
             createVad = { object : SpeechDetector {
-                override fun accept(pcm: ByteArray) = SpeechDecision(speechNow(), if (speechNow()) 0.99f else 0f)
+                override fun accept(pcm: ByteArray) = SpeechDecision(speechNow(), if (speechNow()) probability else 0f)
                 override fun close() {}
             } },
             createTranscriber = {
@@ -58,6 +58,25 @@ class NaturalBargeInAudioInputTest {
                 confirmed++
             }, log = logs::add, nowMs = { clock }, dispatcher = dispatcher,
             minimumProbeAudioMs = minimumProbeMs)
+    }
+    @Test fun weakSingleProbeThanksCannotStopByAgingWhenFurtherWorkIsUnavailable() = runBlocking {
+        gate(text = "Thank you", probability = .6f, minimumProbeMs = 250,
+            budgetNow = { models == 0 || clock <= 300 }).chunks().toList()
+        assertEquals(0, confirmed)
+        assertTrue(logs.any { "reason=fresh_audio_required" in it })
+    }
+    @Test fun weakSpeechCanConfirmOnFreshGrowingAudioAndRetainsOnset() = runBlocking {
+        val audio = gate(text = "No", probability = .6f, minimumProbeMs = 250).chunks().toList()
+        assertEquals(1, confirmed)
+        assertEquals(2, models)
+        assertEquals(30 * 3200, audio.sumOf { it.size })
+        assertTrue(logs.any { "reason=fresh_audio_agreement" in it })
+    }
+    @Test fun changingWeakProbeTextDoesNotInterrupt() = runBlocking {
+        gate(probability = .6f, minimumProbeMs = 250, textNow = {
+            when (models) { 1 -> "You"; 2 -> "Thank you"; else -> "" }
+        }).chunks().toList()
+        assertEquals(0, confirmed)
     }
     @Test fun briefNoInterruptsWithoutAnEnrolledVoice() = runBlocking {
         gate(text = "No", minimumProbeMs = 250, speechNow = { clock <= 300 }, chunks = 15).chunks().toList()

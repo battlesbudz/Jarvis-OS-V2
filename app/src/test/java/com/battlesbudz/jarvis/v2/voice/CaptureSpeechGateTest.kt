@@ -13,6 +13,14 @@ class CaptureSpeechGateTest {
         assertTrue(followup.accept(SpeechDecision(true, .6f), 70.0, 20_300).isSpeech)
         assertEquals(30.0, profile.floorRms, .001)
     }
+    @Test fun suppressedZeroInputCannotPassARecurrentVadTailOrRetainStaleProfile() {
+        val profile = CaptureNoiseProfile().also { it.floorRms = 100.0 }
+        val gate = CaptureSpeechGate(profile)
+        gate.accept(SpeechDecision(false, .01f), 0.0, 0)
+        assertEquals(0.0, profile.floorRms, .001)
+        assertFalse(gate.accept(SpeechDecision(true, .99f), 0.0, 100).isSpeech)
+        assertTrue(gate.accept(SpeechDecision(true, .9f), 12.0, 200).isSpeech)
+    }
     private fun calibrated(rms: Double) = CaptureSpeechGate().also { gate ->
         repeat(3) { gate.accept(SpeechDecision(false, .01f), rms, it * 100L) }
     }

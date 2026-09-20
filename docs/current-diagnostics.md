@@ -1,3 +1,25 @@
+## Live-call false-trigger recording — 20 September 2026
+
+Development diagnostics now includes **Record next call audio for diagnosis** and
+**Clear diagnostic audio**. Arm before the test call, end the call, then use
+**Save latest call test ZIP**. Arming applies to one call only. Ordinary call ZIPs
+remain text-only. Armed recordings stay in bounded RAM until export/clear/new call
+or process exit; no automatic disk recording/upload. Pause/end stops recording.
+
+The ZIP adds `audio-evidence.txt` and available WAVs for post-platform microphone
+input, natural-probe submissions and written answer/filler PCM, with monotonic
+frame/write/playback-head events. PCM limits are 4 MB total, 800 KB per stream;
+trimming and offsets are explicit. These are not synchronized laboratory acoustic
+measurements: hardware pre-AEC audio, tone cues, applied volume/fades and exact
+physical onset/silence remain unavailable. Compare retained intervals by metadata,
+not by assuming WAV files start at the same time. Nearby speech is recorded too.
+
+`barge_acoustic` reports actual room floor, signal and VAD admission.
+`barge_confirmation` distinguishes sustained speech, fresh audio required and
+fresh audio agreement. `followup_speech_evidence` also applies to final correction
+capture. These fields establish why a gate passed; phone audio establishes whether
+its interpretation was correct.
+
 # Current settings and development diagnostics
 
 ## Remove speaker identity from voice calls (2026-09-19)

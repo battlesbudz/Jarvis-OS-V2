@@ -4,6 +4,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FrameSpeechDetectorTest {
+    @Test fun retainedWindowCountsOnlyConfirmedSpeechNotItsSilence() {
+        var frame = 0
+        val detector = FrameSpeechDetector({ if (frame++ < 3) .9f else .01f })
+        val result = detector.accept(pcm(1200, 16000))
+        assertTrue(result.isSpeech)
+        assertEquals(1536, result.speechSamples)
+        assertEquals(1536, result.strongSpeechSamples)
+        val evidence = CandidateSpeechEvidence()
+        evidence.observe(32000, result)
+        assertEquals(96L, evidence.snapshot().strongMs)
+        assertFalse(CandidateConfirmation().observe("Thank you", 1000, 32000, evidence.snapshot()))
+    }
+    @Test fun onsetFramesAreCreditedOnlyOnceAcrossChunks() {
+        val detector = FrameSpeechDetector({ .9f })
+        var samples = 0
+        repeat(5) { samples += detector.accept(pcm(1200, 512)).speechSamples!! }
+        assertEquals(5 * 512, samples)
+    }
     @Test fun requiresThreeSpeechFramesAndRejectsLoudNonSpeech() {
         var probability = 0.99f
         val detector = FrameSpeechDetector({ probability })

@@ -40,6 +40,7 @@ class VoiceAudioSession(
                     source.chunks().collect { pcm ->
                         synchronized(lock) {
                             val frame = Frame(++sequence, pcm.copyOf(), source.lastChunkCaptureTimeMs ?: System.nanoTime() / 1_000_000)
+                            LiveCallAudioEvidence.record("microphone", pcm, source.sampleRateHz, frame.atMs)
                             ring.addLast(frame); ringBytes += pcm.size
                             while (ringBytes > maxBytes && ring.isNotEmpty()) ringBytes -= ring.removeFirst().pcm.size
                             active?.offer(frame)

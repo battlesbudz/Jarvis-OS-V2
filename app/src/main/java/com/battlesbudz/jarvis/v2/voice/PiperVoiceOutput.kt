@@ -32,6 +32,7 @@ class PiperVoiceOutput internal constructor(
     private val log: (String) -> Unit = {}
 ) : VoiceOutput {
     private val numThreads = 4
+    private val evidenceStream = LiveCallAudioEvidence.newStream("answer")
     @Volatile private var stopped = false
     @Volatile private var audioTrack: AudioTrack? = null
     private val speaking = AtomicBoolean(false)
@@ -448,6 +449,7 @@ class PiperVoiceOutput internal constructor(
                                 }
                                 deliveryLedger?.advance(head.coerceAtMost(writtenFrames))
                                 onPlayback(captions.at(head))
+                                LiveCallAudioEvidence.event("playback stream=$evidenceStream head=$head written=$writtenFrames state=${startedTrack.playState}", poll)
                                 delay(if (playbackConfirmed) 40 else 10)
                             }
                         }
@@ -483,6 +485,7 @@ class PiperVoiceOutput internal constructor(
                         }
                         lastWriteProgress = playbackClock.nowMs()
                         audioTrace?.append(phrase.pcm, offset, written, phrase.sampleRate)
+                        LiveCallAudioEvidence.recordOutput(evidenceStream, phrase.pcm, offset, written, phrase.sampleRate)
                         offset += written
                         framesWritten += written
                         writtenFrames = framesWritten.toLong()
@@ -580,6 +583,7 @@ class PiperVoiceOutput internal constructor(
                 runCatching { track.pause() }
                 runCatching { stoppedPlaybackHead.accumulateAndGet(unsignedHead(track)) { previous, current -> maxOf(previous, current) } }
                 deliveryLedger?.advance(stoppedPlaybackHead.get().coerceAtMost(writtenFrames), SpeechDeliveryState.INTERRUPTED)
+                LiveCallAudioEvidence.event("playback_stop stream=$evidenceStream head=${stoppedPlaybackHead.get()} written=$writtenFrames")
                 runCatching { track.flush() }
             }
             deliveryLedger?.advance(stoppedPlaybackHead.get().coerceAtMost(writtenFrames), SpeechDeliveryState.INTERRUPTED)

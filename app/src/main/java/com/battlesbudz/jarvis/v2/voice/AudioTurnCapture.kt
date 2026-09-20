@@ -32,6 +32,7 @@ class AudioTurnCapture(
     private val onRecognitionRecovery: (Boolean) -> Unit = {},
     private val allowAudioOnlyTurns: Boolean = false,
     private val guardFollowupSpeech: Boolean = false,
+    private val initialConfirmedSpeech: () -> String = { "" },
     private val onSpeechResumed: () -> Unit = {},
     private val turnEnd: TurnEndDetector = AdaptiveTurnEnd(),
     private val captureDispatcher: CoroutineDispatcher = Dispatchers.Default,
@@ -95,6 +96,7 @@ class AudioTurnCapture(
         var pendingEndpoint = false
         var unconfirmedOnsetAt: Long? = null
         val followupEvidence = FollowupSpeechEvidence()
+        var initialEvidenceAvailable = true
         val pendingAudio = RollingAudioBuffer(maxDurationMs = 1200)
         log("capture_started vad=silero threshold=0.5 speechConfirmationMs=96 " +
             "speechGate=confirmed_acoustic_v4 noiseWindowMs=3000 noiseCalibrationMs=200 weakNoiseRatio=1.8 strongNoiseRatio=1.1 partialPolicy=work_paced_v1 " +
@@ -180,7 +182,7 @@ class AudioTurnCapture(
                     // Stable words corroborate weak whisper VAD; blank/noisy audio cannot
                     // qualify on amplitude alone. Strong VAD retains its existing fast path.
                     val corroborated = quietEvidence.accept(if (allowPartial) partial else null, decision.probability, audioAt, hasSpeech)
-                    followupEvidence.observe(chunk.size, decision.probability, partial, corroborated, decision.isSpeech)
+                    followupEvidence.observe(decision.speechSamples?.times(2) ?: chunk.size, decision.probability, partial?.takeIf { it.isNotBlank() } ?: initialConfirmedSpeech().takeIf { initialEvidenceAvailable && it.isNotBlank() }, corroborated, decision.isSpeech)
                     if (hasSpeech && corroborated) {
                         if (audioAt - lastSpeechAt >= 180) onSpeechResumed()
                         lastSpeechAt = audioAt
@@ -226,7 +228,7 @@ class AudioTurnCapture(
                             hasSpeech = false
                             finalTranscript = ""
                             synchronized(pcm) { pcm.clear(); capturedPcmBytes = 0; preRoll.clear() }
-                            followupEvidence.reset(); recoveryAudio.clear()
+                            followupEvidence.reset(); initialEvidenceAvailable = false; recoveryAudio.clear()
                             pendingEndpoint = false; pendingAudio.clear(); recognitionIssue = null
                             firstSpeechAt = null; firstPartialAfterSpeechMs = null; lastPartial = ""
                             quietEvidence.reset(); turnEnd.reset()
@@ -308,6 +310,7 @@ class AudioTurnCapture(
                                 pendingEndpoint = false
                                 turnEnd.reset()
                                 followupEvidence.reset()
+                                initialEvidenceAvailable = false
                                 quietEvidence.reset()
                                 onSpeechResumed()
                                 log("empty_speech_candidate ignored=true count=$emptyCandidates microphone=kept_open inactivitySince=last_detected_speech")

@@ -4,6 +4,8 @@ Implemented 15 pinned Qwen candidates with per-model backends/capabilities, temp
 
 # Local voice implementation plan
 
+> 20 September implementation: the [D1/E2 follow-up and phone card](voice-repair-implementation-and-phone-tests.md#d1e2-implementation-after-build-728-2026-09-20) records opt-in live-call audio evidence, shared acoustic admission, selective fresh-probe confirmation, accurate VAD durations and final correction checks. Code/test delivery does not close D2 acoustic or E/F phone acceptance. Software AEC remains conditional.
+
 ## 2026-09-20 — Build 728 false-trigger follow-up (current priority)
 
 The [build-728 reconciliation and bounded D/E/F follow-up](voice-repair-implementation-and-phone-tests.md#build-728-false-trigger-follow-up-and-plan-reconciliation-2026-09-20)
