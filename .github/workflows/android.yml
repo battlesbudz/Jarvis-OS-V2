@@ -171,13 +171,42 @@ jobs:
     needs: build-release
     uses: ./.github/workflows/android-sandbox.yml
 
+  verification-receipt:
+    name: Consolidate exact-build verification evidence
+    if: always() && needs.build-release.result != 'skipped'
+    needs: [build-release, verify-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download same-run evidence
+        id: evidence
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: jarvis-*
+          path: verification-inputs
+      - name: Verify artifact bytes and test evidence
+        env:
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          VERIFICATION_NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/verification/receipt.py --inputs verification-inputs --out verification-receipt
+      - name: Retain verification receipt even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-verification-receipt
+          path: verification-receipt/
+          retention-days: 14
+          if-no-files-found: error
+
   publish:
     name: Publish signed release APK
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository)
-    needs: [build-release, verify-release]
+    needs: [build-release, verify-release, verification-receipt]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -200,7 +229,7 @@ jobs:
   publish-pr-test:
     name: Publish permanent PR test APK
     if: github.event_name == 'push' && github.ref == 'refs/heads/PR1'
-    needs: [build-release, verify-release]
+    needs: [build-release, verify-release, verification-receipt]
     runs-on: ubuntu-latest
     permissions:
       contents: write

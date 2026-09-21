@@ -79,3 +79,9 @@ They demonstrate broken → repaired → retested, reject skipped/crashed/missin
 ## Design references
 
 This is an original Jarvis-specific implementation of the persistent verification workflow described by [pstack](https://github.com/cursor/plugins/tree/main/pstack), adapted to Codex and Android. It does not require Cursor or copy the plugin's source. It uses [UI Automator](https://developer.android.com/training/testing/other-components/ui-automator), Android's [release test variant support](https://developer.android.com/studio/test/advanced-test-setup), and the [Android emulator runner](https://github.com/ReactiveCircus/android-emulator-runner). ARM translation is documented by [Android](https://android-developers.googleblog.com/2020/03/run-arm-apps-on-android-emulator.html); physical-device performance still needs its own measurement.
+
+## Consolidated CI receipt
+
+`Android APK` now includes **Consolidate exact-build verification evidence** after both emulator jobs. It downloads only artifacts from its own run, rehashes the normal, compact and instrumentation APKs, reparses all named instrumentation outcomes and JVM XML, and checks screenshot/hierarchy presence and persisted model selection. Both publication jobs require this gate. The `jarvis-verification-receipt` artifact contains `receipt.json` and a human-readable summary, retained for 14 days including failed validation.
+
+Use the receipt's `pr_head` for the candidate branch and `source_commit` for the tested merge. Refresh the current branch before presenting a candidate: the receipt is historical evidence, not release authorization. The active Work session handles diagnosis/repair using existing connected GitHub access; no separate worker credentials, database or paid host are needed. Closing the session does not stop GitHub CI, but autonomous coding does not continue. Existing inference, physical audio and performance limitations remain.
