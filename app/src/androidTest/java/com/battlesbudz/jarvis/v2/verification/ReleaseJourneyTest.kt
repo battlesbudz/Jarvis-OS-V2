@@ -175,6 +175,19 @@ class ReleaseJourneyTest {
     }
 
     // Leave this selection in durable preferences for the controller's separate-process check.
+    @Test fun test10_modelIssueWarningPrecedesSelectionAndCancelPreservesModel() {
+        val original = com.battlesbudz.jarvis.v2.ai.ModelCatalog.gemma4E2b.id
+        openBrowser()
+        find(By.res("model_search")).text = "Zamba2-2.7B"
+        find(By.res("model_family_Zamba")).click()
+        assertNotNull(scrollTo(By.textStartsWith("Warning: GPU startup reportedly rebooted")))
+        scrollTo(By.res("model_choose_Zamba2-2.7B-instruct")).click()
+        assertNotNull(find(By.text("Known issue — read before choosing")))
+        find(By.text("Cancel")).click()
+        find(By.text("Done")).click()
+        assertNotNull(find(By.text(original)))
+    }
+
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()
         find(By.res("model_search")).text = "Gemma-4-E4B-it"

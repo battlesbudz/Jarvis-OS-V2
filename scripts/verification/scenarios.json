@@ -11,6 +11,7 @@
     "test07_settingsToolOpensAndroidSettings",
     "test08_rejectedToolSequencePreservesAndroidVolume",
     "test09_repeatedVolumeRequestIsIdempotent",
+    "test10_modelIssueWarningPrecedesSelectionAndCancelPreservesModel",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

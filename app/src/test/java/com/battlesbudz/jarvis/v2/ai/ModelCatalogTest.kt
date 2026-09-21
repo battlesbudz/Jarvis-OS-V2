@@ -30,7 +30,7 @@ class ModelCatalogTest {
     }
 
     @Test fun qwenSelectionsDoNotEnableGemmaOnlyPaths() {
-        assertEquals(15, ModelCatalog.qwen.size)
+        assertEquals(13, ModelCatalog.qwen.size)
         ModelCatalog.qwen.forEach { spec ->
             assertEquals(spec, ModelCatalog.resolve(spec.id))
             assertFalse(spec.supportsAudio)

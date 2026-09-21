@@ -103,14 +103,6 @@ object ModelCatalog {
             downloadUrl = "https://huggingface.co/litert-community/Qwen3-4B-Thinking-2507/resolve/92751be3c03156438ba11699fffbd314002ade5d/model.litertlm?download=true"
         ),
         LocalModelSpec(
-            id = "Qwen3-8B", fileName = "qwen3_8b_mixed_int4.litertlm",
-            expectedSha256 = "cb4e6d0de4bbf6656d177812cf0c6a983967dedd17e7f88e84b901c3a9862a42",
-            recommendedGpu = true, supportsVision = false,
-            contextTokens = 2048, downloadBytes = 4887412736L,
-            description = "Large experimental model · high memory use · INT4",
-            downloadUrl = "https://huggingface.co/litert-community/Qwen3-8B/resolve/71ff705588319d52d374977eff3da4eee0c0d26e/qwen3_8b_mixed_int4.litertlm?download=true"
-        ),
-        LocalModelSpec(
             id = "Qwen3.5-0.8B", fileName = "Qwen3.5-0.8B_int8.litertlm",
             expectedSha256 = "684d4d34adf7176eb47f6026ff65c33d42584737254e5524a8d1ad62edc21b98",
             recommendedGpu = false, supportsVision = false,
@@ -149,14 +141,6 @@ object ModelCatalog {
             contextTokens = 4096, downloadBytes = 647377840L,
             description = "Older small assistant",
             downloadUrl = "https://huggingface.co/litert-community/Qwen2-0.5B-Instruct/resolve/13aab3e522828d85fa178d885716ab858a715149/Qwen2_0.5B_Instruct.litertlm?download=true"
-        ),
-        LocalModelSpec(
-            id = "Qwen2-1.5B-Instruct", fileName = "Qwen2_1.5B_Instruct.litertlm",
-            expectedSha256 = "f0009d992f962157ee7164e7bf93d16229992fbb4ffe4ee055d0da47f189ad62",
-            recommendedGpu = true, supportsVision = false,
-            contextTokens = 4096, downloadBytes = 1802843056L,
-            description = "Older general assistant",
-            downloadUrl = "https://huggingface.co/litert-community/Qwen2-1.5B-Instruct/resolve/0292a162494daa04ab6d67da70a39ef353a281f2/Qwen2_1.5B_Instruct.litertlm?download=true"
         ),
         LocalModelSpec(
             id = "Qwen2-VL-2B", fileName = "Qwen2-VL-2B.litertlm",

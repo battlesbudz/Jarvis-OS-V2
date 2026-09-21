@@ -33,6 +33,7 @@ internal fun ModelBrowser(
     var query by rememberSaveable { mutableStateOf("") }
     var family by rememberSaveable { mutableStateOf<String?>(null) }
     var detailId by rememberSaveable { mutableStateOf<String?>(null) }
+    var warningId by rememberSaveable { mutableStateOf<String?>(null) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     val families = remember(query) { ModelGuide.families(query = query) }
     val familyListState = rememberLazyListState()
@@ -40,6 +41,18 @@ internal fun ModelBrowser(
     fun goBack() { if (family != null) { family = null; detailId = null } else onDismiss() }
     Dialog(onDismissRequest = { goBack() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         BackHandler { goBack() }
+        warningId?.let { id -> ModelCatalog.find(id)?.let { spec ->
+            AlertDialog(onDismissRequest = { warningId = null },
+                title = { Text("Known issue — read before choosing") },
+                text = { Text(ModelCompatibility.assess(spec).summary) },
+                confirmButton = { TextButton(onClick = {
+                    warningId = null
+                    error = onSelect(spec)
+                    if (error == null) onDismiss()
+                }, modifier = Modifier.testTag("model_issue_continue")) { Text("Choose anyway") } },
+                dismissButton = { TextButton(onClick = { warningId = null }) { Text("Cancel") } })
+        } }
+
         Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }, color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -59,7 +72,7 @@ internal fun ModelBrowser(
                     LazyColumn(state = familyListState, modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         item {
-                            Text("Open a family to compare uses and phone demands. All models stay available; installed status does not affect recommendations or order.",
+                            Text("Open a family to compare uses and phone demands. Labels show Android test evidence or reported issues. Installed status does not affect recommendations or order.",
                                 style = MaterialTheme.typography.bodyMedium)
                         }
                         if (families.isEmpty()) item { Text("No matching models. Try a different name or use, such as coding.") }
@@ -97,6 +110,7 @@ internal fun ModelBrowser(
                             OutlinedCard(Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text(spec.id, style = MaterialTheme.typography.titleMedium)
+                                    ModelCompatibilityLabel(spec)
                                     Text("Good for: " + purpose.tags.joinToString(" · "), color = MaterialTheme.colorScheme.primary,
                                         fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyMedium)
                                     Text(purpose.description, style = MaterialTheme.typography.bodySmall)
@@ -106,7 +120,7 @@ internal fun ModelBrowser(
                                         style = MaterialTheme.typography.labelLarge)
                                     Text(fit.displayLabel, color = if (fit.memoryRisk >= 2 || fit.compatibilityNotice != null) MaterialTheme.colorScheme.error
                                         else MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.labelLarge)
-                                    fit.compatibilityNotice?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+
                                     Text("Response demand: ${fit.workload}" + if (ModelGuide.canThink(spec)) " · Can think longer" else "",
                                         style = MaterialTheme.typography.labelLarge)
                                     if (startingPoint?.id == spec.id) Text("Everyday starting option · lower demand, general chat",
@@ -121,6 +135,7 @@ internal fun ModelBrowser(
                                     }
                                     if (detailId == spec.id) {
                                         HorizontalDivider()
+                                        Text(ModelCompatibility.assess(spec).details, style = MaterialTheme.typography.bodySmall)
                                         if (fit.compatibilityNotice != null) Text("Memory-only estimate below; it does not establish that this model can start.", style = MaterialTheme.typography.labelMedium)
                                         Text(fit.explanation, style = MaterialTheme.typography.bodySmall)
                                         if (fit.compatibilityNotice == null) Text(fit.workloadExplanation, style = MaterialTheme.typography.bodySmall)
@@ -139,7 +154,8 @@ internal fun ModelBrowser(
                                         TextButton(onClick = { detailId = if (detailId == spec.id) null else spec.id }) {
                                             Text(if (detailId == spec.id) "Less detail" else "Why this rating?")
                                         }
-                                        Button(modifier = Modifier.testTag("model_choose_${spec.id}"), onClick = { error = onSelect(spec); if (error == null) onDismiss() }) {
+                                        Button(modifier = Modifier.testTag("model_choose_${spec.id}"), onClick = { if (ModelCompatibility.assess(spec).confirmBeforeSelection) warningId = spec.id
+                                            else { error = onSelect(spec); if (error == null) onDismiss() } }) {
                                             Text(if (spec.id == selectedId) "Selected" else "Choose")
                                         }
                                     }
@@ -151,4 +167,14 @@ internal fun ModelBrowser(
             }
         }
     }
+}
+
+@Composable
+internal fun ModelCompatibilityLabel(spec: LocalModelSpec) {
+    val evidence = ModelCompatibility.assess(spec)
+    val color = if (evidence.status == ModelEvidenceStatus.ISSUE) MaterialTheme.colorScheme.error
+        else MaterialTheme.colorScheme.onSurface
+    Text(evidence.status.label, color = color, fontWeight = FontWeight.Bold,
+        modifier = Modifier.testTag("model_evidence_${spec.id}"))
+    Text(evidence.summary, color = color, style = MaterialTheme.typography.bodySmall)
 }

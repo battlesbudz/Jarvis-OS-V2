@@ -105,6 +105,7 @@ fun JarvisApp(
                 modifier = Modifier.fillMaxWidth().testTag("model_browse")
             ) { Text("Browse model families · ${com.battlesbudz.jarvis.v2.ai.ModelGuide.family(selectedModel)}") }
             Text(selectedModel.id, style = MaterialTheme.typography.titleSmall)
+            ModelCompatibilityLabel(selectedModel)
             if (expanded && canManage) ModelBrowser(
                 phone = phone, selectedId = selectedModel.id,
                 isInstalled = { store.hasModel(it) },
@@ -168,7 +169,7 @@ fun JarvisApp(
             val fit = com.battlesbudz.jarvis.v2.ai.ModelGuidance.assess(selectedModel, phone)
             Text(fit.displayLabel, color = if (fit.compatibilityNotice != null || fit.memoryRisk >= 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
             Text("Response demand: ${fit.workload}", style = MaterialTheme.typography.bodySmall)
-            Text(fit.compatibilityNotice ?: fit.explanation, style = MaterialTheme.typography.bodySmall)
+            Text(fit.explanation, style = MaterialTheme.typography.bodySmall)
             if (fit.compatibilityNotice == null) Text(fit.workloadExplanation, style = MaterialTheme.typography.bodySmall)
             fit.deviceExperience?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             com.battlesbudz.jarvis.v2.ai.ModelGuidance.storageNotice(selectedModel, phone, store.hasModel(selectedModel))?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }

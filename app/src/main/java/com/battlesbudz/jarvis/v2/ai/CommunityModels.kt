@@ -238,24 +238,6 @@ internal object CommunityModels {
             downloadUrl = "https://huggingface.co/litert-community/LLaVA-OneVision-0.5B/resolve/681d5fea488c40a1dce3c6df52fc18c853e1dd39/LLaVA-OneVision-0.5B.litertlm?download=true"
         ),
         LocalModelSpec(
-            id = "Llama-3.2-1B", requiresAccess = true, provider = "Meta",
-            fileName = "Llama-3.2-1B.litertlm",
-            expectedSha256 = "c6f21c5304c40f45b69e5bfb15bb45acbaad7938e941d25a0a391aef0ec6ac27",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
-            contextTokens = 1280, downloadBytes = 963903488L,
-            description = "Base language model · experimental chat quality",
-            downloadUrl = "https://huggingface.co/litert-community/Llama-3.2-1B/resolve/fd0e16d32f23ffc87473750e294fef8d8bf081e1/llama3_2_1b_mixed_int4_gpu.litertlm?download=true"
-        ),
-        LocalModelSpec(
-            id = "Llama-3.2-3B", requiresAccess = true, provider = "Meta",
-            fileName = "Llama-3.2-3B.litertlm",
-            expectedSha256 = "63419d689ef141cc77d6ab5739f27426d779e1165546a4904edefa9fc36fea51",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
-            contextTokens = 1280, downloadBytes = 2207940608L,
-            description = "Base language model · experimental chat quality",
-            downloadUrl = "https://huggingface.co/litert-community/Llama-3.2-3B/resolve/401735124eace78bbaee7bbf8f95581ab2ee63af/llama3_2_3b_mixed_int4_gpu.litertlm?download=true"
-        ),
-        LocalModelSpec(
             id = "Mage-VL", provider = "Microsoft",
             fileName = "Mage-VL.litertlm",
             expectedSha256 = "4231ea9f88ef2bd3aca92fd4554531f17717225418c4527ac858a8a9184dad72",
@@ -265,15 +247,6 @@ internal object CommunityModels {
             downloadUrl = "https://huggingface.co/litert-community/Mage-VL/resolve/392b2a700f34bb6cc405764af62e494c858b3e87/Mage-VL.litertlm?download=true"
         ),
         LocalModelSpec(
-            id = "MedGemma-1.5-4B-IT", requiresAccess = true, provider = "Google",
-            fileName = "MedGemma-1.5-4B-IT.litertlm",
-            expectedSha256 = "1627e2e433c3799e4ff06ff0895408ca65b255f786dc270fb5cfa325e349233a",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
-            contextTokens = 2048, downloadBytes = 3023069488L,
-            description = "Medical research model · not for clinical decisions",
-            downloadUrl = "https://huggingface.co/litert-community/MedGemma-1.5-4B-IT/resolve/abba4da1132343617b51c180e7147a9742a26559/medgemma-1.5-4b-it_q4_block32_vision_ekv2048.litertlm?download=true"
-        ),
-        LocalModelSpec(
             id = "MiniCPM-V-4", provider = "OpenBMB",
             fileName = "MiniCPM-V-4.litertlm",
             expectedSha256 = "d45ef0cd8141597d731d002b72a152ab1a0f8b9cda8d9a0f5e1bc3a4689dcbd0",
@@ -281,15 +254,6 @@ internal object CommunityModels {
             contextTokens = 1280, downloadBytes = 4214021104L,
             description = "Image-capable model · text chat here",
             downloadUrl = "https://huggingface.co/litert-community/MiniCPM-V-4/resolve/2d05ab8722280bd1f5e654c6a1a5e39c0e2bfc8c/MiniCPM-V-4-int8.litertlm?download=true"
-        ),
-        LocalModelSpec(
-            id = "MiniCPM5-1B", provider = "OpenBMB",
-            fileName = "MiniCPM5-1B.litertlm",
-            expectedSha256 = "4e15a7cc735ae36e9888d341d44bd53c0579153d7a3379aaf958620eea4816e3",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
-            contextTokens = 4096, downloadBytes = 793034752L,
-            description = "General conversation",
-            downloadUrl = "https://huggingface.co/litert-community/MiniCPM5-1B/resolve/8025a9864a6fc31aa2e29db19e5f1a0e4802a4df/minicpm_wi4b32_wi8_afp32_gpu_opt.litertlm?download=true"
         ),
         LocalModelSpec(
             id = "MiniCPM5-2B", provider = "OpenBMB",
@@ -409,51 +373,6 @@ internal object CommunityModels {
             downloadUrl = "https://huggingface.co/litert-community/Polaris-4B-Preview/resolve/e7526d68fdfe0b5cf779c9d22a3b4f20d376bd13/model.litertlm?download=true"
         ),
         LocalModelSpec(
-            id = "Qwen3-0.6B-int4", provider = "Alibaba · Qwen",
-            fileName = "Qwen3-0.6B-int4.litertlm",
-            expectedSha256 = "2df6821ec12702dafd33915e7a1a1adc7c4b053f3672fd9555dfaf3a114c4139",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
-            contextTokens = 1280, downloadBytes = 347251840L,
-            description = "General conversation",
-            downloadUrl = "https://huggingface.co/litert-community/Qwen3-0.6B-int4/resolve/6aa2daf8aba4aa456797fb8040b36a3948bcfda7/qwen3_0.6b_nothink_q4_block32_ekv1280.litertlm?download=true"
-        ),
-        LocalModelSpec(
-            id = "Qwen3-14B", provider = "Alibaba · Qwen",
-            fileName = "Qwen3-14B.litertlm",
-            expectedSha256 = "71de7d58f1b46a3fcba2f7bb700ebcc3c3715877d9a7028d93dd1bcd89bbe946",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
-            contextTokens = 1280, downloadBytes = 8655863808L,
-            description = "General conversation",
-            downloadUrl = "https://huggingface.co/litert-community/Qwen3-14B/resolve/e4122fd370cec85c61467274b180e0954e4f422d/qwen3_14b_mixed_int4.litertlm?download=true"
-        ),
-        LocalModelSpec(
-            id = "SmolLM2-1.7B-Instruct", provider = "Hugging Face",
-            fileName = "SmolLM2-1.7B-Instruct.litertlm",
-            expectedSha256 = "3c3e693157e2fb92b862b572cff74b7a353f81eb232cef682bf0fcc91855f8f1",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
-            contextTokens = 1280, downloadBytes = 1730949280L,
-            description = "Small assistant · simple requests · limited knowledge",
-            downloadUrl = "https://huggingface.co/litert-community/SmolLM2-1.7B-Instruct/resolve/c0ee765a9f197467ead8f22b9bf7bbeb4e6307c7/SmolLM2-1_7B-Instruct_dynamic_wi8_afp32.litertlm?download=true"
-        ),
-        LocalModelSpec(
-            id = "SmolLM2-135M-Instruct", provider = "Hugging Face",
-            fileName = "SmolLM2-135M-Instruct.litertlm",
-            expectedSha256 = "ccdc5c85735743f081b7d44ca309cab569f76c0f2f0e8e163449a63721969c37",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
-            contextTokens = 1280, downloadBytes = 142819328L,
-            description = "Small assistant · simple requests · limited knowledge",
-            downloadUrl = "https://huggingface.co/litert-community/SmolLM2-135M-Instruct/resolve/8111e0a65fda719f0a6855e8e1a8ec8c3f9ccb22/SmolLM2_135M_Instruct.litertlm?download=true"
-        ),
-        LocalModelSpec(
-            id = "SmolLM2-360M-Instruct", provider = "Hugging Face",
-            fileName = "SmolLM2-360M-Instruct.litertlm",
-            expectedSha256 = "8e2834da211b439751af968ed650febdde5a8cb8d88bc6c1a3059f049caa5c2e",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
-            contextTokens = 1280, downloadBytes = 373719040L,
-            description = "Small assistant · simple requests · limited knowledge",
-            downloadUrl = "https://huggingface.co/litert-community/SmolLM2-360M-Instruct/resolve/507c99cfe6541ba2bcd84818786f7b025935e5e1/SmolLM2_360M_instruct.litertlm?download=true"
-        ),
-        LocalModelSpec(
             id = "SmolLM3-3B", provider = "Hugging Face",
             fileName = "SmolLM3-3B.litertlm",
             expectedSha256 = "2d989ddf434a25682e580eb45dcf65c2cbd6a57f76278b8f651a8cf195c2273e",
@@ -499,33 +418,6 @@ internal object CommunityModels {
             downloadUrl = "https://huggingface.co/litert-community/Spark-X2.5-4B/resolve/453039c2968e01cbbb304fe871e6b4c541bf58d5/Spark-X2.5-4B_int4.litertlm?download=true"
         ),
         LocalModelSpec(
-            id = "Ternary-Bonsai-1.7B", provider = "prism-ml",
-            fileName = "Ternary-Bonsai-1.7B.litertlm",
-            expectedSha256 = "13bb3701552157242d06eaf16977ce758a0eeca7888eb7f2314aceaf3fe71cd7",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
-            contextTokens = 4096, downloadBytes = 765800402L,
-            description = "Highly compressed experimental assistant",
-            downloadUrl = "https://huggingface.co/litert-community/Ternary-Bonsai-1.7B/resolve/a8c945e4b7dcd74b16e245e0c20fd80dc53399f2/bonsai-1.7b-int2pc-4k-gpu.litertlm?download=true"
-        ),
-        LocalModelSpec(
-            id = "Ternary-Bonsai-8B", provider = "prism-ml",
-            fileName = "Ternary-Bonsai-8B.litertlm",
-            expectedSha256 = "fa8b5d65e585327d5ad61692b8c28f6ea1ac78bf54eae20e61ba258f2a049d03",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
-            contextTokens = 4096, downloadBytes = 2559504325L,
-            description = "Highly compressed experimental assistant",
-            downloadUrl = "https://huggingface.co/litert-community/Ternary-Bonsai-8B/resolve/f90d0d3725d52aaafe8e95f0633597d2266c473a/bonsai-8b-int2pc-4k-gpu.litertlm?download=true"
-        ),
-        LocalModelSpec(
-            id = "TinySwallow-1.5B-Instruct", provider = "Sakana AI",
-            fileName = "TinySwallow-1.5B-Instruct.litertlm",
-            expectedSha256 = "a79dab105dca3474188cb2cd7f3e94380567dd10d788c830ca7f7388d4ce816b",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
-            contextTokens = 1280, downloadBytes = 1567604736L,
-            description = "Japanese and English conversation",
-            downloadUrl = "https://huggingface.co/litert-community/TinySwallow-1.5B-Instruct/resolve/cf67d4d779c4602a7fdf43331c21897bc63ee67f/TinySwallow-1.5B-Instruct.litertlm?download=true"
-        ),
-        LocalModelSpec(
             id = "VibeThinker-1.5B", provider = "Weibo",
             fileName = "VibeThinker-1.5B.litertlm",
             expectedSha256 = "2b954abf0df11deb7bea9c4ce779566918dd81f4e578d673e7f618b10799e412",
@@ -569,42 +461,6 @@ internal object CommunityModels {
             contextTokens = 1280, downloadBytes = 4724446544L,
             description = "Coding help · uses more memory",
             downloadUrl = "https://huggingface.co/litert-community/codegemma-7b-it-int4-litertlm/resolve/aac118626c8170a2dd617cfe9dc1995fed6f0d34/codegemma-7b-it-int4-litertlm.litertlm?download=true"
-        ),
-        LocalModelSpec(
-            id = "gemma-3-270m-it", requiresAccess = true, provider = "Google",
-            fileName = "gemma-3-270m-it.litertlm",
-            expectedSha256 = "757e9119fa5bd667a2774fb470ac4afcd3190a21c677f8e69a5d6bc908abdd63",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
-            contextTokens = 1280, downloadBytes = 304005120L,
-            description = "Small assistant · simple requests · limited knowledge",
-            downloadUrl = "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/9d2093270fb5aa49a986b49b5779d763dde7b630/gemma3-270m-it-q8.litertlm?download=true"
-        ),
-        LocalModelSpec(
-            id = "gemma-4-26B-A4B-it-litert-lm", provider = "Google",
-            fileName = "gemma-4-26B-A4B-it-litert-lm.litertlm",
-            expectedSha256 = "94bbde2453dd9b67c61c16017af331e5841cbbd9edf83bd2f84bc73e2a7cbdb1",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
-            contextTokens = 2048, downloadBytes = 15786524672L,
-            description = "Very large model · unlikely to fit a phone",
-            downloadUrl = "https://huggingface.co/litert-community/gemma-4-26B-A4B-it-litert-lm/resolve/7228819fa9580751b57b41a93ee54d5c08c4e001/gemma-4-26B-A4B-it-gpu.litertlm?download=true"
-        ),
-        LocalModelSpec(
-            id = "gemma-4-31B-it-litert-lm", provider = "Google",
-            fileName = "gemma-4-31B-it-litert-lm.litertlm",
-            expectedSha256 = "6cd4031c2f3a6c8dc7f96eaf4ded58132de82e38b49862e5c2ed1ef8cc450e35",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
-            contextTokens = 2048, downloadBytes = 19217989632L,
-            description = "Very large model · unlikely to fit a phone",
-            downloadUrl = "https://huggingface.co/litert-community/gemma-4-31B-it-litert-lm/resolve/22b0d25f0876fe5fa038ad8365502415aaf69a59/gemma-4-31B-it-gpu.litertlm?download=true"
-        ),
-        LocalModelSpec(
-            id = "granite-4.0-350m-litert-lm", provider = "IBM",
-            fileName = "granite-4.0-350m-litert-lm.litertlm",
-            expectedSha256 = "c8e9a29493f62b7c44461fb36980987c4c1454c75e95f57ba0539a8edc9dce76",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
-            contextTokens = 1280, downloadBytes = 468209584L,
-            description = "General conversation",
-            downloadUrl = "https://huggingface.co/litert-community/granite-4.0-350m-litert-lm/resolve/6f1e9bce89b174930a79de82d0dcdede708f8c34/granite-4.0-350m_q8_ekv1280.litertlm?download=true"
         ),
         LocalModelSpec(
             id = "granite-4.0-h-1b", provider = "IBM",

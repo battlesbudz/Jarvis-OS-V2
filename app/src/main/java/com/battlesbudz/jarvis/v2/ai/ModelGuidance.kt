@@ -17,7 +17,7 @@ data class ModelFit(
     val deviceExperience: String? = null,
     val compatibilityNotice: String? = null
 ) {
-    val displayLabel: String get() = if (compatibilityNotice != null) "Experimental · not benchmarked in Jarvis" else "Memory: $label"
+    val displayLabel: String get() = "Memory: $label"
     val startingOption: Boolean get() = memoryRisk <= 1 && compatibilityNotice == null
 }
 
@@ -81,13 +81,8 @@ object ModelGuidance {
             "Gemma-4-E4B-it" -> "Reported Fold6 experience: E4B runs, but audible replies have taken around 30 seconds. It remains an option for patient text use."
             else -> null
         } else null
-        // Unverified phone compatibility is independent of downloaded/tested status. Bind it
-        // to the affected catalog artifact/backend so a replacement doesn't inherit it silently.
-        val compatibilityNotice = if (phone.arm64 &&
-            spec.id == "Qwen3-8B" && spec.recommendedGpu &&
-            spec.expectedSha256 == "cb4e6d0de4bbf6656d177812cf0c6a983967dedd17e7f88e84b901c3a9862a42")
-            "Phone compatibility is unverified. This bundle was reported unable to start on a Galaxy Z Fold6; no error was captured and the cause is unknown. It may not load or run on your phone. Do not expect reliable operation; download only if you want to experiment."
-        else null
+        val evidence = ModelCompatibility.assess(spec)
+        val compatibilityNotice = evidence.summary.takeIf { evidence.status != ModelEvidenceStatus.TESTED }
         return ModelFit(label, explanation, workload, workloadExplanation, risk, experience, compatibilityNotice)
     }
 
