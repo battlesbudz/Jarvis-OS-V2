@@ -174,9 +174,9 @@ class ReleaseJourneyTest {
         } finally { audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0) }
     }
 
-    // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test10_modelIssueWarningPrecedesSelectionAndCancelPreservesModel() {
-        val original = com.battlesbudz.jarvis.v2.ai.ModelCatalog.gemma4E2b.id
+        // Exercise the release UI without linking to R8-optimized catalog internals.
+        val original = "Gemma-4-E2B-it"
         openBrowser()
         find(By.res("model_search")).text = "Zamba2-2.7B"
         find(By.res("model_family_Zamba")).click()
@@ -188,6 +188,7 @@ class ReleaseJourneyTest {
         assertNotNull(find(By.text(original)))
     }
 
+    // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()
         find(By.res("model_search")).text = "Gemma-4-E4B-it"
