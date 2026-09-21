@@ -136,6 +136,44 @@ class ReleaseJourneyTest {
         assertFalse(result.succeeded)
     }
 
+    @Test fun test07_settingsToolOpensAndroidSettings() {
+        val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true }))
+        val result = pipeline.execute(ActionRequest("open_app", mapOf("app" to "Settings", "package" to "com.android.settings")))
+        assertTrue(result.message, result.succeeded)
+        assertTrue("Settings must actually appear, not merely report success",
+            device.wait(Until.hasObject(By.pkg("com.android.settings").depth(0)), 15_000))
+        // @After captures the launched Settings screen before closing Jarvis's scenario.
+    }
+
+    @Test fun test08_rejectedToolSequencePreservesAndroidVolume() {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context))
+        val requests = listOf(ActionRequest("unsupported_action"), ActionRequest("open_app")) +
+            listOf("", "NaN", "Infinity", "-1", "101", "loud").map {
+                ActionRequest("set_volume", mapOf("level" to it))
+            }
+        for (request in requests) {
+            assertFalse("Rejected input must not succeed: $request", pipeline.execute(request).succeeded)
+            assertEquals("Rejected input changed volume: $request", before,
+                audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+        }
+    }
+
+    @Test fun test09_repeatedVolumeRequestIsIdempotent() {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context))
+        val request = ActionRequest("set_volume", mapOf("level" to "40"))
+        try {
+            repeat(2) {
+                assertTrue(pipeline.execute(request).succeeded)
+                assertEquals((audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .4).roundToInt(),
+                    audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            }
+        } finally { audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0) }
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()

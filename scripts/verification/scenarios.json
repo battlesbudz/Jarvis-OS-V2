@@ -8,6 +8,9 @@
     "test04_batteryToolReadsAndroid",
     "test05_volumeToolChangesAndroidAndRejectsBadInput",
     "test06_missingAppReturnsFailure",
+    "test07_settingsToolOpensAndroidSettings",
+    "test08_rejectedToolSequencePreservesAndroidVolume",
+    "test09_repeatedVolumeRequestIsIdempotent",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

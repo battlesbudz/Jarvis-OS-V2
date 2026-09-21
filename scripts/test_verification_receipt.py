@@ -30,7 +30,7 @@ class ReceiptTest(unittest.TestCase):
             folder = self.root / f'jarvis-verification-api-{api}-{apk}'
             folder.mkdir()
             (folder / 'tests').mkdir()
-            raw = ''.join(f"INSTRUMENTATION_STATUS: class={self.scenarios['class']}\nINSTRUMENTATION_STATUS: test={name}\nINSTRUMENTATION_STATUS_CODE: 0\n" for name in self.scenarios['tests']) + 'OK (7 tests)\n'
+            raw = ''.join(f"INSTRUMENTATION_STATUS: class={self.scenarios['class']}\nINSTRUMENTATION_STATUS: test={name}\nINSTRUMENTATION_STATUS_CODE: 0\n" for name in self.scenarios['tests']) + f"OK ({len(self.scenarios['tests'])} tests)\n"
             (folder / 'instrumentation.txt').write_text(raw)
             report = {'passed': True, 'source_commit': self.source, 'pr_head': self.head, 'run_url': self.url,
                       'errors': [], 'process_restart': 'passed', 'apk_sha256': sha256(binary), 'test_apk_sha256': sha256(test),
