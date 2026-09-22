@@ -44,7 +44,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
                         m.optString("contextText", m.getString("text")), m.optBoolean("complete", true),
                         m.optJSONObject("attachment")?.let { a -> runCatching {
                             ChatAttachment(a.getString("uri"), AttachmentKind.valueOf(a.getString("kind")))
-                        }.getOrNull(), m.optJSONArray("actions")?.let { actions -> (0 until actions.length()).map { i ->
+                        }.getOrNull() }, m.optJSONArray("actions")?.let { actions -> (0 until actions.length()).map { i ->
                             actions.getJSONObject(i).let { a -> ActionReceipt(a.getString("name"), a.getString("message"), a.getBoolean("succeeded")) }
                         } }.orEmpty())
                 }
