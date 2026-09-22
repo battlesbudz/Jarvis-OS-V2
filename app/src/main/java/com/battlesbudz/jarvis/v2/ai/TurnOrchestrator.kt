@@ -1,5 +1,8 @@
 package com.battlesbudz.jarvis.v2.ai
 
+import com.battlesbudz.jarvis.v2.ChatEntry
+import com.battlesbudz.jarvis.v2.actions.ActionTurnPlan
+
 enum class TurnKind {
     NORMAL_CHAT,
     FACTUAL_LOCAL_FIRST,
@@ -10,7 +13,8 @@ enum class TurnKind {
 data class TurnPlan(
     val kind: TurnKind,
     val lookupQuery: String? = null,
-    val activeSubject: String? = null
+    val activeSubject: String? = null,
+    val actionPlan: ActionTurnPlan = ActionTurnPlan.NotAction
 )
 
 class TurnOrchestrator(
@@ -27,6 +31,11 @@ class TurnOrchestrator(
     }
 
     fun plan(prompt: String, history: List<Pair<String, String>> = emptyList()): TurnPlan {
+        val actionPlan = ActionTurnPlan.parse(prompt, history.map { ChatEntry(it.first, it.second) })
+        if (actionPlan !is ActionTurnPlan.NotAction) {
+            pendingLookupSubject = null; activeSubject = null; activeSubjectQuestion = null
+            return TurnPlan(TurnKind.NORMAL_CHAT, actionPlan = actionPlan)
+        }
         val confirmation = grounding.isLookupConfirmation(prompt)
         val explicit = grounding.isExplicitLookupRequest(prompt)
         val dialogue = DialogueContextPolicy.resolve(prompt, history)

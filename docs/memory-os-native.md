@@ -2,7 +2,7 @@
 
 This milestone ports the reviewable local ledger from the original Jarvis OS MemoryOS work into the Android app. The upstream reference is [jarvis-os commit d8018e4b4ce263a9d03aef41cb864a66e45e331d](https://github.com/battlesbudz/jarvis-os/commit/d8018e4b4ce263a9d03aef41cb864a66e45e331d); the native branch is based on `audio-pr2` at `c20b5137d010aa2a99814bea4387201b485182c7`. It is a standalone milestone and does not claim that chat or voice recall is live.
 
-The feature content is combined with the pinned audio snapshot `5643517b54d10a01f8d9f71631ee2e0ae81f371f` (audio commits `9ccaca5`, `d37eb0c`, and `5643517`) by a single-parent content import; it is not a Git merge.
+The feature content is combined with the pinned natural-routing audio snapshot `9b133b466cf8508618778ea41c25aefd36910737` (including audio snapshots `9ccaca5`, `d37eb0c`, `5643517`, and `9b133b4`) by a single-parent content import; it is not a Git merge.
 
 ## What is implemented
 
@@ -51,7 +51,7 @@ Focused JVM coverage is present in:
 * `MemoryOsTest`: source idempotency/conflicts, concurrent store instances, stale review and lineage deletion.
 * `MemoryRetrievalTest`: lexical/expiry/review filtering and delimiter/injection-safe packets.
 
-The release UI journey is `ReleaseJourneyTest.test18_memoryManagerReviewsCorrectsSearchesAndErases`, listed in `scripts/verification/scenarios.json`. It covers restricted-input rejection, add/approve, search, correction approval and exclusion of the superseded fact, rejection, erase-all cancellation/confirmation, and persistence after Activity recreation. Existing scenarios remain unchanged. Activity recreation is UI persistence coverage; Android process death has not been tested here.
+The release UI journey is `ReleaseJourneyTest.test20_memoryManagerReviewsCorrectsSearchesAndErases`, listed in `scripts/verification/scenarios.json`. It covers restricted-input rejection, add/approve, search, correction approval and exclusion of the superseded fact, rejection, erase-all cancellation/confirmation, and persistence after Activity recreation. Existing scenarios remain unchanged. Activity recreation is UI persistence coverage; Android process death has not been tested here.
 
 Before integration, the combined revision requires code review and the full signed release gate: JVM, native/helper checks, normal API 30 sandbox, compact API 35 sandbox, and the consolidated exact-build receipt. The combined feature revision is a release candidate only after its exact signed normal/compact gate, both emulator journeys, and consolidated receipt complete; this document does not claim that evidence yet. Real model inference, voice capture, automatic recall and physical performance remain unverified.
 

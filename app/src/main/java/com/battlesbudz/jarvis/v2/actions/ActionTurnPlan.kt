@@ -32,7 +32,7 @@ sealed interface ActionTurnPlan {
         private fun looksDirected(clause: String): Boolean =
             ActionRequestText.appTarget(clause) != null ||
                 Regex("""(?i)^(?:set|make|turn|adjust|change|raise|lower|increase|decrease)\b.*\bvolume\b""").containsMatchIn(clause) ||
-                Regex("""(?i)^(?:(?:what(?:'s| is)|how much|check|read|show|tell me)(?:\s+(?:my|phone|device))?\s+battery(?:\s+(?:level|status|percentage|percent|remaining))?|(?:my |phone |device )?battery(?: (?:level|status|percentage|percent|remaining))?)$""").matches(clause)
+                ActionRequestText.batteryRequest(clause)
 
         private fun confirmation(text: String, history: List<ChatEntry>): ActionRequest? {
             val normalized = text.trim()
@@ -50,8 +50,7 @@ sealed interface ActionTurnPlan {
             val volume = Regex("""(?i)^(?:set|make|turn|adjust|change|raise|lower|increase|decrease)(?:\s+(?:the|my))?(?:\s+media)?\s+volume(?:\s+to)?\s+(.+)$""")
                 .matchEntire(clause)?.groupValues?.get(1)
             if (volume != null) return parseExactVolume(volume)?.let { ActionRequest("set_volume", mapOf("level" to it.toString())) }
-            if (Regex("""(?i)^(?:(?:what(?:'s| is)|how much|check|read|show|tell me)(?:\s+(?:my|phone|device))?\s+battery(?:\s+(?:level|status|percentage|percent|remaining))?|(?:my |phone |device )?battery(?: (?:level|status|percentage|percent|remaining))?)$""")
-                    .matches(clause)) return ActionRequest("read_battery")
+            if (ActionRequestText.batteryRequest(clause)) return ActionRequest("read_battery")
             return null
         }
 

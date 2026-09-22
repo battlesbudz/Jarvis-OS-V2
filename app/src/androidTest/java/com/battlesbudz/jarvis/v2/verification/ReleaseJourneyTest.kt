@@ -25,7 +25,7 @@ import org.junit.runners.MethodSorters
 import java.io.File
 import kotlin.math.roundToInt
 
-/** Real release UI and Android actions; no model weights or simulated model replies. */
+/** Real release UI/Android actions; controlled ToolCalls verify routing without model weights. */
 @RunWith(AndroidJUnit4::class)
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class ReleaseJourneyTest {
@@ -408,7 +408,44 @@ class ReleaseJourneyTest {
     }
 
 
-    @Test fun test18_memoryManagerReviewsCorrectsSearchesAndErases() {
+    @Test fun test18_naturalActionRoutingOpensSettingsThenReadsBattery() {
+        val plan = com.battlesbudz.jarvis.v2.ai.TurnOrchestrator(com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient())
+            .plan("Can you open up Settings and tell me what my battery percentage is?")
+        assertEquals(com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT, plan.kind)
+        assertNull(plan.lookupQuery)
+        val outcome = ActionTurnRunner(AndroidMobileActionExecutor(context, canLaunchDirectly = { true })).run(plan.actionPlan, listOf(listOf(
+            com.battlesbudz.jarvis.v2.ai.ToolCall("open_app", "{\"app\":\"Settings\"}"),
+            com.battlesbudz.jarvis.v2.ai.ToolCall("read_battery", "{}"))))
+        assertTrue(outcome.completed)
+        assertEquals(listOf("open_app", "read_battery"), outcome.receipts.map { it.request.name })
+        assertTrue(outcome.receipts.all { it.result.succeeded })
+        assertTrue(device.wait(Until.hasObject(By.pkg("com.android.settings").depth(0)), 15_000))
+        val percent = context.getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        assertEquals("Battery is at $percent percent.", outcome.receipts.last().result.message)
+    }
+
+    @Test fun test19_retryLiteralUnknownAppStopsWithoutBattery() {
+        val plan = com.battlesbudz.jarvis.v2.ai.TurnOrchestrator(com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient())
+            .plan("I said, can you open up the fistbook and tell me what my battery percentage is?")
+        assertEquals(com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT, plan.kind)
+        assertNull(plan.lookupQuery)
+        val ready = plan.actionPlan as ActionTurnPlan.Ready
+        assertEquals("fistbook", ready.steps.first().request.arguments["app"])
+        var calls = 0
+        val substituted = ActionTurnRunner(MobileActionExecutor { calls++; ExecutionResult(true, "bad") }).run(ready, listOf(listOf(
+            com.battlesbudz.jarvis.v2.ai.ToolCall("open_app", "{\"app\":\"Facebook\"}"))))
+        assertFalse(substituted.completed); assertEquals(0, calls)
+        var androidAttempts = 0
+        val real = AndroidMobileActionExecutor(context)
+        val outcome = ActionTurnRunner(MobileActionExecutor { action -> androidAttempts++; real.execute(action) }).run(ready, listOf(listOf(
+            com.battlesbudz.jarvis.v2.ai.ToolCall("open_app", "{\"app\":\"fistbook\"}"),
+            com.battlesbudz.jarvis.v2.ai.ToolCall("read_battery", "{}"))))
+        assertFalse(outcome.completed); assertEquals(1, androidAttempts); assertEquals(1, outcome.receipts.size)
+        assertFalse(outcome.receipts.single().result.succeeded)
+        assertEquals("open_app", outcome.receipts.single().request.name)
+    }
+
+    @Test fun test20_memoryManagerReviewsCorrectsSearchesAndErases() {
         // Use only the release UI: memory implementation classes are intentionally shrinkable.
         clickEnabled(By.res("memory_open"))
         assertNotNull(find(By.text("Memory")))
@@ -485,6 +522,7 @@ class ReleaseJourneyTest {
         captureEvidence("memory_approved_after_recreation")
         clickEnabled(By.res("memory_back"))
     }
+
 
 
     // Leave this selection in durable preferences for the controller's separate-process check.

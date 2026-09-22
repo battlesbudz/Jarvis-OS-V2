@@ -14,9 +14,23 @@ internal object ActionRequestText {
     fun actionClauses(text: String): List<String> {
         val unquoted = quoted.replace(text, " ").trim()
         if (unquoted.isBlank() || Regex("""(?i)\b(?:don't|do not|never|how do i)\b""").containsMatchIn(unquoted)) return emptyList()
-        return unquoted.split(Regex("""(?i)[.!?;\n]+|\s*(?:,?\s+and\s+then\s+|,?\s+then\s+|,?\s+and\s+)"""))
+        val retried = unquoted.replaceFirst(Regex("""(?i)^(?:i\s+(?:said|asked)(?:\s+you)?[, ]+)(?=(?:can|could|would|will)\s+you\b|please\s+(?:open|launch|start|set|read|check|show|tell)\b)"""), "")
+        return retried.split(Regex("""(?i)[.!?;\n]+|\s*(?:,?\s+and\s+then\s+|,?\s+then\s+|,?\s+and\s+)"""))
             .map { trailing.replace(lead.replaceFirst(it.trim(), "").trim(), "").trim().trimEnd('.', '!', '?') }
             .filter { it.isNotBlank() }
+    }
+
+    /** Bounded natural-language forms for the current phone battery reading. */
+    fun batteryRequest(clause: String): Boolean {
+        val text = clause.lowercase().trim()
+        val label = "(?:battery(?: (?:level|status|percentage|percent|remaining))?)"
+        return listOf(
+            "(?:what(?:'s| is)|check|read|show) (?:my |the |phone |device )?$label(?: is)?",
+            "tell me (?:what )?(?:my |the |phone |device )?$label(?: is)?",
+            "tell me how much battery (?:i have(?: left)?|is left|does my phone have)",
+            "how much (?:my )?battery(?: (?:do i have|is left|does my phone have))?",
+            "(?:my |phone |device )?$label"
+        ).any { Regex("^(?:$it)$").matches(text) }
     }
 
     fun appTarget(clause: String): String? {

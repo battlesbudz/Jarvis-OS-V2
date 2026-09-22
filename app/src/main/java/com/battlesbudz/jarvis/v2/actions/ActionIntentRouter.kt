@@ -8,61 +8,10 @@ class ActionIntentRouter {
         prompt: String,
         history: List<ChatEntry>
     ): com.battlesbudz.jarvis.v2.ai.ToolCall? {
-        val normalized = prompt.trim()
-
-        fun openApp(appName: String): com.battlesbudz.jarvis.v2.ai.ToolCall? {
-            val cleanedName = appName.trim().trimEnd('.', '?', '!', ',')
-            return cleanedName.takeIf {
-                it.isNotBlank() && !it.equals("it", ignoreCase = true) &&
-                    !it.equals("that", ignoreCase = true)
-            }?.let {
-                com.battlesbudz.jarvis.v2.ai.ToolCall(
-                    name = "open_app",
-                    arguments = JSONObject().put("app", it).toString()
-                )
-            }
-        }
-
-        val planned = ActionTurnPlan.parse(normalized, history)
-        (planned as? ActionTurnPlan.Ready)?.takeIf { it.steps.size == 1 }?.steps?.single()?.request?.let { request ->
-            return com.battlesbudz.jarvis.v2.ai.ToolCall(request.name, JSONObject(request.arguments).toString())
-        }
-        if (planned is ActionTurnPlan.Ready || planned is ActionTurnPlan.Rejected) return null
-        val clauses = ActionRequestText.clauses(normalized)
-        // Only a directed imperative/request can authorize a phone action.
-        // "It'll open apps" and "how do I open apps?" remain ordinary conversation.
-        clauses.firstNotNullOfOrNull(ActionRequestText::appTarget)?.let { return openApp(it) }
-
-        // Resolve a pronoun or generic confirmation only when a recent turn
-        // established a specific app-opening request or offer.
-        val genericConfirmation = Regex(
-            """(?i)^(?:(?:okay|ok|yes|sure)(?:\s+(?:thanks|thank you|can you|could you|please|do it|now|and))*|do it|go ahead|open it|open that)(?:\s+please)?[?.!]*$"""
-        ).matches(normalized)
-        if (genericConfirmation) {
-            // Confirmation belongs to the immediately preceding request/offer;
-            // an old mention of an app is not a standing authorization.
-            val last = history.lastOrNull()
-            val priorApp = last?.let { entry ->
-                if (entry.role == "Jarvis") ActionRequestText.offeredApp(entry.text)
-                else ActionRequestText.clauses(entry.text).firstNotNullOfOrNull(ActionRequestText::appTarget)
-            }
-            if (priorApp != null) return openApp(priorApp)
-        }
-
-        for (clause in clauses) {
-            val volumeCommand = Regex("""(?i)^(?:set|make|turn|adjust|change|raise|lower|increase|decrease)\b.*\bvolume\b""")
-                .containsMatchIn(clause)
-            if (volumeCommand) {
-                val value = com.battlesbudz.jarvis.v2.voice.SpokenVolumeLevel.fromTranscript(clause)
-                if (value != null) return com.battlesbudz.jarvis.v2.ai.ToolCall(
-                    name = "set_volume", arguments = JSONObject().put("level", value).toString())
-            }
-            if (Regex("""(?i)^(?:(?:what(?:'s| is)|how much|check|read|show|tell me)\b.{0,30}\bbattery\b.*|(?:my |phone |device )?battery(?: (?:level|status|percentage|percent|remaining))?)$""")
-                    .matches(clause)) {
-                return com.battlesbudz.jarvis.v2.ai.ToolCall("read_battery", JSONObject().toString())
-            }
-        }
-        return null
+        val planned = ActionTurnPlan.parse(prompt, history)
+        val request = (planned as? ActionTurnPlan.Ready)?.takeIf { it.steps.size == 1 }?.steps?.single()?.request
+            ?: return null
+        return com.battlesbudz.jarvis.v2.ai.ToolCall(request.name, JSONObject(request.arguments).toString())
     }
 
 

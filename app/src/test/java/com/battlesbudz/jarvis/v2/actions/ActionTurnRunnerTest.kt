@@ -144,4 +144,32 @@ class ActionTurnRunnerTest {
         assertTrue(executed.isEmpty())
     }
 
+    @Test fun naturalBatteryPhrasesAndSafeRetryPrefixUseLiteralAppNames() {
+        for (battery in listOf("tell me what my battery percentage is", "tell me what the battery level is", "what is my battery percentage", "how much battery do I have", "how much my battery", "how much battery is left", "how much battery does my phone have", "tell me how much battery I have left"))
+            assertTrue(battery, ActionTurnPlan.parse(battery) is ActionTurnPlan.Ready)
+        val plan = ActionTurnPlan.parse("Can you open up Facebook and tell me what my battery percentage is?") as ActionTurnPlan.Ready
+        assertEquals(listOf(ActionRequest("open_app", mapOf("app" to "Facebook")), ActionRequest("read_battery")), plan.steps.map { it.request })
+        val retry = ActionTurnPlan.parse("I said, can you open up the fistbook and tell me what my battery percentage is?") as ActionTurnPlan.Ready
+        assertEquals("fistbook", retry.steps.first().request.arguments["app"])
+        for (text in listOf("Tell me about battery technology", "I said that Facebook was useful", "I said, don't open Facebook", "For example, \"tell me what my battery percentage is\""))
+            assertTrue(text, ActionTurnPlan.parse(text) is ActionTurnPlan.NotAction)
+    }
+
+    @Test fun productionRoutePlanDrivesSimulatedCallsWithoutAppSubstitution() {
+        val turns = com.battlesbudz.jarvis.v2.ai.TurnOrchestrator(com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient())
+        val plan = turns.plan("Can you open up Facebook and tell me what my battery percentage is?").actionPlan
+        val world = World()
+        assertTrue(ActionTurnRunner(world).run(plan, listOf(listOf(call("open_app", "{\"app\":\"Facebook\"}"), call("read_battery", "{}")))).completed)
+        assertEquals(listOf(MobileAction.OpenApp("Facebook"), MobileAction.ReadBattery), world.actions)
+        val retry = turns.plan("I said, can you open up the fistbook and tell me what my battery percentage is?").actionPlan
+        val rejected = World()
+        assertFalse(ActionTurnRunner(rejected).run(retry, listOf(listOf(call("open_app", "{\"app\":\"Facebook\"}")))).completed)
+        assertTrue(rejected.actions.isEmpty())
+        val failing = World(failAt = 1)
+        val outcome = ActionTurnRunner(failing).run(retry, listOf(listOf(call("open_app", "{\"app\":\"fistbook\"}"), call("read_battery", "{}"))))
+        assertFalse(outcome.completed); assertEquals(listOf(MobileAction.OpenApp("fistbook")), failing.actions)
+        val source = (retry as ActionTurnPlan.Ready).steps
+        assertTrue(source.all { com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard.allows(it.sourceClause, it.request.name, it.request.arguments) })
+    }
+
 }
