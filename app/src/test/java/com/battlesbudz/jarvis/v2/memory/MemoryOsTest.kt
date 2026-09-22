@@ -1,0 +1,45 @@
+package com.battlesbudz.jarvis.v2.memory
+
+import java.io.File
+import org.junit.Assert.*
+import org.junit.Test
+
+class MemoryOsTest {
+    private var now = 1_700_000_000_000L
+    private fun os() = MemoryOs(temp()) { now }
+    private fun source(id: String) = MemorySource(id, "manual", now)
+
+    @Test fun sourceIdempotencyCollisionAndCorrectionApprovalAreAtomic() {
+        val os = os()
+        val original = os.propose(MemoryProposal("Lives in Austin", source("a"))).memory!!
+        assertEquals(MemoryOutcome.ALREADY_RECORDED, os.propose(MemoryProposal("Lives in Austin", source("a"))).outcome)
+        assertEquals(MemoryOutcome.CONFLICT, os.propose(MemoryProposal("Lives in Dallas", source("a"))).outcome)
+        assertEquals(MemoryOutcome.APPROVED, os.approve(original.id, original.revision).outcome)
+        now++
+        val correction = os.propose(MemoryProposal("Lives in Dallas", source("b"), correctsMemoryId = original.id, expectedTargetRevision = 2)).memory!!
+        assertEquals(MemoryOutcome.CONFLICT, os.propose(MemoryProposal("Elsewhere", source("c"), correctsMemoryId = original.id)).outcome)
+        assertEquals(MemoryOutcome.APPROVED, os.approve(correction.id).outcome)
+        val all = os.list(); assertEquals(MemoryReviewStatus.SUPERSEDED, all.first { it.id == original.id }.reviewStatus); assertEquals(MemoryReviewStatus.APPROVED, all.first { it.id == correction.id }.reviewStatus)
+    }
+
+    @Test fun separateStoreInstancesSerializeSameSourceEvent() {
+        val file = temp(); val first = MemoryOs(file) { now }; val second = MemoryOs(file) { now }
+        val results = arrayOfNulls<MemoryResult>(2)
+        val a = Thread { results[0] = first.propose(MemoryProposal("shared", source("same"))) }
+        val b = Thread { results[1] = second.propose(MemoryProposal("shared", source("same"))) }
+        a.start(); b.start(); a.join(); b.join()
+        assertEquals(setOf(MemoryOutcome.CREATED, MemoryOutcome.ALREADY_RECORDED), results.map { it!!.outcome }.toSet())
+        assertEquals(1, first.list().size)
+    }
+
+    @Test fun staleReviewAndLineageDeleteAreSafeAndDoNotResurrect() {
+        val os = os(); val old = os.propose(MemoryProposal("old", source("old"))).memory!!; os.approve(old.id)
+        val replacement = os.propose(MemoryProposal("new", source("new"), correctsMemoryId = old.id)).memory!!
+        assertEquals(MemoryOutcome.CONFLICT, os.approve(replacement.id, 99).outcome)
+        assertEquals(MemoryOutcome.DELETED, os.delete(replacement.id).outcome)
+        assertTrue(os.list().isEmpty())
+        assertEquals(MemoryOutcome.DELETED, os.propose(MemoryProposal("new", source("new"), correctsMemoryId = old.id)).outcome)
+    }
+
+    private fun temp(): File = File.createTempFile("memory-os", ".json").apply { delete(); deleteOnExit() }
+}
