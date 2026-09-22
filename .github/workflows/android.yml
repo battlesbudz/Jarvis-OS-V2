@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build-release:
@@ -179,15 +180,25 @@ jobs:
     needs: [build-release, verify-release]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
-      - name: Download same-run evidence
+      - name: Resolve exact same-run evidence IDs
         id: evidence
         continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          pattern: jarvis-*
-          path: verification-inputs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/verification/artifacts.py fetch --out artifact-manifest.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"
+          python3 scripts/verification/artifacts.py select --manifest artifact-manifest.json --run-id "$GITHUB_RUN_ID" --head-sha "$EXPECTED_HEAD" --require 'jarvis-release-unit-tests=Build signed release APK' --require 'jarvis-verification-test-apk=Build signed release APK' --require 'jarvis-os-v2-release-apk=Build signed release APK' --require 'jarvis-verification-api-30-app-release=Verify signed release in Android sandbox / Release journeys / API 30 / app-release' --require 'jarvis-verification-api-35-app-compact=Verify signed release in Android sandbox / Release journeys / API 35 / app-compact' --github-output "$GITHUB_OUTPUT"
+      - name: Download exact same-run evidence
+        if: steps.evidence.outcome == 'success'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/verification/artifacts.py download --manifest artifact-manifest.json --artifact-ids "${{ steps.evidence.outputs.artifact_ids }}" --out verification-inputs --layout named
       - name: Verify artifact bytes and test evidence
         env:
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -212,12 +223,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read
     steps:
-      - name: Download release APK
-        uses: actions/download-artifact@v4
-        with:
-          name: jarvis-os-v2-release-apk
-          path: dist
+      - uses: actions/checkout@v4
+      - name: Resolve exact release APK ID
+        id: artifacts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/verification/artifacts.py fetch --out artifact-manifest.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"
+          python3 scripts/verification/artifacts.py select --manifest artifact-manifest.json --run-id "$GITHUB_RUN_ID" --head-sha "$EXPECTED_HEAD" --require 'jarvis-os-v2-release-apk=Build signed release APK' --require-success --github-output "$GITHUB_OUTPUT"
+      - name: Download exact release APK
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/verification/artifacts.py download --manifest artifact-manifest.json --artifact-ids "${{ steps.artifacts.outputs.artifact_ids }}" --out dist --layout flat
 
       - name: Publish GitHub Release APK
         uses: softprops/action-gh-release@v2
@@ -235,12 +255,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read
     steps:
-      - name: Download release APK
-        uses: actions/download-artifact@v4
-        with:
-          name: jarvis-os-v2-release-apk
-          path: dist
+      - uses: actions/checkout@v4
+      - name: Resolve exact release APK ID
+        id: artifacts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/verification/artifacts.py fetch --out artifact-manifest.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"
+          python3 scripts/verification/artifacts.py select --manifest artifact-manifest.json --run-id "$GITHUB_RUN_ID" --head-sha "$EXPECTED_HEAD" --require 'jarvis-os-v2-release-apk=Build signed release APK' --require-success --github-output "$GITHUB_OUTPUT"
+      - name: Download exact release APK
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/verification/artifacts.py download --manifest artifact-manifest.json --artifact-ids "${{ steps.artifacts.outputs.artifact_ids }}" --out dist --layout flat
 
       - name: Publish permanent PR test release
         uses: softprops/action-gh-release@v2
