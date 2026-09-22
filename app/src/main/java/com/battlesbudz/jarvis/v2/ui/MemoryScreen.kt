@@ -57,14 +57,19 @@ internal fun MemoryScreen(memoryOs: MemoryOs, onBack: () -> Unit) {
     var confirmDeleteAll by remember { mutableStateOf(false) }
 
     fun refresh(after: String? = null) {
+        if (busy) return
         busy = true
         scope.launch {
-            val read = withContext(Dispatchers.IO) { memoryOs.read() }
-            busy = false
-            snapshot = read.snapshot
-            error = read.error
-            searchRows = null
-            notice = after
+            try {
+                val read = withContext(Dispatchers.IO) { memoryOs.read() }
+                snapshot = read.snapshot
+                error = read.error
+                searchRows = null
+                notice = after
+            } catch (e: Exception) {
+                snapshot = null
+                error = e.message ?: "Memory manager could not reload saved memories."
+            } finally { busy = false }
         }
     }
     LaunchedEffect(Unit) { refresh() }
@@ -80,11 +85,18 @@ internal fun MemoryScreen(memoryOs: MemoryOs, onBack: () -> Unit) {
         }
     }
     fun runMutation(action: () -> com.battlesbudz.jarvis.v2.memory.MemoryResult, success: () -> Unit = {}) {
+        if (busy) return
         busy = true
         scope.launch {
-            error = null
-            val result = withContext(Dispatchers.IO) { action() }
-            completeMutation(result, success)
+            try {
+                error = null
+                val result = withContext(Dispatchers.IO) { action() }
+                completeMutation(result, success)
+            } catch (e: Exception) {
+                notice = null
+                error = e.message ?: "Memory operation failed."
+                busy = false
+            }
         }
     }
 
@@ -147,18 +159,23 @@ internal fun MemoryScreen(memoryOs: MemoryOs, onBack: () -> Unit) {
         )
         OutlinedButton(
             onClick = {
+                if (busy) return@OutlinedButton
                 busy = true
                 scope.launch {
-                    error = null
-                    val result = withContext(Dispatchers.IO) { memoryOs.retrieveResult(query) }
-                    busy = false
-                    if (result.outcome == null) {
-                        searchRows = result.memories.map { it.memory }
-                        notice = if (searchRows!!.isEmpty()) "No approved memories match that search." else null
-                    } else {
+                    try {
+                        error = null
+                        val result = withContext(Dispatchers.IO) { memoryOs.retrieveResult(query) }
+                        if (result.outcome == null) {
+                            searchRows = result.memories.map { it.memory }
+                            notice = if (searchRows!!.isEmpty()) "No approved memories match that search." else null
+                        } else {
+                            searchRows = null
+                            error = result.message
+                        }
+                    } catch (e: Exception) {
                         searchRows = null
-                        error = result.message
-                    }
+                        error = e.message ?: "Memory search failed."
+                    } finally { busy = false }
                 }
             },
             enabled = query.isNotBlank() && !busy,

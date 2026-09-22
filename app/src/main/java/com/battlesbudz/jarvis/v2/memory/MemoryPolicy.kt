@@ -7,25 +7,59 @@ object MemoryPolicy {
     const val MAX_EVENT_ID_CHARS = 128
     const val MAX_EVENT_SOURCE_CHARS = 128
     const val MAX_PROVENANCE = 8
+    const val MAX_PROVENANCE_KIND_CHARS = 96
+    const val MAX_PROVENANCE_ID_CHARS = 160
+    const val MAX_PROVENANCE_LABEL_CHARS = 240
     const val MAX_MEMORIES = 500
     const val MAX_TOMBSTONES = 2_000
 
     data class Decision(val outcome: MemoryOutcome?, val message: String) { val allowed get() = outcome == null }
 
+    /** Applies the one persisted metadata representation at ingress and before fingerprinting. */
+    fun canonicalize(proposal: MemoryProposal): MemoryProposal = proposal.copy(
+        content = proposal.content.trim(),
+        source = proposal.source.copy(
+            eventId = proposal.source.eventId.trim(),
+            eventSource = proposal.source.eventSource.trim(),
+            provenance = proposal.source.provenance.map { p -> p.copy(
+                kind = p.kind.trim(), id = p.id.trim(), label = p.label?.trim()?.takeIf { it.isNotEmpty() }
+            ) }
+        ),
+        correctsMemoryId = proposal.correctsMemoryId?.trim()?.takeIf { it.isNotEmpty() }
+    )
+
     fun assess(proposal: MemoryProposal, nowMs: Long): Decision {
-        val content = proposal.content.trim()
+        val canonical = canonicalize(proposal)
+        val content = canonical.content
         if (content.isEmpty() || content.length > MAX_CONTENT_CHARS) return Decision(MemoryOutcome.INVALID, "Memory content must be 1-$MAX_CONTENT_CHARS characters.")
-        if (proposal.source.eventId.isBlank() || proposal.source.eventId.length > MAX_EVENT_ID_CHARS ||
-            proposal.source.eventSource.isBlank() || proposal.source.eventSource.length > MAX_EVENT_SOURCE_CHARS) return Decision(MemoryOutcome.INVALID, "A bounded source event is required.")
-        if (proposal.confidence !in 0..100) return Decision(MemoryOutcome.INVALID, "Confidence must be 0-100.")
-        if (proposal.source.createdAtMs <= 0 || proposal.source.createdAtMs > nowMs + 86_400_000L) return Decision(MemoryOutcome.INVALID, "Source timestamp is invalid.")
-        if (proposal.expiresAtMs != null && proposal.expiresAtMs <= nowMs) return Decision(MemoryOutcome.INVALID, "Expiry must be in the future.")
-        if (proposal.source.provenance.size > MAX_PROVENANCE || proposal.source.provenance.any { it.restricted || it.kind.length > 96 || it.id.length > 160 } || isRestrictedSource(proposal.source.eventSource))
-            return Decision(MemoryOutcome.EXCLUDED, "Restricted or invalid provenance cannot be stored.")
-        if (proposal.source.sensitivity == MemorySensitivity.RESTRICTED || containsRawRestrictedContent(content))
-            return Decision(MemoryOutcome.EXCLUDED, "Raw financial or identity data is not stored in memory.")
+        if (canonical.source.eventId.isEmpty() || canonical.source.eventId.length > MAX_EVENT_ID_CHARS ||
+            canonical.source.eventSource.isEmpty() || canonical.source.eventSource.length > MAX_EVENT_SOURCE_CHARS) return Decision(MemoryOutcome.INVALID, "A bounded source event is required.")
+        if (canonical.confidence !in 0..100) return Decision(MemoryOutcome.INVALID, "Confidence must be 0-100.")
+        if (canonical.source.createdAtMs <= 0 || canonical.source.createdAtMs > nowMs + 86_400_000L) return Decision(MemoryOutcome.INVALID, "Source timestamp is invalid.")
+        if (canonical.expiresAtMs != null && canonical.expiresAtMs <= nowMs) return Decision(MemoryOutcome.INVALID, "Expiry must be in the future.")
+        if (canonical.source.provenance.size > MAX_PROVENANCE) return Decision(MemoryOutcome.INVALID, "Too many provenance entries.")
+        if (canonical.source.provenance.any { it.kind.isEmpty() || it.id.isEmpty() || it.kind.length > MAX_PROVENANCE_KIND_CHARS || it.id.length > MAX_PROVENANCE_ID_CHARS || (it.label?.length ?: 0) > MAX_PROVENANCE_LABEL_CHARS }) return Decision(MemoryOutcome.INVALID, "Provenance fields are invalid.")
+        val metadata = listOf(canonical.source.eventId, canonical.source.eventSource) + canonical.source.provenance.flatMap { listOf(it.kind, it.id, it.label.orEmpty()) }
+        if (canonical.source.provenance.any { it.restricted } || metadata.any(::isRestrictedSource) || metadata.any(::containsRawRestrictedContent) || canonical.source.sensitivity == MemorySensitivity.RESTRICTED || containsRawRestrictedContent(content)) return Decision(MemoryOutcome.EXCLUDED, "Raw financial, identity, or restricted provenance data is not stored in memory.")
         return Decision(null, "ok")
     }
+
+    /** Structural validation deliberately does not judge expiry against the current clock: old records remain erasable. */
+    fun validatePersisted(record: MemoryRecord): Boolean {
+        val proposal = MemoryProposal(record.content, record.source, record.category, record.tier, record.type, record.confidence, null, record.correctsMemoryId)
+        val canonical = canonicalize(proposal)
+        if (canonical.content != record.content || canonical.source != record.source || canonical.correctsMemoryId != record.correctsMemoryId) return false
+        if (record.content.isEmpty() || record.content.length > MAX_CONTENT_CHARS || record.confidence !in 0..100 || record.source.createdAtMs <= 0 || record.createdAtMs <= 0 || record.updatedAtMs < record.createdAtMs || record.revision < 1 || (record.expiresAtMs != null && record.expiresAtMs <= 0)) return false
+        if (!isOpaqueEventKey(record.source.eventId) || record.source.eventSource.isEmpty() || record.source.eventSource.length > MAX_EVENT_SOURCE_CHARS) return false
+        if (record.source.provenance.size > MAX_PROVENANCE || record.source.sensitivity == MemorySensitivity.RESTRICTED) return false
+        val metadata = listOf(record.source.eventSource) + record.source.provenance.flatMap { listOf(it.kind, it.id, it.label.orEmpty()) }
+        return record.source.provenance.all { it.kind.isNotEmpty() && it.id.isNotEmpty() && it.kind.length <= MAX_PROVENANCE_KIND_CHARS && it.id.length <= MAX_PROVENANCE_ID_CHARS && (it.label?.length ?: 0) <= MAX_PROVENANCE_LABEL_CHARS && !it.restricted } &&
+            metadata.none(::isRestrictedSource) && metadata.none(::containsRawRestrictedContent) && !containsRawRestrictedContent(record.content)
+    }
+
+    fun isGeneratedMemoryId(value: String): Boolean = value.matches(Regex("[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"))
+    fun isOpaqueEventKey(value: String): Boolean = value.matches(Regex("[0-9a-f]{32}"))
+    fun isFingerprint(value: String): Boolean = value.matches(Regex("[0-9a-f]{64}"))
 
     private fun isRestrictedSource(value: String): Boolean {
         val normalized = value.lowercase().replace(Regex("[^a-z0-9]+"), "_")
@@ -38,12 +72,12 @@ object MemoryPolicy {
         val patterns = listOf(
             "\\b(?:account|routing|card|debit|credit)\\s*(?:number|no\\.?|#|ending(?:\\s+in)?|last\\s+four)?\\s*[:#-]?\\s*(?:\\d[\\s-]?){4,}\\b",
             "\\blast\\s+four\\s*(?:digits?)?\\s*(?:are|is|[:#-])?\\s*(?:\\d[\\s-]?){4}\\b",
-            "\\b(?:ssn|social security)\\b.{0,40}\\d{3}[\\s-]?\\d{2}[\\s-]?\\d{4}\\b",
-            "\\b(?:available|current|ending)\\s+balance\\b.{0,80}\\$?\\d[\\d,]*(?:\\.\\d{2})?\\b",
-            "\\b(?:bank|checking|savings|account)\\s+balance\\b.{0,80}\\$?\\d[\\d,]*(?:\\.\\d{2})?\\b",
-            "\\bbalance\\b.{0,40}\\b(?:bank|checking|savings|account)\\b.{0,80}\\$?\\d[\\d,]*(?:\\.\\d{2})?\\b",
-            "\\b(?:bank|checking|savings|account)(?:\\s+account)?\\b.{0,80}(?:\\$\\d[\\d,]*(?:\\.\\d{2})?|\\b\\d{1,3}(?:,\\d{3})+(?:\\.\\d{2})?\\b)",
-            "(?:\\$\\d[\\d,]*(?:\\.\\d{2})?|\\b\\d{1,3}(?:,\\d{3})+(?:\\.\\d{2})?\\b).{0,80}\\b(?:bank|checking|savings|account)(?:\\s+account)?\\b",
+            "\\b(?:ssn|social security)\\b[\\s\\S]{0,40}\\d{3}[\\s-]?\\d{2}[\\s-]?\\d{4}\\b",
+            "\\b(?:available|current|ending)\\s+balance\\b[\\s\\S]{0,80}\\$?\\d[\\d,]*(?:\\.\\d{2})?\\b",
+            "\\b(?:bank|checking|savings|account)\\s+balance\\b[\\s\\S]{0,80}\\$?\\d[\\d,]*(?:\\.\\d{2})?\\b",
+            "\\bbalance\\b[\\s\\S]{0,40}\\b(?:bank|checking|savings|account)\\b[\\s\\S]{0,80}\\$?\\d[\\d,]*(?:\\.\\d{2})?\\b",
+            "\\b(?:bank|checking|savings|account)(?:\\s+account)?\\b[\\s\\S]{0,80}(?:\\$\\d[\\d,]*(?:\\.\\d{2})?|\\b\\d{1,3}(?:,\\d{3})+(?:\\.\\d{2})?\\b)",
+            "(?:\\$\\d[\\d,]*(?:\\.\\d{2})?|\\b\\d{1,3}(?:,\\d{3})+(?:\\.\\d{2})?\\b)[\\s\\S]{0,80}\\b(?:bank|checking|savings|account)(?:\\s+account)?\\b",
             "^\\s*\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}\\s+.{2,}\\s+[-+]?\\$?\\d[\\d,]*(?:\\.\\d{2})?\\s*$",
             "^\\s*\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}\\s*,\\s*[^,\\n]{2,}\\s*,\\s*[-+]?\\$?\\d[\\d,]*(?:\\.\\d{2})?\\s*$",
         )
@@ -53,12 +87,17 @@ object MemoryPolicy {
     /** Opaque persisted event key: deletion never retains a caller supplied identifier. */
     fun sourceKey(eventId: String): String = sha256("memory-event\u0000" + eventId.trim()).take(32)
 
-    fun fingerprint(proposal: MemoryProposal): String = sha256(listOf(
-        proposal.content.trim(), proposal.category.name, proposal.tier.name, proposal.type.name, proposal.confidence.toString(),
-        proposal.expiresAtMs?.toString().orEmpty(), proposal.correctsMemoryId.orEmpty(), proposal.source.eventSource.trim(),
-        proposal.source.createdAtMs.toString(), proposal.source.sensitivity.name,
-        proposal.source.provenance.joinToString("|") { "${it.kind}:${it.id}:${it.label.orEmpty()}:${it.restricted}" },
-    ).joinToString("\u0000"))
+    /** Length-prefix encoding preserves null, empty, delimiters, controls and list boundaries. */
+    fun fingerprint(proposal: MemoryProposal): String {
+        val p = canonicalize(proposal)
+        fun field(value: String?): String = if (value == null) "N;" else "S${value.length}:$value"
+        val fields = listOf(p.content, p.category.name, p.tier.name, p.type.name, p.confidence.toString(), p.expiresAtMs?.toString(), p.correctsMemoryId, p.source.eventSource, p.source.createdAtMs.toString(), p.source.sensitivity.name)
+        return sha256(buildString {
+            append("memory-fingerprint-v2|"); fields.forEach { append(field(it)) }
+            append("L${p.source.provenance.size}:")
+            p.source.provenance.forEach { x -> append(field(x.kind)); append(field(x.id)); append(field(x.label)); append(field(x.restricted.toString())) }
+        })
+    }
 
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 }

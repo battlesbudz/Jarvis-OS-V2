@@ -11,7 +11,8 @@ class MemoryOs(private val store: MemoryStore, private val clock: () -> Long = {
         val now = clock()
         val decision = MemoryPolicy.assess(proposal, now)
         if (!decision.allowed) return MemoryResult(decision.outcome!!, decision.message)
-        val opaqueProposal = proposal.copy(source = proposal.source.copy(eventId = MemoryPolicy.sourceKey(proposal.source.eventId)))
+        val canonicalProposal = MemoryPolicy.canonicalize(proposal)
+        val opaqueProposal = canonicalProposal.copy(source = canonicalProposal.source.copy(eventId = MemoryPolicy.sourceKey(canonicalProposal.source.eventId)))
         val fingerprint = MemoryPolicy.fingerprint(opaqueProposal)
         val update = store.update { before ->
             val prior = before.memories.firstOrNull { it.source.eventId == opaqueProposal.source.eventId }
@@ -23,12 +24,12 @@ class MemoryOs(private val store: MemoryStore, private val clock: () -> Long = {
             val erased = before.tombstones.firstOrNull { it.eventId == opaqueProposal.source.eventId }
             if (erased != null) return@update before to if (erased.payloadFingerprint == fingerprint) MemoryResult(MemoryOutcome.DELETED, "This source event was erased.")
             else MemoryResult(MemoryOutcome.CONFLICT, "Source event id was reused after erasure.")
-            if (before.memories.size >= MemoryPolicy.MAX_MEMORIES) return@update before to MemoryResult(MemoryOutcome.INVALID, "Memory capacity reached.")
-            val target = proposal.correctsMemoryId?.let { id -> before.memories.firstOrNull { it.id == id } }
-            if (proposal.correctsMemoryId != null && (target == null || target.reviewStatus != MemoryReviewStatus.APPROVED)) return@update before to MemoryResult(MemoryOutcome.CONFLICT, "The memory being corrected is no longer active.")
-            if (target != null && proposal.expectedTargetRevision != null && target.revision != proposal.expectedTargetRevision) return@update before to MemoryResult(MemoryOutcome.CONFLICT, "The memory changed before this correction was proposed.")
+            if (before.memories.size >= MemoryPolicy.MAX_MEMORIES || before.memories.size + before.tombstones.size >= MemoryPolicy.MAX_TOMBSTONES) return@update before to MemoryResult(MemoryOutcome.INVALID, "Memory capacity reached while preserving erasure capacity.")
+            val target = opaqueProposal.correctsMemoryId?.let { id -> before.memories.firstOrNull { it.id == id } }
+            if (opaqueProposal.correctsMemoryId != null && (target == null || target.reviewStatus != MemoryReviewStatus.APPROVED)) return@update before to MemoryResult(MemoryOutcome.CONFLICT, "The memory being corrected is no longer active.")
+            if (target != null && opaqueProposal.expectedTargetRevision != null && target.revision != opaqueProposal.expectedTargetRevision) return@update before to MemoryResult(MemoryOutcome.CONFLICT, "The memory changed before this correction was proposed.")
             if (target != null && before.memories.any { it.correctsMemoryId == target.id && it.reviewStatus == MemoryReviewStatus.PENDING }) return@update before to MemoryResult(MemoryOutcome.CONFLICT, "A correction for this memory is already pending.")
-            val record = MemoryRecord(UUID.randomUUID().toString(), opaqueProposal.content.trim(), opaqueProposal.category, opaqueProposal.tier, opaqueProposal.type, opaqueProposal.confidence, opaqueProposal.source, MemoryReviewStatus.PENDING, now, now, 1, proposal.expiresAtMs, proposal.correctsMemoryId)
+            val record = MemoryRecord(UUID.randomUUID().toString(), opaqueProposal.content, opaqueProposal.category, opaqueProposal.tier, opaqueProposal.type, opaqueProposal.confidence, opaqueProposal.source, MemoryReviewStatus.PENDING, now, now, 1, opaqueProposal.expiresAtMs, opaqueProposal.correctsMemoryId)
             before.copy(generation = before.generation + 1, memories = before.memories + record) to MemoryResult(MemoryOutcome.CREATED, "Memory proposal is awaiting review.", record)
         }
         return update.value ?: MemoryResult(MemoryOutcome.STORAGE_FAILURE, update.error ?: "Memory store failed.")
@@ -81,17 +82,21 @@ class MemoryOs(private val store: MemoryStore, private val clock: () -> Long = {
 
     /** UI callers should use this to distinguish empty history from a corrupt/unavailable store. */
     fun read(): MemoryStore.Read = store.read()
+    @Deprecated("Use read() so storage failures are not represented as an empty history.")
     fun list(includeReviewed: Boolean = true): List<MemoryRecord> = read().snapshot?.memories
         ?.filter { includeReviewed || it.reviewStatus == MemoryReviewStatus.PENDING }?.sortedWith(compareByDescending<MemoryRecord> { it.updatedAtMs }.thenBy { it.id }) ?: emptyList()
 
     fun retrieveResult(query: String, limit: Int = 8, nowMs: Long = clock()): MemorySearchResult {
-        val snapshot = read().snapshot ?: return MemorySearchResult(MemoryOutcome.STORAGE_FAILURE, read().error ?: "Memory store failed.")
+        val read = read()
+        val snapshot = read.snapshot ?: return MemorySearchResult(MemoryOutcome.STORAGE_FAILURE, read.error ?: "Memory store failed.")
         if (query.isBlank() || limit !in 1..50) return MemorySearchResult(MemoryOutcome.INVALID, "A query and limit 1-50 are required.")
         return MemorySearchResult(null, "ok", MemoryRetrieval.retrieve(snapshot.memories, query, limit, nowMs))
     }
+    @Deprecated("Use retrieveResult() so storage failures are not represented as no matches.")
     fun retrieve(query: String, limit: Int = 8, nowMs: Long = clock()): List<RetrievedMemory> = retrieveResult(query, limit, nowMs).memories
     fun contextPacket(query: String, maxChars: Int, limit: Int = 8, nowMs: Long = clock()): MemoryPacketResult {
-        val snapshot = read().snapshot ?: return MemoryPacketResult(MemoryOutcome.STORAGE_FAILURE, read().error ?: "Memory store failed.")
+        val read = read()
+        val snapshot = read.snapshot ?: return MemoryPacketResult(MemoryOutcome.STORAGE_FAILURE, read.error ?: "Memory store failed.")
         if (query.isBlank() || limit !in 1..50 || maxChars < 0) return MemoryPacketResult(MemoryOutcome.INVALID, "A query, limit 1-50, and non-negative budget are required.")
         val candidates = MemoryRetrieval.retrieve(snapshot.memories, query, limit, nowMs).map { it.memory }
         return MemoryPacketResult(null, "ok", MemoryRetrieval.packet(candidates, query, maxChars, nowMs))

@@ -11,6 +11,7 @@ import org.json.JSONObject
 /** Versioned JSON file store. It is intentionally independent from Android; pass noBackupFilesDir from the UI adapter. */
 class MemoryStore(
     private val file: File,
+    private val cleanupArtifacts: (File) -> Unit = MemoryStore::deleteOwnedTemps,
     private val commitWriter: (File, String) -> Unit = ::atomicWrite,
 ) {
     data class Read(val snapshot: MemorySnapshot?, val error: String? = null)
@@ -23,6 +24,8 @@ class MemoryStore(
         val read = readLocked()
         val before = read.snapshot ?: return@synchronized Update(error = read.error ?: "Memory store is unavailable.")
         val (after, value) = try { block(before) } catch (e: Exception) { return@synchronized Update(error = e.message ?: "Memory update failed.") }
+        // Idempotent/conflict/no-op outcomes must not become write failures merely because storage is unavailable.
+        if (after == before) return@synchronized Update(value = value)
         val validity = validate(after)
         if (validity != null) return@synchronized Update(error = validity)
         val encoded = encode(after)
@@ -36,6 +39,9 @@ class MemoryStore(
     }
 
     private fun readLocked(): Read {
+        try { cleanupArtifacts(file) } catch (e: Exception) {
+            return Read(null, "Memory store cleanup failed: ${e.message ?: e.javaClass.simpleName}")
+        }
         if (!file.exists()) return Read(MemorySnapshot(0, emptyList(), emptyList()))
         return try {
             if (!file.isFile || file.length() > MAX_STORE_BYTES) return Read(null, "Memory store is unreadable or exceeds its size limit.")
@@ -86,12 +92,21 @@ class MemoryStore(
     }
 
     private fun validate(snapshot: MemorySnapshot): String? {
-        if (snapshot.memories.size > MemoryPolicy.MAX_MEMORIES || snapshot.tombstones.size > MemoryPolicy.MAX_TOMBSTONES) return "Memory store capacity exceeded."
-        if (snapshot.memories.map { it.id }.toSet().size != snapshot.memories.size) return "Memory store has duplicate memory ids."
+        if (snapshot.generation < 0 || snapshot.memories.size > MemoryPolicy.MAX_MEMORIES || snapshot.tombstones.size > MemoryPolicy.MAX_TOMBSTONES || snapshot.memories.size + snapshot.tombstones.size > MemoryPolicy.MAX_TOMBSTONES) return "Memory store capacity exceeded."
+        if (snapshot.memories.map { it.id }.toSet().size != snapshot.memories.size || snapshot.memories.any { !MemoryPolicy.isGeneratedMemoryId(it.id) }) return "Memory store has invalid memory ids."
         if ((snapshot.memories.map { it.source.eventId } + snapshot.tombstones.map { it.eventId }).toSet().size != snapshot.memories.size + snapshot.tombstones.size) return "Memory store has duplicate source events."
+        if (snapshot.tombstones.any { !MemoryPolicy.isOpaqueEventKey(it.eventId) || !MemoryPolicy.isFingerprint(it.payloadFingerprint) || it.erasedAtMs <= 0 }) return "Memory store contains invalid tombstones."
+        val ids = snapshot.memories.map { it.id }.toSet()
         for (m in snapshot.memories) {
-            val d = MemoryPolicy.assess(MemoryProposal(m.content, m.source, m.category, m.tier, m.type, m.confidence, m.expiresAtMs, m.correctsMemoryId), Long.MAX_VALUE / 2)
-            if (!d.allowed || m.revision < 1 || m.createdAtMs <= 0 || m.updatedAtMs < m.createdAtMs) return "Memory store contains invalid records."
+            if (!MemoryPolicy.validatePersisted(m) || (m.correctsMemoryId != null && (!MemoryPolicy.isGeneratedMemoryId(m.correctsMemoryId) || m.correctsMemoryId !in ids || m.correctsMemoryId == m.id))) return "Memory store contains invalid records."
+        }
+        // Correction references must form finite lineages rather than cycles.
+        for (m in snapshot.memories) {
+            val seen = mutableSetOf<String>(); var current: MemoryRecord? = m
+            while (current?.correctsMemoryId != null) {
+                if (!seen.add(current.id)) return "Memory store contains cyclic corrections."
+                current = snapshot.memories.firstOrNull { it.id == current.correctsMemoryId } ?: return "Memory store contains invalid correction references."
+            }
         }
         return null
     }
@@ -105,7 +120,18 @@ class MemoryStore(
         const val SCHEMA_VERSION = 1
         const val MAX_STORE_BYTES = 1_048_576L
         private val locks = ConcurrentHashMap<String, Any>()
-        private fun lockFor(file: File): Any = locks.getOrPut(file.absoluteFile.normalize().path) { Any() }
+        private fun lockFor(file: File): Any = locks.getOrPut(file.canonicalFile.path) { Any() }
+        /** Deletes only files whose name is the store's own atomic-write temp naming family. */
+        private fun deleteOwnedTemps(destination: File) {
+            val parent = destination.parentFile ?: return
+            if (!parent.exists()) return // A new store has no directory or artifacts yet.
+            if (!parent.isDirectory) throw IllegalStateException("memory store parent is not a directory")
+            val prefix = ".${destination.name}."
+            val candidates = parent.listFiles() ?: throw IllegalStateException("could not inspect memory store artifacts")
+            candidates.filter { candidate -> candidate.isFile && candidate.name.startsWith(prefix) && candidate.name.endsWith(".tmp") }
+                .forEach { candidate -> if (!candidate.delete()) throw IllegalStateException("could not remove abandoned memory artifact") }
+        }
+
         private fun atomicWrite(destination: File, contents: String) {
             destination.parentFile?.mkdirs()
             val temporary = File(destination.parentFile, ".${destination.name}.${UUID.randomUUID()}.tmp")

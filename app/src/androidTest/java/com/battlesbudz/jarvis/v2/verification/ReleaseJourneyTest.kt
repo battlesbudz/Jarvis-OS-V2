@@ -78,14 +78,19 @@ class ReleaseJourneyTest {
         device.wait(Until.findObject(selector), 15_000)
             ?: throw AssertionError("Missing UI element: $selector")
 
+    /** Finds controls above or below the current viewport without relying on content height. */
     private fun scrollTo(selector: BySelector): UiObject2 {
-        repeat(14) {
-            device.findObject(selector)?.let { return it }
-            device.swipe(device.displayWidth / 2, device.displayHeight * 4 / 5,
-                device.displayWidth / 2, device.displayHeight / 3, 25)
-            device.waitForIdle()
+        fun seek(fromY: Int, toY: Int): UiObject2? {
+            repeat(14) {
+                device.findObject(selector)?.let { return it }
+                device.swipe(device.displayWidth / 2, fromY, device.displayWidth / 2, toY, 25)
+                device.waitForIdle()
+            }
+            return device.findObject(selector)
         }
-        return find(selector)
+        return seek(device.displayHeight * 4 / 5, device.displayHeight / 3)
+            ?: seek(device.displayHeight / 3, device.displayHeight * 4 / 5)
+            ?: find(selector)
     }
 
     private fun openBrowser() { find(By.res("model_browse")).click(); find(By.res("model_search")) }
@@ -292,7 +297,15 @@ class ReleaseJourneyTest {
         scrollTo(By.res("memory_correct")).click()
         enterText(By.res("memory_new_content"), "Synthetic preference: indigo notebooks.")
         scrollTo(By.res("memory_propose")).click()
+        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
         scrollTo(By.res("memory_approve")).click()
+        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
+        enterText(By.res("memory_search_input"), "teal notebooks")
+        scrollTo(By.res("memory_search")).click()
+        assertNotNull(scrollTo(By.text("No matching memories.")))
+        assertFalse(device.hasObject(By.text("Synthetic preference: teal notebooks.")))
+        enterText(By.res("memory_search_input"), "indigo notebooks")
+        scrollTo(By.res("memory_search")).click()
         assertNotNull(scrollTo(By.text("Synthetic preference: indigo notebooks.")))
 
         enterText(By.res("memory_new_content"), "Synthetic item to reject.")
@@ -310,13 +323,16 @@ class ReleaseJourneyTest {
 
         enterText(By.res("memory_new_content"), "Synthetic memory after erase.")
         scrollTo(By.res("memory_propose")).click()
+        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
         scrollTo(By.res("memory_approve")).click()
+        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
         assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
         scrollTo(By.res("memory_back")).click()
         assertNotNull(find(By.text("Jarvis setup")))
         activity.recreate()
         scrollTo(By.res("memory_open")).click()
         assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
+        captureEvidence("memory_approved_after_recreation")
         scrollTo(By.res("memory_back")).click()
     }
 

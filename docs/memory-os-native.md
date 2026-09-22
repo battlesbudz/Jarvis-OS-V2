@@ -1,6 +1,6 @@
 # Native MemoryOS milestone
 
-This milestone ports the reviewable local ledger from the original Jarvis OS MemoryOS work into the Android app. The source reference is `/workspace/scratch/aabe47e92c09/jarvis-os-source` at `d8018e4b4ce263a9d03aef41cb864a66e45e331d`; the native branch is based on `audio-pr2` at `c20b5137d010aa2a99814bea4387201b485182c7`. It is a standalone milestone and does not claim that chat or voice recall is live.
+This milestone ports the reviewable local ledger from the original Jarvis OS MemoryOS work into the Android app. The upstream reference is [Jarvis-OS-V2 commit d8018e4b4ce263a9d03aef41cb864a66e45e331d](https://github.com/battlesbudz/Jarvis-OS-V2/commit/d8018e4b4ce263a9d03aef41cb864a66e45e331d); the native branch is based on `audio-pr2` at `c20b5137d010aa2a99814bea4387201b485182c7`. It is a standalone milestone and does not claim that chat or voice recall is live.
 
 ## What is implemented
 
@@ -8,7 +8,7 @@ The native API is in `app/src/main/java/com/battlesbudz/jarvis/v2/memory/`:
 
 * `MemoryModels.kt` defines bounded records, source/provenance, review state, outcomes, snapshots and packet results.
 * `MemoryPolicy.kt` validates content, timestamps, confidence, provenance and restricted data. It uses conservative detectors for raw financial or identity data; it is not a blanket secret detector.
-* `MemoryStore.kt` stores schema-versioned JSON with an atomic write, a per-file process lock, a 1 MiB encoded-store cap, record/tombstone caps, and fail-closed reads.
+* `MemoryStore.kt` stores schema-versioned JSON with an atomic write, a per-file process lock, cleanup of store-owned interrupted-write artifacts on access, a 1 MiB encoded-store cap, record/tombstone caps, and fail-closed reads.
 * `MemoryOs.kt` exposes `propose`, `approve`, `reject`, correction supersession, lineage deletion, generation/revision checks, listing, retrieval and bounded context packets.
 * `MemoryRetrieval.kt` performs deterministic lexical token matching and emits JSON-quoted historical entries under a character budget.
 * `AndroidMemoryOs.kt` binds the store to the app's `noBackupFilesDir/memory-os.json`; it uses no network and adds no model.
@@ -19,7 +19,7 @@ The UI is deliberately manual. `MemoryScreen.kt` is opened from the setup/model 
 
 ## Retrieval and trust boundary
 
-Only approved, non-expired records can match retrieval. A query must be non-blank and its limit must be 1–50. Matching is lexical and deterministic; confidence and recency only break ties. There are no embeddings, semantic similarity, cloud retrieval, or automatic extraction in this milestone.
+Only approved, non-expired records can match retrieval. A query must be non-blank and its limit must be 1–50. Matching is lexical and deterministic; confidence, then recency, then ID break equal lexical scores. There are no embeddings, semantic similarity, cloud retrieval, or automatic extraction in this milestone.
 
 `contextPacket` applies a caller-supplied character budget and wraps each selected value in JSON quoting inside a clear historical-data header. The packet is a bounded model-context artifact. It is not an instruction, tool request, authorization, current-user message, or source of truth. Any future integration must route the raw current user request through action selection first, then add an approved packet only as untrusted historical model context. It must never let memory authorize a tool or override system, developer, safety, tool, or current-user instructions.
 
@@ -49,7 +49,7 @@ Focused JVM coverage is present in:
 * `MemoryOsTest`: source idempotency/conflicts, concurrent store instances, stale review and lineage deletion.
 * `MemoryRetrievalTest`: lexical/expiry/review filtering and delimiter/injection-safe packets.
 
-The release UI journey is `ReleaseJourneyTest.test14_memoryManagerReviewsCorrectsSearchesAndErases`, listed in `scripts/verification/scenarios.json`. It covers restricted-input rejection, add/approve, search, correction approval, rejection, erase-all cancellation/confirmation, and persistence after Activity recreation. Existing scenarios remain unchanged. Activity recreation is UI persistence coverage; Android process death has not been tested here.
+The release UI journey is `ReleaseJourneyTest.test14_memoryManagerReviewsCorrectsSearchesAndErases`, listed in `scripts/verification/scenarios.json`. It covers restricted-input rejection, add/approve, search, correction approval and exclusion of the superseded fact, rejection, erase-all cancellation/confirmation, and persistence after Activity recreation. Existing scenarios remain unchanged. Activity recreation is UI persistence coverage; Android process death has not been tested here.
 
 Before integration, the combined revision requires code review and the full signed release gate: JVM, native/helper checks, normal API 30 sandbox, compact API 35 sandbox, and the consolidated exact-build receipt. This milestone has not yet earned CI or physical-device/model verification, and it promises no APK from this branch. Real model inference, voice capture, automatic recall and physical performance remain unverified.
 

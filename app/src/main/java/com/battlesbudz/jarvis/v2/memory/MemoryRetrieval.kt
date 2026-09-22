@@ -18,7 +18,7 @@ object MemoryRetrieval {
                     val phraseBonus = if (phrase.length > 2 && memory.content.lowercase().contains(phrase)) queryTokens.size * 3 else 0
                     RetrievedMemory(memory, matches * 100 + phraseBonus)
                 }
-            }.sortedWith(compareByDescending<RetrievedMemory> { it.score }.thenByDescending { it.memory.updatedAtMs }.thenBy { it.memory.id }).take(limit).toList()
+            }.sortedWith(compareByDescending<RetrievedMemory> { it.score }.thenByDescending { it.memory.confidence }.thenByDescending { it.memory.updatedAtMs }.thenBy { it.memory.id }).take(limit).toList()
     }
 
     /** Builds a bounded, complete packet. Historical content is JSON-quoted and has no instruction/tool authority. */
@@ -30,11 +30,15 @@ object MemoryRetrieval {
         val output = StringBuilder(header)
         for (item in retrieve(memories, query, 50, nowMs)) {
             val quoted = jsonQuote(item.memory.content)
-            val entry = "<memory id=\"${item.memory.id}\">$quoted</memory>\n"
+            val entry = "<memory id=\"${xmlAttribute(item.memory.id)}\">$quoted</memory>\n"
             if (output.length + entry.length > maxChars) continue
             output.append(entry); selected += item
         }
         return MemoryContextPacket(output.toString(), selected)
+    }
+
+    private fun xmlAttribute(value: String): String = buildString(value.length) {
+        value.forEach { c -> when (c) { '&' -> append("&amp;"); '<' -> append("&lt;"); '>' -> append("&gt;"); '\"' -> append("&quot;"); '\'' -> append("&apos;"); else -> if (c.code < 0x20) append("&#x%02x;".format(c.code)) else append(c) } }
     }
 
     private fun tokens(value: String): Set<String> = Regex("[\\p{L}\\p{N}][\\p{L}\\p{N}'-]{1,}").findAll(value.lowercase()).map { it.value }.toSet()

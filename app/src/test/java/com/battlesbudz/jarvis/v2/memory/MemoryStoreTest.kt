@@ -1,19 +1,72 @@
 package com.battlesbudz.jarvis.v2.memory
 
 import java.io.File
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 
 class MemoryStoreTest {
+    private val now = 1_700_000_000_000L
+
     @Test fun reopensCommittedDataAndDoesNotClaimFailedWrites() {
         val file = temporaryFile()
-        val os = MemoryOs(file) { 1_700_000_000_000L }
-        val p = MemoryProposal("Tea is preferred", MemorySource("one", "manual", 1_700_000_000_000L))
+        val os = MemoryOs(file) { now }
+        val p = MemoryProposal("Tea is preferred", MemorySource("one", "manual", now))
         assertEquals(MemoryOutcome.CREATED, os.propose(p).outcome)
-        assertEquals(1, MemoryOs(file) { 1_700_000_000_001L }.list().size)
-        val broken = MemoryOs(MemoryStore(file) { _, _ -> throw IllegalStateException("disk full") }) { 1_700_000_000_002L }
-        assertEquals(MemoryOutcome.STORAGE_FAILURE, broken.propose(MemoryProposal("Other", MemorySource("two", "manual", 1_700_000_000_002L))).outcome)
-        assertEquals(1, MemoryOs(file).list().size)
+        assertEquals(1, MemoryOs(file) { now + 1 }.read().snapshot!!.memories.size)
+        val broken = MemoryOs(MemoryStore(file) { _, _ -> throw IllegalStateException("disk full") }) { now + 2 }
+        assertEquals(MemoryOutcome.STORAGE_FAILURE, broken.propose(MemoryProposal("Other", MemorySource("two", "manual", now + 2))).outcome)
+        assertEquals(1, MemoryOs(file).read().snapshot!!.memories.size)
+    }
+
+    @Test fun idempotentNoOpDoesNotReportWriteOutage() {
+        val file = temporaryFile(); val proposal = MemoryProposal("Tea", MemorySource("one", "manual", now))
+        assertEquals(MemoryOutcome.CREATED, MemoryOs(file) { now }.propose(proposal).outcome)
+        val unavailableWriter = MemoryOs(MemoryStore(file) { _, _ -> throw IllegalStateException("disk full") }) { now }
+        assertEquals(MemoryOutcome.ALREADY_RECORDED, unavailableWriter.propose(proposal).outcome)
+    }
+
+    @Test fun abandonedOwnedTempIsRemovedBeforeReadAndErase() {
+        val file = temporaryFile(); val os = MemoryOs(file) { now }
+        val record = os.propose(MemoryProposal("Tea preference", MemorySource("one", "manual", now))).memory!!
+        val orphan = File(file.parentFile, ".${file.name}.dead-process.tmp").apply { writeText(file.readText()) }
+        assertEquals(1, os.read().snapshot!!.memories.size)
+        assertFalse(orphan.exists())
+        val second = File(file.parentFile, ".${file.name}.another.tmp").apply { writeText(file.readText()) }
+        assertEquals(MemoryOutcome.DELETED, os.delete(record.id).outcome)
+        assertFalse(second.exists())
+    }
+
+    @Test fun cleanupFailureBlocksEraseInsteadOfClaimingErasure() {
+        val file = temporaryFile(); val normal = MemoryOs(file) { now }
+        val record = normal.propose(MemoryProposal("secret", MemorySource("one", "manual", now))).memory!!
+        val orphan = File(file.parentFile, ".${file.name}.blocked.tmp").apply { writeText(file.readText()) }
+        val failing = MemoryOs(MemoryStore(file, cleanupArtifacts = { throw IllegalStateException("locked orphan") })) { now }
+        assertEquals(MemoryOutcome.STORAGE_FAILURE, failing.delete(record.id).outcome)
+        assertTrue(orphan.exists())
+        assertEquals(1, normal.read().snapshot!!.memories.size)
+    }
+
+    @Test fun loadedRestrictedMetadataFailsClosed() {
+        val file = temporaryFile(); val os = MemoryOs(file) { now }
+        os.propose(MemoryProposal("Tea", MemorySource("one", "manual", now)))
+        val json = JSONObject(file.readText())
+        json.getJSONArray("memories").getJSONObject(0).getJSONObject("source").put("eventSource", "bank_transaction")
+        file.writeText(json.toString())
+        assertNotNull(MemoryOs(file) { now }.read().error)
+    }
+
+    @Test fun expiredRecordsReopenButMalformedIdsFailClosed() {
+        val file = temporaryFile(); val os = MemoryOs(file) { now }
+        val record = os.propose(MemoryProposal("Tea", MemorySource("one", "manual", now), expiresAtMs = now + 1)).memory!!
+        assertEquals(MemoryOutcome.APPROVED, os.approve(record.id).outcome)
+        assertNotNull(MemoryOs(file) { now + 2 }.read().snapshot)
+        val json = JSONObject(file.readText())
+        json.getJSONArray("memories").getJSONObject(0).put("id", "x\">INJECTED</memory>")
+        file.writeText(json.toString())
+        val bad = MemoryOs(file) { now + 2 }
+        assertNotNull(bad.read().error)
+        assertEquals(MemoryOutcome.STORAGE_FAILURE, bad.contextPacket("tea", 500).outcome)
     }
 
     @Test fun corruptionAndUnknownSchemaFailClosedWithoutOverwrite() {
