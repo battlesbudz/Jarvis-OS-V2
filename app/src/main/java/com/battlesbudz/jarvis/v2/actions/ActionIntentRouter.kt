@@ -66,11 +66,17 @@ class ActionIntentRouter {
         history: List<ChatEntry>,
         call: com.battlesbudz.jarvis.v2.ai.ToolCall
     ): Boolean {
-        val normalized = prompt.trim()
-        return when (call.name.lowercase()) {
-            "read_battery" -> classifyActionIntent(normalized, history)?.name == "read_battery"
-            "set_volume" -> classifyActionIntent(normalized, history)?.name == "set_volume"
-            "open_app" -> classifyActionIntent(normalized, history)?.name == "open_app"
+        val expected = classifyActionIntent(prompt, history)?.let(NativeActionDecoder::decode) ?: return false
+        val proposed = NativeActionDecoder.decode(call) ?: return false
+        if (expected.name != proposed.name) return false
+        return when (expected.name) {
+            "read_battery" -> true
+            "set_volume" -> expected.arguments["level"]?.toIntOrNull()?.let { requested ->
+                proposed.arguments["level"]?.toIntOrNull() == requested
+            } == true
+            "open_app" -> expected.arguments["app"]?.let { requested ->
+                proposed.arguments["app"]?.trim()?.equals(requested.trim(), ignoreCase = true)
+            } == true
             else -> false
         }
     }

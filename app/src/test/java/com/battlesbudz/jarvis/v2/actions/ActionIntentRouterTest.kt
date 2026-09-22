@@ -20,6 +20,16 @@ class ActionIntentRouterTest {
         assertEquals("set_volume", router.classifyActionIntent("Please set volume to fifty percent", emptyList())?.name)
         assertEquals("read_battery", router.classifyActionIntent("What's my battery level?", emptyList())?.name)
     }
+    @Test fun modelCannotSubstituteAnotherVolumeOrApp() {
+        fun call(name: String, args: String) = com.battlesbudz.jarvis.v2.ai.ToolCall(name, args)
+        assertTrue(router.toolMatchesUserIntent("Set volume to 20 percent", emptyList(), call("set_volume", "{\"level\":20}")))
+        assertFalse(router.toolMatchesUserIntent("Set volume to 20 percent", emptyList(), call("set_volume", "{\"level\":100}")))
+        assertFalse(router.toolMatchesUserIntent("Set volume to 20 percent", emptyList(), call("set_volume", "{\"level\":\"NaN\"}")))
+        assertTrue(router.toolMatchesUserIntent("Open YouTube", emptyList(), call("open_app", "{\"app\":\"YouTube\"}")))
+        assertFalse(router.toolMatchesUserIntent("Open YouTube", emptyList(), call("open_app", "{\"app\":\"Settings\"}")))
+        assertFalse(router.toolMatchesUserIntent("Describe this picture", emptyList(), call("set_volume", "{\"level\":100}")))
+    }
+
     @Test fun yesOnlyConfirmsAnImmediateSpecificOffer() {
         assertEquals("open_app", router.classifyActionIntent("Yes", listOf(ChatEntry("Jarvis", "Shall I open YouTube?")))?.name)
         assertNull(router.classifyActionIntent("Yes", listOf(ChatEntry("Jarvis", "It would open YouTube."))))

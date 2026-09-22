@@ -437,7 +437,10 @@ internal fun JarvisRuntime.runConversationInternal(
                     proposedCall.name in setOf("read_battery", "set_volume", "open_app")
                 ) {
                     actionName = proposedCall.name
-                    val request = com.battlesbudz.jarvis.v2.actions.NativeActionDecoder.decode(proposedCall)
+                    val request = com.battlesbudz.jarvis.v2.actions.NativeActionDecoder.decode(proposedCall)?.let {
+                        // Resolve the user-named app locally; a model-supplied package cannot override it.
+                        if (it.name == "open_app") it.copy(arguments = it.arguments - "package") else it
+                    }
                     if (request != null) {
                         val result = kotlinx.coroutines.withContext(Dispatchers.Main) {
                             com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
