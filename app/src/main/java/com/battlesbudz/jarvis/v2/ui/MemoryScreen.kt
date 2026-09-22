@@ -56,8 +56,9 @@ internal fun MemoryScreen(memoryOs: MemoryOs, onBack: () -> Unit) {
     var confirmDelete by remember { mutableStateOf<MemoryRecord?>(null) }
     var confirmDeleteAll by remember { mutableStateOf(false) }
 
-    fun refresh(after: String? = null) {
-        if (busy) return
+    fun refresh(after: String? = null, fromMutation: Boolean = false) {
+        if (busy && !fromMutation) return
+        // A successful mutation hands its busy lease to the reload that exposes the saved state.
         busy = true
         scope.launch {
             try {
@@ -77,7 +78,7 @@ internal fun MemoryScreen(memoryOs: MemoryOs, onBack: () -> Unit) {
     fun completeMutation(result: com.battlesbudz.jarvis.v2.memory.MemoryResult, success: () -> Unit = {}) {
         if (result.outcome in setOf(MemoryOutcome.CREATED, MemoryOutcome.APPROVED, MemoryOutcome.REJECTED, MemoryOutcome.DELETED)) {
             success()
-            refresh(result.message)
+            refresh(result.message, fromMutation = true)
         } else {
             busy = false
             notice = null

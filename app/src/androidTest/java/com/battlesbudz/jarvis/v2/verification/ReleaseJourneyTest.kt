@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.ContentValues
 import android.media.AudioManager
 import android.os.BatteryManager
+import android.os.SystemClock
 import android.provider.MediaStore
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -91,6 +92,18 @@ class ReleaseJourneyTest {
         return seek(device.displayHeight * 4 / 5, device.displayHeight / 3)
             ?: seek(device.displayHeight / 3, device.displayHeight * 4 / 5)
             ?: find(selector)
+    }
+
+    /** Waits for the async reload after a mutation instead of racing a disabled form control. */
+    private fun enabled(selector: BySelector): UiObject2 {
+        val deadline = SystemClock.uptimeMillis() + 15_000
+        var control = scrollTo(selector)
+        while (SystemClock.uptimeMillis() < deadline) {
+            if (control.isEnabled) return control
+            device.waitForIdle()
+            control = scrollTo(selector)
+        }
+        throw AssertionError("Control did not become enabled: $selector")
     }
 
     private fun openBrowser() { find(By.res("model_browse")).click(); find(By.res("model_search")) }
@@ -288,30 +301,40 @@ class ReleaseJourneyTest {
         enterText(By.res("memory_new_content"), "Synthetic preference: teal notebooks.")
         scrollTo(By.res("memory_propose")).click()
         assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
+        // Saved mutations must settle and restore input; this catches a stuck busy lease.
+        assertTrue(enabled(By.res("memory_new_content")).isEnabled)
         scrollTo(By.res("memory_approve")).click()
         assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
+        assertTrue(enabled(By.res("memory_new_content")).isEnabled)
 
-        enterText(By.res("memory_search_input"), "teal notebooks")
+        enterText(By.res("memory_search_input"), "teal")
         scrollTo(By.res("memory_search")).click()
         assertNotNull(scrollTo(By.text("Synthetic preference: teal notebooks.")))
         scrollTo(By.res("memory_correct")).click()
         enterText(By.res("memory_new_content"), "Synthetic preference: indigo notebooks.")
         scrollTo(By.res("memory_propose")).click()
         assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
+        assertTrue(enabled(By.res("memory_new_content")).isEnabled)
         scrollTo(By.res("memory_approve")).click()
+        // The old approved row must become superseded before we treat the replacement as searchable.
+        assertNotNull(scrollTo(By.text("Superseded · Added from manual entry")))
         assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
-        enterText(By.res("memory_search_input"), "teal notebooks")
+        assertTrue(enabled(By.res("memory_new_content")).isEnabled)
+        enterText(By.res("memory_search_input"), "teal")
         scrollTo(By.res("memory_search")).click()
         assertNotNull(scrollTo(By.text("No matching memories.")))
         assertFalse(device.hasObject(By.text("Synthetic preference: teal notebooks.")))
-        enterText(By.res("memory_search_input"), "indigo notebooks")
+        enterText(By.res("memory_search_input"), "indigo")
         scrollTo(By.res("memory_search")).click()
         assertNotNull(scrollTo(By.text("Synthetic preference: indigo notebooks.")))
 
         enterText(By.res("memory_new_content"), "Synthetic item to reject.")
         scrollTo(By.res("memory_propose")).click()
+        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
+        assertTrue(enabled(By.res("memory_new_content")).isEnabled)
         scrollTo(By.res("memory_reject")).click()
         assertNotNull(scrollTo(By.text("Rejected · Added from manual entry")))
+        assertTrue(enabled(By.res("memory_new_content")).isEnabled)
 
         // Cancellation must leave the saved records visible before the confirmed erase.
         scrollTo(By.res("memory_erase_all")).click()
@@ -320,17 +343,24 @@ class ReleaseJourneyTest {
         scrollTo(By.res("memory_erase_all")).click()
         find(By.res("memory_erase_all_confirm")).click()
         assertNotNull(scrollTo(By.text("No memories have been added yet.")))
+        assertTrue(enabled(By.res("memory_new_content")).isEnabled)
 
         enterText(By.res("memory_new_content"), "Synthetic memory after erase.")
         scrollTo(By.res("memory_propose")).click()
         assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
+        assertTrue(enabled(By.res("memory_new_content")).isEnabled)
         scrollTo(By.res("memory_approve")).click()
         assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
+        assertTrue(enabled(By.res("memory_new_content")).isEnabled)
         assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
         scrollTo(By.res("memory_back")).click()
         assertNotNull(find(By.text("Jarvis setup")))
         activity.recreate()
         scrollTo(By.res("memory_open")).click()
+        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
+        assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
+        assertTrue(enabled(By.res("memory_new_content")).isEnabled)
+        // The control assertion scrolls upward; return to the approved record for useful retained evidence.
         assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
         captureEvidence("memory_approved_after_recreation")
         scrollTo(By.res("memory_back")).click()

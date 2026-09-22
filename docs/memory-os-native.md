@@ -1,6 +1,6 @@
 # Native MemoryOS milestone
 
-This milestone ports the reviewable local ledger from the original Jarvis OS MemoryOS work into the Android app. The upstream reference is [Jarvis-OS-V2 commit d8018e4b4ce263a9d03aef41cb864a66e45e331d](https://github.com/battlesbudz/Jarvis-OS-V2/commit/d8018e4b4ce263a9d03aef41cb864a66e45e331d); the native branch is based on `audio-pr2` at `c20b5137d010aa2a99814bea4387201b485182c7`. It is a standalone milestone and does not claim that chat or voice recall is live.
+This milestone ports the reviewable local ledger from the original Jarvis OS MemoryOS work into the Android app. The upstream reference is [jarvis-os commit d8018e4b4ce263a9d03aef41cb864a66e45e331d](https://github.com/battlesbudz/jarvis-os/commit/d8018e4b4ce263a9d03aef41cb864a66e45e331d); the native branch is based on `audio-pr2` at `c20b5137d010aa2a99814bea4387201b485182c7`. It is a standalone milestone and does not claim that chat or voice recall is live.
 
 ## What is implemented
 
