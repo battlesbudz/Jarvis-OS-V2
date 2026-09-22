@@ -41,14 +41,18 @@ class ReleaseJourneyTest {
 
     @After fun close() {
         try {
-            val directory = File(context.cacheDir, "verification").apply { mkdirs() }
-            val screenshot = File(directory, "${testName.methodName}.png")
-            val hierarchy = File(directory, "${testName.methodName}.xml")
-            assertTrue("Screenshot capture failed", device.takeScreenshot(screenshot))
-            device.dumpWindowHierarchy(hierarchy)
-            exportEvidence(screenshot, "image/png")
-            exportEvidence(hierarchy, "application/xml")
+            captureEvidence(testName.methodName)
         } finally { if (::activity.isInitialized) activity.close() }
+    }
+
+    private fun captureEvidence(name: String) {
+        val directory = File(context.cacheDir, "verification").apply { mkdirs() }
+        val screenshot = File(directory, "$name.png")
+        val hierarchy = File(directory, "$name.xml")
+        assertTrue("Screenshot capture failed", device.takeScreenshot(screenshot))
+        device.dumpWindowHierarchy(hierarchy)
+        exportEvidence(screenshot, "image/png")
+        exportEvidence(hierarchy, "application/xml")
     }
 
     private fun exportEvidence(file: File, mime: String) {
@@ -186,6 +190,57 @@ class ReleaseJourneyTest {
         find(By.text("Cancel")).click()
         find(By.text("Done")).click()
         assertNotNull(find(By.text(original)))
+    }
+
+    @Test fun test11_modelDetailsAreOptionalAndDoNotChangeSelection() {
+        assertFalse(device.hasObject(By.textContains("bundle /")))
+        find(By.res("selected_model_details")).click()
+        assertNotNull(find(By.text("About this model")))
+        find(By.text("Close details")).click()
+        assertNotNull(find(By.text("Gemma-4-E2B-it")))
+        openBrowser()
+        find(By.res("model_search")).text = "Gemma"
+        find(By.res("model_family_Gemma")).click()
+        assertNotNull(find(By.text("Not yet verified for this Jarvis setup.")))
+        assertFalse(device.hasObject(By.textContains("bundle /")))
+        scrollTo(By.res("model_details_Gemma3-1B-IT")).click()
+        assertNotNull(find(By.text("About this model")))
+        captureEvidence("model_details_open")
+        find(By.text("Close details")).click()
+        assertNotNull(find(By.res("model_choose_Gemma3-1B-IT")))
+        // Keep the compact family view visible for the screenshot.
+    }
+
+    @Test fun test12_lastFamilyModelCanBeSelectedAboveNavigationBar() {
+        openBrowser()
+        find(By.res("model_search")).text = "Gemma"
+        find(By.res("model_family_Gemma")).click()
+        val target = By.res("model_choose_codegemma-7b-it-int4-litertlm")
+        scrollTo(target)
+        // Reach the actual end of the list, not just the first partly visible button.
+        repeat(3) {
+            val list = find(By.res("model_list")).visibleBounds
+            device.swipe(list.centerX(), list.bottom - 30, list.centerX(), list.top + 30, 25)
+            device.waitForIdle()
+        }
+        val button = find(target)
+        var navigationInset = 0
+        activity.onActivity {
+            navigationInset = it.window.decorView.rootWindowInsets
+                ?.getInsets(android.view.WindowInsets.Type.navigationBars())?.bottom ?: 0
+        }
+        val bounds = button.visibleBounds
+        assertTrue("Choose must be above Android navigation", bounds.bottom <= device.displayHeight - navigationInset)
+        assertTrue("Choose must have its full touch target", bounds.height() >= (40 * context.resources.displayMetrics.density).roundToInt())
+        captureEvidence("last_model_button")
+        button.click()
+        assertNotNull(find(By.text("codegemma-7b-it-int4-litertlm")))
+        // Restore the starting model without touching files or bypassing the UI.
+        openBrowser()
+        find(By.res("model_search")).text = "Gemma-4-E2B-it"
+        find(By.res("model_family_Gemma")).click()
+        scrollTo(By.res("model_choose_Gemma-4-E2B-it")).click()
+        assertNotNull(find(By.text("Gemma-4-E2B-it")))
     }
 
     // Leave this selection in durable preferences for the controller's separate-process check.

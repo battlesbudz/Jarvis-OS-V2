@@ -19,6 +19,16 @@ class ModelGuidanceTest {
         assertEquals(ModelGuide.families(), ModelGuide.families(ModelCatalog.all.reversed()))
     }
 
+    @Test fun experimentalStatusCannotTurnPositiveMemoryAdviceIntoAWarning() {
+        val experimental = ModelCatalog.find("Phi-4-mini-instruct")!!
+        val fit = ModelGuidance.assess(experimental, phone)
+        assertNotNull(fit.compatibilityNotice)
+        assertEquals("Memory estimate: Likely enough room", fit.quickMemoryLabel)
+        assertFalse(fit.memoryWarning)
+        assertFalse(ModelGuidance.assess(experimental.copy(downloadBytes = null), phone).memoryWarning)
+        assertTrue(ModelGuidance.assess(experimental, phone.copy(totalRamBytes = 4_000_000_000)).memoryWarning)
+    }
+
     @Test fun downloadStorageRemainsSeparateFromMemory() {
         val full = phone.copy(freeStorageBytes = 1)
         assertNotNull(ModelGuidance.storageNotice(ModelCatalog.gemma4E2b, full, installed = false))

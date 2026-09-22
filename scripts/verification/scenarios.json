@@ -12,6 +12,8 @@
     "test08_rejectedToolSequencePreservesAndroidVolume",
     "test09_repeatedVolumeRequestIsIdempotent",
     "test10_modelIssueWarningPrecedesSelectionAndCancelPreservesModel",
+    "test11_modelDetailsAreOptionalAndDoNotChangeSelection",
+    "test12_lastFamilyModelCanBeSelectedAboveNavigationBar",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

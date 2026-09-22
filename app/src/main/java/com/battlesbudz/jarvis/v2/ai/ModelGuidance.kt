@@ -18,6 +18,15 @@ data class ModelFit(
     val compatibilityNotice: String? = null
 ) {
     val displayLabel: String get() = "Memory: $label"
+    // Color depends on this resource estimate only, never on experimental status.
+    val memoryWarning: Boolean get() = memoryRisk >= 2 && label != "Memory needs unknown"
+    val quickMemoryLabel: String get() = when {
+        label == "Unsupported architecture" -> "Not supported on this phone"
+        label == "Memory needs unknown" -> "Memory estimate unavailable"
+        memoryRisk >= 2 -> "Memory estimate: May not fit"
+        memoryRisk == 1 -> "Memory estimate: May be tight"
+        else -> "Memory estimate: Likely enough room"
+    }
     val startingOption: Boolean get() = memoryRisk <= 1 && compatibilityNotice == null
 }
 

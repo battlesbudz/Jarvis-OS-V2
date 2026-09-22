@@ -100,6 +100,9 @@ object ModelGuide {
                 "Everyday questions, drafting, summarizing and working through problems.",
                 if (spec.supportsTools) "Jarvis tools are connected for this model. Image upload is not available in this chat."
                 else "Image upload and this model's native tool calls are not connected in this chat.")
+            id == "phi-4-mini-instruct" -> ModelPurpose(listOf("Math", "Code help", "Languages"),
+                "Explain math steps, help with code and answer questions in different languages.",
+                "These are publisher-described uses, not a measured advantage over other models in Jarvis.")
             id.startsWith("qwen3.5") -> ModelPurpose(listOf("Chat", "Writing", "Code help"),
                 "Try general questions, summaries, drafting and code explanations.", "This bundle is a text-only conversion; it does not add image input.")
             canThink(spec) -> ModelPurpose(listOf("Chat", "Reasoning", "Code help"),
@@ -109,6 +112,24 @@ object ModelGuide {
             else -> ModelPurpose(listOf("Chat", "Writing", "Summaries"),
                 "Try everyday questions, drafting, rewriting and summarizing text.", "General-purpose model; these uses are not a measured quality ranking in Jarvis.")
         }
+    }
+
+    /** Short task descriptions, not quality rankings or phone speed promises. */
+    fun quickUse(spec: LocalModelSpec): String = when (spec.id) {
+        "Gemma-4-E2B-it" -> "Everyday chat & voice assistance"
+        "Gemma-4-E4B-it" -> "Writing & longer problem-solving tasks"
+        "Gemma3-1B-IT" -> "Short questions & simple rewrites"
+        "Phi-4-mini-instruct" -> "Math, code help & multilingual questions"
+        else -> purpose(spec).tags.take(2).joinToString(" · ")
+    }
+
+    /** Limitations that could change a choice stay visible even with Details closed. */
+    fun visibleLimitation(spec: LocalModelSpec): String? = when {
+        spec.id.startsWith("Llama-", true) -> "Base model: may not follow instructions reliably."
+        spec.id.startsWith("FastContext", true) -> "Code-search tools are not connected in Jarvis."
+        spec.id.startsWith("MedGemma", true) -> "Research only; not medical advice. Text only in Jarvis."
+        (spec.supportsVision && !spec.id.startsWith("Gemma-4", true)) || spec.id.startsWith("FastVLM", true) -> "Text only in Jarvis; image input is not available."
+        else -> null
     }
 
     /** A lower-load general chat candidate, not a quality or benchmark winner. */

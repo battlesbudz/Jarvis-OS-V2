@@ -1,6 +1,5 @@
 package com.battlesbudz.jarvis.v2.ui
 
-import android.content.Context
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,12 +33,7 @@ internal fun VoiceInputSettings(enabled: Boolean, onBusy: (Boolean) -> Unit) {
                 }
             }) { Text("Use ${engine.label}") }
         }
-        Text("Moonshine shows words while you speak. Whisper base.en updates stable words in the background and confirms them when you finish. Both run on this phone.", style = MaterialTheme.typography.bodySmall)
-        Text("Speaker preference learns automatically from consistent speech after separate activations. Short or uncertain samples stay permissive while it learns.", style = MaterialTheme.typography.bodySmall)
-        TextButton(enabled = enabled && !busy, onClick = {
-            context.getSharedPreferences("speaker_preference_v1", Context.MODE_PRIVATE).edit().clear().apply()
-            message = "Learned voice preference cleared. It will learn again after your next activations."
-        }) { Text("Reset learned voice preference") }
+        Text("Both transcribe your voice on this phone. Moonshine transcribes as you speak; Whisper confirms the text when you finish.", style = MaterialTheme.typography.bodySmall)
         if (busy) TextButton(onClick = { task?.cancel(); message = "Stopped." }) { Text("Cancel") }
         if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
     }

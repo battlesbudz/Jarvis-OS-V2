@@ -2,6 +2,8 @@ package com.battlesbudz.jarvis.v2.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -26,7 +28,6 @@ internal fun ModelBrowser(
     phone: PhoneProfile,
     selectedId: String,
     isInstalled: (LocalModelSpec) -> Boolean,
-    isTested: (LocalModelSpec) -> Boolean,
     onSelect: (LocalModelSpec) -> String?,
     onDismiss: () -> Unit
 ) {
@@ -37,10 +38,12 @@ internal fun ModelBrowser(
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     val families = remember(query) { ModelGuide.families(query = query) }
     val familyListState = rememberLazyListState()
-    val uriHandler = LocalUriHandler.current
     fun goBack() { if (family != null) { family = null; detailId = null } else onDismiss() }
-    Dialog(onDismissRequest = { goBack() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = { goBack() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         BackHandler { goBack() }
+        detailId?.let { id -> ModelCatalog.find(id)?.let { spec ->
+            ModelDetails(spec, phone) { detailId = null }
+        } }
         warningId?.let { id -> ModelCatalog.find(id)?.let { spec ->
             AlertDialog(onDismissRequest = { warningId = null },
                 title = { Text("Known issue — read before choosing") },
@@ -54,6 +57,7 @@ internal fun ModelBrowser(
         } }
 
         Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }, color = MaterialTheme.colorScheme.background) {
+            // The dialog owns edge-to-edge insets, including Android 15/16 three-button navigation.
             Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween) {
@@ -62,7 +66,7 @@ internal fun ModelBrowser(
                 }
                 Text(family ?: "Choose a model family", style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.padding(horizontal = 16.dp))
-                Text("${phone.name} · ${ModelGuidance.gb(phone.totalRamBytes)} reported RAM",
+                Text(phone.name,
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                 OutlinedTextField(value = query, onValueChange = { query = it; detailId = null }, singleLine = true,
                     placeholder = { Text("Search families, models or uses") },
@@ -72,7 +76,7 @@ internal fun ModelBrowser(
                     LazyColumn(state = familyListState, modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         item {
-                            Text("Open a family to compare uses and phone demands. Labels show Android test evidence or reported issues. Installed status does not affect recommendations or order.",
+                            Text("Choose a family, then compare models from smallest to largest.",
                                 style = MaterialTheme.typography.bodyMedium)
                         }
                         if (families.isEmpty()) item { Text("No matching models. Try a different name or use, such as coding.") }
@@ -93,66 +97,40 @@ internal fun ModelBrowser(
                 } else key(family, query) {
                     val specs = families[family].orEmpty()
                     val startingPoint = ModelGuide.startingPoint(ModelGuide.families()[family].orEmpty(), phone)
-                    LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(16.dp),
+                    LazyColumn(modifier = Modifier.weight(1f).testTag("model_list"),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         item {
                             Text("Smallest download → largest", style = MaterialTheme.typography.titleSmall)
-                            Text("Size is not speed: compression, model architecture and thinking all matter. A larger model can be worth waiting for on a harder task, but larger does not guarantee a better answer.",
-                                style = MaterialTheme.typography.bodySmall)
-                            Text("Memory labels compare bundle size with total RAM, not currently free RAM. They are a rough screen, not measured working memory. Android, speech, conversation length and driver caches need extra room.",
-                                style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+
                         }
                         if (specs.isEmpty()) item { Text("No matches in this family. Clear the search or return to Families.") }
                         items(specs, key = { it.id }) { spec ->
-                            val purpose = ModelGuide.purpose(spec)
                             val fit = ModelGuidance.assess(spec, phone)
                             val installed = isInstalled(spec)
                             OutlinedCard(Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text(spec.id, style = MaterialTheme.typography.titleMedium)
                                     ModelCompatibilityLabel(spec)
-                                    Text("Good for: " + purpose.tags.joinToString(" · "), color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyMedium)
-                                    Text(purpose.description, style = MaterialTheme.typography.bodySmall)
-                                    // Limitations of specialists and vision bundles are visible before selecting.
-                                    if (purpose.caveat.isNotBlank()) Text(purpose.caveat, style = MaterialTheme.typography.bodySmall)
-                                    Text("Download: " + (spec.downloadBytes?.let(ModelGuidance::gb) ?: "Unknown"),
-                                        style = MaterialTheme.typography.labelLarge)
-                                    Text(fit.displayLabel, color = if (fit.memoryRisk >= 2 || fit.compatibilityNotice != null) MaterialTheme.colorScheme.error
-                                        else MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.labelLarge)
-
-                                    Text("Response demand: ${fit.workload}" + if (ModelGuide.canThink(spec)) " · Can think longer" else "",
-                                        style = MaterialTheme.typography.labelLarge)
-                                    if (startingPoint?.id == spec.id) Text("Everyday starting option · lower demand, general chat",
+                                    Text(ModelGuide.quickUse(spec), color = MaterialTheme.colorScheme.primary,
+                                        style = MaterialTheme.typography.bodyMedium)
+                                    ModelGuide.visibleLimitation(spec)?.let {
+                                        Text(it, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    Text("Download: " + (spec.downloadBytes?.let(ModelGuidance::gb) ?: "Size unknown") +
+                                        if (installed) " · Installed" else "",
+                                        style = MaterialTheme.typography.bodySmall)
+                                    Text(fit.quickMemoryLabel,
+                                        color = if (fit.memoryWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodySmall)
+                                    if (startingPoint?.id == spec.id) Text("Suggested starting model",
                                         color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
-                                    Text((if (spec.id == selectedId) "Selected · " else "") +
-                                        (if (installed) "Installed" else "Not downloaded") +
-                                        (if (installed && isTested(spec)) " · Reply test passed" else ""),
-                                        style = MaterialTheme.typography.labelSmall)
-                                    if (spec.requiresAccess) Text("Publisher terms must be accepted before downloading.", style = MaterialTheme.typography.bodySmall)
                                     ModelGuidance.storageNotice(spec, phone, installed)?.let {
                                         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                                     }
-                                    if (detailId == spec.id) {
-                                        HorizontalDivider()
-                                        Text(ModelCompatibility.assess(spec).details, style = MaterialTheme.typography.bodySmall)
-                                        if (fit.compatibilityNotice != null) Text("Memory-only estimate below; it does not establish that this model can start.", style = MaterialTheme.typography.labelMedium)
-                                        Text(fit.explanation, style = MaterialTheme.typography.bodySmall)
-                                        if (fit.compatibilityNotice == null) Text(fit.workloadExplanation, style = MaterialTheme.typography.bodySmall)
-                                        fit.deviceExperience?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                                        Text("Phone chip: ${phone.chip}. No device benchmark is inferred from this name. A short reply test checks loading, not sustained speed or heat.",
-                                            style = MaterialTheme.typography.bodySmall)
-                                        if (spec.id.contains("26B-A4B", true)) Text("A4B means about 4B active parameters per token, but the full 26B model weights still need memory.",
-                                            style = MaterialTheme.typography.bodySmall)
-                                        TextButton(onClick = {
-                                            spec.downloadUrl?.substringBefore("/resolve/")?.let { url ->
-                                                runCatching { uriHandler.openUri(url) }.onFailure { error = "Could not open the model card." }
-                                            }
-                                        }) { Text("Read model card") }
-                                    }
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        TextButton(onClick = { detailId = if (detailId == spec.id) null else spec.id }) {
-                                            Text(if (detailId == spec.id) "Less detail" else "Why this rating?")
+                                        TextButton(onClick = { detailId = spec.id }, modifier = Modifier.testTag("model_details_${spec.id}")) {
+                                            Text("Details")
                                         }
                                         Button(modifier = Modifier.testTag("model_choose_${spec.id}"), onClick = { if (ModelCompatibility.assess(spec).confirmBeforeSelection) warningId = spec.id
                                             else { error = onSelect(spec); if (error == null) onDismiss() } }) {
@@ -176,5 +154,51 @@ internal fun ModelCompatibilityLabel(spec: LocalModelSpec) {
         else MaterialTheme.colorScheme.onSurface
     Text(evidence.status.label, color = color, fontWeight = FontWeight.Bold,
         modifier = Modifier.testTag("model_evidence_${spec.id}"))
-    Text(evidence.summary, color = color, style = MaterialTheme.typography.bodySmall)
+    if (evidence.status == ModelEvidenceStatus.ISSUE) {
+        Text(evidence.summary, color = color, style = MaterialTheme.typography.bodySmall)
+    } else if (evidence.status == ModelEvidenceStatus.EXPERIMENTAL) {
+        Text("Not yet verified for this Jarvis setup.", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+
+/** Shared explanation, revealed on request instead of repeated throughout Settings. */
+@Composable
+internal fun ModelDetails(spec: LocalModelSpec, phone: PhoneProfile, onDismiss: () -> Unit) {
+    val purpose = ModelGuide.purpose(spec)
+    val fit = ModelGuidance.assess(spec, phone)
+    val evidence = ModelCompatibility.assess(spec)
+    val uriHandler = LocalUriHandler.current
+    var linkError by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("About this model") },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close details") } },
+        text = {
+            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(spec.id, style = MaterialTheme.typography.titleSmall)
+                Text(purpose.description)
+                if (purpose.caveat.isNotBlank()) Text(purpose.caveat)
+                HorizontalDivider()
+                Text(evidence.status.label, fontWeight = FontWeight.Bold)
+                Text(evidence.summary)
+                if (evidence.details.isNotBlank()) Text(evidence.details)
+                Text("An Android test is not a speed or reliability guarantee for your phone.")
+                HorizontalDivider()
+                Text("Phone estimate", fontWeight = FontWeight.Bold)
+                Text(fit.explanation)
+                Text(fit.workloadExplanation)
+                fit.deviceExperience?.let { Text(it) }
+                Text("${phone.name} · ${ModelGuidance.gb(phone.totalRamBytes)} RAM · ${ModelGuidance.gb(phone.freeStorageBytes)} free storage")
+                Text("Download size is not measured memory use. These estimates do not change when you install a model. Phone checks stay on your device.")
+                val source = evidence.source ?: spec.downloadUrl?.substringBefore("/resolve/")
+                if (source != null) TextButton(onClick = {
+                    runCatching { uriHandler.openUri(source) }.onFailure { linkError = "Could not open the publisher page." }
+                }) { Text("Publisher evidence") }
+                linkError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        }
+    )
 }

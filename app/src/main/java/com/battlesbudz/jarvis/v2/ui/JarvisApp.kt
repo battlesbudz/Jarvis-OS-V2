@@ -91,6 +91,7 @@ fun JarvisApp(
             Text("AI model", style = MaterialTheme.typography.titleMedium)
             var expanded by remember { mutableStateOf(false) }
             var confirmingDelete by remember { mutableStateOf(false) }
+            var detailsOpen by remember(selectedModel.id) { mutableStateOf(false) }
             var storageRevision by remember { mutableStateOf(0) }
             val canManage = enabled && !smokeTestRunning && !modelImportRunning && !modelDownloadRunning
             val storedBytes = remember(selectedModel, storageRevision, modelImportRunning, modelDownloadRunning) {
@@ -109,7 +110,6 @@ fun JarvisApp(
             if (expanded && canManage) ModelBrowser(
                 phone = phone, selectedId = selectedModel.id,
                 isInstalled = { store.hasModel(it) },
-                isTested = { store.isUsable(it) && store.smokeTestPassed(it) },
                 onDismiss = { expanded = false },
                 onSelect = { spec ->
                     selectionError = onSelectModel(spec)
@@ -126,7 +126,7 @@ fun JarvisApp(
             Text(if (store.hasModel(selectedModel)) "Installed" else "Not installed")
             if (storedBytes > 0L) {
                 OutlinedButton(enabled = canManage, onClick = { confirmingDelete = true }) {
-                    Text("Delete downloaded model · %.2f GB".format(java.util.Locale.US, storedBytes / 1_000_000_000.0))
+                    Text("Delete model & cache · %.2f GB".format(java.util.Locale.US, storedBytes / 1_000_000_000.0))
                 }
             }
             if (confirmingDelete && canManage) {
@@ -159,30 +159,20 @@ fun JarvisApp(
                     }
                 }) { Text("Open publisher page") }
             }
-            val purpose = com.battlesbudz.jarvis.v2.ai.ModelGuide.purpose(selectedModel)
-            Text("Good for: " + purpose.tags.joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
-            Text(purpose.description, style = MaterialTheme.typography.bodySmall)
-            if (purpose.caveat.isNotBlank()) Text(purpose.caveat, style = MaterialTheme.typography.bodySmall)
-            selectedModel.downloadBytes?.let {
-                Text("Download: %.2f GB".format(java.util.Locale.US, it / 1_000_000_000.0), style = MaterialTheme.typography.bodySmall)
+            Text(com.battlesbudz.jarvis.v2.ai.ModelGuide.quickUse(selectedModel), style = MaterialTheme.typography.bodyMedium)
+            com.battlesbudz.jarvis.v2.ai.ModelGuide.visibleLimitation(selectedModel)?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall)
             }
-            val fit = com.battlesbudz.jarvis.v2.ai.ModelGuidance.assess(selectedModel, phone)
-            Text(fit.displayLabel, color = if (fit.compatibilityNotice != null || fit.memoryRisk >= 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
-            Text("Response demand: ${fit.workload}", style = MaterialTheme.typography.bodySmall)
-            Text(fit.explanation, style = MaterialTheme.typography.bodySmall)
-            if (fit.compatibilityNotice == null) Text(fit.workloadExplanation, style = MaterialTheme.typography.bodySmall)
-            fit.deviceExperience?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            com.battlesbudz.jarvis.v2.ai.ModelGuidance.storageNotice(selectedModel, phone, store.hasModel(selectedModel))?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-            Text("${phone.name} · %.1f GB RAM · %.1f GB free storage".format(java.util.Locale.US,
-                phone.totalRamBytes / 1_000_000_000.0, phone.freeStorageBytes / 1_000_000_000.0),
-                style = MaterialTheme.typography.bodySmall)
-            Text("Phone check stays on your device. Download size is not measured RAM usage. Installed status and reply tests do not change these ratings.",
-                style = MaterialTheme.typography.bodySmall)
-            if (selectedModel.experimental) Text(if (store.isUsable(selectedModel) && store.smokeTestPassed(selectedModel))
-                "Community model · reply test passed" else "Community model · test required on your phone",
-                style = MaterialTheme.typography.labelSmall)
-            Text("All models can use voice through speech recognition. No model download happens until you choose Download.",
-                style = MaterialTheme.typography.bodySmall)
+            if (!store.hasModel(selectedModel)) selectedModel.downloadBytes?.let {
+                Text("Download: ${com.battlesbudz.jarvis.v2.ai.ModelGuidance.gb(it)}", style = MaterialTheme.typography.bodySmall)
+            }
+            com.battlesbudz.jarvis.v2.ai.ModelGuidance.storageNotice(selectedModel, phone, store.hasModel(selectedModel))?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            androidx.compose.material3.TextButton(onClick = { detailsOpen = true }, modifier = Modifier.testTag("selected_model_details")) {
+                Text("Model details")
+            }
+            if (detailsOpen) ModelDetails(selectedModel, phone) { detailsOpen = false }
             selectionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }

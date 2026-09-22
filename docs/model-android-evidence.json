@@ -106,7 +106,7 @@
       "sha256": "e3e290109da4388d65a17510a0c66af91c8039f52d2c465868dbc43c09a776cf",
       "record_matches": [],
       "status": "EXPERIMENTAL",
-      "summary": "May not start or run properly. Available for testing.",
+      "summary": "Android operation of this exact download and setup is not yet verified.",
       "details": "Android tables cover qwen3_0_6b_mixed_int4 and Qwen3-0.6B.litertlm; Jarvis pins Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm. Related model evidence, not an established identity match.",
       "source": "https://huggingface.co/litert-community/Qwen3-0.6B",
       "confirm": false
@@ -209,7 +209,7 @@
       "sha256": "86c97baba6d3fb4109588562f0b9411e502c883be7fc2479f93ce3a6ea3efb6b",
       "record_matches": [],
       "status": "EXPERIMENTAL",
-      "summary": "May not start or run properly. Available for testing.",
+      "summary": "Android operation of this exact download and setup is not yet verified.",
       "details": "Top Galaxy S26 results refer to the VL artifact, while Jarvis downloads text-only INT8. Text-only Pixel GPU ran out of memory; Pixel CPU test was blocked by storage. Positive Android CPU result for this exact text-only file not established here.",
       "source": "https://huggingface.co/litert-community/Qwen3.5-2B",
       "confirm": false
@@ -241,7 +241,7 @@
       "sha256": "faa60663b333290c1496c499828b21d3e3254a788cacd8cce917ce0f761a2dc9",
       "record_matches": [],
       "status": "EXPERIMENTAL",
-      "summary": "May not start or run properly. Available for testing.",
+      "summary": "Android operation of this exact download and setup is not yet verified.",
       "details": "Samsung S25 Ultra CPU/GPU benchmarks exist for INT8 4096, but table download links point to .task artifacts, not Jarvis\u2019s .litertlm. Good family/conversion evidence; exact bundle identity unproven.",
       "source": "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct",
       "confirm": false
@@ -289,7 +289,7 @@
       "sha256": "69b35f01759eed765641ab4af589bbe98131fd2825662a086d9037409b8c1295",
       "record_matches": [],
       "status": "EXPERIMENTAL",
-      "summary": "May not start or run properly. Available for testing.",
+      "summary": "Android operation of this exact download and setup is not yet verified.",
       "details": "Samsung S24 Ultra INT8 CPU/GPU measurements exist. Card\u2019s prose mentions 1280 context while table says 4096, and lacks a checksum-linked runtime/bundle result. Related Android evidence, not exact Jarvis certification.",
       "source": "https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B",
       "confirm": false
@@ -472,7 +472,7 @@
       "sha256": "1325ae366d31950f137c9c357b9fa89448b176d76998180c08ceaca78bba98be",
       "record_matches": [],
       "status": "EXPERIMENTAL",
-      "summary": "May not start or run properly. Available for testing.",
+      "summary": "Android operation of this exact download and setup is not yet verified.",
       "details": "Named S24 Ultra LiteRT-LM QAT GPU benchmarks exist, but table context is 2048 while Jarvis configures 4096 and pins a differently sized artifact. Exact configuration is not established.",
       "source": "https://huggingface.co/litert-community/Gemma3-1B-IT",
       "confirm": false
@@ -728,7 +728,7 @@
       "sha256": "79ca9db8af91e40486a5dfcaf26549180fd6c811ad85f826e3aef20ad0bd565c",
       "record_matches": [],
       "status": "EXPERIMENTAL",
-      "summary": "May not start or run properly. Available for testing.",
+      "summary": "Android operation of this exact download and setup is not yet verified.",
       "details": "Android tests cover original INT4 bundle; Jarvis pins later fixB vision repair. Publisher says text weights unchanged, but a matching Android test of the repaired full bundle is not established.",
       "source": "https://huggingface.co/litert-community/LFM2.5-VL-1.6B",
       "confirm": false
@@ -744,7 +744,7 @@
       "sha256": "2393cfba9d78e930bca56e92a752b222bc8b0cb111356faf6c5f23d021a3fa5e",
       "record_matches": [],
       "status": "EXPERIMENTAL",
-      "summary": "May not start or run properly. Available for testing.",
+      "summary": "Android operation of this exact download and setup is not yet verified.",
       "details": "Original INT4 has Pixel 8a/S26 GPU text evidence; catalog uses later fixB vision repair. Do not transfer full multimodal verification without retest.",
       "source": "https://huggingface.co/litert-community/LFM2.5-VL-3B",
       "confirm": false
@@ -760,7 +760,7 @@
       "sha256": "6854cd9677a34e680070b60076793e49aeb3224de7cb4101076b261cb9bf6033",
       "record_matches": [],
       "status": "EXPERIMENTAL",
-      "summary": "May not start or run properly. Available for testing.",
+      "summary": "Android operation of this exact download and setup is not yet verified.",
       "details": "Original INT4 has Pixel 8a/S26 GPU text evidence; catalog uses later fixB vision repair. Small size does not establish corrected image behavior on Android.",
       "source": "https://huggingface.co/litert-community/LFM2.5-VL-450M",
       "confirm": false
@@ -903,7 +903,7 @@
       "sha256": "2a3388f958ad22faabc306856bfa026515b2352ca9564964f3e5e9129f22f289",
       "record_matches": [],
       "status": "EXPERIMENTAL",
-      "summary": "May not start or run properly. Available for testing.",
+      "summary": "Android operation of this exact download and setup is not yet verified.",
       "details": "Older fp32act artifact generated on Galaxy S26 GPU. Publisher explicitly says device test was not repeated after chat-template metadata repair. The CPU-only model.litertlm failure is a different file.",
       "source": "https://huggingface.co/litert-community/Nanbeige4.2-3B",
       "confirm": false
@@ -1007,7 +1007,7 @@
       "sha256": "7764d4deb53800578307be33039476b38a6c370fff71bedb3c0552563e23ab02",
       "record_matches": [],
       "status": "EXPERIMENTAL",
-      "summary": "May not start or run properly. Available for testing.",
+      "summary": "Android operation of this exact download and setup is not yet verified.",
       "details": "S24 Ultra INT8 GPU table reports 10.39 tok/s, but prose/table context conflict and exact .litertlm/runtime identity is not linked. Strong related Android evidence, weaker exact-artifact evidence.",
       "source": "https://huggingface.co/litert-community/Phi-4-mini-instruct",
       "confirm": false
@@ -1223,7 +1223,7 @@
       "sha256": "895b4ef975512d67d3a9160305f1e9d7525bf87bbfa01ec33225325b35983f5b",
       "record_matches": [],
       "status": "EXPERIMENTAL",
-      "summary": "May not start or run properly. Available for testing.",
+      "summary": "Android operation of this exact download and setup is not yet verified.",
       "details": "Android integration instructions only; no named-device benchmark. Card lists roughly 3.85 GB and 512 context, unlike catalog 4.72 GB and 1280. Needs artifact/configuration validation.",
       "source": "https://huggingface.co/litert-community/codegemma-7b-it-int4-litertlm",
       "confirm": false
