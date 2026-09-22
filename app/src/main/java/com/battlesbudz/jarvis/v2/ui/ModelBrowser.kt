@@ -114,6 +114,7 @@ internal fun ModelBrowser(
                                     ModelCompatibilityLabel(spec)
                                     Text(ModelGuide.quickUse(spec), color = MaterialTheme.colorScheme.primary,
                                         style = MaterialTheme.typography.bodyMedium)
+                                    Text(ModelGuide.inputsLabel(spec), style = MaterialTheme.typography.labelSmall)
                                     ModelGuide.visibleLimitation(spec)?.let {
                                         Text(it, style = MaterialTheme.typography.bodySmall)
                                     }
@@ -180,6 +181,9 @@ internal fun ModelDetails(spec: LocalModelSpec, phone: PhoneProfile, onDismiss: 
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(spec.id, style = MaterialTheme.typography.titleSmall)
                 Text(purpose.description)
+                Text("Inputs: ${ModelGuide.inputsLabel(spec)}")
+                if (spec.supportsAudio) Text("Audio clips: up to 30 seconds, 16 kHz mono PCM WAV. Voice calls still use your chosen speech recognizer.")
+                if (spec.supportsTools) Text("Jarvis tools: read battery, set volume and open apps. Availability does not mean this model has passed a tool-calling test. Calls are checked against your request before execution.")
                 if (purpose.caveat.isNotBlank()) Text(purpose.caveat)
                 HorizontalDivider()
                 Text(evidence.status.label, fontWeight = FontWeight.Bold)

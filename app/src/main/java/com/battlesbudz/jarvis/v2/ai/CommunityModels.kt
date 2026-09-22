@@ -79,7 +79,7 @@ internal object CommunityModels {
             id = "FastVLM-0.5B", provider = "Apple",
             fileName = "FastVLM-0.5B.litertlm",
             expectedSha256 = "ccba1e8bfa0bab78345f5d009fdffd20bd8c907cf39b4bc632e391b0a96f3b18",
-            recommendedGpu = true, supportsVision = false, reasoning = false,
+            recommendedGpu = true, supportsVision = true, reasoning = false,
             contextTokens = 1280, downloadBytes = 1156342768L,
             description = "General conversation",
             downloadUrl = "https://huggingface.co/litert-community/FastVLM-0.5B/resolve/460013246392191f8532e45e518576bb6513eace/FastVLM-0.5B.litertlm?download=true"
@@ -108,7 +108,7 @@ internal object CommunityModels {
             expectedSha256 = "7cf87c35cf364d04bd2e6f957e3a0366830ad0b46eca3dd81e0000891fd1284a",
             recommendedGpu = true, supportsVision = true, reasoning = false,
             contextTokens = 2048, downloadBytes = 737314160L,
-            description = "Image-capable model · text chat here",
+            description = "Image and text assistant",
             downloadUrl = "https://huggingface.co/litert-community/InternVL3-1B/resolve/1750633fd6d028d3f2d1cf733860f5a52926bb5f/InternVL3-1B.litertlm?download=true"
         ),
         LocalModelSpec(
@@ -117,7 +117,7 @@ internal object CommunityModels {
             expectedSha256 = "cb7d63cbf2f5d9b3eb307012b54dc4fc4d68fef78dc3a5d4fbba41c59812f9b6",
             recommendedGpu = true, supportsVision = true, reasoning = false,
             contextTokens = 2048, downloadBytes = 1429640560L,
-            description = "Image-capable model · text chat here",
+            description = "Image and text assistant",
             downloadUrl = "https://huggingface.co/litert-community/InternVL3-2B/resolve/6960f534f0c95569baa29c72cbd7b3238046a67c/InternVL3-2B.litertlm?download=true"
         ),
         LocalModelSpec(
@@ -126,7 +126,7 @@ internal object CommunityModels {
             expectedSha256 = "df984928897c84aa2d6603651850a809dc1fbb2ec5f42c048b988b2d1bd1d456",
             recommendedGpu = true, supportsVision = true, reasoning = false,
             contextTokens = 2048, downloadBytes = 817517936L,
-            description = "Image-capable model · text chat here",
+            description = "Image and text assistant",
             downloadUrl = "https://huggingface.co/litert-community/InternVL3_5-1B/resolve/d786967d292b7f76578b0c7a52a912b021436cf6/model.litertlm?download=true"
         ),
         LocalModelSpec(
@@ -135,7 +135,7 @@ internal object CommunityModels {
             expectedSha256 = "0f288a1cca1674ca3c0c0ee1705aefd78e9bf163594d00f012c9a7817c3679e1",
             recommendedGpu = true, supportsVision = true, reasoning = false,
             contextTokens = 2048, downloadBytes = 1613223280L,
-            description = "Image-capable model · text chat here",
+            description = "Image and text assistant",
             downloadUrl = "https://huggingface.co/litert-community/InternVL3_5-2B/resolve/4886a33c6439f3d1df00c9565cf472b7bc8211a1/model.litertlm?download=true"
         ),
         LocalModelSpec(
@@ -144,7 +144,7 @@ internal object CommunityModels {
             expectedSha256 = "2721a08faaa12dfb3af5f336c76b56274093468c1e25c1b35edfddfdcc8cb649",
             recommendedGpu = true, supportsVision = true, reasoning = false,
             contextTokens = 2048, downloadBytes = 2992182640L,
-            description = "Image-capable model · text chat here",
+            description = "Image and text assistant",
             downloadUrl = "https://huggingface.co/litert-community/InternVL3_5-4B/resolve/5acea476065132d64ed79f48b13c869f420f7af7/model.litertlm?download=true"
         ),
         LocalModelSpec(
@@ -207,7 +207,7 @@ internal object CommunityModels {
             expectedSha256 = "79ca9db8af91e40486a5dfcaf26549180fd6c811ad85f826e3aef20ad0bd565c",
             recommendedGpu = true, supportsVision = true, reasoning = false,
             contextTokens = 4096, downloadBytes = 1298139472L,
-            description = "Image-capable model · text chat here",
+            description = "Image and text assistant",
             downloadUrl = "https://huggingface.co/litert-community/LFM2.5-VL-1.6B/resolve/9f4ac757b88ffcd58510e590ef30c98603795c92/LFM2.5-VL-1.6B_int4_fixB.litertlm?download=true"
         ),
         LocalModelSpec(
@@ -216,7 +216,7 @@ internal object CommunityModels {
             expectedSha256 = "2393cfba9d78e930bca56e92a752b222bc8b0cb111356faf6c5f23d021a3fa5e",
             recommendedGpu = true, supportsVision = true, reasoning = false,
             contextTokens = 4096, downloadBytes = 2352023888L,
-            description = "Image-capable model · text chat here",
+            description = "Image and text assistant",
             downloadUrl = "https://huggingface.co/litert-community/LFM2.5-VL-3B/resolve/3797245190aa4ae67f524481ed3d9657a3423e04/LFM2.5-VL-3B_int4_fixB.litertlm?download=true"
         ),
         LocalModelSpec(
@@ -225,7 +225,7 @@ internal object CommunityModels {
             expectedSha256 = "6854cd9677a34e680070b60076793e49aeb3224de7cb4101076b261cb9bf6033",
             recommendedGpu = true, supportsVision = true, reasoning = false,
             contextTokens = 4096, downloadBytes = 406817104L,
-            description = "Image-capable model · text chat here",
+            description = "Image and text assistant",
             downloadUrl = "https://huggingface.co/litert-community/LFM2.5-VL-450M/resolve/be196f4fa88b2dfba8cdbbbff07b641df794f977/LFM2.5-VL-450M_int4_fixB.litertlm?download=true"
         ),
         LocalModelSpec(
@@ -234,7 +234,7 @@ internal object CommunityModels {
             expectedSha256 = "7f7cd7ae3d2ae435a1f69651de02a9d51e916be60fdfef5cadc721725310971a",
             recommendedGpu = true, supportsVision = true, reasoning = false,
             contextTokens = 2048, downloadBytes = 828590400L,
-            description = "Image-capable model · text chat here",
+            description = "Image and text assistant",
             downloadUrl = "https://huggingface.co/litert-community/LLaVA-OneVision-0.5B/resolve/681d5fea488c40a1dce3c6df52fc18c853e1dd39/LLaVA-OneVision-0.5B.litertlm?download=true"
         ),
         LocalModelSpec(
@@ -243,7 +243,7 @@ internal object CommunityModels {
             expectedSha256 = "4231ea9f88ef2bd3aca92fd4554531f17717225418c4527ac858a8a9184dad72",
             recommendedGpu = true, supportsVision = true, reasoning = false,
             contextTokens = 2048, downloadBytes = 2811977104L,
-            description = "Image-capable model · text chat here",
+            description = "Image and text assistant",
             downloadUrl = "https://huggingface.co/litert-community/Mage-VL/resolve/392b2a700f34bb6cc405764af62e494c858b3e87/Mage-VL.litertlm?download=true"
         ),
         LocalModelSpec(
@@ -252,7 +252,7 @@ internal object CommunityModels {
             expectedSha256 = "d45ef0cd8141597d731d002b72a152ab1a0f8b9cda8d9a0f5e1bc3a4689dcbd0",
             recommendedGpu = true, supportsVision = true, reasoning = false,
             contextTokens = 1280, downloadBytes = 4214021104L,
-            description = "Image-capable model · text chat here",
+            description = "Image and text assistant",
             downloadUrl = "https://huggingface.co/litert-community/MiniCPM-V-4/resolve/2d05ab8722280bd1f5e654c6a1a5e39c0e2bfc8c/MiniCPM-V-4-int8.litertlm?download=true"
         ),
         LocalModelSpec(
@@ -324,7 +324,7 @@ internal object CommunityModels {
             expectedSha256 = "098c7f7a3d20985136d7cc7311a2477943e5d00a51a6d8d1042cd903d48a9e45",
             recommendedGpu = true, supportsVision = true, reasoning = false,
             contextTokens = 4096, downloadBytes = 2190562720L,
-            description = "Image-capable model · text chat here",
+            description = "Image and text assistant",
             downloadUrl = "https://huggingface.co/litert-community/North-Micro-Vision-Instruct/resolve/dcc265605b6195c333819439acc73b6d4652012a/North-Micro-Vision-Instruct_int4.litertlm?download=true"
         ),
         LocalModelSpec(
@@ -342,7 +342,7 @@ internal object CommunityModels {
             expectedSha256 = "b8c5cb82e2a8b945e8f2b72576745acf22e61393074b345a2575245d21ab8e4b",
             recommendedGpu = true, supportsVision = true, reasoning = false,
             contextTokens = 2048, downloadBytes = 2148712880L,
-            description = "Image-capable model · text chat here",
+            description = "Image and text assistant",
             downloadUrl = "https://huggingface.co/litert-community/Ovis2.5-2B/resolve/0e4c75b24c56f2b09ba6a359b09162805d8c7059/Ovis2.5-2B.litertlm?download=true"
         ),
         LocalModelSpec(
@@ -387,7 +387,7 @@ internal object CommunityModels {
             expectedSha256 = "fab0ba947699ab405ff8fb9ea2de6c9af3cdfb598ea93f57631a268f3d631da2",
             recommendedGpu = true, supportsVision = true, reasoning = false,
             contextTokens = 2048, downloadBytes = 1511123888L,
-            description = "Image-capable model · text chat here",
+            description = "Image and text assistant",
             downloadUrl = "https://huggingface.co/litert-community/SmolVLM2-2.2B/resolve/4a18e38c5bfde31eb25d015471c122d73bf7bcbe/SmolVLM2-2.2B.litertlm?download=true"
         ),
         LocalModelSpec(
@@ -396,7 +396,7 @@ internal object CommunityModels {
             expectedSha256 = "b808b328d845a600a33c5295f93d9217487317bd334dbc91b2a8d50e26e60ad0",
             recommendedGpu = true, supportsVision = true, reasoning = false,
             contextTokens = 2048, downloadBytes = 360822960L,
-            description = "Image-capable model · text chat here",
+            description = "Image and text assistant",
             downloadUrl = "https://huggingface.co/litert-community/SmolVLM2-500M/resolve/dad030b6e56756201d670cfb4d042736a2ce3a5c/SmolVLM2-500M.litertlm?download=true"
         ),
         LocalModelSpec(

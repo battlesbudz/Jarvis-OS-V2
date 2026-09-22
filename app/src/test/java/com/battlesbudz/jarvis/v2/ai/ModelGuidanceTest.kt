@@ -76,7 +76,7 @@ class ModelGuidanceTest {
         }
         assertTrue(ModelGuide.purpose(ModelCatalog.find("Qwen2.5-Coder-1.5B-Instruct")!!).tags.contains("Coding"))
         assertTrue(ModelGuide.purpose(ModelCatalog.find("FastContext-1.0-4B-SFT")!!).caveat.contains("not connected"))
-        assertTrue(ModelGuide.purpose(ModelCatalog.find("FastVLM-0.5B")!!).caveat.contains("not available"))
+        assertTrue(ModelGuide.purpose(ModelCatalog.find("FastVLM-0.5B")!!).caveat.contains("Attach one image"))
         assertTrue(ModelGuide.purpose(ModelCatalog.find("Hy-MT2-1.8B")!!).tags.contains("Translation"))
     }
 

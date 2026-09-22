@@ -75,7 +75,7 @@ object ModelGuide {
                 listOf("Coding", "Debugging"), "Write and explain code snippets, suggest fixes and help understand errors.",
                 "Code suggestions need review. This picker does not give the model access to your repositories.")
             id.contains("medgemma") -> ModelPurpose(listOf("Medical research", "Specialist"),
-                "Explore medical terminology and research material.", "Research use; not a clinician or a basis for diagnosis. Image upload is not available in this chat.")
+                "Explore medical terminology and research material.", "Research use; not a clinician or a basis for diagnosis. Attach one image per message.")
             id.startsWith("fastcontext") -> ModelPurpose(listOf("Code exploration", "Specialist"),
                 "Designed to find relevant code and gather repository evidence for a coding agent.",
                 "Its file-search tools are not connected in Jarvis; this is an experimental text-only use of that specialist.")
@@ -86,20 +86,20 @@ object ModelGuide {
                 "These catalog bundles are base models, not instruction-tuned chat assistants; they may not follow requests reliably.")
             spec.supportsVision && !id.contains("gemma-4") || id.startsWith("fastvlm") -> ModelPurpose(
                 listOf("Images", "Text & image model"), "Model family designed for questions about pictures and visual content.",
-                "Image upload is not available in this chat. You can try text conversation here; this does not enable screen control or video calls.")
+                "Attach one image per message. This does not enable screen control or live video calls.")
             spec.reasoning -> ModelPurpose(listOf("Reasoning", "Math", "Problem solving"),
                 "Work through multi-step questions, calculations and problems where waiting for extra thinking may be worthwhile.",
                 "Can spend longer thinking before the answer. Extra thinking is not a guarantee of correctness.")
             id.contains("-jp") || id.startsWith("tinyswallow") || id.startsWith("sarashina") -> ModelPurpose(
                 listOf("Japanese", "English", "Writing"), "Japanese and English conversation, rewriting and language practice.")
             id.startsWith("jan-") -> ModelPurpose(listOf("Chat", "Tool-oriented"),
-                "General assistance with training aimed at tool-driven tasks.", "This model's native tool calls are not connected in Jarvis.")
+                "General assistance with training aimed at tool-driven tasks.", "Jarvis provides battery, volume and app-opening tools; other tools are not installed.")
             (parametersB(spec) ?: 99.0) < 0.5 -> ModelPurpose(listOf("Simple requests", "Short writing"),
                 "Try short rewrites, basic questions and simple instructions with a very small model.", "Limited knowledge and reasoning; a larger model may handle difficult requests better.")
             id.contains("gemma-4") -> ModelPurpose(listOf("Chat", "Writing", "Reasoning"),
                 "Everyday questions, drafting, summarizing and working through problems.",
-                if (spec.supportsTools) "Jarvis tools are connected for this model. Image upload is not available in this chat."
-                else "Image upload and this model's native tool calls are not connected in this chat.")
+                if (spec.supportsTools) "Jarvis tools are connected for this model. Attach one image per message."
+                else "Attach one image per message.")
             id == "phi-4-mini-instruct" -> ModelPurpose(listOf("Math", "Code help", "Languages"),
                 "Explain math steps, help with code and answer questions in different languages.",
                 "These are publisher-described uses, not a measured advantage over other models in Jarvis.")
@@ -123,12 +123,15 @@ object ModelGuide {
         else -> purpose(spec).tags.take(2).joinToString(" · ")
     }
 
+    fun inputsLabel(spec: LocalModelSpec): String = listOfNotNull(
+        "Text", "Images".takeIf { spec.supportsVision }, "Audio clips".takeIf { spec.supportsAudio }
+    ).joinToString(" · ")
+
     /** Limitations that could change a choice stay visible even with Details closed. */
     fun visibleLimitation(spec: LocalModelSpec): String? = when {
         spec.id.startsWith("Llama-", true) -> "Base model: may not follow instructions reliably."
         spec.id.startsWith("FastContext", true) -> "Code-search tools are not connected in Jarvis."
-        spec.id.startsWith("MedGemma", true) -> "Research only; not medical advice. Text only in Jarvis."
-        (spec.supportsVision && !spec.id.startsWith("Gemma-4", true)) || spec.id.startsWith("FastVLM", true) -> "Text only in Jarvis; image input is not available."
+        spec.id.startsWith("MedGemma", true) -> "Research only; not medical advice."
         else -> null
     }
 

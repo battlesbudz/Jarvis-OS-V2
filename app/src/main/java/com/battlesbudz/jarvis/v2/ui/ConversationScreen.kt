@@ -16,7 +16,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
-import com.battlesbudz.jarvis.v2.chat.ConversationHistory
+import com.battlesbudz.jarvis.v2.chat.*
+import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionState
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionUi
 import kotlinx.coroutines.flow.StateFlow
@@ -27,7 +28,8 @@ internal fun ConversationScreen(
     history: ConversationHistory,
     busy: StateFlow<Boolean>,
     callState: StateFlow<VoiceSessionState>,
-    onSend: (String) -> String?,
+    onSend: (String, ChatAttachment?) -> String?,
+    selectedModel: LocalModelSpec,
     onSelectConversation: (String?) -> String?,
     onEndVoice: ((String) -> Unit) -> Unit,
     onOpenVoiceCalls: () -> Unit,
@@ -45,6 +47,15 @@ internal fun ConversationScreen(
     var showHistory by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var draft by rememberSaveable(thread.id) { mutableStateOf("") }
+    var pendingUri by rememberSaveable(thread.id) { mutableStateOf<String?>(null) }
+    var pendingKind by rememberSaveable(thread.id) { mutableStateOf(AttachmentKind.IMAGE) }
+    var preparingAttachment by remember { mutableStateOf(false) }
+    val pendingAttachment = pendingUri?.let { ChatAttachment(it, pendingKind) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    DisposableEffect(thread.id) {
+        onDispose { if ((context as? android.app.Activity)?.isChangingConfigurations != true)
+            pendingUri?.let { ChatMediaStore.discard(context, ChatAttachment(it, pendingKind)) } }
+    }
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -80,17 +91,17 @@ internal fun ConversationScreen(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text("JARVIS", style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
-            TextButton(onClick = { settings = true }) { Text("Settings") }
+            TextButton(enabled = !preparingAttachment, onClick = { settings = true }) { Text("Settings") }
         }
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             SegmentedButton(selected = !voiceVisible, onClick = { returnToChat() },
                 shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)) { Text("Chat") }
-            SegmentedButton(selected = voiceVisible, enabled = !sending, onClick = { voiceVisible = true },
+            SegmentedButton(selected = voiceVisible, enabled = !sending && !preparingAttachment, onClick = { voiceVisible = true },
                 shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)) { Text("Voice call") }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = { showHistory = true }, enabled = !sending && !armed) { Text("Conversations") }
-            TextButton(onClick = { error = onSelectConversation(null) }, enabled = !sending && !armed) { Text("New") }
+            TextButton(onClick = { showHistory = true }, enabled = !sending && !armed && !preparingAttachment) { Text("Conversations") }
+            TextButton(onClick = { error = onSelectConversation(null) }, enabled = !sending && !armed && !preparingAttachment) { Text("New") }
         }
         // The conversation stays mounted beneath the voice surface: same draft, list and thread.
         // Hidden transcript nodes must not remain readable by accessibility services during a call.
@@ -107,6 +118,7 @@ internal fun ConversationScreen(
                             Column(Modifier.fillMaxWidth().padding(14.dp)) {
                                 Text(message.role + if (message.spoken) " · Spoken transcript" else "",
                                     style = MaterialTheme.typography.labelMedium)
+                                message.attachment?.let { ChatAttachmentPreview(it) }
                                 SelectionContainer {
                                     Text(message.text.ifBlank { if (sending) "Thinking…" else "No reply was saved." },
                                         fontStyle = if (message.spoken) FontStyle.Italic else FontStyle.Normal,
@@ -119,12 +131,30 @@ internal fun ConversationScreen(
                     }
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp)) }
+                pendingAttachment?.let { attached ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text(if (attached.kind == AttachmentKind.IMAGE) "Image attached" else "Audio clip attached", modifier = Modifier.weight(1f))
+                        TextButton(enabled = !sending && !preparingAttachment, onClick = {
+                            ChatMediaStore.discard(context, attached); pendingUri = null
+                        }) { Text("Remove") }
+                    }
+                    if (!AttachmentPolicy.accepts(selectedModel, attached.kind))
+                        Text("Choose a compatible model or remove the attachment.", color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = 16.dp))
+                }
+                if (preparingAttachment) Text("Preparing attachment…", modifier = Modifier.padding(horizontal = 16.dp))
+                ChatAttachmentPicker(selectedModel, enabled = !sending && !armed && !voiceVisible && !preparingAttachment,
+                    onBusy = { preparingAttachment = it }, onError = { error = it }, onPrepared = { attached ->
+                        pendingAttachment?.let { ChatMediaStore.discard(context, it) }
+                        pendingKind = attached.kind; pendingUri = attached.uri; error = null
+                    })
                 Row(Modifier.fillMaxWidth().imePadding().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = draft, onValueChange = { draft = it }, placeholder = { Text("Message Jarvis") },
                         modifier = Modifier.weight(1f), maxLines = 5, enabled = !armed && !voiceVisible)
-                    Button(enabled = draft.isNotBlank() && !sending && !armed && !voiceVisible, onClick = {
-                        error = onSend(draft)
-                        if (error == null) draft = ""
+                    Button(enabled = (draft.isNotBlank() || pendingAttachment != null) && !sending && !armed && !voiceVisible &&
+                        !preparingAttachment && (pendingAttachment == null || AttachmentPolicy.accepts(selectedModel, pendingAttachment.kind)), onClick = {
+                        error = onSend(draft, pendingAttachment)
+                        if (error == null) { draft = ""; pendingUri = null }
                     }) { Text(if (sending) "Thinking…" else "Send") }
                 }
             }

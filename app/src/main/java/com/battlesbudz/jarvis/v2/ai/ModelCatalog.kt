@@ -8,7 +8,8 @@ data class LocalModelSpec(
     val downloadUrl: String? = null,
     val supportsVision: Boolean = false,
     val supportsAudio: Boolean = false,
-    val supportsTools: Boolean = false,
+    /** Expose Jarvis tools through the bundle's own LiteRT template; reliability is model-dependent. */
+    val supportsTools: Boolean = true,
     val incrementalGemmaInput: Boolean = false,
     val contextTokens: Int? = null,
     val downloadBytes: Long? = null,

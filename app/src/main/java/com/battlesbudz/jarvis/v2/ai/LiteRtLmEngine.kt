@@ -66,7 +66,7 @@ class LiteRtLmEngine(
         return LiteRtVoicePrefillSession(LiteRtNativeVoiceSession(engine.createSession()))
     }
 
-    private var toolsEnabled = true
+    private var toolsEnabled = false
     suspend fun setToolsEnabled(enabled: Boolean): Boolean {
         if (toolsEnabled == enabled) return false
         toolsEnabled = enabled
@@ -74,27 +74,9 @@ class LiteRtLmEngine(
         return true
     }
 
-    private fun createConversation() =
-        if (!modelSpec.incrementalGemmaInput) {
-            engine.createConversation(ConversationConfig(
-                // Community Qwen bundles do not share Gemma's native tool protocol.
-                automaticToolCalling = false,
-                channels = listOf(com.google.ai.edge.litertlm.Channel("thought", "<think>", "</think>")),
-                maxOutputToken = 512,
-                thinkingConfig = ThinkingConfig(
-                    enableThinking = modelSpec.reasoning, thinkingTokenBudget = 256
-                )
-            ))
-        } else if (tools.isEmpty() || !toolsEnabled) {
-            engine.createConversation()
-        } else {
-            engine.createConversation(
-                ConversationConfig(
-                    tools = tools.map { tool(it) },
-                    automaticToolCalling = false
-                )
-            )
-        }
+    private fun createConversation() = engine.createConversation(
+        modelConversationConfig(modelSpec, tools, toolsEnabled)
+    )
 
     @OptIn(ExperimentalApi::class)
     suspend fun initialize() {

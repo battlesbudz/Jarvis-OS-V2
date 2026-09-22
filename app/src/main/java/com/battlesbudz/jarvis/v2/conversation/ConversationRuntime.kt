@@ -20,7 +20,8 @@ internal fun JarvisRuntime.runConversationInternal(
         voiceAudioIsComplete: Boolean = true,
         comparison: com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.Trial? = null,
         onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit = {},
-        onActionResult: (String, String, Boolean) -> Unit = { _, _, _ -> }
+        onActionResult: (String, String, Boolean) -> Unit = { _, _, _ -> },
+        audioUri: Uri? = null
     ) {
         fun buildTurnPrompt(userPrompt: String, actionResultContext: String?,
                             history: List<ChatEntry>, seedContext: Boolean): String =
@@ -86,10 +87,10 @@ internal fun JarvisRuntime.runConversationInternal(
                 var actionResultForGemma: String? = null
                 var actionResultMessage: String? = null
                 var actionName: String? = null
-                val turnPlan = if (comparison != null) com.battlesbudz.jarvis.v2.ai.TurnPlan(com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT)
+                val turnPlan = if (comparison != null || imageUri != null || audioUri != null) com.battlesbudz.jarvis.v2.ai.TurnPlan(com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT)
                     else turnOrchestrator.plan(prompt, history.map { it.role to it.text })
                 if (voiceAudio != null && turnPlan.lookupQuery == null) activeVoiceOutput?.acknowledgeConfirmedTurn()
-                val repeatReply = if (imageUri == null && voiceAudio == null) com.battlesbudz.jarvis.v2.ai.LastReplyRecall.resolve(
+                val repeatReply = if (imageUri == null && audioUri == null && voiceAudio == null) com.battlesbudz.jarvis.v2.ai.LastReplyRecall.resolve(
                     prompt, history.map { it.role to it.text }
                 ) else null
                 if (repeatReply != null) {
@@ -104,7 +105,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 // A final, explicit app command does not depend on the model emitting a tool call.
                 val textInput = incrementalVoice?.takeIf { imageUri == null && actionIntentRouter.classifyActionIntent(prompt, history) == null }
                 if (textInput == null) incrementalVoice?.close()
-                val directRequest = if (comparison != null) null else com.battlesbudz.jarvis.v2.actions.DirectAppCommand.parse(prompt)
+                val directRequest = if (comparison != null || imageUri != null || audioUri != null) null else com.battlesbudz.jarvis.v2.actions.DirectAppCommand.parse(prompt)
                 if (directRequest != null) {
                     resetNativeConversation()
                     val result = kotlinx.coroutines.withContext(Dispatchers.Main) {
@@ -214,9 +215,19 @@ internal fun JarvisRuntime.runConversationInternal(
                 // and reseed that history into the fresh conversation below.
                 if (imageUri != null) {
                     check(modelStore.selectedModel().supportsVision) {
-                        "${modelStore.selectedModel().id} is text-only. Select Gemma or Qwen2-VL for images."
+                        "${modelStore.selectedModel().id} is text-only. Select a model with image input."
                     }
                     if (conversationEngine?.visionEnabled != true) {
+                        conversationEngine?.close()
+                        conversationEngine = null
+                        nativeConversationHasContext = false
+                        conversationCharacters = 0
+                    } else resetNativeConversation()
+                }
+
+                if (audioUri != null) {
+                    check(modelStore.selectedModel().supportsAudio) { "This download does not support audio input." }
+                    if (conversationEngine?.audioEnabled != true) {
                         conversationEngine?.close()
                         conversationEngine = null
                         nativeConversationHasContext = false
@@ -237,7 +248,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     tools = if (modelStore.selectedModel().supportsTools)
                         com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions.all() else emptyList(),
                     visionEnabled = imageUri != null && modelStore.selectedModel().supportsVision,
-                    audioEnabled = voiceAudio != null && modelStore.selectedModel().supportsAudio
+                    audioEnabled = (voiceAudio != null || audioUri != null) && modelStore.selectedModel().supportsAudio
                 ).also {
                     it.initialize()
                     conversationEngine = it
@@ -339,12 +350,13 @@ internal fun JarvisRuntime.runConversationInternal(
                 }
                 val imageBytes = imageUri?.let { uri ->
                     openVisionInputStream(uri)?.use { input ->
-                        input.readBytes().also { bytes ->
-                            check(bytes.size <= ConversationPolicy.MAX_IMAGE_BYTES) {
-                                "The selected image is too large for safe local inference."
-                            }
-                        }
+                        com.battlesbudz.jarvis.v2.chat.AttachmentPolicy.readBounded(input)
                     } ?: error("The selected image could not be read.")
+                }
+                val attachedAudio = audioUri?.let { uri ->
+                    openVisionInputStream(uri)?.use { com.battlesbudz.jarvis.v2.chat.AttachmentPolicy.readBounded(it) }
+                        ?.also { com.battlesbudz.jarvis.v2.chat.AttachmentPolicy.validateAudio(it) }
+                        ?: error("The selected audio could not be read.")
                 }
                 fun recordInference(label: String, result: com.battlesbudz.jarvis.v2.ai.GenerationResult) {
                     comparison?.put("inference_" + label, "nativeTTFTMs=${result.timeToFirstTokenMs} totalMs=${result.totalGenerationTimeMs} nativeSubmitMs=${result.nativeSubmitMs} firstCallbackMs=${result.firstCallbackMs}")
@@ -379,7 +391,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 diagnosticRecorder.recordSummary("Inference input: mode=" +
                     (if (directAudioComparison) "diagnostic_direct_audio" else if (textInput != null) "incremental_text"
                         else if (voiceAudio != null) "voice_text"
-                        else if (imageBytes != null) "image_text" else "text") +
+                        else if (imageBytes != null) "image_text" else if (attachedAudio != null) "audio_file_text" else "text") +
                     " audioBytes=${if (directAudioComparison) voiceAudio?.size ?: 0 else 0} retainedAudioBytes=${voiceAudio?.size ?: 0} promptChars=${submittedPrompt.length}" +
                     " nativeAudioEncodeMs=${if (directAudioComparison) "unavailable" else "not_used"} queueMs=unavailable")
                 var incrementalFallbackUsed = false
@@ -395,6 +407,8 @@ internal fun JarvisRuntime.runConversationInternal(
                     }
                 } else if (voiceAudio != null) {
                     engine.generate(prompt = submittedPrompt, onToken = acceptVoiceToken)
+                } else if (attachedAudio != null) {
+                    engine.generateAudio(submittedPrompt, attachedAudio, streamFilter::accept)
                 } else if (imageBytes != null) {
                     engine.generate(
                         prompt = submittedPrompt,
@@ -465,7 +479,9 @@ internal fun JarvisRuntime.runConversationInternal(
                         
                         The previous output contained an invalid tool call. Answer the user's current message directly as normal text. Do not call a tool.
                     """.trimIndent()
-                    generated = if (imageBytes != null) {
+                    generated = if (attachedAudio != null) {
+                        engine.generateAudio(retryPrompt, attachedAudio, streamFilter::accept)
+                    } else if (imageBytes != null) {
                         engine.generate(
                             prompt = retryPrompt,
                             imageBytes = imageBytes,

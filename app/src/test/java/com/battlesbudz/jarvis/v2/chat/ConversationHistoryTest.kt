@@ -97,6 +97,17 @@ class ConversationHistoryTest {
         assertEquals("Finished reply", history.context().single().text)
     }
 
+    @Test fun attachmentsSurviveRestartAndNeverBecomeToolInstructions() {
+        val prefs = preferences()
+        val history = ConversationHistory(prefs)
+        val attachment = ChatAttachment("file:///private/example.jpg", AttachmentKind.IMAGE)
+        history.appendUser("Describe this", attachment)
+        val restored = ConversationHistory(prefs)
+        assertEquals(attachment, restored.current.value.messages.single().attachment)
+        assertEquals("Describe this\n[image attached to this message]", restored.context().single().text)
+        assertFalse(restored.context().single().text.contains("file:"))
+    }
+
     private fun preferences(): SharedPreferences {
         val values = mutableMapOf<String, Any?>()
         lateinit var editor: SharedPreferences.Editor

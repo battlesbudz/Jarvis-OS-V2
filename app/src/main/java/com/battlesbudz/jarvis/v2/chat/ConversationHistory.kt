@@ -16,7 +16,8 @@ data class ConversationMessage(
     val spoken: Boolean = false,
     val callId: String? = null,
     val contextText: String = text,
-    val complete: Boolean = true
+    val complete: Boolean = true,
+    val attachment: ChatAttachment? = null
 )
 data class ConversationThread(val id: String, val messages: List<ConversationMessage> = emptyList()) {
     val title: String get() = messages.firstOrNull { it.role == "You" }?.text?.take(60) ?: "New conversation"
@@ -38,7 +39,10 @@ class ConversationHistory(private val preferences: SharedPreferences) {
                     val m = entries.getJSONObject(n)
                     ConversationMessage(m.getString("id"), m.getString("role"), m.getString("text"),
                         m.optBoolean("spoken"), m.optString("callId").takeIf { it.isNotBlank() },
-                        m.optString("contextText", m.getString("text")), m.optBoolean("complete", true))
+                        m.optString("contextText", m.getString("text")), m.optBoolean("complete", true),
+                        m.optJSONObject("attachment")?.let { a -> runCatching {
+                            ChatAttachment(a.getString("uri"), AttachmentKind.valueOf(a.getString("kind")))
+                        }.getOrNull() })
                 }
                 threads[t.getString("id")] = ConversationThread(t.getString("id"), messages)
             }
@@ -53,9 +57,10 @@ class ConversationHistory(private val preferences: SharedPreferences) {
         persist()
     }
     @Synchronized fun select(id: String) { threads[id]?.let { _current.value = it; persist() } }
-    @Synchronized fun appendUser(text: String): String {
+    @Synchronized fun appendUser(text: String, attachment: ChatAttachment? = null): String {
         val id = UUID.randomUUID().toString()
-        replace(_current.value.copy(messages = _current.value.messages + ConversationMessage(id, "You", text)))
+        replace(_current.value.copy(messages = _current.value.messages + ConversationMessage(id, "You", text,
+            contextText = text + (attachment?.let { "\n[${it.kind.name.lowercase()} attached to this message]" } ?: ""), attachment = attachment)))
         return id
     }
     @Synchronized fun updateReply(threadId: String, id: String, text: String, complete: Boolean) {
@@ -113,7 +118,8 @@ class ConversationHistory(private val preferences: SharedPreferences) {
             val messages = JSONArray()
             thread.messages.forEach { m -> messages.put(JSONObject().put("id", m.id).put("role", m.role)
                 .put("text", m.text).put("spoken", m.spoken).put("callId", m.callId)
-                .put("contextText", m.contextText).put("complete", m.complete)) }
+                .put("contextText", m.contextText).put("complete", m.complete)
+                .put("attachment", m.attachment?.let { JSONObject().put("uri", it.uri).put("kind", it.kind.name) })) }
             array.put(JSONObject().put("id", thread.id).put("messages", messages))
         }
         preferences.edit().putString("active", _current.value.id).putString("threads", array.toString()).apply()

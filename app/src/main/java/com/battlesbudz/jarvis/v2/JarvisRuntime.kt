@@ -145,8 +145,12 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         voiceSessionArmed = true
         startVoiceDiagnostics("Jarvis session — awaiting wake word")
     }
-    fun sendChat(text: String): String? {
-        if (text.isBlank()) return "Write a message first."
+    fun sendChat(text: String, attachment: com.battlesbudz.jarvis.v2.chat.ChatAttachment? = null): String? {
+        if (text.isBlank() && attachment == null) return "Write a message first."
+        if (attachment != null && !com.battlesbudz.jarvis.v2.chat.AttachmentPolicy.accepts(modelStore.selectedModel(), attachment.kind))
+            return "The selected download does not support this attachment. Choose a compatible model or remove it."
+        val userText = text.trim().ifBlank { if (attachment?.kind == com.battlesbudz.jarvis.v2.chat.AttachmentKind.AUDIO)
+            "Transcribe this audio." else "Describe this image." }
         if (text.length > ConversationPolicy.MAX_USER_PROMPT_CHARS) return "That message is too long. Please send it in smaller parts."
         if (chatBusy.value || voiceSessionArmed || voiceTurnJob?.isCompleted == false ||
             conversationJob?.isCompleted == false || ConversationWork.activeJobs.get() != 0 || modelStore.isModelOperationActive())
@@ -155,7 +159,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         val history = conversationHistory.context()
         val threadId = conversationHistory.current.value.id
         val replyId = java.util.UUID.randomUUID().toString()
-        conversationHistory.appendUser(text.trim())
+        conversationHistory.appendUser(userText, attachment)
         conversationHistory.updateReply(threadId, replyId, "", false)
         chatBusy.value = true
         runtimeScope.launch {
@@ -164,7 +168,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 // Mode changes may leave a native voice session behind. App history is authoritative.
                 shortTermContext.clear()
                 resetNativeConversation()
-                runConversationInternal(text.trim(), history, null,
+                runConversationInternal(userText, history,
+                    attachment?.takeIf { it.kind == com.battlesbudz.jarvis.v2.chat.AttachmentKind.IMAGE }?.let { android.net.Uri.parse(it.uri) },
+                    audioUri = attachment?.takeIf { it.kind == com.battlesbudz.jarvis.v2.chat.AttachmentKind.AUDIO }?.let { android.net.Uri.parse(it.uri) },
                     onToken = { token -> synchronized(response) {
                         response.append(token)
                         conversationHistory.updateReply(threadId, replyId, response.toString(), false)

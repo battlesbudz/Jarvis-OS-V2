@@ -85,7 +85,7 @@ object ModelCompatibility {
                 "Exact block128 checksum has Galaxy S26 GPU result, 7.49 tok/s. Repository-exploration model; its intended tools are a separate integration question.", "https://huggingface.co/litert-community/FastContext-1.0-4B-SFT", false)),
         "FastVLM-0.5B" to Entry("ccba1e8bfa0bab78345f5d009fdffd20bd8c907cf39b4bc632e391b0a96f3b18", true, 1280,
             ModelEvidence(ModelEvidenceStatus.TESTED, "Shown to work on an Android phone. Performance on yours may vary.",
-                "Xiaomi 17 Pro Max GPU benchmark directly links FastVLM-0.5B.litertlm. NPU numbers belong to another file. Jarvis’s catalog currently disables vision for this entry.", "https://huggingface.co/litert-community/FastVLM-0.5B", false)),
+                "Xiaomi 17 Pro Max GPU benchmark directly links FastVLM-0.5B.litertlm. NPU numbers belong to another file. Jarvis exposes this bundle’s GPU vision input; app-specific image validation is pending.", "https://huggingface.co/litert-community/FastVLM-0.5B", false)),
         "Gemma3-1B-IT" to Entry("1325ae366d31950f137c9c357b9fa89448b176d76998180c08ceaca78bba98be", true, 4096,
             ModelEvidence(ModelEvidenceStatus.EXPERIMENTAL, "Android operation of this exact download and setup is not yet verified.",
                 "Named S24 Ultra LiteRT-LM QAT GPU benchmarks exist, but table context is 2048 while Jarvis configures 4096 and pins a differently sized artifact. Exact configuration is not established.", "https://huggingface.co/litert-community/Gemma3-1B-IT", false)),

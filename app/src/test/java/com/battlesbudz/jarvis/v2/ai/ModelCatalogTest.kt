@@ -34,7 +34,7 @@ class ModelCatalogTest {
         ModelCatalog.qwen.forEach { spec ->
             assertEquals(spec, ModelCatalog.resolve(spec.id))
             assertFalse(spec.supportsAudio)
-            assertFalse(spec.supportsTools)
+            assertTrue(spec.supportsTools)
             assertFalse(spec.incrementalGemmaInput)
             assertTrue(spec.downloadBytes!! > 0)
             assertTrue(spec.contextTokens!! in 2048..4096)

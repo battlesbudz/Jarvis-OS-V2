@@ -243,6 +243,28 @@ class ReleaseJourneyTest {
         assertNotNull(find(By.text("Gemma-4-E2B-it")))
     }
 
+    @Test fun test13_imageAttachmentIsResizedStoredAndInvalidInputRejected() {
+        val original = File(context.cacheDir, "attachment-source.png")
+        val bitmap = android.graphics.Bitmap.createBitmap(2000, 1000, android.graphics.Bitmap.Config.ARGB_8888)
+        try { original.outputStream().use { assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)) } }
+        finally { bitmap.recycle() }
+        val media = com.battlesbudz.jarvis.v2.chat.ChatMediaStore.prepare(context, android.net.Uri.fromFile(original),
+            com.battlesbudz.jarvis.v2.chat.AttachmentKind.IMAGE)
+        try {
+            val file = File(android.net.Uri.parse(media.uri).path!!)
+            assertTrue(file.exists())
+            val decoded = android.graphics.BitmapFactory.decodeFile(file.path)
+            try { assertEquals(1536, decoded.width); assertEquals(768, decoded.height) }
+            finally { decoded.recycle() }
+            original.writeText("This is not an image")
+            try {
+                com.battlesbudz.jarvis.v2.chat.ChatMediaStore.prepare(context, android.net.Uri.fromFile(original),
+                    com.battlesbudz.jarvis.v2.chat.AttachmentKind.IMAGE)
+                fail("Corrupt input must be rejected")
+            } catch (_: android.graphics.ImageDecoder.DecodeException) { }
+        } finally { com.battlesbudz.jarvis.v2.chat.ChatMediaStore.discard(context, media); original.delete() }
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()

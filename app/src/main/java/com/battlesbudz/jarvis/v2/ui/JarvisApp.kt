@@ -41,7 +41,7 @@ fun JarvisApp(
     conversationHistory: com.battlesbudz.jarvis.v2.chat.ConversationHistory,
     chatBusy: kotlinx.coroutines.flow.StateFlow<Boolean>,
     callState: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.voice.VoiceSessionState>,
-    onSendChat: (String) -> String?,
+    onSendChat: (String, com.battlesbudz.jarvis.v2.chat.ChatAttachment?) -> String?,
     onSelectConversation: (String?) -> String?,
     onSelectModel: (com.battlesbudz.jarvis.v2.ai.LocalModelSpec) -> String?,
     onDeleteModel: (com.battlesbudz.jarvis.v2.ai.LocalModelSpec) -> String?,
@@ -160,6 +160,7 @@ fun JarvisApp(
                 }) { Text("Open publisher page") }
             }
             Text(com.battlesbudz.jarvis.v2.ai.ModelGuide.quickUse(selectedModel), style = MaterialTheme.typography.bodyMedium)
+            Text(com.battlesbudz.jarvis.v2.ai.ModelGuide.inputsLabel(selectedModel), style = MaterialTheme.typography.labelSmall)
             com.battlesbudz.jarvis.v2.ai.ModelGuide.visibleLimitation(selectedModel)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall)
             }
@@ -288,6 +289,7 @@ fun JarvisApp(
                     )
                     else -> ConversationScreen(
                         history = conversationHistory, busy = chatBusy, callState = callState, onSend = onSendChat,
+                        selectedModel = selectedModel,
                         onSelectConversation = onSelectConversation, onEndVoice = onEndVoiceCall,
                         onOpenVoiceCalls = {
                             voiceCalls = onRefreshVoiceCalls()
