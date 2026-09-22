@@ -24,7 +24,7 @@ The feature map describes coverage and gaps. Future features extend that map and
 
 ## Local device control
 
-Prerequisites: Python 3.10+, Java 17, Gradle 8.10.2, Android SDK/platform 35, NDK 27.2.12479018, CMake 3.22.1, adb, a compatible disposable emulator, and the existing release-signing environment. This Work container may lack SDK/KVM; the hosted runner is the default execution path.
+Prerequisites: Python 3.10+, Java 21, Gradle 8.10.2, Android SDK/platform 35, NDK 27.2.12479018, CMake 3.22.1, adb, a compatible disposable emulator, and the existing release-signing environment. This Work container may lack SDK/KVM; the hosted runner is the default execution path.
 
 ```bash
 python3 scripts/verification/android.py --serial emulator-5554 control launch --out verification-runs/explore
@@ -85,3 +85,5 @@ This is an original Jarvis-specific implementation of the persistent verificatio
 `Android APK` now includes **Consolidate exact-build verification evidence** after both emulator jobs. It downloads only artifacts from its own run, rehashes the normal, compact and instrumentation APKs, reparses all named instrumentation outcomes and JVM XML, and checks screenshot/hierarchy presence and persisted model selection. Both publication jobs require this gate. The `jarvis-verification-receipt` artifact contains `receipt.json` and a human-readable summary, retained for 14 days including failed validation.
 
 Use the receipt's `pr_head` for the candidate branch and `source_commit` for the tested merge. Refresh the current branch before presenting a candidate: the receipt is historical evidence, not release authorization. The active Work session handles diagnosis/repair using existing connected GitHub access; no separate worker credentials, database or paid host are needed. Closing the session does not stop GitHub CI, but autonomous coding does not continue. Existing inference, physical audio and performance limitations remain.
+
+Host test runtime: LiteRT-LM 0.16.0 ships Java 21 class files. CI uses Java 21 so tests can inspect its actual tool/config API. App Java/Kotlin output remains targeted at Java 17 and is desugared for Android. Build 747 retained the `UnsupportedClassVersionError` evidence that exposed this mismatch; no test was removed or weakened.
