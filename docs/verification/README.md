@@ -4,7 +4,7 @@ This implements phases 1–5 of the development workflow: persistent Codex instr
 
 ## What runs automatically
 
-Each same-repository PR update triggers the existing `Android APK` workflow:
+Each same-repository PR update and push to `feature/**` triggers the existing `Android APK` workflow (alongside the existing `main` and `PR1` push routes):
 
 1. Build native keyword checks, Python harness checks, all release JVM tests, the signed/minified release APK and its instrumentation APK.
 2. Build the compact release APK and compare native/DEX/assets with the normal variant.
@@ -12,7 +12,7 @@ Each same-repository PR update triggers the existing `Android APK` workflow:
 4. Execute fourteen named release instrumentation scenarios, then kill/relaunch Jarvis in a separate process to check persisted selection. Retain screenshots, UI hierarchy, Android logs, test output, package metadata, APK hashes, source SHA and PR head.
 5. Allow the existing publication jobs only after the build and both sandbox jobs pass. This creates a candidate for Justin's signoff; passing automation does not merge the PR or constitute product acceptance.
 
-No production signing secrets are passed to the emulator job. It consumes already signed artifacts. Evidence expires after 14 days; download it from the run when keeping a long-lived investigation. Test reports and APKs are associated with the same workflow run. `source_commit` is GitHub's tested PR merge commit; `pr_head` identifies the contributor branch revision. Both are intentional, not interchangeable.
+No production signing secrets are passed to the emulator job. It consumes already signed artifacts. Evidence expires after 14 days; download it from the run when keeping a long-lived investigation. Test reports and APKs are associated with the same workflow run. On a PR run, `source_commit` is GitHub's tested PR merge commit and `pr_head` identifies the contributor branch revision. On a feature-branch push, `source_commit` is the exact pushed commit and `pr_head` is empty. Both conventions are intentional; do not substitute a branch-head pass for a combined merge-candidate pass.
 
 The release runner shares the app's class loader. `app/proguard-rules.pro` preserves the shared Kotlin/coroutine runtime, Lifecycle, tracing, futures, annotation interfaces and the action contract used by the integration tests. These shared dependencies were audited against the release test DEX's external method/field owners. Without these rules, separate shrinking can remove methods needed only by the runner and crash before tests start. The same rules apply to the shipped APK; ordinary app optimization remains enabled and the existing size reports record the tradeoff. Recheck this boundary when changing test dependencies.
 
@@ -87,3 +87,15 @@ This is an original Jarvis-specific implementation of the persistent verificatio
 Use the receipt's `pr_head` for the candidate branch and `source_commit` for the tested merge. Refresh the current branch before presenting a candidate: the receipt is historical evidence, not release authorization. The active Work session handles diagnosis/repair using existing connected GitHub access; no separate worker credentials, database or paid host are needed. Closing the session does not stop GitHub CI, but autonomous coding does not continue. Existing inference, physical audio and performance limitations remain.
 
 Host test runtime: LiteRT-LM 0.16.0 ships Java 21 class files. CI uses Java 21 so tests can inspect its actual tool/config API. App Java/Kotlin output remains targeted at Java 17 and is desugared for Android. Build 747 retained the `UnsupportedClassVersionError` evidence that exposed this mismatch; no test was removed or weakened.
+
+## Parallel feature branches
+
+Create a separate branch such as `feature/memory-os` from the latest agreed `audio-pr2` base **containing this workflow update**. Use a separate checkout/worktree and an explicit file scope per chat. Pushes to `feature/**` run the same signed normal/compact APK build, JVM/native/helper checks, API 30/API 35 emulator journeys, and consolidated receipt. Other new branch names are not opted in. No new PR is needed to test a feature branch.
+
+Download `jarvis-os-v2-release-apk` and `jarvis-verification-receipt` from that exact Actions run. Feature push runs do not invoke either release-publication job, change `audio-pr2`, or merge anything. Artifacts are associated with their own run, so simultaneous branches do not overwrite one another's APKs/evidence. Distinct runs use disposable hosted runners; GitHub's available concurrency may queue them. Do not cancel unrelated runs.
+
+When an approved PR exists, a feature update can produce both a branch-head run and a PR merge-candidate run. These test different commits and both consume CI time. No automatic cancellation or cross-chat locking is added here. Keep publication and integration assigned to one chat; refresh the destination head and resolve conflicts rather than force-pushing over another chat's work.
+
+For a large feature such as MemoryOS, keep an independent branch through small, tested milestones. Regularly incorporate agreed base updates into the feature branch and rerun its checks. Integrate a useful milestone only after the combined revision passes review and tests. Opening a PR proposes that integration; it does not merge automatically. Justin's explicit permission is still required to create a new PR or merge one. Preserve reserved PR #7 and its branch unless Justin specifically chooses to reuse it.
+
+Branches created from an older base must first receive the workflow update to opt into testing. This is push-triggered support, not a manual-dispatch service or a guarantee that the default branch already contains the update. APK/emulator success does not verify real model inference, physical audio or device performance.

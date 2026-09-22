@@ -3,8 +3,9 @@ name: Android APK
 on:
   pull_request:
   push:
-    # Open PRs already build, test, and publish their signed APK.
-    branches: [main, PR1]
+    # Feature branches build/test without opening a PR or publishing a release.
+    # PR runs separately verify GitHub's combined merge candidate.
+    branches: [main, PR1, 'feature/**']
 
 permissions:
   contents: read
@@ -14,7 +15,8 @@ jobs:
     name: Build signed release APK
     if: >-
       (github.event_name == 'push' &&
-       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/PR1')) ||
+       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/PR1' ||
+        startsWith(github.ref, 'refs/heads/feature/'))) ||
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
