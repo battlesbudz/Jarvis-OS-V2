@@ -54,3 +54,9 @@
 # Return values traversed by the release test DEX while checking persisted receipts.
 -keep class com.battlesbudz.jarvis.v2.chat.ConversationThread { *; }
 -keep class com.battlesbudz.jarvis.v2.ChatEntry { *; }
+
+# Natural route release journeys invoke the authoritative routing contract.
+-keep class com.battlesbudz.jarvis.v2.ai.TurnOrchestrator { *; }
+-keep class com.battlesbudz.jarvis.v2.ai.TurnPlan { *; }
+-keep class com.battlesbudz.jarvis.v2.ai.TurnKind { *; }
+-keep class com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient { *; }

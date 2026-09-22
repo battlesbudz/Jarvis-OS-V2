@@ -19,6 +19,8 @@
     "test15_invalidActionTurnPreservesAndroidState",
     "test16_partialFailureKeepsCompletedAndroidAction",
     "test17_cancelledAndDuplicateActionTurnsDoNotReplay",
+    "test18_naturalActionRoutingOpensSettingsThenReadsBattery",
+    "test19_retryLiteralUnknownAppStopsWithoutBattery",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

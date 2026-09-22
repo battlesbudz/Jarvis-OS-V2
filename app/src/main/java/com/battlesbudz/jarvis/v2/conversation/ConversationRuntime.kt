@@ -104,9 +104,10 @@ internal fun JarvisRuntime.runConversationInternal(
                     return@launch
                 }
                 // Parse the completed request before any direct shortcut, lookup, or model side effect.
-                val requestedActionPlan = if (comparison == null && imageUri == null && audioUri == null)
-                    com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.parse(prompt, history)
-                else com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.NotAction
+                val requestedActionPlan = turnPlan.actionPlan
+                diagnosticRecorder.record("Action route plan=${requestedActionPlan.javaClass.simpleName} " +
+                    "steps=${(requestedActionPlan as? com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready)?.steps?.map { it.request.name } ?: emptyList<String>()} " +
+                    "lookup=${turnPlan.lookupQuery != null}")
                 if (requestedActionPlan is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Rejected) {
                     incrementalVoice?.close()
                     resetNativeConversation()
