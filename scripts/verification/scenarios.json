@@ -21,6 +21,10 @@
     "test17_cancelledAndDuplicateActionTurnsDoNotReplay",
     "test18_naturalActionRoutingOpensSettingsThenReadsBattery",
     "test19_retryLiteralUnknownAppStopsWithoutBattery",
+    "test20_followupQueuesWhileAcceptedAndroidActionRuns",
+    "test21_speechInterruptionPreservesAcceptedAndroidActions",
+    "test22_explicitCancellationKeepsCompletedAndroidReceipts",
+    "test23_actionResultsSurviveEndCallWithoutReplay",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

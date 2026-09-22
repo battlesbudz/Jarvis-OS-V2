@@ -8,6 +8,7 @@ import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
 import com.battlesbudz.jarvis.v2.actions.runNative
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import java.io.InputStream
 
 internal fun JarvisRuntime.runConversationInternal(
@@ -22,8 +23,12 @@ internal fun JarvisRuntime.runConversationInternal(
         comparison: com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.Trial? = null,
         onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit = {},
         onActionResult: (String, String, Boolean) -> Unit = { _, _, _ -> },
-        audioUri: Uri? = null
-    ) {
+        audioUri: Uri? = null,
+        /** A queue admission freezes authorization before it waits for native ownership. */
+        frozenActionPlan: com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready? = null,
+        /** Frozen final ASR still requires the same source-clause guard as attached voice input. */
+        frozenVoiceFinal: Boolean = false
+    ): Job? {
         fun buildTurnPrompt(userPrompt: String, actionResultContext: String?,
                             history: List<ChatEntry>, seedContext: Boolean): String =
             promptBuilder.buildGemmaPrompt(userPrompt, actionResultContext, history, seedContext,
@@ -51,15 +56,15 @@ internal fun JarvisRuntime.runConversationInternal(
             comparison?.put("answer", text)
             onComplete(text)
         }
-        if (voiceAudio == null && modelStore.isModelOperationActive()) {
+        if (voiceAudio == null && frozenActionPlan == null && modelStore.isModelOperationActive()) {
             finish("A voice or model operation is still active. Please finish it first.")
-            return
+            return null
         }
         if (!ConversationWork.activeJobs.compareAndSet(0, 1)) {
             finish("The previous response is still finishing. Please try again in a moment.")
-            return
+            return null
         }
-        conversationJob = runtimeScope.launch(Dispatchers.Default) {
+        val invocation = runtimeScope.launch(Dispatchers.Default) {
             try {
                 if (!modelStore.verifyIntegrity(modelStore.selectedModel())) {
                     incrementalVoice?.close()
@@ -104,7 +109,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     return@launch
                 }
                 // Parse the completed request before any direct shortcut, lookup, or model side effect.
-                val requestedActionPlan = turnPlan.actionPlan
+                val requestedActionPlan = frozenActionPlan ?: turnPlan.actionPlan
                 diagnosticRecorder.record("Action route plan=${requestedActionPlan.javaClass.simpleName} " +
                     "steps=${(requestedActionPlan as? com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready)?.steps?.map { it.request.name } ?: emptyList<String>()} " +
                     "lookup=${turnPlan.lookupQuery != null}")
@@ -113,6 +118,19 @@ internal fun JarvisRuntime.runConversationInternal(
                     resetNativeConversation()
                     val rejection = requestedActionPlan.reason
                     turnOrchestrator.recordResponse(prompt, rejection, turnPlan)
+                    mainHandler.post { finish(rejection) }
+                    return@launch
+                }
+                val guardedFrozenVoicePlan = requestedActionPlan as? com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready
+                if (frozenVoiceFinal && guardedFrozenVoicePlan != null &&
+                    !guardedFrozenVoicePlan.steps.all { step ->
+                        com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard.allows(
+                            step.sourceClause, step.request.name, step.request.arguments)
+                    }) {
+                    incrementalVoice?.close()
+                    resetNativeConversation()
+                    val rejection = "I couldn't verify that final spoken phone request. Please say it again."
+                    diagnosticRecorder.recordImportant("Voice action rejected: final source-clause guard failed")
                     mainHandler.post { finish(rejection) }
                     return@launch
                 }
@@ -444,7 +462,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 val actionPlan = requestedActionPlan
                 if (actionPlan is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready && generated.toolCalls.isNotEmpty()) {
                     // Final transcript only: every source clause is independently guarded before dispatch.
-                    val voiceAllowed = voiceAudio == null || actionPlan.steps.all { step ->
+                    val voiceAllowed = (voiceAudio == null && !frozenVoiceFinal) || actionPlan.steps.all { step ->
                         com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard.allows(
                             step.sourceClause, step.request.name, step.request.arguments)
                     }
@@ -743,7 +761,9 @@ internal fun JarvisRuntime.runConversationInternal(
                 incrementalVoice?.close()
             }
         }
-        conversationJob?.invokeOnCompletion { ConversationWork.activeJobs.decrementAndGet() }
+        conversationJob = invocation
+        invocation.invokeOnCompletion { ConversationWork.activeJobs.decrementAndGet() }
+        return invocation
     }
 
 private fun JarvisRuntime.openVisionInputStream(uri: Uri): InputStream? {

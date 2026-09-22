@@ -14,9 +14,14 @@ internal object ActionRequestText {
     fun actionClauses(text: String): List<String> {
         val unquoted = quoted.replace(text, " ").trim()
         if (unquoted.isBlank() || Regex("""(?i)\b(?:don't|do not|never|how do i)\b""").containsMatchIn(unquoted)) return emptyList()
-        val retried = unquoted.replaceFirst(Regex("""(?i)^(?:i\s+(?:said|asked)(?:\s+you)?[, ]+)(?=(?:can|could|would|will)\s+you\b|please\s+(?:open|launch|start|set|read|check|show|tell)\b)"""), "")
+        val actionLead = """(?:can|could|would|will)\s+you\b|(?:open|launch|start|set|make|turn|adjust|change|raise|lower|increase|decrease|read|check|show|tell)\b"""
+        val discourse = unquoted.replaceFirst(Regex("""(?i)^(?:(?:but\s+)?actually|and\s+then|then)\s+(?=$actionLead)"""), "")
+        val retried = discourse.replaceFirst(Regex("""(?i)^(?:i\s+(?:said|asked)(?:\s+you)?[, ]+)(?=(?:can|could|would|will)\s+you\b|please\s+(?:open|launch|start|set|read|check|show|tell)\b)"""), "")
         return retried.split(Regex("""(?i)[.!?;\n]+|\s*(?:,?\s+and\s+then\s+|,?\s+then\s+|,?\s+and\s+)"""))
-            .map { trailing.replace(lead.replaceFirst(it.trim(), "").trim(), "").trim().trimEnd('.', '!', '?') }
+            .map {
+                val normalized = trailing.replace(lead.replaceFirst(it.trim(), "").trim(), "").trim().trimEnd('.', '!', '?')
+                Regex("""(?i)\s+after that$""").replace(normalized, "").trim()
+            }
             .filter { it.isNotBlank() }
     }
 

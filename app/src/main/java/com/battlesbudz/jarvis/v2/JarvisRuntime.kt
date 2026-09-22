@@ -19,6 +19,9 @@ import com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext
 import com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor
 import com.battlesbudz.jarvis.v2.actions.MobileActionPipeline
 import com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions
+import com.battlesbudz.jarvis.v2.actions.AcceptedActionQueue
+import com.battlesbudz.jarvis.v2.actions.AcceptedActionLease
+import com.battlesbudz.jarvis.v2.actions.ActionTurnPlan
 import com.battlesbudz.jarvis.v2.ai.ModelStore
 import com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient
 import com.battlesbudz.jarvis.v2.ui.JarvisApp
@@ -37,6 +40,7 @@ import com.battlesbudz.jarvis.v2.voice.PiperVoiceOutput
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.takeWhile
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -47,15 +51,33 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.async
 import java.util.concurrent.atomic.AtomicInteger
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
+/** Frozen final ASR evidence; this is scheduled work, not a second action executor. */
+private data class AcceptedVoiceInvocation(
+    val callId: String,
+    val replyId: String,
+    val utteranceId: String,
+    val prompt: String,
+    val history: List<ChatEntry>,
+    val plan: ActionTurnPlan.Ready
+)
+
 /** Application-context runtime. The foreground service owns voice execution; UI only observes. */
 internal class JarvisRuntime private constructor(context: android.content.Context) : android.content.ContextWrapper(context) {
     internal val mainHandler = Handler(Looper.getMainLooper())
     internal val runtimeScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // This worker outlives a single TTS delivery/capture attempt. It is closed only with the
+    // process runtime; end-call detaches audio but retains bounded accepted Android work.
+    private val acceptedVoiceActions = AcceptedActionQueue<AcceptedVoiceInvocation>(scope = runtimeScope)
+    @Volatile private var activeContinuousActionSession: com.battlesbudz.jarvis.v2.voice.ContinuousActionSession<AcceptedVoiceInvocation>? = null
+    /** Transferred from the initial final-ASR turn and retained through the entire FIFO batch. */
+    private val acceptedVoiceLease = AcceptedActionLease()
     internal lateinit var modelStore: ModelStore
     internal var conversationEngine: LiteRtLmEngine? = null
     internal var conversationJob: Job? = null
@@ -111,6 +133,28 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         diagnosticRecorder.restore()
         diagnosticRecorder.recordPreviousProcessExit(applicationContext)
         shortTermContext.restoreSummary(sessionPreferences.getString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, null))
+        // Persist terminal reply evidence even after End Call detached its audio session. Waiting
+        // for queue idle means active cancellation has joined its exact native child first.
+        runtimeScope.launch {
+            acceptedVoiceActions.events.collect { event ->
+                if (event.task.state in setOf(com.battlesbudz.jarvis.v2.actions.AcceptedActionState.COMPLETED,
+                        com.battlesbudz.jarvis.v2.actions.AcceptedActionState.FAILED,
+                        com.battlesbudz.jarvis.v2.actions.AcceptedActionState.CANCELLED,
+                        com.battlesbudz.jarvis.v2.actions.AcceptedActionState.INTERRUPTED)) {
+                    runtimeScope.launch {
+                        acceptedVoiceActions.awaitIdle()
+                        acceptedVoiceActions.tasks.value.forEach { terminal ->
+                            if (terminal.state in setOf(com.battlesbudz.jarvis.v2.actions.AcceptedActionState.COMPLETED,
+                                    com.battlesbudz.jarvis.v2.actions.AcceptedActionState.FAILED,
+                                    com.battlesbudz.jarvis.v2.actions.AcceptedActionState.CANCELLED,
+                                    com.battlesbudz.jarvis.v2.actions.AcceptedActionState.INTERRUPTED)) {
+                                persistTerminalActionReply(terminal)
+                            }
+                        }
+                    }
+                }
+            }
+        }
         runtimeScope.launch {
             for (control in com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.controls) {
                 if (!voiceSessionArmed) continue
@@ -124,7 +168,16 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         runtimeScope.launch { callResources.closeMicrophone() }
                     }
                     activeVoiceOutput?.stopSpeaking()
-                    voiceTurnJob?.cancel(com.battlesbudz.jarvis.v2.voice.VoiceControlCancellation(control))
+                    val acceptedMode = acceptedVoiceActions.hasUnfinished() ||
+                        (activeContinuousActionSession?.pendingReportCount() ?: 0) > 0
+                    if (acceptedMode && control == com.battlesbudz.jarvis.v2.voice.VoiceControl.STOP_REPLY) {
+                        activeContinuousActionSession?.interruptDelivery()
+                        diagnosticRecorder.recordImportant("UI STOP_REPLY detached accepted delivery; ASR/action worker retained")
+                    } else if (acceptedMode && control == com.battlesbudz.jarvis.v2.voice.VoiceControl.PAUSE) {
+                        // The pump remains the call owner and waits for Resume; it must not
+                        // reenter ordinary runVoiceTurn while its accepted batch is active.
+                        diagnosticRecorder.recordImportant("UI PAUSE suspended accepted capture; worker/report obligations retained")
+                    } else voiceTurnJob?.cancel(com.battlesbudz.jarvis.v2.voice.VoiceControlCancellation(control))
                 }
             }
         }
@@ -153,7 +206,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             "Transcribe this audio." else "Describe this image." }
         if (text.length > ConversationPolicy.MAX_USER_PROMPT_CHARS) return "That message is too long. Please send it in smaller parts."
         if (chatBusy.value || voiceSessionArmed || voiceTurnJob?.isCompleted == false ||
-            conversationJob?.isCompleted == false || ConversationWork.activeJobs.get() != 0 || modelStore.isModelOperationActive())
+            conversationJob?.isCompleted == false || acceptedVoiceActions.hasUnfinished() ||
+                ConversationWork.activeJobs.get() != 0 || modelStore.isModelOperationActive())
             return "Wait for the current response or voice session to finish."
         if (!modelStore.isUsable() || !modelStore.smokeTestPassed()) return "Set up and test a model first."
         val history = conversationHistory.context()
@@ -196,7 +250,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
 
     fun selectConversation(id: String? = null): String? {
         if (chatBusy.value || voiceSessionArmed || voiceTurnJob?.isCompleted == false ||
-            ConversationWork.activeJobs.get() != 0 || modelStore.isModelOperationActive())
+            acceptedVoiceActions.hasUnfinished() || ConversationWork.activeJobs.get() != 0 || modelStore.isModelOperationActive())
             return "Finish the current response or voice session first."
         if (id == null) conversationHistory.newConversation() else conversationHistory.select(id)
         shortTermContext.clear()
@@ -259,7 +313,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         }
     }
     fun runVoiceTurn() {
-        if (!voiceSessionArmed || voiceTurnJob?.isCompleted == false) return
+        if (!voiceSessionArmed || voiceTurnJob?.isCompleted == false || acceptedVoiceActions.hasUnfinished() ||
+            (activeContinuousActionSession?.pendingReportCount() ?: 0) > 0) return
         fun report(message: String) { sessionReport(message) }
         fun onTranscript(role: String, text: String, complete: Boolean) { transcriptListener(role, text, complete) }
         fun onFinished(message: String) { finishedListener(message) }
@@ -712,6 +767,271 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 output.acknowledgeConfirmedTurn()
                 diagnosticRecorder.recordSummary("Voice pipeline turn=$asrTurnId stage=reply_dispatch " +
                     "sinceEndpointMs=${(System.nanoTime() - endpointAt) / 1_000_000}")
+                // Action mode is entered only after final ASR and the shared strict plan. It keeps
+                // native work on acceptedVoiceActions while this turn owns an ASR-only follow-up pump.
+                val initialActionPlan = if (recognitionIssue == null)
+                    turnOrchestrator.plan(transcript, voiceHistory.map { it.role to it.text }).actionPlan
+                    else ActionTurnPlan.NotAction
+                if (comparison == null && initialActionPlan is ActionTurnPlan.Ready) {
+                    incremental.close() // Never leave speculative prefill attached to a queued native turn.
+                    voiceSessionController.appendTranscript("You", transcript)
+                    voiceSessionController.beginReply(expectedCallId, asrTurnId)
+                    voiceSessionController.setState(VoiceSessionState.EXECUTING_ACTION)
+                    // Transfer the existing final-ASR lease to the whole accepted FIFO batch.
+                    // It remains held across A→B handoff, so no selector/delete/reset can swap
+                    // the native engine while the queue is briefly between invocations.
+                    if (operationOwned) {
+                        transferAcceptedVoiceLease()
+                        operationOwned = false
+                    } else if (retainAcceptedVoiceLease() == null) {
+                        val rejection = "The local model is still busy. Please repeat that phone request shortly."
+                        voiceSessionController.updateReplyText(expectedCallId, asrTurnId, rejection, finished = true)
+                        finalMessage = rejection
+                        return@launch
+                    }
+                    val actionSession = com.battlesbudz.jarvis.v2.voice.ContinuousActionSession(acceptedVoiceActions)
+                    activeContinuousActionSession = actionSession
+                    val accepted = enqueueAcceptedVoiceAction(actionSession, AcceptedVoiceInvocation(
+                        expectedCallId, asrTurnId, correction?.utteranceId ?: asrTurnId, transcript, voiceHistory, initialActionPlan
+                    ))
+                    if (!accepted) {
+                        releaseAcceptedVoiceLeaseIfIdle()
+                        val rejection = "I already have three accepted phone requests. Please wait for one to finish."
+                        voiceSessionController.updateReplyText(expectedCallId, asrTurnId, rejection, finished = true)
+                        finalMessage = rejection
+                        return@launch
+                    }
+                    diagnosticRecorder.recordImportant("Accepted action mode: admitted=$asrTurnId steps=${initialActionPlan.steps.size} call=$expectedCallId")
+                    // The action worker is already running while this listener waits. Do not call
+                    // runVoiceTurn here: that would reset/prefill the shared native engine.
+                    var terminalReportsPublished = false
+                    actionPump@ while ((acceptedVoiceActions.hasUnfinished() || actionSession.pendingReportCount() > 0 ||
+                        !terminalReportsPublished) &&
+                        voiceSessionArmed && voiceSessionController.currentCallId() == expectedCallId) {
+                        while (com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value && voiceSessionArmed) {
+                            delay(100)
+                        }
+                        if (!voiceSessionArmed) break@actionPump
+                        // Keep a single ASR capture alive while terminal reports become ready and
+                        // while Piper swaps to a fresh delivery ledger. A barge-in therefore stops
+                        // only the current report attempt; it never discards the final utterance.
+                        var reportOutput: PiperVoiceOutput? = null
+                        val followup = async {
+                            com.battlesbudz.jarvis.v2.voice.ReplyVoiceCapture(applicationContext) {
+                                diagnosticRecorder.recordImportant("Action follow-up capture: $it")
+                            }.listen(output, asrDirectory, onConfirmed = {
+                                actionSession.onCaptureStarted()
+                            }, asrEngine = asrEngine,
+                                inputFactory = { callResources.borrowMicrophone("accepted-followup", communication = true) },
+                                modelSession = models, asrOnly = true,
+                                outputProvider = { reportOutput ?: output })
+                        }
+                        val deliveryReady = async { actionSession.awaitDeliveryReady() }
+                        // Queue cancellation can terminally skip a task without entering its
+                        // executor callback. Its durable task record still needs a report, so
+                        // wake on actual worker-idle as well as a pre-existing pending report.
+                        val workerIdle = async { acceptedVoiceActions.awaitIdle() }
+                        var captured: com.battlesbudz.jarvis.v2.voice.CapturedVoiceTurn? = null
+                        val pumpEvent = kotlinx.coroutines.selects.select<Int> {
+                            followup.onAwait { captured = it; 0 }
+                            deliveryReady.onAwait { 1 }
+                            workerIdle.onAwait { 2 }
+                        }
+                        if (pumpEvent != 0) {
+                            publishTerminalActionReports(actionSession, expectedCallId)
+                            terminalReportsPublished = true
+                            val report = actionSession.nextDelivery()
+                            if (report != null) {
+                                speechChunks.close()
+                                withContext(kotlinx.coroutines.NonCancellable) { speechJob?.cancelAndJoin() }
+                                val reportReplyId = "report-" + java.util.UUID.randomUUID().toString()
+                                voiceSessionController.beginReply(expectedCallId, reportReplyId)
+                                val reportTerminal = java.util.concurrent.atomic.AtomicReference<com.battlesbudz.jarvis.v2.voice.SpeechDelivery?>(null)
+                                val createdReportOutput = PiperVoiceOutput(ttsDirectory.path, engine = ttsEngine,
+                                    modelSession = models,
+                                    deliveryLedger = com.battlesbudz.jarvis.v2.voice.SpeechDeliveryLedger(reportReplyId) { delivery ->
+                                        reportTerminal.set(delivery)
+                                        voiceSessionController.updateDelivery(expectedCallId, delivery)
+                                    },
+                                    onPlaybackEnded = { callResources.playbackEnded(System.nanoTime() / 1_000_000) },
+                                    acknowledgeDelays = false,
+                                    log = { diagnosticRecorder.recordImportant("Accepted report TTS: $it") })
+                                reportOutput = createdReportOutput
+                                activeVoiceOutput = createdReportOutput
+                                val reportJob = async {
+                                    try {
+                                        createdReportOutput.speak(kotlinx.coroutines.flow.flowOf(
+                                            cleanSpeechText(report.reports.joinToString(" ") { it.text })
+                                        ))
+                                        true
+                                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                        // Parent/end-call cancellation still escapes; an interrupted
+                                        // report attempt remains pending for the same session.
+                                        if (!voiceSessionArmed) throw cancelled
+                                        false
+                                    } catch (failure: Throwable) {
+                                        diagnosticRecorder.recordImportant("Accepted report delivery failed: ${failure.javaClass.simpleName}")
+                                        false
+                                    }
+                                }
+                                var reportPlaybackSucceeded = false
+                                val reportFinishedFirst = kotlinx.coroutines.selects.select<Boolean> {
+                                    reportJob.onAwait { reportPlaybackSucceeded = it; true }
+                                    followup.onAwait { captured = it; false }
+                                }
+                                withContext(kotlinx.coroutines.NonCancellable) {
+                                    if (!reportFinishedFirst) reportJob.join()
+                                }
+                                val reportCompleted = reportFinishedFirst && reportPlaybackSucceeded &&
+                                    reportTerminal.get()?.state == com.battlesbudz.jarvis.v2.voice.SpeechDeliveryState.COMPLETED
+                                if (reportCompleted) {
+                                    actionSession.markDelivered(report.attemptId, report.reports.mapTo(linkedSetOf()) { it.taskId })
+                                } else {
+                                    // STOP_REPLY, Barge-in, and delivery failure retain this exact
+                                    // pending aggregate for a fresh ledger attempt; no action repeats.
+                                    actionSession.interruptDelivery(report.attemptId)
+                                }
+                                createdReportOutput.release()
+                                if (activeVoiceOutput === createdReportOutput) activeVoiceOutput = output
+                                reportOutput = null
+                                if (reportFinishedFirst && actionSession.isCaptureInProgress()) {
+                                    captured = followup.await()
+                                } else if (reportFinishedFirst && captured == null) {
+                                    withContext(kotlinx.coroutines.NonCancellable) { followup.cancelAndJoin() }
+                                    withContext(kotlinx.coroutines.NonCancellable) { deliveryReady.cancelAndJoin() }
+                                    withContext(kotlinx.coroutines.NonCancellable) { workerIdle.cancelAndJoin() }
+                                    if (reportCompleted) break@actionPump
+                                    continue@actionPump
+                                }
+                            } else if (actionSession.isCaptureInProgress()) {
+                                // Worker-idle may race a just-confirmed user floor. Its final ASR
+                                // remains authoritative even when no delivery is leaseable yet.
+                                captured = followup.await()
+                            } else {
+                                withContext(kotlinx.coroutines.NonCancellable) { followup.cancelAndJoin() }
+                                withContext(kotlinx.coroutines.NonCancellable) { deliveryReady.cancelAndJoin() }
+                                withContext(kotlinx.coroutines.NonCancellable) { workerIdle.cancelAndJoin() }
+                                continue@actionPump
+                            }
+                        }
+                        withContext(kotlinx.coroutines.NonCancellable) { deliveryReady.cancelAndJoin() }
+                        withContext(kotlinx.coroutines.NonCancellable) { workerIdle.cancelAndJoin() }
+                        // A very fast executor can be terminal before its first listener select.
+                        // Publish its durable report before classifying an idle ordinary capture.
+                        if (pumpEvent == 0 && !terminalReportsPublished && !acceptedVoiceActions.hasUnfinished()) {
+                            publishTerminalActionReports(actionSession, expectedCallId)
+                            terminalReportsPublished = true
+                        }
+                        val finalCaptured = captured ?: continue
+                        if (finalCaptured.recognitionIssue == null &&
+                            com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.isGoodbye(finalCaptured.transcript)) {
+                            voiceSessionController.appendTranscript("You", finalCaptured.transcript)
+                            actionSession.detach()
+                            if (activeContinuousActionSession === actionSession) activeContinuousActionSession = null
+                            voiceSessionArmed = false
+                            runCatching { voiceSessionController.end() }
+                            diagnosticRecorder.recordImportant("Accepted action mode: spoken goodbye detached capture; work retained")
+                            break@actionPump
+                        }
+                        val finalCapture = com.battlesbudz.jarvis.v2.voice.SessionCapture(
+                            finalCaptured.utteranceId, finalCaptured.transcript, finalCaptured.recognitionIssue,
+                            finalCaptured.wav, finalCaptured.audioIsComplete
+                        )
+                        val plan = if (finalCaptured.recognitionIssue == null)
+                            turnOrchestrator.plan(finalCaptured.transcript, voiceHistory.map { it.role to it.text }).actionPlan
+                        else ActionTurnPlan.NotAction
+                        val control = actionSession.control(finalCaptured.transcript, acceptedVoiceActions.hasUnfinished())
+                        val kind = when {
+                            finalCaptured.recognitionIssue != null -> com.battlesbudz.jarvis.v2.voice.CapturedKind.Ordinary
+                            control != com.battlesbudz.jarvis.v2.voice.VoiceActionControl.None ->
+                                com.battlesbudz.jarvis.v2.voice.CapturedKind.Control(control)
+                            plan is ActionTurnPlan.Ready -> com.battlesbudz.jarvis.v2.voice.CapturedKind.AcceptedAction
+                            plan is ActionTurnPlan.Rejected -> com.battlesbudz.jarvis.v2.voice.CapturedKind.RejectedAction
+                            else -> com.battlesbudz.jarvis.v2.voice.CapturedKind.Ordinary
+                        }
+                        when (val captureOutcome = actionSession.onCaptured(finalCapture, kind)) {
+                            is com.battlesbudz.jarvis.v2.voice.CaptureOutcome.Control -> {
+                                if (captureOutcome.value == com.battlesbudz.jarvis.v2.voice.VoiceActionControl.SpeechOnly) {
+                                    activeVoiceOutput?.stopSpeaking()
+                                    when (finalCaptured.transcript.trim().lowercase().trimEnd('.', '!', '?')) {
+                                        "stop listening" -> {
+                                            actionSession.detach()
+                                            if (activeContinuousActionSession === actionSession) activeContinuousActionSession = null
+                                            voiceSessionArmed = false
+                                            runtimeScope.launch { callResources.closeMicrophone() }
+                                            runCatching { voiceSessionController.end() }
+                                        }
+                                        "pause microphone" -> {
+                                            com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = true
+                                            runtimeScope.launch { callResources.closeMicrophone() }
+                                        }
+                                        else -> diagnosticRecorder.recordImportant("Accepted action mode: speech delivery detached; work retained")
+                                    }
+                                } else acceptedVoiceActions.cancel(captureOutcome.value) { it.value.callId == expectedCallId }
+                            }
+                            is com.battlesbudz.jarvis.v2.voice.CaptureOutcome.AcceptedAction -> {
+                                val followPlan = plan as ActionTurnPlan.Ready
+                                val followId = java.util.UUID.randomUUID().toString()
+                                voiceSessionController.appendTranscript("You", finalCaptured.transcript)
+                                voiceSessionController.beginReply(expectedCallId, followId)
+                                if (!enqueueAcceptedVoiceAction(actionSession, AcceptedVoiceInvocation(
+                                        expectedCallId, followId, finalCaptured.utteranceId, finalCaptured.transcript, voiceHistory, followPlan))) {
+                                    val explanation = "I already have accepted phone results waiting to be reported. Please wait a moment."
+                                    voiceSessionController.updateReplyText(expectedCallId, followId, explanation, finished = true)
+                                    actionSession.offerLocalFeedback(explanation)
+                                } else terminalReportsPublished = false
+                            }
+                            is com.battlesbudz.jarvis.v2.voice.CaptureOutcome.DeferredConversation -> {
+                                diagnosticRecorder.recordImportant("Accepted action mode: ordinary follow-up retained for post-queue normal turn")
+                            }
+                            is com.battlesbudz.jarvis.v2.voice.CaptureOutcome.ConversationReady -> {
+                                // An ordinary barge-in never discards already completed Android
+                                // evidence. Hand it to the next normal turn only after this same
+                                // session has acknowledged every pending terminal report.
+                                pendingVoiceCorrection.set(finalCaptured)
+                                if (actionSession.pendingReportCount() == 0) break@actionPump
+                            }
+                            is com.battlesbudz.jarvis.v2.voice.CaptureOutcome.RejectedAction -> {
+                                val replyId = "local-" + java.util.UUID.randomUUID().toString()
+                                voiceSessionController.appendTranscript("You", finalCaptured.transcript)
+                                voiceSessionController.beginReply(expectedCallId, replyId)
+                                val explanation = (plan as ActionTurnPlan.Rejected).reason
+                                voiceSessionController.updateReplyText(expectedCallId, replyId, explanation, finished = true)
+                                actionSession.offerLocalFeedback(explanation)
+                                diagnosticRecorder.recordImportant("Accepted action mode: rejected follow-up did not enqueue work")
+                            }
+                            is com.battlesbudz.jarvis.v2.voice.CaptureOutcome.RecognitionIssue -> {
+                                val replyId = "local-" + java.util.UUID.randomUUID().toString()
+                                voiceSessionController.appendTranscript("You", finalCaptured.transcript)
+                                voiceSessionController.beginReply(expectedCallId, replyId)
+                                val explanation = "I couldn't retain that follow-up reliably. Please repeat it after these phone actions finish."
+                                voiceSessionController.updateReplyText(expectedCallId, replyId, explanation, finished = true)
+                                actionSession.offerLocalFeedback(explanation)
+                            }
+                            is com.battlesbudz.jarvis.v2.voice.CaptureOutcome.ConversationBusy -> {
+                                val replyId = "local-" + java.util.UUID.randomUUID().toString()
+                                voiceSessionController.appendTranscript("You", finalCaptured.transcript)
+                                voiceSessionController.beginReply(expectedCallId, replyId)
+                                val explanation = "I kept your earlier follow-up; please repeat this later request after it is answered."
+                                voiceSessionController.updateReplyText(expectedCallId, replyId, explanation, finished = true)
+                                actionSession.offerLocalFeedback(explanation)
+                            }
+                            com.battlesbudz.jarvis.v2.voice.CaptureOutcome.Duplicate -> Unit
+                        }
+                    }
+                    acceptedVoiceActions.awaitIdle()
+                    actionSession.takeDeferredConversation()?.let { deferred ->
+                        pendingVoiceCorrection.set(com.battlesbudz.jarvis.v2.voice.CapturedVoiceTurn(
+                            deferred.text, deferred.wav, deferred.audioIsComplete,
+                            deferred.recognitionIssue, deferred.utteranceId
+                        ))
+                    }
+                    val summary = acceptedVoiceSummary(expectedCallId)
+                    voiceSessionController.setStateIfCurrent(expectedCallId, VoiceSessionState.ACTIVELY_LISTENING)
+                    mainHandler.post { onTranscript("Jarvis", summary, true) }
+                    finalMessage = "Voice Call accepted actions complete. Jarvis: $summary"
+                    return@launch
+                }
                 val outcome = com.battlesbudz.jarvis.v2.voice.runInterruptibleReply(
                     reply = {
                         output.updateWaitStage(com.battlesbudz.jarvis.v2.voice.DelayedAcknowledgement.Stage.GENERATING)
@@ -874,12 +1194,12 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             } finally {
                 val cancelled = kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive != true
                 withContext(kotlinx.coroutines.NonCancellable) {
-                    if (cancelled) { conversationJob?.cancel(); conversationJob?.join() }
+                    if (cancelled && !acceptedVoiceActions.hasUnfinished()) { conversationJob?.cancel(); conversationJob?.join() }
                     try {
                         runCatching { capture?.stop() }
                         runCatching { microphone?.stop() }
                         preparation?.close()
-                        conversationEngine?.onPromptSubmitted = { _, _ -> }
+                        if (!acceptedVoiceActions.hasUnfinished()) conversationEngine?.onPromptSubmitted = { _, _ -> }
                     } finally {
                         speechChunks.close()
                         runCatching { voiceOutput?.stopSpeaking() }
@@ -891,6 +1211,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         finalSpeechDelivery.get()?.let { turnOrchestrator.reconcileVoiceDelivery(it.deliveredText) }
                         if (activeVoiceOutput === voiceOutput) activeVoiceOutput = null
                         if (activeVoiceCapture === capture) activeVoiceCapture = null
+                        if (!acceptedVoiceActions.hasUnfinished()) activeContinuousActionSession = null
                         val callEnded = !voiceSessionArmed || voiceSessionController.currentCallId() == null ||
                             (expectedResourceCall != null && voiceSessionController.currentCallId() != expectedResourceCall) ||
                             finalMessage.contains("turn failed", true)
@@ -899,7 +1220,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                 cancelled && !preserveCaptureOnCancellation) callResources.closeMicrophone()
                             if (callEnded) {
                                 com.battlesbudz.jarvis.v2.voice.LiveCallAudioEvidence.finish()
-                                callResources.closeModels()
+                                // Accepted native work owns the resident engine until its exact task Job joins.
+                                if (!acceptedVoiceActions.hasUnfinished()) callResources.closeModels()
                             }
                         } finally { if (operationOwned) modelStore.endModelOperation() }
                     }
@@ -946,6 +1268,189 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         }
     }
 
+    /**
+     * Schedules an already parsed final voice action. The callback uses saved call/reply IDs so a
+     * result remains durable after an End Call UI transition and can never attach to a newer call.
+     */
+    private fun enqueueAcceptedVoiceAction(
+        actionSession: com.battlesbudz.jarvis.v2.voice.ContinuousActionSession<AcceptedVoiceInvocation>,
+        invocation: AcceptedVoiceInvocation
+    ): Boolean {
+        // Every admission advances a shared generation. An older idle observer may release only
+        // if no later admission has occurred while it was suspended in awaitIdle().
+        val leaseGeneration = retainAcceptedVoiceLease() ?: return false
+        // Reserve this task's eventual terminal report before admission. The reservation survives
+        // queue completion until a real playback delivery acknowledges it.
+        if (!actionSession.reserveActionAdmission(invocation.replyId)) {
+            releaseAcceptedVoiceLeaseAfterIdle(leaseGeneration)
+            return false
+        }
+        val admitted = acceptedVoiceActions.admit(invocation.replyId, invocation.utteranceId, invocation)
+        if (admitted == null || admitted.id != invocation.replyId) {
+            actionSession.abandonActionAdmission(invocation.replyId)
+            releaseAcceptedVoiceLeaseAfterIdle(leaseGeneration)
+            return false
+        }
+        acceptedVoiceActions.start { task ->
+            val accepted = task.value
+            val planned = accepted.plan.steps.map { it.request.name }
+            val completedSteps = mutableListOf<String>()
+            var allSucceeded = true
+            voiceSessionController.updateTaskForCall(accepted.callId, com.battlesbudz.jarvis.v2.voice.VoiceTaskStatus(
+                com.battlesbudz.jarvis.v2.voice.VoiceTaskState.WAITING_FOR_USER,
+                pendingSteps = planned
+            ))
+            // The action-mode admission transferred one lease for the complete FIFO batch.
+            check(acceptedVoiceLeaseActive()) { "accepted_action_batch_missing_model_lease" }
+            // This callback is installed only by the serial queue worker. It prevents a queued
+            // task from inheriting the initial voice turn's diagnostic attribution.
+            conversationEngine?.onPromptSubmitted = { submitted, audioSize ->
+                diagnosticRecorder.recordInferencePrompt(
+                    "acceptedTask=${task.id} replyId=${accepted.replyId} utteranceId=${accepted.utteranceId} " +
+                        "callId=${accepted.callId} audioBytes=$audioSize\nsource=${accepted.prompt}\nsubmitted=$submitted"
+                )
+            }
+            val completed = CompletableDeferred<String>()
+            val job = runConversationInternal(
+                prompt = accepted.prompt,
+                history = accepted.history,
+                imageUri = null,
+                onToken = { /* Executor receipts, rather than draft model prose, are reported after completion. */ },
+                onComplete = { completed.complete(it) },
+                onActionResult = { name, message, succeeded ->
+                    allSucceeded = allSucceeded && succeeded
+                    completedSteps += name
+                    voiceSessionController.recordReplyAction(accepted.callId, accepted.replyId,
+                        com.battlesbudz.jarvis.v2.voice.VoiceActionOutcome(name, message, succeeded))
+                    voiceSessionController.updateTaskForCall(accepted.callId, com.battlesbudz.jarvis.v2.voice.VoiceTaskStatus(
+                        if (succeeded) com.battlesbudz.jarvis.v2.voice.VoiceTaskState.WAITING_FOR_USER
+                        else com.battlesbudz.jarvis.v2.voice.VoiceTaskState.FAILED,
+                        completedSteps.toList(), planned.drop(completedSteps.size)
+                    ))
+                },
+                frozenActionPlan = accepted.plan,
+                frozenVoiceFinal = true
+            )
+            if (job == null) {
+                val terminal = "Failed; unattempted: ${planned.joinToString()}."
+                voiceSessionController.updateTaskForCall(accepted.callId, com.battlesbudz.jarvis.v2.voice.VoiceTaskStatus(
+                    com.battlesbudz.jarvis.v2.voice.VoiceTaskState.FAILED, emptyList(), planned
+                ))
+                voiceSessionController.updateTerminalReplyTextForCall(accepted.callId, accepted.replyId, terminal)
+                return@start false
+            }
+            // The exact invocation handle, not mutable conversationJob, is the queue completion
+            // boundary. Cancellation joins this handle before the next accepted task begins.
+            try {
+                completed.await()
+                job.join()
+                completedSteps.size == planned.size && allSucceeded
+            } finally {
+                val cancelledBeforeCleanup = !kotlin.coroutines.coroutineContext.isActive
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    if (!job.isCompleted) job.cancel()
+                    job.join()
+                    val state = when {
+                        completedSteps.size == planned.size && allSucceeded -> com.battlesbudz.jarvis.v2.voice.VoiceTaskState.COMPLETED
+                        cancelledBeforeCleanup -> com.battlesbudz.jarvis.v2.voice.VoiceTaskState.CANCELLED
+                        else -> com.battlesbudz.jarvis.v2.voice.VoiceTaskState.FAILED
+                    }
+                    val remaining = planned.drop(completedSteps.size)
+                    voiceSessionController.updateTaskForCall(accepted.callId, com.battlesbudz.jarvis.v2.voice.VoiceTaskStatus(
+                        state, completedSteps.toList(), remaining
+                    ))
+                    val terminal = when (state) {
+                        com.battlesbudz.jarvis.v2.voice.VoiceTaskState.COMPLETED -> ""
+                        com.battlesbudz.jarvis.v2.voice.VoiceTaskState.CANCELLED -> "Cancelled; unattempted: ${remaining.joinToString()}."
+                        else -> "Failed; unattempted: ${remaining.joinToString()}."
+                    }
+                    val receipts = acceptedVoiceSummary(accepted.callId, setOf(accepted.replyId))
+                    voiceSessionController.updateTerminalReplyTextForCall(accepted.callId, accepted.replyId,
+                        listOf(receipts, terminal).filter { it.isNotBlank() }.joinToString(" "))
+                }
+            }
+        }
+        releaseAcceptedVoiceLeaseAfterIdle(leaseGeneration)
+        return true
+    }
+
+    /** Retain or transfer a batch lease and publish a generation for its idle observer. */
+    private fun retainAcceptedVoiceLease(): Long? = acceptedVoiceLease.retain(modelStore::tryBeginModelOperation)
+
+    /** Called only while the initial voice turn already owns ModelStore's lease. */
+    private fun transferAcceptedVoiceLease(): Long = acceptedVoiceLease.transfer()
+
+    private fun acceptedVoiceLeaseActive(): Boolean = acceptedVoiceLease.active()
+
+    private fun releaseAcceptedVoiceLeaseAfterIdle(generation: Long) {
+        runtimeScope.launch {
+            acceptedVoiceActions.awaitIdle()
+            if (acceptedVoiceLease.releaseIfCurrent(generation, !acceptedVoiceActions.hasUnfinished())) {
+                modelStore.endModelOperation()
+            }
+        }
+    }
+
+    /** Failed admission after a transferred initial lease has no task to drain. */
+    private fun releaseAcceptedVoiceLeaseIfIdle() =
+        releaseAcceptedVoiceLeaseAfterIdle(acceptedVoiceLease.generation())
+
+    private fun publishTerminalActionReports(
+        session: com.battlesbudz.jarvis.v2.voice.ContinuousActionSession<AcceptedVoiceInvocation>, callId: String
+    ) {
+        acceptedVoiceActions.tasks.value.filter { it.value.callId == callId && it.state.isTerminalActionState() }
+            .forEach { task ->
+                val terminalText = persistTerminalActionReply(task)
+                if (!session.onTaskEvent(task.id, terminalText))
+                    diagnosticRecorder.recordImportant("Accepted terminal report remains durable pending retry task=${task.id}")
+            }
+    }
+
+    /** Saved-ID terminal text is authoritative even when no voice session remains to speak it. */
+    private fun persistTerminalActionReply(
+        task: com.battlesbudz.jarvis.v2.actions.AcceptedActionTask<AcceptedVoiceInvocation>
+    ): String {
+        val invocation = task.value
+        val callId = invocation.callId
+        val receipts = acceptedVoiceSummary(callId, setOf(invocation.replyId))
+        val completed = voiceCallStore.list().firstOrNull { it.id == callId }?.transcript
+            ?.firstOrNull { it.replyId == invocation.replyId }?.actions.orEmpty()
+        val remaining = invocation.plan.steps.map { it.request.name }.drop(completed.size)
+        val terminal = when (task.state) {
+            com.battlesbudz.jarvis.v2.actions.AcceptedActionState.CANCELLED -> "Cancelled; unattempted: ${remaining.joinToString()}."
+            com.battlesbudz.jarvis.v2.actions.AcceptedActionState.INTERRUPTED -> "Interrupted; unattempted: ${remaining.joinToString()}."
+            com.battlesbudz.jarvis.v2.actions.AcceptedActionState.FAILED -> "Failed; unattempted: ${remaining.joinToString()}."
+            else -> ""
+        }
+        val terminalState = when (task.state) {
+            com.battlesbudz.jarvis.v2.actions.AcceptedActionState.COMPLETED -> com.battlesbudz.jarvis.v2.voice.VoiceTaskState.COMPLETED
+            com.battlesbudz.jarvis.v2.actions.AcceptedActionState.CANCELLED,
+            com.battlesbudz.jarvis.v2.actions.AcceptedActionState.INTERRUPTED -> com.battlesbudz.jarvis.v2.voice.VoiceTaskState.CANCELLED
+            else -> com.battlesbudz.jarvis.v2.voice.VoiceTaskState.FAILED
+        }
+        val terminalText = listOf(receipts, terminal).filter { it.isNotBlank() }.joinToString(" ")
+        voiceSessionController.updateTaskForCall(callId, com.battlesbudz.jarvis.v2.voice.VoiceTaskStatus(
+            terminalState, completed.map { it.name }, remaining
+        ))
+        voiceSessionController.updateTerminalReplyTextForCall(callId, invocation.replyId, terminalText)
+        return terminalText
+    }
+
+    private fun com.battlesbudz.jarvis.v2.actions.AcceptedActionState.isTerminalActionState(): Boolean =
+        this in setOf(com.battlesbudz.jarvis.v2.actions.AcceptedActionState.COMPLETED,
+            com.battlesbudz.jarvis.v2.actions.AcceptedActionState.FAILED,
+            com.battlesbudz.jarvis.v2.actions.AcceptedActionState.CANCELLED,
+            com.battlesbudz.jarvis.v2.actions.AcceptedActionState.INTERRUPTED)
+
+    private fun acceptedVoiceSummary(callId: String, onlyReplyIds: Set<String>? = null): String {
+        val replyIds = onlyReplyIds ?: acceptedVoiceActions.tasks.value.map { it.value }
+            .filter { it.callId == callId }.map { it.replyId }.toSet()
+        val outcomes = voiceCallStore.list().firstOrNull { it.id == callId }?.transcript
+            ?.filter { it.replyId in replyIds }?.flatMap { it.actions }.orEmpty()
+        return outcomes.takeIf { it.isNotEmpty() }?.joinToString(" ") { it.message }
+            ?: "I couldn't complete the accepted phone action."
+    }
+
     fun onServiceStopped() {
         endVoiceCall()
         val previousVoice = voiceTurnJob
@@ -953,6 +1458,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         runtimeScope.launch {
             previousVoice?.join()
             previousConversation?.join()
+            acceptedVoiceActions.awaitIdle()
             if (!voiceSessionArmed && ConversationWork.activeJobs.get() == 0 && modelStore.tryBeginModelOperation()) {
                 try {
                     conversationEngine?.close()
@@ -977,8 +1483,12 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         stopVoiceService()
         runtimeScope.launch { callResources.closeMicrophone() }
         activeVoiceOutput?.stopSpeaking()
+        activeContinuousActionSession?.detach()
+        activeContinuousActionSession = null // Detached call reports remain durable; never block a new call.
         voiceTurnJob?.cancel()
-        conversationJob?.cancel()
+        // End Call detaches microphone/TTS immediately but does not retract a bounded accepted
+        // task. Its saved-ID callbacks continue to checkpoint evidence for this original call.
+        if (!acceptedVoiceActions.hasUnfinished()) conversationJob?.cancel()
         activeVoiceCapture = null
         runCatching {
             if (voiceSessionController.state.value != VoiceSessionState.PASSIVE_LISTENING) {

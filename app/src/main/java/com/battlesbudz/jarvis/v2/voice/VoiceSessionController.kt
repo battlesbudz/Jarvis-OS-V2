@@ -62,6 +62,16 @@ class VoiceSessionController(
                 latency = latency ?: entry.latency)
         }
     }
+    /**
+     * Only queue-terminal evidence may update an ended call. It targets an already saved reply
+     * ID and never revives the call or permits a late ordinary generation to replace its text.
+     */
+    @Synchronized fun updateTerminalReplyTextForCall(callId: String, replyId: String, text: String) {
+        changeReply(callId, replyId, durable = true) { entry ->
+            entry.copy(text = text, generationComplete = true)
+        }
+    }
+
     @Synchronized fun updateDelivery(callId: String, delivery: SpeechDelivery) {
         changeReply(callId, delivery.turnId) { entry ->
             val previous = entry.delivery
@@ -164,8 +174,16 @@ class VoiceSessionController(
     }
 
     @Synchronized fun updateTask(status: VoiceTaskStatus) {
-        activeCall = requireActiveCall().copy(taskStatus = status)
-        checkpoint()
+        updateTaskForCall(requireActiveCall().id, status)
+    }
+
+    /** Accepted worker callbacks may finish after End Call; update only their saved original call. */
+    @Synchronized fun updateTaskForCall(callId: String, status: VoiceTaskStatus) {
+        val live = activeCall?.id == callId
+        val call = (if (live) activeCall else store.list().firstOrNull { it.id == callId }) ?: return
+        val updated = call.copy(taskStatus = status)
+        if (live) activeCall = updated
+        store.save(updated)
     }
 
     @Synchronized fun interrupt(): VoiceCallRecord {

@@ -109,4 +109,18 @@ class VoiceSessionControllerTest {
         assertEquals(VoiceTaskState.COMPLETED, ended.taskStatus?.state)
         assertTrue(store.calls.single().endedAtMs != null)
     }
+    @Test fun terminalReplyEvidenceUpdatesSavedEndedCallWithoutRevivingIt() {
+        val store = MemoryStore()
+        val controller = VoiceSessionController(store)
+        val call = controller.beginCall()
+        controller.beginReply(call.id, "queued-b")
+        controller.end()
+
+        controller.updateTerminalReplyTextForCall(call.id, "queued-b", "Cancelled; unattempted: open_app.")
+
+        assertEquals(VoiceSessionState.PASSIVE_LISTENING, controller.state.value)
+        assertEquals("Cancelled; unattempted: open_app.",
+            store.list().single { it.id == call.id }.transcript.single { it.replyId == "queued-b" }.text)
+    }
+
 }

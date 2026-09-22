@@ -9,7 +9,11 @@ import kotlinx.coroutines.*
 class ReplyVoiceCapture(private val context: Context, private val log: (String) -> Unit) {
     suspend fun listen(output: PiperVoiceOutput, asrDirectory: File,
                        onConfirmed: () -> Unit, asrEngine: AsrEngine = AsrEngine.MOONSHINE, onPartialTranscript: (String) -> Unit = {}, trace: VoiceTurnTrace? = null,
-                       inputFactory: (suspend () -> AudioInput)? = null, modelSession: VoiceModelSession? = null): CapturedVoiceTurn = recoverReplyListener(log) {
+                       inputFactory: (suspend () -> AudioInput)? = null, modelSession: VoiceModelSession? = null,
+                       /** Action mode listens while native work is silent; its ASR budget is independent of Piper. */
+                       asrOnly: Boolean = false,
+                       /** The action pump can swap its report ledger/output without restarting ASR. */
+                       outputProvider: () -> PiperVoiceOutput = { output }): CapturedVoiceTurn = recoverReplyListener(log) {
         supervisorScope {
             MicrophoneInterruptionMonitor.awaitAvailable()
             val input = inputFactory?.invoke() ?: AndroidAudioInput(this,
@@ -20,10 +24,11 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
             var confirmedNaturalText = ""
             var stopOnly = false
             var endConversation = false
+            fun currentOutput(): PiperVoiceOutput = outputProvider()
             fun confirm() {
                 trace?.mark(VoiceTurnTrace.Stage.INTERRUPTION_CONFIRMED)
                 trace?.mark(VoiceTurnTrace.Stage.PLAYBACK_STOP_REQUESTED)
-                output.stopSpeaking()
+                currentOutput().stopSpeaking()
                 confirmed.complete(Unit)
                 onConfirmed()
             }
@@ -40,9 +45,9 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                                 log = log, modelSession = modelSession, warmProbe = true)
                         }
                     },
-                    playing = { output.isPlayingAudio }, reference = { output.recentSpokenText() },
-                    hasPlaybackBudget = output::hasInterruptionBudget,
-                    canContinuePlayback = output::canContinueInterruption,
+                    playing = { currentOutput().isPlayingAudio }, reference = { currentOutput().recentSpokenText() },
+                    hasPlaybackBudget = { asrOnly || currentOutput().hasInterruptionBudget() },
+                    canContinuePlayback = { asrOnly || currentOutput().canContinueInterruption() },
                     onNaturalTextConfirmed = { confirmedNaturalText = it },
                     onConfirmed = { natural, evidence ->
                         if (natural) naturalReference = evidence
@@ -89,7 +94,8 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                         log("barge_correction_discarded reason=final_request_not_confirmed")
                         return@supervisorScope CapturedVoiceTurn("", byteArrayOf())
                     }
-                    if (NaturalCorrectionText.isFloorOnly(checked)) {
+                    if (NaturalCorrectionText.isFloorOnly(checked) &&
+                        VoiceActionControl.parse(checked, hasUnfinished = true) == VoiceActionControl.None) {
                         log("barge_floor_handoff text=$checked destination=followup_listening modelAnswer=false")
                         return@supervisorScope CapturedVoiceTurn("", byteArrayOf())
                     }
@@ -102,7 +108,16 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
             } catch (timeout: TimeoutCancellationException) {
                 log("barge_correction_timeout")
                 return@supervisorScope CapturedVoiceTurn("", byteArrayOf())
-            } catch (cancelled: CancellationException) { throw cancelled }
+            } catch (cancelled: CancellationException) {
+                // UI microphone pause closes the current audio channel. It is a capture boundary,
+                // not an action-task cancellation: return a final local issue so the persistent
+                // action pump can wait for Resume and attach a fresh ASR capture.
+                if (VoiceSessionUi.paused.value) {
+                    log("barge_capture_paused destination=action_pump_resume")
+                    return@supervisorScope CapturedVoiceTurn("", byteArrayOf(), recognitionIssue = "microphone_paused")
+                }
+                throw cancelled
+            }
             catch (error: Exception) {
                 if (confirmed.isCompleted) {
                     // Never replay an incomplete correction after a capture failure.
