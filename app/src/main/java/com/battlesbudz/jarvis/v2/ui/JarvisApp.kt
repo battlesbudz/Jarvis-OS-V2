@@ -28,6 +28,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import com.battlesbudz.jarvis.v2.ai.ModelCatalog
 import com.battlesbudz.jarvis.v2.ai.ModelStore
+import com.battlesbudz.jarvis.v2.memory.AndroidMemoryOs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
@@ -79,12 +80,14 @@ fun JarvisApp(
     var downloadTotalBytes by remember { mutableStateOf(-1L) }
     var setupElapsedSeconds by remember { mutableStateOf(0L) }
     var showingVoiceCalls by rememberSaveable { mutableStateOf(false) }
+    var showingMemory by rememberSaveable { mutableStateOf(false) }
     var voiceCalls by remember { mutableStateOf(initialVoiceCalls) }
     var selectedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
     var resumedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
 
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val phoneContext = androidx.compose.ui.platform.LocalContext.current
+    val memoryOs = remember(phoneContext.applicationContext) { AndroidMemoryOs.get(phoneContext.applicationContext) }
     var phone by remember { mutableStateOf(com.battlesbudz.jarvis.v2.ai.PhoneCheck.read(phoneContext)) }
     val modelSelector: @Composable (Boolean) -> Unit = { enabled ->
         Column {
@@ -124,6 +127,11 @@ fun JarvisApp(
                 }
             )
             Text(if (store.hasModel(selectedModel)) "Installed" else "Not installed")
+            OutlinedButton(
+                enabled = !modelImportRunning && !modelDownloadRunning,
+                onClick = { showingMemory = true },
+                modifier = Modifier.fillMaxWidth().testTag("memory_open")
+            ) { Text("Memory") }
             if (storedBytes > 0L) {
                 OutlinedButton(enabled = canManage, onClick = { confirmingDelete = true }) {
                     Text("Delete model & cache · %.2f GB".format(java.util.Locale.US, storedBytes / 1_000_000_000.0))
@@ -253,7 +261,9 @@ fun JarvisApp(
         colorScheme = darkColorScheme()
     ) {
         Surface(modifier = Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
-            if (modelsReady && smokeTestPassed) {
+            if (showingMemory) {
+                MemoryScreen(memoryOs = memoryOs, onBack = { showingMemory = false })
+            } else if (modelsReady && smokeTestPassed) {
                 when {
                     selectedVoiceCall != null -> {
                         val selected = requireNotNull(selectedVoiceCall)
@@ -361,4 +371,3 @@ fun JarvisApp(
         }
     }
 }
-

@@ -15,6 +15,7 @@
     "test11_modelDetailsAreOptionalAndDoNotChangeSelection",
     "test12_lastFamilyModelCanBeSelectedAboveNavigationBar",
     "test13_imageAttachmentIsResizedStoredAndInvalidInputRejected",
+    "test14_memoryManagerReviewsCorrectsSearchesAndErases",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",
@@ -22,6 +23,7 @@
     "Real-model inference and model-generated tool selection",
     "Microphone, speaker, Bluetooth and acoustic interruption behavior",
     "Physical-device GPU/NPU compatibility, thermal behavior and latency",
-    "Successful multi-gigabyte model download/import"
+    "Successful multi-gigabyte model download/import",
+    "Conversation and voice recall of approved memories"
   ]
 }

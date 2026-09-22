@@ -90,6 +90,13 @@ class ReleaseJourneyTest {
 
     private fun openBrowser() { find(By.res("model_browse")).click(); find(By.res("model_search")) }
 
+    private fun enterText(selector: BySelector, value: String) {
+        scrollTo(selector).text = value
+        // Close the IME without navigating away before we need to reach controls below the editor.
+        device.pressKeyCode(android.view.KeyEvent.KEYCODE_ESCAPE)
+        device.waitForIdle()
+    }
+
     @Test fun test01_setupRequiresAnInstalledModel() {
         assertNotNull(find(By.text("Jarvis setup")))
         assertFalse(scrollTo(By.res("model_check")).isEnabled)
@@ -263,6 +270,54 @@ class ReleaseJourneyTest {
                 fail("Corrupt input must be rejected")
             } catch (_: android.graphics.ImageDecoder.DecodeException) { }
         } finally { com.battlesbudz.jarvis.v2.chat.ChatMediaStore.discard(context, media); original.delete() }
+    }
+
+    @Test fun test14_memoryManagerReviewsCorrectsSearchesAndErases() {
+        // Use only the release UI: memory implementation classes are intentionally shrinkable.
+        scrollTo(By.res("memory_open")).click()
+        assertNotNull(find(By.text("Memory")))
+
+        enterText(By.res("memory_new_content"), "Bank account number 1234 5678 9012 3456")
+        scrollTo(By.res("memory_propose")).click()
+        assertNotNull(find(By.res("memory_error")))
+        enterText(By.res("memory_new_content"), "Synthetic preference: teal notebooks.")
+        scrollTo(By.res("memory_propose")).click()
+        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
+        scrollTo(By.res("memory_approve")).click()
+        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
+
+        enterText(By.res("memory_search_input"), "teal notebooks")
+        scrollTo(By.res("memory_search")).click()
+        assertNotNull(scrollTo(By.text("Synthetic preference: teal notebooks.")))
+        scrollTo(By.res("memory_correct")).click()
+        enterText(By.res("memory_new_content"), "Synthetic preference: indigo notebooks.")
+        scrollTo(By.res("memory_propose")).click()
+        scrollTo(By.res("memory_approve")).click()
+        assertNotNull(scrollTo(By.text("Synthetic preference: indigo notebooks.")))
+
+        enterText(By.res("memory_new_content"), "Synthetic item to reject.")
+        scrollTo(By.res("memory_propose")).click()
+        scrollTo(By.res("memory_reject")).click()
+        assertNotNull(scrollTo(By.text("Rejected · Added from manual entry")))
+
+        // Cancellation must leave the saved records visible before the confirmed erase.
+        scrollTo(By.res("memory_erase_all")).click()
+        find(By.res("memory_erase_all_cancel")).click()
+        assertNotNull(scrollTo(By.text("Synthetic preference: indigo notebooks.")))
+        scrollTo(By.res("memory_erase_all")).click()
+        find(By.res("memory_erase_all_confirm")).click()
+        assertNotNull(scrollTo(By.text("No memories have been added yet.")))
+
+        enterText(By.res("memory_new_content"), "Synthetic memory after erase.")
+        scrollTo(By.res("memory_propose")).click()
+        scrollTo(By.res("memory_approve")).click()
+        assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
+        scrollTo(By.res("memory_back")).click()
+        assertNotNull(find(By.text("Jarvis setup")))
+        activity.recreate()
+        scrollTo(By.res("memory_open")).click()
+        assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
+        scrollTo(By.res("memory_back")).click()
     }
 
     // Leave this selection in durable preferences for the controller's separate-process check.
