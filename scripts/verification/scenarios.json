@@ -15,7 +15,11 @@
     "test11_modelDetailsAreOptionalAndDoNotChangeSelection",
     "test12_lastFamilyModelCanBeSelectedAboveNavigationBar",
     "test13_imageAttachmentIsResizedStoredAndInvalidInputRejected",
-    "test14_memoryManagerReviewsCorrectsSearchesAndErases",
+    "test14_threeActionTurnUsesRealAndroidState",
+    "test15_invalidActionTurnPreservesAndroidState",
+    "test16_partialFailureKeepsCompletedAndroidAction",
+    "test17_cancelledAndDuplicateActionTurnsDoNotReplay",
+    "test18_memoryManagerReviewsCorrectsSearchesAndErases",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

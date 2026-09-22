@@ -37,4 +37,24 @@ object NativeActionDecoder {
             else -> null
         }
     }
+    /** Strict boundary used before real device side effects; legacy decode stays tolerant for old fixtures. */
+    fun decodeStrict(call: ToolCall): ActionRequest? {
+        val json = runCatching { JSONObject(call.arguments) }.getOrNull() ?: return null
+        val args = when {
+            json.has("args") && json.opt("args") is JSONObject && json.length() == 1 -> json.getJSONObject("args")
+            else -> json
+        }
+        fun exact(vararg keys: String) = args.length() == keys.size && keys.all(args::has)
+        return when (call.name) {
+            "read_battery" -> if (exact()) ActionRequest(call.name) else null
+            "open_app" -> if (exact("app")) args.optString("app").trim().takeIf { it.isNotBlank() }?.let {
+                ActionRequest(call.name, mapOf("app" to it)) } else null
+            "set_volume" -> if (exact("level")) {
+                val raw = args.opt("level")?.toString()?.trim().orEmpty()
+                raw.takeIf { it.matches(Regex("(?:0|[1-9][0-9]?)|100")) }?.let { ActionRequest(call.name, mapOf("level" to it)) }
+            } else null
+            else -> null
+        }
+    }
+
 }

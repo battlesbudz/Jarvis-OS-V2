@@ -5,6 +5,7 @@ import com.battlesbudz.jarvis.v2.*
 import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
 import androidx.lifecycle.lifecycleScope
 import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
+import com.battlesbudz.jarvis.v2.actions.runNative
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.InputStream
@@ -102,10 +103,25 @@ internal fun JarvisRuntime.runConversationInternal(
                     mainHandler.post { finish(repeatReply) }
                     return@launch
                 }
-                // A final, explicit app command does not depend on the model emitting a tool call.
-                val textInput = incrementalVoice?.takeIf { imageUri == null && actionIntentRouter.classifyActionIntent(prompt, history) == null }
+                // Parse the completed request before any direct shortcut, lookup, or model side effect.
+                val requestedActionPlan = if (comparison == null && imageUri == null && audioUri == null)
+                    com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.parse(prompt, history)
+                else com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.NotAction
+                if (requestedActionPlan is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Rejected) {
+                    incrementalVoice?.close()
+                    resetNativeConversation()
+                    val rejection = requestedActionPlan.reason
+                    turnOrchestrator.recordResponse(prompt, rejection, turnPlan)
+                    mainHandler.post { finish(rejection) }
+                    return@launch
+                }
+                val textInput = incrementalVoice?.takeIf { imageUri == null && requestedActionPlan !is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready }
                 if (textInput == null) incrementalVoice?.close()
-                val directRequest = if (comparison != null || imageUri != null || audioUri != null) null else com.battlesbudz.jarvis.v2.actions.DirectAppCommand.parse(prompt)
+                val directRequest = if (comparison != null || imageUri != null || audioUri != null) null else
+                    com.battlesbudz.jarvis.v2.actions.DirectAppCommand.parse(prompt)?.takeIf { direct ->
+                        (requestedActionPlan as? com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready)
+                            ?.takeIf { it.steps.size == 1 }?.steps?.single()?.request == direct
+                    }
                 if (directRequest != null) {
                     resetNativeConversation()
                     val result = kotlinx.coroutines.withContext(Dispatchers.Main) {
@@ -256,7 +272,8 @@ internal fun JarvisRuntime.runConversationInternal(
                     conversationCharacters = 0
                 }
                 if (!engineWasLoaded) loadMs += (System.nanoTime() - loadingStarted) / 1_000_000
-                val allowTools = comparison == null && modelStore.selectedModel().supportsTools && actionIntentRouter.classifyActionIntent(prompt, history) != null
+                val allowTools = comparison == null && modelStore.selectedModel().supportsTools &&
+                    requestedActionPlan is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready
                 if (engine.setToolsEnabled(allowTools)) {
                     nativeConversationHasContext = false
                     conversationCharacters = 0
@@ -278,7 +295,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     // With supplied evidence, release checked voice sentences as they arrive.
                     // Unverified local-factual drafts and action results retain their final gates.
                     if ((turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT || streamGroundedVoice) &&
-                        actionIntentRouter.classifyActionIntent(prompt, history) == null
+                        requestedActionPlan !is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready
                     ) {
                         if (voiceRepetitionGuard != null) voiceRepetitionGuard.accept(safeText)
                         else mainHandler.post { deliverToken(safeText) }
@@ -423,61 +440,67 @@ internal fun JarvisRuntime.runConversationInternal(
                 }
                 recordInference("answer", generated)
                 var nativeConversationContainsCurrentTurn = textInput == null || incrementalFallbackUsed
-                val candidateCall = generated.toolCalls.singleOrNull()
-                // Gemma can occasionally emit a tool call copied from the
-                // previous turn while answering a normal question. Never let
-                // that stale call cause a phone side effect.
-                val proposedCall = candidateCall?.takeIf {
-                    comparison == null && actionIntentRouter.toolMatchesUserIntent(prompt, history, it) &&
-                        (voiceAudio == null || com.battlesbudz.jarvis.v2.actions.NativeActionDecoder.decode(it)?.let { request ->
-                            com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard.allows(prompt, request.name, request.arguments)
-                        } == true)
-                }
-                if (proposedCall != null &&
-                    proposedCall.name in setOf("read_battery", "set_volume", "open_app")
-                ) {
-                    actionName = proposedCall.name
-                    val request = com.battlesbudz.jarvis.v2.actions.NativeActionDecoder.decode(proposedCall)?.let {
-                        // Resolve the user-named app locally; a model-supplied package cannot override it.
-                        if (it.name == "open_app") it.copy(arguments = it.arguments - "package") else it
+                val actionPlan = requestedActionPlan
+                if (actionPlan is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready && generated.toolCalls.isNotEmpty()) {
+                    // Final transcript only: every source clause is independently guarded before dispatch.
+                    val voiceAllowed = voiceAudio == null || actionPlan.steps.all { step ->
+                        com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard.allows(
+                            step.sourceClause, step.request.name, step.request.arguments)
                     }
-                    if (request != null) {
-                        val result = kotlinx.coroutines.withContext(Dispatchers.Main) {
-                            com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
-                                executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
-                                    this@runConversationInternal,
-                                    canLaunchDirectly = { activityVisible }
-                                )
-                            ).execute(request).also {
-                                onActionResult(request.name, it.message, it.succeeded)
+                    if (voiceAllowed) {
+                        val coordinator = com.battlesbudz.jarvis.v2.actions.ActionTurnRunner(
+                            executor = com.battlesbudz.jarvis.v2.actions.MobileActionExecutor {
+                                error("ActionTurnRunner dispatch is supplied by the conversation runtime")
                             }
-                        }
-                        diagnosticRecorder.recordImportant("Action\nuser=${prompt.take(500)}\nrequest=$request\nsucceeded=${result.succeeded}\nresult=${result.message}")
-                        actionResultMessage = result.message
-                        actionResultForGemma = promptBuilder.buildToolResultContext(
-                            userPrompt = prompt,
-                            toolName = proposedCall.name,
-                            resultMessage = result.message,
-                            succeeded = result.succeeded
                         )
-                        generated = engine.sendToolResult(
-                            proposedCall,
-                            actionResultForGemma!!,
-                            streamFilter::accept
+                        val outcome = coordinator.runNative(
+                            plan = actionPlan,
+                            initialCalls = generated.toolCalls,
+                            dispatch = { request ->
+                                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                    // Receipt and voice/text persistence occur in the same synchronous Main block.
+                                    com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
+                                        executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
+                                            this@runConversationInternal, canLaunchDirectly = { activityVisible }
+                                        )
+                                    ).execute(request).also { onActionResult(request.name, it.message, it.succeeded) }
+                                }
+                            },
+                            nextCalls = { batch ->
+                                val nativeResults = batch.map { receipt ->
+                                    val call = com.battlesbudz.jarvis.v2.ai.ToolCall(
+                                        receipt.request.name, org.json.JSONObject(receipt.request.arguments).toString())
+                                    val context = promptBuilder.buildToolResultContext(prompt, receipt.request.name,
+                                        receipt.result.message, receipt.result.succeeded)
+                                    call to context
+                                }
+                                generated = engine.sendToolResults(nativeResults, streamFilter::accept)
+                                recordInference("tool response", generated)
+                                generated.toolCalls
+                            }
                         )
-                        recordInference("tool response", generated)
+                        actionName = actionPlan.steps.joinToString(",") { it.request.name }
+                        actionResultMessage = outcome.message
+                        actionResultForGemma = outcome.message
+                        diagnosticRecorder.recordImportant("Action turn\nuser=${prompt.take(500)}\n" +
+                            "steps=${actionPlan.steps.map { it.request }}\nreceipts=${outcome.receipts}\n" +
+                            "completed=${outcome.completed} result=${outcome.message}")
+                    } else {
+                        actionResultMessage = "I couldn't verify the requested phone actions."
                     }
+                } else if (actionPlan is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready) {
+                    // An action turn never falls back to model prose or claims without a verified receipt.
+                    actionResultMessage = "I couldn't verify the requested phone actions."
                 }
                 // A rejected tool call can sometimes contain no answer text at all.
                 // Retry that turn as ordinary conversation so a normal question
                 // never falls through to a phone-action error message.
-                if (candidateCall != null &&
-                    proposedCall == null &&
+                if (generated.toolCalls.isNotEmpty() && actionResultMessage == null &&
                     cleanAssistantText(generated.text).isBlank()
                 ) {
                     resetNativeConversation()
                     engine.setToolsEnabled(false)
-                    diagnosticRecorder.recordSummary("Rejected tool name=${candidateCall.name} reason=does_not_match_current_intent retryToolsEnabled=false")
+                    diagnosticRecorder.recordSummary("Rejected tool response reason=does_not_match_current_intent retryToolsEnabled=false")
                     val retryPrompt = submittedPrompt + """
                         
                         The previous output contained an invalid tool call. Answer the user's current message directly as normal text. Do not call a tool.

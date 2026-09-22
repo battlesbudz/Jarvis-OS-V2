@@ -60,18 +60,17 @@ class AndroidMobileActionExecutor(
                 if (!canLaunchDirectly()) {
                     com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.launch(context, launchIntent, resolution.app.label)
                         ?: AppLaunchNotification.offer(context, launchIntent, resolution.app.label)
-                } else runCatching {
+                } else try {
                     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(launchIntent)
-                }.fold(
-                    { ExecutionResult(true, "Opening ${resolution.app.label}.") },
-                    { error ->
-                        ExecutionResult(
-                            false,
-                            "Could not open ${resolution.app.label}: ${error.message ?: "Android rejected the launch."}"
-                        )
-                    }
-                )
+                    ExecutionResult(true, "Opening ${resolution.app.label}.")
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: android.content.ActivityNotFoundException) {
+                    ExecutionResult(false, "Could not open ${resolution.app.label}: ${error.message ?: "Android rejected the launch."}")
+                } catch (error: SecurityException) {
+                    ExecutionResult(false, "Could not open ${resolution.app.label}: ${error.message ?: "Android rejected the launch."}")
+                }
             }
         }
     }

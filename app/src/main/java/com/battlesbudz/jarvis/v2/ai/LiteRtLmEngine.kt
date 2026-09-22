@@ -146,6 +146,15 @@ class LiteRtLmEngine(
         onToken
     )
 
+    /** Keep a batch in one native tool message so no call/result is discarded. */
+    suspend fun sendToolResults(
+        results: List<Pair<ToolCall, String>>,
+        onToken: (String) -> Unit
+    ): GenerationResult = generateWithMessage(
+        Message.tool(Contents.of(*results.map { Content.ToolResponse(it.first.name, it.second) }.toTypedArray())),
+        onToken
+    )
+
     private suspend fun generateWithMessage(
         message: Message,
         onToken: (String) -> Unit

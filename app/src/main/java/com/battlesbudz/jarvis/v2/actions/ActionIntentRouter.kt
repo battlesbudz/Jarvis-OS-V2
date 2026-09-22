@@ -23,6 +23,11 @@ class ActionIntentRouter {
             }
         }
 
+        val planned = ActionTurnPlan.parse(normalized, history)
+        (planned as? ActionTurnPlan.Ready)?.takeIf { it.steps.size == 1 }?.steps?.single()?.request?.let { request ->
+            return com.battlesbudz.jarvis.v2.ai.ToolCall(request.name, JSONObject(request.arguments).toString())
+        }
+        if (planned is ActionTurnPlan.Ready || planned is ActionTurnPlan.Rejected) return null
         val clauses = ActionRequestText.clauses(normalized)
         // Only a directed imperative/request can authorize a phone action.
         // "It'll open apps" and "how do I open apps?" remain ordinary conversation.
@@ -66,8 +71,10 @@ class ActionIntentRouter {
         history: List<ChatEntry>,
         call: com.battlesbudz.jarvis.v2.ai.ToolCall
     ): Boolean {
-        val expected = classifyActionIntent(prompt, history)?.let(NativeActionDecoder::decode) ?: return false
-        val proposed = NativeActionDecoder.decode(call) ?: return false
+        val plan = ActionTurnPlan.parse(prompt, history) as? ActionTurnPlan.Ready ?: return false
+        if (plan.steps.size != 1) return false
+        val expected = plan.steps.single().request
+        val proposed = NativeActionDecoder.decodeStrict(call) ?: return false
         if (expected.name != proposed.name) return false
         return when (expected.name) {
             "read_battery" -> true
