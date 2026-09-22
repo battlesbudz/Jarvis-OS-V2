@@ -42,3 +42,15 @@
 -keep class com.battlesbudz.jarvis.v2.actions.ActionRequest { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ActionValidation** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ExecutionResult { *; }
+# Release instrumentation reaches the multi-action contract through the shared test DEX.
+-keep class com.battlesbudz.jarvis.v2.actions.ActionTurnPlan** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ActionTurnRunner** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.NativeActionDecoder { *; }
+-keep class com.battlesbudz.jarvis.v2.ai.ToolCall { *; }
+# Release instrumentation reads durable multi-action receipts after cancellation/recreation.
+-keep class com.battlesbudz.jarvis.v2.chat.ConversationHistory { *; }
+-keep class com.battlesbudz.jarvis.v2.chat.ConversationMessage { *; }
+-keep class com.battlesbudz.jarvis.v2.chat.ActionReceipt { *; }
+# Return values traversed by the release test DEX while checking persisted receipts.
+-keep class com.battlesbudz.jarvis.v2.chat.ConversationThread { *; }
+-keep class com.battlesbudz.jarvis.v2.ChatEntry { *; }

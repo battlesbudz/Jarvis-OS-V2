@@ -177,6 +177,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     } },
                     onComplete = { answer ->
                         conversationHistory.updateReply(threadId, replyId, answer, true)
+                    },
+                    onActionResult = { name, message, succeeded ->
+                        conversationHistory.recordReplyAction(threadId, replyId,
+                            com.battlesbudz.jarvis.v2.chat.ActionReceipt(name, message, succeeded))
                     })
                 conversationJob?.join()
             } catch (error: Exception) {

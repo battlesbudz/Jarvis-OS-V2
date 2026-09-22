@@ -108,6 +108,42 @@ class ConversationHistoryTest {
         assertFalse(restored.context().single().text.contains("file:"))
     }
 
+
+    @Test fun repeatedReceiptsSurviveCancellationReloadAndCompleteSummary() {
+        val prefs = preferences()
+        val history = ConversationHistory(prefs)
+        val id = history.current.value.id
+        val receipt = ActionReceipt("set_volume", "Media volume set to 30 percent.", true)
+        history.updateReply(id, "reply", "draft", false)
+        history.recordReplyAction(id, "reply", receipt)
+        history.recordReplyAction(id, "reply", receipt)
+        // A cancellation before a terminal reply still has exact visible and contextual executor evidence.
+        val cancelled = ConversationHistory(prefs).current.value.messages.single()
+        assertEquals(2, cancelled.actions.size)
+        assertEquals(2, Regex("Media volume set to 30 percent.").findAll(cancelled.text).count())
+        assertEquals(2, Regex("Media volume set to 30 percent.").findAll(ConversationHistory(prefs).context().single().text).count())
+
+        val completeSummary = "Media volume set to 30 percent. Media volume set to 30 percent."
+        history.updateReply(id, "reply", completeSummary, true)
+        val reply = ConversationHistory(prefs).current.value.messages.single()
+        assertEquals(2, reply.actions.size)
+        assertEquals(2, Regex("Media volume set to 30 percent.").findAll(reply.text).count())
+        assertEquals(2, Regex("Media volume set to 30 percent.").findAll(ConversationHistory(prefs).context().single().text).count())
+    }
+
+    @Test fun singleReceiptFinalSummaryIsRenderedOnce() {
+        val history = ConversationHistory(preferences())
+        val id = history.current.value.id
+        val receipt = ActionReceipt("read_battery", "Battery is at 73 percent.", true)
+        history.updateReply(id, "reply", "", false)
+        history.recordReplyAction(id, "reply", receipt)
+        history.updateReply(id, "reply", receipt.message, true)
+        val reply = history.current.value.messages.single()
+        assertEquals(1, reply.actions.size)
+        assertEquals(1, Regex("Battery is at 73 percent.").findAll(reply.text).count())
+        assertEquals(1, Regex("Battery is at 73 percent.").findAll(history.context().single().text).count())
+    }
+
     private fun preferences(): SharedPreferences {
         val values = mutableMapOf<String, Any?>()
         lateinit var editor: SharedPreferences.Editor

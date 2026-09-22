@@ -265,6 +265,101 @@ class ReleaseJourneyTest {
         } finally { com.battlesbudz.jarvis.v2.chat.ChatMediaStore.discard(context, media); original.delete() }
     }
 
+    @Test fun test14_threeActionTurnUsesRealAndroidState() {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        try {
+            val outcome = ActionTurnRunner(AndroidMobileActionExecutor(context, canLaunchDirectly = { true })).run(
+                ActionTurnPlan.parse("Read battery then set media volume to 30 percent then open Settings"), listOf(listOf(
+                    com.battlesbudz.jarvis.v2.ai.ToolCall("read_battery", "{}"),
+                    com.battlesbudz.jarvis.v2.ai.ToolCall("set_volume", "{\"level\":30}"),
+                    com.battlesbudz.jarvis.v2.ai.ToolCall("open_app", "{\"app\":\"Settings\"}"))))
+            assertTrue(outcome.message, outcome.completed)
+            assertEquals(kotlin.math.round(audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .3).toInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            assertTrue(device.wait(Until.hasObject(By.pkg("com.android.settings").depth(0)), 15_000))
+        } finally { audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0) }
+    }
+
+    @Test fun test15_invalidActionTurnPreservesAndroidState() {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val outcome = ActionTurnRunner(AndroidMobileActionExecutor(context)).run(
+            ActionTurnPlan.parse("Set media volume to 5000 percent then delete files"), emptyList())
+        assertFalse(outcome.completed)
+        assertEquals(before, audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+    }
+
+    @Test fun test16_partialFailureKeepsCompletedAndroidAction() {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        try {
+            val outcome = ActionTurnRunner(AndroidMobileActionExecutor(context)).run(
+                ActionTurnPlan.parse("Set media volume to 30 percent then open jarvis-nonexistent-app-8429 then read battery"), listOf(listOf(
+                    com.battlesbudz.jarvis.v2.ai.ToolCall("set_volume", "{\"level\":30}"),
+                    com.battlesbudz.jarvis.v2.ai.ToolCall("open_app", "{\"app\":\"jarvis-nonexistent-app-8429\"}"),
+                    com.battlesbudz.jarvis.v2.ai.ToolCall("read_battery", "{}"))))
+            assertFalse(outcome.completed)
+            assertEquals(2, outcome.receipts.size)
+            assertEquals(kotlin.math.round(audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .3).toInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+        } finally { audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0) }
+    }
+
+    @Test fun test17_cancelledAndDuplicateActionTurnsDoNotReplay() {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val prefs = context.getSharedPreferences("action-turn-cancel", android.content.Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val history = com.battlesbudz.jarvis.v2.chat.ConversationHistory(prefs)
+        val reply = "cancelled-reply"
+        history.updateReply(history.current.value.id, reply, "", false)
+        val real = AndroidMobileActionExecutor(context)
+        var executions = 0
+        val job = kotlinx.coroutines.Job()
+        val execute = MobileActionExecutor { action ->
+            executions++
+            val result = real.execute(action)
+            history.recordReplyAction(history.current.value.id, reply,
+                com.battlesbudz.jarvis.v2.chat.ActionReceipt("set_volume", result.message, result.succeeded))
+            if (executions == 1) job.cancel()
+            result
+        }
+        val runner = ActionTurnRunner(execute)
+        try {
+            kotlinx.coroutines.runBlocking {
+                kotlinx.coroutines.withContext(job) {
+                    runner.runNative(ActionTurnPlan.parse("Set media volume to 30 percent then read battery"), listOf(
+                        com.battlesbudz.jarvis.v2.ai.ToolCall("set_volume", "{\"level\":30}"),
+                        com.battlesbudz.jarvis.v2.ai.ToolCall("read_battery", "{}")), dispatch = { request ->
+                            val action = MobileActionValidator().validate(request) as ActionValidation.Valid
+                            execute.execute(action.action)
+                        }, nextCalls = { emptyList() })
+                }
+            }
+        } catch (_: java.util.concurrent.CancellationException) { }
+        try {
+            assertEquals("Cancellation must stop before the second Android action", 1, executions)
+            val restored = com.battlesbudz.jarvis.v2.chat.ConversationHistory(prefs)
+            assertTrue(restored.current.value.messages.single().text.contains("Media volume set to 30 percent."))
+            assertTrue(restored.context().single().text.contains("Media volume set to 30 percent."))
+            assertEquals(kotlin.math.round(audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .3).toInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            var duplicateExecutions = 0
+            val duplicateRunner = ActionTurnRunner(MobileActionExecutor { action ->
+                duplicateExecutions++
+                real.execute(action)
+            })
+            val duplicateOutcome = duplicateRunner.run(
+                ActionTurnPlan.parse("Set media volume to 30 percent then read battery"), listOf(
+                    listOf(com.battlesbudz.jarvis.v2.ai.ToolCall("set_volume", "{\"level\":30}")),
+                    listOf(com.battlesbudz.jarvis.v2.ai.ToolCall("set_volume", "{\"level\":30}"),
+                        com.battlesbudz.jarvis.v2.ai.ToolCall("read_battery", "{}"))))
+            assertTrue(duplicateOutcome.completed)
+            assertEquals("Duplicate model call must not rerun Android volume", 2, duplicateExecutions)
+            assertEquals(2, duplicateOutcome.receipts.size)
+            assertEquals(kotlin.math.round(audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .3).toInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+        } finally { audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0) }
+    }
+
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()
