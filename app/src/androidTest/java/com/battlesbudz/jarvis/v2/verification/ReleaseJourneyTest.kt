@@ -118,20 +118,40 @@ class ReleaseJourneyTest {
             ?: find(selector)
     }
 
-    /** Waits for the async reload after a mutation instead of racing a disabled form control. */
+    /** Requires a non-edge, non-empty visible area before a single physical tap. */
+    private fun hasSafeTapBounds(control: UiObject2): Boolean {
+        val bounds = control.visibleBounds
+        val safeInset = 24
+        return bounds.width() > 0 && bounds.height() > 0 &&
+            bounds.left >= safeInset && bounds.right <= device.displayWidth - safeInset &&
+            bounds.top >= safeInset && bounds.bottom <= device.displayHeight - safeInset
+    }
+
+    /**
+     * Waits for the async reload after a mutation, then verifies a fresh Compose node
+     * remains enabled with unchanged tap bounds for a bounded settling interval.
+     */
     private fun enabled(selector: BySelector): UiObject2 {
         val deadline = SystemClock.uptimeMillis() + 15_000
         while (SystemClock.uptimeMillis() < deadline) {
             // Scrolling and Compose recomposition can invalidate a prior accessibility node.
             val control = scrollTo(selector)
             try {
-                if (control.isEnabled) return control
+                if (control.isEnabled && hasSafeTapBounds(control)) {
+                    val before = control.visibleBounds
+                    device.waitForIdle()
+                    SystemClock.sleep(300)
+                    val fresh = device.findObject(selector)
+                    if (fresh != null && fresh.isEnabled && hasSafeTapBounds(fresh) && fresh.visibleBounds == before) {
+                        return fresh
+                    }
+                }
             } catch (_: StaleObjectException) {
                 // No action has been dispatched; retry with a fresh node within the same bound.
             }
             device.waitForIdle()
         }
-        throw AssertionError("Control did not become enabled: $selector")
+        throw AssertionError("Control did not become stably enabled: $selector")
     }
 
     private fun openBrowser() { find(By.res("model_browse")).click(); find(By.res("model_search")) }
