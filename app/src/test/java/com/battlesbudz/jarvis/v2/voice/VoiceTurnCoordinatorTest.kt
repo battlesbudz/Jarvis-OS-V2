@@ -3,6 +3,7 @@ package com.battlesbudz.jarvis.v2.voice
 import kotlinx.coroutines.*
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VoiceTurnCoordinatorTest {
@@ -87,6 +88,13 @@ class VoiceTurnCoordinatorTest {
         coordinator.processTurn((result as ReplyOutcome.Interrupted).correction.transcript) { emit -> emit("Opening YouTube") }
         assertEquals(id, session.currentCallId())
         assertEquals(4, session.currentTranscript().size)
+    }
+
+    @Test fun revokedPublicationGatePreventsTokenAndCatchFallbackRepublish() = runBlocking {
+        val store = MemoryStore(); val session = VoiceSessionController(store)
+        val coordinator = VoiceTurnCoordinator(session)
+        runCatching { coordinator.processTurn("secret", publish = { false }) { emit -> emit("old memory"); "done" } }
+        assertTrue(session.currentTranscript().none { it.text.contains("old memory") })
     }
 
 }

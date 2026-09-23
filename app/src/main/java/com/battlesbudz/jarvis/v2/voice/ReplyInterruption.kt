@@ -6,8 +6,10 @@ import kotlinx.coroutines.selects.select
 /** Carries the correction itself across turn cleanup, so the user need not repeat it. */
 data class CapturedVoiceTurn(val transcript: String, val wav: ByteArray,
     val audioIsComplete: Boolean = true, val recognitionIssue: String? = null,
-    /** One final capture receives one ID; retries carry the same identity into admission. */
-    val utteranceId: String = java.util.UUID.randomUUID().toString())
+    /** One final capture receives one ID and wall-clock boundary; retries preserve both. */
+    val utteranceId: String = java.util.UUID.randomUUID().toString(),
+    val capturedAtMs: Long = System.currentTimeMillis(),
+    val origin: TranscriptOrigin = TranscriptOrigin.SPOKEN)
 sealed interface ReplyOutcome<out T> {
     data class Finished<T>(val value: T) : ReplyOutcome<T>
     data class Interrupted(val correction: CapturedVoiceTurn) : ReplyOutcome<Nothing>

@@ -1,74 +1,65 @@
 package com.battlesbudz.jarvis.v2.memory
 
-import java.util.UUID
-
 /**
- * The small bridge between an explicit conversation request and the reviewed
- * local ledger. It never extracts facts automatically. A packet is only made
- * available after the caller has authorized the raw current action request.
+ * Boundary between finalized user conversation input and MemoryOS. It has no access to drafts,
+ * assistant text, tool calls, or automatic model extraction; callers submit only final user input.
  */
-class ConversationMemory(private val memoryOs: MemoryOs, private val now: () -> Long = { System.currentTimeMillis() }) {
-    data class Recall(val packet: String?, val error: String? = null, val resetNativeContext: Boolean = false)
-
-    private var seededSignature: String? = null
-    private var forceNativeReset = false
-
-    fun proposeExplicit(userText: String): MemoryResult? {
-        val content = explicitContent(userText) ?: return null
-        val timestamp = now()
-        val result = memoryOs.propose(MemoryProposal(
-            content = content,
-            source = MemorySource(UUID.randomUUID().toString(), "conversation_explicit", timestamp),
-            category = MemoryCategory.OTHER,
-            confidence = 70
-        ))
-        // A write can change the ledger generation even when it is still pending.
-        seededSignature = null
-        forceNativeReset = true
-        return if (result.outcome == MemoryOutcome.CREATED) result.copy(
-            message = "Memory proposal is pending review. Approve it in Memory before Jarvis can use it.") else result
-    }
-
-    /** Reads approved records only. A failed read is explicit and never looks like no matches. */
-    fun recallApproved(query: String, modelId: String, budget: Int = 900): Recall {
-        val packetResult = memoryOs.contextPacket(query, budget)
-        if (packetResult.outcome != null) {
-            seededSignature = null
-            forceNativeReset = false
-            return Recall(null, "Approved memory is unavailable: ${packetResult.message}", resetNativeContext = true)
+class ConversationMemory(private val memoryOs: MemoryOs) {
+    fun capture(input: FinalMemoryInput): ConversationMemoryResult {
+        val ignored = finalInputError(input)
+        if (ignored != null) return ConversationMemoryResult(ConversationMemoryOutcome.IGNORED, ignored)
+        if (MemoryPolicy.containsRawRestrictedContent(input.text)) return ConversationMemoryResult(ConversationMemoryOutcome.EXCLUDED, "Restricted content is never proposed as memory.")
+        val candidate = extract(input) ?: return ConversationMemoryResult(ConversationMemoryOutcome.IGNORED, "No conservative memory candidate in this input.")
+        val source = MemorySource(
+            eventId = input.eventId,
+            eventSource = if (input.source == ConversationMemorySource.VOICE) "final_voice_input" else "final_text_input",
+            createdAtMs = input.capturedAtMs,
+            provenance = buildList {
+                add(MemoryProvenance("conversation", input.conversationId))
+                input.callId?.trim()?.takeIf { it.isNotEmpty() }?.let { add(MemoryProvenance("call", it)) }
+            },
+        )
+        val result = memoryOs.propose(MemoryProposal(candidate.content, source, candidate.category, candidate.tier, candidate.type, candidate.confidence))
+        return when (result.outcome) {
+            MemoryOutcome.CREATED, MemoryOutcome.ALREADY_RECORDED -> ConversationMemoryResult(ConversationMemoryOutcome.PROPOSED, result.message, result.memory)
+            MemoryOutcome.EXCLUDED -> ConversationMemoryResult(ConversationMemoryOutcome.EXCLUDED, result.message)
+            MemoryOutcome.CONFLICT -> ConversationMemoryResult(ConversationMemoryOutcome.CONFLICT, result.message, result.memory)
+            MemoryOutcome.STORAGE_FAILURE -> ConversationMemoryResult(ConversationMemoryOutcome.STORAGE_FAILURE, result.message)
+            else -> ConversationMemoryResult(ConversationMemoryOutcome.INVALID, result.message)
         }
-        // packet() always has a header; only a packet with selected records belongs in a prompt.
-        val packet = packetResult.packet?.takeIf { it.memories.isNotEmpty() }?.text
-        val signature = listOf(modelId, packet.orEmpty()).joinToString("\u0000")
-        val changed = forceNativeReset || (seededSignature != null && seededSignature != signature)
-        forceNativeReset = false
-        seededSignature = signature
-        return Recall(packet, resetNativeContext = changed)
     }
 
-    fun invalidate() { seededSignature = null; forceNativeReset = true }
+    /** Returned packet is historical quoted data only; it never grants instruction, state, or tool authority. */
+    fun approvedContext(rawQuery: String, maxChars: Int, limit: Int = 8): MemoryPacketResult =
+        memoryOs.contextPacket(rawQuery, maxChars, limit)
 
-    companion object {
-        data class ReferenceRouting(val suppressesReference: Boolean) {
-            fun shouldVerifyFactualDraft(): Boolean = !suppressesReference
-            fun shouldUseReferenceFallback(): Boolean = !suppressesReference
-            fun requiresReference(): Boolean = !suppressesReference
-        }
+    private data class Candidate(val content: String, val category: MemoryCategory, val tier: MemoryTier = MemoryTier.LONG_TERM, val type: MemoryType = MemoryType.SEMANTIC, val confidence: Int = 80)
 
-        /** Personal wording is eligible to answer from reviewed local history before web lookup. */
-        fun isPersonalRecallQuery(text: String): Boolean = Regex(
-            "\\b(my|mine)\\b|\\babout\\s+me\\b|\\bwhat\\s+(?:did|have|do)\\s+i\\b|\\b(?:remembered|saved)\\s+(?:about\\s+)?me\\b",
-            RegexOption.IGNORE_CASE
-        ).containsMatchIn(text)
-
-        /** Explicit Wikipedia/lookup turns keep their requested reference behavior. */
-        fun referenceRouting(approvedPacket: String?, prompt: String, explicitLookup: Boolean): ReferenceRouting =
-            ReferenceRouting(approvedPacket != null && !explicitLookup && isPersonalRecallQuery(prompt))
+    private fun finalInputError(input: FinalMemoryInput): String? {
+        if (!input.complete) return "Draft input is not eligible for memory."
+        if (input.source == ConversationMemorySource.VOICE && !input.recognitionSucceeded) return "Unrecognized voice input is not eligible for memory."
+        if (input.eventId.isBlank() || input.conversationId.isBlank() || input.text.isBlank() || input.capturedAtMs <= 0) return "Final input metadata is invalid."
+        if (input.text.length > MemoryPolicy.MAX_CONTENT_CHARS) return "Final input exceeds the memory limit."
+        return null
     }
 
-    internal fun explicitContent(userText: String): String? {
-        val match = Regex("^\\s*(?:please\\s+)?remember(?:\\s+that)?\\s+(.+?)\\s*$", RegexOption.IGNORE_CASE)
-            .matchEntire(userText) ?: return null
-        return match.groupValues[1].trim().takeIf { it.isNotBlank() }
+    private fun extract(input: FinalMemoryInput): Candidate? {
+        val text = input.text.trim().replace(Regex("\\s+"), " ")
+        if (text.endsWith("?") || text.startsWith("/") || text.startsWith("!")) return null
+        explicitRemember(text)?.let { return it }
+        val lower = text.lowercase()
+        val preference = Regex("^i (?:really )?(?:like|love|prefer|enjoy|hate|dislike) (.{2,180})[.!]?$", RegexOption.IGNORE_CASE).matchEntire(text)
+        if (preference != null) return Candidate(text.trimEnd('.', '!'), MemoryCategory.PREFERENCE)
+        if (Regex("^my favorite .{2,80} is .{1,120}[.!]?$", RegexOption.IGNORE_CASE).matches(text)) return Candidate(text.trimEnd('.', '!'), MemoryCategory.PREFERENCE)
+        if (Regex("^(?:i live in|i'm based in|i work (?:at|as)|my name is) .{2,160}[.!]?$", RegexOption.IGNORE_CASE).matches(text)) return Candidate(text.trimEnd('.', '!'), if (lower.startsWith("my name")) MemoryCategory.PERSON else MemoryCategory.FACT)
+        return null
+    }
+
+    private fun explicitRemember(text: String): Candidate? {
+        val matched = Regex("^(?:please )?remember(?: that)?\\s+(.{2,300})[.!]?$", RegexOption.IGNORE_CASE).matchEntire(text) ?: return null
+        val fact = matched.groupValues[1].trim().trimEnd('.', '!')
+        if (fact.endsWith("?") || fact.startsWith("/") || fact.startsWith("!")) return null
+        val category = if (Regex("^(?:i )?(?:like|love|prefer|enjoy|hate|dislike)\\b|^my favorite\\b", RegexOption.IGNORE_CASE).containsMatchIn(fact)) MemoryCategory.PREFERENCE else MemoryCategory.FACT
+        return Candidate(fact, category, confidence = 90)
     }
 }

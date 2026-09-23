@@ -6,6 +6,14 @@ import android.media.AudioManager
 import android.os.BatteryManager
 import android.os.SystemClock
 import android.provider.MediaStore
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -18,16 +26,26 @@ import androidx.test.uiautomator.Until
 import com.battlesbudz.jarvis.v2.MainActivity
 import com.battlesbudz.jarvis.v2.actions.*
 import com.battlesbudz.jarvis.v2.ai.ToolCall
+import com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder
+import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
+import com.battlesbudz.jarvis.v2.chat.ConversationHistory
+import com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext
+import com.battlesbudz.jarvis.v2.memory.*
+import com.battlesbudz.jarvis.v2.ui.ConversationScreen
+import com.battlesbudz.jarvis.v2.ui.MemoryScreen
 import com.battlesbudz.jarvis.v2.voice.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.*
 import org.junit.Assert.*
 import org.junit.rules.TestName
 import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
 /** Real release UI/Android actions; controlled ToolCalls verify routing without model weights. */
@@ -100,20 +118,40 @@ class ReleaseJourneyTest {
             ?: find(selector)
     }
 
-    /** Waits for the async reload after a mutation instead of racing a disabled form control. */
+    /** Requires a non-edge, non-empty visible area before a single physical tap. */
+    private fun hasSafeTapBounds(control: UiObject2): Boolean {
+        val bounds = control.visibleBounds
+        val safeInset = 24
+        return bounds.width() > 0 && bounds.height() > 0 &&
+            bounds.left >= safeInset && bounds.right <= device.displayWidth - safeInset &&
+            bounds.top >= safeInset && bounds.bottom <= device.displayHeight - safeInset
+    }
+
+    /**
+     * Waits for the async reload after a mutation, then verifies a fresh Compose node
+     * remains enabled with unchanged tap bounds for a bounded settling interval.
+     */
     private fun enabled(selector: BySelector): UiObject2 {
         val deadline = SystemClock.uptimeMillis() + 15_000
         while (SystemClock.uptimeMillis() < deadline) {
             // Scrolling and Compose recomposition can invalidate a prior accessibility node.
             val control = scrollTo(selector)
             try {
-                if (control.isEnabled) return control
+                if (control.isEnabled && hasSafeTapBounds(control)) {
+                    val before = control.visibleBounds
+                    device.waitForIdle()
+                    SystemClock.sleep(300)
+                    val fresh = device.findObject(selector)
+                    if (fresh != null && fresh.isEnabled && hasSafeTapBounds(fresh) && fresh.visibleBounds == before) {
+                        return fresh
+                    }
+                }
             } catch (_: StaleObjectException) {
                 // No action has been dispatched; retry with a fresh node within the same bound.
             }
             device.waitForIdle()
         }
-        throw AssertionError("Control did not become enabled: $selector")
+        throw AssertionError("Control did not become stably enabled: $selector")
     }
 
     private fun openBrowser() { find(By.res("model_browse")).click(); find(By.res("model_search")) }
@@ -450,85 +488,6 @@ class ReleaseJourneyTest {
         assertEquals("open_app", outcome.receipts.single().request.name)
     }
 
-    @Test fun test24_memoryManagerReviewsCorrectsSearchesAndErases() {
-        // Use only the release UI: memory implementation classes are intentionally shrinkable.
-        clickEnabled(By.res("memory_open"))
-        assertNotNull(find(By.text("Memory")))
-
-        enterText(By.res("memory_new_content"), "Bank account number 1234 5678 9012 3456")
-        clickEnabled(By.res("memory_propose"))
-        assertNotNull(find(By.res("memory_error")))
-        enabled(By.res("memory_new_content"))
-        enterText(By.res("memory_new_content"), "Synthetic preference: teal notebooks.")
-        clickEnabled(By.res("memory_propose"))
-        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
-        // Saved mutations must settle and restore input; this catches a stuck busy lease.
-        enabled(By.res("memory_new_content"))
-        clickEnabled(By.res("memory_approve"))
-        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-
-        searchMemory("teal", By.text("Synthetic preference: teal notebooks."))
-        clickEnabled(By.res("memory_correct"))
-        assertNotNull(scrollTo(By.text("This change will replace: Synthetic preference: teal notebooks.")))
-        enabled(By.res("memory_new_content"))
-        enterText(By.res("memory_new_content"), "Synthetic preference: indigo notebooks.")
-        clickEnabled(By.res("memory_propose"))
-        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-        clickEnabled(By.res("memory_approve"))
-        // The old approved row must become superseded before we treat the replacement as searchable.
-        assertNotNull(scrollTo(By.text("Superseded · Added from manual entry")))
-        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-        searchMemory("teal", By.text("No matching memories."))
-        assertFalse(device.hasObject(By.text("Synthetic preference: teal notebooks.")))
-        searchMemory("indigo", By.text("Synthetic preference: indigo notebooks."))
-
-        enterText(By.res("memory_new_content"), "Synthetic item to reject.")
-        clickEnabled(By.res("memory_propose"))
-        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-        clickEnabled(By.res("memory_reject"))
-        assertNotNull(scrollTo(By.text("Rejected · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-
-        // Cancellation must leave the saved records visible before the confirmed erase.
-        clickEnabled(By.res("memory_erase_all"))
-        assertNotNull(find(By.text("Erase all memories?")))
-        find(By.text("Cancel")).click()
-        device.waitForIdle()
-        enabled(By.res("memory_new_content"))
-        assertNotNull(scrollTo(By.text("Synthetic preference: indigo notebooks.")))
-        clickEnabled(By.res("memory_erase_all"))
-        assertNotNull(find(By.text("Erase all memories?")))
-        find(By.text("Erase all")).click()
-        device.waitForIdle()
-        assertNotNull(scrollTo(By.text("No memories have been added yet.")))
-        enabled(By.res("memory_new_content"))
-
-        enterText(By.res("memory_new_content"), "Synthetic memory after erase.")
-        clickEnabled(By.res("memory_propose"))
-        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-        clickEnabled(By.res("memory_approve"))
-        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-        assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
-        clickEnabled(By.res("memory_back"))
-        assertNotNull(find(By.text("Jarvis setup")))
-        activity.recreate()
-        clickEnabled(By.res("memory_open"))
-        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
-        assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
-        enabled(By.res("memory_new_content"))
-        // The control assertion scrolls upward; return to the approved record for useful retained evidence.
-        assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
-        captureEvidence("memory_approved_after_recreation")
-        clickEnabled(By.res("memory_back"))
-    }
-
-
 
     @Test fun test20_followupQueuesWhileAcceptedAndroidActionRuns() = runBlocking {
         val audio = context.getSystemService(AudioManager::class.java)
@@ -780,8 +739,250 @@ class ReleaseJourneyTest {
             audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
         }
     }
+    @Test fun test24_memoryManagerReviewsCorrectsSearchesAndErases() {
+        // Use only the release UI: memory implementation classes are intentionally shrinkable.
+        clickEnabled(By.res("memory_open"))
+        assertNotNull(find(By.text("Memory")))
 
-    @Test fun test25_voiceNavigationRetainsCallIdUntilExplicitEnd() {
+        enterText(By.res("memory_new_content"), "Bank account number 1234 5678 9012 3456")
+        clickEnabled(By.res("memory_propose"))
+        assertNotNull(find(By.res("memory_error")))
+        enabled(By.res("memory_new_content"))
+        enterText(By.res("memory_new_content"), "Synthetic preference: teal notebooks.")
+        clickEnabled(By.res("memory_propose"))
+        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
+        // Saved mutations must settle and restore input; this catches a stuck busy lease.
+        enabled(By.res("memory_new_content"))
+        clickEnabled(By.res("memory_approve"))
+        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
+        enabled(By.res("memory_new_content"))
+
+        searchMemory("teal", By.text("Synthetic preference: teal notebooks."))
+        clickEnabled(By.res("memory_correct"))
+        assertNotNull(scrollTo(By.text("This change will replace: Synthetic preference: teal notebooks.")))
+        enabled(By.res("memory_new_content"))
+        enterText(By.res("memory_new_content"), "Synthetic preference: indigo notebooks.")
+        clickEnabled(By.res("memory_propose"))
+        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
+        enabled(By.res("memory_new_content"))
+        clickEnabled(By.res("memory_approve"))
+        // The old approved row must become superseded before we treat the replacement as searchable.
+        assertNotNull(scrollTo(By.text("Superseded · Added from manual entry")))
+        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
+        enabled(By.res("memory_new_content"))
+        searchMemory("teal", By.text("No matching memories."))
+        assertFalse(device.hasObject(By.text("Synthetic preference: teal notebooks.")))
+        searchMemory("indigo", By.text("Synthetic preference: indigo notebooks."))
+
+        enterText(By.res("memory_new_content"), "Synthetic item to reject.")
+        clickEnabled(By.res("memory_propose"))
+        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
+        enabled(By.res("memory_new_content"))
+        clickEnabled(By.res("memory_reject"))
+        assertNotNull(scrollTo(By.text("Rejected · Added from manual entry")))
+        enabled(By.res("memory_new_content"))
+
+        // Cancellation must leave the saved records visible before the confirmed erase.
+        clickEnabled(By.res("memory_erase_all"))
+        assertNotNull(find(By.text("Erase all memories?")))
+        find(By.text("Cancel")).click()
+        device.waitForIdle()
+        enabled(By.res("memory_new_content"))
+        assertNotNull(scrollTo(By.text("Synthetic preference: indigo notebooks.")))
+        clickEnabled(By.res("memory_erase_all"))
+        assertNotNull(find(By.text("Erase all memories?")))
+        find(By.text("Erase all")).click()
+        device.waitForIdle()
+        assertNotNull(scrollTo(By.text("No memories have been added yet.")))
+        enabled(By.res("memory_new_content"))
+
+        enterText(By.res("memory_new_content"), "Synthetic memory after erase.")
+        clickEnabled(By.res("memory_propose"))
+        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
+        enabled(By.res("memory_new_content"))
+        clickEnabled(By.res("memory_approve"))
+        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
+        enabled(By.res("memory_new_content"))
+        assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
+        clickEnabled(By.res("memory_back"))
+        assertNotNull(find(By.text("Jarvis setup")))
+        activity.recreate()
+        clickEnabled(By.res("memory_open"))
+        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
+        assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
+        enabled(By.res("memory_new_content"))
+        // The control assertion scrolls upward; return to the approved record for useful retained evidence.
+        assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
+        captureEvidence("memory_approved_after_recreation")
+        clickEnabled(By.res("memory_back"))
+    }
+
+    @Test fun test25_finalizedTextAndVoiceMemoryNeedsApprovalBeforePromptUse() {
+        // Controlled finalized-input fixtures exercise the production local bridge and prompt builder,
+        // not a microphone or model-generated response.
+        val file = File(context.cacheDir, "release-finalized-memory.json").apply { delete() }
+        val now = System.currentTimeMillis()
+        try {
+            val os = MemoryOs(file) { now }
+            val bridge = ConversationMemory(os)
+            val text = bridge.capture(FinalMemoryInput(
+                "release-text-memory", "thread-release", null, ConversationMemorySource.TEXT,
+                "Remember I prefer bergamot tea.", now
+            ))
+            val voice = bridge.capture(FinalMemoryInput(
+                "release-voice-memory", "thread-release", "call-release", ConversationMemorySource.VOICE,
+                "My favorite color is cobalt.", now
+            ))
+            assertEquals(ConversationMemoryOutcome.PROPOSED, text.outcome)
+            assertEquals(ConversationMemoryOutcome.PROPOSED, voice.outcome)
+            val pending = checkNotNull(os.read().snapshot).memories
+            assertEquals(setOf(MemoryReviewStatus.PENDING), pending.map { it.reviewStatus }.toSet())
+            assertTrue(bridge.approvedContext("tea", 600).packet!!.memories.isEmpty())
+
+            pending.forEach { record -> assertEquals(MemoryOutcome.APPROVED, os.approve(record.id, record.revision).outcome) }
+            val packet = checkNotNull(bridge.approvedContext("tea cobalt", 900).packet).text
+            assertTrue(packet.contains("I prefer bergamot tea"))
+            assertTrue(packet.contains("My favorite color is cobalt"))
+            val builder = ConversationPromptBuilder(ShortTermConversationContext())
+            assertTrue(builder.buildGemmaPrompt("What tea and color do I prefer?", null, emptyList(), true,
+                memoryContext = packet).contains(packet))
+            assertTrue(builder.buildGemmaPrompt("What tea and color do I prefer?", null, emptyList(), true,
+                voice = true, memoryContext = packet).contains(packet))
+        } finally { file.delete() }
+    }
+
+    @Test fun test26_memoryCorrectionAndEraseRefreshApprovedPacket() {
+        // This is a local persistence/refresh contract; it does not claim a generated reply changed.
+        val file = File(context.cacheDir, "release-memory-refresh.json").apply { delete() }
+        val now = System.currentTimeMillis()
+        try {
+            val os = MemoryOs(file) { now }
+            val bridge = ConversationMemory(os)
+            val created = checkNotNull(bridge.capture(FinalMemoryInput(
+                "release-original-memory", "thread-release", null, ConversationMemorySource.TEXT,
+                "Remember I prefer blue mugs.", now
+            )).memory)
+            val approved = checkNotNull(os.approve(created.id, created.revision).memory)
+            val before = bridge.approvedContext("mugs", 600)
+            assertTrue(checkNotNull(before.packet).text.contains("blue mugs"))
+
+            val correction = checkNotNull(os.propose(MemoryProposal(
+                "I prefer green mugs",
+                MemorySource("release-correction-memory", "final_text_input", now),
+                correctsMemoryId = approved.id,
+                expectedTargetRevision = approved.revision,
+            )).memory)
+            val replacement = checkNotNull(os.approve(correction.id, correction.revision).memory)
+            val afterCorrection = bridge.approvedContext("mugs", 600)
+            assertTrue(checkNotNull(afterCorrection.packet).text.contains("green mugs"))
+            assertFalse(afterCorrection.packet.text.contains("blue mugs"))
+            assertNotEquals(before.stateToken, afterCorrection.stateToken)
+
+            assertEquals(MemoryOutcome.DELETED, os.delete(replacement.id, replacement.revision).outcome)
+            val afterErase = bridge.approvedContext("mugs", 600)
+            assertTrue(checkNotNull(afterErase.packet).memories.isEmpty())
+            assertNotEquals(afterCorrection.stateToken, afterErase.stateToken)
+        } finally { file.delete() }
+    }
+
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @Test fun test27_controlledConversationSurfaceKeepsCallUntilExplicitEnd() {
+        // Controlled StateFlows exercise the production Compose navigation surface. They do not
+        // start audio capture, load weights, or represent a microphone/model result.
+        val prefs = context.getSharedPreferences("release-conversation-surface", android.content.Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val history = ConversationHistory(prefs)
+        val busy = MutableStateFlow(false)
+        val callState = MutableStateFlow(VoiceSessionState.ACTIVELY_LISTENING)
+        val ends = AtomicInteger(0)
+        val sends = AtomicInteger(0)
+        val memoryBacks = AtomicInteger(0)
+        val memoryFile = File(context.cacheDir, "release-memory-overlay.json").apply { delete() }
+        val queueFull = AtomicBoolean(true)
+        try {
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme {
+                    Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                    ConversationScreen(
+                        history = history,
+                        busy = busy,
+                        callState = callState,
+                        onSend = { _, attachment ->
+                            sends.incrementAndGet()
+                            if (attachment != null) "Attachments are unavailable while a Voice Call is active."
+                            else if (queueFull.get()) "Voice Call input queue is full. Wait for the current turn." else null
+                        },
+                        selectedModel = LocalModelSpec("release-fixture", "release-fixture.bin", recommendedGpu = false),
+                        onSelectConversation = { null },
+                        onEndVoice = { done -> ends.incrementAndGet(); done("Voice Call ended.") },
+                        onOpenVoiceCalls = {},
+                        resumedVoice = false,
+                        voiceContent = { visible, _, _, _ -> if (visible) androidx.compose.material3.Text("Controlled voice surface") },
+                    )
+                    }
+                }
+            } }
+            VoiceSessionUi.status.value = "Voice Call is listening — controlled fixture with a deliberately long status that must not hide End call on a narrow screen."
+            VoiceSessionUi.armed.value = true
+            assertNotNull(find(By.text("Controlled voice surface")))
+            device.pressBack()
+            device.waitForIdle()
+            assertEquals("Back must not end the active call", 0, ends.get())
+            assertNotNull(find(By.res("voice_call_status")))
+            val endBounds = find(By.res("voice_call_end")).visibleBounds
+            assertTrue("End call must remain visible beside a long status", endBounds.width() > 0 && endBounds.right <= device.displayWidth)
+            find(By.res("voice_tab")).click()
+            assertNotNull(find(By.text("Controlled voice surface")))
+            find(By.res("chat_tab")).click()
+            assertEquals("Changing tabs must not end the active call", 0, ends.get())
+            assertNotNull(find(By.res("voice_call_status")))
+            assertNotNull(find(By.text("Attachments are unavailable during a voice call. End the call to add one.")))
+            enterText(By.res("chat_composer"), "Synthetic typed call follow-up")
+            clickEnabled(By.res("chat_send"))
+            assertEquals(1, sends.get())
+            assertNotNull(find(By.text("Voice Call input queue is full. Wait for the current turn.")))
+            assertEquals("Synthetic typed call follow-up", find(By.res("chat_composer")).text)
+            queueFull.set(false)
+            clickEnabled(By.res("chat_send"))
+            assertEquals(2, sends.get())
+            assertFalse("Successful armed admission must clear the draft", find(By.res("chat_send")).isEnabled)
+            find(By.res("voice_call_end")).click()
+            assertEquals(1, ends.get())
+            VoiceSessionUi.armed.value = false
+
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme {
+                    Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                        Box(Modifier.fillMaxSize()) {
+                            androidx.compose.material3.Text("Underlying call surface")
+                            MemoryScreen(
+                                memoryOs = MemoryOs(memoryFile),
+                                onBack = { memoryBacks.incrementAndGet() },
+                                callActive = true,
+                                callStatus = "A deliberately long controlled call status that must keep the End call action visible on a narrow screen.",
+                                onEndCall = { done -> ends.incrementAndGet(); done("Voice Call ended.") },
+                            )
+                        }
+                    }
+                }
+            } }
+            assertNotNull(find(By.text("Memory")))
+            enabled(By.res("memory_back"))
+            val memoryEndBounds = find(By.res("voice_call_end")).visibleBounds
+            assertTrue("Memory must keep End call visible beside a long status", memoryEndBounds.width() > 0 && memoryEndBounds.right <= device.displayWidth)
+            device.pressBack()
+            device.waitForIdle()
+            assertEquals("Memory overlay must consume system Back before its underlying call surface", 1, memoryBacks.get())
+        } finally {
+            VoiceSessionUi.armed.value = false
+            VoiceSessionUi.status.value = ""
+            memoryFile.delete()
+        }
+    }
+
+
+
+    @Test fun test28_voiceNavigationRetainsCallIdUntilExplicitEnd() {
         val preferences = context.getSharedPreferences("voice-navigation-contract", android.content.Context.MODE_PRIVATE)
         preferences.edit().clear().commit()
         val controller = VoiceSessionController(SharedPreferencesVoiceCallStore(preferences))

@@ -49,6 +49,7 @@ class SharedPreferencesVoiceCallStore(
                                 entry.replyId?.let { put("replyId", it) }
                                 entry.delivery?.let { put("delivery", it.json()) }
                                 put("generationComplete", entry.generationComplete)
+                                put("origin", entry.origin.name)
                                 if (entry.actions.isNotEmpty()) put("actions", JSONArray().also { actions ->
                                     entry.actions.forEach { action -> actions.put(JSONObject().put("name", action.name)
                                         .put("message", action.message).put("succeeded", action.succeeded)) }
@@ -88,7 +89,9 @@ class SharedPreferencesVoiceCallStore(
                                     generationComplete = entry.optBoolean("generationComplete", entry.optBoolean("complete", true)),
                                     actions = entry.optJSONArray("actions")?.let { actions -> (0 until actions.length()).mapNotNull { i ->
                                         actions.optJSONObject(i)?.let { VoiceActionOutcome(it.optString("name"), it.optString("message"), it.optBoolean("succeeded")) }
-                                    } }.orEmpty()
+                                    } }.orEmpty(),
+                                    origin = runCatching { TranscriptOrigin.valueOf(entry.optString("origin", TranscriptOrigin.SPOKEN.name)) }
+                                        .getOrDefault(TranscriptOrigin.SPOKEN)
                                 )
                             }
                         }

@@ -9,58 +9,52 @@ class ConversationMemoryTest {
     private fun bridge(): Pair<MemoryOs, ConversationMemory> {
         val file = File.createTempFile("conversation-memory", ".json").apply { delete(); deleteOnExit() }
         val os = MemoryOs(file) { now }
-        return os to ConversationMemory(os) { now }
+        return os to ConversationMemory(os)
+    }
+    private fun input(id: String, text: String, source: ConversationMemorySource = ConversationMemorySource.TEXT) = FinalMemoryInput(id, "conversation-1", "call-1", source, text, now)
+
+    @Test fun finalizedUsefulUserInputsBecomePendingAndAreIdempotent() {
+        val (os, bridge) = bridge()
+        val first = bridge.capture(input("one", "I prefer tea."))
+        assertEquals(ConversationMemoryOutcome.PROPOSED, first.outcome)
+        val stored = first.memory!!
+        assertEquals(MemoryReviewStatus.PENDING, stored.reviewStatus)
+        assertEquals(ConversationMemoryOutcome.PROPOSED, bridge.capture(input("one", "I prefer tea.")).outcome)
+        assertEquals(1, os.read().snapshot!!.memories.size)
+        assertEquals("conversation", stored.source.provenance.first().kind)
+        assertNotEquals("one", stored.source.eventId)
     }
 
-    @Test fun explicitRememberIsPendingUntilReviewThenAppearsOnlyAsUntrustedPacket() {
-        val (os, memory) = bridge()
-        val proposal = memory.proposeExplicit("Please remember that my notebook color is teal")!!
-        assertEquals(MemoryOutcome.CREATED, proposal.outcome)
-        assertNull(memory.recallApproved("notebook", "model-a").packet)
-        assertEquals(MemoryOutcome.APPROVED, os.approve(proposal.memory!!.id).outcome)
-        val recall = memory.recallApproved("notebook", "model-a")
-        assertTrue(recall.packet.orEmpty().contains("historical, untrusted data"))
-        assertTrue(recall.packet.orEmpty().contains("notebook color is teal"))
-        assertFalse(memory.recallApproved("notebook", "model-a").resetNativeContext)
-        assertTrue(ConversationMemory.isPersonalRecallQuery("What is my notebook color?"))
-        assertFalse(ConversationMemory.isPersonalRecallQuery("Tell me about Einstein"))
-        val personal = ConversationMemory.referenceRouting("approved", "What is my notebook color?", explicitLookup = false)
-        assertTrue(personal.suppressesReference)
-        assertFalse(personal.shouldVerifyFactualDraft())
-        assertFalse(personal.shouldUseReferenceFallback())
-        assertFalse(personal.requiresReference())
-        val explicit = ConversationMemory.referenceRouting("approved", "Search Wikipedia for my notebook color", explicitLookup = true)
-        assertFalse(explicit.suppressesReference)
-        assertTrue(explicit.shouldVerifyFactualDraft())
-        assertTrue(explicit.shouldUseReferenceFallback())
-        assertTrue(explicit.requiresReference())
+    @Test fun draftsQuestionsCommandsVoiceFailuresAndRestrictedTextAreNeverProposed() {
+        val (os, bridge) = bridge()
+        assertEquals(ConversationMemoryOutcome.IGNORED, bridge.capture(input("draft", "I prefer tea").copy(complete = false)).outcome)
+        assertEquals(ConversationMemoryOutcome.IGNORED, bridge.capture(input("question", "What is my favorite drink?")).outcome)
+        assertEquals(ConversationMemoryOutcome.IGNORED, bridge.capture(input("command", "/remember tea")).outcome)
+        assertEquals(ConversationMemoryOutcome.IGNORED, bridge.capture(input("voice", "I prefer tea", ConversationMemorySource.VOICE).copy(recognitionSucceeded = false)).outcome)
+        assertEquals(ConversationMemoryOutcome.EXCLUDED, bridge.capture(input("secret", "Remember my password is hunter22")).outcome)
+        assertTrue(os.read().snapshot!!.memories.isEmpty())
     }
 
-    @Test fun correctionDeletionModelChangeAndReadFailureInvalidateSeededContext() {
-        val (os, memory) = bridge()
-        val original = os.propose(MemoryProposal("Favorite editor is Vim", MemorySource("one", "manual", now))).memory!!
-        os.approve(original.id)
-        assertFalse(memory.recallApproved("editor", "model-a").resetNativeContext)
-        val correction = os.propose(MemoryProposal("Favorite editor is Emacs", MemorySource("two", "manual", now), correctsMemoryId = original.id, expectedTargetRevision = 2)).memory!!
-        os.approve(correction.id)
-        assertTrue(memory.recallApproved("editor", "model-a").resetNativeContext)
-        assertTrue(memory.recallApproved("editor", "model-b").resetNativeContext)
-        os.delete(correction.id)
-        assertTrue(memory.recallApproved("editor", "model-b").resetNativeContext)
-        val broken = File.createTempFile("conversation-memory-broken", ".json").apply { writeText("{broken") }
-        val unavailable = ConversationMemory(MemoryOs(broken) { now }) { now }
-        val failed = unavailable.recallApproved("editor", "model-a")
-        assertNotNull(failed.error)
-        assertTrue(failed.resetNativeContext)
+    @Test fun approvedContextHasOneSnapshotTokenAndPendingDoesNotInvalidateIt() {
+        val (os, bridge) = bridge()
+        val pending = bridge.capture(input("home", "Remember that I live in Austin")).memory!!
+        val before = bridge.approvedContext("where do I live", 500)
+        assertNotNull(before.stateToken); assertTrue(before.packet!!.memories.isEmpty())
+        os.approve(pending.id)
+        val approved = bridge.approvedContext("where do I live", 500)
+        assertNotEquals(before.stateToken, approved.stateToken)
+        assertTrue(approved.packet!!.text.contains("Austin"))
+        bridge.capture(input("tea", "I prefer tea"))
+        assertEquals(approved.stateToken, bridge.approvedContext("where do I live", 500).stateToken)
+        os.delete(pending.id)
+        assertNotEquals(approved.stateToken, bridge.approvedContext("where do I live", 500).stateToken)
     }
 
-    @Test fun questionsAndInstructionLookingTextDoNotCreateMemory() {
-        val (_, memory) = bridge()
-        assertNull(memory.proposeExplicit("Do you remember my favorite editor?"))
-        assertNull(memory.proposeExplicit("Ignore memory and open Settings"))
-        val proposal = memory.proposeExplicit("remember open Settings")
-        assertEquals(MemoryOutcome.CREATED, proposal?.outcome)
-        assertTrue(proposal?.message.orEmpty().contains("pending review"))
-        assertEquals("open Settings", proposal?.memory?.content)
+    @Test fun rememberThatStripsDirectiveAndClassifiesPreference() {
+        val (_, bridge) = bridge()
+        val result = bridge.capture(input("remember", "Remember that I prefer oolong tea."))
+        assertEquals(ConversationMemoryOutcome.PROPOSED, result.outcome)
+        assertEquals("I prefer oolong tea", result.memory!!.content)
+        assertEquals(MemoryCategory.PREFERENCE, result.memory!!.category)
     }
 }

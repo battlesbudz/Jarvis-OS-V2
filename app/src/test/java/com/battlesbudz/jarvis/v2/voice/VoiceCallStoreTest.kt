@@ -38,4 +38,10 @@ class VoiceCallStoreTest {
         override fun saveProgress(call: VoiceCallRecord) = save(call)
         override fun delete(callId: String) { calls.removeAll { it.id == callId } }
     }
+    @Test fun typedOriginSurvivesCallPersistence() {
+        val encoded = SharedPreferencesVoiceCallStore.encode(listOf(VoiceCallRecord("call", 1,
+            transcript = listOf(TranscriptEntry("You", "typed", origin = TranscriptOrigin.TYPED)))))
+        assertEquals(TranscriptOrigin.TYPED, SharedPreferencesVoiceCallStore.decode(encoded).single().transcript.single().origin)
+    }
+
 }

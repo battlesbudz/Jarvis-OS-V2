@@ -55,6 +55,49 @@
 -keep class com.battlesbudz.jarvis.v2.chat.ConversationThread { *; }
 -keep class com.battlesbudz.jarvis.v2.ChatEntry { *; }
 
+# Release instrumentation exercises the local finalized-input to approved-packet
+# boundary and the production prompt builder without model weights.
+-keep class com.battlesbudz.jarvis.v2.memory.ConversationMemory { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.FinalMemoryInput { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.ConversationMemoryResult { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.ConversationMemoryOutcome { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.ConversationMemorySource { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryOs { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryProposal { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemorySource { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryRecord { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryResult { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryPacketResult { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryContextPacket { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryReviewStatus { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryOutcome { *; }
+-keep class com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder { *; }
+-keep class com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext { *; }
+
+# A controlled Android-test fixture renders the actual conversation surface.
+-keep class com.battlesbudz.jarvis.v2.ui.ConversationScreenKt { *; }
+-keep class com.battlesbudz.jarvis.v2.ui.MemoryScreenKt { *; }
+-keep class com.battlesbudz.jarvis.v2.ai.LocalModelSpec { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceSessionUi { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceSessionState { *; }
+
+# The controlled Compose fixture in release instrumentation directly calls these
+# shared top-level composables after replacing the activity content.
+-keep class androidx.activity.compose.ComponentActivityKt { *; }
+-keep class androidx.compose.ui.Modifier { *; }
+-keep class androidx.compose.ui.Modifier$Companion { *; }
+-keep class androidx.compose.runtime.Composer { *; }
+-keep class androidx.compose.runtime.ComposerKt { *; }
+-keep class androidx.compose.runtime.ScopeUpdateScope { *; }
+-keep class androidx.compose.runtime.internal.ComposableLambdaKt { *; }
+-keep class androidx.compose.material3.MaterialThemeKt { *; }
+-keep class androidx.compose.material3.SurfaceKt { *; }
+-keep class androidx.compose.material3.TextKt { *; }
+-keep class androidx.compose.foundation.layout.SizeKt { *; }
+-keep class androidx.compose.foundation.layout.BoxKt { *; }
+-keep class androidx.compose.ui.semantics.SemanticsModifierKt { *; }
+-keep class androidx.compose.ui.semantics.SemanticsProperties_androidKt { *; }
+
 # Natural route release journeys invoke the authoritative routing contract.
 -keep class com.battlesbudz.jarvis.v2.ai.TurnOrchestrator { *; }
 -keep class com.battlesbudz.jarvis.v2.ai.TurnPlan { *; }
@@ -83,6 +126,25 @@
 -keep class com.battlesbudz.jarvis.v2.voice.VoiceActionOutcome { *; }
 -keep class com.battlesbudz.jarvis.v2.voice.VoiceTaskStatus { *; }
 -keep class com.battlesbudz.jarvis.v2.voice.VoiceTaskState { *; }
+# The separately shrunk AndroidJUnitRunner DEX reads the atomic store snapshot
+# and Compose companion through the target APK's class loader. These are narrow
+# shared ABI owners observed in the release test DEX, not broad Compose keeps.
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryStore$Read { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemorySnapshot { *; }
+-keep class androidx.compose.runtime.Composer$Companion { *; }
+# The release-test inline Box composition also links these companion getters
+# from the independently shrunk instrumentation DEX.
+-keep class androidx.compose.ui.Alignment$Companion { *; }
+-keep class androidx.compose.ui.node.ComposeUiNode$Companion { *; }
+# Keep the exact interface field through which the test DEX reaches Alignment's
+# companion; the companion getter keep above does not retain this static field.
+-keepclassmembers interface androidx.compose.ui.Alignment {
+    public static androidx.compose.ui.Alignment$Companion Companion;
+}
+# Inline Compose code in the separately shrunk release-test DEX invokes these
+# runtime helper owners through the target APK's class loader.
+-keep class androidx.compose.runtime.ComposablesKt { *; }
+-keep class androidx.compose.runtime.Updater { *; }
 
-# Release instrumentation crosses this tiny policy API from its separate test DEX.
+# Preserve the destination branch navigation policy shared with release instrumentation.
 -keep class com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicy** { *; }

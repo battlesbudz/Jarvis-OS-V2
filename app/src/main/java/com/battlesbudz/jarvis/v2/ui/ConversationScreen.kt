@@ -1,5 +1,7 @@
 package com.battlesbudz.jarvis.v2.ui
 
+import com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicy
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,7 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import com.battlesbudz.jarvis.v2.chat.*
@@ -39,6 +43,7 @@ internal fun ConversationScreen(
     val thread by history.current.collectAsState()
     val sending by busy.collectAsState()
     val armed by VoiceSessionUi.armed.collectAsState()
+    val voiceStatus by VoiceSessionUi.status.collectAsState()
     val voiceState by callState.collectAsState()
     var hadCall by remember { mutableStateOf(false) }
     var voiceVisible by rememberSaveable { mutableStateOf(false) }
@@ -60,10 +65,7 @@ internal fun ConversationScreen(
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     fun returnToChat() {
-        // Switching tabs leaves the foreground call and its call ID running.
-        // End Call and a recognized stop request are the only termination paths.
-        com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicy.dispatch(
-            com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicy.Transition.SHOW_CHAT) { onEndVoice { error = it } }
+        VoiceNavigationPolicy.dispatch(VoiceNavigationPolicy.Transition.SHOW_CHAT) { onEndVoice {} }
         voiceVisible = false
     }
     BackHandler(enabled = voiceVisible && !settings && !showHistory) { returnToChat() }
@@ -97,21 +99,33 @@ internal fun ConversationScreen(
             TextButton(enabled = !preparingAttachment, onClick = { settings = true }) { Text("Settings") }
         }
         if (armed) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween,
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Text("Voice call active — Chat is read-only while listening.", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    if (voiceStatus.isBlank()) "Voice call active" else "Voice call active · $voiceStatus",
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(end = 8.dp).testTag("voice_call_status")
+                )
                 TextButton(onClick = {
-                    com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicy.dispatch(
-                        com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicy.Transition.EXPLICIT_END) {
-                        onEndVoice { error = it }
+                    VoiceNavigationPolicy.dispatch(VoiceNavigationPolicy.Transition.EXPLICIT_END) {
+                        onEndVoice { result -> if (result.isNotBlank()) error = result }
                     }
-                }) { Text("End call") }
+                    voiceVisible = false
+                }, modifier = Modifier.testTag("voice_call_end")) { Text("End call") }
             }
         }
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             SegmentedButton(selected = !voiceVisible, onClick = { returnToChat() },
+                modifier = Modifier.testTag("chat_tab"),
                 shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)) { Text("Chat") }
-            SegmentedButton(selected = voiceVisible, enabled = !sending && !preparingAttachment, onClick = { voiceVisible = true },
+            SegmentedButton(selected = voiceVisible, enabled = !sending && !preparingAttachment, onClick = {
+                VoiceNavigationPolicy.dispatch(VoiceNavigationPolicy.Transition.SHOW_VOICE) { onEndVoice {} }
+                voiceVisible = true
+            },
+                modifier = Modifier.testTag("voice_tab"),
                 shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)) { Text("Voice call") }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -158,19 +172,23 @@ internal fun ConversationScreen(
                             modifier = Modifier.padding(horizontal = 16.dp))
                 }
                 if (preparingAttachment) Text("Preparing attachment…", modifier = Modifier.padding(horizontal = 16.dp))
-                ChatAttachmentPicker(selectedModel, enabled = !sending && !armed && !voiceVisible && !preparingAttachment,
+                if (armed) Text("Attachments are unavailable during a voice call. End the call to add one.",
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp))
+                else ChatAttachmentPicker(selectedModel, enabled = !sending && !voiceVisible && !preparingAttachment,
                     onBusy = { preparingAttachment = it }, onError = { error = it }, onPrepared = { attached ->
                         pendingAttachment?.let { ChatMediaStore.discard(context, it) }
                         pendingKind = attached.kind; pendingUri = attached.uri; error = null
                     })
                 Row(Modifier.fillMaxWidth().imePadding().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = draft, onValueChange = { draft = it }, placeholder = { Text("Message Jarvis") },
-                        modifier = Modifier.weight(1f), maxLines = 5, enabled = !armed && !voiceVisible)
-                    Button(enabled = (draft.isNotBlank() || pendingAttachment != null) && !sending && !armed && !voiceVisible &&
-                        !preparingAttachment && (pendingAttachment == null || AttachmentPolicy.accepts(selectedModel, pendingAttachment.kind)), onClick = {
-                        error = onSend(draft, pendingAttachment)
+                        modifier = Modifier.weight(1f).testTag("chat_composer"), maxLines = 5, enabled = !voiceVisible)
+                    val canSend = if (armed) draft.isNotBlank() && pendingAttachment == null
+                    else (draft.isNotBlank() || pendingAttachment != null) &&
+                        (pendingAttachment == null || AttachmentPolicy.accepts(selectedModel, pendingAttachment.kind))
+                    Button(enabled = canSend && !sending && !voiceVisible && !preparingAttachment, onClick = {
+                        error = onSend(draft, if (armed) null else pendingAttachment)
                         if (error == null) { draft = ""; pendingUri = null }
-                    }) { Text(if (sending) "Thinking…" else "Send") }
+                    }, modifier = Modifier.testTag("chat_send")) { Text(if (sending) "Thinking…" else "Send") }
                 }
             }
             // Keep the voice controller and shared Settings alive in both modes.

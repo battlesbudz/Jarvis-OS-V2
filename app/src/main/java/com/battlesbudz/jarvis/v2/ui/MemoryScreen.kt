@@ -1,6 +1,10 @@
 package com.battlesbudz.jarvis.v2.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +30,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.battlesbudz.jarvis.v2.memory.MemoryOs
 import com.battlesbudz.jarvis.v2.memory.MemoryOutcome
@@ -39,9 +44,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
-/** A local memory manager. It never automatically extracts conversation content. */
+/** A local review screen for proposals from finalized conversation messages. */
 @Composable
-internal fun MemoryScreen(memoryOs: MemoryOs, onBack: () -> Unit) {
+internal fun MemoryScreen(
+    memoryOs: MemoryOs,
+    onBack: () -> Unit,
+    callActive: Boolean = false,
+    callStatus: String = "",
+    onEndCall: (((String) -> Unit) -> Unit)? = null,
+) {
     val scope = rememberCoroutineScope()
     var snapshot by remember { mutableStateOf<MemorySnapshot?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -101,15 +112,33 @@ internal fun MemoryScreen(memoryOs: MemoryOs, onBack: () -> Unit) {
         }
     }
 
-    Column(
-        Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
+    BackHandler { if (!busy) onBack() }
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Box(Modifier.fillMaxSize()) {
+            // This is below the scrollable content, so blank overlay areas cannot activate the retained chat.
+            Box(
+                Modifier.fillMaxSize().clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {}
+                )
+            )
+            Column(
+                Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Memory", style = MaterialTheme.typography.headlineMedium)
             TextButton(onClick = onBack, enabled = !busy, modifier = Modifier.testTag("memory_back")) { Text("Back") }
         }
-        Text("Add and review memories saved on this phone. Jarvis never automatically saves conversations: an explicit remember request or this form creates a pending proposal. Only approved memories may be used as historical context in chat or voice.",
+        if (callActive) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(if (callStatus.isBlank()) "Voice call active" else "Voice call active · $callStatus",
+                style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(end = 8.dp).testTag("voice_call_status"))
+            TextButton(onClick = { onEndCall?.invoke { result -> notice = result } },
+                modifier = Modifier.testTag("voice_call_end")) { Text("End call") }
+        }
+        Text("Review proposed memories from finalized conversations. Approved memories can help future text and voice replies. Memories stay on this phone.",
             style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(
             value = draft,
@@ -207,9 +236,11 @@ internal fun MemoryScreen(memoryOs: MemoryOs, onBack: () -> Unit) {
                 )
             }
         }
-        if (snapshot?.memories?.isNotEmpty() == true) {
-            TextButton(onClick = { confirmDeleteAll = true }, enabled = !busy,
-                modifier = Modifier.testTag("memory_erase_all")) { Text("Erase all memories") }
+                if (snapshot?.memories?.isNotEmpty() == true) {
+                    TextButton(onClick = { confirmDeleteAll = true }, enabled = !busy,
+                        modifier = Modifier.testTag("memory_erase_all")) { Text("Erase all memories") }
+                }
+            }
         }
     }
 
@@ -252,7 +283,7 @@ private fun MemoryRow(
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(record.content)
-            Text("${record.reviewStatus.name.lowercase().replaceFirstChar { it.titlecase() } } · Added from ${if (record.source.eventSource == "conversation_explicit") "explicit conversation request" else record.source.eventSource}",
+            Text("${record.reviewStatus.name.lowercase().replaceFirstChar { it.titlecase() } } · Added from ${record.source.eventSource}",
                 style = MaterialTheme.typography.bodySmall)
             if (record.source.provenance.isNotEmpty()) Text("Details: " + record.source.provenance.joinToString { it.label ?: it.kind },
                 style = MaterialTheme.typography.bodySmall)

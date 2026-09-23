@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import com.battlesbudz.jarvis.v2.ai.ModelCatalog
 import com.battlesbudz.jarvis.v2.ai.ModelStore
 import com.battlesbudz.jarvis.v2.memory.AndroidMemoryOs
@@ -85,11 +87,12 @@ fun JarvisApp(
     var voiceCalls by remember { mutableStateOf(initialVoiceCalls) }
     var selectedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
     var resumedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
-    val activeVoiceCall by com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.armed.collectAsState()
 
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val phoneContext = androidx.compose.ui.platform.LocalContext.current
     val memoryOs = remember(phoneContext.applicationContext) { AndroidMemoryOs.get(phoneContext.applicationContext) }
+    val activeVoiceCall by com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.armed.collectAsState()
+    val activeVoiceStatus by com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.status.collectAsState()
     var phone by remember { mutableStateOf(com.battlesbudz.jarvis.v2.ai.PhoneCheck.read(phoneContext)) }
     val modelSelector: @Composable (Boolean) -> Unit = { enabled ->
         Column {
@@ -130,11 +133,10 @@ fun JarvisApp(
             )
             Text(if (store.hasModel(selectedModel)) "Installed" else "Not installed")
             OutlinedButton(
-                enabled = !activeVoiceCall && !modelImportRunning && !modelDownloadRunning,
+                enabled = !modelImportRunning && !modelDownloadRunning,
                 onClick = { showingMemory = true },
                 modifier = Modifier.fillMaxWidth().testTag("memory_open")
             ) { Text("Memory") }
-            if (activeVoiceCall) Text("End the active call before managing memory.", style = MaterialTheme.typography.bodySmall)
             if (storedBytes > 0L) {
                 OutlinedButton(enabled = canManage, onClick = { confirmingDelete = true }) {
                     Text("Delete model & cache · %.2f GB".format(java.util.Locale.US, storedBytes / 1_000_000_000.0))
@@ -264,10 +266,10 @@ fun JarvisApp(
         colorScheme = darkColorScheme()
     ) {
         Surface(modifier = Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
-            if (showingMemory) {
-                MemoryScreen(memoryOs = memoryOs, onBack = { showingMemory = false })
-            } else if (modelsReady && smokeTestPassed) {
-                when {
+            if (modelsReady && smokeTestPassed) {
+                Box(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize().then(if (showingMemory) Modifier.clearAndSetSemantics { } else Modifier)) {
+                    when {
                     selectedVoiceCall != null -> {
                         val selected = requireNotNull(selectedVoiceCall)
                         VoiceCallDetailScreen(
@@ -310,7 +312,7 @@ fun JarvisApp(
                         },
                         resumedVoice = resumedVoiceCall != null
                     ) { visible, settingsOpen, dismissSettings, returnToChat -> VoiceCallScreen(
-                        visible = visible, settingsOpen = settingsOpen,
+                        visible = visible, settingsOpen = settingsOpen, memoryOpen = showingMemory,
                         onDismissSettings = dismissSettings, onReturnToChat = returnToChat,
                         chatBusy = chatBusy, modelSelector = modelSelector,
                         resumedCall = resumedVoiceCall,
@@ -323,7 +325,25 @@ fun JarvisApp(
                         onCopyDiagnostics = onCopyDiagnostics,
                         onExportSpeechAudio = onExportSpeechAudio
                     ) }
+                    }
+                    }
+                    // Keep the conversation and voice controller composed beneath this review surface.
+                    if (showingMemory) MemoryScreen(
+                        memoryOs = memoryOs,
+                        onBack = { showingMemory = false },
+                        callActive = activeVoiceCall,
+                        callStatus = activeVoiceStatus,
+                        onEndCall = onEndVoiceCall,
+                    )
                 }
+            } else if (showingMemory) {
+                MemoryScreen(
+                    memoryOs = memoryOs,
+                    onBack = { showingMemory = false },
+                    callActive = activeVoiceCall,
+                    callStatus = activeVoiceStatus,
+                    onEndCall = onEndVoiceCall,
+                )
             } else {
                 ModelSetup(
                     modelSelector = modelSelector,

@@ -39,6 +39,31 @@ class ConversationHistoryTest {
         assertNotEquals(old, history.current.value.id)
     }
 
+    @Test fun memoryCutoffKeepsVisibleMessagesButExcludesThemAfterRestart() {
+        val prefs = preferences()
+        val history = ConversationHistory(prefs)
+        history.appendUser("My wife is Ada")
+        history.updateReply(history.current.value.id, "reply", "Ada is your wife", true)
+        history.markMemoryContextCutoff()
+        history.appendUser("What is my name?")
+        assertEquals(listOf("What is my name?"), history.contextAfterMemoryCutoff().map { it.text })
+        assertEquals(listOf("My wife is Ada", "Ada is your wife", "What is my name?"), ConversationHistory(prefs).context().map { it.text })
+        assertEquals(listOf("What is my name?"), ConversationHistory(prefs).contextAfterMemoryCutoff().map { it.text })
+    }
+
+    @Test fun memoryCutoffExcludesLateGrowthOfAnEarlierCallSegment() {
+        val history = ConversationHistory(preferences())
+        val thread = history.current.value.id
+        val call = VoiceCallRecord("old-call", 1, conversationId = thread, transcript = listOf(TranscriptEntry("You", "Old fact")))
+        history.syncCall(call)
+        history.markMemoryContextCutoff()
+        history.appendUser("Fresh question")
+        history.syncCall(call.copy(transcript = call.transcript + TranscriptEntry("Jarvis", "Old fact repeated", timestampMs = 2)))
+        assertEquals(listOf("Fresh question"), history.contextAfterMemoryCutoff().map { it.text })
+        history.syncCall(call.copy(transcript = call.transcript + TranscriptEntry("You", "New call turn", timestampMs = Long.MAX_VALUE)))
+        assertEquals(setOf("Fresh question", "New call turn"), history.contextAfterMemoryCutoff().map { it.text }.toSet())
+    }
+
     @Test fun partialAssistantDraftIsVisibleButExcludedFromModelContext() {
         val history = ConversationHistory(preferences())
         history.appendUser("Tell me a story")
@@ -149,7 +174,7 @@ class ConversationHistoryTest {
         lateinit var editor: SharedPreferences.Editor
         editor = Proxy.newProxyInstance(javaClass.classLoader, arrayOf(SharedPreferences.Editor::class.java)) { _, method, args ->
             when (method.name) {
-                "putString" -> { values[args!![0] as String] = args[1]; editor }
+                "putString", "putInt" -> { values[args!![0] as String] = args[1]; editor }
                 "apply" -> null
                 "commit" -> true
                 else -> editor
@@ -157,7 +182,7 @@ class ConversationHistoryTest {
         } as SharedPreferences.Editor
         return Proxy.newProxyInstance(javaClass.classLoader, arrayOf(SharedPreferences::class.java)) { _, method, args ->
             when (method.name) {
-                "getString" -> values[args!![0]] ?: args[1]
+                "getString", "getInt" -> values[args!![0]] ?: args[1]
                 "edit" -> editor
                 else -> null
             }

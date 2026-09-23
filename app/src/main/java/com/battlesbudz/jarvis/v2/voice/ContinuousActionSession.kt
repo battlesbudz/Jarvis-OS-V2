@@ -1,9 +1,11 @@
 package com.battlesbudz.jarvis.v2.voice
 
 import com.battlesbudz.jarvis.v2.actions.AcceptedActionQueue
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.selects.select
 
 /** A stable final ASR result. The runtime supplies the ID from its capture source. */
 data class SessionCapture(
@@ -11,7 +13,9 @@ data class SessionCapture(
     val text: String,
     val recognitionIssue: String? = null,
     val wav: ByteArray = byteArrayOf(),
-    val audioIsComplete: Boolean = true
+    val audioIsComplete: Boolean = true,
+    val capturedAtMs: Long = System.currentTimeMillis(),
+    val origin: TranscriptOrigin = TranscriptOrigin.SPOKEN
 )
 
 /** An executor-derived terminal result that still needs an audible report. */
@@ -46,6 +50,22 @@ sealed interface CaptureOutcome {
     data class ConversationBusy(val capture: SessionCapture) : CaptureOutcome
 }
 
+/** Persistent pump event selection. It deliberately does not cancel losing deferreds: the
+ * runtime owns their lifetime so a typed cancellation cannot discard an in-progress ASR floor. */
+enum class ActionPumpEvent { CAPTURED, DELIVERY_READY, WORKER_IDLE, TYPED_AVAILABLE }
+suspend fun awaitActionPumpEvent(
+    followup: Deferred<CapturedVoiceTurn>,
+    deliveryReady: Deferred<Unit>,
+    workerIdle: Deferred<Unit>?,
+    typedAvailable: Deferred<Unit>,
+    onCaptured: (CapturedVoiceTurn) -> Unit
+): ActionPumpEvent = select {
+    followup.onAwait { capture -> onCaptured(capture); ActionPumpEvent.CAPTURED }
+    deliveryReady.onAwait { ActionPumpEvent.DELIVERY_READY }
+    workerIdle?.onAwait { ActionPumpEvent.WORKER_IDLE }
+    typedAvailable.onAwait { ActionPumpEvent.TYPED_AVAILABLE }
+}
+
 /**
  * Call-owned capture/report state for continuous accepted actions.
  *
@@ -77,6 +97,7 @@ class ContinuousActionSession<T>(
     private val _revision = MutableStateFlow(0L)
 
     private var captureInProgress = false
+    private var captureDetached = false
     private var detached = false
     private var deferredConversation: SessionCapture? = null
     private var delivery: ReportDelivery? = null
@@ -92,7 +113,7 @@ class ContinuousActionSession<T>(
      */
     fun onCaptureStarted() {
         synchronized(lock) {
-            if (detached) return
+            if (detached || captureDetached) return
             captureInProgress = true
             interruptDeliveryLocked(null)
             changedLocked()
@@ -138,6 +159,17 @@ class ContinuousActionSession<T>(
         outcome
     }
 
+    /**
+     * Classify a final typed call message through the same action/control/deferred queue without
+     * stealing an already-confirmed spoken floor. The runtime owns the actual queue admission.
+     */
+    fun onTyped(capture: SessionCapture, kind: CapturedKind): CaptureOutcome = synchronized(lock) {
+        val spokenFloorWasActive = captureInProgress
+        val outcome = onCaptured(capture, kind)
+        captureInProgress = spokenFloorWasActive
+        outcome
+    }
+
     /** An ASR cancellation/failure ends the floor while retaining any deferred conversational turn. */
     fun onCaptureStopped() {
         synchronized(lock) {
@@ -151,12 +183,27 @@ class ContinuousActionSession<T>(
      * Retain one ordinary capture until the queue is actually idle. The caller should call this
      * after its queue-idle barrier, before restarting normal model ownership.
      */
+    fun hasDeferredConversation(): Boolean = synchronized(lock) { deferredConversation != null }
+
+    /** Atomically hand off only when no confirmed ASR floor can race the idle transition. */
+    fun takeDeferredConversationIfNoCapture(): SessionCapture? = synchronized(lock) {
+        if (captureInProgress || detached || queue.hasUnfinished()) null else deferredConversation.also {
+            deferredConversation = null
+            if (it != null) changedLocked()
+        }
+    }
+
     fun takeDeferredConversation(): SessionCapture? = synchronized(lock) {
         if (detached || queue.hasUnfinished()) return null
         deferredConversation.also {
             deferredConversation = null
             if (it != null) changedLocked()
         }
+    }
+
+    /** End Call makes an unprocessed ordinary follow-up visible instead of silently discarding it. */
+    fun cancelDeferredConversation(): SessionCapture? = synchronized(lock) {
+        deferredConversation.also { deferredConversation = null; if (it != null) changedLocked() }
     }
 
     /** Classifies only. The runtime delegates explicit queue cancellation with its saved call ID. */
@@ -252,6 +299,13 @@ class ContinuousActionSession<T>(
         }
     }
 
+    /**
+     * The action pump must keep an idle observer armed until it has reconciled at least one
+     * terminal transition. A worker can complete between an eager scan and listener creation.
+     */
+    fun needsIdleObservation(terminalReportsObserved: Boolean): Boolean =
+        !terminalReportsObserved || queue.hasUnfinished()
+
     /** A suspension point for a host pump that selects capture, queue events, and report delivery. */
     suspend fun awaitDeliveryReady() {
         combine(queue.idle, _revision) { idle, _ -> idle }
@@ -293,6 +347,11 @@ class ContinuousActionSession<T>(
             deferredConversation = null
             changedLocked()
         }
+    }
+
+    /** The pump may cancel its listener only when this locked claim wins over capture start. */
+    fun tryDetachIdleCapture(): Boolean = synchronized(lock) {
+        if (captureInProgress || detached || captureDetached) false else { captureDetached = true; changedLocked(); true }
     }
 
     fun isCaptureInProgress(): Boolean = synchronized(lock) { captureInProgress }

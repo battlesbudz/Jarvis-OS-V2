@@ -31,14 +31,15 @@ class VoiceSessionController(
     }
 
     @Synchronized fun appendTranscript(role: String, text: String, complete: Boolean = true,
-                         latency: com.battlesbudz.jarvis.v2.diagnostics.TurnLatency? = null) {
+                         latency: com.battlesbudz.jarvis.v2.diagnostics.TurnLatency? = null,
+                         origin: TranscriptOrigin = TranscriptOrigin.SPOKEN) {
         val call = requireActiveCall()
         val entries = call.transcript.toMutableList()
         val previous = entries.lastOrNull()
         if (previous?.role == role && !previous.complete) {
             entries[entries.lastIndex] = previous.copy(text = text, complete = complete, generationComplete = complete, timestampMs = nowMs(), latency = latency ?: previous.latency)
         } else {
-            entries += TranscriptEntry(role, text, nowMs(), complete, latency)
+            entries += TranscriptEntry(role, text, nowMs(), complete, latency, origin = origin)
         }
         activeCall = call.copy(transcript = entries)
         if (complete) checkpoint() else store.saveProgress(requireActiveCall())
@@ -70,6 +71,16 @@ class VoiceSessionController(
         changeReply(callId, replyId, durable = true) { entry ->
             entry.copy(text = text, generationComplete = true)
         }
+    }
+
+    /** Persists one non-revivable terminal input receipt against its original call. */
+    @Synchronized fun recordTerminalInputForCall(callId: String, eventId: String, text: String) {
+        val current = activeCall?.takeIf { it.id == callId } ?: store.list().firstOrNull { it.id == callId } ?: return
+        if (current.transcript.any { it.replyId == "terminal-$eventId" }) return
+        val updated = current.copy(transcript = current.transcript + TranscriptEntry("Jarvis", text, nowMs(),
+            complete = true, replyId = "terminal-$eventId", generationComplete = true))
+        if (activeCall?.id == callId) activeCall = updated
+        store.save(updated)
     }
 
     @Synchronized fun updateDelivery(callId: String, delivery: SpeechDelivery) {

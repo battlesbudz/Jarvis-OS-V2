@@ -2,9 +2,23 @@ package com.battlesbudz.jarvis.v2.memory
 
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.CopyOnWriteArraySet
 
 /** Explicit-review memory lifecycle. It never observes chat/voice itself: callers must propose an event. */
 class MemoryOs(private val store: MemoryStore, private val clock: () -> Long = { System.currentTimeMillis() }) {
+    private val approvedStateObservers = CopyOnWriteArraySet<(String) -> Unit>()
+
+    /** In-process fence notification after a durable approved-history mutation. Pending proposals never notify. */
+    fun addApprovedStateObserver(observer: (stateToken: String) -> Unit): AutoCloseable {
+        approvedStateObservers += observer
+        return AutoCloseable { approvedStateObservers -= observer }
+    }
+
+    private fun notifyApprovedStateChanged() {
+        val snapshot = read().snapshot ?: return
+        val token = MemoryRetrieval.approvedStateToken(snapshot.memories, clock())
+        approvedStateObservers.forEach { observer -> runCatching { observer(token) } }
+    }
     constructor(file: File, clock: () -> Long = { System.currentTimeMillis() }) : this(MemoryStore(file), clock)
 
     fun propose(proposal: MemoryProposal): MemoryResult {
@@ -54,7 +68,9 @@ class MemoryOs(private val store: MemoryStore, private val clock: () -> Long = {
             }
             before.copy(generation = before.generation + 1, memories = all) to MemoryResult(if (status == MemoryReviewStatus.APPROVED) MemoryOutcome.APPROVED else MemoryOutcome.REJECTED, "Memory review recorded.", changed)
         }
-        return update.value ?: MemoryResult(MemoryOutcome.STORAGE_FAILURE, update.error ?: "Memory store failed.")
+        val result = update.value ?: MemoryResult(MemoryOutcome.STORAGE_FAILURE, update.error ?: "Memory store failed.")
+        if (result.outcome == MemoryOutcome.APPROVED) notifyApprovedStateChanged()
+        return result
     }
 
     /** Erases the entire correction lineage and retains only non-content idempotency tombstones. */
@@ -68,16 +84,20 @@ class MemoryOs(private val store: MemoryStore, private val clock: () -> Long = {
 
     private fun erase(expectedGeneration: Long? = null, selector: (List<MemoryRecord>) -> Set<String>): MemoryResult {
         val now = clock()
+        var approvedChanged = false
         val update = store.update { before ->
             if (expectedGeneration != null && before.generation != expectedGeneration) return@update before to MemoryResult(MemoryOutcome.CONFLICT, "Memory store changed before deletion.")
             val ids = selector(before.memories)
             if (ids.isEmpty()) return@update before to MemoryResult(MemoryOutcome.NOT_FOUND, "Memory not found.")
             val erased = before.memories.filter { it.id in ids }
+            approvedChanged = erased.any { it.reviewStatus == MemoryReviewStatus.APPROVED }
             if (before.tombstones.size + erased.size > MemoryPolicy.MAX_TOMBSTONES) return@update before to MemoryResult(MemoryOutcome.INVALID, "Erasure tombstone capacity reached.")
             val tombstones = before.tombstones + erased.map { MemoryTombstone(it.source.eventId, MemoryPolicy.fingerprint(it.toProposal()), now) }
             before.copy(generation = before.generation + 1, memories = before.memories.filterNot { it.id in ids }, tombstones = tombstones) to MemoryResult(MemoryOutcome.DELETED, "Memory content and correction lineage erased.")
         }
-        return update.value ?: MemoryResult(MemoryOutcome.STORAGE_FAILURE, update.error ?: "Memory store failed.")
+        val result = update.value ?: MemoryResult(MemoryOutcome.STORAGE_FAILURE, update.error ?: "Memory store failed.")
+        if (approvedChanged && result.outcome == MemoryOutcome.DELETED) notifyApprovedStateChanged()
+        return result
     }
 
     /** UI callers should use this to distinguish empty history from a corrupt/unavailable store. */
@@ -98,8 +118,13 @@ class MemoryOs(private val store: MemoryStore, private val clock: () -> Long = {
         val read = read()
         val snapshot = read.snapshot ?: return MemoryPacketResult(MemoryOutcome.STORAGE_FAILURE, read.error ?: "Memory store failed.")
         if (query.isBlank() || limit !in 1..50 || maxChars < 0) return MemoryPacketResult(MemoryOutcome.INVALID, "A query, limit 1-50, and non-negative budget are required.")
-        val candidates = MemoryRetrieval.retrieve(snapshot.memories, query, limit, nowMs).map { it.memory }
-        return MemoryPacketResult(null, "ok", MemoryRetrieval.packet(candidates, query, maxChars, nowMs))
+        val candidates = MemoryRetrieval.retrieve(snapshot.memories, query, limit, nowMs)
+        val nextApprovedExpiryMs = snapshot.memories.asSequence()
+            .filter { it.reviewStatus == MemoryReviewStatus.APPROVED }
+            .mapNotNull { it.expiresAtMs }
+            .filter { it > nowMs }
+            .minOrNull()
+        return MemoryPacketResult(null, "ok", MemoryRetrieval.packetFromRetrieved(candidates, maxChars), MemoryRetrieval.approvedStateToken(snapshot.memories, nowMs), nextApprovedExpiryMs)
     }
 
     private fun lineage(memories: List<MemoryRecord>, id: String): Set<String> {

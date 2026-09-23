@@ -341,4 +341,85 @@ class ContinuousActionSessionTest {
         queue.close()
     }
 
+    @Test fun typedControlUsesTheAcceptedSessionWithoutClearingABegunSpokenFloor() = runBlocking {
+        val queue = AcceptedActionQueue<String>()
+        val session = ContinuousActionSession(queue)
+        queue.admit("blocked", "spoken-action", "A")
+        val entered = CompletableDeferred<Unit>()
+        val hold = CompletableDeferred<Unit>()
+        val worker = queue.start { entered.complete(Unit); hold.await(); true }
+        entered.await()
+        session.onCaptureStarted()
+        val typed = SessionCapture("typed-cancel", "cancel that action", origin = TranscriptOrigin.TYPED)
+        assertEquals(CaptureOutcome.Control(typed, VoiceActionControl.CancelCurrent),
+            session.onTyped(typed, CapturedKind.Control(VoiceActionControl.CancelCurrent)))
+        assertTrue(session.isCaptureInProgress())
+        // The runtime applies this call-scoped control to the same durable queue.
+        queue.cancel(VoiceActionControl.CancelCurrent)
+        assertEquals(AcceptedActionState.CANCELLED, queue.tasks.value.single().state)
+        worker.join()
+        queue.close()
+    }
+
+    @Test fun idleHandoffNeverStealsConfirmedSpokenFloor() = runBlocking {
+        val queue = AcceptedActionQueue<String>(); val session = ContinuousActionSession(queue)
+        queue.admit("a", "a", "A")
+        val release = CompletableDeferred<Unit>()
+        val worker = queue.start { release.await(); true }
+        session.onCaptureStarted()
+        val deferred = SessionCapture("ordinary", "question")
+        assertTrue(session.onCaptured(deferred, CapturedKind.Ordinary) is CaptureOutcome.DeferredConversation)
+        // Simulate the next confirmed capture before idle handoff; it must keep its floor.
+        session.onCaptureStarted()
+        release.complete(Unit); worker.join()
+        assertNull(session.takeDeferredConversationIfNoCapture())
+        session.onCaptureStopped()
+        assertEquals(deferred, session.takeDeferredConversationIfNoCapture())
+        queue.close()
+    }
+
+    @Test fun idleCaptureDetachKeepsDeferredInputRetrievable() = runBlocking {
+        val queue = AcceptedActionQueue<String>(); val session = ContinuousActionSession(queue)
+        val deferred = SessionCapture("typed-b", "B", origin = TranscriptOrigin.TYPED)
+        assertTrue(session.onCaptured(deferred, CapturedKind.Ordinary) is CaptureOutcome.ConversationReady)
+        // A real deferred slot is retained while work exists; detach only capture ownership.
+        queue.admit("a", "a", "A")
+        assertTrue(session.onCaptured(deferred.copy(utteranceId = "deferred"), CapturedKind.Ordinary) is CaptureOutcome.DeferredConversation)
+        queue.drain { true }
+        assertTrue(session.tryDetachIdleCapture())
+        assertEquals("deferred", session.takeDeferredConversationIfNoCapture()?.utteranceId)
+        queue.close()
+    }
+
+    @Test fun idleObservationRemainsArmedWhenExecutorFinishedBeforeThePumpListener() = runBlocking {
+        val queue = AcceptedActionQueue<String>()
+        val session = ContinuousActionSession(queue)
+        assertTrue(session.reserveActionAdmission("fast"))
+        assertNotNull(queue.admit("fast", "utterance-fast", "fast"))
+        // The executor completed before the host had attached its first idle listener.
+        queue.drain { true }
+        assertTrue(session.needsIdleObservation(terminalReportsObserved = false))
+        assertFalse(session.needsIdleObservation(terminalReportsObserved = true))
+        // Relaying the durable terminal record makes a report visible without rerunning work.
+        assertTrue(session.onTaskEvent("fast", "fast complete"))
+        assertNotNull(session.nextDelivery())
+        queue.close()
+    }
+
+    @Test fun productionPumpSelectorObservesFastIdleThenStillAcceptsTypedControl() = runBlocking {
+        val followup = CompletableDeferred<CapturedVoiceTurn>()
+        val delivery = CompletableDeferred<Unit>()
+        val idle = CompletableDeferred<Unit>().also { it.complete(Unit) }
+        val typed = CompletableDeferred<Unit>()
+        var capture: CapturedVoiceTurn? = null
+        assertEquals(ActionPumpEvent.WORKER_IDLE,
+            awaitActionPumpEvent(followup, delivery, idle, typed) { capture = it })
+        assertNull(capture)
+        // The first selection did not cancel the persistent typed waiter or the ASR floor.
+        typed.complete(Unit)
+        assertEquals(ActionPumpEvent.TYPED_AVAILABLE,
+            awaitActionPumpEvent(followup, delivery, null, typed) { capture = it })
+        assertNull(capture)
+    }
+
 }
