@@ -17,6 +17,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,6 +85,7 @@ fun JarvisApp(
     var voiceCalls by remember { mutableStateOf(initialVoiceCalls) }
     var selectedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
     var resumedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
+    val activeVoiceCall by com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.armed.collectAsState()
 
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val phoneContext = androidx.compose.ui.platform.LocalContext.current
@@ -128,10 +130,11 @@ fun JarvisApp(
             )
             Text(if (store.hasModel(selectedModel)) "Installed" else "Not installed")
             OutlinedButton(
-                enabled = !modelImportRunning && !modelDownloadRunning,
+                enabled = !activeVoiceCall && !modelImportRunning && !modelDownloadRunning,
                 onClick = { showingMemory = true },
                 modifier = Modifier.fillMaxWidth().testTag("memory_open")
             ) { Text("Memory") }
+            if (activeVoiceCall) Text("End the active call before managing memory.", style = MaterialTheme.typography.bodySmall)
             if (storedBytes > 0L) {
                 OutlinedButton(enabled = canManage, onClick = { confirmingDelete = true }) {
                     Text("Delete model & cache · %.2f GB".format(java.util.Locale.US, storedBytes / 1_000_000_000.0))

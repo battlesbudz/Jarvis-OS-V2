@@ -119,7 +119,9 @@ class NaturalBargeInAudioInput(
                         log("barge_keyword_ready keywords=Hey_Jarvis,stop readyMs=${now - started} mode=bounded_candidates " +
                             "loadMs=$keywordLoadMs inputMs=${keywordBytes / 32} maxWorkMs=$maxKeywordWorkMs maxBacklogMs=$maxBacklogMs")
                     }
-                    if (hit != null && (hit != "stop" || !playing())) {
+                    // A raw stop hit is never enough to change action state. It always needs final,
+                    // non-echo ASR confirmation, including while no reply audio is playing.
+                    if (hit != null && hit != "stop") {
                         finalReason = "keyword_$hit"
                         delivered = true
                         onConfirmed(false, hit)

@@ -60,3 +60,29 @@
 -keep class com.battlesbudz.jarvis.v2.ai.TurnPlan { *; }
 -keep class com.battlesbudz.jarvis.v2.ai.TurnKind { *; }
 -keep class com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient { *; }
+
+# Continuous accepted-action release journeys cross this production boundary from
+# the separately shrunk instrumentation DEX. Keep only the durable queue/session
+# contracts and saved-call DTO/controller API they invoke.
+-keep class com.battlesbudz.jarvis.v2.actions.AcceptedActionQueue { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AcceptedActionTask { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AcceptedActionEvent { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AcceptedActionState { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.ContinuousActionSession { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.SessionCapture { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.CapturedKind** { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.CaptureOutcome** { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.PendingReport { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.ReportDelivery { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceActionControl** { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceSessionController { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceCallStore { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceCallRecord { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.TranscriptEntry { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceActionOutcome { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceTaskStatus { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceTaskState { *; }
+
+# Release instrumentation crosses this tiny policy API from its separate test DEX.
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicy** { *; }

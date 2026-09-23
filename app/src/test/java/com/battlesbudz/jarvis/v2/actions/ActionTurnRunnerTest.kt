@@ -30,6 +30,13 @@ class ActionTurnRunnerTest {
         assertEquals(listOf(MobileAction.ReadBattery, MobileAction.SetVolume(20), MobileAction.OpenApp("Settings")), world.actions)
     }
 
+    @Test fun discoursePrefixesAndAfterThatRemainDirectedActions() {
+        assertEquals("Facebook", (ActionTurnPlan.parse("And then open up Facebook after that.") as ActionTurnPlan.Ready).steps.single().request.arguments["app"])
+        assertEquals("Settings", (ActionTurnPlan.parse("Then open Settings") as ActionTurnPlan.Ready).steps.single().request.arguments["app"])
+        assertEquals("read_battery", (ActionTurnPlan.parse("Actually read battery") as ActionTurnPlan.Ready).steps.single().request.name)
+        assertTrue(ActionTurnPlan.parse("Open Facebook after the download finishes") is ActionTurnPlan.Rejected)
+    }
+
     @Test fun malformedWrongOrOutOfOrderResponseHasNoEffects() {
         val plan = ActionTurnPlan.parse("Read battery then set volume to 20 percent")
         for (calls in listOf(

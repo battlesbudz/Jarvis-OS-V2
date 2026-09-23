@@ -8,6 +8,7 @@ import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
 import com.battlesbudz.jarvis.v2.actions.runNative
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import java.io.InputStream
 
 internal fun JarvisRuntime.runConversationInternal(
@@ -22,12 +23,18 @@ internal fun JarvisRuntime.runConversationInternal(
         comparison: com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.Trial? = null,
         onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit = {},
         onActionResult: (String, String, Boolean) -> Unit = { _, _, _ -> },
-        audioUri: Uri? = null
-    ) {
+        audioUri: Uri? = null,
+        /** A queue admission freezes authorization before it waits for native ownership. */
+        frozenActionPlan: com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready? = null,
+        /** Frozen final ASR still requires the same source-clause guard as attached voice input. */
+        frozenVoiceFinal: Boolean = false
+    ): Job? {
+        var approvedMemoryPacket: String? = null
         fun buildTurnPrompt(userPrompt: String, actionResultContext: String?,
                             history: List<ChatEntry>, seedContext: Boolean): String =
             promptBuilder.buildGemmaPrompt(userPrompt, actionResultContext, history, seedContext,
-                voice = voiceAudio != null, compactInstructions = (modelStore.selectedModel().contextTokens ?: 4096) < 2048)
+                voice = voiceAudio != null, compactInstructions = (modelStore.selectedModel().contextTokens ?: 4096) < 2048,
+                approvedMemoryContext = approvedMemoryPacket)
         // Smaller Qwen exports have a real 2K/4K cache, not the upstream model's advertised context.
         // Character budgeting remains conservative/approximate; native token limits are authoritative.
         val contextLimit = modelStore.selectedModel().contextTokens?.let {
@@ -51,15 +58,15 @@ internal fun JarvisRuntime.runConversationInternal(
             comparison?.put("answer", text)
             onComplete(text)
         }
-        if (voiceAudio == null && modelStore.isModelOperationActive()) {
+        if (voiceAudio == null && frozenActionPlan == null && modelStore.isModelOperationActive()) {
             finish("A voice or model operation is still active. Please finish it first.")
-            return
+            return null
         }
         if (!ConversationWork.activeJobs.compareAndSet(0, 1)) {
             finish("The previous response is still finishing. Please try again in a moment.")
-            return
+            return null
         }
-        conversationJob = runtimeScope.launch(Dispatchers.Default) {
+        val invocation = runtimeScope.launch(Dispatchers.Default) {
             try {
                 if (!modelStore.verifyIntegrity(modelStore.selectedModel())) {
                     incrementalVoice?.close()
@@ -104,7 +111,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     return@launch
                 }
                 // Parse the completed request before any direct shortcut, lookup, or model side effect.
-                val requestedActionPlan = turnPlan.actionPlan
+                val requestedActionPlan = frozenActionPlan ?: turnPlan.actionPlan
                 diagnosticRecorder.record("Action route plan=${requestedActionPlan.javaClass.simpleName} " +
                     "steps=${(requestedActionPlan as? com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready)?.steps?.map { it.request.name } ?: emptyList<String>()} " +
                     "lookup=${turnPlan.lookupQuery != null}")
@@ -116,8 +123,54 @@ internal fun JarvisRuntime.runConversationInternal(
                     mainHandler.post { finish(rejection) }
                     return@launch
                 }
-                val textInput = incrementalVoice?.takeIf { imageUri == null && requestedActionPlan !is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready }
+                val guardedFrozenVoicePlan = requestedActionPlan as? com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready
+                if (frozenVoiceFinal && guardedFrozenVoicePlan != null &&
+                    !guardedFrozenVoicePlan.steps.all { step ->
+                        com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard.allows(
+                            step.sourceClause, step.request.name, step.request.arguments)
+                    }) {
+                    incrementalVoice?.close()
+                    resetNativeConversation()
+                    val rejection = "I couldn't verify that final spoken phone request. Please say it again."
+                    diagnosticRecorder.recordImportant("Voice action rejected: final source-clause guard failed")
+                    mainHandler.post { finish(rejection) }
+                    return@launch
+                }
+                // The explicit request is routed after raw action authorization and becomes a
+                // pending proposal. It is never automatically approved or injected this turn.
+                conversationMemory.proposeExplicit(prompt)?.let { proposal ->
+                    incrementalVoice?.close()
+                    resetNativeConversation()
+                    val message = proposal.message
+                    turnOrchestrator.recordResponse(prompt, message, turnPlan)
+                    mainHandler.post { finish(message) }
+                    return@launch
+                }
+                // Recall only after the current action plan has been authorized. This occurs
+                // before optional factual lookup so a reviewed personal fact remains usable offline.
+                val memoryRecall = if (requestedActionPlan is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready) null
+                    else conversationMemory.recallApproved(prompt, modelStore.selectedModel().id)
+                if (memoryRecall?.resetNativeContext == true) {
+                    // The incremental prefill belongs to the prior native context.
+                    incrementalVoice?.close()
+                    resetNativeConversation()
+                }
+                if (memoryRecall?.error != null) {
+                    incrementalVoice?.close()
+                    diagnosticRecorder.recordImportant("Memory recall failed: ${memoryRecall.error}")
+                    mainHandler.post { finish("${memoryRecall.error} No memory was used for this response.") }
+                    return@launch
+                }
+                approvedMemoryPacket = memoryRecall?.packet
+                var textInput = incrementalVoice?.takeIf { imageUri == null && requestedActionPlan !is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready }
                 if (textInput == null) incrementalVoice?.close()
+                // Incremental ASR prefill predates final memory lookup. Discard it rather than
+                // silently omitting approved context from the final generation.
+                if (approvedMemoryPacket != null && textInput != null) {
+                    textInput?.close()
+                    textInput = null
+                    diagnosticRecorder.record("Voice incremental prefill discarded for approved memory context")
+                }
                 val directRequest = if (comparison != null || imageUri != null || audioUri != null) null else
                     com.battlesbudz.jarvis.v2.actions.DirectAppCommand.parse(prompt)?.takeIf { direct ->
                         (requestedActionPlan as? com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready)
@@ -142,21 +195,37 @@ internal fun JarvisRuntime.runConversationInternal(
                     return@launch
                 }
                 val lookupStarted = System.nanoTime()
-                val referenceContext = turnPlan.lookupQuery?.let {
+                val referenceRouting = com.battlesbudz.jarvis.v2.memory.ConversationMemory.referenceRouting(
+                    approvedMemoryPacket,
+                    prompt,
+                    explicitLookup = turnPlan.kind in setOf(
+                        com.battlesbudz.jarvis.v2.ai.TurnKind.EXPLICIT_LOOKUP,
+                        com.battlesbudz.jarvis.v2.ai.TurnKind.LOOKUP_CONFIRMATION
+                    )
+                )
+                val personalMemoryAnswer = referenceRouting.suppressesReference
+                // Automatic factual routing is no longer active once approved personal
+                // history can answer the request. Keep explicit lookup kinds unchanged.
+                val effectiveTurnPlan = if (personalMemoryAnswer) turnPlan.copy(
+                    kind = com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT,
+                    lookupQuery = null
+                ) else turnPlan
+                val lookupQuery = effectiveTurnPlan.lookupQuery
+                val referenceContext = lookupQuery?.let {
                     if (voiceAudio != null) activeVoiceOutput?.acknowledgeConfirmedTurn()
                     referenceGrounding.fetchIfRequested(it)?.context
                 }
                 if (turnPlan.lookupQuery != null) diagnosticRecorder.recordSummary(
-                    "Voice lookup durationMs=${(System.nanoTime() - lookupStarted) / 1_000_000} success=${!referenceContext.isNullOrBlank()}")
+                    "Voice lookup durationMs=${(System.nanoTime() - lookupStarted) / 1_000_000} success=${!referenceContext.isNullOrBlank()} suppressedForApprovedPersonalMemory=$personalMemoryAnswer")
 
-                lookupMs += if (turnPlan.lookupQuery != null) (System.nanoTime() - lookupStarted) / 1_000_000 else 0L
+                lookupMs += if (lookupQuery != null) (System.nanoTime() - lookupStarted) / 1_000_000 else 0L
 
                 // Automatic factual routing owns the lookup decision. If the
                 // reference service is unavailable, do not let the local model
                 // bounce the same question back to the user as an offer to
                 // search; report the failed automatic attempt directly.
                 if (turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.FACTUAL_LOCAL_FIRST &&
-                    referenceContext.isNullOrBlank()
+                    referenceContext.isNullOrBlank() && !personalMemoryAnswer
                 ) {
                     diagnosticRecorder.record(
                         "Automatic factual lookup failed\\n" +
@@ -170,7 +239,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 }
 
                 if (turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.EXPLICIT_LOOKUP &&
-                    referenceContext.isNullOrBlank()
+                    referenceContext.isNullOrBlank() && !personalMemoryAnswer
                 ) {
                     diagnosticRecorder.record(
                         "Turn lookup failed\\n" +
@@ -295,7 +364,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 val streamFilter = AssistantStreamFilter { safeText ->
                     // With supplied evidence, release checked voice sentences as they arrive.
                     // Unverified local-factual drafts and action results retain their final gates.
-                    if ((turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT || streamGroundedVoice) &&
+                    if ((effectiveTurnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT || streamGroundedVoice) &&
                         requestedActionPlan !is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready
                     ) {
                         if (voiceRepetitionGuard != null) voiceRepetitionGuard.accept(safeText)
@@ -444,7 +513,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 val actionPlan = requestedActionPlan
                 if (actionPlan is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready && generated.toolCalls.isNotEmpty()) {
                     // Final transcript only: every source clause is independently guarded before dispatch.
-                    val voiceAllowed = voiceAudio == null || actionPlan.steps.all { step ->
+                    val voiceAllowed = (voiceAudio == null && !frozenVoiceFinal) || actionPlan.steps.all { step ->
                         com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard.allows(
                             step.sourceClause, step.request.name, step.request.arguments)
                     }
@@ -526,7 +595,8 @@ internal fun JarvisRuntime.runConversationInternal(
                 val isFactualQuestion =
                     referenceContext == null &&
                         actionName == null &&
-                        turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.FACTUAL_LOCAL_FIRST
+                        effectiveTurnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.FACTUAL_LOCAL_FIRST &&
+                        referenceRouting.shouldVerifyFactualDraft()
                 var verifierRequestsLookup = false
                 if (isFactualQuestion &&
                     !referenceGrounding.isInsufficientAnswer(localAnswer)
@@ -547,7 +617,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     nativeConversationContainsCurrentTurn = false
                 }
                 val shouldUseAutomaticFallback =
-                    isFactualQuestion &&
+                    isFactualQuestion && referenceRouting.shouldUseReferenceFallback() &&
                         (referenceGrounding.isInsufficientAnswer(localAnswer) ||
                             verifierRequestsLookup)
                 if (shouldUseAutomaticFallback) {
@@ -587,9 +657,11 @@ internal fun JarvisRuntime.runConversationInternal(
                     nativeConversationContainsCurrentTurn = false
                 }
                 var cleanedResponse = cleanAssistantText(generated.text)
-                val requiresReference = turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.FACTUAL_LOCAL_FIRST ||
-                    turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.EXPLICIT_LOOKUP ||
-                    turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.LOOKUP_CONFIRMATION
+                val requiresReference = referenceRouting.requiresReference() && (
+                    effectiveTurnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.FACTUAL_LOCAL_FIRST ||
+                        effectiveTurnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.EXPLICIT_LOOKUP ||
+                        effectiveTurnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.LOOKUP_CONFIRMATION
+                )
                 if (requiresReference && referenceGrounding.isInsufficientAnswer(cleanedResponse) &&
                     (voiceRepetitionGuard?.acceptedSentences ?: 0) == 0) {
                     // Never expose a local knowledge-base disclaimer for a
@@ -706,7 +778,7 @@ internal fun JarvisRuntime.runConversationInternal(
                         "I couldn't generate a response. Please try that again."
                     }
                 }
-                turnOrchestrator.recordResponse(prompt, finalResponse, turnPlan)
+                turnOrchestrator.recordResponse(prompt, finalResponse, effectiveTurnPlan)
                 nativeConversationHasContext = nativeConversationContainsCurrentTurn
                 diagnosticRecorder.recordImportant(
                     "Turn\n" +
@@ -743,7 +815,9 @@ internal fun JarvisRuntime.runConversationInternal(
                 incrementalVoice?.close()
             }
         }
-        conversationJob?.invokeOnCompletion { ConversationWork.activeJobs.decrementAndGet() }
+        conversationJob = invocation
+        invocation.invokeOnCompletion { ConversationWork.activeJobs.decrementAndGet() }
+        return invocation
     }
 
 private fun JarvisRuntime.openVisionInputStream(uri: Uri): InputStream? {

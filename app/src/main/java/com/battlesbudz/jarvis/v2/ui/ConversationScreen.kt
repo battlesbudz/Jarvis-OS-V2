@@ -60,7 +60,10 @@ internal fun ConversationScreen(
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     fun returnToChat() {
-        onEndVoice { }
+        // Switching tabs leaves the foreground call and its call ID running.
+        // End Call and a recognized stop request are the only termination paths.
+        com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicy.dispatch(
+            com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicy.Transition.SHOW_CHAT) { onEndVoice { error = it } }
         voiceVisible = false
     }
     BackHandler(enabled = voiceVisible && !settings && !showHistory) { returnToChat() }
@@ -92,6 +95,18 @@ internal fun ConversationScreen(
             Text("JARVIS", style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
             TextButton(enabled = !preparingAttachment, onClick = { settings = true }) { Text("Settings") }
+        }
+        if (armed) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text("Voice call active — Chat is read-only while listening.", style = MaterialTheme.typography.labelMedium)
+                TextButton(onClick = {
+                    com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicy.dispatch(
+                        com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicy.Transition.EXPLICIT_END) {
+                        onEndVoice { error = it }
+                    }
+                }) { Text("End call") }
+            }
         }
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             SegmentedButton(selected = !voiceVisible, onClick = { returnToChat() },

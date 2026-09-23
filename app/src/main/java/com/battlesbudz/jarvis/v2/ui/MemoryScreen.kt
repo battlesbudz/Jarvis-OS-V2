@@ -39,7 +39,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
-/** A manual, local memory manager. It does not observe chat or voice conversations. */
+/** A local memory manager. It never automatically extracts conversation content. */
 @Composable
 internal fun MemoryScreen(memoryOs: MemoryOs, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -109,7 +109,7 @@ internal fun MemoryScreen(memoryOs: MemoryOs, onBack: () -> Unit) {
             Text("Memory", style = MaterialTheme.typography.headlineMedium)
             TextButton(onClick = onBack, enabled = !busy, modifier = Modifier.testTag("memory_back")) { Text("Back") }
         }
-        Text("Add and review memories saved on this phone. This manager does not automatically save chat or voice conversations, and conversation recall is not connected yet.",
+        Text("Add and review memories saved on this phone. Jarvis never automatically saves conversations: an explicit remember request or this form creates a pending proposal. Only approved memories may be used as historical context in chat or voice.",
             style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(
             value = draft,
@@ -252,7 +252,7 @@ private fun MemoryRow(
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(record.content)
-            Text("${record.reviewStatus.name.lowercase().replaceFirstChar { it.titlecase() } } · Added from ${record.source.eventSource}",
+            Text("${record.reviewStatus.name.lowercase().replaceFirstChar { it.titlecase() } } · Added from ${if (record.source.eventSource == "conversation_explicit") "explicit conversation request" else record.source.eventSource}",
                 style = MaterialTheme.typography.bodySmall)
             if (record.source.provenance.isNotEmpty()) Text("Details: " + record.source.provenance.joinToString { it.label ?: it.kind },
                 style = MaterialTheme.typography.bodySmall)
