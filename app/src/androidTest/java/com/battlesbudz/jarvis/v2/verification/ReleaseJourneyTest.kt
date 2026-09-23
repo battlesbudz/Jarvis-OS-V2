@@ -6,6 +6,14 @@ import android.media.AudioManager
 import android.os.BatteryManager
 import android.os.SystemClock
 import android.provider.MediaStore
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -17,12 +25,27 @@ import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.Until
 import com.battlesbudz.jarvis.v2.MainActivity
 import com.battlesbudz.jarvis.v2.actions.*
+import com.battlesbudz.jarvis.v2.ai.ToolCall
+import com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder
+import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
+import com.battlesbudz.jarvis.v2.chat.ConversationHistory
+import com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext
+import com.battlesbudz.jarvis.v2.memory.*
+import com.battlesbudz.jarvis.v2.ui.ConversationScreen
+import com.battlesbudz.jarvis.v2.ui.MemoryScreen
+import com.battlesbudz.jarvis.v2.voice.*
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.*
 import org.junit.Assert.*
 import org.junit.rules.TestName
 import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
 /** Real release UI/Android actions; controlled ToolCalls verify routing without model weights. */
@@ -445,7 +468,258 @@ class ReleaseJourneyTest {
         assertEquals("open_app", outcome.receipts.single().request.name)
     }
 
-    @Test fun test20_memoryManagerReviewsCorrectsSearchesAndErases() {
+
+    @Test fun test20_followupQueuesWhileAcceptedAndroidActionRuns() = runBlocking {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val queue = AcceptedActionQueue<String>()
+        val session = ContinuousActionSession(queue)
+        val firstNativeGeneration = CompletableDeferred<Unit>()
+        val releaseFirstNativeGeneration = CompletableDeferred<Unit>()
+        val executionOrder = mutableListOf<String>()
+        try {
+            assertNotNull(queue.admit("accepted-A", "utterance-A", "A"))
+            queue.start { task ->
+                if (task.value == "A") {
+                    firstNativeGeneration.complete(Unit)
+                    releaseFirstNativeGeneration.await()
+                }
+                val plan = if (task.value == "A") {
+                    ActionTurnPlan.parse("Read battery then set media volume to 30 percent")
+                } else ActionTurnPlan.parse("Open Settings")
+                val calls = if (task.value == "A") listOf(
+                    ToolCall("read_battery", "{}"), ToolCall("set_volume", "{\"level\":30}")
+                ) else listOf(ToolCall("open_app", "{\"app\":\"Settings\"}"))
+                val outcome = ActionTurnRunner(MobileActionExecutor { error("controlled calls dispatch below") }).runNative(
+                    plan, calls,
+                    dispatch = { request ->
+                        executionOrder += "${task.value}:${request.name}"
+                        MobileActionPipeline(executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true })).execute(request)
+                    },
+                    nextCalls = { emptyList() }
+                )
+                assertTrue(session.onTaskEvent(task.id, "${task.value}: ${outcome.message}"))
+                outcome.completed
+            }
+            withTimeout(15_000) { firstNativeGeneration.await() }
+            assertTrue("The listener/session must remain available before native dispatch", session.canAdmitAcceptedAction())
+            assertNotNull("Follow-up B must be accepted while A is blocked", queue.admit("accepted-B", "utterance-B", "B"))
+            assertEquals(1, queue.pendingCount())
+            releaseFirstNativeGeneration.complete(Unit)
+            withTimeout(20_000) { queue.awaitIdle() }
+
+            assertEquals(listOf("A:read_battery", "A:set_volume", "B:open_app"), executionOrder)
+            assertEquals(kotlin.math.round(audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .3).toInt(),
+                audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            assertTrue(device.wait(Until.hasObject(By.pkg("com.android.settings").depth(0)), 15_000))
+            val delivery = checkNotNull(session.nextDelivery())
+            val combinedReport = delivery.reports.joinToString(" ") { it.text }
+            assertTrue(combinedReport.contains("Battery is at"))
+            assertTrue(combinedReport.contains("Media volume set to 30 percent."))
+            assertTrue(combinedReport.contains("Opening Settings."))
+            assertTrue(session.markDelivered(delivery.attemptId, delivery.reports.map { it.taskId }.toSet()))
+            assertEquals(0, session.pendingReportCount())
+        } finally {
+            queue.close()
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
+        }
+    }
+
+    @Test fun test21_speechInterruptionPreservesAcceptedAndroidActions() = runBlocking {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val queue = AcceptedActionQueue<String>()
+        val session = ContinuousActionSession(queue)
+        val originalBlocked = CompletableDeferred<Unit>()
+        val releaseOriginal = CompletableDeferred<Unit>()
+        val dispatches = mutableListOf<String>()
+        try {
+            assertNotNull(queue.admit("original", "original-utterance", "original"))
+            queue.start { task ->
+                if (task.value == "original") {
+                    originalBlocked.complete(Unit)
+                    releaseOriginal.await()
+                }
+                val plan = if (task.value == "original") {
+                    ActionTurnPlan.parse("Set media volume to 30 percent then read battery")
+                } else ActionTurnPlan.parse("Open Settings")
+                val calls = if (task.value == "original") listOf(
+                    ToolCall("set_volume", "{\"level\":30}"), ToolCall("read_battery", "{}")
+                ) else listOf(ToolCall("open_app", "{\"app\":\"Settings\"}"))
+                val outcome = ActionTurnRunner(MobileActionExecutor { error("controlled calls dispatch below") }).runNative(
+                    plan, calls,
+                    dispatch = { request ->
+                        dispatches += "${task.value}:${request.name}"
+                        MobileActionPipeline(executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true })).execute(request)
+                    }, nextCalls = { emptyList() }
+                )
+                assertTrue(session.onTaskEvent(task.id, "${task.value}: ${outcome.message}"))
+                outcome.completed
+            }
+            withTimeout(15_000) { originalBlocked.await() }
+            assertNotNull(queue.admit("followup", "followup-utterance", "followup"))
+            session.onCaptureStarted()
+            val control = session.control("stop speaking")
+            assertEquals(VoiceActionControl.SpeechOnly, control)
+            assertTrue(session.onCaptured(SessionCapture("speech-interrupt", "stop speaking"),
+                CapturedKind.Control(control)) is CaptureOutcome.Control)
+            assertTrue("Speech interruption must leave accepted actions alive", queue.hasUnfinished())
+            releaseOriginal.complete(Unit)
+            withTimeout(20_000) { queue.awaitIdle() }
+
+            assertEquals(listOf("original:set_volume", "original:read_battery", "followup:open_app"), dispatches)
+            assertEquals(1, dispatches.count { it == "original:set_volume" })
+            assertEquals(1, dispatches.count { it == "followup:open_app" })
+            val firstDelivery = checkNotNull(session.nextDelivery())
+            assertEquals(2, firstDelivery.reports.size)
+            session.onCaptureStarted()
+            assertTrue("A speech floor handoff must interrupt only delivery", session.interruptDelivery(firstDelivery.attemptId).not())
+            assertEquals(2, session.pendingReportCount())
+            session.onCaptureStopped()
+            val acknowledgedDelivery = checkNotNull(session.nextDelivery())
+            assertEquals(firstDelivery.reports.map { it.taskId }.toSet(), acknowledgedDelivery.reports.map { it.taskId }.toSet())
+            assertTrue(session.markDelivered(acknowledgedDelivery.attemptId,
+                acknowledgedDelivery.reports.map { it.taskId }.toSet()))
+            assertEquals(0, session.pendingReportCount())
+        } finally {
+            queue.close()
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
+        }
+    }
+
+    @Test fun test22_explicitCancellationKeepsCompletedAndroidReceipts() = runBlocking {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val preferences = context.getSharedPreferences("continuous-action-cancel", android.content.Context.MODE_PRIVATE)
+        preferences.edit().clear().commit()
+        val store = SharedPreferencesVoiceCallStore(preferences)
+        val calls = VoiceSessionController(store)
+        val call = calls.beginCall()
+        val replyId = "cancelled-accepted-reply"
+        calls.beginReply(call.id, replyId)
+        val queue = AcceptedActionQueue<String>()
+        val session = ContinuousActionSession(queue)
+        val volumeReceipt = CompletableDeferred<Unit>()
+        val allowBattery = CompletableDeferred<Unit>()
+        var batteryDispatches = 0
+        var settingsDispatches = 0
+        try {
+            assertNotNull(queue.admit("cancel-A", "cancel-utterance-A", "A"))
+            queue.start { task ->
+                if (task.value == "B-settings") {
+                    val outcome = ActionTurnRunner(MobileActionExecutor { error("controlled calls dispatch below") }).runNative(
+                        ActionTurnPlan.parse("Open Settings"), listOf(ToolCall("open_app", "{\"app\":\"Settings\"}")),
+                        dispatch = { request ->
+                            settingsDispatches++
+                            MobileActionPipeline(executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true })).execute(request)
+                        }, nextCalls = { emptyList() }
+                    )
+                    outcome.completed
+                } else try {
+                    val outcome = ActionTurnRunner(MobileActionExecutor { error("controlled calls dispatch below") }).runNative(
+                        ActionTurnPlan.parse("Set media volume to 30 percent then read battery"),
+                        listOf(ToolCall("set_volume", "{\"level\":30}")),
+                        dispatch = { request ->
+                            val result = MobileActionPipeline(executor = AndroidMobileActionExecutor(context)).execute(request)
+                            calls.recordReplyAction(call.id, replyId, VoiceActionOutcome(request.name, result.message, result.succeeded))
+                            volumeReceipt.complete(Unit)
+                            result
+                        },
+                        nextCalls = {
+                            allowBattery.await()
+                            batteryDispatches++
+                            listOf(ToolCall("read_battery", "{}"))
+                        }
+                    )
+                    outcome.completed
+                } finally {
+                    session.onTaskEvent(task.id, "A cancelled after its durable volume receipt")
+                }
+            }
+            withTimeout(15_000) { volumeReceipt.await() }
+            assertNotNull(queue.admit("cancel-B", "cancel-utterance-B", "B-settings"))
+            queue.cancel(VoiceActionControl.CancelAll)
+            withTimeout(15_000) { queue.awaitIdle() }
+
+            assertEquals("Cancellation must prevent the blocked battery dispatch", 0, batteryDispatches)
+            assertEquals("Cancellation must prevent queued Settings", 0, settingsDispatches)
+            assertEquals(AcceptedActionState.CANCELLED, queue.tasks.value.first { it.id == "cancel-A" }.state)
+            assertEquals(AcceptedActionState.CANCELLED, queue.tasks.value.first { it.id == "cancel-B" }.state)
+            val savedReceipt = store.list().single { it.id == call.id }.transcript.single { it.replyId == replyId }.actions.single()
+            assertEquals("set_volume", savedReceipt.name)
+            assertTrue(savedReceipt.succeeded)
+            assertEquals(kotlin.math.round(audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .3).toInt(),
+                audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+        } finally {
+            queue.close()
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
+        }
+    }
+
+    @Test fun test23_actionResultsSurviveEndCallWithoutReplay() = runBlocking {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val preferences = context.getSharedPreferences("continuous-action-end-call", android.content.Context.MODE_PRIVATE)
+        preferences.edit().clear().commit()
+        val store = SharedPreferencesVoiceCallStore(preferences)
+        val controller = VoiceSessionController(store)
+        val originalCall = controller.beginCall()
+        val replyId = "ended-call-accepted-reply"
+        controller.beginReply(originalCall.id, replyId)
+        val queue = AcceptedActionQueue<String>()
+        val session = ContinuousActionSession(queue)
+        val nativeBlocked = CompletableDeferred<Unit>()
+        val releaseNative = CompletableDeferred<Unit>()
+        var executions = 0
+        try {
+            assertNotNull(queue.admit("ended-A", "ended-utterance-A", "A"))
+            queue.start { task ->
+                nativeBlocked.complete(Unit)
+                releaseNative.await()
+                val outcome = ActionTurnRunner(MobileActionExecutor { error("controlled calls dispatch below") }).runNative(
+                    ActionTurnPlan.parse("Read battery then set media volume to 30 percent"),
+                    listOf(ToolCall("read_battery", "{}"), ToolCall("set_volume", "{\"level\":30}")),
+                    dispatch = { request ->
+                        executions++
+                        val result = MobileActionPipeline(executor = AndroidMobileActionExecutor(context)).execute(request)
+                        controller.recordReplyAction(originalCall.id, replyId,
+                            VoiceActionOutcome(request.name, result.message, result.succeeded))
+                        result
+                    }, nextCalls = { emptyList() }
+                )
+                controller.updateTaskForCall(originalCall.id, VoiceTaskStatus(
+                    if (outcome.completed) VoiceTaskState.COMPLETED else VoiceTaskState.FAILED,
+                    completedSteps = outcome.receipts.map { it.request.name }
+                ))
+                assertTrue(session.onTaskEvent(task.id, outcome.message))
+                outcome.completed
+            }
+            withTimeout(15_000) { nativeBlocked.await() }
+            controller.end()
+            releaseNative.complete(Unit)
+            withTimeout(20_000) { queue.awaitIdle() }
+
+            assertEquals(2, executions)
+            val reloadedStore = SharedPreferencesVoiceCallStore(preferences)
+            val saved = reloadedStore.list().single { it.id == originalCall.id }
+            assertNotNull(saved.endedAtMs)
+            assertEquals(listOf("read_battery", "set_volume"),
+                saved.transcript.single { it.replyId == replyId }.actions.map { it.name })
+            assertEquals(VoiceTaskState.COMPLETED, saved.taskStatus?.state)
+            assertEquals(kotlin.math.round(audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .3).toInt(),
+                audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            val reloadedController = VoiceSessionController(reloadedStore)
+            val newCall = reloadedController.beginCall()
+            assertTrue(reloadedController.currentTranscript().isEmpty())
+            assertEquals("Reloading storage must not replay completed Android work", 2, executions)
+            reloadedController.end()
+            assertNotEquals(originalCall.id, newCall.id)
+        } finally {
+            queue.close()
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
+        }
+    }
+    @Test fun test24_memoryManagerReviewsCorrectsSearchesAndErases() {
         // Use only the release UI: memory implementation classes are intentionally shrinkable.
         clickEnabled(By.res("memory_open"))
         assertNotNull(find(By.text("Memory")))
@@ -521,6 +795,169 @@ class ReleaseJourneyTest {
         assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
         captureEvidence("memory_approved_after_recreation")
         clickEnabled(By.res("memory_back"))
+    }
+
+    @Test fun test25_finalizedTextAndVoiceMemoryNeedsApprovalBeforePromptUse() {
+        // Controlled finalized-input fixtures exercise the production local bridge and prompt builder,
+        // not a microphone or model-generated response.
+        val file = File(context.cacheDir, "release-finalized-memory.json").apply { delete() }
+        val now = System.currentTimeMillis()
+        try {
+            val os = MemoryOs(file) { now }
+            val bridge = ConversationMemory(os)
+            val text = bridge.capture(FinalMemoryInput(
+                "release-text-memory", "thread-release", null, ConversationMemorySource.TEXT,
+                "Remember I prefer bergamot tea.", now
+            ))
+            val voice = bridge.capture(FinalMemoryInput(
+                "release-voice-memory", "thread-release", "call-release", ConversationMemorySource.VOICE,
+                "My favorite color is cobalt.", now
+            ))
+            assertEquals(ConversationMemoryOutcome.PROPOSED, text.outcome)
+            assertEquals(ConversationMemoryOutcome.PROPOSED, voice.outcome)
+            val pending = checkNotNull(os.read().snapshot).memories
+            assertEquals(setOf(MemoryReviewStatus.PENDING), pending.map { it.reviewStatus }.toSet())
+            assertTrue(bridge.approvedContext("tea", 600).packet!!.memories.isEmpty())
+
+            pending.forEach { record -> assertEquals(MemoryOutcome.APPROVED, os.approve(record.id, record.revision).outcome) }
+            val packet = checkNotNull(bridge.approvedContext("tea cobalt", 900).packet).text
+            assertTrue(packet.contains("I prefer bergamot tea"))
+            assertTrue(packet.contains("My favorite color is cobalt"))
+            val builder = ConversationPromptBuilder(ShortTermConversationContext())
+            assertTrue(builder.buildGemmaPrompt("What tea and color do I prefer?", null, emptyList(), true,
+                memoryContext = packet).contains(packet))
+            assertTrue(builder.buildGemmaPrompt("What tea and color do I prefer?", null, emptyList(), true,
+                voice = true, memoryContext = packet).contains(packet))
+        } finally { file.delete() }
+    }
+
+    @Test fun test26_memoryCorrectionAndEraseRefreshApprovedPacket() {
+        // This is a local persistence/refresh contract; it does not claim a generated reply changed.
+        val file = File(context.cacheDir, "release-memory-refresh.json").apply { delete() }
+        val now = System.currentTimeMillis()
+        try {
+            val os = MemoryOs(file) { now }
+            val bridge = ConversationMemory(os)
+            val created = checkNotNull(bridge.capture(FinalMemoryInput(
+                "release-original-memory", "thread-release", null, ConversationMemorySource.TEXT,
+                "Remember I prefer blue mugs.", now
+            )).memory)
+            val approved = checkNotNull(os.approve(created.id, created.revision).memory)
+            val before = bridge.approvedContext("mugs", 600)
+            assertTrue(checkNotNull(before.packet).text.contains("blue mugs"))
+
+            val correction = checkNotNull(os.propose(MemoryProposal(
+                "I prefer green mugs",
+                MemorySource("release-correction-memory", "final_text_input", now),
+                correctsMemoryId = approved.id,
+                expectedTargetRevision = approved.revision,
+            )).memory)
+            val replacement = checkNotNull(os.approve(correction.id, correction.revision).memory)
+            val afterCorrection = bridge.approvedContext("mugs", 600)
+            assertTrue(checkNotNull(afterCorrection.packet).text.contains("green mugs"))
+            assertFalse(afterCorrection.packet.text.contains("blue mugs"))
+            assertNotEquals(before.stateToken, afterCorrection.stateToken)
+
+            assertEquals(MemoryOutcome.DELETED, os.delete(replacement.id, replacement.revision).outcome)
+            val afterErase = bridge.approvedContext("mugs", 600)
+            assertTrue(checkNotNull(afterErase.packet).memories.isEmpty())
+            assertNotEquals(afterCorrection.stateToken, afterErase.stateToken)
+        } finally { file.delete() }
+    }
+
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @Test fun test27_controlledConversationSurfaceKeepsCallUntilExplicitEnd() {
+        // Controlled StateFlows exercise the production Compose navigation surface. They do not
+        // start audio capture, load weights, or represent a microphone/model result.
+        val prefs = context.getSharedPreferences("release-conversation-surface", android.content.Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val history = ConversationHistory(prefs)
+        val busy = MutableStateFlow(false)
+        val callState = MutableStateFlow(VoiceSessionState.ACTIVELY_LISTENING)
+        val ends = AtomicInteger(0)
+        val sends = AtomicInteger(0)
+        val memoryBacks = AtomicInteger(0)
+        val memoryFile = File(context.cacheDir, "release-memory-overlay.json").apply { delete() }
+        val queueFull = AtomicBoolean(true)
+        try {
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme {
+                    Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                    ConversationScreen(
+                        history = history,
+                        busy = busy,
+                        callState = callState,
+                        onSend = { _, attachment ->
+                            sends.incrementAndGet()
+                            if (attachment != null) "Attachments are unavailable while a Voice Call is active."
+                            else if (queueFull.get()) "Voice Call input queue is full. Wait for the current turn." else null
+                        },
+                        selectedModel = LocalModelSpec("release-fixture", "release-fixture.bin", recommendedGpu = false),
+                        onSelectConversation = { null },
+                        onEndVoice = { done -> ends.incrementAndGet(); done("Voice Call ended.") },
+                        onOpenVoiceCalls = {},
+                        resumedVoice = false,
+                        voiceContent = { visible, _, _, _ -> if (visible) androidx.compose.material3.Text("Controlled voice surface") },
+                    )
+                    }
+                }
+            } }
+            VoiceSessionUi.status.value = "Voice Call is listening — controlled fixture with a deliberately long status that must not hide End call on a narrow screen."
+            VoiceSessionUi.armed.value = true
+            assertNotNull(find(By.text("Controlled voice surface")))
+            device.pressBack()
+            device.waitForIdle()
+            assertEquals("Back must not end the active call", 0, ends.get())
+            assertNotNull(find(By.res("voice_call_status")))
+            val endBounds = find(By.res("voice_call_end")).visibleBounds
+            assertTrue("End call must remain visible beside a long status", endBounds.width() > 0 && endBounds.right <= device.displayWidth)
+            find(By.res("voice_tab")).click()
+            assertNotNull(find(By.text("Controlled voice surface")))
+            find(By.res("chat_tab")).click()
+            assertEquals("Changing tabs must not end the active call", 0, ends.get())
+            assertNotNull(find(By.res("voice_call_status")))
+            assertNotNull(find(By.text("Attachments are unavailable during a voice call. End the call to add one.")))
+            enterText(By.res("chat_composer"), "Synthetic typed call follow-up")
+            clickEnabled(By.res("chat_send"))
+            assertEquals(1, sends.get())
+            assertNotNull(find(By.text("Voice Call input queue is full. Wait for the current turn.")))
+            assertEquals("Synthetic typed call follow-up", find(By.res("chat_composer")).text)
+            queueFull.set(false)
+            clickEnabled(By.res("chat_send"))
+            assertEquals(2, sends.get())
+            assertFalse("Successful armed admission must clear the draft", find(By.res("chat_send")).isEnabled)
+            find(By.res("voice_call_end")).click()
+            assertEquals(1, ends.get())
+            VoiceSessionUi.armed.value = false
+
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme {
+                    Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                        Box(Modifier.fillMaxSize()) {
+                            androidx.compose.material3.Text("Underlying call surface")
+                            MemoryScreen(
+                                memoryOs = MemoryOs(memoryFile),
+                                onBack = { memoryBacks.incrementAndGet() },
+                                callActive = true,
+                                callStatus = "A deliberately long controlled call status that must keep the End call action visible on a narrow screen.",
+                                onEndCall = { done -> ends.incrementAndGet(); done("Voice Call ended.") },
+                            )
+                        }
+                    }
+                }
+            } }
+            assertNotNull(find(By.text("Memory")))
+            enabled(By.res("memory_back"))
+            val memoryEndBounds = find(By.res("voice_call_end")).visibleBounds
+            assertTrue("Memory must keep End call visible beside a long status", memoryEndBounds.width() > 0 && memoryEndBounds.right <= device.displayWidth)
+            device.pressBack()
+            device.waitForIdle()
+            assertEquals("Memory overlay must consume system Back before its underlying call surface", 1, memoryBacks.get())
+        } finally {
+            VoiceSessionUi.armed.value = false
+            VoiceSessionUi.status.value = ""
+            memoryFile.delete()
+        }
     }
 
 

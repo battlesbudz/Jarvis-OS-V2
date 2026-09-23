@@ -21,7 +21,14 @@
     "test17_cancelledAndDuplicateActionTurnsDoNotReplay",
     "test18_naturalActionRoutingOpensSettingsThenReadsBattery",
     "test19_retryLiteralUnknownAppStopsWithoutBattery",
-    "test20_memoryManagerReviewsCorrectsSearchesAndErases",
+    "test20_followupQueuesWhileAcceptedAndroidActionRuns",
+    "test21_speechInterruptionPreservesAcceptedAndroidActions",
+    "test22_explicitCancellationKeepsCompletedAndroidReceipts",
+    "test23_actionResultsSurviveEndCallWithoutReplay",
+    "test24_memoryManagerReviewsCorrectsSearchesAndErases",
+    "test25_finalizedTextAndVoiceMemoryNeedsApprovalBeforePromptUse",
+    "test26_memoryCorrectionAndEraseRefreshApprovedPacket",
+    "test27_controlledConversationSurfaceKeepsCallUntilExplicitEnd",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",
@@ -30,6 +37,6 @@
     "Microphone, speaker, Bluetooth and acoustic interruption behavior",
     "Physical-device GPU/NPU compatibility, thermal behavior and latency",
     "Successful multi-gigabyte model download/import",
-    "Conversation and voice recall of approved memories"
+    "Real-model use of approved memory recall"
   ]
 }

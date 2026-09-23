@@ -12,6 +12,8 @@ class VoiceTurnCoordinator(
     suspend fun <T> processTurn(
         transcript: String?,
         replyId: String? = null,
+        /** Serializes every persisted publication with the owning delivery fence. */
+        publish: ((() -> Unit) -> Boolean) = { block -> block(); true },
         generate: suspend (onToken: (String) -> Unit) -> T
     ): T {
         if (session.state.value == VoiceSessionState.PASSIVE_LISTENING) {
@@ -27,10 +29,12 @@ class VoiceTurnCoordinator(
         return try {
             val result = generate { token ->
                 if (session.currentCallId() != callId) throw kotlinx.coroutines.CancellationException("The voice call ended.")
-                response.append(token)
-                session.setState(VoiceSessionState.SPEAKING)
-                if (replyId != null && callId != null) session.updateReplyText(callId, replyId, response.toString())
-                else session.appendTranscript("Jarvis", response.toString(), complete = false)
+                if (!publish {
+                        response.append(token)
+                        session.setState(VoiceSessionState.SPEAKING)
+                        if (replyId != null && callId != null) session.updateReplyText(callId, replyId, response.toString())
+                        else session.appendTranscript("Jarvis", response.toString(), complete = false)
+                    }) throw kotlinx.coroutines.CancellationException("Voice publication revoked.")
             }
             if (session.currentCallId() != callId) throw kotlinx.coroutines.CancellationException("The voice call ended.")
             if (response.isNotBlank()) {
@@ -40,8 +44,10 @@ class VoiceTurnCoordinator(
         } catch (error: Throwable) {
             if (session.currentCallId() == callId) {
                 if (response.isNotBlank()) {
-                    if (replyId != null && callId != null) session.updateReplyText(callId, replyId, response.toString())
-                    else session.appendTranscript("Jarvis", response.toString(), complete = false)
+                    publish {
+                        if (replyId != null && callId != null) session.updateReplyText(callId, replyId, response.toString())
+                        else session.appendTranscript("Jarvis", response.toString(), complete = false)
+                    }
                 }
                 if (error is VoiceControlCancellation && error.control == VoiceControl.STOP_REPLY) {
                     session.setState(VoiceSessionState.ACTIVELY_LISTENING)

@@ -6,8 +6,10 @@ import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
 import androidx.lifecycle.lifecycleScope
 import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
 import com.battlesbudz.jarvis.v2.actions.runNative
+import com.battlesbudz.jarvis.v2.memory.MemoryTurnContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import java.io.InputStream
 
 internal fun JarvisRuntime.runConversationInternal(
@@ -22,12 +24,23 @@ internal fun JarvisRuntime.runConversationInternal(
         comparison: com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.Trial? = null,
         onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit = {},
         onActionResult: (String, String, Boolean) -> Unit = { _, _, _ -> },
-        audioUri: Uri? = null
-    ) {
+        audioUri: Uri? = null,
+        /** A queue admission freezes authorization before it waits for native ownership. */
+        frozenActionPlan: com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready? = null,
+        /** Frozen final ASR still requires the same source-clause guard as attached voice input. */
+        frozenVoiceFinal: Boolean = false,
+        /** The call owner holds the one model lease and joins this invocation before restart. */
+        callOwned: Boolean = false,
+        /** Binds an ordinary answer's exact voice output to its mutation/expiry delivery ticket. */
+        onMemoryBound: (com.battlesbudz.jarvis.v2.memory.MemoryDeliveryFence.Ticket, MemoryTurnContext) -> Unit = { _, _ -> }
+    ): Job? {
+        var memoryTurnContext: MemoryTurnContext? = null
+        var memoryDeliveryTicket: com.battlesbudz.jarvis.v2.memory.MemoryDeliveryFence.Ticket? = null
         fun buildTurnPrompt(userPrompt: String, actionResultContext: String?,
                             history: List<ChatEntry>, seedContext: Boolean): String =
             promptBuilder.buildGemmaPrompt(userPrompt, actionResultContext, history, seedContext,
-                voice = voiceAudio != null, compactInstructions = (modelStore.selectedModel().contextTokens ?: 4096) < 2048)
+                voice = voiceAudio != null, compactInstructions = (modelStore.selectedModel().contextTokens ?: 4096) < 2048,
+                memoryContext = memoryTurnContext?.takeIf { it.isCurrent() }?.promptSection())
         // Smaller Qwen exports have a real 2K/4K cache, not the upstream model's advertised context.
         // Character budgeting remains conservative/approximate; native token limits are authoritative.
         val contextLimit = modelStore.selectedModel().contextTokens?.let {
@@ -41,25 +54,39 @@ internal fun JarvisRuntime.runConversationInternal(
         var firstVisibleMs: Long? = null
         fun elapsed() = (System.nanoTime() - latencyStarted) / 1_000_000
         fun deliverToken(text: String) {
-            if (firstVisibleMs == null && text.isNotBlank()) firstVisibleMs = elapsed()
-            onToken(text)
+            val publish = {
+                if (firstVisibleMs == null && text.isNotBlank()) firstVisibleMs = elapsed()
+                onToken(text)
+            }
+            val ticket = memoryDeliveryTicket
+            if (ticket == null) publish()
+            else memoryDeliveryFence.publish(ticket, { memoryTurnContext?.isCurrent() != false }, publish)
         }
         fun finish(text: String) {
-            if (firstVisibleMs == null && text.isNotBlank()) firstVisibleMs = elapsed()
-            onLatency(com.battlesbudz.jarvis.v2.diagnostics.TurnLatency(latencyId, elapsed(),
-                firstVisibleMs, loadMs, lookupMs, inferencePasses.toList()))
-            comparison?.put("answer", text)
-            onComplete(text)
+            val publish = {
+                if (firstVisibleMs == null && text.isNotBlank()) firstVisibleMs = elapsed()
+                onLatency(com.battlesbudz.jarvis.v2.diagnostics.TurnLatency(latencyId, elapsed(),
+                    firstVisibleMs, loadMs, lookupMs, inferencePasses.toList()))
+                comparison?.put("answer", text)
+                onComplete(text)
+            }
+            val ticket = memoryDeliveryTicket
+            if (ticket == null) publish()
+            else if (!memoryDeliveryFence.publish(ticket, { memoryTurnContext?.isCurrent() != false }, publish)) {
+                // Complete the owning reply with a safe terminal result so voice deferreds and
+                // typed owner cleanup cannot wait forever on a dropped stale callback.
+                onComplete("Memory changed while I was responding. Please ask again.")
+            }
         }
-        if (voiceAudio == null && modelStore.isModelOperationActive()) {
+        if (voiceAudio == null && frozenActionPlan == null && !callOwned && modelStore.isModelOperationActive()) {
             finish("A voice or model operation is still active. Please finish it first.")
-            return
+            return null
         }
         if (!ConversationWork.activeJobs.compareAndSet(0, 1)) {
             finish("The previous response is still finishing. Please try again in a moment.")
-            return
+            return null
         }
-        conversationJob = runtimeScope.launch(Dispatchers.Default) {
+        val invocation = runtimeScope.launch(Dispatchers.Default) {
             try {
                 if (!modelStore.verifyIntegrity(modelStore.selectedModel())) {
                     incrementalVoice?.close()
@@ -88,23 +115,14 @@ internal fun JarvisRuntime.runConversationInternal(
                 var actionResultForGemma: String? = null
                 var actionResultMessage: String? = null
                 var actionName: String? = null
+                // All routing, recall, and summaries must observe the persistent post-memory
+                // boundary. Visible transcript stays intact; only prompt context is filtered.
+                var safeHistory = conversationHistory.contextAfterMemoryCutoff()
                 val turnPlan = if (comparison != null || imageUri != null || audioUri != null) com.battlesbudz.jarvis.v2.ai.TurnPlan(com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT)
-                    else turnOrchestrator.plan(prompt, history.map { it.role to it.text })
+                    else turnOrchestrator.plan(prompt, safeHistory.map { it.role to it.text })
                 if (voiceAudio != null && turnPlan.lookupQuery == null) activeVoiceOutput?.acknowledgeConfirmedTurn()
-                val repeatReply = if (imageUri == null && audioUri == null && voiceAudio == null) com.battlesbudz.jarvis.v2.ai.LastReplyRecall.resolve(
-                    prompt, history.map { it.role to it.text }
-                ) else null
-                if (repeatReply != null) {
-                    // Speculation may have guessed an older reply. The saved visible
-                    // answer is authoritative; repeating it never reruns a phone tool.
-                    resetNativeConversation()
-                    turnOrchestrator.recordResponse(prompt, repeatReply, turnPlan)
-                    diagnosticRecorder.record("Dialogue recall: source=latest_visible_reply chars=${repeatReply.length}")
-                    mainHandler.post { finish(repeatReply) }
-                    return@launch
-                }
                 // Parse the completed request before any direct shortcut, lookup, or model side effect.
-                val requestedActionPlan = turnPlan.actionPlan
+                val requestedActionPlan = frozenActionPlan ?: turnPlan.actionPlan
                 diagnosticRecorder.record("Action route plan=${requestedActionPlan.javaClass.simpleName} " +
                     "steps=${(requestedActionPlan as? com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready)?.steps?.map { it.request.name } ?: emptyList<String>()} " +
                     "lookup=${turnPlan.lookupQuery != null}")
@@ -113,6 +131,19 @@ internal fun JarvisRuntime.runConversationInternal(
                     resetNativeConversation()
                     val rejection = requestedActionPlan.reason
                     turnOrchestrator.recordResponse(prompt, rejection, turnPlan)
+                    mainHandler.post { finish(rejection) }
+                    return@launch
+                }
+                val guardedFrozenVoicePlan = requestedActionPlan as? com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready
+                if (frozenVoiceFinal && guardedFrozenVoicePlan != null &&
+                    !guardedFrozenVoicePlan.steps.all { step ->
+                        com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard.allows(
+                            step.sourceClause, step.request.name, step.request.arguments)
+                    }) {
+                    incrementalVoice?.close()
+                    resetNativeConversation()
+                    val rejection = "I couldn't verify that final spoken phone request. Please say it again."
+                    diagnosticRecorder.recordImportant("Voice action rejected: final source-clause guard failed")
                     mainHandler.post { finish(rejection) }
                     return@launch
                 }
@@ -141,8 +172,12 @@ internal fun JarvisRuntime.runConversationInternal(
                     mainHandler.post { finish(result.message) }
                     return@launch
                 }
+                // Current raw request is classified before a MemoryOS lookup. Ready phone actions
+                // intentionally receive no memory packet and retain their existing frozen authority.
+                val personalMemoryRecall = requestedActionPlan !is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready &&
+                    MemoryTurnContext.isPersonalRecall(prompt)
                 val lookupStarted = System.nanoTime()
-                val referenceContext = turnPlan.lookupQuery?.let {
+                val referenceContext = turnPlan.lookupQuery?.takeUnless { personalMemoryRecall }?.let {
                     if (voiceAudio != null) activeVoiceOutput?.acknowledgeConfirmedTurn()
                     referenceGrounding.fetchIfRequested(it)?.context
                 }
@@ -155,7 +190,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 // reference service is unavailable, do not let the local model
                 // bounce the same question back to the user as an offer to
                 // search; report the failed automatic attempt directly.
-                if (turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.FACTUAL_LOCAL_FIRST &&
+                if (!personalMemoryRecall && turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.FACTUAL_LOCAL_FIRST &&
                     referenceContext.isNullOrBlank()
                 ) {
                     diagnosticRecorder.record(
@@ -186,6 +221,43 @@ internal fun JarvisRuntime.runConversationInternal(
                     return@launch
                 }
 
+                // Read one approved snapshot only for an ordinary answer, after routing and lookup
+                // resolution but before every prompt-size/retry calculation. Pending proposals never
+                // invalidate it; an approved mutation fences later tokens and forces a fresh context.
+                if (requestedActionPlan !is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready) {
+                    val memoryBudget = (contextLimit / 5).coerceIn(240, 1_200)
+                    memoryTurnContext = freshMemoryTurnContext(prompt, memoryBudget)
+                    if (memoryTurnContext == null) {
+                        // A failed store read must not reuse a resident native conversation seeded
+                        // with an earlier approved packet. Keep the user-visible failure explicit.
+                        memoryDeliveryFence.invalidate()
+                        nativeMemoryStateToken = null
+                        resetNativeConversation()
+                        mainHandler.post { finish("Memory context is unavailable right now; please try again after storage recovers.") }
+                        return@launch
+                    }
+                    if (adoptMemoryState(memoryTurnContext!!)) {
+                        resetNativeConversation()
+                        // Expiry-token adoption can publish a fresh persistent cutoff. Reload
+                        // before any recall/retry prompt observes retained dialogue.
+                        safeHistory = conversationHistory.contextAfterMemoryCutoff()
+                    }
+                    memoryDeliveryTicket = memoryDeliveryFence.ticket(memoryTurnContext!!.expiresAtMs)
+                    onMemoryBound(memoryDeliveryTicket!!, memoryTurnContext!!)
+                    val repeatReply = if (imageUri == null && audioUri == null && voiceAudio == null)
+                        com.battlesbudz.jarvis.v2.ai.LastReplyRecall.resolve(prompt, safeHistory.map { it.role to it.text }) else null
+                    if (repeatReply != null) {
+                        resetNativeConversation()
+                        turnOrchestrator.recordResponse(prompt, repeatReply, turnPlan)
+                        diagnosticRecorder.record("Dialogue recall: source=latest_visible_reply chars=${repeatReply.length}")
+                        mainHandler.post { finish(repeatReply) }
+                        return@launch
+                    }
+                }
+                val memoryHistoryInvalidated = requestedActionPlan !is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready &&
+                    consumeMemoryHistoryCutoff()
+                if (memoryHistoryInvalidated) resetNativeConversation()
+                val effectiveHistory = safeHistory
                 // Include retrieved evidence in the budget calculation. A
                 // factual lookup must trigger compaction before the fresh prompt
                 // is submitted, rather than being rejected after construction.
@@ -197,22 +269,22 @@ internal fun JarvisRuntime.runConversationInternal(
                 val existingPromptSize = buildTurnPrompt(
                     prompt,
                     actionResultForGemma,
-                    history,
+                    effectiveHistory,
                     seedContext = false
                 ).length
                 val freshPromptSize = buildTurnPrompt(
                     prompt,
                     actionResultForGemma,
-                    history,
+                    effectiveHistory,
                     seedContext = true
                 ).length
                 val pendingRequestSize = maxOf(existingPromptSize, freshPromptSize) + referenceSize
-                var promptHistory = history
+                var promptHistory = if (memoryHistoryInvalidated) emptyList() else effectiveHistory
                 if (conversationCharacters + pendingRequestSize + ConversationPolicy.GENERATION_HEADROOM >
                     contextLimit
                 ) {
                     val compactedText = shortTermContext.compactSnapshot(
-                        history.map { it.role to it.text }
+                        promptHistory.map { it.role to it.text }
                     )
                     if (compactedText.isNotBlank()) {
                         shortTermContext.updateSummary(compactedText)
@@ -444,7 +516,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 val actionPlan = requestedActionPlan
                 if (actionPlan is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready && generated.toolCalls.isNotEmpty()) {
                     // Final transcript only: every source clause is independently guarded before dispatch.
-                    val voiceAllowed = voiceAudio == null || actionPlan.steps.all { step ->
+                    val voiceAllowed = (voiceAudio == null && !frozenVoiceFinal) || actionPlan.steps.all { step ->
                         com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard.allows(
                             step.sourceClause, step.request.name, step.request.arguments)
                     }
@@ -526,7 +598,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 val isFactualQuestion =
                     referenceContext == null &&
                         actionName == null &&
-                        turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.FACTUAL_LOCAL_FIRST
+                        turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.FACTUAL_LOCAL_FIRST && !personalMemoryRecall
                 var verifierRequestsLookup = false
                 if (isFactualQuestion &&
                     !referenceGrounding.isInsufficientAnswer(localAnswer)
@@ -587,7 +659,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     nativeConversationContainsCurrentTurn = false
                 }
                 var cleanedResponse = cleanAssistantText(generated.text)
-                val requiresReference = turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.FACTUAL_LOCAL_FIRST ||
+                val requiresReference = (!personalMemoryRecall && turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.FACTUAL_LOCAL_FIRST) ||
                     turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.EXPLICIT_LOOKUP ||
                     turnPlan.kind == com.battlesbudz.jarvis.v2.ai.TurnKind.LOOKUP_CONFIRMATION
                 if (requiresReference && referenceGrounding.isInsufficientAnswer(cleanedResponse) &&
@@ -644,7 +716,7 @@ internal fun JarvisRuntime.runConversationInternal(
                         resetNativeConversation()
                         nativeConversationContainsCurrentTurn = false
                         try {
-                            val repairPrompt = buildTurnPrompt(prompt, null, history, seedContext = true) +
+                            val repairPrompt = buildTurnPrompt(prompt, null, promptHistory, seedContext = true) +
                                 "\n" + referenceContext.orEmpty() + "\n" +
                                 "\nYour previous draft repeated the user or an earlier reply and was suppressed. " +
                                 "Give a NEW direct answer to the CURRENT question in one or two sentences. " +
@@ -706,6 +778,15 @@ internal fun JarvisRuntime.runConversationInternal(
                         "I couldn't generate a response. Please try that again."
                     }
                 }
+                if (memoryTurnContext?.let(::isMemoryTurnCurrent) == false) {
+                    memoryDeliveryFence.invalidate()
+                    // The owner is now at a safe native boundary. Do not preserve or speak an
+                    // answer assembled from erased/corrected approved memory.
+                    resetNativeConversation()
+                    shortTermContext.clear()
+                    mainHandler.post { finish("Memory changed while I was responding. Please ask again.") }
+                    return@launch
+                }
                 turnOrchestrator.recordResponse(prompt, finalResponse, turnPlan)
                 nativeConversationHasContext = nativeConversationContainsCurrentTurn
                 diagnosticRecorder.recordImportant(
@@ -743,7 +824,9 @@ internal fun JarvisRuntime.runConversationInternal(
                 incrementalVoice?.close()
             }
         }
-        conversationJob?.invokeOnCompletion { ConversationWork.activeJobs.decrementAndGet() }
+        conversationJob = invocation
+        invocation.invokeOnCompletion { ConversationWork.activeJobs.decrementAndGet() }
+        return invocation
     }
 
 private fun JarvisRuntime.openVisionInputStream(uri: Uri): InputStream? {

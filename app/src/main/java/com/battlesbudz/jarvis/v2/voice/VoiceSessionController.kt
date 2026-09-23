@@ -31,14 +31,15 @@ class VoiceSessionController(
     }
 
     @Synchronized fun appendTranscript(role: String, text: String, complete: Boolean = true,
-                         latency: com.battlesbudz.jarvis.v2.diagnostics.TurnLatency? = null) {
+                         latency: com.battlesbudz.jarvis.v2.diagnostics.TurnLatency? = null,
+                         origin: TranscriptOrigin = TranscriptOrigin.SPOKEN) {
         val call = requireActiveCall()
         val entries = call.transcript.toMutableList()
         val previous = entries.lastOrNull()
         if (previous?.role == role && !previous.complete) {
             entries[entries.lastIndex] = previous.copy(text = text, complete = complete, generationComplete = complete, timestampMs = nowMs(), latency = latency ?: previous.latency)
         } else {
-            entries += TranscriptEntry(role, text, nowMs(), complete, latency)
+            entries += TranscriptEntry(role, text, nowMs(), complete, latency, origin = origin)
         }
         activeCall = call.copy(transcript = entries)
         if (complete) checkpoint() else store.saveProgress(requireActiveCall())
@@ -62,6 +63,26 @@ class VoiceSessionController(
                 latency = latency ?: entry.latency)
         }
     }
+    /**
+     * Only queue-terminal evidence may update an ended call. It targets an already saved reply
+     * ID and never revives the call or permits a late ordinary generation to replace its text.
+     */
+    @Synchronized fun updateTerminalReplyTextForCall(callId: String, replyId: String, text: String) {
+        changeReply(callId, replyId, durable = true) { entry ->
+            entry.copy(text = text, generationComplete = true)
+        }
+    }
+
+    /** Persists one non-revivable terminal input receipt against its original call. */
+    @Synchronized fun recordTerminalInputForCall(callId: String, eventId: String, text: String) {
+        val current = activeCall?.takeIf { it.id == callId } ?: store.list().firstOrNull { it.id == callId } ?: return
+        if (current.transcript.any { it.replyId == "terminal-$eventId" }) return
+        val updated = current.copy(transcript = current.transcript + TranscriptEntry("Jarvis", text, nowMs(),
+            complete = true, replyId = "terminal-$eventId", generationComplete = true))
+        if (activeCall?.id == callId) activeCall = updated
+        store.save(updated)
+    }
+
     @Synchronized fun updateDelivery(callId: String, delivery: SpeechDelivery) {
         changeReply(callId, delivery.turnId) { entry ->
             val previous = entry.delivery
@@ -164,8 +185,16 @@ class VoiceSessionController(
     }
 
     @Synchronized fun updateTask(status: VoiceTaskStatus) {
-        activeCall = requireActiveCall().copy(taskStatus = status)
-        checkpoint()
+        updateTaskForCall(requireActiveCall().id, status)
+    }
+
+    /** Accepted worker callbacks may finish after End Call; update only their saved original call. */
+    @Synchronized fun updateTaskForCall(callId: String, status: VoiceTaskStatus) {
+        val live = activeCall?.id == callId
+        val call = (if (live) activeCall else store.list().firstOrNull { it.id == callId }) ?: return
+        val updated = call.copy(taskStatus = status)
+        if (live) activeCall = updated
+        store.save(updated)
     }
 
     @Synchronized fun interrupt(): VoiceCallRecord {

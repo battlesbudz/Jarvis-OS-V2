@@ -12,6 +12,7 @@ enum class VoiceSessionState {
 }
 
 enum class VoiceTaskState { COMPLETED, FAILED, CANCELLED, INTERRUPTED, WAITING_FOR_USER }
+enum class TranscriptOrigin { SPOKEN, TYPED }
 
 data class VoiceTaskStatus(
     val state: VoiceTaskState,
@@ -38,7 +39,8 @@ data class TranscriptEntry(
     val replyId: String? = null,
     val delivery: SpeechDelivery? = null,
     val generationComplete: Boolean = complete,
-    val actions: List<VoiceActionOutcome> = emptyList()
+    val actions: List<VoiceActionOutcome> = emptyList(),
+    val origin: TranscriptOrigin = TranscriptOrigin.SPOKEN
 )
 
 data class VoiceActionOutcome(val name: String, val message: String, val succeeded: Boolean)

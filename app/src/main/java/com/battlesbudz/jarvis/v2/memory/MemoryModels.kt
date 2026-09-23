@@ -67,4 +67,25 @@ data class MemorySnapshot(
 
 /** Retrieval outcome preserves storage failures for UI rather than treating them as an empty history. */
 data class MemorySearchResult(val outcome: MemoryOutcome?, val message: String, val memories: List<RetrievedMemory> = emptyList())
-data class MemoryPacketResult(val outcome: MemoryOutcome?, val message: String, val packet: MemoryContextPacket? = null)
+data class MemoryPacketResult(val outcome: MemoryOutcome?, val message: String, val packet: MemoryContextPacket? = null, val stateToken: String? = null, val nextApprovedExpiryMs: Long? = null)
+
+enum class ConversationMemorySource { TEXT, VOICE }
+
+data class FinalMemoryInput(
+    val eventId: String,
+    val conversationId: String,
+    val callId: String? = null,
+    val source: ConversationMemorySource,
+    val text: String,
+    val capturedAtMs: Long,
+    val recognitionSucceeded: Boolean = true,
+    val complete: Boolean = true,
+)
+
+enum class ConversationMemoryOutcome { PROPOSED, IGNORED, EXCLUDED, CONFLICT, STORAGE_FAILURE, INVALID }
+
+data class ConversationMemoryResult(
+    val outcome: ConversationMemoryOutcome,
+    val message: String,
+    val memory: MemoryRecord? = null,
+)

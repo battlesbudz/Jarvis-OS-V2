@@ -40,4 +40,9 @@ class MemoryPolicyTest {
         assertNotEquals("a phrase from the caller", MemoryPolicy.sourceKey("a phrase from the caller"))
         assertEquals(MemoryPolicy.sourceKey("same"), MemoryPolicy.sourceKey("same"))
     }
+
+    @Test fun passwordAndApiTokensAreExcludedWithoutClaimingPerfectDetection() {
+        assertEquals(MemoryOutcome.EXCLUDED, MemoryPolicy.assess(proposal("password: hunter22"), now).outcome)
+        assertEquals(MemoryOutcome.EXCLUDED, MemoryPolicy.assess(proposal("api key = abcdefghijkl"), now).outcome)
+    }
 }

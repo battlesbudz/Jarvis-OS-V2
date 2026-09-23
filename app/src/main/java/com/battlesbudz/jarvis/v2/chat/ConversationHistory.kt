@@ -18,7 +18,9 @@ data class ConversationMessage(
     val contextText: String = text,
     val complete: Boolean = true,
     val attachment: ChatAttachment? = null,
-    val actions: List<ActionReceipt> = emptyList()
+    val actions: List<ActionReceipt> = emptyList(),
+    /** Original final-input/checkpoint time; call updates retain it across late replacement. */
+    val sourceTimestampMs: Long = System.currentTimeMillis()
 )
 data class ActionReceipt(val name: String, val message: String, val succeeded: Boolean)
 data class ConversationThread(val id: String, val messages: List<ConversationMessage> = emptyList()) {
@@ -46,7 +48,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
                             ChatAttachment(a.getString("uri"), AttachmentKind.valueOf(a.getString("kind")))
                         }.getOrNull() }, m.optJSONArray("actions")?.let { actions -> (0 until actions.length()).map { i ->
                             actions.getJSONObject(i).let { a -> ActionReceipt(a.getString("name"), a.getString("message"), a.getBoolean("succeeded")) }
-                        } }.orEmpty())
+                        } }.orEmpty(), m.optLong("sourceTimestampMs", System.currentTimeMillis()))
                 }
                 threads[t.getString("id")] = ConversationThread(t.getString("id"), messages)
             }
@@ -99,8 +101,8 @@ class ConversationHistory(private val preferences: SharedPreferences) {
         val threadId = call.conversationId ?: return
         val thread = threads[threadId] ?: return
         val messages = call.transcript.mapIndexed { index, entry ->
-            ConversationMessage("${call.id}:$index", entry.role, entry.text, entry.role == "You", call.id,
-                entry.forConversation()?.text.orEmpty(), entry.complete)
+            ConversationMessage("${call.id}:$index", entry.role, entry.text, entry.role == "You" && entry.origin == TranscriptOrigin.SPOKEN, call.id,
+                entry.forConversation()?.text.orEmpty(), entry.complete, sourceTimestampMs = entry.timestampMs)
         }
         val first = thread.messages.indexOfFirst { it.callId == call.id }
         val entries = thread.messages.filterNot { it.callId == call.id }.toMutableList()
@@ -128,6 +130,41 @@ class ConversationHistory(private val preferences: SharedPreferences) {
         _current.value.messages.filter { (excludingCall == null || it.callId != excludingCall) && it.contextText.isNotBlank() }
             .takeLast(24).map { ChatEntry(it.role, it.contextText) }
 
+    /**
+     * Keeps visible history but fences pre-mutation prompt context by stable text IDs and original
+     * call-entry timestamps. A late checkpoint of old call audio stays excluded, while a new final
+     * utterance in that still-active call remains available.
+     */
+    @Synchronized fun markMemoryContextCutoff(durable: Boolean = false): Boolean {
+        var succeeded = true
+        val now = System.currentTimeMillis()
+        threads.values.forEach { thread ->
+            val directIds = thread.messages.filter { it.callId == null }.map { it.id }
+            val calls = thread.messages.mapNotNull { it.callId }.distinct().associateWith { now }
+            val value = org.json.JSONObject().put("messages", org.json.JSONArray(directIds))
+                .put("calls", org.json.JSONObject(calls))
+            val edit = preferences.edit().putString("memory_cutoff:${thread.id}", value.toString())
+            if (durable) succeeded = edit.commit() && succeeded else edit.apply()
+        }
+        return succeeded
+    }
+
+    @Synchronized fun contextAfterMemoryCutoff(excludingCall: String? = null): List<ChatEntry> {
+        val thread = _current.value
+        val cutoff = runCatching { org.json.JSONObject(preferences.getString("memory_cutoff:${thread.id}", "{}")) }
+            .getOrDefault(org.json.JSONObject())
+        val directIds = cutoff.optJSONArray("messages")?.let { array ->
+            (0 until array.length()).mapTo(linkedSetOf()) { array.getString(it) }
+        }.orEmpty()
+        val calls = cutoff.optJSONObject("calls")
+        return thread.messages.filter { message ->
+            val callCutoff = message.callId?.let { calls?.optLong(it, Long.MIN_VALUE) } ?: Long.MIN_VALUE
+            (message.callId == null && message.id !in directIds) ||
+                (message.callId != null && message.sourceTimestampMs > callCutoff)
+        }.filter { (excludingCall == null || it.callId != excludingCall) && it.contextText.isNotBlank() }
+            .takeLast(24).map { ChatEntry(it.role, it.contextText) }
+    }
+
     private fun replace(thread: ConversationThread, durable: Boolean = true) {
         threads[thread.id] = thread
         if (_current.value.id == thread.id) _current.value = thread
@@ -140,7 +177,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
             val messages = JSONArray()
             thread.messages.forEach { m -> messages.put(JSONObject().put("id", m.id).put("role", m.role)
                 .put("text", m.text).put("spoken", m.spoken).put("callId", m.callId)
-                .put("contextText", m.contextText).put("complete", m.complete)
+                .put("contextText", m.contextText).put("complete", m.complete).put("sourceTimestampMs", m.sourceTimestampMs)
                 .put("attachment", m.attachment?.let { JSONObject().put("uri", it.uri).put("kind", it.kind.name) })
                 .put("actions", JSONArray().also { actions -> m.actions.forEach { action -> actions.put(JSONObject().put("name", action.name).put("message", action.message).put("succeeded", action.succeeded)) } })) }
             array.put(JSONObject().put("id", thread.id).put("messages", messages))

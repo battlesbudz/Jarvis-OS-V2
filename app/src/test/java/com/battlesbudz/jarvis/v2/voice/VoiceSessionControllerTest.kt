@@ -109,4 +109,42 @@ class VoiceSessionControllerTest {
         assertEquals(VoiceTaskState.COMPLETED, ended.taskStatus?.state)
         assertTrue(store.calls.single().endedAtMs != null)
     }
+    @Test fun typedCallInputIsNotPresentedAsSpokenHistory() {
+        val controller = VoiceSessionController(MemoryStore())
+        controller.beginCall()
+        controller.appendTranscript("You", "typed follow-up", origin = TranscriptOrigin.TYPED)
+        assertEquals(TranscriptOrigin.TYPED, controller.currentTranscript().single().origin)
+    }
+
+    @Test fun terminalReplyEvidenceUpdatesSavedEndedCallWithoutRevivingIt() {
+        val store = MemoryStore()
+        val controller = VoiceSessionController(store)
+        val call = controller.beginCall()
+        controller.beginReply(call.id, "queued-b")
+        controller.end()
+
+        controller.updateTerminalReplyTextForCall(call.id, "queued-b", "Cancelled; unattempted: open_app.")
+
+        assertEquals(VoiceSessionState.PASSIVE_LISTENING, controller.state.value)
+        assertEquals("Cancelled; unattempted: open_app.",
+            store.list().single { it.id == call.id }.transcript.single { it.replyId == "queued-b" }.text)
+    }
+
+    @Test fun terminalTypedReceiptTargetsSavedEndedCallAndNeverTheReplacement() {
+        val store = MemoryStore()
+        val controller = VoiceSessionController(store)
+        val ended = controller.beginCall()
+        controller.end()
+        val replacement = controller.beginCall()
+
+        controller.recordTerminalInputForCall(ended.id, "typed-event", "Cancelled before processing typed message: open settings")
+        controller.recordTerminalInputForCall(ended.id, "typed-event", "duplicate must not be written")
+
+        val saved = store.list().single { it.id == ended.id }
+        assertEquals(listOf("Cancelled before processing typed message: open settings"),
+            saved.transcript.filter { it.replyId == "terminal-typed-event" }.map { it.text })
+        assertTrue(controller.currentTranscript().isEmpty())
+        assertEquals(replacement.id, controller.currentCallId())
+    }
+
 }

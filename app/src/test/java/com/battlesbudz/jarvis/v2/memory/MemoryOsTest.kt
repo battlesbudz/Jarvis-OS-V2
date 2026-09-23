@@ -74,5 +74,61 @@ class MemoryOsTest {
         assertEquals(MemoryOutcome.DELETED, os.propose(MemoryProposal("new", source("new"), correctsMemoryId = old.id)).outcome)
     }
 
+
+    @Test fun approvedStateTokenChangesForCorrectionAndExpiryButNotPendingWrites() {
+        val os = os()
+        val original = os.propose(MemoryProposal("I live in Austin", source("token-old"), expiresAtMs = now + 100)).memory!!
+        os.approve(original.id)
+        val first = os.contextPacket("where do I live", 500).stateToken!!
+        val pending = os.propose(MemoryProposal("I prefer tea", source("token-pending"))).memory!!
+        assertEquals(first, os.contextPacket("where do I live", 500).stateToken)
+        val correction = os.propose(MemoryProposal("I live in Dallas", source("token-new"), expiresAtMs = now + 100, correctsMemoryId = original.id)).memory!!
+        os.approve(correction.id)
+        val corrected = os.contextPacket("where do I live", 500).stateToken!!
+        assertNotEquals(first, corrected)
+        now += 101
+        assertNotEquals(corrected, os.contextPacket("where do I live", 500).stateToken)
+        assertEquals(MemoryReviewStatus.PENDING, os.read().snapshot!!.memories.first { it.id == pending.id }.reviewStatus)
+    }
+
+
+    @Test fun observerFencesDurableApprovedChangesButNotPendingProposals() {
+        val os = os(); val tokens = mutableListOf<String>(); val closeable = os.addApprovedStateObserver { tokens += it }
+        val pending = os.propose(MemoryProposal("I live in Austin", source("observe"))).memory!!
+        assertTrue(tokens.isEmpty())
+        os.approve(pending.id)
+        assertEquals(1, tokens.size)
+        val next = os.propose(MemoryProposal("I prefer tea", source("observe-pending"))).memory!!
+        assertEquals(1, tokens.size)
+        os.delete(pending.id)
+        assertEquals(2, tokens.size)
+        closeable.close()
+        os.reject(next.id)
+        assertEquals(2, tokens.size)
+    }
+
+
+    @Test fun contextCarriesEarliestApprovedExpiryEvenForNonmatchAndZeroBudget() {
+        val os = os()
+        val early = os.propose(MemoryProposal("Tea preference", source("early"), expiresAtMs = now + 10)).memory!!
+        val late = os.propose(MemoryProposal("Lives in Austin", source("late"), expiresAtMs = now + 20)).memory!!
+        val pending = os.propose(MemoryProposal("Pending data", source("pending-expiry"), expiresAtMs = now + 2)).memory!!
+        val rejected = os.propose(MemoryProposal("Rejected data", source("rejected-expiry"), expiresAtMs = now + 3)).memory!!
+        os.approve(early.id); os.approve(late.id); os.reject(rejected.id)
+        val nonmatch = os.contextPacket("unrelated public lookup", 400)
+        assertTrue(nonmatch.packet!!.memories.isEmpty())
+        assertEquals(now + 10, nonmatch.nextApprovedExpiryMs)
+        val emptyBudget = os.contextPacket("unrelated public lookup", 0)
+        assertEquals("", emptyBudget.packet!!.text)
+        assertEquals(now + 10, emptyBudget.nextApprovedExpiryMs)
+        val beforeExpiryToken = nonmatch.stateToken
+        now += 11
+        val afterExpiry = os.contextPacket("unrelated public lookup", 0)
+        assertEquals(now - 1, early.expiresAtMs)
+        assertEquals(now + 9, afterExpiry.nextApprovedExpiryMs)
+        assertNotEquals(beforeExpiryToken, afterExpiry.stateToken)
+        assertEquals(MemoryReviewStatus.PENDING, os.read().snapshot!!.memories.first { it.id == pending.id }.reviewStatus)
+    }
+
     private fun temp(): File = File.createTempFile("memory-os", ".json").apply { delete(); deleteOnExit() }
 }

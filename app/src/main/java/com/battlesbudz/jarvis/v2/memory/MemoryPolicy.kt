@@ -80,6 +80,7 @@ object MemoryPolicy {
             "(?:\\$\\d[\\d,]*(?:\\.\\d{2})?|\\b\\d{1,3}(?:,\\d{3})+(?:\\.\\d{2})?\\b)[\\s\\S]{0,80}\\b(?:bank|checking|savings|account)(?:\\s+account)?\\b",
             "^\\s*\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}\\s+.{2,}\\s+[-+]?\\$?\\d[\\d,]*(?:\\.\\d{2})?\\s*$",
             "^\\s*\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}\\s*,\\s*[^,\\n]{2,}\\s*,\\s*[-+]?\\$?\\d[\\d,]*(?:\\.\\d{2})?\\s*$",
+            """\b(?:password|passcode|api[ _-]?key|access[ _-]?token|auth(?:entication)?[ _-]?token|secret)\b\s*(?:is|:|=)?\s*["']?[a-z0-9_./+=-]{6,}""",
         )
         return patterns.any { Regex(it, setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)).containsMatchIn(bounded) }
     }

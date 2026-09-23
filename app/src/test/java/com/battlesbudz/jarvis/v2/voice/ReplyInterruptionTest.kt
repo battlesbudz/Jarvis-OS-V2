@@ -21,6 +21,12 @@ class ReplyInterruptionTest {
         assertTrue(outcome is ReplyOutcome.Interrupted)
         assertArrayEquals(audio, (outcome as ReplyOutcome.Interrupted).correction.wav)
     }
+    @Test fun capturedFinalKeepsStableAdmissionIdentityWhenDeferred() {
+        val captured = CapturedVoiceTurn("Open YouTube", byteArrayOf(9))
+        val deferred = captured.copy()
+        assertEquals(captured.utteranceId, deferred.utteranceId)
+    }
+
     @Test fun normalReplyCancelsAndClosesUnusedListener() = runBlocking {
         val listening = CompletableDeferred<Unit>()
         var listenerClosed = false
