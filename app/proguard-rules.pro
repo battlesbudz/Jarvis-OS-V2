@@ -126,3 +126,18 @@
 -keep class com.battlesbudz.jarvis.v2.voice.VoiceActionOutcome { *; }
 -keep class com.battlesbudz.jarvis.v2.voice.VoiceTaskStatus { *; }
 -keep class com.battlesbudz.jarvis.v2.voice.VoiceTaskState { *; }
+# The separately shrunk AndroidJUnitRunner DEX reads the atomic store snapshot
+# and Compose companion through the target APK's class loader. These are narrow
+# shared ABI owners observed in the release test DEX, not broad Compose keeps.
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryStore$Read { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemorySnapshot { *; }
+-keep class androidx.compose.runtime.Composer$Companion { *; }
+# The release-test inline Box composition also links these companion getters
+# from the independently shrunk instrumentation DEX.
+-keep class androidx.compose.ui.Alignment$Companion { *; }
+-keep class androidx.compose.ui.node.ComposeUiNode$Companion { *; }
+# Keep the exact interface field through which the test DEX reaches Alignment's
+# companion; the companion getter keep above does not retain this static field.
+-keepclassmembers interface androidx.compose.ui.Alignment {
+    public static androidx.compose.ui.Alignment$Companion Companion;
+}
