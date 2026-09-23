@@ -141,3 +141,7 @@
 -keepclassmembers interface androidx.compose.ui.Alignment {
     public static androidx.compose.ui.Alignment$Companion Companion;
 }
+# Inline Compose code in the separately shrunk release-test DEX invokes these
+# runtime helper owners through the target APK's class loader.
+-keep class androidx.compose.runtime.ComposablesKt { *; }
+-keep class androidx.compose.runtime.Updater { *; }
