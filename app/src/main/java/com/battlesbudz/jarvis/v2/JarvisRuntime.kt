@@ -1054,7 +1054,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 val initialActionPlan = if (recognitionIssue == null)
                     turnOrchestrator.plan(transcript, voiceHistory.map { it.role to it.text }).actionPlan
                     else ActionTurnPlan.NotAction
-                if (comparison == null && initialActionPlan is ActionTurnPlan.Ready) {
+                suspend fun runAcceptedActionMode(): Boolean {
+                    if (comparison != null || initialActionPlan !is ActionTurnPlan.Ready) return false
                     incremental.close() // Never leave speculative prefill attached to a queued native turn.
                     // A typed input can be End-drained while preparation is in progress. Keep
                     // the ordinary lease until its successful atomic promotion, then transfer it
@@ -1089,7 +1090,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         if (!callInputQueue.promote(typed) {
                                 preparingTypedInput.compareAndSet(typed, null)
                                 admitAction()
-                            }) return@launch
+                            }) return true
                     } else admitAction()
                     if (!accepted) {
                         promotionLease.releaseIfUnadmitted(::releaseAcceptedVoiceLeaseIfIdle)
@@ -1097,7 +1098,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             else "I already have three accepted phone requests. Please wait for one to finish."
                         voiceSessionController.updateReplyText(expectedCallId, asrTurnId, rejection, finished = true)
                         finalMessage = rejection
-                        return@launch
+                        return true
                     }
                     promotionLease.markAdmitted() // accepted queue now owns release through its idle lifecycle.
                     diagnosticRecorder.recordImportant("Accepted action mode: admitted=$asrTurnId steps=${initialActionPlan.steps.size} call=$expectedCallId")
@@ -1499,8 +1500,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     voiceSessionController.setStateIfCurrent(expectedCallId, VoiceSessionState.ACTIVELY_LISTENING)
                     mainHandler.post { onTranscript("Jarvis", summary, true) }
                     finalMessage = "Voice Call accepted actions complete. Jarvis: $summary"
-                    return@launch
+                    return true
                 }
+                if (runAcceptedActionMode()) return@launch
                 val outcome = com.battlesbudz.jarvis.v2.voice.runInterruptibleReply(
                     reply = {
                         output.updateWaitStage(com.battlesbudz.jarvis.v2.voice.DelayedAcknowledgement.Stage.GENERATING)
