@@ -1,6 +1,8 @@
 package com.battlesbudz.jarvis.v2.verification
 
 import android.content.Intent
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.ContentValues
 import android.media.AudioManager
 import android.os.BatteryManager
@@ -28,11 +30,14 @@ import com.battlesbudz.jarvis.v2.actions.*
 import com.battlesbudz.jarvis.v2.ai.ToolCall
 import com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
+import com.battlesbudz.jarvis.v2.ai.ModelCatalog
+import com.battlesbudz.jarvis.v2.ai.ModelStore
 import com.battlesbudz.jarvis.v2.chat.ConversationHistory
 import com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext
 import com.battlesbudz.jarvis.v2.memory.*
 import com.battlesbudz.jarvis.v2.ui.ConversationScreen
 import com.battlesbudz.jarvis.v2.ui.MemoryScreen
+import com.battlesbudz.jarvis.v2.ui.JarvisApp
 import com.battlesbudz.jarvis.v2.voice.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
@@ -161,6 +166,23 @@ class ReleaseJourneyTest {
         device.waitForIdle()
     }
 
+    /** Category chips live in horizontal LazyRows, so vertical page seeking cannot reveal all of them. */
+    private fun clickHorizontalChip(strip: BySelector, target: BySelector) {
+        repeat(8) {
+            device.findObject(target)?.let { chip ->
+                if (chip.isEnabled && hasSafeTapBounds(chip)) {
+                    chip.click()
+                    device.waitForIdle()
+                    return
+                }
+            }
+            val row = find(strip).visibleBounds
+            device.swipe(row.right - 12, row.centerY(), row.left + 12, row.centerY(), 180)
+            device.waitForIdle()
+        }
+        clickEnabled(target)
+    }
+
     private fun enterText(selector: BySelector, value: String) {
         try {
             enabled(selector).text = value
@@ -175,8 +197,8 @@ class ReleaseJourneyTest {
 
     private fun searchMemory(query: String, expected: BySelector) {
         enterText(By.res("memory_search_input"), query)
-        clickEnabled(By.res("memory_search"))
-        // The enabled field proves the async search has replaced the prior rows before checking its result.
+        // Search is live in the wiki.  The adjacent action clears a search; it must not be
+        // tapped here or the assertion would inspect the unfiltered page.
         enabled(By.res("memory_search_input"))
         assertNotNull(scrollTo(expected))
     }
@@ -739,82 +761,231 @@ class ReleaseJourneyTest {
             audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
         }
     }
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     @Test fun test24_memoryManagerReviewsCorrectsSearchesAndErases() {
-        // Use only the release UI: memory implementation classes are intentionally shrinkable.
-        clickEnabled(By.res("memory_open"))
-        assertNotNull(find(By.text("Memory")))
+        /*
+         * This mounts the shipping MemoryScreen on a real, file-backed MemoryOs.  The two
+         * ConversationMemory inputs are deliberately finalized fixtures: this proves the
+         * production capture boundary and review UI without claiming microphone/ASR/model work.
+         */
+        val file = File(context.cacheDir, "release-memory-wiki-journey.json").apply { delete() }
+        val memoryOs = MemoryOs(file)
+        val bridge = ConversationMemory(memoryOs)
+        val sapphire = "I prefer sapphire notebooks for verification"
+        val cobalt = "My favorite color is cobalt"
+        val atlas = "Project Atlas uses [[Cobalt]]."
+        val cobaltNotes = "Cobalt reference notes for verification."
+        val indigo = "I prefer indigo notebooks for verification"
+        val persistent = "I prefer persistent amber tea for verification"
 
-        enterText(By.res("memory_new_content"), "Bank account number 1234 5678 9012 3456")
-        clickEnabled(By.res("memory_propose"))
-        assertNotNull(find(By.res("memory_error")))
-        enabled(By.res("memory_new_content"))
-        enterText(By.res("memory_new_content"), "Synthetic preference: teal notebooks.")
-        clickEnabled(By.res("memory_propose"))
-        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
-        // Saved mutations must settle and restore input; this catches a stuck busy lease.
-        enabled(By.res("memory_new_content"))
-        clickEnabled(By.res("memory_approve"))
-        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
+        fun mountMemoryWiki() {
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                    MemoryScreen(memoryOs = memoryOs, onBack = {})
+                } }
+            } }
+            assertNotNull(find(By.text("Memory")))
+        }
+        fun addManual(content: String, category: String, topic: String) {
+            clickEnabled(By.res("memory_new"))
+            assertNotNull(find(By.text("Add a memory")))
+            enterText(By.res("memory_new_content"), content)
+            clickHorizontalChip(By.res("memory_category_picker"), By.res("memory_category_$category"))
+            enterText(By.res("memory_topic_input"), topic)
+            clickEnabled(By.res("memory_propose"))
+            assertTrue("Add dialog did not close after its saved proposal", device.wait(
+                Until.gone(By.res("memory_new_content")), 15_000
+            ))
+        }
+        fun approveOnlyPending() {
+            clickEnabled(By.res("memory_review_tab"))
+            assertNotNull(find(By.text("Review (1)")))
+            clickEnabled(By.res("memory_approve"))
+            assertNotNull(find(By.text("Review (0)")))
+        }
 
-        searchMemory("teal", By.text("Synthetic preference: teal notebooks."))
-        clickEnabled(By.res("memory_correct"))
-        assertNotNull(scrollTo(By.text("This change will replace: Synthetic preference: teal notebooks.")))
-        enabled(By.res("memory_new_content"))
-        enterText(By.res("memory_new_content"), "Synthetic preference: indigo notebooks.")
-        clickEnabled(By.res("memory_propose"))
-        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-        clickEnabled(By.res("memory_approve"))
-        // The old approved row must become superseded before we treat the replacement as searchable.
-        assertNotNull(scrollTo(By.text("Superseded · Added from manual entry")))
-        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-        searchMemory("teal", By.text("No matching memories."))
-        assertFalse(device.hasObject(By.text("Synthetic preference: teal notebooks.")))
-        searchMemory("indigo", By.text("Synthetic preference: indigo notebooks."))
+        try {
+            // Keep the app-level entry and return route in the release journey before mounting
+            // the controlled, file-backed capture fixture below.
+            clickEnabled(By.res("memory_open"))
+            assertNotNull(find(By.text("Memory")))
+            clickEnabled(By.res("memory_back"))
+            assertNotNull(find(By.res("model_browse")))
+            mountMemoryWiki()
 
-        enterText(By.res("memory_new_content"), "Synthetic item to reject.")
-        clickEnabled(By.res("memory_propose"))
-        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-        clickEnabled(By.res("memory_reject"))
-        assertNotNull(scrollTo(By.text("Rejected · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
+            // Add remains a modal. Restricted content must stay visibly rejected in that modal.
+            clickEnabled(By.res("memory_new"))
+            assertNotNull(find(By.text("Add a memory")))
+            enterText(By.res("memory_new_content"), "Bank account number 1234 5678 9012 3456")
+            clickEnabled(By.res("memory_propose"))
+            assertNotNull(find(By.res("memory_error")))
+            find(By.text("Cancel")).click()
 
-        // Cancellation must leave the saved records visible before the confirmed erase.
-        clickEnabled(By.res("memory_erase_all"))
-        assertNotNull(find(By.text("Erase all memories?")))
-        find(By.text("Cancel")).click()
-        device.waitForIdle()
-        enabled(By.res("memory_new_content"))
-        assertNotNull(scrollTo(By.text("Synthetic preference: indigo notebooks.")))
-        clickEnabled(By.res("memory_erase_all"))
-        assertNotNull(find(By.text("Erase all memories?")))
-        find(By.text("Erase all")).click()
-        device.waitForIdle()
-        assertNotNull(scrollTo(By.text("No memories have been added yet.")))
-        enabled(By.res("memory_new_content"))
+            val now = System.currentTimeMillis()
+            assertEquals(ConversationMemoryOutcome.PROPOSED, bridge.capture(FinalMemoryInput(
+                "release-wiki-text", "release-wiki-thread", null, ConversationMemorySource.TEXT,
+                "Remember $sapphire.", now
+            )).outcome)
+            assertEquals(ConversationMemoryOutcome.PROPOSED, bridge.capture(FinalMemoryInput(
+                "release-wiki-voice", "release-wiki-thread", "release-wiki-call", ConversationMemorySource.VOICE,
+                "$cobalt.", now + 1
+            )).outcome)
 
-        enterText(By.res("memory_new_content"), "Synthetic memory after erase.")
-        clickEnabled(By.res("memory_propose"))
-        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-        clickEnabled(By.res("memory_approve"))
-        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-        assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
-        clickEnabled(By.res("memory_back"))
-        assertNotNull(find(By.text("Jarvis setup")))
-        activity.recreate()
-        clickEnabled(By.res("memory_open"))
-        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
-        assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
-        enabled(By.res("memory_new_content"))
-        // The control assertion scrolls upward; return to the approved record for useful retained evidence.
-        assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
-        captureEvidence("memory_approved_after_recreation")
-        clickEnabled(By.res("memory_back"))
+            // Pending capture is reviewable but never part of Wiki search until a real Approve tap.
+            assertNotNull(find(By.text("Review (2)")))
+            searchMemory("sapphire notebooks", By.text("No approved memories match that search."))
+            enterText(By.res("memory_search_input"), "")
+            clickEnabled(By.res("memory_review_tab"))
+            assertNotNull(scrollTo(By.text(sapphire)))
+            captureEvidence("memory_wiki_review_pending")
+            clickEnabled(By.res("memory_approve"))
+            assertNotNull(find(By.text("Review (1)")))
+            clickEnabled(By.res("memory_approve"))
+            assertNotNull(find(By.text("Review (0)")))
+
+            // Exact wiki search opens the derived topic page; Sources exposes the capture provenance.
+            clickEnabled(By.res("memory_wiki_tab"))
+            searchMemory("sapphire notebooks", By.text(sapphire))
+            find(By.text(sapphire)).click()
+            assertNotNull(find(By.text("Preferences")))
+            find(By.res("memory_sources_tab")).click()
+            assertNotNull(scrollTo(By.textStartsWith("Captured from Text conversation")))
+            find(By.res("memory_article_back")).click()
+
+            // Explicit category/topic placement can be changed later and survives the store reload.
+            addManual(atlas, "projects", "Atlas")
+            addManual(cobaltNotes, "knowledge", "Cobalt")
+            clickEnabled(By.res("memory_review_tab"))
+            assertNotNull(find(By.text("Review (2)")))
+            clickEnabled(By.res("memory_approve"))
+            assertNotNull(find(By.text("Review (1)")))
+            clickEnabled(By.res("memory_approve"))
+            assertNotNull(find(By.text("Review (0)")))
+            clickEnabled(By.res("memory_wiki_tab"))
+            searchMemory("atlas", By.text(atlas))
+            find(By.text(atlas)).click()
+            assertNotNull(find(By.text("Atlas")))
+            find(By.text(atlas)).click()
+            assertNotNull(find(By.text("Memory detail")))
+            clickEnabled(By.res("memory_organize"))
+            assertNotNull(find(By.text("Organize memory")))
+            clickHorizontalChip(By.res("memory_organize_category_picker"), By.res("memory_organize_category_knowledge"))
+            enterText(By.res("memory_organize_topic"), "Verified links")
+            captureEvidence("memory_wiki_organize_dialog")
+            clickEnabled(By.res("memory_assign"))
+            assertTrue("Organize dialog did not close after saving placement", device.wait(
+                Until.gone(By.res("memory_organize_topic")), 15_000
+            ))
+            // Assignment moved the record from Atlas to Verified links and refreshed the page index.
+            find(By.res("memory_detail_back")).click()
+            searchMemory("atlas", By.text(atlas))
+            assertNotNull(find(By.text("Verified links")))
+            find(By.text(atlas)).click()
+            assertNotNull(find(By.text("Verified links")))
+            assertNotNull(scrollTo(By.text("Linked pages")))
+            find(By.text("Cobalt")).click()
+            assertNotNull(find(By.text("Cobalt")))
+            assertNotNull(scrollTo(By.text("Backlinks")))
+            assertNotNull(scrollTo(By.text("Verified links")))
+            captureEvidence("memory_wiki_linked_article")
+            find(By.res("memory_article_back")).click()
+
+            // Corrections stay out of the index until reviewed, then supersede the old search hit.
+            searchMemory("sapphire notebooks", By.text(sapphire))
+            find(By.text(sapphire)).click()
+            find(By.text(sapphire)).click()
+            clickEnabled(By.res("memory_correct"))
+            assertNotNull(find(By.text("Correct memory")))
+            enterText(By.res("memory_new_content"), indigo)
+            clickEnabled(By.res("memory_propose"))
+            assertTrue("Correction dialog did not close after its saved proposal", device.wait(
+                Until.gone(By.res("memory_new_content")), 15_000
+            ))
+            find(By.res("memory_article_back")).click()
+            approveOnlyPending()
+            clickEnabled(By.res("memory_wiki_tab"))
+            searchMemory("sapphire notebooks", By.text("No approved memories match that search."))
+            searchMemory("indigo notebooks", By.text(indigo))
+            find(By.text(indigo)).click()
+            find(By.text(indigo)).click()
+            assertNotNull(find(By.text("This is a correction of an earlier saved fact.")))
+            val indigoId = checkNotNull(memoryOs.read().snapshot).memories.first { it.content == indigo }.id
+            clickEnabled(By.res("memory_delete"))
+            assertNotNull(find(By.text("Erase this memory?")))
+            clickEnabled(By.res("memory_delete_cancel"))
+            assertNotNull(find(By.text(indigo)))
+            clickEnabled(By.res("memory_delete"))
+            clickEnabled(By.res("memory_delete_confirm"))
+            assertTrue("Deletion confirmation must finish before returning from a removed article", device.wait(
+                Until.gone(By.text("Erase this memory?")), 15_000
+            ))
+            assertTrue("The deleted detail must leave the UI before optional article navigation", device.wait(
+                Until.gone(By.res("memory_detail_$indigoId")), 15_000
+            ))
+            // A deletion can remove the page that was open. Return only when the page remains.
+            device.findObject(By.res("memory_article_back"))?.click()
+            enabled(By.res("memory_search_input"))
+            searchMemory("indigo notebooks", By.text("No approved memories match that search."))
+            searchMemory("sapphire notebooks", By.text("No approved memories match that search."))
+            enterText(By.res("memory_search_input"), "")
+
+            // Rejected pending records are retained only in History, never in the wiki index.
+            addManual("Rejected private note for verification.", "knowledge", "Rejected")
+            clickEnabled(By.res("memory_review_tab"))
+            clickEnabled(By.res("memory_reject"))
+            assertNotNull(find(By.text("Review (0)")))
+            clickEnabled(By.res("memory_wiki_tab"))
+            searchMemory("rejected private note", By.text("No approved memories match that search."))
+            enterText(By.res("memory_search_input"), "")
+            clickEnabled(By.res("memory_history_tab"))
+            assertNotNull(scrollTo(By.text("Rejected private note for verification.")))
+            assertNotNull(scrollTo(By.textStartsWith("Rejected ·")))
+
+            // A fresh approved record survives Activity recreation using the same real store.
+            addManual(persistent, "preferences", "Tea")
+            approveOnlyPending()
+            activity.recreate()
+            val reloaded = checkNotNull(MemoryOs(file).read().snapshot)
+            assertTrue("A separately opened store must retain the approved record after recreation",
+                reloaded.memories.any { it.content == persistent && it.reviewStatus == MemoryReviewStatus.APPROVED })
+            assertTrue("Manual category/topic organization must also survive a separate store reopen",
+                reloaded.memories.any { it.content == atlas && it.wikiAssignment == MemoryWikiAssignment(WikiCategory.KNOWLEDGE, "Verified links") })
+            mountMemoryWiki()
+            clickEnabled(By.res("memory_wiki_tab"))
+            searchMemory("persistent amber tea", By.text(persistent))
+            captureEvidence("memory_wiki_reloaded_search")
+            enterText(By.res("memory_search_input"), "")
+            clickEnabled(By.res("memory_erase_all"))
+            assertNotNull(find(By.text("Erase all memories?")))
+            find(By.text("Cancel")).click()
+            searchMemory("persistent amber tea", By.text(persistent))
+            enterText(By.res("memory_search_input"), "")
+            clickEnabled(By.res("memory_erase_all"))
+            clickEnabled(By.res("memory_delete_all_confirm"))
+            assertTrue("Erase-all confirmation must finish before checking the ledger", device.wait(
+                Until.gone(By.text("Erase all memories?")), 15_000
+            ))
+            clickEnabled(By.res("memory_history_tab"))
+            assertNotNull(find(By.text("No memory history yet.")))
+            clickEnabled(By.res("memory_wiki_tab"))
+            searchMemory("persistent amber tea", By.text("No approved memories match that search."))
+
+            // History keeps the bulk action even when no approved page exists.
+            val pendingOnly = checkNotNull(memoryOs.propose(MemoryProposal("Pending ledger-only note", MemorySource("release-pending-only", "manual", System.currentTimeMillis()))).memory)
+            val rejectedOnly = checkNotNull(memoryOs.propose(MemoryProposal("Rejected ledger-only note", MemorySource("release-rejected-only", "manual", System.currentTimeMillis() + 1))).memory)
+            assertEquals(MemoryOutcome.REJECTED, memoryOs.reject(rejectedOnly.id, rejectedOnly.revision).outcome)
+            mountMemoryWiki()
+            clickEnabled(By.res("memory_history_tab"))
+            assertNotNull(scrollTo(By.text(pendingOnly.content)))
+            assertNotNull(scrollTo(By.text(rejectedOnly.content)))
+            clickEnabled(By.res("memory_erase_all"))
+            assertNotNull(find(By.text("Erase all memories?")))
+            clickEnabled(By.res("memory_delete_all_confirm"))
+            assertTrue("History erase confirmation must finish", device.wait(Until.gone(By.text("Erase all memories?")), 15_000))
+            assertNotNull(find(By.text("No memory history yet.")))
+        } finally {
+            file.delete()
+        }
     }
 
     @Test fun test25_finalizedTextAndVoiceMemoryNeedsApprovalBeforePromptUse() {
@@ -899,6 +1070,8 @@ class ReleaseJourneyTest {
         val memoryBacks = AtomicInteger(0)
         val memoryFile = File(context.cacheDir, "release-memory-overlay.json").apply { delete() }
         val queueFull = AtomicBoolean(true)
+        val forceChat = androidx.compose.runtime.mutableStateOf(false)
+        val forceChatConsumed = AtomicInteger(0)
         try {
             activity.onActivity { host -> host.setContent {
                 MaterialTheme {
@@ -917,6 +1090,8 @@ class ReleaseJourneyTest {
                         onEndVoice = { done -> ends.incrementAndGet(); done("Voice Call ended.") },
                         onOpenVoiceCalls = {},
                         resumedVoice = false,
+                        forceChatDestination = forceChat.value,
+                        onForceChatConsumed = { forceChatConsumed.incrementAndGet(); forceChat.value = false },
                         voiceContent = { visible, _, _, _ -> if (visible) androidx.compose.material3.Text("Controlled voice surface") },
                     )
                     }
@@ -931,6 +1106,12 @@ class ReleaseJourneyTest {
             assertNotNull(find(By.res("voice_call_status")))
             val endBounds = find(By.res("voice_call_end")).visibleBounds
             assertTrue("End call must remain visible beside a long status", endBounds.width() > 0 && endBounds.right <= device.displayWidth)
+            find(By.res("voice_tab")).click()
+            assertNotNull(find(By.text("Controlled voice surface")))
+            activity.onActivity { forceChat.value = true }
+            assertNotNull(find(By.res("chat_composer")))
+            assertEquals("Memory's Chat destination must switch the visible surface without ending the call", 1, forceChatConsumed.get())
+            assertEquals(0, ends.get())
             find(By.res("voice_tab")).click()
             assertNotNull(find(By.text("Controlled voice surface")))
             find(By.res("chat_tab")).click()
@@ -949,6 +1130,62 @@ class ReleaseJourneyTest {
             find(By.res("voice_call_end")).click()
             assertEquals(1, ends.get())
             VoiceSessionUi.armed.value = false
+
+            // Mount the shipping parent with an isolated, explicitly seeded ready-state store.
+            // Its inert callbacks deliberately avoid native model, microphone, and download work.
+            val fixtureRoot = File(context.cacheDir, "release-jarvis-app-memory-route").apply { deleteRecursively(); mkdirs() }
+            val fixtureContext = object : ContextWrapper(context) {
+                override fun getApplicationContext(): Context = this
+                override fun getFilesDir(): File = File(fixtureRoot, "files").apply { mkdirs() }
+                override fun getCacheDir(): File = File(fixtureRoot, "cache").apply { mkdirs() }
+                override fun getSharedPreferences(name: String, mode: Int) = context.getSharedPreferences("release-jarvis-app-$name", mode)
+            }
+            val fixtureStore = ModelStore(fixtureContext)
+            val fixtureSpec = ModelCatalog.gemma4E2b
+            val fixturePrefs = fixtureContext.getSharedPreferences("model_setup", Context.MODE_PRIVATE)
+            fixturePrefs.edit().clear().commit()
+            val fixtureFile = fixtureStore.fileFor(fixtureSpec).apply { parentFile?.mkdirs(); writeText("ready-state fixture") }
+            fixturePrefs.edit()
+                .putString("selected_model", fixtureSpec.id)
+                .putString("sha256_${fixtureSpec.id}", "ready-state-fixture")
+                .putLong("sha256_${fixtureSpec.id}_length", fixtureFile.length())
+                .putLong("sha256_${fixtureSpec.id}_modified", fixtureFile.lastModified())
+                .putBoolean("sha256_${fixtureSpec.id}_invalid", false)
+                .putBoolean("smoke_test_passed_${fixtureSpec.id}", true)
+                .commit()
+            assertTrue("The isolated fixture must reach JarvisApp's ready branch", fixtureStore.isUsable() && fixtureStore.smokeTestPassed())
+            val appHistory = ConversationHistory(fixtureContext.getSharedPreferences("conversation-history", Context.MODE_PRIVATE))
+            val callsBeforeRoute = ends.get()
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                    JarvisApp(
+                        store = fixtureStore, conversationHistory = appHistory, chatBusy = busy, callState = callState,
+                        onSendChat = { _, _ -> null }, onSelectConversation = { null }, onSelectModel = { null }, onDeleteModel = { null },
+                        voicePlayback = MutableStateFlow(VoicePlaybackFrame()), voiceModelStore = TtsModelStore(fixtureContext),
+                        initialVoiceCalls = emptyList(), onRunModelSmokeTest = { done -> done("Ready-state fixture") },
+                        onVoiceTurn = { _, _, _, done -> done("Voice is disabled in this route fixture.") },
+                        onWakeTest = { _, done -> done() }, onStopWakeTest = {},
+                        onEndVoiceCall = { done -> ends.incrementAndGet(); done("") },
+                        onResumeVoiceCall = { _, done -> done(null) }, onDeleteVoiceCall = {}, onRefreshVoiceCalls = { emptyList() },
+                        onDownloadGemma = { _, _, done -> done("Downloads are disabled in this route fixture.") },
+                        onImportModel = { _, _, done -> done("Imports are disabled in this route fixture.") },
+                        onCopyDiagnostics = {}, onExportSpeechAudio = {},
+                    )
+                } }
+            } }
+            VoiceSessionUi.armed.value = true
+            clickEnabled(By.res("voice_tab"))
+            assertNotNull(find(By.res("voice_call_status")))
+            clickEnabled(By.res("memory_open"))
+            assertNotNull(find(By.text("Memory")))
+            clickEnabled(By.res("memory_nav_chat"))
+            assertNotNull(find(By.res("chat_composer")))
+            assertEquals("The parent Memory-to-Chat route must preserve an active call", callsBeforeRoute, ends.get())
+            clickEnabled(By.res("conversation_nav_voice"))
+            assertNotNull(find(By.text("One conversation, out loud")))
+            assertTrue("Returning to Voice must hide Chat's composer", device.wait(Until.gone(By.res("chat_composer")), 15_000))
+            VoiceSessionUi.armed.value = false
+            fixtureRoot.deleteRecursively()
 
             activity.onActivity { host -> host.setContent {
                 MaterialTheme {

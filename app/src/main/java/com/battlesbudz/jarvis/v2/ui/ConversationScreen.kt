@@ -38,6 +38,11 @@ internal fun ConversationScreen(
     onEndVoice: ((String) -> Unit) -> Unit,
     onOpenVoiceCalls: () -> Unit,
     resumedVoice: Boolean,
+    onOpenMemory: () -> Unit = {},
+    forceVoiceDestination: Boolean = false,
+    onForceVoiceConsumed: () -> Unit = {},
+    forceChatDestination: Boolean = false,
+    onForceChatConsumed: () -> Unit = {},
     voiceContent: @Composable (visible: Boolean, settingsOpen: Boolean, dismissSettings: () -> Unit, returnToChat: () -> Unit) -> Unit
 ) {
     val thread by history.current.collectAsState()
@@ -77,6 +82,18 @@ internal fun ConversationScreen(
         }
     }
     LaunchedEffect(resumedVoice) { if (resumedVoice) voiceVisible = true }
+    LaunchedEffect(forceVoiceDestination) {
+        if (forceVoiceDestination) {
+            VoiceNavigationPolicy.dispatch(VoiceNavigationPolicy.Transition.SHOW_VOICE) { onEndVoice {} }
+            voiceVisible = true; onForceVoiceConsumed()
+        }
+    }
+    LaunchedEffect(forceChatDestination) {
+        if (forceChatDestination) {
+            returnToChat()
+            onForceChatConsumed()
+        }
+    }
     LaunchedEffect(armed) {
         if (armed) voiceVisible = true
         else if (wasArmed) voiceVisible = false
@@ -197,7 +214,15 @@ internal fun ConversationScreen(
                 }
             }
             // Keep the voice controller and shared Settings alive in both modes.
-            voiceContent(voiceVisible, settings, { settings = false }, { voiceVisible = false })
+            voiceContent(voiceVisible, settings, { settings = false }, ::returnToChat)
+        }
+        NavigationBar {
+            NavigationBarItem(selected = !voiceVisible, onClick = ::returnToChat, icon = {}, label = { Text("Chat") }, modifier = Modifier.testTag("conversation_nav_chat"))
+            NavigationBarItem(selected = voiceVisible, onClick = {
+                VoiceNavigationPolicy.dispatch(VoiceNavigationPolicy.Transition.SHOW_VOICE) { onEndVoice {} }
+                voiceVisible = true
+            }, icon = {}, label = { Text("Voice") }, modifier = Modifier.testTag("conversation_nav_voice"))
+            NavigationBarItem(selected = false, onClick = onOpenMemory, icon = {}, label = { Text("Memory") }, modifier = Modifier.testTag("memory_open"))
         }
     }
     if (showHistory) AlertDialog(onDismissRequest = { showHistory = false }, title = { Text("Conversations") },

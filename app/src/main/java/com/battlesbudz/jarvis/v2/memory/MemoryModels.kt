@@ -8,6 +8,14 @@ enum class MemoryReviewStatus { PENDING, APPROVED, REJECTED, SUPERSEDED }
 enum class MemorySensitivity { NORMAL, RESTRICTED }
 enum class MemoryOutcome { CREATED, APPROVED, REJECTED, DELETED, ALREADY_RECORDED, INVALID, CONFLICT, EXCLUDED, NOT_FOUND, STORAGE_FAILURE }
 
+/** User-visible wiki classification; it is metadata only and never changes a memory’s content authority. */
+enum class WikiCategory(val id: String, val title: String) {
+    ABOUT_YOU("about-you", "About You"), PEOPLE("people", "People"), PROJECTS("projects", "Projects"),
+    PREFERENCES("preferences", "Preferences"), PLACES("places", "Places"), KNOWLEDGE("knowledge", "Knowledge");
+}
+
+data class MemoryWikiAssignment(val category: WikiCategory, val topic: String)
+
 data class MemoryProvenance(
     val kind: String,
     val id: String,
@@ -37,6 +45,9 @@ data class MemoryRecord(
     val revision: Long,
     val expiresAtMs: Long? = null,
     val correctsMemoryId: String? = null,
+    val wikiAssignment: MemoryWikiAssignment? = null,
+    /** Immutable proposal fingerprint for idempotency after mutable metadata edits. */
+    val payloadFingerprint: String? = null,
 )
 
 data class MemoryProposal(
@@ -49,6 +60,7 @@ data class MemoryProposal(
     val expiresAtMs: Long? = null,
     val correctsMemoryId: String? = null,
     val expectedTargetRevision: Long? = null,
+    val wikiAssignment: MemoryWikiAssignment? = null,
 )
 
 data class MemoryResult(

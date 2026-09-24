@@ -53,7 +53,7 @@ class MemoryStore(
 
     private fun decode(raw: String): Read {
         val root = JSONObject(raw)
-        if (root.optInt("schemaVersion", -1) != SCHEMA_VERSION) return Read(null, "Memory store schema is not supported.")
+        if (root.optInt("schemaVersion", -1) !in 1..SCHEMA_VERSION) return Read(null, "Memory store schema is not supported.")
         if (!root.has("generation") || !root.has("memories") || !root.has("tombstones")) return Read(null, "Memory store is incomplete.")
         val generation = root.getLong("generation").also { require(it >= 0) }
         val memories = root.getJSONArray("memories").map { decodeMemory(it as JSONObject) }
@@ -77,6 +77,8 @@ class MemoryStore(
             confidence = j.getInt("confidence"), source = MemorySource(sourceJson.requiredString("eventId", MemoryPolicy.MAX_EVENT_ID_CHARS), sourceJson.requiredString("eventSource", MemoryPolicy.MAX_EVENT_SOURCE_CHARS), sourceJson.getLong("createdAtMs"), enumValue(sourceJson.requiredString("sensitivity", 32)), provenance),
             reviewStatus = enumValue(j.requiredString("reviewStatus", 32)), createdAtMs = j.getLong("createdAtMs"), updatedAtMs = j.getLong("updatedAtMs"), revision = j.getLong("revision"),
             expiresAtMs = j.optLongOrNull("expiresAtMs"), correctsMemoryId = j.optString("correctsMemoryId").takeIf { it.isNotBlank() },
+            wikiAssignment = j.optJSONObject("wikiAssignment")?.let { a -> MemoryWikiAssignment(enumValue(a.requiredString("category", 32)), a.requiredString("topic", 120)) },
+            payloadFingerprint = j.optString("payloadFingerprint").takeIf { it.isNotBlank() },
         )
     }
 
@@ -87,7 +89,7 @@ class MemoryStore(
 
     private fun encodeMemory(m: MemoryRecord): JSONObject = JSONObject().apply {
         put("id", m.id); put("content", m.content); put("category", m.category.name); put("tier", m.tier.name); put("type", m.type.name); put("confidence", m.confidence); put("reviewStatus", m.reviewStatus.name)
-        put("createdAtMs", m.createdAtMs); put("updatedAtMs", m.updatedAtMs); put("revision", m.revision); put("expiresAtMs", m.expiresAtMs); put("correctsMemoryId", m.correctsMemoryId)
+        put("createdAtMs", m.createdAtMs); put("updatedAtMs", m.updatedAtMs); put("revision", m.revision); put("expiresAtMs", m.expiresAtMs); put("correctsMemoryId", m.correctsMemoryId); put("wikiAssignment", m.wikiAssignment?.let { a -> JSONObject().put("category", a.category.name).put("topic", a.topic) }); put("payloadFingerprint", m.payloadFingerprint)
         put("source", JSONObject().put("eventId", m.source.eventId).put("eventSource", m.source.eventSource).put("createdAtMs", m.source.createdAtMs).put("sensitivity", m.source.sensitivity.name).put("provenance", JSONArray(m.source.provenance.map { p -> JSONObject().put("kind", p.kind).put("id", p.id).put("label", p.label).put("restricted", p.restricted) })))
     }
 
@@ -98,7 +100,7 @@ class MemoryStore(
         if (snapshot.tombstones.any { !MemoryPolicy.isOpaqueEventKey(it.eventId) || !MemoryPolicy.isFingerprint(it.payloadFingerprint) || it.erasedAtMs <= 0 }) return "Memory store contains invalid tombstones."
         val ids = snapshot.memories.map { it.id }.toSet()
         for (m in snapshot.memories) {
-            if (!MemoryPolicy.validatePersisted(m) || (m.correctsMemoryId != null && (!MemoryPolicy.isGeneratedMemoryId(m.correctsMemoryId) || m.correctsMemoryId !in ids || m.correctsMemoryId == m.id))) return "Memory store contains invalid records."
+            if (!MemoryPolicy.validatePersisted(m) || (m.payloadFingerprint != null && !MemoryPolicy.isFingerprint(m.payloadFingerprint)) || (m.correctsMemoryId != null && (!MemoryPolicy.isGeneratedMemoryId(m.correctsMemoryId) || m.correctsMemoryId !in ids || m.correctsMemoryId == m.id))) return "Memory store contains invalid records."
         }
         // Correction references must form finite lineages rather than cycles.
         for (m in snapshot.memories) {
@@ -117,7 +119,7 @@ class MemoryStore(
     private fun <T> JSONArray.map(block: (Any) -> T): List<T> = (0 until length()).map { block(get(it)) }
 
     companion object {
-        const val SCHEMA_VERSION = 1
+        const val SCHEMA_VERSION = 2
         const val MAX_STORE_BYTES = 1_048_576L
         private val locks = ConcurrentHashMap<String, Any>()
         private fun lockFor(file: File): Any = locks.getOrPut(file.canonicalFile.path) { Any() }

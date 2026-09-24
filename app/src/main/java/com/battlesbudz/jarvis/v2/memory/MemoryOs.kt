@@ -31,7 +31,7 @@ class MemoryOs(private val store: MemoryStore, private val clock: () -> Long = {
         val update = store.update { before ->
             val prior = before.memories.firstOrNull { it.source.eventId == opaqueProposal.source.eventId }
             if (prior != null) {
-                val priorFingerprint = MemoryPolicy.fingerprint(prior.toProposal())
+                val priorFingerprint = prior.payloadFingerprint ?: MemoryPolicy.fingerprint(prior.toProposal())
                 return@update before to if (priorFingerprint == fingerprint) MemoryResult(MemoryOutcome.ALREADY_RECORDED, "Source event was already recorded.", prior)
                 else MemoryResult(MemoryOutcome.CONFLICT, "Source event id was reused with different data.")
             }
@@ -43,10 +43,34 @@ class MemoryOs(private val store: MemoryStore, private val clock: () -> Long = {
             if (opaqueProposal.correctsMemoryId != null && (target == null || target.reviewStatus != MemoryReviewStatus.APPROVED)) return@update before to MemoryResult(MemoryOutcome.CONFLICT, "The memory being corrected is no longer active.")
             if (target != null && opaqueProposal.expectedTargetRevision != null && target.revision != opaqueProposal.expectedTargetRevision) return@update before to MemoryResult(MemoryOutcome.CONFLICT, "The memory changed before this correction was proposed.")
             if (target != null && before.memories.any { it.correctsMemoryId == target.id && it.reviewStatus == MemoryReviewStatus.PENDING }) return@update before to MemoryResult(MemoryOutcome.CONFLICT, "A correction for this memory is already pending.")
-            val record = MemoryRecord(UUID.randomUUID().toString(), opaqueProposal.content, opaqueProposal.category, opaqueProposal.tier, opaqueProposal.type, opaqueProposal.confidence, opaqueProposal.source, MemoryReviewStatus.PENDING, now, now, 1, opaqueProposal.expiresAtMs, opaqueProposal.correctsMemoryId)
+            val assignment = opaqueProposal.wikiAssignment ?: target?.wikiAssignment
+            val record = MemoryRecord(UUID.randomUUID().toString(), opaqueProposal.content, opaqueProposal.category, opaqueProposal.tier, opaqueProposal.type, opaqueProposal.confidence, opaqueProposal.source, MemoryReviewStatus.PENDING, now, now, 1, opaqueProposal.expiresAtMs, opaqueProposal.correctsMemoryId, assignment, fingerprint)
             before.copy(generation = before.generation + 1, memories = before.memories + record) to MemoryResult(MemoryOutcome.CREATED, "Memory proposal is awaiting review.", record)
         }
         return update.value ?: MemoryResult(MemoryOutcome.STORAGE_FAILURE, update.error ?: "Memory store failed.")
+    }
+
+    /** Changes only user-controlled wiki metadata. Pending and approved memories remain reviewable. */
+    fun assignWiki(id: String, expectedRevision: Long? = null, assignment: MemoryWikiAssignment): MemoryResult {
+        val normalized = MemoryPolicy.canonicalize(MemoryProposal("x", MemorySource("a", "a", 1), wikiAssignment = assignment)).wikiAssignment!!
+        MemoryPolicy.assessWikiAssignment(normalized)?.let { return MemoryResult(MemoryOutcome.INVALID, it) }
+        if (MemoryPolicy.isRestrictedMetadata(normalized.topic) || MemoryPolicy.containsRawRestrictedContent(normalized.topic)) return MemoryResult(MemoryOutcome.EXCLUDED, "Restricted wiki metadata is not stored in memory.")
+        val now = clock(); var approvedChanged = false
+        val update = store.update { before ->
+            val record = before.memories.firstOrNull { it.id == id } ?: return@update before to MemoryResult(MemoryOutcome.NOT_FOUND, "Memory not found.")
+            if (expectedRevision != null && record.revision != expectedRevision) return@update before to MemoryResult(MemoryOutcome.CONFLICT, "Memory changed before classification.", record)
+            if (record.reviewStatus !in setOf(MemoryReviewStatus.PENDING, MemoryReviewStatus.APPROVED)) return@update before to MemoryResult(MemoryOutcome.CONFLICT, "Only pending or approved memories can be classified.", record)
+            if (record.wikiAssignment == normalized) return@update before to MemoryResult(MemoryOutcome.ALREADY_RECORDED, "Memory is already in this wiki topic.", record)
+            // A legacy record has no immutable fingerprint. Seed its pre-assignment v2 payload
+            // before changing placement so original event replay and its future tombstone stay valid.
+            val originalFingerprint = record.payloadFingerprint ?: MemoryPolicy.fingerprint(record.toProposal())
+            val changed = record.copy(wikiAssignment = normalized, payloadFingerprint = originalFingerprint, updatedAtMs = now, revision = record.revision + 1)
+            approvedChanged = record.reviewStatus == MemoryReviewStatus.APPROVED
+            before.copy(generation = before.generation + 1, memories = before.memories.map { if (it.id == id) changed else it }) to MemoryResult(MemoryOutcome.APPROVED, "Memory wiki classification recorded.", changed)
+        }
+        val result = update.value ?: MemoryResult(MemoryOutcome.STORAGE_FAILURE, update.error ?: "Memory store failed.")
+        if (approvedChanged && result.outcome == MemoryOutcome.APPROVED) notifyApprovedStateChanged()
+        return result
     }
 
     fun approve(id: String, expectedRevision: Long? = null): MemoryResult = transition(id, expectedRevision, MemoryReviewStatus.APPROVED)
@@ -92,7 +116,7 @@ class MemoryOs(private val store: MemoryStore, private val clock: () -> Long = {
             val erased = before.memories.filter { it.id in ids }
             approvedChanged = erased.any { it.reviewStatus == MemoryReviewStatus.APPROVED }
             if (before.tombstones.size + erased.size > MemoryPolicy.MAX_TOMBSTONES) return@update before to MemoryResult(MemoryOutcome.INVALID, "Erasure tombstone capacity reached.")
-            val tombstones = before.tombstones + erased.map { MemoryTombstone(it.source.eventId, MemoryPolicy.fingerprint(it.toProposal()), now) }
+            val tombstones = before.tombstones + erased.map { MemoryTombstone(it.source.eventId, it.payloadFingerprint ?: MemoryPolicy.fingerprint(it.toProposal()), now) }
             before.copy(generation = before.generation + 1, memories = before.memories.filterNot { it.id in ids }, tombstones = tombstones) to MemoryResult(MemoryOutcome.DELETED, "Memory content and correction lineage erased.")
         }
         val result = update.value ?: MemoryResult(MemoryOutcome.STORAGE_FAILURE, update.error ?: "Memory store failed.")
@@ -140,5 +164,5 @@ class MemoryOs(private val store: MemoryStore, private val clock: () -> Long = {
         return result
     }
 
-    private fun MemoryRecord.toProposal() = MemoryProposal(content, source, category, tier, type, confidence, expiresAtMs, correctsMemoryId)
+    private fun MemoryRecord.toProposal() = MemoryProposal(content, source, category, tier, type, confidence, expiresAtMs, correctsMemoryId, null, wikiAssignment)
 }

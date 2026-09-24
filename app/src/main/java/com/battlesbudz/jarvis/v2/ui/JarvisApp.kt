@@ -84,6 +84,8 @@ fun JarvisApp(
     var setupElapsedSeconds by remember { mutableStateOf(0L) }
     var showingVoiceCalls by rememberSaveable { mutableStateOf(false) }
     var showingMemory by rememberSaveable { mutableStateOf(false) }
+    var memoryReturnToVoice by rememberSaveable { mutableStateOf(false) }
+    var memoryReturnToChat by rememberSaveable { mutableStateOf(false) }
     var voiceCalls by remember { mutableStateOf(initialVoiceCalls) }
     var selectedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
     var resumedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
@@ -310,7 +312,12 @@ fun JarvisApp(
                             voiceCalls = onRefreshVoiceCalls()
                             showingVoiceCalls = true
                         },
-                        resumedVoice = resumedVoiceCall != null
+                        resumedVoice = resumedVoiceCall != null,
+                        onOpenMemory = { showingMemory = true },
+                        forceVoiceDestination = memoryReturnToVoice,
+                        onForceVoiceConsumed = { memoryReturnToVoice = false },
+                        forceChatDestination = memoryReturnToChat,
+                        onForceChatConsumed = { memoryReturnToChat = false }
                     ) { visible, settingsOpen, dismissSettings, returnToChat -> VoiceCallScreen(
                         visible = visible, settingsOpen = settingsOpen, memoryOpen = showingMemory,
                         onDismissSettings = dismissSettings, onReturnToChat = returnToChat,
@@ -334,6 +341,8 @@ fun JarvisApp(
                         callActive = activeVoiceCall,
                         callStatus = activeVoiceStatus,
                         onEndCall = onEndVoiceCall,
+                        onOpenChat = { memoryReturnToVoice = false; memoryReturnToChat = true; showingMemory = false },
+                        onOpenVoice = { memoryReturnToChat = false; memoryReturnToVoice = true; showingMemory = false },
                     )
                 }
             } else if (showingMemory) {
@@ -343,6 +352,8 @@ fun JarvisApp(
                     callActive = activeVoiceCall,
                     callStatus = activeVoiceStatus,
                     onEndCall = onEndVoiceCall,
+                    onOpenChat = { memoryReturnToVoice = false; memoryReturnToChat = true; showingMemory = false },
+                    onOpenVoice = { memoryReturnToChat = false; memoryReturnToVoice = true; showingMemory = false },
                 )
             } else {
                 ModelSetup(

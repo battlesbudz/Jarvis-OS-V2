@@ -78,5 +78,19 @@ class MemoryStoreTest {
         assertEquals(MemoryOutcome.STORAGE_FAILURE, os.propose(MemoryProposal("x", MemorySource("a", "manual", 1))).outcome)
     }
 
+    @Test fun legacySchemaOneWithoutWikiAssignmentReopensAndUpgradesOnNextWrite() {
+        val file = temporaryFile(); val os = MemoryOs(file) { now }
+        val record = os.propose(MemoryProposal("Tea", MemorySource("legacy", "manual", now))).memory!!
+        val legacy = JSONObject(file.readText()).apply {
+            put("schemaVersion", 1)
+            getJSONArray("memories").getJSONObject(0).remove("wikiAssignment")
+        }
+        file.writeText(legacy.toString())
+        val reopened = MemoryOs(file) { now }
+        assertNull(reopened.read().snapshot!!.memories.single().wikiAssignment)
+        assertEquals(MemoryOutcome.APPROVED, reopened.approve(record.id).outcome)
+        assertEquals(MemoryStore.SCHEMA_VERSION, JSONObject(file.readText()).getInt("schemaVersion"))
+    }
+
     private fun temporaryFile(): File { val f = File.createTempFile("memory", ".json"); f.delete(); return f.apply { deleteOnExit() } }
 }

@@ -19,6 +19,8 @@ class ConversationMemory(private val memoryOs: MemoryOs) {
                 input.callId?.trim()?.takeIf { it.isNotEmpty() }?.let { add(MemoryProvenance("call", it)) }
             },
         )
+        // Wiki suggestions are derived when rendering. Persisting them here would alter the identity
+        // of captures created before wiki support and break their replay/tombstones.
         val result = memoryOs.propose(MemoryProposal(candidate.content, source, candidate.category, candidate.tier, candidate.type, candidate.confidence))
         return when (result.outcome) {
             MemoryOutcome.CREATED, MemoryOutcome.ALREADY_RECORDED -> ConversationMemoryResult(ConversationMemoryOutcome.PROPOSED, result.message, result.memory)
