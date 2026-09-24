@@ -257,6 +257,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         val history = conversationHistory.context()
         val threadId = conversationHistory.current.value.id
         val replyId = java.util.UUID.randomUUID().toString()
+        com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.beginLiveMetrics(
+            com.battlesbudz.jarvis.v2.voice.LiveReplyMetrics(replyId, threadId))
         val userMessageId = conversationHistory.appendUser(userText, attachment)
         val capturedAtMs = System.currentTimeMillis()
         runtimeScope.launch(Dispatchers.IO) {
@@ -285,6 +287,22 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     onActionResult = { name, message, succeeded ->
                         conversationHistory.recordReplyAction(threadId, replyId,
                             com.battlesbudz.jarvis.v2.chat.ActionReceipt(name, message, succeeded))
+                    }, onLiveInference = { submittedAt, firstTokenAt, tokensPerSecond, durable ->
+                        conversationHistory.updateReplyMetrics(threadId, replyId, durable = durable) { current ->
+                            var updated = current
+                            submittedAt?.let { updated = updated.submitted(it) }
+                            firstTokenAt?.let { updated = updated.firstRawToken(it) }
+                            if (tokensPerSecond != null && tokensPerSecond.isFinite())
+                                updated = updated.copy(estimatedTokensPerSecond = tokensPerSecond)
+                            updated
+                        }
+                        com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.updateLiveMetrics(replyId, threadId) { metrics ->
+                            var updated = metrics
+                            submittedAt?.let { updated = updated.submitted(it) }
+                            firstTokenAt?.let { updated = updated.firstText(it) }
+                            if (tokensPerSecond != null && tokensPerSecond.isFinite()) updated = updated.copy(estimatedTokensPerSecond = tokensPerSecond)
+                            updated
+                        }
                     })
                 conversationJob?.join()
             } catch (error: Exception) {
@@ -481,10 +499,28 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         preparingTypedInput.compareAndSet(input, null)
                         voiceSessionController.appendTranscript("You", input.text, origin = com.battlesbudz.jarvis.v2.voice.TranscriptOrigin.TYPED)
                         voiceSessionController.beginReply(input.callId, replyId)
+                        com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.beginLiveMetrics(
+                            com.battlesbudz.jarvis.v2.voice.LiveReplyMetrics(replyId, input.conversationId))
                         invocation = runConversationInternal(input.text, conversationHistory.context(), null,
                             callOwned = true,
                             onToken = { token -> response.append(token); voiceSessionController.updateReplyText(input.callId, replyId, response.toString()) },
-                            onComplete = { answer -> voiceSessionController.updateReplyText(input.callId, replyId, answer, finished = true) })
+                            onComplete = { answer -> voiceSessionController.updateReplyText(input.callId, replyId, answer, finished = true) },
+                            onLiveInference = { submittedAt, firstTokenAt, tokensPerSecond, durable ->
+                                voiceSessionController.updateReplyMetrics(input.callId, replyId, durable = durable) { current ->
+                                    var updated = current
+                                    submittedAt?.let { updated = updated.submitted(it) }
+                                    firstTokenAt?.let { updated = updated.firstRawToken(it) }
+                                    if (tokensPerSecond != null && tokensPerSecond.isFinite()) updated = updated.copy(estimatedTokensPerSecond = tokensPerSecond)
+                                    updated
+                                }
+                                com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.updateLiveMetrics(replyId, input.conversationId) { metrics ->
+                                    var updated = metrics
+                                    submittedAt?.let { updated = updated.submitted(it) }
+                                    firstTokenAt?.let { updated = updated.firstText(it) }
+                                    if (tokensPerSecond != null && tokensPerSecond.isFinite()) updated = updated.copy(estimatedTokensPerSecond = tokensPerSecond)
+                                    updated
+                                }
+                            })
                     }) return@launch
                 invocation?.join()
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -561,6 +597,22 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         val finalReadyAt = java.util.concurrent.atomic.AtomicLong(0)
         val speechEndedAt = java.util.concurrent.atomic.AtomicLong(0)
         val firstPlayback = java.util.concurrent.atomic.AtomicBoolean(true)
+        val liveMetrics = java.util.concurrent.atomic.AtomicReference(
+            com.battlesbudz.jarvis.v2.voice.LiveReplyMetrics(asrTurnId, conversationHistory.current.value.id))
+        val liveMetricsActive = java.util.concurrent.atomic.AtomicBoolean(false)
+        fun activateLiveMetrics() {
+            if (liveMetricsActive.compareAndSet(false, true)) {
+                speechEndedAt.get().takeIf { it != 0L }?.let { ended ->
+                    liveMetrics.updateAndGet { it.speechEnded(ended) }
+                }
+                com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.beginLiveMetrics(liveMetrics.get())
+            }
+        }
+        fun publishLiveMetrics(update: (com.battlesbudz.jarvis.v2.voice.LiveReplyMetrics) -> com.battlesbudz.jarvis.v2.voice.LiveReplyMetrics) {
+            val value = liveMetrics.updateAndGet(update)
+            if (liveMetricsActive.get())
+                com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.updateLiveMetrics(asrTurnId, value.conversationId) { value }
+        }
         voiceTurnJob = runtimeScope.launch(Dispatchers.Default) {
             var operationOwned = false
             val promotionLease = com.battlesbudz.jarvis.v2.voice.CallPromotionLease()
@@ -764,6 +816,15 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                 (memoryVoiceBinding.get() === binding && memoryDeliveryFence.isValid(binding.ticket) && binding.context.isCurrent())
                         }) {
                             if (firstPlayback.compareAndSet(true, false) && finalReadyAt.get() != 0L) {
+                                val playbackAt = System.nanoTime() / 1_000_000
+                                publishLiveMetrics { metrics ->
+                                    var updated = metrics.firstActualPlayback(playbackAt)
+                                    speechEndedAt.get().takeIf { it != 0L }?.let { updated = updated.speechEnded(it) }
+                                    updated
+                                }
+                                voiceSessionController.updateReplyMetrics(expectedCallId, asrTurnId) {
+                                    it.firstActualPlayback(playbackAt)
+                                }
                                 comparison?.mark("answer_audio")
                                 turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.FIRST_REPLY_AUDIO)
                                 asrComparisonStore.update(asrTurnId, "final_to_playback_start_ms",
@@ -904,7 +965,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 val firstFinalToken = java.util.concurrent.atomic.AtomicBoolean(true)
                 val audioBytes = correction?.wav ?: activeCapture.stop()
                 comparison?.wav = audioBytes.copyOf()
-                activeCapture.lastSpeechAtMs?.let { comparison?.mark("speech_end", it); speechEndedAt.set(it) }
+                (correction?.speechEndedAtMs ?: activeCapture.lastSpeechAtMs)?.let {
+                    comparison?.mark("speech_end", it); speechEndedAt.set(it)
+                    publishLiveMetrics { metrics -> metrics.speechEnded(it) }
+                }
                 comparison?.mark("capture_final")
                 if (correction == null) turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.CAPTURE_CONSUMER_RELEASED)
                 kotlin.coroutines.coroutineContext.ensureActive()
@@ -1082,6 +1146,13 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         voiceSessionController.appendTranscript("You", transcript,
                             origin = correction?.origin ?: com.battlesbudz.jarvis.v2.voice.TranscriptOrigin.SPOKEN)
                         voiceSessionController.beginReply(expectedCallId, asrTurnId)
+                        speechEndedAt.get().takeIf { it != 0L }?.let { ended ->
+                            voiceSessionController.updateReplyMetrics(expectedCallId, asrTurnId) { it.speechEnded(ended) }
+                        }
+                        // Deterministic accepted actions may not invoke the model; start a fresh
+                        // per-task record with unknown timings instead of retaining the prior reply.
+                        com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.beginLiveMetrics(
+                            com.battlesbudz.jarvis.v2.voice.LiveReplyMetrics(asrTurnId, conversationHistory.current.value.id))
                         voiceSessionController.setState(VoiceSessionState.EXECUTING_ACTION)
                         activeContinuousActionSession = actionSession
                         accepted = enqueueAcceptedVoiceAction(actionSession, actionInvocation)
@@ -1106,6 +1177,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     // The action worker is already running while this listener waits. Do not call
                     // runVoiceTurn here: that would reset/prefill the shared native engine.
                     var terminalReportsPublished = false
+                    // SessionCapture cannot carry timing without widening its stable queue API. Keep
+                    // the capture's monotonic endpoint keyed by its immutable utterance ID.
+                    val capturedSpeechEnds = java.util.concurrent.ConcurrentHashMap<String, Long>()
                     // A fast executor can finish before the listener exists. Reconcile its durable
                     // terminal record before deciding whether an idle watcher is needed.
                     publishTerminalActionReports(actionSession, expectedCallId)
@@ -1224,8 +1298,11 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                 speechChunks.close()
                                 withContext(kotlinx.coroutines.NonCancellable) { speechJob?.cancelAndJoin() }
                                 val reportReplyId = "report-" + java.util.UUID.randomUUID().toString()
+                                val reportText = cleanSpeechText(report.reports.joinToString(" ") { it.text })
                                 voiceSessionController.beginReply(expectedCallId, reportReplyId)
+                                voiceSessionController.updateReplyText(expectedCallId, reportReplyId, reportText, finished = true)
                                 val reportTerminal = java.util.concurrent.atomic.AtomicReference<com.battlesbudz.jarvis.v2.voice.SpeechDelivery?>(null)
+                                val reportPlaybackObserved = java.util.concurrent.atomic.AtomicBoolean(false)
                                 val createdReportOutput = PiperVoiceOutput(ttsDirectory.path, engine = ttsEngine,
                                     modelSession = models,
                                     deliveryLedger = com.battlesbudz.jarvis.v2.voice.SpeechDeliveryLedger(reportReplyId) { delivery ->
@@ -1239,9 +1316,18 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                 activeVoiceOutput = createdReportOutput
                                 val reportJob = async {
                                     try {
-                                        createdReportOutput.speak(kotlinx.coroutines.flow.flowOf(
-                                            cleanSpeechText(report.reports.joinToString(" ") { it.text })
-                                        ))
+                                        createdReportOutput.speak(kotlinx.coroutines.flow.flowOf(reportText)) {
+                                            // Piper emits this only once AudioTrack head passes its first audible
+                                            // frame. A combined report is its own reply: do not backdate a later
+                                            // task's first word to the aggregate opening.
+                                            if (reportPlaybackObserved.compareAndSet(false, true)) {
+                                                val at = System.nanoTime() / 1_000_000
+                                                val targetId = report.reports.singleOrNull()?.taskId ?: reportReplyId
+                                                voiceSessionController.updateReplyMetrics(expectedCallId, targetId) {
+                                                    it.firstActualPlayback(at)
+                                                }
+                                            }
+                                        }
                                         true
                                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                                         // Parent/end-call cancellation still escapes; an interrupted
@@ -1376,6 +1462,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             diagnosticRecorder.recordImportant("Accepted action mode: spoken goodbye detached capture; work retained")
                             break@actionPump
                         }
+                        finalCaptured.speechEndedAtMs?.let { capturedSpeechEnds[finalCaptured.utteranceId] = it }
                         val finalCapture = com.battlesbudz.jarvis.v2.voice.SessionCapture(
                             finalCaptured.utteranceId, finalCaptured.transcript, finalCaptured.recognitionIssue,
                             finalCaptured.wav, finalCaptured.audioIsComplete, finalCaptured.capturedAtMs, finalCaptured.origin
@@ -1413,6 +1500,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                     val followId = java.util.UUID.randomUUID().toString()
                                     voiceSessionController.appendTranscript("You", finalCaptured.transcript, origin = finalCaptured.origin)
                                     voiceSessionController.beginReply(expectedCallId, followId)
+                                    finalCaptured.speechEndedAtMs?.let { ended ->
+                                        voiceSessionController.updateReplyMetrics(expectedCallId, followId) { it.speechEnded(ended) }
+                                    }
                                     if (!enqueueAcceptedVoiceAction(actionSession, AcceptedVoiceInvocation(
                                             expectedCallId, followId, finalCaptured.utteranceId, finalCaptured.transcript, voiceHistory, followPlan))) {
                                         val explanation = "I already have accepted phone results waiting to be reported. Please wait a moment."
@@ -1494,7 +1584,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             }
                         } else pendingVoiceCorrection.set(com.battlesbudz.jarvis.v2.voice.CapturedVoiceTurn(
                             deferred.text, deferred.wav, deferred.audioIsComplete,
-                            deferred.recognitionIssue, deferred.utteranceId, deferred.capturedAtMs, deferred.origin
+                            deferred.recognitionIssue, deferred.utteranceId, deferred.capturedAtMs, deferred.origin,
+                            capturedSpeechEnds.remove(deferred.utteranceId)
                         ))
                     }
                     val summary = acceptedVoiceSummary(expectedCallId)
@@ -1506,6 +1597,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 if (runAcceptedActionMode()) return@launch
                 val outcome = com.battlesbudz.jarvis.v2.voice.runInterruptibleReply(
                     reply = {
+                        activateLiveMetrics()
                         output.updateWaitStage(com.battlesbudz.jarvis.v2.voice.DelayedAcknowledgement.Stage.GENERATING)
                         turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.REPLY_DISPATCHED)
                         val coordinator = VoiceTurnCoordinator(voiceSessionController)
@@ -1514,6 +1606,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         val publicationGuard = com.battlesbudz.jarvis.v2.memory.MemoryPublicationGuard(memoryDeliveryFence)
                         fun publishBound(block: () -> Unit): Boolean = publicationGuard.publish(block)
                         val response = coordinator.processTurn(transcript, replyId = asrTurnId, publish = ::publishBound) { onToken ->
+                            speechEndedAt.get().takeIf { it != 0L }?.let { ended ->
+                                voiceSessionController.updateReplyMetrics(expectedCallId, asrTurnId) { it.speechEnded(ended) }
+                            }
                             val completed = CompletableDeferred<String>()
                             val streamed = StringBuilder()
                             fun recordFirstText(text: String) {
@@ -1553,6 +1648,22 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                 prompt = transcript, history = voiceHistory, imageUri = null,
                                 incrementalVoice = preparedText, voiceAudio = audioBytes, voiceAudioIsComplete = audioIsComplete,
                                 comparison = comparison,
+                                onLiveInference = { submittedAt, firstTokenAt, tokensPerSecond, durable ->
+                                    voiceSessionController.updateReplyMetrics(expectedCallId, asrTurnId, durable = durable) { current ->
+                                        var updated = current
+                                        submittedAt?.let { updated = updated.submitted(it) }
+                                        firstTokenAt?.let { updated = updated.firstRawToken(it) }
+                                        if (tokensPerSecond != null && tokensPerSecond.isFinite()) updated = updated.copy(estimatedTokensPerSecond = tokensPerSecond)
+                                        updated
+                                    }
+                                    publishLiveMetrics { metrics ->
+                                        var updated = metrics
+                                        submittedAt?.let { updated = updated.submitted(it) }
+                                        firstTokenAt?.let { updated = updated.firstText(it) }
+                                        if (tokensPerSecond != null && tokensPerSecond.isFinite()) updated = updated.copy(estimatedTokensPerSecond = tokensPerSecond)
+                                        updated
+                                    }
+                                },
                                 onLatency = { replyLatency.set(it) },
                                 onMemoryBound = { ticket, context ->
                                     val binding = MemoryVoiceBinding(ticket, context, output, speechJob, expectedCallId, asrTurnId, answerExpiryJob)
@@ -1869,6 +1980,15 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         else com.battlesbudz.jarvis.v2.voice.VoiceTaskState.FAILED,
                         completedSteps.toList(), planned.drop(completedSteps.size)
                     ))
+                },
+                onLiveInference = { submittedAt, firstTokenAt, tokensPerSecond, durable ->
+                    voiceSessionController.updateReplyMetrics(accepted.callId, accepted.replyId, durable = durable) { current ->
+                        var updated = current
+                        submittedAt?.let { updated = updated.submitted(it) }
+                        firstTokenAt?.let { updated = updated.firstRawToken(it) }
+                        if (tokensPerSecond != null && tokensPerSecond.isFinite()) updated = updated.copy(estimatedTokensPerSecond = tokensPerSecond)
+                        updated
+                    }
                 },
                 frozenActionPlan = accepted.plan,
                 frozenVoiceFinal = true

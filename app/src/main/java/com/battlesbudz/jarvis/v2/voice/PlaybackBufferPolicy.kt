@@ -10,9 +10,9 @@ internal object PlaybackBufferPolicy {
 
     fun startupWaitMs(synthesisMs: Long, audioMs: Long): Long {
         if (audioMs <= 0) return 0
-        // A tiny acknowledgement cannot cover synthesis of a normal following phrase.
-        // End-of-stream or a ready second phrase releases this wait early.
-        if (audioMs < 1200) return 2000
+        // The first completed sentence is the latency-critical opening. Start it now;
+        // later normal passages provide the usual queue headroom.
+        if (audioMs < 1200) return 0
         return (synthesisMs * 3 / 2 - audioMs * 4 / 5).coerceIn(0, 1200)
     }
 

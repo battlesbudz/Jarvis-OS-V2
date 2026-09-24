@@ -27,6 +27,12 @@ class ReplyInterruptionTest {
         assertEquals(captured.utteranceId, deferred.utteranceId)
     }
 
+    @Test fun spokenCorrectionKeepsItsActualSpeechEndAcrossDeferral() {
+        val captured = CapturedVoiceTurn("Open YouTube", byteArrayOf(1), speechEndedAtMs = 1234L)
+        assertEquals(1234L, captured.copy().speechEndedAtMs)
+        assertNull(CapturedVoiceTurn("typed", byteArrayOf(), origin = TranscriptOrigin.TYPED).speechEndedAtMs)
+    }
+
     @Test fun normalReplyCancelsAndClosesUnusedListener() = runBlocking {
         val listening = CompletableDeferred<Unit>()
         var listenerClosed = false

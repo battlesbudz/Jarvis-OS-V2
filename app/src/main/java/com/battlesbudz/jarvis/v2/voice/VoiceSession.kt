@@ -40,7 +40,8 @@ data class TranscriptEntry(
     val delivery: SpeechDelivery? = null,
     val generationComplete: Boolean = complete,
     val actions: List<VoiceActionOutcome> = emptyList(),
-    val origin: TranscriptOrigin = TranscriptOrigin.SPOKEN
+    val origin: TranscriptOrigin = TranscriptOrigin.SPOKEN,
+    val metrics: com.battlesbudz.jarvis.v2.diagnostics.ReplyMetrics? = null
 )
 
 data class VoiceActionOutcome(val name: String, val message: String, val succeeded: Boolean)

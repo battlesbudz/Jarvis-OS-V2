@@ -45,6 +45,8 @@ class LiteRtLmEngine(
 
     /** Reports actual submissions, including incremental input, retries and recognition fallback. */
     var onPromptSubmitted: (String, Int) -> Unit = { _, _ -> }
+    /** Native submission/raw-callback timing; intentionally carries no generated text. */
+    var onInferenceProgress: (InferenceProgress) -> Unit = {}
 
     private var nativeSession = 0L
     private var nativeSubmissions = 0
@@ -63,7 +65,7 @@ class LiteRtLmEngine(
         // Voice owns this engine exclusively. Do not allocate a second idle KV cache.
         conversation?.close()
         conversation = null
-        return LiteRtVoicePrefillSession(LiteRtNativeVoiceSession(engine.createSession()))
+        return LiteRtVoicePrefillSession(LiteRtNativeVoiceSession(engine.createSession())) { progress -> onInferenceProgress(progress) }
     }
 
     private var toolsEnabled = false
@@ -176,9 +178,13 @@ class LiteRtLmEngine(
         val terminal = CompletableDeferred<Unit>()
         try {
             try {
+            val submittedAt = System.nanoTime() / 1_000_000
+            onInferenceProgress(InferenceProgress(submittedAtMs = submittedAt))
             activeConversation.sendMessageAsync(message, object : MessageCallback {
                 override fun onMessage(message: Message) {
-                    firstCallbackAt.compareAndSet(0L, System.nanoTime())
+                    val callbackAt = System.nanoTime()
+                    if (firstCallbackAt.compareAndSet(0L, callbackAt))
+                        onInferenceProgress(InferenceProgress(firstRawTokenAtMs = callbackAt / 1_000_000))
                     responses.trySend(message)
                 }
                 override fun onDone() { terminal.complete(Unit); responses.close() }

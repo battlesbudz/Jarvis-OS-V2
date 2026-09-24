@@ -153,6 +153,11 @@ internal fun ConversationScreen(
                                         fontStyle = if (message.spoken) FontStyle.Italic else FontStyle.Normal,
                                         modifier = Modifier.padding(top = 6.dp))
                                 }
+                                if (message.role == "Jarvis")
+                                    Text((message.metrics ?: com.battlesbudz.jarvis.v2.diagnostics.ReplyMetrics.unavailable).summary(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("reply_metrics_${message.id}"))
                                 if (!message.complete && message.role == "Jarvis" && message.text.isNotBlank() && !sending)
                                     Text("Reply interrupted or not fully spoken", style = MaterialTheme.typography.labelSmall)
                             }

@@ -97,9 +97,17 @@ class NaturalBargeInAudioInputTest {
             assertEquals(text, 0, confirmed)
         }
     }
-    @Test fun heyJarvisStillWorksWithoutNaturalRecognitionBudget() = runBlocking {
+    @Test fun keywordNoiseCannotStopPlaybackWithoutAsrWords() = runBlocking {
         gate(budget = false, keywordAt = 10).chunks().toList()
-        assertEquals(1, confirmed); assertEquals(0, models)
+        assertEquals(0, confirmed); assertEquals(0, models)
+        assertTrue(logs.any { "barge_stop_rejected reason=verification_budget" in it })
+    }
+    @Test fun recognizedKeywordEventuallyConfirmsOnlyAfterItsAsrVerification() = runBlocking {
+        val delivered = gate(text = "Hey Jarvis", speech = false, keywordAt = 10, keyword = "Hey_Jarvis").chunks().toList()
+        assertEquals(1, confirmed)
+        assertTrue(models >= 1)
+        assertTrue(logs.any { "barge_keyword_confirmed keyword=Hey_Jarvis verification=asr_non_echo" in it })
+        assertTrue(delivered.isNotEmpty())
     }
     @Test fun sirMistakenForStopDoesNotCutOffPlayback() = runBlocking {
         val audio = gate(text = "Sir, I apologize for the interruption", reference = "Sir, I apologize for the interruption",
@@ -191,15 +199,16 @@ class NaturalBargeInAudioInputTest {
         assertTrue(gate(speech = false).chunks().toList().isEmpty())
         assertEquals(0, models); assertEquals(30, keywordCalls)
     }
-    @Test fun lowSupplyLeavesKeywordListenerWorkingWithoutAsr() = runBlocking {
+    @Test fun lowSupplyKeywordHitLeavesPlaybackUninterruptedWithoutAsr() = runBlocking {
         val delivered = gate(budget = false, keywordAt = 15).chunks().toList()
-        assertEquals(0, models); assertEquals(1, confirmed)
-        assertEquals(15, keywordCalls); assertEquals(16, delivered.first()[0].toInt())
+        assertEquals(0, models); assertEquals(0, confirmed)
+        assertEquals(30, keywordCalls); assertTrue(delivered.isEmpty())
+        assertTrue(logs.any { "barge_stop_rejected reason=verification_budget" in it })
     }
-    @Test fun recognizerFailureFallsBackWithoutLosingKeywordControl() = runBlocking {
+    @Test fun recognizerFailureKeywordHitLeavesPlaybackUninterrupted() = runBlocking {
         val delivered = gate(failing = true, keywordAt = 20).chunks().toList()
-        assertEquals(1, models); assertEquals(models, closedModels); assertEquals(1, confirmed)
-        assertEquals(21, delivered.first()[0].toInt())
+        assertTrue(models >= 1); assertEquals(models, closedModels); assertEquals(0, confirmed)
+        assertTrue(delivered.isEmpty())
         assertTrue(logs.any { it.contains("fallback=keyword") })
     }
     @Test fun sustainedEchoHasBoundedProbeCountAndNoDuplicateAudio() = runBlocking {
@@ -223,26 +232,12 @@ class NaturalBargeInAudioInputTest {
         assertTrue(delivered.isEmpty()); assertEquals(0, confirmed)
         assertTrue(logs.any { it.contains("queued_audio_too_old") })
     }
-    @Test fun keywordCanStopPlaybackWhileNativeDecodeIsBlocked() = runBlocking {
-        val entered = java.util.concurrent.CountDownLatch(1)
-        val release = java.util.concurrent.CountDownLatch(1)
-        try {
-            val delivered = gate(chunks = 15, keywordAt = 12, dispatcher = Dispatchers.Default,
-                beforeFrame = { index ->
-                    if (index == 10) assertTrue(entered.await(2, java.util.concurrent.TimeUnit.SECONDS))
-                }, acceptAction = {
-                    entered.countDown()
-                    check(release.await(2, java.util.concurrent.TimeUnit.SECONDS))
-                }, onConfirmation = { natural ->
-                    assertFalse(natural)
-                    assertEquals(1L, release.count) // Capture reached the keyword without waiting for ASR.
-                    assertEquals(0, closedModels)
-                    release.countDown()
-                }).chunks().toList()
-            assertEquals(1, confirmed)
-            assertEquals(models, closedModels)
-            assertEquals(13, delivered.first()[0].toInt())
-        } finally { release.countDown() }
+    @Test fun keywordCannotStopPlaybackWhileVerificationIsUnavailable() = runBlocking {
+        val delivered = gate(chunks = 15, keywordAt = 12, speech = false, budgetNow = { false }).chunks().toList()
+        assertEquals(0, confirmed)
+        assertEquals(0, models)
+        assertTrue(delivered.isEmpty())
+        assertTrue(logs.any { "barge_stop_rejected reason=verification_budget" in it })
     }
     @Test fun completedResultIsConsumedDuringSilenceWithoutAnotherCandidate() = runBlocking {
         val pending = java.util.ArrayDeque<Runnable>()

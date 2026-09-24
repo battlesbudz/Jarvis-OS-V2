@@ -21,8 +21,8 @@ class PlaybackBufferPolicyTest {
         assertEquals(1200L, PlaybackBufferPolicy.startupWaitMs(19200, 11100))
         assertEquals(0L, PlaybackBufferPolicy.startupWaitMs(500, 0))
     }
-    @Test fun tinyOpeningGetsBoundedTimeForSecondPhrase() {
-        assertEquals(2000L, PlaybackBufferPolicy.startupWaitMs(500, 800))
+    @Test fun tinyFirstSentenceStartsWithoutASecondPhraseDelay() {
+        assertEquals(0L, PlaybackBufferPolicy.startupWaitMs(500, 800))
     }
     @Test fun nextSynthesisFitsAvailableAudioInsteadOfJumpingToLongChunk() {
         assertEquals(40, PlaybackBufferPolicy.nextChunkChars(800, 40, 700))

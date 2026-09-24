@@ -84,7 +84,7 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 val wav = capture.stop()
                 val finalText = capture.finalTranscript
                 if (capture.recognitionIssue != null) {
-                    return@supervisorScope CapturedVoiceTurn(finalText, wav, capture.audioIsComplete, capture.recognitionIssue)
+                    return@supervisorScope CapturedVoiceTurn(finalText, wav, capture.audioIsComplete, capture.recognitionIssue, speechEndedAtMs = capture.lastSpeechAtMs)
                 }
                 val echo = naturalReference
                 if (echo != null) {
@@ -99,9 +99,9 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                         log("barge_floor_handoff text=$checked destination=followup_listening modelAnswer=false")
                         return@supervisorScope CapturedVoiceTurn("", byteArrayOf())
                     }
-                    return@supervisorScope CapturedVoiceTurn(checked, wav, capture.audioIsComplete, capture.recognitionIssue)
+                    return@supervisorScope CapturedVoiceTurn(checked, wav, capture.audioIsComplete, capture.recognitionIssue, speechEndedAtMs = capture.lastSpeechAtMs)
                 }
-                return@supervisorScope CapturedVoiceTurn(finalText, wav, capture.audioIsComplete, capture.recognitionIssue)
+                return@supervisorScope CapturedVoiceTurn(finalText, wav, capture.audioIsComplete, capture.recognitionIssue, speechEndedAtMs = capture.lastSpeechAtMs)
             } catch (busy: MicrophoneBusyException) {
                 log("barge_listener_yielded external_microphone=true")
                 throw busy

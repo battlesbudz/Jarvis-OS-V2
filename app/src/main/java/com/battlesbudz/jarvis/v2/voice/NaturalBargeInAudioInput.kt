@@ -43,7 +43,8 @@ class NaturalBargeInAudioInput(
             val stopWorkBudget = InterruptionProbeBudget(capacity = 2)
             var budgetDeferrals = 0
             val stopAudio = RollingAudioBuffer(maxDurationMs = 2000)
-            data class StopCandidate(val pcm: ByteArray, val at: Long, val reference: String, val id: Long, var submitted: Boolean = false)
+            data class StopCandidate(val pcm: ByteArray, val at: Long, val reference: String, val id: Long,
+                                     val keyword: String, var submitted: Boolean = false)
             var pendingStop: StopCandidate? = null
             var stopProbes = 0
             var stopHits = 0L
@@ -121,36 +122,30 @@ class NaturalBargeInAudioInput(
                     }
                     // A raw stop hit is never enough to change action state. It always needs final,
                     // non-echo ASR confirmation, including while no reply audio is playing.
-                    if (hit != null && hit != "stop") {
-                        finalReason = "keyword_$hit"
-                        delivered = true
-                        onConfirmed(false, hit)
-                        worker.close()
-                        log("barge_keyword_confirmed keyword=$hit verification=not_required")
-                        return@collect
-                    }
-                    if (hit == "stop" && pendingStop == null) {
+                    if (hit != null && pendingStop == null) {
                         reset() // Results for an earlier natural candidate cannot verify this hit.
                         stopHits++
-                        pendingStop = StopCandidate(stopAudio.snapshot(), at, reference(), -stopHits)
-                        log("barge_stop_candidate playback=true verification=required evidence=${keyword.lastHitEvidence}")
+                        pendingStop = StopCandidate(stopAudio.snapshot(), at, reference(), -stopHits, hit)
+                        log("barge_keyword_candidate keyword=$hit playback=true verification=required evidence=${keyword.lastHitEvidence}")
                     }
                     val polled = worker.poll()
                     val stop = pendingStop
                     if (stop != null) {
                         if (polled?.revision == stop.id) {
                             val fresh = now - stop.at <= InterruptionTiming.RESULT_AGE_MS
-                            val accepted = fresh && StopKeywordEvidence.confirms(polled.text, stop.reference + " " + reference())
+                            val accepted = fresh && RecognizedInterruptionWords.confirmsKeyword(stop.keyword, polled.text, stop.reference + " " + reference())
                             pendingStop = null
                             if (accepted) {
-                                finalReason = "keyword_stop"
+                                finalReason = "keyword_${stop.keyword}"
                                 delivered = true
                                 // This is a final-only decode, not a provisional hypothesis.
                                 // Preserve end-call intent instead of reducing every control to
                                 // stop-reply and reopening ordinary listening.
-                                onConfirmed(false, if (VoiceCallPolicy.isGoodbye(polled.text)) "stop listening" else "stop")
+                                onConfirmed(false, if (stop.keyword == "stop") {
+                                    if (VoiceCallPolicy.isGoodbye(polled.text)) "stop listening" else "stop"
+                                } else stop.keyword)
                                 worker.close()
-                                log("barge_keyword_confirmed keyword=stop verification=asr_non_echo workMs=${polled.workMs}")
+                                log("barge_keyword_confirmed keyword=${stop.keyword} verification=asr_non_echo workMs=${polled.workMs}")
                             } else log("barge_stop_rejected reason=${if (fresh) "unconfirmed_or_echo" else "stale"} chars=${polled.text.length} playback_uninterrupted=true")
                             return@collect
                         }

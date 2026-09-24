@@ -23,6 +23,7 @@ internal fun JarvisRuntime.runConversationInternal(
         voiceAudioIsComplete: Boolean = true,
         comparison: com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.Trial? = null,
         onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit = {},
+        onLiveInference: (submittedAtMs: Long?, firstTokenAtMs: Long?, estimatedTokensPerSecond: Double?, durable: Boolean) -> Unit = { _, _, _, _ -> },
         onActionResult: (String, String, Boolean) -> Unit = { _, _, _ -> },
         audioUri: Uri? = null,
         /** A queue admission freezes authorization before it waits for native ownership. */
@@ -87,6 +88,7 @@ internal fun JarvisRuntime.runConversationInternal(
             return null
         }
         val invocation = runtimeScope.launch(Dispatchers.Default) {
+            var lastLiveRate: Double? = null
             try {
                 if (!modelStore.verifyIntegrity(modelStore.selectedModel())) {
                     incrementalVoice?.close()
@@ -479,15 +481,22 @@ internal fun JarvisRuntime.runConversationInternal(
                 }
                 val directAudioComparison = comparison?.request?.path == com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.Path.GEMMA_DIRECT
                 comparison?.mark("answer_submit")
-                val voiceGenerationStarted = System.nanoTime()
-                var rawVoiceTokenSeen = false
-                val acceptVoiceToken: (String) -> Unit = { token ->
-                    if (!rawVoiceTokenSeen && token.isNotBlank()) {
+                // Native edges are durable; interim decode rate is throttled progress only.
+                val liveRate = com.battlesbudz.jarvis.v2.ai.LiveTokenRateEstimator {
+                    System.nanoTime() / 1_000_000
+                }
+                engine.onInferenceProgress = { progress ->
+                    progress.submittedAtMs?.let { onLiveInference(it, null, null, true) }
+                    progress.firstRawTokenAtMs?.let {
+                        liveRate.rawToken(it)
                         comparison?.mark("answer_first_token")
-                        rawVoiceTokenSeen = true
-                        diagnosticRecorder.recordSummary("Voice generation: first_raw_token_ms=" +
-                            ((System.nanoTime() - voiceGenerationStarted) / 1_000_000) +
-                            " source=" + if (textInput != null) "incremental_text" else "live_text")
+                        onLiveInference(null, it, null, true)
+                    }
+                }
+                val acceptVoiceToken: (String) -> Unit = { token ->
+                    liveRate.addRawChunk(token)?.let {
+                        lastLiveRate = it
+                        onLiveInference(null, null, it, false)
                     }
                     streamFilter.accept(token)
                 }
@@ -511,20 +520,21 @@ internal fun JarvisRuntime.runConversationInternal(
                 } else if (voiceAudio != null) {
                     engine.generate(prompt = submittedPrompt, onToken = acceptVoiceToken)
                 } else if (attachedAudio != null) {
-                    engine.generateAudio(submittedPrompt, attachedAudio, streamFilter::accept)
+                    engine.generateAudio(submittedPrompt, attachedAudio, acceptVoiceToken)
                 } else if (imageBytes != null) {
                     engine.generate(
                         prompt = submittedPrompt,
                         imageBytes = imageBytes,
-                        onToken = streamFilter::accept
+                        onToken = acceptVoiceToken
                     )
                 } else {
                     engine.generate(
                         prompt = submittedPrompt,
-                        onToken = streamFilter::accept
+                        onToken = acceptVoiceToken
                     )
                 }
                 recordInference("answer", generated)
+                onLiveInference(null, null, generated.decodeTokensPerSecond ?: lastLiveRate, true)
                 var nativeConversationContainsCurrentTurn = textInput == null || incrementalFallbackUsed
                 val actionPlan = requestedActionPlan
                 if (actionPlan is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready && generated.toolCalls.isNotEmpty()) {
@@ -816,8 +826,10 @@ internal fun JarvisRuntime.runConversationInternal(
                 )
                 mainHandler.post { finish(finalResponse) }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                lastLiveRate?.let { onLiveInference(null, null, it, true) }
                 throw cancelled
             } catch (error: Throwable) {
+                lastLiveRate?.let { onLiveInference(null, null, it, true) }
                 comparison?.put("generation_error", error.message ?: error.javaClass.simpleName)
                 incrementalVoice?.close()
                 // Leave the next turn with a fresh native session after any
@@ -834,6 +846,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 )
                 mainHandler.post { finish("I could not load the local model: ${error.message ?: "unknown error"}") }
             } finally {
+                conversationEngine?.onInferenceProgress = {}
                 incrementalVoice?.close()
             }
         }

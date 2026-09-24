@@ -5,7 +5,7 @@ on:
   push:
     # Feature branches build/test without opening a PR or publishing a release.
     # PR runs separately verify GitHub's combined merge candidate.
-    branches: [main, PR1, 'feature/**']
+    branches: [main, PR1, feature-tools, 'feature/**']
 
 permissions:
   contents: read
@@ -17,6 +17,7 @@ jobs:
     if: >-
       (github.event_name == 'push' &&
        (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/PR1' ||
+        github.ref == 'refs/heads/feature-tools' ||
         startsWith(github.ref, 'refs/heads/feature/'))) ||
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository)
