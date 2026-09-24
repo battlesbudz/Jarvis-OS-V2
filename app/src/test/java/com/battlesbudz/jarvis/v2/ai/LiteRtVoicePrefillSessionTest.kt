@@ -47,6 +47,26 @@ class LiteRtVoicePrefillSessionTest {
         assertEquals(1, native.closes)
     }
 
+    @Test fun rawNativeTimingPrecedesFilteredVisibleAnswer() = runBlocking {
+        val native = Native().apply {
+            stream = { callback ->
+                callback.onNext("<|channel>thought")
+                callback.onNext(" private reasoning")
+                callback.onNext("<channel|>Visible answer")
+                callback.onDone()
+            }
+        }
+        val events = mutableListOf<InferenceProgress>()
+        val session = LiteRtVoicePrefillSession(native) { events += it }
+        session.append("Hello")
+        val displayed = StringBuilder()
+        session.decode { displayed.append(it) }
+        assertTrue(events.first().submittedAtMs != null)
+        assertTrue(events.any { it.firstRawTokenAtMs != null })
+        assertFalse(displayed.toString().contains("private reasoning"))
+        session.close()
+    }
+
     @Test fun synchronousNativeRejectionPropagatesWithoutHangingCleanup() = runBlocking {
         val native = Native().apply { stream = { error("native submission failed") } }
         val session = LiteRtVoicePrefillSession(native)

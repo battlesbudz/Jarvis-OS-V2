@@ -6,15 +6,10 @@ import org.junit.Test
 class PiperTextStreamTest {
     private val earlySentence = "A civilization capable of that would need to harness energy on a stellar scale."
 
-    @Test fun fasterOpeningReleasesCompletedSentenceAtDeadlineWithoutNewTokens() {
+    @Test fun firstCompletedSentenceReleasesWithoutWaitingForFullReply() {
         var clock = 0L
         val stream = PiperTextStream(openingTargetChars = 160, nowMs = { clock })
         stream.append("$earlySentence The next explanation")
-        assertNull(stream.take())
-        assertEquals(750L, stream.openingWaitMs())
-        clock = 749
-        assertNull(stream.take())
-        clock = 750
         assertEquals(earlySentence, stream.take())
         assertNull(stream.openingWaitMs())
         stream.append(" continues here.")
@@ -23,27 +18,35 @@ class PiperTextStreamTest {
         assertEquals("The next explanation continues here.", stream.take(final = true))
     }
 
-    @Test fun deadlineNeverReleasesAnIncompleteSentenceOrShortAcknowledgement() {
+    @Test fun immediateOpeningPreservesAbbreviationsAndSplitDecimals() {
+        val stream = PiperTextStream()
+        stream.append("Dr. Smith measured 3.")
+        assertNull(stream.take())
+        stream.append("14 volts before giving a complete explanation.")
+        assertEquals("Dr. Smith measured 3.14 volts before giving a complete explanation.", stream.take())
+    }
+
+    @Test fun immediateShortOpeningStillNeverReleasesIncompleteSentence() {
         var clock = 0L
         val stream = PiperTextStream(openingTargetChars = 160, nowMs = { clock })
         stream.append("Yes, sir. " + "This explanation is not finished yet ".repeat(3))
+        assertEquals("Yes, sir.", stream.take())
         clock = 5000
-        assertNull(stream.openingWaitMs())
         assertNull(stream.take())
         stream.append("and now it is. ")
-        assertNotNull(stream.take())
+        assertNotNull(stream.take(final = true))
     }
 
-    @Test fun deadlineDoesNotChangeDefaultOrFullReplyPolicies() {
+    @Test fun fullReplyPolicyStillWaitsWhileDefaultStreamsOpening() {
         var clock = 0L
         val normal = PiperTextStream(nowMs = { clock })
         val full = PiperTextStream(waitForEnd = true, openingTargetChars = 160, nowMs = { clock })
         for (stream in listOf(normal, full)) stream.append("$earlySentence Another sentence is ready. ")
         clock = 10_000
-        for (stream in listOf(normal, full)) {
-            assertNull(stream.openingWaitMs()); assertNull(stream.take())
-            assertEquals("$earlySentence Another sentence is ready.", stream.take(final = true))
-        }
+        assertEquals(earlySentence, normal.take())
+        assertEquals("Another sentence is ready.", normal.take(final = true))
+        assertNull(full.openingWaitMs()); assertNull(full.take())
+        assertEquals("$earlySentence Another sentence is ready.", full.take(final = true))
     }
 
     @Test fun waitingForOpeningDoesNotMistakeAnAbbreviationForASentence() {
@@ -63,22 +66,24 @@ class PiperTextStreamTest {
         text.chunked(4).forEach { stream.append(it); while (true) parts += stream.take() ?: break }
         while (true) parts += stream.take(final = true) ?: break
         assertEquals(text, parts.joinToString(" "))
-        assertTrue(parts.first().length in 160 until 320)
+        assertTrue(parts.first().length in 1 until 320)
         assertTrue(parts[1].length in 320..640)
         assertTrue(parts.all { it.endsWith(".") && it.length <= 640 })
     }
     @Test fun shortRepliesStayTogetherUntilGemmaFinishes() {
         val text = "Good evening, sir. Your appointment begins in twenty minutes. There is time for tea."
         val stream = PiperTextStream()
-        text.chunked(4).forEach { stream.append(it); assertNull(stream.take()) }
-        assertEquals(text, stream.take(final = true))
+        val parts = mutableListOf<String>()
+        text.chunked(4).forEach { stream.append(it); stream.take()?.let(parts::add) }
+        while (true) parts += stream.take(final = true) ?: break
+        assertEquals(text, parts.joinToString(" "))
         assertNull(stream.take(final = true))
     }
 
     @Test fun storyProducesLargerBoundedPassagesWithoutLosingWords() {
         val text = "Kiko stood on the deck as the moon rose above the island. The little monkey had found a map inside an old brass compass, and tonight his crew would follow it. Beyond the reef, a blue light flickered beneath the waves. Kiko lowered a lantern and discovered the roof of a sunken library. Its windows were still glowing. He smiled, tied a rope around his waist, and handed the other end to his first mate. Gold could wait. Somewhere below them was a story that no pirate had ever heard, and Kiko intended to bring it home."
         val parts = collect(text)
-        assertEquals(2, parts.size)
+        assertTrue(parts.size >= 2)
         assertEquals(text, parts.joinToString(" "))
         assertTrue(parts.all { it.length <= PiperTextStream.MAX_CHARS })
         assertTrue(parts.first().endsWith("."))

@@ -111,6 +111,14 @@ class VoiceSessionController(
         if (durable || !live) store.save(updated) else store.saveProgress(updated)
     }
 
+    /** Late native/audio events are tied to the original reply ID, even after another turn begins. */
+    @Synchronized fun updateReplyMetrics(callId: String, replyId: String, durable: Boolean = true,
+        transform: (com.battlesbudz.jarvis.v2.diagnostics.ReplyMetrics) -> com.battlesbudz.jarvis.v2.diagnostics.ReplyMetrics) {
+        changeReply(callId, replyId, durable = durable) { entry ->
+            entry.copy(metrics = transform(entry.metrics ?: com.battlesbudz.jarvis.v2.diagnostics.ReplyMetrics.unavailable))
+        }
+    }
+
     /** Late speech metrics can update only the reply carrying this measurement ID. */
     @Synchronized fun updateReplyLatency(latency: com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) {
         val call = activeCall ?: return

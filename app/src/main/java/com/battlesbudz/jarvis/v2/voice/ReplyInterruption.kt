@@ -9,7 +9,9 @@ data class CapturedVoiceTurn(val transcript: String, val wav: ByteArray,
     /** One final capture receives one ID and wall-clock boundary; retries preserve both. */
     val utteranceId: String = java.util.UUID.randomUUID().toString(),
     val capturedAtMs: Long = System.currentTimeMillis(),
-    val origin: TranscriptOrigin = TranscriptOrigin.SPOKEN)
+    val origin: TranscriptOrigin = TranscriptOrigin.SPOKEN,
+    /** Monotonic end of the spoken floor; typed inputs intentionally leave it unknown. */
+    val speechEndedAtMs: Long? = null)
 sealed interface ReplyOutcome<out T> {
     data class Finished<T>(val value: T) : ReplyOutcome<T>
     data class Interrupted(val correction: CapturedVoiceTurn) : ReplyOutcome<Nothing>

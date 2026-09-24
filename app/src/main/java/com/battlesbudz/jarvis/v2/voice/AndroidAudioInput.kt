@@ -50,6 +50,7 @@ class AndroidAudioInput(
         private set
     private var captureJob: Job? = null
     private val priorityLost = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val preferredRouteId = java.util.concurrent.atomic.AtomicInteger(Int.MIN_VALUE)
 
     fun discardBufferedAudio() {
         while (true) queuedBytes.addAndGet(-(emittedChunks.tryReceive().getOrNull() ?: break).pcm.size.toLong())
@@ -118,6 +119,7 @@ class AndroidAudioInput(
             override fun onRecordingConfigChanged(configs: MutableList<android.media.AudioRecordingConfiguration>?) {
                 val config = created.activeRecordingConfiguration
                 if (!dictation) MicrophoneHandoff.ownRecorderSilenced = config?.isClientSilenced == true
+                applyMicrophonePreference(created, config?.audioDevice)
                 log("capture_route silenced=${config?.isClientSilenced} source=${config?.clientAudioSource} routeType=${config?.audioDevice?.type} routeId=${config?.audioDevice?.id} sampleRate=${config?.clientFormat?.sampleRate}")
             }
         }
@@ -136,6 +138,7 @@ class AndroidAudioInput(
                 }
                 created.startRecording()
                 check(created.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "The microphone did not start recording." }
+                applyMicrophonePreference(created, created.routedDevice)
             }
         } catch (error: Throwable) {
             MicrophoneHandoff.withRecorderLock {
@@ -223,6 +226,25 @@ class AndroidAudioInput(
             MicrophonePolicy.externalCommunication(manager.mode, CommunicationAudioSession.ownsMode()) || manager.isMicrophoneMute)
         if (occupied && !dictation) MicrophoneHandoff.requestInterruption("capture_detected_contention")
         occupied
+    }
+
+    private fun applyMicrophonePreference(record: AudioRecord, route: android.media.AudioDeviceInfo?) {
+        val routeId = route?.id ?: Int.MIN_VALUE
+        if (!preferredRouteId.compareAndSet(Int.MIN_VALUE, routeId) && preferredRouteId.get() == routeId) return
+        preferredRouteId.set(routeId)
+        val preference = MicrophonePreference.forRoute(android.os.Build.VERSION.SDK_INT,
+            route?.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_MIC)
+        val directionApplied = if (preference.requestTowardsUser) runCatching {
+            record.setPreferredMicrophoneDirection(AudioRecord.MIC_DIRECTION_TOWARDS_USER)
+        }.getOrDefault(false) else runCatching {
+            record.setPreferredMicrophoneDirection(AudioRecord.MIC_DIRECTION_UNSPECIFIED)
+        }.getOrDefault(false)
+        val fieldApplied = preference.fieldDimension?.let { field -> runCatching {
+            record.setPreferredMicrophoneFieldDimension(field)
+        }.getOrDefault(false) } ?: runCatching { record.setPreferredMicrophoneFieldDimension(0f) }.getOrDefault(false)
+        log("capture_microphone_preference reason=${preference.reason} towardsUserRequested=${preference.requestTowardsUser} " +
+            "towardsUserApplied=$directionApplied fieldDimension=${preference.fieldDimension} fieldApplied=$fieldApplied " +
+            "actualRouteType=${route?.type} actualRouteId=${route?.id} physicalBottomMic=not_addressable")
     }
 
     override suspend fun stop() {

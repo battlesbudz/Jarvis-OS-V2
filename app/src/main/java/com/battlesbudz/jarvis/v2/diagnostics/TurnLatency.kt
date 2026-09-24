@@ -47,7 +47,7 @@ data class TurnLatency(
     fun summary(): String {
         val first = passes.firstOrNull()
         return if (first == null) "Reply ${seconds(totalMs)} · Model timing unavailable" else buildString {
-            append("GPU · Gemma 4 E2B · TTFT ${seconds(first.firstTokenMs)}")
+            append("TTFT ${seconds(first.firstTokenMs)}")
             if (first.prepared) append(" (prepared)")
             first.estimatedTokensPerSecond?.let { append(" · ~${String.format(Locale.US, "%.1f", it)} tok/s") }
             if (passes.size == 1) first.estimatedTokens?.let { append(" · ~$it tokens") }
@@ -72,7 +72,7 @@ data class TurnLatency(
             appendLine("First speech text → playback: ${seconds(textToPlaybackMs)}")
             appendLine("Estimated audio supply gaps: ${seconds(supplyGapMs)}")
         }
-        appendLine("TTFT starts at model submission; it excludes model loading and speech synthesis. Token counts/speed are estimates. Timings overlap; do not add them together. Voice timing excludes the cached filler and uses detected speech/audio, not word recognition.")
+        appendLine("TTFT starts at model submission; it excludes model loading and speech synthesis. Token counts/speed marked ~ are estimates. Timings overlap; do not add them together. Voice timing excludes cached filler and uses the playback head as an audio proxy, not an acoustic microphone measurement.")
         append("Turn $id")
     }
     companion object {

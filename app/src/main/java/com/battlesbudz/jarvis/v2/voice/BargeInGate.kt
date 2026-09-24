@@ -102,5 +102,5 @@ class BargeInGate(private val stableMs: Long = 300, private val allowShortEchoOv
         return emptyList()
     }
 
-    private fun words(text: String) = PlaybackEchoText.words(text)
+    private fun words(text: String) = RecognizedInterruptionWords.words(text)
 }

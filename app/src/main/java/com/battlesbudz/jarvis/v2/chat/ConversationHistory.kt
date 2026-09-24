@@ -2,6 +2,7 @@ package com.battlesbudz.jarvis.v2.chat
 
 import android.content.SharedPreferences
 import com.battlesbudz.jarvis.v2.ChatEntry
+import com.battlesbudz.jarvis.v2.diagnostics.ReplyMetrics
 import com.battlesbudz.jarvis.v2.voice.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,7 +21,9 @@ data class ConversationMessage(
     val attachment: ChatAttachment? = null,
     val actions: List<ActionReceipt> = emptyList(),
     /** Original final-input/checkpoint time; call updates retain it across late replacement. */
-    val sourceTimestampMs: Long = System.currentTimeMillis()
+    val sourceTimestampMs: Long = System.currentTimeMillis(),
+    /** Reply-owned timings survive streaming replacements, call sync and process restart. */
+    val metrics: ReplyMetrics? = null
 )
 data class ActionReceipt(val name: String, val message: String, val succeeded: Boolean)
 data class ConversationThread(val id: String, val messages: List<ConversationMessage> = emptyList()) {
@@ -48,7 +51,8 @@ class ConversationHistory(private val preferences: SharedPreferences) {
                             ChatAttachment(a.getString("uri"), AttachmentKind.valueOf(a.getString("kind")))
                         }.getOrNull() }, m.optJSONArray("actions")?.let { actions -> (0 until actions.length()).map { i ->
                             actions.getJSONObject(i).let { a -> ActionReceipt(a.getString("name"), a.getString("message"), a.getBoolean("succeeded")) }
-                        } }.orEmpty(), m.optLong("sourceTimestampMs", System.currentTimeMillis()))
+                        } }.orEmpty(), m.optLong("sourceTimestampMs", System.currentTimeMillis()),
+                        ReplyMetrics.read(m.optJSONObject("metrics")))
                 }
                 threads[t.getString("id")] = ConversationThread(t.getString("id"), messages)
             }
@@ -78,12 +82,22 @@ class ConversationHistory(private val preferences: SharedPreferences) {
         val visible = if (receiptText.isBlank() || text.contains(receiptText)) text
             else listOf(text, receiptText).filter { it.isNotBlank() }.joinToString("\n")
         val message = ConversationMessage(id, "Jarvis", visible, complete = complete,
-            contextText = if (complete) visible else receiptText, actions = savedActions)
+            contextText = if (complete) visible else receiptText, actions = savedActions,
+            sourceTimestampMs = prior?.sourceTimestampMs ?: System.currentTimeMillis(), metrics = prior?.metrics)
         val index = thread.messages.indexOfFirst { it.id == id }
         val entries = thread.messages.toMutableList()
         if (index < 0) entries += message else entries[index] = message
         replace(thread.copy(messages = entries), complete)
     }
+    @Synchronized fun updateReplyMetrics(threadId: String, id: String, durable: Boolean = true, transform: (ReplyMetrics) -> ReplyMetrics) {
+        val thread = threads[threadId] ?: return
+        val index = thread.messages.indexOfFirst { it.id == id }
+        if (index < 0) return
+        val entries = thread.messages.toMutableList()
+        entries[index] = entries[index].copy(metrics = transform(entries[index].metrics ?: ReplyMetrics.unavailable))
+        replace(thread.copy(messages = entries), durable = durable)
+    }
+
     @Synchronized fun recordReplyAction(threadId: String, id: String, receipt: ActionReceipt) {
         val thread = threads[threadId] ?: return
         val index = thread.messages.indexOfFirst { it.id == id }
@@ -102,7 +116,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
         val thread = threads[threadId] ?: return
         val messages = call.transcript.mapIndexed { index, entry ->
             ConversationMessage("${call.id}:$index", entry.role, entry.text, entry.role == "You" && entry.origin == TranscriptOrigin.SPOKEN, call.id,
-                entry.forConversation()?.text.orEmpty(), entry.complete, sourceTimestampMs = entry.timestampMs)
+                entry.forConversation()?.text.orEmpty(), entry.complete, sourceTimestampMs = entry.timestampMs, metrics = entry.metrics)
         }
         val first = thread.messages.indexOfFirst { it.callId == call.id }
         val entries = thread.messages.filterNot { it.callId == call.id }.toMutableList()
@@ -178,6 +192,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
             thread.messages.forEach { m -> messages.put(JSONObject().put("id", m.id).put("role", m.role)
                 .put("text", m.text).put("spoken", m.spoken).put("callId", m.callId)
                 .put("contextText", m.contextText).put("complete", m.complete).put("sourceTimestampMs", m.sourceTimestampMs)
+                .put("metrics", m.metrics?.json())
                 .put("attachment", m.attachment?.let { JSONObject().put("uri", it.uri).put("kind", it.kind.name) })
                 .put("actions", JSONArray().also { actions -> m.actions.forEach { action -> actions.put(JSONObject().put("name", action.name).put("message", action.message).put("succeeded", action.succeeded)) } })) }
             array.put(JSONObject().put("id", thread.id).put("messages", messages))

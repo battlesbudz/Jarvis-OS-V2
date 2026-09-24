@@ -46,6 +46,7 @@ class SharedPreferencesVoiceCallStore(
                                 put("timestampMs", entry.timestampMs)
                                 put("complete", entry.complete)
                                 entry.latency?.let { put("latency", it.json()) }
+                                entry.metrics?.let { put("metrics", it.json()) }
                                 entry.replyId?.let { put("replyId", it) }
                                 entry.delivery?.let { put("delivery", it.json()) }
                                 put("generationComplete", entry.generationComplete)
@@ -84,6 +85,7 @@ class SharedPreferencesVoiceCallStore(
                                     timestampMs = entry.optLong("timestampMs"),
                                     complete = entry.optBoolean("complete", true),
                                     latency = com.battlesbudz.jarvis.v2.diagnostics.TurnLatency.read(entry.optJSONObject("latency")),
+                                    metrics = com.battlesbudz.jarvis.v2.diagnostics.ReplyMetrics.read(entry.optJSONObject("metrics")),
                                     replyId = entry.optString("replyId").takeIf { it.isNotBlank() },
                                     delivery = readSpeechDelivery(entry.optJSONObject("delivery"), entry.optString("replyId").takeIf { it.isNotBlank() }),
                                     generationComplete = entry.optBoolean("generationComplete", entry.optBoolean("complete", true)),

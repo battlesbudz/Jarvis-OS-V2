@@ -28,6 +28,7 @@ internal class PiperTextStream(private val waitForEnd: Boolean = false, private 
         val openingDue = openingWaitMs() == 0L
         for (end in sentenceEnds(final)) {
             lastSentence = end
+            if (!waitForEnd && opening) return release(end)
             if (!waitForEnd && (end >= if (opening) openingTargetChars else TARGET_CHARS)) return release(end)
             if (openingDue && end >= MIN_OPENING_CHARS) return release(end)
         }
@@ -44,10 +45,13 @@ internal class PiperTextStream(private val waitForEnd: Boolean = false, private 
             if (buffer[i] !in ".!?\n") continue
             var end = i + 1
             while (end < buffer.length && buffer[end] in "\"'’”)!?") end++
-            if (end > MAX_CHARS || end == buffer.length && !final) continue
+            if (end > MAX_CHARS) continue
             if (end < buffer.length && !buffer[end].isWhitespace()) continue
             val word = buffer.substring(0, i).takeLastWhile { !it.isWhitespace() }.lowercase()
             if (buffer[i] == '.' && (word in ABBREVIATIONS || word.length == 1 && word[0].isLetter())) continue
+            // A token ending in a bare digit-period may be the beginning of a decimal split
+            // across streamed callbacks. Keep it until the next token resolves it.
+            if (!final && end == buffer.length && buffer[i] == '.' && word.all(Char::isDigit)) continue
             ends += end
         }
         return ends

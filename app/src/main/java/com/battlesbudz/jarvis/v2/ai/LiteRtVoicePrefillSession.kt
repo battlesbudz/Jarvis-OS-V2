@@ -22,7 +22,8 @@ internal interface VoiceNativeSession : AutoCloseable {
     fun cancelProcess()
 }
 
-internal class LiteRtVoicePrefillSession(private val session: VoiceNativeSession) : VoicePrefillSession {
+internal class LiteRtVoicePrefillSession(private val session: VoiceNativeSession,
+    private val onInferenceProgress: (InferenceProgress) -> Unit = {}) : VoicePrefillSession {
     private var started = false
     private var closed = false
     override fun append(text: String) {
@@ -41,14 +42,21 @@ internal class LiteRtVoicePrefillSession(private val session: VoiceNativeSession
         val tokens = Channel<String>(Channel.UNLIMITED)
         val terminal = CompletableDeferred<Unit>()
         var first: Long? = null
+        val rawFirstReported = java.util.concurrent.atomic.AtomicBoolean(false)
         var events = 0
         var rawChars = 0
         val text = StringBuilder()
         val visible = GemmaSessionText { chunk -> text.append(chunk); onToken(chunk) }
         try {
             try {
+                // This is the native submission, after final prefill has completed.
+                onInferenceProgress(InferenceProgress(submittedAtMs = System.nanoTime() / 1_000_000))
                 session.generateContentStream(finalInput, object : VoiceNativeCallback {
-                    override fun onNext(response: String) { tokens.trySend(response) }
+                    override fun onNext(response: String) {
+                        if (response.isNotEmpty() && rawFirstReported.compareAndSet(false, true))
+                            onInferenceProgress(InferenceProgress(firstRawTokenAtMs = System.nanoTime() / 1_000_000))
+                        tokens.trySend(response)
+                    }
                     override fun onDone() { terminal.complete(Unit); tokens.close() }
                     override fun onError(throwable: Throwable) { terminal.complete(Unit); tokens.close(throwable) }
                 })

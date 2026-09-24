@@ -996,6 +996,30 @@ class ReleaseJourneyTest {
         assertNull(controller.currentCallId())
     }
 
+    @Test fun test29_eachAssistantReplyKeepsPersistedMetricsAcrossReload() {
+        val prefs = context.getSharedPreferences("release-live-metrics", android.content.Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val history = ConversationHistory(prefs)
+        val threadId = history.current.value.id
+        history.updateReply(threadId, "one", "First response", true)
+        history.updateReplyMetrics(threadId, "one") { it.submitted(100).firstRawToken(220).copy(estimatedTokensPerSecond = 12.5) }
+        history.updateReply(threadId, "two", "Second response", true)
+        history.updateReplyMetrics(threadId, "two") { it.submitted(400).firstRawToken(760).copy(estimatedTokensPerSecond = 5.0) }
+        activity.onActivity { host -> host.setContent {
+            MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                ConversationScreen(history, MutableStateFlow(false), MutableStateFlow(VoiceSessionState.PASSIVE_LISTENING),
+                    onSend = { _, _ -> null }, selectedModel = LocalModelSpec("release-fixture", "release-fixture.bin", recommendedGpu = false),
+                    onSelectConversation = { null }, onEndVoice = {}, onOpenVoiceCalls = {}, resumedVoice = false,
+                    voiceContent = { _, _, _, _ -> })
+            } }
+        } }
+        assertTrue(find(By.res("reply_metrics_one")).text.contains("TTFT 0.12s"))
+        assertTrue(find(By.res("reply_metrics_two")).text.contains("TTFT 0.36s"))
+        val reloaded = ConversationHistory(prefs)
+        assertEquals(12.5, reloaded.current.value.messages.first { it.id == "one" }.metrics?.estimatedTokensPerSecond)
+        assertEquals(5.0, reloaded.current.value.messages.first { it.id == "two" }.metrics?.estimatedTokensPerSecond)
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()
