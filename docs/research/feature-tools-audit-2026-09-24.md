@@ -2,6 +2,8 @@
 
 Research date: 2026-09-24. Status: research and proposed design; no runtime feature implementation or model benchmark performed.
 
+Follow-up: the [AppFunctions landscape review](appfunctions-landscape-2026-09-24.md) promotes AppFunctions consumer integration and caller-access validation into the initial tools work, alongside the shared registry and MCP architecture. It updates the integration priorities below with current platform, sample, and early-access findings.
+
 ## Recommendation
 
 Build one Kotlin tool runtime shared by chat and voice. Keep the existing V2 execution receipts, strict validation, accepted-action queue, and separation between interrupting speech and cancelling work. Add phone-control adapters from Android Remote Control MCP selectively. Reuse the original Jarvis OS capability registry, operation history, and workflow concepts, redesigning their server dependencies and recovery semantics for Android.
