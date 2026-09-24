@@ -2,6 +2,12 @@
 
 Update this file when adding a feature or learning a reproducible regression. A listed gap is not passing coverage.
 
+## Planned tools epic
+
+The [tools implementation plan](../plans/tools-implementation-plan.md) defines milestones M0–M8 and planned acceptance T01–T25 from the [completed design interview](../plans/tools-interview-decisions.md). These checks are not implemented or passing coverage. In particular, automatic memory will intentionally change the manual-review default described below; preserve historical tests/evidence and add explicit migration coverage when implementing M6. Extend this map with exact test names and run evidence as each milestone is built.
+
+## Existing acceptance
+
 | Area | Existing logic checks | Release emulator checks | Remaining device/model checks |
 | --- | --- | --- | --- |
 | Setup and model browsing | ModelCatalog, ModelGuide and ModelGuidance JVM tests | First-run setup, disabled model check, empty search, browse/cancel without selection | Successful download/import and real model load |

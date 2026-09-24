@@ -2,6 +2,8 @@
 
 Research date: 2026-09-24. Research and proposed architecture only; no runtime changes, device execution, model benchmark, or early-access application.
 
+The completed interview now has an [implementation plan](../plans/tools-implementation-plan.md) and [decision record](../plans/tools-interview-decisions.md). Their agreed product choices supersede conflicting proposals here; this document remains the dated technical research reference.
+
 ## Decision
 
 Make **AppFunctions a first-class integration in the initial tools architecture**, alongside MCP. Prioritize Jarvis as a **consumer** of other apps' functions. Separately expose selected Jarvis capabilities as a **provider**. This advances AppFunctions from the exploratory adapter mentioned in the earlier review to an early implementation and access-validation track.
