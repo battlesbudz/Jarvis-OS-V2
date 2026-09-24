@@ -39,3 +39,42 @@ silently-working mode, durable task supervision and confirmation UI remain pendi
 AppFunctions consumer access/discovery, MCP, conditional workflows, local scripts and
 FunctionGemma are not enabled by this baseline. No Android Control MCP source is
 ported yet; retain its license and author credit if later slices reuse its code.
+
+## M0/M1a contract slice — pending exact CI
+
+The existing native actions now share `MobileToolCatalog`: the catalog declares each
+stable name, version, description and typed parameter once, then generates the LiteRT
+schema and validates the strict side-effect decoder. `open_app` now has only the
+required human-readable `app` string; the unsupported package schema is removed.
+`set_volume.level` is a genuine JSON integer from 0 through 100. Numeric strings,
+decimals, nulls and extra fields are rejected at the strict boundary. The established
+sole `{ "args": { ... } }` wrapper remains accepted there. Legacy `decode` intentionally
+remains tolerant for existing fixtures and compatibility paths.
+
+LiteRT automatic tool calling remains disabled. Its SDK callback reports disabled
+execution rather than returning a fake successful `{}` response; validated runtime
+dispatch remains the only Android side-effect path.
+
+`ActionTurnRunner` now rejects non-positive configured model-pass budgets, counts the
+initial generated call batch as pass one, and never requests another model batch after
+the configured final pass. `ExecutionResult` preserves its existing `(Boolean, String)`
+JVM constructor and adds typed success, ordinary failure, validation rejection,
+permission denial and unknown-completion outcomes. Unknown completion is not retried.
+
+New JVM checks are pending hosted exact-SHA CI: catalog/schema parity; strict
+type/range rejection with zero executor effects; retained tolerant decode; callback
+failure closure; one/two-pass limits with no extra inference; completion within one
+batch; invalid budgets; and distinct denied/unknown/validation outcomes. Existing
+ordered replay, explicit-repeat and cancellation coverage is retained. M1 commands,
+screen control, workflows and release journeys remain pending and no Android or
+real-model claim is made by this slice.
+
+## Source refresh during M0/M1a
+
+`audio-pr2` remains at `e3a68a05f59bc32c91ec8329c75c2a1dd078b27f`.
+`feature/memory-os-v2` advanced to
+`5211b8f246c6bd441c08499f68320d013d8f88bd` (`Add dedicated Memory wiki with review,
+indexing, search and lifecycle repairs`). That source is not imported into this bounded
+action-contract slice. Revisit its wiki category/topic/source/link/index/history and
+navigation changes at M6 and the shared UI boundary, after checking that source's CI
+and the combined-revision tests.

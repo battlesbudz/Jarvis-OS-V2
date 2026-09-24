@@ -9,8 +9,11 @@ import kotlinx.coroutines.yield
 /** Shared bounded coordinator for production and deterministic JVM tests. */
 class ActionTurnRunner(
     private val executor: MobileActionExecutor,
-    private val maxModelPasses: Int = 6
+    internal val maxModelPasses: Int = 6
 ) {
+    init {
+        require(maxModelPasses > 0) { "maxModelPasses must be positive." }
+    }
     data class Receipt(val request: ActionRequest, val result: ExecutionResult)
     data class Outcome(val receipts: List<Receipt>, val completed: Boolean, val stopped: Boolean, val message: String)
     sealed interface Batch {
@@ -72,7 +75,8 @@ suspend fun ActionTurnRunner.runNative(
         ?: return ActionTurnRunner.Outcome(emptyList(), false, true, (plan as? ActionTurnPlan.Rejected)?.reason.orEmpty())
     val receipts = mutableListOf<ActionTurnRunner.Receipt>()
     var calls = initialCalls
-    repeat(6) {
+    // `initialCalls` comes from the first generation and consumes the first pass.
+    for (pass in 0 until maxModelPasses) {
         currentCoroutineContext().ensureActive()
         val batch = validateBatch(ready, receipts, calls)
         if (batch is ActionTurnRunner.Batch.Rejected) return ActionTurnRunner.Outcome(receipts, false, true,
@@ -91,6 +95,8 @@ suspend fun ActionTurnRunner.runNative(
         }
         if (receipts.size == ready.steps.size) return ActionTurnRunner.Outcome(receipts, true, false,
             receipts.joinToString(" ") { it.result.message })
+        // Do not start another inference after the final configured model pass.
+        if (pass == maxModelPasses - 1) break
         currentCoroutineContext().ensureActive()
         yield()
         currentCoroutineContext().ensureActive()

@@ -6,6 +6,21 @@ Update this file when adding a feature or learning a reproducible regression. A 
 
 The [tools implementation plan](../plans/tools-implementation-plan.md) defines milestones M0–M8 and planned acceptance T01–T25 from the [completed design interview](../plans/tools-interview-decisions.md). These checks are not implemented or passing coverage. In particular, automatic memory will intentionally change the manual-review default described below; preserve historical tests/evidence and add explicit migration coverage when implementing M6. Extend this map with exact test names and run evidence as each milestone is built.
 
+### M0/M1a typed native-tool contract — JVM checks pending exact CI
+
+`MobileToolCatalogTest` covers the shared catalog's LiteRT schemas, strict decoder
+types/ranges and the removed `open_app.package` parameter. Strict `set_volume.level`
+accepts only a genuine JSON integer 0–100; numeric strings remain a legacy-decode
+compatibility behavior and cannot cross the side-effect boundary. It also checks that
+the disabled LiteRT SDK callback cannot return a fake success. `ActionTurnRunnerTest`
+covers a positive pass budget, initial-generation accounting, no post-limit inference,
+and a batch completing inside its limit. `MobileActionPipelineTest` distinguishes
+validation rejection, Android denial and unknown completion while preserving
+cancellation propagation and zero effects for invalid requests. These are new JVM
+checks pending hosted CI for the exact published SHA; Android executor journeys,
+model-generated calls, new M1 commands, screen control, workflows and device/model
+coverage remain pending.
+
 ## Existing acceptance
 
 | Area | Existing logic checks | Release emulator checks | Remaining device/model checks |
