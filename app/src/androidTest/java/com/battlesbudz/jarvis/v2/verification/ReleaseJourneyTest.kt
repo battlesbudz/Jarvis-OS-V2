@@ -996,6 +996,7 @@ class ReleaseJourneyTest {
         assertNull(controller.currentCallId())
     }
 
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     @Test fun test29_eachAssistantReplyKeepsPersistedMetricsAcrossReload() {
         val prefs = context.getSharedPreferences("release-live-metrics", android.content.Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
