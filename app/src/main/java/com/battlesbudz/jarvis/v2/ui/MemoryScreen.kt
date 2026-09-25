@@ -235,7 +235,7 @@ private fun MemoryEditorDialog(draft: String, topic: String, category: WikiCateg
         else if (isCorrection) Text("The original memory will be checked when this correction is saved.", style = MaterialTheme.typography.bodySmall)
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("memory_error")) }
     } },
-    confirmButton = { TextButton(onClick = onSave, enabled = draft.isNotBlank() && topic.isNotBlank() && !busy, modifier = Modifier.testTag("memory_propose")) { Text(if (isCorrection) "Submit correction" else "Add for review") } },
+    confirmButton = { TextButton(onClick = onSave, enabled = draft.isNotBlank() && topic.isNotBlank() && !busy, modifier = Modifier.semantics { testTagsAsResourceId = true }.testTag("memory_propose")) { Text(if (isCorrection) "Submit correction" else "Add for review") } },
     dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
 )
 
