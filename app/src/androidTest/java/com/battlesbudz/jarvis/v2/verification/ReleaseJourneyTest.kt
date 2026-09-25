@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -1104,16 +1103,17 @@ class ReleaseJourneyTest {
         val sends = AtomicInteger(0)
         val sessions = AtomicInteger(0)
         val transcribes = AtomicInteger(0)
-        val model = MutableStateFlow(LocalModelSpec("text-only-fixture", "fixture.bin", recommendedGpu = false))
+        val textOnlyModel = LocalModelSpec("text-only-fixture", "fixture.bin", recommendedGpu = false)
         val audioSent = java.util.concurrent.atomic.AtomicReference<com.battlesbudz.jarvis.v2.chat.ChatAttachment?>()
         val rawPcm = ByteArray(3200) { (it % 127).toByte() }
         val cancellations = AtomicInteger(0)
         VoiceSessionUi.armed.value = false
+        fun renderModel(model: LocalModelSpec) {
         activity.onActivity { host -> host.setContent {
             MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
                 ConversationScreen(history, MutableStateFlow(false), MutableStateFlow(VoiceSessionState.PASSIVE_LISTENING),
                     onSend = { _, attachment -> audioSent.set(attachment); sends.incrementAndGet(); null },
-                    selectedModel = model.collectAsState().value,
+                    selectedModel = model,
                     onSelectConversation = { null }, onEndVoice = {}, onOpenVoiceCalls = {}, resumedVoice = false,
                     dictationFactory = {
                         val number = sessions.incrementAndGet()
@@ -1134,6 +1134,8 @@ class ReleaseJourneyTest {
                     }, voiceContent = { _, _, _, _ -> })
             } }
         } }
+        }
+        renderModel(textOnlyModel)
         assertFalse(device.hasObject(By.text("Attach audio")))
         enterText(By.res("chat_composer"), "Existing draft")
         hideKeyboardWithoutNavigating()
@@ -1162,7 +1164,7 @@ class ReleaseJourneyTest {
         clickEnabled(By.res("chat_send"))
         assertEquals(1, sends.get())
         assertNull(audioSent.get())
-        model.value = model.value.copy(supportsAudio = true)
+        renderModel(textOnlyModel.copy(supportsAudio = true))
         clickEnabled(By.res("chat_voice_input"))
         enabled(By.res("dictation_send"))
         val beforeAudioSend = transcribes.get()
