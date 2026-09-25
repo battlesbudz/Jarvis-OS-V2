@@ -148,3 +148,10 @@
 
 # Preserve the destination branch navigation policy shared with release instrumentation.
 -keep class com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicy** { *; }
+
+# Build 775: the release-test DEX invokes mutableStateOf$default through the
+# SnapshotStateKt facade, which production R8 otherwise removes/inlines. Keep
+# that facade and its inherited factory ABI, not the entire Compose runtime.
+-keep,includedescriptorclasses class androidx.compose.runtime.SnapshotStateKt** {
+    public static *** mutableStateOf*(...);
+}

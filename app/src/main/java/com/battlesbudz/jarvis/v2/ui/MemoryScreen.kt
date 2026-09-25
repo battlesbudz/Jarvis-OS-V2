@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+
 package com.battlesbudz.jarvis.v2.ui
 
 import androidx.activity.compose.BackHandler
@@ -13,6 +15,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -209,8 +213,8 @@ internal fun MemoryScreen(
             mutate({ memoryOs.propose(MemoryProposal(content = draft, source = MemorySource(sourceEventId, "manual entry", sourceCreatedAtMs), wikiAssignment = MemoryWikiAssignment(category, topic), correctsMemoryId = correctionId, expectedTargetRevision = correctionRevision)) }) { showEditor = false; correctionId = null; correctionRevision = null }
         })
     organizeTarget?.let { record -> OrganizeDialog(record, organizeCategory, organizeTopic, actionError, busy, onCategory = { organizeCategoryName = it.name }, onTopic = { organizeTopic = it }, onDismiss = { organizeId = null; organizeRevision = null }, onSave = { mutate({ memoryOs.assignWiki(record.id, organizeRevision, MemoryWikiAssignment(organizeCategory, organizeTopic)) }) { organizeId = null; organizeRevision = null } }) }
-    deleteTarget?.let { record -> AlertDialog(onDismissRequest = { if (!busy) confirmDeleteId = null }, title = { Text("Erase this memory?") }, text = { Column { Text("This also erases linked corrections."); actionError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("memory_error")) } } }, confirmButton = { TextButton(onClick = { mutate({ memoryOs.delete(record.id, confirmDeleteRevision) }) { confirmDeleteId = null } }, enabled = !busy, modifier = Modifier.testTag("memory_delete_confirm")) { Text("Erase") } }, dismissButton = { TextButton(onClick = { confirmDeleteId = null }, enabled = !busy, modifier = Modifier.testTag("memory_delete_cancel")) { Text("Cancel") } }) }
-    if (confirmDeleteAll) AlertDialog(onDismissRequest = { if (!busy) confirmDeleteAll = false }, title = { Text("Erase all memories?") }, text = { Column { Text("This permanently erases every saved memory and correction."); actionError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("memory_error")) } } }, confirmButton = { TextButton(onClick = { val generation = eraseGeneration; if (generation == null) actionError = "Saved memories are unavailable." else mutate({ memoryOs.deleteAll(generation) }) { confirmDeleteAll = false; eraseGeneration = null; pageId = null; detailId = null } }, enabled = !busy && eraseGeneration != null, modifier = Modifier.testTag("memory_delete_all_confirm")) { Text("Erase all") } }, dismissButton = { TextButton(onClick = { confirmDeleteAll = false; eraseGeneration = null }, enabled = !busy) { Text("Cancel") } })
+    deleteTarget?.let { record -> AlertDialog(modifier = Modifier.semantics { testTagsAsResourceId = true }, onDismissRequest = { if (!busy) confirmDeleteId = null }, title = { Text("Erase this memory?") }, text = { Column { Text("This also erases linked corrections."); actionError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("memory_error")) } } }, confirmButton = { TextButton(onClick = { mutate({ memoryOs.delete(record.id, confirmDeleteRevision) }) { confirmDeleteId = null } }, enabled = !busy, modifier = Modifier.testTag("memory_delete_confirm")) { Text("Erase") } }, dismissButton = { TextButton(onClick = { confirmDeleteId = null }, enabled = !busy, modifier = Modifier.testTag("memory_delete_cancel")) { Text("Cancel") } }) }
+    if (confirmDeleteAll) AlertDialog(modifier = Modifier.semantics { testTagsAsResourceId = true }, onDismissRequest = { if (!busy) confirmDeleteAll = false }, title = { Text("Erase all memories?") }, text = { Column { Text("This permanently erases every saved memory and correction."); actionError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("memory_error")) } } }, confirmButton = { TextButton(onClick = { val generation = eraseGeneration; if (generation == null) actionError = "Saved memories are unavailable." else mutate({ memoryOs.deleteAll(generation) }) { confirmDeleteAll = false; eraseGeneration = null; pageId = null; detailId = null } }, enabled = !busy && eraseGeneration != null, modifier = Modifier.testTag("memory_delete_all_confirm")) { Text("Erase all") } }, dismissButton = { TextButton(onClick = { confirmDeleteAll = false; eraseGeneration = null }, enabled = !busy) { Text("Cancel") } })
     }
 }
 
@@ -218,6 +222,7 @@ internal fun MemoryScreen(
 
 @Composable
 private fun MemoryEditorDialog(draft: String, topic: String, category: WikiCategory, categoryOverridden: Boolean, topicOverridden: Boolean, isCorrection: Boolean, correction: MemoryRecord?, error: String?, busy: Boolean, onDraft: (String) -> Unit, onTopic: (String) -> Unit, onCategory: (WikiCategory) -> Unit, onDismiss: () -> Unit, onSave: () -> Unit) = AlertDialog(
+    modifier = Modifier.semantics { testTagsAsResourceId = true },
     onDismissRequest = onDismiss,
     title = { Text(if (isCorrection) "Correct memory" else "Add a memory") },
     text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -236,6 +241,7 @@ private fun MemoryEditorDialog(draft: String, topic: String, category: WikiCateg
 
 @Composable
 private fun OrganizeDialog(record: MemoryRecord, category: WikiCategory, topic: String, error: String?, busy: Boolean, onCategory: (WikiCategory) -> Unit, onTopic: (String) -> Unit, onDismiss: () -> Unit, onSave: () -> Unit) = AlertDialog(
+    modifier = Modifier.semantics { testTagsAsResourceId = true },
     onDismissRequest = onDismiss,
     title = { Text("Organize memory") },
     text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {

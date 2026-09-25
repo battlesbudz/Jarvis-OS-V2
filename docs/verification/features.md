@@ -44,3 +44,9 @@ Conflict resolution uses the build-768 persistent-call, input ownership, deliver
 ## Memory wiki repair recovery
 
 Recovered the final wiki repairs from the interrupted compilation workspace: preserve legacy event fingerprints through organization and erasure, keep all topic links, retain erase-all for pending/rejected-only ledgers, and explicitly return Memory to Chat or Voice without ending a call. Existing release journeys now exercise these navigation and ledger paths. JVM regressions cover legacy replay/tombstones, placement suggestions, and search beyond 50 memories. No local tests were run during recovery; the exact pushed revision requires the GitHub Android APK workflow and both emulator variants before it can be called verified.
+
+## Build 775 verification repair
+
+Run https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36074570506 at `5211b8f246c6bd441c08499f68320d013d8f88bd` passed 713 JVM tests and both signed APK builds. Both emulator variants ran all 30 journeys; test24 and test27 failed. Retained artifacts: API 30 `10839224113`, API 35 `10840760161`, JVM `10840500290`.
+
+The test24 screenshot shows an open Add-memory dialog, while its XML has no exported resource IDs for its controls. Dialogs use a separate semantics root, so every Memory dialog now exports its existing test tags at that root. The test and its assertions are unchanged. Test27 failed at `mutableStateOf(false)` with `NoClassDefFoundError: androidx.compose.runtime.SnapshotStateKt`; the release mapping/test DEX confirm that its facade was removed while the test still invokes it. A narrow keep preserves the facade and inherited mutable-state factory ABI. This is verification accessibility/release-harness repair, not a relaxed acceptance gate. Both complete emulator suites must rerun on the new exact revision.
