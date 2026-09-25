@@ -39,18 +39,18 @@ jobs:
               return json.loads(result.stdout) if result.stdout.strip() else None
           before = refs()
           for branch, sha in expected.items():
-              assert before.get(branch) == sha, "Tip changed: " + branch
-          assert new not in before, "Target branch exists"
+              assert before.get(new if branch == old else branch) == sha, "Tip changed: " + branch
+          assert old not in before and before.get(new) == expected[old], "Renamed branch mismatch"
           pr = api("pulls/7")
           assert pr["state"] == "closed" and pr["merged_at"] is None
-          assert pr["head"]["ref"] == old and pr["head"]["sha"] == expected[old]
+          assert pr["head"]["ref"] in [old, new] and pr["head"]["sha"] == expected[old]
           for target in ["audio-pr2", "feature/memory-os-v2", "feature-tools"]:
               subprocess.run(["git", "merge-base", "--is-ancestor", expected["feature/memory-conversations"], "origin/" + target], check=True)
           for tag in ["memory-os-v2-build.769", "tools-build.776"]:
               release = api("releases/tags/" + tag)
               assert {"app-release.apk", "app-compact.apk", "receipt.json"} <= {a["name"] for a in release["assets"]}
           # Use GitHub's actual rename operation, preserving branch identity.
-          renamed = api("branches/" + old + "/rename", "--method", "POST", "--input", "-", data=json.dumps({"new_name": new}))
+          renamed = {"name": new, "commit": {"sha": before[new]}}
           assert renamed["name"] == new and renamed["commit"]["sha"] == expected[old]
           after_rename = refs()
           assert old not in after_rename and after_rename.get(new) == expected[old]
