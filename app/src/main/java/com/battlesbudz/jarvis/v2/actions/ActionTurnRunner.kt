@@ -64,6 +64,39 @@ class ActionTurnRunner(
     }
 }
 
+
+data class AuthorizedDispatch(
+    val task: ToolTaskAttempt,
+    val approval: ActionApprovalRequest
+)
+
+class ActionDispatchGate(
+    private val approvals: ActionApprovalStore,
+    private val ledger: ToolTaskLedger
+) {
+    fun prepare(task: ToolTaskAttempt, provider: String = "native", schemaVersion: Int = MobileToolCatalog.VERSION): AuthorizedDispatch {
+        require(task.state == ToolTaskState.QUEUED || task.state == ToolTaskState.READY || task.state == ToolTaskState.WAITING_APPROVAL)
+        val waiting = ledger.transition(task.id, task.generation, ToolTaskState.WAITING_APPROVAL)
+            ?: error("Task attempt changed before approval could be requested.")
+        val approval = approvals.request(waiting.id, "dispatch", provider, waiting.request, schemaVersion)
+        return AuthorizedDispatch(waiting, approval)
+    }
+
+    fun authorize(dispatch: AuthorizedDispatch): ToolTaskAttempt? {
+        if (approvals.consume(dispatch.approval.id, dispatch.approval.fingerprint) != ApprovalDecision.APPROVED) return null
+        return ledger.transition(dispatch.task.id, dispatch.task.generation, ToolTaskState.RUNNING)
+    }
+
+    fun complete(running: ToolTaskAttempt, result: ExecutionResult): ToolTaskAttempt? {
+        val state = when (result.outcome) {
+            ExecutionResult.Outcome.SUCCEEDED -> ToolTaskState.SUCCEEDED
+            ExecutionResult.Outcome.UNKNOWN_COMPLETION -> ToolTaskState.UNKNOWN_OUTCOME
+            else -> ToolTaskState.FAILED
+        }
+        return ledger.transition(running.id, running.generation, state, result.message)
+    }
+}
+
 /** Suspended production path. Native generation happens only between accepted batches. */
 suspend fun ActionTurnRunner.runNative(
     plan: ActionTurnPlan,
