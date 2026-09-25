@@ -5,6 +5,29 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TurnOrchestratorTest {
+    @Test fun newQuestionAndCorrectionCannotInheritMvpSubject() {
+        val turns = TurnOrchestrator(ReferenceGroundingClient())
+        assertEquals("MVP", turns.plan("What is MVP?").activeSubject)
+        assertEquals(null, turns.plan("You're not repeating the right information?").activeSubject)
+        turns.plan("What is MVP?")
+        turns.reset()
+        assertEquals(null, turns.plan("What about that?").activeSubject)
+    }
+
+    @Test fun unspokenLookupOfferCannotArmConfirmation() {
+        val turns = TurnOrchestrator(ReferenceGroundingClient())
+        val plan = turns.plan("Who is Jack Herer?")
+        turns.recordResponse("Who is Jack Herer?", "Would you like me to search Wikipedia?", plan)
+        turns.reconcileVoiceDelivery("")
+        assertTrue(turns.plan("Yes").kind != TurnKind.LOOKUP_CONFIRMATION)
+    }
+    @Test fun deliveredLookupOfferRetainsItsConfirmation() {
+        val turns = TurnOrchestrator(ReferenceGroundingClient())
+        turns.plan("Who is Jack Herer?")
+        turns.reconcileVoiceDelivery("Would you like me to search Wikipedia?")
+        assertEquals(TurnKind.LOOKUP_CONFIRMATION, turns.plan("Yes").kind)
+    }
+
     @Test
     fun namedEntityWithMiddleInitialTriggersAutomaticGrounding() {
         val grounding = ReferenceGroundingClient()
@@ -78,4 +101,30 @@ class TurnOrchestratorTest {
 
         assertEquals("Harry J. Anslinger", query)
     }
+    @Test fun naturalActionsPreemptFactualLookupAndClearPriorSubject() {
+        val turns = TurnOrchestrator(ReferenceGroundingClient())
+        turns.plan("Who is Jack Herer?")
+        val plan = turns.plan("Can you open up Facebook and tell me what my battery percentage is?")
+        assertEquals(TurnKind.NORMAL_CHAT, plan.kind)
+        assertEquals(null, plan.lookupQuery)
+        assertEquals(null, plan.activeSubject)
+        val ready = plan.actionPlan as com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready
+        assertEquals(listOf("open_app", "read_battery"), ready.steps.map { it.request.name })
+        assertEquals("Facebook", ready.steps.first().request.arguments["app"])
+        val retry = turns.plan("I said, can you open up the fistbook and tell me what my battery percentage is?")
+        assertEquals(TurnKind.NORMAL_CHAT, retry.kind)
+        assertEquals("fistbook", (retry.actionPlan as com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready).steps.first().request.arguments["app"])
+    }
+
+    @Test fun pendingLookupIsClearedByNaturalAction() {
+        val turns = TurnOrchestrator(ReferenceGroundingClient())
+        val factual = turns.plan("Who is Jack Herer?")
+        turns.recordResponse("Who is Jack Herer?", "Would you like me to search Wikipedia?", factual)
+        val action = turns.plan("Can you open up Facebook and tell me what my battery percentage is?")
+        assertTrue(action.actionPlan is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready)
+        assertEquals(TurnKind.NORMAL_CHAT, action.kind)
+        assertEquals(null, action.lookupQuery)
+        assertTrue(turns.plan("Yes").kind != TurnKind.LOOKUP_CONFIRMATION)
+    }
+
 }

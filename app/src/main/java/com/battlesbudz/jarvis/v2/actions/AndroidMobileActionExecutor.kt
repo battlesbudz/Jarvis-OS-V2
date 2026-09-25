@@ -7,9 +7,9 @@ import android.os.BatteryManager
 import kotlin.math.round
 
 class AndroidMobileActionExecutor(
-    context: Context
+    private val context: Context,
+    private val canLaunchDirectly: () -> Boolean = { false }
 ) : MobileActionExecutor {
-    private val context = context.applicationContext
     private val appResolver = InstalledAppResolver(context)
     override fun execute(action: MobileAction): ExecutionResult = when (action) {
         MobileAction.ReadBattery -> {
@@ -57,18 +57,20 @@ class AndroidMobileActionExecutor(
                     resolution.app.packageName,
                     resolution.app.activityName
                 )
-                runCatching {
+                if (!canLaunchDirectly()) {
+                    com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.launch(context, launchIntent, resolution.app.label)
+                        ?: AppLaunchNotification.offer(context, launchIntent, resolution.app.label)
+                } else try {
                     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(launchIntent)
-                }.fold(
-                    { ExecutionResult(true, "Opened ${resolution.app.label}.") },
-                    { error ->
-                        ExecutionResult(
-                            false,
-                            "Could not open ${resolution.app.label}: ${error.message ?: "Android rejected the launch."}"
-                        )
-                    }
-                )
+                    ExecutionResult(true, "Opening ${resolution.app.label}.")
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: android.content.ActivityNotFoundException) {
+                    ExecutionResult(false, "Could not open ${resolution.app.label}: ${error.message ?: "Android rejected the launch."}")
+                } catch (error: SecurityException) {
+                    ExecutionResult(false, "Could not open ${resolution.app.label}: ${error.message ?: "Android rejected the launch."}")
+                }
             }
         }
     }

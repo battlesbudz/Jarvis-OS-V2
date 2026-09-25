@@ -1,5 +1,8 @@
 package com.battlesbudz.jarvis.v2.ai
 
+import com.battlesbudz.jarvis.v2.ChatEntry
+import com.battlesbudz.jarvis.v2.actions.ActionTurnPlan
+
 enum class TurnKind {
     NORMAL_CHAT,
     FACTUAL_LOCAL_FIRST,
@@ -10,7 +13,8 @@ enum class TurnKind {
 data class TurnPlan(
     val kind: TurnKind,
     val lookupQuery: String? = null,
-    val activeSubject: String? = null
+    val activeSubject: String? = null,
+    val actionPlan: ActionTurnPlan = ActionTurnPlan.NotAction
 )
 
 class TurnOrchestrator(
@@ -20,9 +24,27 @@ class TurnOrchestrator(
     private var activeSubjectQuestion: String? = null
     private var activeSubject: String? = null
 
-    fun plan(prompt: String): TurnPlan {
+    fun reset() {
+        pendingLookupSubject = null
+        activeSubjectQuestion = null
+        activeSubject = null
+    }
+
+    fun plan(prompt: String, history: List<Pair<String, String>> = emptyList()): TurnPlan {
+        val actionPlan = ActionTurnPlan.parse(prompt, history.map { ChatEntry(it.first, it.second) })
+        if (actionPlan !is ActionTurnPlan.NotAction) {
+            pendingLookupSubject = null; activeSubject = null; activeSubjectQuestion = null
+            return TurnPlan(TurnKind.NORMAL_CHAT, actionPlan = actionPlan)
+        }
         val confirmation = grounding.isLookupConfirmation(prompt)
         val explicit = grounding.isExplicitLookupRequest(prompt)
+        val dialogue = DialogueContextPolicy.resolve(prompt, history)
+        if (!explicit && (dialogue.recall || dialogue.storyInstruction != null)) {
+            pendingLookupSubject = null
+            activeSubject = null
+            activeSubjectQuestion = null
+            return TurnPlan(TurnKind.NORMAL_CHAT)
+        }
         if (confirmation && pendingLookupSubject != null) {
             return TurnPlan(
                 kind = TurnKind.LOOKUP_CONFIRMATION,
@@ -56,9 +78,8 @@ class TurnOrchestrator(
                 normalized.contains(" her ") ||
                 normalized.contains(" his ") ||
                 normalized.contains(" their ")
-            if (namedEntity != null) {
-                activeSubject = namedEntity
-            }
+            // A new request or correction must not inherit an unrelated subject.
+            if (!isFollowUp || namedEntity != null) activeSubject = namedEntity
             activeSubjectQuestion = if (isFollowUp && activeSubjectQuestion != null) {
                 activeSubjectQuestion + "\nFollow-up: " + prompt
             } else {
@@ -101,6 +122,14 @@ class TurnOrchestrator(
         } else {
             pendingLookupSubject = null
         }
+    }
+
+    /** An offer that was generated but never spoken cannot arm a later "yes". */
+    fun reconcileVoiceDelivery(spoken: String) {
+        val normalized = spoken.lowercase()
+        pendingLookupSubject = if (spoken.isNotBlank() && (grounding.isInsufficientAnswer(spoken) ||
+            normalized.contains("would you like me to search wikipedia") ||
+            normalized.contains("would you like me to search wikidata"))) activeSubject ?: activeSubjectQuestion else null
     }
 
     fun pendingSubjectForDiagnostics(): String? = pendingLookupSubject
