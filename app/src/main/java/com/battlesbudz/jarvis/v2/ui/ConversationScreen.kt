@@ -172,7 +172,7 @@ internal fun ConversationScreen(
                             Column(Modifier.fillMaxWidth().padding(14.dp)) {
                                 Text(message.role + if (message.spoken) " · Spoken transcript" else "",
                                     style = MaterialTheme.typography.labelMedium)
-                                message.attachment?.let { ChatAttachmentPreview(it) }
+                                message.attachment?.let { ChatAttachmentPreview(it, playbackEnabled = !dictating && !armed && !voiceVisible) }
                                 SelectionContainer {
                                     Text(message.text.ifBlank { if (sending) "Thinking…" else "No reply was saved." },
                                         fontStyle = if (message.spoken) FontStyle.Italic else FontStyle.Normal,
@@ -204,11 +204,7 @@ internal fun ConversationScreen(
                 if (preparingAttachment) Text("Preparing attachment…", modifier = Modifier.padding(horizontal = 16.dp))
                 if (armed) Text("Attachments are unavailable during a voice call. End the call to add one.",
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp))
-                else ChatAttachmentPicker(selectedModel, enabled = !sending && !voiceVisible && !inputBusy,
-                    onBusy = { preparingAttachment = it }, onError = { error = it }, onPrepared = { attached ->
-                        pendingAttachment?.let { ChatMediaStore.discard(context, it) }
-                        pendingKind = attached.kind; pendingUri = attached.uri; error = null
-                    })
+
                 key(thread.id) {
                     ChatVoiceInput(enabled = !sending && !voiceVisible && !armed && !preparingAttachment,
                         canSendAudio = selectedModel.supportsAudio && pendingAttachment == null,
@@ -216,7 +212,7 @@ internal fun ConversationScreen(
                             else if (pendingAttachment != null) "Remove the existing attachment to send audio." else null,
                         createRecorder = { dictationFactory?.invoke() ?: com.battlesbudz.jarvis.v2.voice.LocalChatDictation(context) },
                         onBusy = { dictating = it },
-                        onAudio = { pcm ->
+                        onAudio = { pcm, transcript ->
                             check(selectedModel.supportsAudio && pendingAttachment == null) { "Select an audio-capable model and remove other attachments to send audio." }
                             var attached: ChatAttachment? = null
                             var accepted = false
@@ -224,7 +220,8 @@ internal fun ConversationScreen(
                                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                     attached = ChatMediaStore.prepareVoiceNote(context, pcm)
                                 }
-                                val failure = onSend(draft, requireNotNull(attached))
+                                val voiceText = if (draft.isBlank()) transcript else draft.trimEnd() + "\n" + transcript
+                                val failure = onSend(voiceText, requireNotNull(attached))
                                 check(failure == null) { failure.orEmpty() }
                                 accepted = true
                                 draft = ""
@@ -234,18 +231,30 @@ internal fun ConversationScreen(
                         onTranscript = { text ->
                             draft = if (draft.isBlank()) text else draft.trimEnd() + " " + text
                             error = null
-                        }, onError = { error = it })
-                }
-                Row(Modifier.fillMaxWidth().imePadding().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = draft, onValueChange = { draft = it }, placeholder = { Text("Message Jarvis") },
-                        modifier = Modifier.weight(1f).testTag("chat_composer"), maxLines = 5, enabled = !voiceVisible && !dictating)
-                    val canSend = if (armed) draft.isNotBlank() && pendingAttachment == null
-                    else (draft.isNotBlank() || pendingAttachment != null) &&
-                        (pendingAttachment == null || AttachmentPolicy.accepts(selectedModel, pendingAttachment.kind))
-                    Button(enabled = canSend && !sending && !voiceVisible && !inputBusy, onClick = {
-                        error = onSend(draft, if (armed) null else pendingAttachment)
-                        if (error == null) { draft = ""; pendingUri = null }
-                    }, modifier = Modifier.testTag("chat_send")) { Text(if (sending) "Thinking…" else "Send") }
+                        }, onError = { error = it }) { voiceButton ->
+                        Row(Modifier.fillMaxWidth().imePadding().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            OutlinedTextField(value = draft, onValueChange = { draft = it }, placeholder = { Text("Message Jarvis") },
+                                modifier = Modifier.weight(1f).testTag("chat_composer"), maxLines = 5, enabled = !voiceVisible,
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp), trailingIcon = voiceButton,
+                                leadingIcon = if (!armed && selectedModel.supportsVision) { {
+                                    ChatAttachmentPicker(selectedModel, enabled = !sending && !voiceVisible && !inputBusy,
+                                        onBusy = { preparingAttachment = it }, onError = { error = it }, onPrepared = { attached ->
+                                            pendingAttachment?.let { ChatMediaStore.discard(context, it) }
+                                            pendingKind = attached.kind; pendingUri = attached.uri; error = null
+                                        })
+                                } } else null)
+                            val canSend = if (armed) draft.isNotBlank() && pendingAttachment == null
+                            else (draft.isNotBlank() || pendingAttachment != null) &&
+                                (pendingAttachment == null || AttachmentPolicy.accepts(selectedModel, pendingAttachment.kind))
+                            FilledIconButton(enabled = canSend && !sending && !voiceVisible && !inputBusy, onClick = {
+                                error = onSend(draft, if (armed) null else pendingAttachment)
+                                if (error == null) { draft = ""; pendingUri = null }
+                            }, modifier = Modifier.testTag("chat_send")) {
+                                ComposerIcon(com.battlesbudz.jarvis.v2.R.drawable.ic_composer_send, if (sending) "Thinking" else "Send message")
+                            }
+                        }
+                    }
                 }
             }
             // Keep the voice controller and shared Settings alive in both modes.

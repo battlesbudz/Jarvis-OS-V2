@@ -504,8 +504,8 @@ internal fun JarvisRuntime.runConversationInternal(
                     (if (directAudioComparison) "diagnostic_direct_audio" else if (textInput != null) "incremental_text"
                         else if (voiceAudio != null) "voice_text"
                         else if (imageBytes != null) "image_text" else if (attachedAudio != null) "audio_file_text" else "text") +
-                    " audioBytes=${if (directAudioComparison) voiceAudio?.size ?: 0 else 0} retainedAudioBytes=${voiceAudio?.size ?: 0} promptChars=${submittedPrompt.length}" +
-                    " nativeAudioEncodeMs=${if (directAudioComparison) "unavailable" else "not_used"} queueMs=unavailable")
+                    " audioBytes=${if (directAudioComparison) voiceAudio?.size ?: 0 else attachedAudio?.size ?: 0} retainedAudioBytes=${voiceAudio?.size ?: 0} promptChars=${submittedPrompt.length}" +
+                    " nativeAudioEncodeMs=${if (directAudioComparison || attachedAudio != null) "unavailable" else "not_used"} queueMs=unavailable")
                 var incrementalFallbackUsed = false
                 var generated = if (directAudioComparison) {
                     engine.generateAudio(submittedPrompt, requireNotNull(voiceAudio), acceptVoiceToken)

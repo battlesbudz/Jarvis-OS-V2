@@ -1113,7 +1113,9 @@ class ReleaseJourneyTest {
         activity.onActivity { host -> host.setContent {
             MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
                 ConversationScreen(history, MutableStateFlow(false), MutableStateFlow(VoiceSessionState.PASSIVE_LISTENING),
-                    onSend = { _, attachment -> audioSent.set(attachment); sends.incrementAndGet(); null },
+                    onSend = { text, attachment ->
+                        history.appendUser(text, attachment)
+                        audioSent.set(attachment); sends.incrementAndGet(); null },
                     selectedModel = model,
                     onSelectConversation = { null }, onEndVoice = {}, onOpenVoiceCalls = {}, resumedVoice = false,
                     dictationFactory = {
@@ -1128,7 +1130,7 @@ class ReleaseJourneyTest {
                             override fun finish() { result.complete(rawPcm) }
                             override suspend fun transcribe(pcm: ByteArray, onStatus: (String) -> Unit): String {
                                 transcribes.incrementAndGet()
-                                if (number == 3) error("No speech detected. Try recording again.")
+                                if (number == 3 || number == 5) error("No speech detected. Try recording again.")
                                 return "dictated words"
                             }
                         }
@@ -1144,7 +1146,7 @@ class ReleaseJourneyTest {
         assertNotNull(find(By.res("dictation_status")))
         assertFalse(find(By.res("voice_tab")).isEnabled)
         assertFalse("Text-only model must not receive raw audio", find(By.res("dictation_send")).isEnabled)
-        assertFalse(find(By.res("chat_send")).isEnabled)
+        assertFalse("Recording replaces the text-send controls", device.hasObject(By.res("chat_send")))
         clickEnabled(By.res("dictation_stop"))
         enabled(By.res("chat_voice_input"))
         assertEquals("Existing draft dictated words", find(By.res("chat_composer")).text)
@@ -1168,16 +1170,34 @@ class ReleaseJourneyTest {
         renderModel(textOnlyModel.copy(supportsAudio = true))
         clickEnabled(By.res("chat_voice_input"))
         enabled(By.res("dictation_send"))
+        captureEvidence("voice_recording_controls")
         val beforeAudioSend = transcribes.get()
         clickEnabled(By.res("dictation_send"))
         enabled(By.res("chat_voice_input"))
         assertEquals(2, sends.get())
-        assertEquals("Send must bypass transcription", beforeAudioSend, transcribes.get())
+        assertEquals("Send must include a transcript", beforeAudioSend + 1, transcribes.get())
+        val saved = history.current.value.messages.last()
+        assertEquals("dictated words", saved.text)
+        assertTrue(saved.spoken)
+        assertNotNull(saved.attachment)
+        val reloaded = ConversationHistory(prefs).current.value.messages.last()
+        assertEquals(saved.text, reloaded.text)
+        assertEquals(saved.attachment, reloaded.attachment)
+        assertNotNull(find(By.desc("Play voice message")))
         val attachment = requireNotNull(audioSent.get())
         assertEquals(com.battlesbudz.jarvis.v2.chat.AttachmentKind.AUDIO, attachment.kind)
         val wav = File(requireNotNull(android.net.Uri.parse(attachment.uri).path)).readBytes()
         com.battlesbudz.jarvis.v2.chat.AttachmentPolicy.validateAudio(wav)
         assertArrayEquals("Audio payload must preserve the recording", rawPcm, wav.copyOfRange(44, wav.size))
+        captureEvidence("voice_message_with_transcript")
+        enterText(By.res("chat_composer"), "Keep my draft")
+        hideKeyboardWithoutNavigating()
+        clickEnabled(By.res("chat_voice_input"))
+        clickEnabled(By.res("dictation_send"))
+        assertNotNull(find(By.text("No speech detected. Try recording again.")))
+        enabled(By.res("chat_voice_input"))
+        assertEquals("Keep my draft", find(By.res("chat_composer")).text)
+        assertEquals("Failed Send transcription must not send", 2, sends.get())
         com.battlesbudz.jarvis.v2.chat.ChatMediaStore.discard(context, attachment)
     }
 

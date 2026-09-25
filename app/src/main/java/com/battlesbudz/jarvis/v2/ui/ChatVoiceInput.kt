@@ -21,7 +21,8 @@ import kotlinx.coroutines.*
 
 @Composable
 internal fun ChatVoiceInput(enabled: Boolean, canSendAudio: Boolean, audioUnavailableReason: String?, createRecorder: () -> ChatDictation,
-    onBusy: (Boolean) -> Unit, onAudio: suspend (ByteArray) -> Unit, onTranscript: (String) -> Unit, onError: (String) -> Unit) {
+    onBusy: (Boolean) -> Unit, onAudio: suspend (ByteArray, String) -> Unit, onTranscript: (String) -> Unit, onError: (String) -> Unit,
+    composer: @Composable (@Composable () -> Unit) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val owner = LocalLifecycleOwner.current
@@ -56,14 +57,12 @@ internal fun ChatVoiceInput(enabled: Boolean, canSendAudio: Boolean, audioUnavai
                 ensureActive()
                 if (!choice.isCompleted) status = "Recording ready · Stop for text or Send audio"
                 val sendAudio = choice.await()
-                if (sendAudio) currentAudio(pcm)
-                else {
-                    val text = session.transcribe(pcm) { update ->
-                        scope.launch { if (recorder === session) status = update }
-                    }
-                    ensureActive()
-                    currentTranscript(text)
+                val text = session.transcribe(pcm) { update ->
+                    scope.launch { if (recorder === session) status = update }
                 }
+                ensureActive()
+                if (sendAudio) { status = "Sending…"; currentAudio(pcm, text) }
+                else currentTranscript(text)
             } catch (timeout: TimeoutCancellationException) { currentError("Voice input timed out. Please try again.") }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { currentError(error.message ?: "Voice input failed. Please try again.") }
@@ -91,24 +90,45 @@ internal fun ChatVoiceInput(enabled: Boolean, canSendAudio: Boolean, audioUnavai
         onDispose { owner.lifecycle.removeObserver(observer); job?.cancel() }
     }
     BackHandler(enabled = recording) { cancel() }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-        if (recording) {
-            Text(status, modifier = Modifier.testTag("dictation_status"), style = MaterialTheme.typography.bodySmall)
-
-            Row {
-                TextButton(enabled = !finishing, onClick = {
-                    finishing = true; status = "Transcribing…"; action?.complete(false); recorder?.finish()
-                }, modifier = Modifier.testTag("dictation_stop")) { Text("Stop") }
-                TextButton(enabled = !finishing && canSendAudio, onClick = {
-                    finishing = true; status = "Sending audio…"; action?.complete(true); recorder?.finish()
-                }, modifier = Modifier.testTag("dictation_send")) { Text("Send") }
-                TextButton(onClick = { cancel() }, modifier = Modifier.testTag("dictation_cancel")) { Text("Cancel") }
+    if (recording) {
+        Surface(modifier = Modifier.fillMaxWidth().imePadding().padding(12.dp),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+            Column(Modifier.padding(4.dp)) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    IconButton(onClick = { cancel() }, modifier = Modifier.testTag("dictation_cancel")) {
+                        ComposerIcon(com.battlesbudz.jarvis.v2.R.drawable.ic_composer_close, "Cancel")
+                    }
+                    Text(status, modifier = Modifier.weight(1f).testTag("dictation_status"),
+                        style = MaterialTheme.typography.bodySmall)
+                    IconButton(enabled = !finishing, onClick = {
+                        finishing = true; status = "Transcribing…"; action?.complete(false); recorder?.finish()
+                    }, modifier = Modifier.testTag("dictation_stop")) {
+                        ComposerIcon(com.battlesbudz.jarvis.v2.R.drawable.ic_composer_stop, "Stop")
+                    }
+                    FilledIconButton(enabled = !finishing && canSendAudio, onClick = {
+                        finishing = true; status = "Transcribing…"; action?.complete(true); recorder?.finish()
+                    }, modifier = Modifier.testTag("dictation_send")) {
+                        ComposerIcon(com.battlesbudz.jarvis.v2.R.drawable.ic_composer_send, "Send")
+                    }
+                }
+                if (!canSendAudio && audioUnavailableReason != null)
+                    Text(audioUnavailableReason, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                        style = MaterialTheme.typography.bodySmall)
             }
-            if (!canSendAudio && audioUnavailableReason != null)
-                Text(audioUnavailableReason, style = MaterialTheme.typography.bodySmall)
-        } else TextButton(enabled = enabled && !permissionPending, onClick = {
+        }
+    } else composer {
+        IconButton(enabled = enabled && !permissionPending, onClick = {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) start()
             else { permissionPending = true; permission.launch(Manifest.permission.RECORD_AUDIO) }
-        }, modifier = Modifier.testTag("chat_voice_input")) { Text("🎙 Voice input") }
+        }, modifier = Modifier.testTag("chat_voice_input")) {
+            ComposerIcon(com.battlesbudz.jarvis.v2.R.drawable.ic_composer_mic, "Record voice message")
+        }
     }
+}
+
+@Composable
+internal fun ComposerIcon(resource: Int, description: String) {
+    Icon(androidx.compose.ui.res.painterResource(resource), contentDescription = description,
+        modifier = Modifier.size(24.dp))
 }

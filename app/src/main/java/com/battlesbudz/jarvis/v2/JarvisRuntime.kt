@@ -262,7 +262,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         val userMessageId = conversationHistory.appendUser(userText, attachment)
         val capturedAtMs = System.currentTimeMillis()
         runtimeScope.launch(Dispatchers.IO) {
-            if (!captureFinalMemory(userMessageId, threadId, null, ConversationMemorySource.TEXT, userText, capturedAtMs)) {
+            if (!captureFinalMemory(userMessageId, threadId, null,
+                    if (attachment?.kind == com.battlesbudz.jarvis.v2.chat.AttachmentKind.AUDIO) ConversationMemorySource.VOICE else ConversationMemorySource.TEXT,
+                    userText, capturedAtMs)) {
                 mainHandler.post { sessionReport("Memory proposal could not be saved; the conversation was sent normally.") }
             }
         }

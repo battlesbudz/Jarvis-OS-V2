@@ -131,7 +131,7 @@ class LiteRtLmEngine(
     ): GenerationResult {
         require(audioEnabled && modelSpec.supportsAudio) { "$modelId requires Moonshine or Whisper for speech recognition." }
         onPromptSubmitted(prompt, audioBytes.size)
-        return generateWithContents(Contents.of(Content.AudioBytes(audioBytes), Content.Text(prompt)), onToken)
+        return generateWithContents(audioMessageContents(prompt, audioBytes), onToken)
     }
 
     private suspend fun generateWithContents(

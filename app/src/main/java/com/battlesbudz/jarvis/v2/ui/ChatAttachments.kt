@@ -43,15 +43,13 @@ internal fun ChatAttachmentPicker(model: LocalModelSpec, enabled: Boolean,
             }
         }
     }
-    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-        if (model.supportsVision) TextButton(enabled = enabled, onClick = {
+    if (model.supportsVision) IconButton(enabled = enabled, onClick = {
             kind = AttachmentKind.IMAGE; picker.launch(arrayOf("image/*"))
-        }) { Text("Attach image") }
-    }
+        }) { ComposerIcon(com.battlesbudz.jarvis.v2.R.drawable.ic_composer_attach, "Attach image") }
 }
 
 @Composable
-internal fun ChatAttachmentPreview(attachment: ChatAttachment) {
+internal fun ChatAttachmentPreview(attachment: ChatAttachment, playbackEnabled: Boolean = true) {
     val thumbnail by produceState<Bitmap?>(null, attachment.uri) {
         if (attachment.kind == AttachmentKind.IMAGE) value = withContext(Dispatchers.IO) {
             runCatching {
@@ -60,8 +58,51 @@ internal fun ChatAttachmentPreview(attachment: ChatAttachment) {
             }.getOrNull()
         }
     }
-    if (attachment.kind == AttachmentKind.AUDIO) Text("Audio clip attached", style = MaterialTheme.typography.labelMedium)
+    if (attachment.kind == AttachmentKind.AUDIO) VoiceMessagePlayback(attachment, playbackEnabled)
     else thumbnail?.let {
         Image(it.asImageBitmap(), contentDescription = "Attached image", modifier = Modifier.fillMaxWidth().height(120.dp))
     } ?: Text("Image unavailable", style = MaterialTheme.typography.labelMedium)
+}
+
+@Composable
+private fun VoiceMessagePlayback(attachment: ChatAttachment, enabled: Boolean) {
+    val context = LocalContext.current
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    var player by remember(attachment.uri) { mutableStateOf<android.media.MediaPlayer?>(null) }
+    var playing by remember(attachment.uri) { mutableStateOf(false) }
+    var failure by remember(attachment.uri) { mutableStateOf<String?>(null) }
+    fun stop() { player?.release(); player = null; playing = false }
+    LaunchedEffect(enabled) { if (!enabled) stop() }
+    DisposableEffect(attachment.uri, owner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) stop()
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer); stop() }
+    }
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        IconButton(enabled = enabled, onClick = {
+            if (playing) stop() else {
+                failure = null
+                try {
+                    val next = android.media.MediaPlayer()
+                    player = next
+                    next.setAudioAttributes(android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                    next.setDataSource(context, android.net.Uri.parse(attachment.uri))
+                    next.setOnCompletionListener { stop() }
+                    next.setOnErrorListener { _, _, _ -> failure = "Recording unavailable"; stop(); true }
+                    next.setOnPreparedListener { if (player === it) it.start() }
+                    playing = true
+                    next.prepareAsync()
+                } catch (_: Exception) { failure = "Recording unavailable"; stop() }
+            }
+        }) {
+            ComposerIcon(if (playing) com.battlesbudz.jarvis.v2.R.drawable.ic_composer_stop
+                else com.battlesbudz.jarvis.v2.R.drawable.ic_composer_play,
+                if (playing) "Stop playback" else "Play voice message")
+        }
+        Text(failure ?: "Voice message", style = MaterialTheme.typography.labelMedium)
+    }
 }

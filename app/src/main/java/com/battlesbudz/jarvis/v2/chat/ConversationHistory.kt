@@ -70,6 +70,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
     @Synchronized fun appendUser(text: String, attachment: ChatAttachment? = null): String {
         val id = UUID.randomUUID().toString()
         replace(_current.value.copy(messages = _current.value.messages + ConversationMessage(id, "You", text,
+            spoken = attachment?.kind == AttachmentKind.AUDIO,
             contextText = text + (attachment?.let { "\n[${it.kind.name.lowercase()} attached to this message]" } ?: ""), attachment = attachment)))
         return id
     }
