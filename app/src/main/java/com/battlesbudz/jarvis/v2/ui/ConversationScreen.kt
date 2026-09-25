@@ -4,6 +4,9 @@ import com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicy
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -68,6 +71,12 @@ internal fun ConversationScreen(
         VoiceNavigationPolicy.dispatch(VoiceNavigationPolicy.Transition.SHOW_CHAT) { onEndVoice {} }
         voiceVisible = false
     }
+    fun showVoice() {
+        if (sending || preparingAttachment) return
+        VoiceNavigationPolicy.dispatch(VoiceNavigationPolicy.Transition.SHOW_VOICE) { onEndVoice {} }
+        voiceVisible = true
+    }
+    val swipeThreshold = with(LocalDensity.current) { 64.dp.toPx() }
     BackHandler(enabled = voiceVisible && !settings && !showHistory) { returnToChat() }
     LaunchedEffect(voiceState) {
         if (voiceState != VoiceSessionState.PASSIVE_LISTENING) hadCall = true
@@ -121,10 +130,7 @@ internal fun ConversationScreen(
             SegmentedButton(selected = !voiceVisible, onClick = { returnToChat() },
                 modifier = Modifier.testTag("chat_tab"),
                 shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)) { Text("Chat") }
-            SegmentedButton(selected = voiceVisible, enabled = !sending && !preparingAttachment, onClick = {
-                VoiceNavigationPolicy.dispatch(VoiceNavigationPolicy.Transition.SHOW_VOICE) { onEndVoice {} }
-                voiceVisible = true
-            },
+            SegmentedButton(selected = voiceVisible, enabled = !sending && !preparingAttachment, onClick = { showVoice() },
                 modifier = Modifier.testTag("voice_tab"),
                 shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)) { Text("Voice call") }
         }
@@ -134,7 +140,23 @@ internal fun ConversationScreen(
         }
         // The conversation stays mounted beneath the voice surface: same draft, list and thread.
         // Hidden transcript nodes must not remain readable by accessibility services during a call.
-        Box(Modifier.weight(1f).fillMaxWidth()) {
+        Box(Modifier.weight(1f).fillMaxWidth().testTag("conversation_swipe_area")
+            .pointerInput(voiceVisible, sending, preparingAttachment, settings, showHistory, swipeThreshold) {
+                if (settings || showHistory) return@pointerInput
+                var horizontalDistance = 0f
+                // Horizontal touch slop leaves vertical list scrolling and ordinary taps to children.
+                // Commit once on release, so small movements/cancelled gestures never change modes.
+                detectHorizontalDragGestures(
+                    onDragStart = { horizontalDistance = 0f },
+                    onDragCancel = { horizontalDistance = 0f },
+                    onHorizontalDrag = { _, amount -> horizontalDistance += amount },
+                    onDragEnd = {
+                        if (horizontalDistance <= -swipeThreshold && !voiceVisible) showVoice()
+                        else if (horizontalDistance >= swipeThreshold && voiceVisible) returnToChat()
+                        horizontalDistance = 0f
+                    }
+                )
+            }) {
             Column(Modifier.fillMaxSize().alpha(if (voiceVisible) 0f else 1f)
                 .then(if (voiceVisible) Modifier.clearAndSetSemantics { } else Modifier)) {
                 if (thread.messages.isEmpty()) Text("Type a message or switch to Voice call. It's all one conversation.",

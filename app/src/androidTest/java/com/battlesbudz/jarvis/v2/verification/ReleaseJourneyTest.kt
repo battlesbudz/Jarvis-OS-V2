@@ -1021,6 +1021,70 @@ class ReleaseJourneyTest {
         assertEquals(5.0, reloaded.current.value.messages.first { it.id == "two" }.metrics?.estimatedTokensPerSecond)
     }
 
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @Test fun test30_middleSwipesSwitchChatAndVoiceWithoutEndingCall() {
+        val prefs = context.getSharedPreferences("release-swipe-navigation", android.content.Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val history = ConversationHistory(prefs)
+        repeat(20) { history.updateReply(history.current.value.id, "swipe-$it", "Scrollable message $it", true) }
+        val busy = MutableStateFlow(false)
+        val ends = AtomicInteger(0)
+        try {
+            VoiceSessionUi.armed.value = false
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                    ConversationScreen(history, busy, MutableStateFlow(VoiceSessionState.ACTIVELY_LISTENING),
+                        onSend = { _, _ -> null },
+                        selectedModel = LocalModelSpec("release-fixture", "release-fixture.bin", recommendedGpu = false),
+                        onSelectConversation = { null }, onEndVoice = { done -> ends.incrementAndGet(); done("") },
+                        onOpenVoiceCalls = {}, resumedVoice = false,
+                        voiceContent = { visible, _, _, _ -> if (visible) Box(Modifier.fillMaxSize()) {
+                            androidx.compose.material3.Text("Swipe voice fixture")
+                        } })
+                } }
+            } }
+            enterText(By.res("chat_composer"), "Keep my draft")
+            device.pressBack() // Dismiss the keyboard before measuring the middle content area.
+            device.waitForIdle()
+            fun swipe(left: Boolean, fraction: Float = 0.35f) {
+                val b = find(By.res("conversation_swipe_area")).visibleBounds
+                val start = b.left + b.width() * (if (left) 3 else 1) / 4
+                val end = b.left + b.width() * (if (left) 1 else 3) / 4
+                val y = b.top + (b.height() * fraction).roundToInt()
+                device.swipe(start, y, end, y, 25)
+                device.waitForIdle()
+            }
+            // Wrong direction and vertical scroll must leave Chat selected.
+            swipe(left = false)
+            assertTrue(find(By.res("chat_tab")).isSelected)
+            val b = find(By.res("conversation_swipe_area")).visibleBounds
+            device.swipe(b.centerX(), b.top + b.height() / 5, b.centerX(), b.top + b.height() / 2, 25)
+            device.waitForIdle()
+            assertTrue(find(By.res("chat_tab")).isSelected)
+            busy.value = true
+            assertFalse(find(By.res("voice_tab")).isEnabled)
+            swipe(left = true)
+            assertTrue(find(By.res("chat_tab")).isSelected)
+            busy.value = false
+            enabled(By.res("voice_tab"))
+            swipe(left = true)
+            assertNotNull(find(By.text("Swipe voice fixture")))
+            assertTrue(find(By.res("voice_tab")).isSelected)
+            VoiceSessionUi.armed.value = true
+            assertNotNull(find(By.res("voice_call_status")))
+            swipe(left = false, fraction = 0.55f)
+            assertTrue(find(By.res("chat_tab")).isSelected)
+            assertEquals("Keep my draft", find(By.res("chat_composer")).text)
+            assertEquals("Swiping must preserve the active call", 0, ends.get())
+            swipe(left = true)
+            assertNotNull(find(By.text("Swipe voice fixture")))
+            assertEquals(0, ends.get())
+        } finally {
+            VoiceSessionUi.armed.value = false
+            VoiceSessionUi.status.value = ""
+        }
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()
