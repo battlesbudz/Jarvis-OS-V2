@@ -1,0 +1,49 @@
+name: Delete approved merged branches
+on:
+  push:
+    branches: [feature-tools]
+    paths: ['.github/workflows/delete-approved-merged-branches.yml']
+permissions:
+  contents: write
+  pull-requests: read
+jobs:
+  delete-approved:
+    if: github.repository == 'battlesbudz/Jarvis-OS-V2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify preserved code and delete only two approved branches
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import json, os, subprocess
+          assert os.environ["GITHUB_REPOSITORY"] == "battlesbudz/Jarvis-OS-V2"
+          assert os.environ["GITHUB_REF"] == "refs/heads/feature-tools"
+          expected = {"PR1": "2239c9664c77bbdfe01afcc0d0e77529a8b081e4", "codex/wikipedia-approval-fix": "9966d0a32d4df03c3ae89019b0713c329b86c92d"}
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+          def refs():
+              return {line.split()[1].removeprefix("refs/heads/"): line.split()[0] for line in git("ls-remote", "--heads", "origin").splitlines()}
+          before = refs()
+          for branch, sha in expected.items():
+              assert before.get(branch) == sha, "Branch moved: " + branch
+              assert git("rev-parse", sha + "^{tree}") == git("rev-parse", "origin/main^{tree}"), "Code differs: " + branch
+          for target in ["audio-pr2", "feature/memory-os-v2", "feature-tools"]:
+              subprocess.run(["git", "merge-base", "--is-ancestor", "origin/main", "origin/" + target], check=True)
+          for number in [2, 3]:
+              pr = json.loads(subprocess.check_output(["gh", "api", "repos/battlesbudz/Jarvis-OS-V2/pulls/" + str(number)], text=True))
+              assert pr["state"] == "closed" and pr["merged_at"] is not None
+          leases = ["--force-with-lease=refs/heads/" + b + ":" + sha for b, sha in expected.items()]
+          deletions = [":refs/heads/" + b for b in expected]
+          subprocess.run(["git", "push", "--dry-run", "--atomic", *leases, "origin", *deletions], check=True)
+          subprocess.run(["git", "push", "--atomic", *leases, "origin", *deletions], check=True)
+          after = refs()
+          assert after == {b: sha for b, sha in before.items() if b not in expected}
+          print(json.dumps({"deleted": expected, "remaining": after}, indent=2))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
+              out.write("Deleted only PR1 and codex/wikipedia-approval-fix after verifying identical trees to main and preservation in all three working branches. All remaining refs unchanged. PR records unchanged.\n")
+          
