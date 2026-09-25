@@ -47,9 +47,6 @@ internal fun ChatAttachmentPicker(model: LocalModelSpec, enabled: Boolean,
         if (model.supportsVision) TextButton(enabled = enabled, onClick = {
             kind = AttachmentKind.IMAGE; picker.launch(arrayOf("image/*"))
         }) { Text("Attach image") }
-        if (model.supportsAudio) TextButton(enabled = enabled, onClick = {
-            kind = AttachmentKind.AUDIO; picker.launch(arrayOf("audio/wav", "audio/x-wav", "audio/wave"))
-        }) { Text("Attach audio") }
     }
 }
 

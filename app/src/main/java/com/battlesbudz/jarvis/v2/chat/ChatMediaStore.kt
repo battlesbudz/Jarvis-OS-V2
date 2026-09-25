@@ -31,6 +31,14 @@ import java.util.UUID
         try { target.writeBytes(data) } catch (error: Exception) { target.delete(); throw error }
         return ChatAttachment(Uri.fromFile(target).toString(), kind)
     }
+    fun prepareVoiceNote(context: Context, pcm: ByteArray): ChatAttachment {
+        val wav = com.battlesbudz.jarvis.v2.voice.WavEncoder.pcm16Mono(pcm)
+        AttachmentPolicy.validateAudio(wav)
+        val directory = File(context.filesDir, "chat-media").apply { mkdirs() }
+        val target = File(directory, UUID.randomUUID().toString() + ".wav")
+        try { target.writeBytes(wav) } catch (error: Exception) { target.delete(); throw error }
+        return ChatAttachment(Uri.fromFile(target).toString(), AttachmentKind.AUDIO)
+    }
     fun discard(context: Context, attachment: ChatAttachment) {
         val uri = Uri.parse(attachment.uri)
         if (uri.scheme != "file") return

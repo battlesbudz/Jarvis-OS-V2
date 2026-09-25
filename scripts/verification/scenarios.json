@@ -32,6 +32,7 @@
     "test28_voiceNavigationRetainsCallIdUntilExplicitEnd",
     "test29_eachAssistantReplyKeepsPersistedMetricsAcrossReload",
     "test30_middleSwipesSwitchChatAndVoiceWithoutEndingCall",
+    "test31_voiceInputReviewsTextAndCancelPreservesDraft",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

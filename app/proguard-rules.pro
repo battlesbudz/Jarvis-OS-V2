@@ -148,3 +148,6 @@
 
 # Preserve the destination branch navigation policy shared with release instrumentation.
 -keep class com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicy** { *; }
+
+# Controlled release dictation fixture implements this production boundary.
+-keep interface com.battlesbudz.jarvis.v2.voice.ChatDictation { *; }

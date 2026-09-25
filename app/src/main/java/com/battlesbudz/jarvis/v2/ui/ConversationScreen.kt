@@ -41,6 +41,7 @@ internal fun ConversationScreen(
     onEndVoice: ((String) -> Unit) -> Unit,
     onOpenVoiceCalls: () -> Unit,
     resumedVoice: Boolean,
+    dictationFactory: (() -> com.battlesbudz.jarvis.v2.voice.ChatDictation)? = null,
     voiceContent: @Composable (visible: Boolean, settingsOpen: Boolean, dismissSettings: () -> Unit, returnToChat: () -> Unit) -> Unit
 ) {
     val thread by history.current.collectAsState()
@@ -58,6 +59,8 @@ internal fun ConversationScreen(
     var pendingUri by rememberSaveable(thread.id) { mutableStateOf<String?>(null) }
     var pendingKind by rememberSaveable(thread.id) { mutableStateOf(AttachmentKind.IMAGE) }
     var preparingAttachment by remember { mutableStateOf(false) }
+    var dictating by remember { mutableStateOf(false) }
+    val inputBusy = preparingAttachment || dictating
     val pendingAttachment = pendingUri?.let { ChatAttachment(it, pendingKind) }
     val context = androidx.compose.ui.platform.LocalContext.current
     DisposableEffect(thread.id) {
@@ -72,7 +75,7 @@ internal fun ConversationScreen(
         voiceVisible = false
     }
     fun showVoice() {
-        if (sending || preparingAttachment) return
+        if (sending || inputBusy) return
         VoiceNavigationPolicy.dispatch(VoiceNavigationPolicy.Transition.SHOW_VOICE) { onEndVoice {} }
         voiceVisible = true
     }
@@ -105,7 +108,7 @@ internal fun ConversationScreen(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text("JARVIS", style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
-            TextButton(enabled = !preparingAttachment, onClick = { settings = true }) { Text("Settings") }
+            TextButton(enabled = !inputBusy, onClick = { settings = true }) { Text("Settings") }
         }
         if (armed) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -130,18 +133,18 @@ internal fun ConversationScreen(
             SegmentedButton(selected = !voiceVisible, onClick = { returnToChat() },
                 modifier = Modifier.testTag("chat_tab"),
                 shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)) { Text("Chat") }
-            SegmentedButton(selected = voiceVisible, enabled = !sending && !preparingAttachment, onClick = { showVoice() },
+            SegmentedButton(selected = voiceVisible, enabled = !sending && !inputBusy, onClick = { showVoice() },
                 modifier = Modifier.testTag("voice_tab"),
                 shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)) { Text("Voice call") }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = { showHistory = true }, enabled = !sending && !armed && !preparingAttachment) { Text("Conversations") }
-            TextButton(onClick = { error = onSelectConversation(null) }, enabled = !sending && !armed && !preparingAttachment) { Text("New") }
+            TextButton(onClick = { showHistory = true }, enabled = !sending && !armed && !inputBusy) { Text("Conversations") }
+            TextButton(onClick = { error = onSelectConversation(null) }, enabled = !sending && !armed && !inputBusy) { Text("New") }
         }
         // The conversation stays mounted beneath the voice surface: same draft, list and thread.
         // Hidden transcript nodes must not remain readable by accessibility services during a call.
         Box(Modifier.weight(1f).fillMaxWidth().testTag("conversation_swipe_area")
-            .pointerInput(voiceVisible, sending, preparingAttachment, settings, showHistory, swipeThreshold) {
+            .pointerInput(voiceVisible, sending, inputBusy, settings, showHistory, swipeThreshold) {
                 if (settings || showHistory) return@pointerInput
                 var horizontalDistance = 0f
                 // Horizontal touch slop leaves vertical list scrolling and ordinary taps to children.
@@ -190,7 +193,7 @@ internal fun ConversationScreen(
                 pendingAttachment?.let { attached ->
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         Text(if (attached.kind == AttachmentKind.IMAGE) "Image attached" else "Audio clip attached", modifier = Modifier.weight(1f))
-                        TextButton(enabled = !sending && !preparingAttachment, onClick = {
+                        TextButton(enabled = !sending && !inputBusy, onClick = {
                             ChatMediaStore.discard(context, attached); pendingUri = null
                         }) { Text("Remove") }
                     }
@@ -201,18 +204,45 @@ internal fun ConversationScreen(
                 if (preparingAttachment) Text("Preparing attachment…", modifier = Modifier.padding(horizontal = 16.dp))
                 if (armed) Text("Attachments are unavailable during a voice call. End the call to add one.",
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp))
-                else ChatAttachmentPicker(selectedModel, enabled = !sending && !voiceVisible && !preparingAttachment,
+                else ChatAttachmentPicker(selectedModel, enabled = !sending && !voiceVisible && !inputBusy,
                     onBusy = { preparingAttachment = it }, onError = { error = it }, onPrepared = { attached ->
                         pendingAttachment?.let { ChatMediaStore.discard(context, it) }
                         pendingKind = attached.kind; pendingUri = attached.uri; error = null
                     })
+                key(thread.id) {
+                    ChatVoiceInput(enabled = !sending && !voiceVisible && !armed && !preparingAttachment,
+                        canSendAudio = selectedModel.supportsAudio && pendingAttachment == null,
+                        audioUnavailableReason = if (!selectedModel.supportsAudio) "This model accepts text only. Use Stop to transcribe."
+                            else if (pendingAttachment != null) "Remove the existing attachment to send audio." else null,
+                        createRecorder = { dictationFactory?.invoke() ?: com.battlesbudz.jarvis.v2.voice.LocalChatDictation(context) },
+                        onBusy = { dictating = it },
+                        onAudio = { pcm ->
+                            check(selectedModel.supportsAudio && pendingAttachment == null) { "Select an audio-capable model and remove other attachments to send audio." }
+                            var attached: ChatAttachment? = null
+                            var accepted = false
+                            try {
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    attached = ChatMediaStore.prepareVoiceNote(context, pcm)
+                                }
+                                val failure = onSend(draft, requireNotNull(attached))
+                                check(failure == null) { failure.orEmpty() }
+                                accepted = true
+                                draft = ""
+                                error = null
+                            } finally { if (!accepted) attached?.let { ChatMediaStore.discard(context, it) } }
+                        },
+                        onTranscript = { text ->
+                            draft = if (draft.isBlank()) text else draft.trimEnd() + " " + text
+                            error = null
+                        }, onError = { error = it })
+                }
                 Row(Modifier.fillMaxWidth().imePadding().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = draft, onValueChange = { draft = it }, placeholder = { Text("Message Jarvis") },
-                        modifier = Modifier.weight(1f).testTag("chat_composer"), maxLines = 5, enabled = !voiceVisible)
+                        modifier = Modifier.weight(1f).testTag("chat_composer"), maxLines = 5, enabled = !voiceVisible && !dictating)
                     val canSend = if (armed) draft.isNotBlank() && pendingAttachment == null
                     else (draft.isNotBlank() || pendingAttachment != null) &&
                         (pendingAttachment == null || AttachmentPolicy.accepts(selectedModel, pendingAttachment.kind))
-                    Button(enabled = canSend && !sending && !voiceVisible && !preparingAttachment, onClick = {
+                    Button(enabled = canSend && !sending && !voiceVisible && !inputBusy, onClick = {
                         error = onSend(draft, if (armed) null else pendingAttachment)
                         if (error == null) { draft = ""; pendingUri = null }
                     }, modifier = Modifier.testTag("chat_send")) { Text(if (sending) "Thinking…" else "Send") }

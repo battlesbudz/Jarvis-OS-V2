@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -1083,6 +1084,89 @@ class ReleaseJourneyTest {
             VoiceSessionUi.armed.value = false
             VoiceSessionUi.status.value = ""
         }
+    }
+
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @Test fun test31_voiceInputReviewsTextAndCancelPreservesDraft() {
+        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, android.Manifest.permission.RECORD_AUDIO)
+        val prefs = context.getSharedPreferences("release-chat-dictation", android.content.Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val history = ConversationHistory(prefs)
+        val sends = AtomicInteger(0)
+        val sessions = AtomicInteger(0)
+        val transcribes = AtomicInteger(0)
+        val model = MutableStateFlow(LocalModelSpec("text-only-fixture", "fixture.bin", recommendedGpu = false))
+        val audioSent = java.util.concurrent.atomic.AtomicReference<com.battlesbudz.jarvis.v2.chat.ChatAttachment?>()
+        val rawPcm = ByteArray(3200) { (it % 127).toByte() }
+        val cancellations = AtomicInteger(0)
+        VoiceSessionUi.armed.value = false
+        activity.onActivity { host -> host.setContent {
+            MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                ConversationScreen(history, MutableStateFlow(false), MutableStateFlow(VoiceSessionState.PASSIVE_LISTENING),
+                    onSend = { _, attachment -> audioSent.set(attachment); sends.incrementAndGet(); null },
+                    selectedModel = model.collectAsState().value,
+                    onSelectConversation = { null }, onEndVoice = {}, onOpenVoiceCalls = {}, resumedVoice = false,
+                    dictationFactory = {
+                        val number = sessions.incrementAndGet()
+                        object : ChatDictation {
+                            val result = CompletableDeferred<ByteArray>()
+                            override suspend fun record(onStatus: (String) -> Unit): ByteArray {
+                                onStatus("Recording controlled speech")
+                                try { return result.await() }
+                                catch (cancelled: kotlinx.coroutines.CancellationException) { cancellations.incrementAndGet(); throw cancelled }
+                            }
+                            override fun finish() { result.complete(rawPcm) }
+                            override suspend fun transcribe(pcm: ByteArray, onStatus: (String) -> Unit): String {
+                                transcribes.incrementAndGet()
+                                if (number == 3) error("No speech detected. Try recording again.")
+                                return "dictated words"
+                            }
+                        }
+                    }, voiceContent = { _, _, _, _ -> })
+            } }
+        } }
+        assertFalse(device.hasObject(By.text("Attach audio")))
+        enterText(By.res("chat_composer"), "Existing draft")
+        device.pressBack()
+        clickEnabled(By.res("chat_voice_input"))
+        assertNotNull(find(By.res("dictation_status")))
+        assertFalse(find(By.res("voice_tab")).isEnabled)
+        assertFalse("Text-only model must not receive raw audio", find(By.res("dictation_send")).isEnabled)
+        assertFalse(find(By.res("chat_send")).isEnabled)
+        clickEnabled(By.res("dictation_stop"))
+        enabled(By.res("chat_voice_input"))
+        assertEquals("Existing draft dictated words", find(By.res("chat_composer")).text)
+        assertEquals("Dictation must not send a message", 0, sends.get())
+        clickEnabled(By.res("chat_voice_input"))
+        assertNotNull(find(By.res("dictation_status")))
+        clickEnabled(By.res("dictation_cancel"))
+        enabled(By.res("chat_voice_input"))
+        assertEquals(1, cancellations.get())
+        assertEquals("Existing draft dictated words", find(By.res("chat_composer")).text)
+        clickEnabled(By.res("chat_voice_input"))
+        assertNotNull(find(By.res("dictation_status")))
+        clickEnabled(By.res("dictation_stop"))
+        assertNotNull(find(By.text("No speech detected. Try recording again.")))
+        assertEquals("Existing draft dictated words", find(By.res("chat_composer")).text)
+        assertEquals(0, sends.get())
+        enterText(By.res("chat_composer"), "Reviewed and edited")
+        clickEnabled(By.res("chat_send"))
+        assertEquals(1, sends.get())
+        assertNull(audioSent.get())
+        model.value = model.value.copy(supportsAudio = true)
+        clickEnabled(By.res("chat_voice_input"))
+        enabled(By.res("dictation_send"))
+        val beforeAudioSend = transcribes.get()
+        clickEnabled(By.res("dictation_send"))
+        enabled(By.res("chat_voice_input"))
+        assertEquals(2, sends.get())
+        assertEquals("Send must bypass transcription", beforeAudioSend, transcribes.get())
+        val attachment = requireNotNull(audioSent.get())
+        assertEquals(com.battlesbudz.jarvis.v2.chat.AttachmentKind.AUDIO, attachment.kind)
+        val wav = File(requireNotNull(android.net.Uri.parse(attachment.uri).path)).readBytes()
+        com.battlesbudz.jarvis.v2.chat.AttachmentPolicy.validateAudio(wav)
+        assertArrayEquals("Audio payload must preserve the recording", rawPcm, wav.copyOfRange(44, wav.size))
+        com.battlesbudz.jarvis.v2.chat.ChatMediaStore.discard(context, attachment)
     }
 
     // Leave this selection in durable preferences for the controller's separate-process check.
