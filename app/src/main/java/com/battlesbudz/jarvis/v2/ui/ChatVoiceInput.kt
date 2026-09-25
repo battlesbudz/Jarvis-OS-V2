@@ -64,7 +64,8 @@ internal fun ChatVoiceInput(enabled: Boolean, canSendAudio: Boolean, audioUnavai
                     ensureActive()
                     currentTranscript(text)
                 }
-            } catch (cancelled: CancellationException) { throw cancelled }
+            } catch (timeout: TimeoutCancellationException) { currentError("Voice input timed out. Please try again.") }
+            catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { currentError(error.message ?: "Voice input failed. Please try again.") }
             finally {
                 recorder = null

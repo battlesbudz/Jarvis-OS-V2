@@ -234,7 +234,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         if (attachment != null && !com.battlesbudz.jarvis.v2.chat.AttachmentPolicy.accepts(modelStore.selectedModel(), attachment.kind))
             return "The selected download does not support this attachment. Choose a compatible model or remove it."
         val userText = text.trim().ifBlank { if (attachment?.kind == com.battlesbudz.jarvis.v2.chat.AttachmentKind.AUDIO)
-            "Transcribe this audio." else "Describe this image." }
+            "Respond to this voice message." else "Describe this image." }
         if (text.length > ConversationPolicy.MAX_USER_PROMPT_CHARS) return "That message is too long. Please send it in smaller parts."
         if (voiceSessionArmed) {
             if (attachment != null) return "Attachments are unavailable while a Voice Call is active."
