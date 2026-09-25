@@ -71,6 +71,15 @@ class ReleaseJourneyTest {
         } finally { if (::activity.isInitialized) activity.close() }
     }
 
+    private fun hideKeyboardWithoutNavigating() {
+        // UiObject2.setText need not open the IME. A blind Back can finish the Activity.
+        activity.onActivity { host ->
+            host.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+                .hideSoftInputFromWindow(host.window.decorView.windowToken, 0)
+        }
+        device.waitForIdle()
+    }
+
     private fun captureEvidence(name: String) {
         val directory = File(context.cacheDir, "verification").apply { mkdirs() }
         val screenshot = File(directory, "$name.png")
@@ -1045,7 +1054,7 @@ class ReleaseJourneyTest {
                 } }
             } }
             enterText(By.res("chat_composer"), "Keep my draft")
-            device.pressBack() // Dismiss the keyboard before measuring the middle content area.
+            hideKeyboardWithoutNavigating() // Keep the activity alive when no IME was opened.
             device.waitForIdle()
             fun swipe(left: Boolean, fraction: Float = 0.35f) {
                 val b = find(By.res("conversation_swipe_area")).visibleBounds
@@ -1127,7 +1136,7 @@ class ReleaseJourneyTest {
         } }
         assertFalse(device.hasObject(By.text("Attach audio")))
         enterText(By.res("chat_composer"), "Existing draft")
-        device.pressBack()
+        hideKeyboardWithoutNavigating()
         clickEnabled(By.res("chat_voice_input"))
         assertNotNull(find(By.res("dictation_status")))
         assertFalse(find(By.res("voice_tab")).isEnabled)
