@@ -1071,7 +1071,8 @@ class ReleaseJourneyTest {
             device.waitForIdle()
             assertTrue(find(By.res("chat_tab")).isChecked)
             busy.value = true
-            assertFalse(find(By.res("voice_tab")).isEnabled)
+            assertNotNull("Voice tab must disable after the busy state reaches Compose",
+                device.wait(Until.findObject(By.res("voice_tab").enabled(false)), 20_000))
             swipe(left = true)
             assertTrue(find(By.res("chat_tab")).isChecked)
             busy.value = false
