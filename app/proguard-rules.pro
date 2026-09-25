@@ -78,6 +78,8 @@
 -keep class com.battlesbudz.jarvis.v2.ui.ConversationScreenKt { *; }
 -keep class com.battlesbudz.jarvis.v2.ui.MemoryScreenKt { *; }
 -keep class com.battlesbudz.jarvis.v2.ai.LocalModelSpec { *; }
+# Release instrumentation seeds the shipping parent through ModelCatalog; retain its Kotlin object INSTANCE ABI.
+-keep class com.battlesbudz.jarvis.v2.ai.ModelCatalog { *; }
 -keep class com.battlesbudz.jarvis.v2.voice.VoiceSessionUi { *; }
 -keep class com.battlesbudz.jarvis.v2.voice.VoiceSessionState { *; }
 
