@@ -1,192 +1,341 @@
 package com.battlesbudz.jarvis.v2
 
+import com.battlesbudz.jarvis.v2.conversation.ConversationPolicy
+import com.battlesbudz.jarvis.v2.conversation.ConversationWork
 import android.net.Uri
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
-import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
-import com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext
-import com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor
-import com.battlesbudz.jarvis.v2.actions.MobileActionPipeline
 import com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions
-import com.battlesbudz.jarvis.v2.ai.ModelCatalog
-import com.battlesbudz.jarvis.v2.ai.ModelStore
-import com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient
 import com.battlesbudz.jarvis.v2.ui.JarvisApp
-import com.battlesbudz.jarvis.v2.conversation.runConversationInternal
+import com.battlesbudz.jarvis.v2.voice.AndroidAudioInput
+import kotlinx.coroutines.flow.takeWhile
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
 import org.json.JSONObject
 import org.json.JSONArray
-import java.util.concurrent.atomic.AtomicInteger
-
-internal const val MAX_IMAGE_BYTES = 12 * 1024 * 1024
-
-data class ChatEntry(
-    val role: String,
-    val text: String,
-    val imageUri: String? = null
-)
 
 class MainActivity : ComponentActivity() {
-    internal companion object {
-        val activeConversationJobs = AtomicInteger(0)
-        internal const val SHORT_TERM_SUMMARY_KEY = "short_term_summary"
-        // This is an app-side character budget, not Gemma's advertised
-        // context maximum. It leaves room for a normal answer before the
-        // bounded native conversation is reset and reseeded from app context.
-        internal const val CONVERSATION_COMPACTION_LIMIT = 10_000
-        internal const val GENERATION_HEADROOM = 2_000
-        internal const val MAX_USER_PROMPT_CHARS = 12_000
-        internal const val INTERRUPTED_RESPONSE = "The previous response was interrupted. Please send that again."
-    }
 
-    internal val mainHandler = Handler(Looper.getMainLooper())
-    private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    internal lateinit var modelStore: ModelStore
-    internal var conversationEngine: LiteRtLmEngine? = null
-    internal var conversationJob: Job? = null
-    internal var conversationCharacters = 0
-    // The full transcript and rolling summary live in the app. This flag only
-    // describes whether the current native Conversation has received that
-    // app-managed context capsule.
-    internal var nativeConversationHasContext = false
-    internal val shortTermContext = ShortTermConversationContext()
-    internal val referenceGrounding = ReferenceGroundingClient()
-    internal val factualityVerifier = com.battlesbudz.jarvis.v2.ai.FactualityVerifier()
-    internal val turnOrchestrator = com.battlesbudz.jarvis.v2.ai.TurnOrchestrator(referenceGrounding)
-    internal val promptBuilder = com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder(shortTermContext)
-    internal val actionIntentRouter = com.battlesbudz.jarvis.v2.actions.ActionIntentRouter()
-    internal lateinit var sessionPreferences: android.content.SharedPreferences
-    internal lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
+    private val runtime get() = JarvisRuntime.get(applicationContext)
+    internal val mainHandler get() = runtime.mainHandler
+    internal val modelStore get() = runtime.modelStore
+    internal val shortTermContext get() = runtime.shortTermContext
+    internal val referenceGrounding get() = runtime.referenceGrounding
+    internal val factualityVerifier get() = runtime.factualityVerifier
+    internal val turnOrchestrator get() = runtime.turnOrchestrator
+    internal val promptBuilder get() = runtime.promptBuilder
+    internal val actionIntentRouter get() = runtime.actionIntentRouter
+    internal val sessionPreferences get() = runtime.sessionPreferences
+    internal val diagnosticRecorder get() = runtime.diagnosticRecorder
+    internal val voiceCallStore get() = runtime.voiceCallStore
+    internal val voiceSessionController get() = runtime.voiceSessionController
+    internal val ttsComparisonStore get() = runtime.ttsComparisonStore
+    internal val ttsModels get() = runtime.ttsModels
+    internal val voicePlayback get() = runtime.voicePlayback
+    internal val asrComparisonStore get() = runtime.asrComparisonStore
+    internal val voiceTurnJob get() = runtime.voiceTurnJob
+    internal val activeVoiceCapture get() = runtime.activeVoiceCapture
+    internal val returnToWakeCuePending get() = runtime.returnToWakeCuePending
+    internal var conversationEngine: LiteRtLmEngine?
+        get() = runtime.conversationEngine
+        set(value) { runtime.conversationEngine = value }
+    internal var conversationJob: Job?
+        get() = runtime.conversationJob
+        set(value) { runtime.conversationJob = value }
+    internal var conversationCharacters: Int
+        get() = runtime.conversationCharacters
+        set(value) { runtime.conversationCharacters = value }
+    internal var nativeConversationHasContext: Boolean
+        get() = runtime.nativeConversationHasContext
+        set(value) { runtime.nativeConversationHasContext = value }
+    internal var voiceSessionArmed: Boolean
+        get() = runtime.voiceSessionArmed
+        set(value) { runtime.voiceSessionArmed = value }
+    internal var audioRecoveryAttempts: Int
+        get() = runtime.audioRecoveryAttempts
+        set(value) { runtime.audioRecoveryAttempts = value }
+    internal var sessionReport: (String) -> Unit
+        get() = runtime.sessionReport
+        set(value) { runtime.sessionReport = value }
+    private var notificationPermissionAsked = false
+    private var pendingSpeechAudio: ByteArray? = null
+    private val speechAudioExport = registerForActivityResult(ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
+        val bytes = pendingSpeechAudio
+        pendingSpeechAudio = null
+        if (uri != null && bytes != null) lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val stream = contentResolver.openOutputStream(uri) ?: error("Could not open destination")
+                    stream.use { it.write(bytes) }
+                }
+                android.widget.Toast.makeText(this@MainActivity, "Reply audio saved", android.widget.Toast.LENGTH_SHORT).show()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                android.widget.Toast.makeText(this@MainActivity, "Could not save reply audio: ${error.message}", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    private val voiceCallResumer by lazy {
+        com.battlesbudz.jarvis.v2.voice.VoiceCallResumer(voiceSessionController)
+    }
+    private val activeVoiceOutput get() = runtime.activeVoiceOutput
+    private data class PendingVoiceTurn(
+        val start: Boolean,
+        val report: (String) -> Unit,
+        val onTranscript: (String, String, Boolean) -> Unit,
+        val onFinished: (String) -> Unit
+    )
+    private var pendingVoiceTurn: PendingVoiceTurn? = null
+    private val voicePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val pending = pendingVoiceTurn
+        pendingVoiceTurn = null
+        if (pending == null) return@registerForActivityResult
+        if (granted) {
+            runVoiceTurn(pending.start, pending.report, pending.onTranscript, pending.onFinished)
+        } else {
+            voiceSessionArmed = false
+            pending.report("Microphone permission is required for Voice Calls.")
+            pending.onFinished("Voice Call could not start because microphone permission was denied.")
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        modelStore = ModelStore(applicationContext)
-        sessionPreferences = getSharedPreferences("chat_session", MODE_PRIVATE)
-        diagnosticRecorder = com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(sessionPreferences)
         val interruptedSession = sessionPreferences.getBoolean("sending", false)
-        shortTermContext.restoreSummary(
+        if (!voiceSessionArmed) shortTermContext.restoreSummary(
             if (interruptedSession) null else {
-                savedInstanceState?.getString(SHORT_TERM_SUMMARY_KEY)
-                    ?: sessionPreferences.getString(SHORT_TERM_SUMMARY_KEY, null)
+                savedInstanceState?.getString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY)
+                    ?: sessionPreferences.getString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, null)
             }
         )
         if (interruptedSession) {
             // Do not reuse context captured while the native engine was being
             // torn down. The visible transcript remains recoverable.
-            sessionPreferences.edit().remove(SHORT_TERM_SUMMARY_KEY).apply()
+            sessionPreferences.edit().remove(ConversationPolicy.SHORT_TERM_SUMMARY_KEY).apply()
         }
-        diagnosticRecorder.restore()
         setContent {
             JarvisApp(
                 store = modelStore,
-                initialMessages = restoreTranscript(),
+                conversationHistory = runtime.conversationHistory,
+                chatBusy = runtime.chatBusy,
+                callState = voiceSessionController.state,
+                onSendChat = runtime::sendChat,
+                onSelectConversation = runtime::selectConversation,
+                onSelectModel = ::selectAiModel,
+                onDeleteModel = ::deleteAiModel,
+                voicePlayback = voicePlayback,
+                voiceModelStore = ttsModels,
+                initialVoiceCalls = voiceCallStore.list(),
                 onRunModelSmokeTest = { runModelSmokeTest(it) },
+                onVoiceTurn = { start, report, onTranscript, onFinished ->
+                    com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
+                    com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.report("Preparing microphone…")
+                    audioRecoveryAttempts = 0
+                    returnToWakeCuePending.set(false)
+                    sessionReport = report
+                    runVoiceTurn(start, report, onTranscript, onFinished)
+                },
+                onWakeTest = { report, finished -> runWakeTest(report, finished) },
+                onStopWakeTest = { wakeTestJob?.cancel() },
+                onEndVoiceCall = { report -> endVoiceCall(report) },
+                onResumeVoiceCall = { call, onComplete ->
+                    lifecycleScope.launch {
+                        val result = voiceCallResumer.resume(call) {
+                            pendingVoiceTurn = null
+                            activeVoiceOutput?.stopSpeaking()
+                            val previousVoice = voiceTurnJob
+                            val previousConversation = conversationJob
+                            previousVoice?.cancel(kotlinx.coroutines.CancellationException("resuming_saved_voice_call"))
+                            previousConversation?.cancel()
+                            previousVoice?.join()
+                            previousConversation?.join()
+                        }
+                        result.onSuccess {
+                            runtime.conversationHistory.openCall(call)
+                            voiceSessionController.linkConversation(runtime.conversationHistory.current.value.id)
+                            startVoiceDiagnostics("Voice Call ${it.id} (resumed)")
+                        }.onFailure {
+                            diagnosticRecorder.record("Voice resume failed: ${it.stackTraceToString().take(4000)}")
+                        }
+                        onComplete(result.exceptionOrNull()?.let {
+                            "Could not resume this call: ${it.message ?: "unknown error"}"
+                        })
+                    }
+                },
+                onDeleteVoiceCall = { callId -> voiceCallStore.delete(callId) },
+                onRefreshVoiceCalls = { voiceCallStore.list() },
                 onDownloadGemma = { onProgress, onStatus, onFinished ->
                     downloadGemmaAndTest(onProgress, onStatus, onFinished)
                 },
                 onImportModel = { uri, spec, report -> importModel(uri, spec, report) },
                 onCopyDiagnostics = { transcript -> copyDiagnostics(transcript) },
-                onMessagesChanged = { persistTranscript(it) },
-                onSendingChanged = { sessionPreferences.edit().putBoolean("sending", it).apply() },
-                onSend = { prompt, imageUri, history, onToken, onComplete ->
-                    runConversation(prompt, history, imageUri, onToken, onComplete)
+                onExportSpeechAudio = { exportSpeechAudio() },
+
+            )
+        }
+    }
+
+    /** Streaming ASR -> speculative Gemma -> final validation -> tools and speech. */
+    private fun runVoiceTurn(
+        start: Boolean,
+        report: (String) -> Unit,
+        onTranscript: (String, String, Boolean) -> Unit,
+        onFinished: (String) -> Unit
+    ) {
+        if (runtime.chatBusy.value || ConversationWork.activeJobs.get() != 0) {
+            onFinished("Voice Call could not start: wait for the text response to finish.")
+            return
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            pendingVoiceTurn = PendingVoiceTurn(start, report, onTranscript, onFinished)
+            voicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        if (!start || voiceTurnJob?.isActive == true) {
+            val message = "Voice Call turn failed: the previous turn is still finishing."
+            report(message)
+            onFinished(message)
+            return
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 33 && !notificationPermissionAsked &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermissionAsked = true
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        runtime.attachUi(report, onTranscript, onFinished)
+        runtime.arm()
+        try {
+            startForegroundService(android.content.Intent(this, com.battlesbudz.jarvis.v2.voice.VoiceCallService::class.java))
+        } catch (error: Exception) {
+            runtime.endVoiceCall(report)
+            onFinished("Voice Call turn failed: background audio could not start: ${error.message}")
+        }
+    }
+
+    private var wakeTestJob: Job? = null
+
+    private fun runWakeTest(report: (String) -> Unit, finished: () -> Unit) {
+        if (wakeTestJob?.isActive == true || voiceSessionArmed || !modelStore.tryBeginModelOperation()) {
+            report("Stop the current session or model operation before testing the wake word.")
+            finished()
+            return
+        }
+        startVoiceDiagnostics("microWakeWord microphone test")
+        wakeTestJob = lifecycleScope.launch(Dispatchers.Default) {
+            fun status(message: String) { mainHandler.post { report(message) } }
+            val input = AndroidAudioInput(this,
+                audioManager = getSystemService(android.media.AudioManager::class.java),
+                onWaiting = { status("Wake test paused — another app is using the microphone.") })
+            try {
+                val directory = com.battlesbudz.jarvis.v2.voice.WakeWordModelStore(applicationContext).ensureReady(::status)
+                val detected = kotlinx.coroutines.withTimeoutOrNull(30_000) {
+                    com.battlesbudz.jarvis.v2.voice.PassiveWakeListener(directory,
+                        log = { diagnosticRecorder.record("Wake test: $it") },
+                        onReady = { status("Say Hey Jarvis — testing microphone and wake model only.") },
+                        onLevel = { rms, score -> status("Microphone level: $rms · Wake score: ${"%.3f".format(java.util.Locale.US, score)} / 0.97") }
+                    ).use { wake -> input.start(); wake.awaitWake(input) }
+                    true
+                } == true
+                if (detected) {
+                    diagnosticRecorder.recordImportant("Wake test passed: Hey Jarvis matched without ASR or Gemma.")
+                    status("Hey Jarvis detected! Wake test passed.")
+                    com.battlesbudz.jarvis.v2.voice.VoiceCues.play(
+                        com.battlesbudz.jarvis.v2.voice.VoiceCues.Cue.COMMAND_READY,
+                        log = { diagnosticRecorder.recordImportant(it) })
+                } else {
+                    diagnosticRecorder.recordImportant("Wake test ended: no match in 30 seconds.")
+                    status("No wake detected in 30 seconds. Copy diagnostics to share this test.")
                 }
-            )
-        }
-    }
-
-    private fun restoreTranscript(): List<ChatEntry> {
-        val stored = sessionPreferences.getString("transcript", null).orEmpty()
-        if (stored.isBlank()) return emptyList()
-        return runCatching {
-            val array = JSONArray(stored)
-            (0 until array.length()).mapNotNull { index ->
-                val item = array.optJSONObject(index) ?: return@mapNotNull null
-                val role = item.optString("role")
-                val text = item.optString("text")
-                val imageUri = item.optString("imageUri").takeIf { it.isNotBlank() }
-                if (role.isBlank() || text.isBlank()) null else ChatEntry(role, text, imageUri)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                diagnosticRecorder.recordImportant("Wake test stopped.")
+                status("Wake test stopped — microphone off.")
+                throw cancelled
+            } catch (error: Throwable) {
+                diagnosticRecorder.recordImportant("Wake test failed: ${error.message}")
+                status("Wake test failed: ${error.message}")
+            } finally {
+                withContext(kotlinx.coroutines.NonCancellable) { input.stop() }
+                modelStore.endModelOperation()
+                mainHandler.post { finished() }
             }
-        }.getOrDefault(emptyList())
+        }
     }
 
-    private fun persistTranscript(messages: List<ChatEntry>) {
-        val array = JSONArray()
-        messages.takeLast(100).forEach { entry ->
-            array.put(
-                JSONObject()
-                    .put("role", entry.role)
-                    .put("text", entry.text)
-                    .apply { entry.imageUri?.let { put("imageUri", it) } }
-            )
+    private fun endVoiceCall(report: (String) -> Unit) {
+        pendingVoiceTurn = null
+        runtime.endVoiceCall(report)
+    }
+
+    private fun startVoiceDiagnostics(label: String) = runtime.startVoiceDiagnostics(label)
+
+    private fun exportSpeechAudio() {
+        lifecycleScope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    java.io.File(cacheDir, "latest-jarvis-speech.wav").takeIf { it.isFile }?.readBytes()
+                }
+                if (bytes == null) {
+                    android.widget.Toast.makeText(this@MainActivity, "No completed reply audio yet", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    pendingSpeechAudio = bytes // Snapshot before the chooser; later turns may replace the cache.
+                    speechAudioExport.launch("jarvis-speech-${System.currentTimeMillis()}.wav")
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                android.widget.Toast.makeText(this@MainActivity, "Could not read reply audio: ${error.message}", android.widget.Toast.LENGTH_LONG).show()
+            }
         }
-        sessionPreferences.edit().putString("transcript", array.toString()).apply()
     }
 
     private fun copyDiagnostics(transcript: List<ChatEntry>) {
-        val visible = transcript.joinToString("\n\n") { "${it.role}: ${it.text}" }
-        val diagnostics = "Jarvis OS V2 chat diagnostics\n\nVisible transcript:\n$visible\n\nRecent runtime turns:\n${diagnosticRecorder.snapshot()}"
+        // The runtime ring contains the latest call's ASR, inference and playback events.
+        // Comparison archives and full chat histories do not belong in a call failure report.
+        val diagnostics = "Jarvis OS V2 — latest Voice Call diagnostics\n\n${diagnosticRecorder.snapshot()}\n\n${com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.diagnostics()}"
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Jarvis diagnostics", diagnostics))
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putString(SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
+        outState.putString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
         sessionPreferences.edit()
-            .putString(SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
+            .putString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, shortTermContext.summaryForDiagnostics())
             .apply()
         super.onSaveInstanceState(outState)
     }
 
     
+    override fun onResume() {
+        super.onResume()
+        runtime.activityVisible = true
+    }
+    override fun onPause() {
+        runtime.activityVisible = false
+        super.onPause()
+    }
     override fun onDestroy() {
-        conversationJob?.cancel()
-        val engine = conversationEngine
-        conversationEngine = null
-        if (engine != null) {
-            conversationJob?.invokeOnCompletion {
-                cleanupScope.launch { engine.close() }
-            } ?: cleanupScope.launch { engine.close() }
-        }
+        wakeTestJob?.cancel()
+        runtime.detachUi()
+        // Voice jobs and models belong to the service runtime, including during Activity recreation.
         super.onDestroy()
     }
 
@@ -195,6 +344,50 @@ class MainActivity : ComponentActivity() {
         conversationEngine?.resetConversation()
         nativeConversationHasContext = false
         conversationCharacters = 0
+    }
+
+    private fun selectAiModel(spec: com.battlesbudz.jarvis.v2.ai.LocalModelSpec): String? {
+        if (runtime.chatBusy.value || voiceSessionArmed || voiceSessionController.currentCallId() != null ||
+            voiceTurnJob?.isCompleted == false || ConversationWork.activeJobs.get() != 0 ||
+            wakeTestJob?.isActive == true) {
+            return "End the Jarvis session and any tests before switching AI models."
+        }
+        if (!modelStore.tryBeginModelOperation()) return "Wait for model setup or testing to finish."
+        return try {
+            conversationEngine?.close()
+            conversationEngine = null
+            nativeConversationHasContext = false
+            conversationCharacters = 0
+            modelStore.selectModel(spec)
+            diagnosticRecorder.recordImportant("AI model selected: ${spec.id}")
+            null
+        } catch (error: Exception) {
+            "Could not switch models: ${error.message}"
+        } finally {
+            modelStore.endModelOperation()
+        }
+    }
+
+    private fun deleteAiModel(spec: com.battlesbudz.jarvis.v2.ai.LocalModelSpec): String? {
+        if (runtime.chatBusy.value || voiceSessionArmed || voiceSessionController.currentCallId() != null ||
+            voiceTurnJob?.isCompleted == false || ConversationWork.activeJobs.get() != 0 ||
+            wakeTestJob?.isActive == true) {
+            return "End the Jarvis session and any tests before deleting AI models."
+        }
+        if (!modelStore.tryBeginModelOperation()) return "Wait for model setup or testing to finish."
+        return try {
+            conversationEngine?.close()
+            conversationEngine = null
+            nativeConversationHasContext = false
+            conversationCharacters = 0
+            modelStore.deleteModel(spec)
+            diagnosticRecorder.recordImportant("AI model deleted: ${spec.id}")
+            null
+        } catch (error: Exception) {
+            "Could not delete model: ${error.message}"
+        } finally {
+            modelStore.endModelOperation()
+        }
     }
 
     private fun runModelSmokeTest(
@@ -207,41 +400,43 @@ class MainActivity : ComponentActivity() {
             return
         }
         val smokeTestJob = lifecycleScope.launch(Dispatchers.Default) {
-            mainHandler.post { report("Loading Gemma 4 E2B…") }
+            mainHandler.post { report("Loading ${modelStore.selectedModel().id}…") }
             var gemma: LiteRtLmEngine? = null
             var smokeTestSucceeded = false
             var finalMessage: String? = null
             try {
-                check(modelStore.verifyIntegrity(ModelCatalog.gemma4E2b)) {
-                    "The Gemma model file changed or failed integrity verification. Re-import it."
+                modelStore.markSmokeTestStarted()
+                check(modelStore.verifyIntegrity(modelStore.selectedModel())) {
+                    "The selected model file changed or failed integrity verification. Re-import it."
                 }
                 conversationEngine?.close()
                 conversationEngine = null
                 nativeConversationHasContext = false
                 gemma = LiteRtLmEngine(
-                    ModelCatalog.gemma4E2b.id,
-                    modelStore.fileFor(ModelCatalog.gemma4E2b).path,
+                    modelStore.selectedModel().id,
+                    modelStore.fileFor(modelStore.selectedModel()).path,
                     cacheDir.path,
-                    useGpu = true,
-                    tools = MobileActionToolDefinitions.all(),
-                    visionEnabled = true
+                    useGpu = modelStore.selectedModel().recommendedGpu,
+                    tools = if (modelStore.selectedModel().supportsTools) MobileActionToolDefinitions.all() else emptyList(),
+                    visionEnabled = false,
+                    audioEnabled = false
                 )
                 gemma.initialize()
                 val probe = gemma.generate(
-                    "Reply with exactly GEMMA_PR1_OK and nothing else.",
+                    "Say hello in one short sentence.",
                     onToken = {}
                 )
-                check(probe.text.trim() == "GEMMA_PR1_OK") {
-                    "The selected Gemma file did not pass its identity probe."
+                check(runtime.cleanAssistantText(probe.text).any { it.isLetterOrDigit() }) {
+                    "The selected model loaded but did not return readable text."
                 }
                 smokeTestSucceeded = true
             } catch (error: Throwable) {
-                finalMessage = "Gemma model test failed: ${error.message ?: "unknown error"}"
+                finalMessage = "Selected model test failed: ${error.message ?: "unknown error"}"
             } finally {
                 gemma?.close()
                 if (smokeTestSucceeded) {
                     modelStore.markSmokeTestPassed()
-                    finalMessage = "Gemma 4 E2B initialized successfully."
+                    finalMessage = "${modelStore.selectedModel().id} initialized successfully."
                 }
                 finalMessage?.let { message ->
                     mainHandler.post {
@@ -259,36 +454,40 @@ class MainActivity : ComponentActivity() {
         report: (String) -> Unit,
         onFinished: (String) -> Unit
     ) {
-        if (modelStore.isModelOperationActive()) {
-            val message = "A model operation is still finishing. Please try again in a moment."
-            report(message)
-            onFinished(message)
-            return
-        }
-        lifecycleScope.launch(Dispatchers.IO) {
-            mainHandler.post { report("Checking for the existing Gemma model…") }
-            val result = modelStore.downloadOrReuse(
-                spec = ModelCatalog.gemma4E2b,
-                onProgress = { downloaded, total ->
-                    mainHandler.post { onProgress(downloaded, total) }
-                },
-                onStatus = { status ->
-                    mainHandler.post { report(status) }
+        val workName = "jarvis-local-model-setup"
+        val request = OneTimeWorkRequestBuilder<com.battlesbudz.jarvis.v2.voice.JarvisModelSetupWorker>()
+            .setInputData(androidx.work.workDataOf("model_id" to modelStore.selectedModel().id))
+            .addTag(workName)
+            .build()
+        val workManager = WorkManager.getInstance(applicationContext)
+        workManager.enqueueUniqueWork(workName, ExistingWorkPolicy.KEEP, request)
+        lifecycleScope.launch {
+            var terminal: WorkInfo? = null
+            workManager.getWorkInfosForUniqueWorkFlow(workName)
+                .takeWhile { infos ->
+                    val info = infos.firstOrNull()
+                    if (info != null) {
+                        val stage = info.progress.getString("stage")
+                        val downloaded = info.progress.getLong("downloaded", 0L)
+                        val total = info.progress.getLong("total", -1L)
+                        if (!stage.isNullOrBlank()) report(stage)
+                        if (downloaded > 0L) onProgress(downloaded, total)
+                        if (info.state.isFinished) {
+                            terminal = info
+                            false
+                        } else true
+                    } else true
                 }
-            )
-            result.fold(
-                onSuccess = {
-                    mainHandler.post { report("Gemma found. Starting Jarvis’s final setup…") }
-                    runModelSmokeTest(report, onFinished)
-                },
-                onFailure = { error ->
-                    mainHandler.post {
-                        val message = "Model setup failed: ${error.message ?: "unknown error"}"
-                        report(message)
-                        onFinished(message)
-                    }
-                }
-            )
+                .collect { }
+            val result = terminal
+            if (result?.state == WorkInfo.State.SUCCEEDED) {
+                runModelSmokeTest(report, onFinished)
+            } else {
+                val message = result?.outputData?.getString("error")
+                    ?: "Jarvis model setup did not complete."
+                report(message)
+                onFinished(message)
+            }
         }
     }
 
@@ -300,7 +499,7 @@ class MainActivity : ComponentActivity() {
         val importJob = lifecycleScope.launch(Dispatchers.IO) {
             val result = modelStore.importModel(uri, spec)
             withContext(Dispatchers.Main) {
-                if (result.isSuccess && spec.id == ModelCatalog.gemma4E2b.id) {
+                if (result.isSuccess && spec.id == modelStore.selectedModel().id) {
                     conversationEngine?.close()
                     conversationEngine = null
                     nativeConversationHasContext = false
@@ -314,7 +513,7 @@ class MainActivity : ComponentActivity() {
                 ))
             }
         }
-        if (spec.id == ModelCatalog.gemma4E2b.id) {
+        if (spec.id == modelStore.selectedModel().id) {
             importJob.invokeOnCompletion {
                 conversationEngine?.close()
                 conversationEngine = null
@@ -323,26 +522,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    internal fun cleanAssistantText(text: String): String {
-        val cleaned = text
-            .replace(
-                Regex("""(?s)(?:<\|)?tool_call>.*?(?:<\|tool_call\|>|$)"""),
-                ""
-            )
-            .replace(
-                Regex("""(?s)<start_function_call>.*?(?:<end_function_call>|$)"""),
-                ""
-            )
-            .replace(Regex("""(?i)<\|tool_call\|>|<end_function_call>|<\|end_function_call\|>"""), "")
-            .trim()
-        return cleaned
-    }
+    internal fun cleanSpeechText(text: String) = com.battlesbudz.jarvis.v2.chat.AssistantText.forSpeech(text)
+    internal fun cleanAssistantText(text: String) = com.battlesbudz.jarvis.v2.chat.AssistantText.forDisplay(text)
 
-    private fun runConversation(
-        prompt: String,
-        history: List<ChatEntry>,
-        imageUri: Uri?,
-        onToken: (String) -> Unit,
-        onComplete: (String) -> Unit
-    ) = runConversationInternal(prompt, history, imageUri, onToken, onComplete)
 }
