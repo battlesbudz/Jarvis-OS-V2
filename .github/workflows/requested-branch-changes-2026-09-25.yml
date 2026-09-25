@@ -1,0 +1,73 @@
+name: Requested branch changes 2026-09-25
+on:
+  push:
+    branches: [feature-tools]
+    paths: ['.github/workflows/requested-branch-changes-2026-09-25.yml']
+permissions:
+  contents: write
+  pull-requests: read
+concurrency:
+  group: requested-branch-changes-2026-09-25
+  cancel-in-progress: false
+jobs:
+  change-branches:
+    if: github.repository == 'battlesbudz/Jarvis-OS-V2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Rename reserved branch and delete only three authorized branches
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import json, os, subprocess
+          repo = "battlesbudz/Jarvis-OS-V2"
+          assert os.environ["GITHUB_REPOSITORY"] == repo
+          assert os.environ["GITHUB_REF"] == "refs/heads/feature-tools"
+          expected = {"delivery/memory-build-769":"e4e050fd0389a503c3aa58c16f35abf01100451d","distribution/build-776":"58e0582b911e06b67590abdc67633b9e484497bf","feature/gemma-model-switch":"22f856d68f6d7450bf8c4e8de9452adb10c1a75d","feature/memory-conversations":"649f58cfb5fd03197cf760db1ddf1d8fbc39dcde"}
+          remove = ["feature/memory-conversations","delivery/memory-build-769","distribution/build-776"]
+          old, new = "feature/gemma-model-switch", "feature/future-feature"
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+          def refs():
+              return {line.split()[1].removeprefix("refs/heads/"): line.split()[0] for line in git("ls-remote", "--heads", "origin").splitlines()}
+          def api(path, *args, data=None):
+              result = subprocess.run(["gh", "api", "repos/" + repo + "/" + path, *args], input=data, text=True, capture_output=True, check=True)
+              return json.loads(result.stdout) if result.stdout.strip() else None
+          before = refs()
+          for branch, sha in expected.items():
+              assert before.get(branch) == sha, "Tip changed: " + branch
+          assert new not in before, "Target branch exists"
+          pr = api("pulls/7")
+          assert pr["state"] == "closed" and pr["merged_at"] is None
+          assert pr["head"]["ref"] == old and pr["head"]["sha"] == expected[old]
+          for target in ["audio-pr2", "feature/memory-os-v2", "feature-tools"]:
+              subprocess.run(["git", "merge-base", "--is-ancestor", expected["feature/memory-conversations"], "origin/" + target], check=True)
+          for tag in ["memory-os-v2-build.769", "tools-build.776"]:
+              release = api("releases/tags/" + tag)
+              assert {"app-release.apk", "app-compact.apk", "receipt.json"} <= {a["name"] for a in release["assets"]}
+          # Use GitHub's actual rename operation, preserving branch identity.
+          renamed = api("branches/" + old + "/rename", "--method", "POST", "--input", "-", data=json.dumps({"new_name": new}))
+          assert renamed["name"] == new and renamed["commit"]["sha"] == expected[old]
+          after_rename = refs()
+          assert old not in after_rename and after_rename.get(new) == expected[old]
+          # Delete only the three explicitly authorized refs; reject concurrent tip changes.
+          leases = ["--force-with-lease=refs/heads/" + b + ":" + expected[b] for b in remove]
+          deletions = [":refs/heads/" + b for b in remove]
+          subprocess.run(["git", "push", "--dry-run", "--atomic", *leases, "origin", *deletions], check=True)
+          subprocess.run(["git", "push", "--atomic", *leases, "origin", *deletions], check=True)
+          after = refs()
+          wanted = {b: sha for b, sha in before.items() if b not in remove and b != old}
+          wanted[new] = expected[old]
+          assert after == wanted, {"expected": wanted, "actual": after}
+          pr_after = api("pulls/7")
+          assert pr_after["number"] == 7 and pr_after["state"] == "closed" and pr_after["merged_at"] is None
+          assert pr_after["title"] == pr["title"] and pr_after["body"] == pr["body"]
+          receipt = {"deleted": remove, "renamed_from": old, "renamed_to": new, "renamed_sha": expected[old], "remaining": after, "pr7_head": pr_after["head"]["ref"], "pr7_state": pr_after["state"]}
+          print(json.dumps(receipt, indent=2))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
+              out.write("# Requested branch changes\n\n" + json.dumps(receipt, indent=2) + "\n")
+          
