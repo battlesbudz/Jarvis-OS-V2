@@ -1065,24 +1065,24 @@ class ReleaseJourneyTest {
             }
             // Wrong direction and vertical scroll must leave Chat selected.
             swipe(left = false)
-            assertTrue(find(By.res("chat_tab")).isSelected)
+            assertTrue(find(By.res("chat_tab")).isChecked)
             val b = find(By.res("conversation_swipe_area")).visibleBounds
             device.swipe(b.centerX(), b.top + b.height() / 5, b.centerX(), b.top + b.height() / 2, 25)
             device.waitForIdle()
-            assertTrue(find(By.res("chat_tab")).isSelected)
+            assertTrue(find(By.res("chat_tab")).isChecked)
             busy.value = true
             assertFalse(find(By.res("voice_tab")).isEnabled)
             swipe(left = true)
-            assertTrue(find(By.res("chat_tab")).isSelected)
+            assertTrue(find(By.res("chat_tab")).isChecked)
             busy.value = false
             enabled(By.res("voice_tab"))
             swipe(left = true)
             assertNotNull(find(By.text("Swipe voice fixture")))
-            assertTrue(find(By.res("voice_tab")).isSelected)
+            assertTrue(find(By.res("voice_tab")).isChecked)
             VoiceSessionUi.armed.value = true
             assertNotNull(find(By.res("voice_call_status")))
             swipe(left = false, fraction = 0.55f)
-            assertTrue(find(By.res("chat_tab")).isSelected)
+            assertTrue(find(By.res("chat_tab")).isChecked)
             assertEquals("Keep my draft", find(By.res("chat_composer")).text)
             assertEquals("Swiping must preserve the active call", 0, ends.get())
             swipe(left = true)
