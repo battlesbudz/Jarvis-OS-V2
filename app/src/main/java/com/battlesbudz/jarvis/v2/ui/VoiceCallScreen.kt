@@ -25,6 +25,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 
 @Composable
@@ -34,6 +36,7 @@ internal fun VoiceCallScreen(
     memoryOpen: Boolean,
     onDismissSettings: () -> Unit,
     onReturnToChat: () -> Unit,
+    startRequest: Long,
     chatBusy: kotlinx.coroutines.flow.StateFlow<Boolean>,
     modelSelector: @Composable (Boolean) -> Unit,
     resumedCall: VoiceCallRecord?,
@@ -75,6 +78,7 @@ internal fun VoiceCallScreen(
     var listening by remember { mutableStateOf(false) }
     var turnInFlight by remember { mutableStateOf(false) }
     var status by rememberSaveable { mutableStateOf("") }
+    var consumedStartRequest by rememberSaveable { mutableLongStateOf(0L) }
     var turns by remember { mutableStateOf(resumedCall?.transcript.orEmpty().map { ChatEntry(it.role, it.text) }) }
     var provisionalUser by remember { mutableStateOf("") }
     fun requestVoiceTurn(start: Boolean) {
@@ -124,27 +128,39 @@ internal fun VoiceCallScreen(
         }
     }
 
+    LaunchedEffect(startRequest) {
+        if (startRequest > consumedStartRequest) {
+            consumedStartRequest = startRequest
+            if (!runtimeArmed) requestVoiceTurn(start = true)
+        }
+    }
+
     LaunchedEffect(runtimeArmed) {
         if (!runtimeArmed) { listening = false; turnInFlight = false }
     }
     LaunchedEffect(memoryOpen) {
         if (memoryOpen && settingsOpen) onDismissSettings()
     }
-    androidx.compose.animation.AnimatedVisibility(
-        visible = visible,
-        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = .96f),
-        exit = androidx.compose.animation.fadeOut(),
-        modifier = Modifier.fillMaxSize()
+    if (visible) Dialog(
+        onDismissRequest = onReturnToChat,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        androidx.compose.material3.Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        androidx.compose.material3.Surface(
+            Modifier.fillMaxWidth(.92f).fillMaxHeight(.82f).testTag("voice_call_overlay"),
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp
+        ) {
             Column(
                 Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 28.dp, vertical = 24.dp),
+                    .padding(horizontal = 24.dp, vertical = 18.dp),
                 horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Top
             ) {
+                TextButton(onClick = onReturnToChat, modifier = Modifier.align(androidx.compose.ui.Alignment.End)
+                    .testTag("voice_call_minimize")) { Text("Minimize") }
                 Text("One conversation, out loud", style = MaterialTheme.typography.titleMedium)
                 Text("Your words are saved in chat. End the call to read or keep typing.",
                     style = MaterialTheme.typography.bodySmall,
@@ -153,7 +169,7 @@ internal fun VoiceCallScreen(
                 val phase = if (runtimeArmed) runtimePhase.label else "Ready"
                 VoiceOrb(phase, if (runtimeArmed) {
                     if (runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING) playback.level else microphoneLevel
-                } else 0f)
+                } else 0f, modifier = Modifier.testTag("voice_call_orb"))
                 if (!runtimeArmed) Button(
                     onClick = { requestVoiceTurn(start = true) },
                     enabled = !chatSending && !turnInFlight && !wakeTesting && !inputTesting && !audioPathTesting,

@@ -25,7 +25,7 @@ import kotlin.math.*
 
 /** Layered continuous wave contours: audio changes their shape, not just their opacity. */
 @Composable
-internal fun VoiceOrb(phase: String, level: Float) {
+internal fun VoiceOrb(phase: String, level: Float, modifier: Modifier = Modifier) {
     val lavender = MaterialTheme.colorScheme.primary
     val violet = Color(0xFF956BFA)
     val blue = Color(0xFF89BFFF)
@@ -36,7 +36,7 @@ internal fun VoiceOrb(phase: String, level: Float) {
         animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing)), label = "wave flow")
     val amplitude = animateFloatAsState(if (reactive) level.coerceIn(0f, 1f) else 0f,
         spring(dampingRatio = .8f, stiffness = 300f), label = "audio envelope")
-    Column(Modifier.fillMaxWidth().padding(vertical = 20.dp)
+    Column(modifier.fillMaxWidth().padding(vertical = 20.dp)
         .semantics { contentDescription = "Voice call: $phase" },
         horizontalAlignment = Alignment.CenterHorizontally) {
         Canvas(Modifier.size(250.dp)) {

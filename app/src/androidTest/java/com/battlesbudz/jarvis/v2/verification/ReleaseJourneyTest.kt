@@ -926,7 +926,7 @@ class ReleaseJourneyTest {
                         onEndVoice = { done -> ends.incrementAndGet(); done("Voice Call ended.") },
                         onOpenVoiceCalls = {},
                         resumedVoice = false,
-                        voiceContent = { visible, _, _, _ -> if (visible) androidx.compose.material3.Text("Controlled voice surface") },
+                        voiceContent = { visible, _, _, _, _ -> if (visible) androidx.compose.material3.Text("Controlled voice surface") },
                     )
                     }
                 }
@@ -940,10 +940,13 @@ class ReleaseJourneyTest {
             assertNotNull(find(By.res("voice_call_status")))
             val endBounds = find(By.res("voice_call_end")).visibleBounds
             assertTrue("End call must remain visible beside a long status", endBounds.width() > 0 && endBounds.right <= device.displayWidth)
-            find(By.res("voice_tab")).click()
+            assertFalse("Unified chat has no mode tabs", device.hasObject(By.res("voice_tab")))
+            assertEquals("Unified chat has no mode tabs", false, device.hasObject(By.res("chat_tab")))
+            find(By.res("voice_call_open")).click()
             assertNotNull(find(By.text("Controlled voice surface")))
-            find(By.res("chat_tab")).click()
-            assertEquals("Changing tabs must not end the active call", 0, ends.get())
+            device.pressBack()
+            device.waitForIdle()
+            assertEquals("Dismissing the call surface must not end the call", 0, ends.get())
             assertNotNull(find(By.res("voice_call_status")))
             assertNotNull(find(By.text("Attachments are unavailable during a voice call. End the call to add one.")))
             enterText(By.res("chat_composer"), "Synthetic typed call follow-up")
@@ -1020,7 +1023,7 @@ class ReleaseJourneyTest {
                 ConversationScreen(history, MutableStateFlow(false), MutableStateFlow(VoiceSessionState.PASSIVE_LISTENING),
                     onSend = { _, _ -> null }, selectedModel = LocalModelSpec("release-fixture", "release-fixture.bin", recommendedGpu = false),
                     onSelectConversation = { null }, onEndVoice = {}, onOpenVoiceCalls = {}, resumedVoice = false,
-                    voiceContent = { _, _, _, _ -> })
+                    voiceContent = { _, _, _, _, _ -> })
             } }
         } }
         assertTrue(find(By.res("reply_metrics_one")).text.contains("TTFT 0.12s"))
@@ -1031,8 +1034,8 @@ class ReleaseJourneyTest {
     }
 
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-    @Test fun test30_middleSwipesSwitchChatAndVoiceWithoutEndingCall() {
-        val prefs = context.getSharedPreferences("release-swipe-navigation", android.content.Context.MODE_PRIVATE)
+    @Test fun test30_phoneCallOverlaysUnifiedChatAndKeepsVoiceNoteMic() {
+        val prefs = context.getSharedPreferences("release-call-overlay", android.content.Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
         val history = ConversationHistory(prefs)
         repeat(20) { history.updateReply(history.current.value.id, "swipe-$it", "Scrollable message $it", true) }
@@ -1047,8 +1050,9 @@ class ReleaseJourneyTest {
                         selectedModel = LocalModelSpec("release-fixture", "release-fixture.bin", recommendedGpu = false),
                         onSelectConversation = { null }, onEndVoice = { done -> ends.incrementAndGet(); done("") },
                         onOpenVoiceCalls = {}, resumedVoice = false,
-                        voiceContent = { visible, _, _, _ -> if (visible) Box(Modifier.fillMaxSize()) {
-                            androidx.compose.material3.Text("Swipe voice fixture")
+                        voiceContent = { visible, _, _, minimize, request -> if (visible) Column {
+                            androidx.compose.material3.Text("Call overlay request $request", Modifier.testTag("controlled_overlay"))
+                            androidx.compose.material3.TextButton(onClick = minimize) { androidx.compose.material3.Text("Minimize") }
                         } })
                 } }
             } }
@@ -1063,31 +1067,22 @@ class ReleaseJourneyTest {
                 device.swipe(start, y, end, y, 25)
                 device.waitForIdle()
             }
-            // Wrong direction and vertical scroll must leave Chat selected.
-            swipe(left = false)
-            assertTrue(find(By.res("chat_tab")).isChecked)
-            val b = find(By.res("conversation_swipe_area")).visibleBounds
-            device.swipe(b.centerX(), b.top + b.height() / 5, b.centerX(), b.top + b.height() / 2, 25)
-            device.waitForIdle()
-            assertTrue(find(By.res("chat_tab")).isChecked)
+            assertNotNull(find(By.res("chat_voice_input")))
             busy.value = true
-            assertNotNull("Voice tab must disable after the busy state reaches Compose",
-                device.wait(Until.findObject(By.res("voice_tab").enabled(false)), 20_000))
-            swipe(left = true)
-            assertTrue(find(By.res("chat_tab")).isChecked)
+            assertFalse(find(By.res("voice_call_open")).isEnabled)
             busy.value = false
-            enabled(By.res("voice_tab"))
-            swipe(left = true)
-            assertNotNull(find(By.text("Swipe voice fixture")))
-            assertTrue(find(By.res("voice_tab")).isChecked)
+            enabled(By.res("voice_call_open"))
+            find(By.res("voice_call_open")).click()
+            assertNotNull(find(By.res("controlled_overlay")))
+            assertTrue(find(By.res("controlled_overlay")).text.contains("request 1"))
+            assertNotNull("The separate dictation microphone stays in the composer", find(By.res("chat_voice_input")))
             VoiceSessionUi.armed.value = true
             assertNotNull(find(By.res("voice_call_status")))
-            swipe(left = false, fraction = 0.55f)
-            assertTrue(find(By.res("chat_tab")).isChecked)
+            find(By.text("Minimize")).click()
             assertEquals("Keep my draft", find(By.res("chat_composer")).text)
-            assertEquals("Swiping must preserve the active call", 0, ends.get())
-            swipe(left = true)
-            assertNotNull(find(By.text("Swipe voice fixture")))
+            assertEquals("Minimizing must preserve the active call", 0, ends.get())
+            find(By.res("voice_call_open")).click()
+            assertNotNull(find(By.res("controlled_overlay")))
             assertEquals(0, ends.get())
         } finally {
             VoiceSessionUi.armed.value = false
@@ -1134,7 +1129,7 @@ class ReleaseJourneyTest {
                                 return "dictated words"
                             }
                         }
-                    }, voiceContent = { _, _, _, _ -> })
+                    }, voiceContent = { _, _, _, _, _ -> })
             } }
         } }
         }
@@ -1144,7 +1139,7 @@ class ReleaseJourneyTest {
         hideKeyboardWithoutNavigating()
         clickEnabled(By.res("chat_voice_input"))
         assertNotNull(find(By.res("dictation_status")))
-        assertFalse(find(By.res("voice_tab")).isEnabled)
+        assertFalse(find(By.res("voice_call_open")).isEnabled)
         assertFalse("Text-only model must not receive raw audio", find(By.res("dictation_send")).isEnabled)
         assertFalse("Recording replaces the text-send controls", device.hasObject(By.res("chat_send")))
         clickEnabled(By.res("dictation_stop"))

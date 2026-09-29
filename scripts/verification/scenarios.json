@@ -31,7 +31,7 @@
     "test27_controlledConversationSurfaceKeepsCallUntilExplicitEnd",
     "test28_voiceNavigationRetainsCallIdUntilExplicitEnd",
     "test29_eachAssistantReplyKeepsPersistedMetricsAcrossReload",
-    "test30_middleSwipesSwitchChatAndVoiceWithoutEndingCall",
+    "test30_phoneCallOverlaysUnifiedChatAndKeepsVoiceNoteMic",
     "test31_voiceInputReviewsTextAndCancelPreservesDraft",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
