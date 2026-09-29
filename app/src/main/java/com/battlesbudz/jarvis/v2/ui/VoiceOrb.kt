@@ -92,7 +92,7 @@ internal fun VoiceOrb(phase: String, level: Float, modifier: Modifier = Modifier
                 }
                 drawPath(path, Brush.horizontalGradient(listOf(Color.Transparent,
                     lavender.copy(alpha = (.6f - layer * .12f) * alpha), blue.copy(alpha = .6f * alpha),
-                    Color.Transparent)), style = Stroke(1.(3.dp.toPx() * drawingScale)))
+                    Color.Transparent)), style = Stroke(1.3.dp.toPx() * drawingScale))
             }
         }
         if (showPhaseLabel) Text(phase, modifier = Modifier.padding(top = 8.dp),
