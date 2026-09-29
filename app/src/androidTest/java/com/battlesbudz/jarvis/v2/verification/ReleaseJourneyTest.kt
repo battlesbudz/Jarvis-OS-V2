@@ -1098,7 +1098,7 @@ class ReleaseJourneyTest {
                         onOpenVoiceCalls = {}, resumedVoice = false,
                         voiceContent = { visible, _, _, _ ->
                             if (visible) VoiceCallOverlay.Bubble(
-                                phase = VoiceSessionUi.phase.value.label,
+                                phase = "Listening",
                                 status = VoiceSessionUi.status.value.ifBlank { "Voice Call is listening" },
                                 transcriptSpeaker = "You",
                                 transcript = liveCaption,
