@@ -1107,7 +1107,7 @@ class ReleaseJourneyTest {
             VoiceSessionUi.armed.value = true
             assertNotNull(find(By.res("voice_call_status")))
             assertNotNull(find(By.res("voice_call_minimize")))
-            val minimize = minimizeCallback.get() ?: fail("Minimize callback was not captured")
+            val minimize = checkNotNull(minimizeCallback.get()) { "Minimize callback was not captured" }
             instrumentation.runOnMainSync { minimize.invoke() }
             device.waitForIdle()
             assertEquals("Keep my draft", find(By.res("chat_composer")).text)
