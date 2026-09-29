@@ -952,7 +952,7 @@ class ReleaseJourneyTest {
                         onOpenVoiceCalls = {},
                         resumedVoice = false,
                         voiceContent = { visible, _, _, _ ->
-                            if (visible) VoiceCallOverlayBubble(
+                            if (visible) VoiceCallOverlay.Bubble(
                                 phase = "Listening",
                                 status = VoiceSessionUi.status.value.ifBlank { "Voice Call is listening" },
                                 level = 0.2f,
@@ -1097,7 +1097,7 @@ class ReleaseJourneyTest {
                         onSelectConversation = { null }, onEndVoice = { done -> ends.incrementAndGet(); done("") },
                         onOpenVoiceCalls = {}, resumedVoice = false,
                         voiceContent = { visible, _, _, _ ->
-                            if (visible) VoiceCallOverlayBubble(
+                            if (visible) VoiceCallOverlay.Bubble(
                                 phase = VoiceSessionUi.phase.value.label,
                                 status = VoiceSessionUi.status.value.ifBlank { "Voice Call is listening" },
                                 transcriptSpeaker = "You",

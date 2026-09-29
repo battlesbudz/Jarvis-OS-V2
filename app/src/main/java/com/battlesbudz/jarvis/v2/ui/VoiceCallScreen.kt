@@ -30,8 +30,9 @@ import androidx.compose.ui.unit.dp
 
 
 @androidx.annotation.Keep
-@Composable
-internal fun VoiceCallOverlayBubble(
+internal object VoiceCallOverlay {
+    @Composable
+    fun Bubble(
     phase: String,
     status: String,
     level: Float,
@@ -145,6 +146,7 @@ internal fun VoiceCallOverlayBubble(
                 }
             }
         }
+    }
     }
 }
 
@@ -264,7 +266,7 @@ internal fun VoiceCallScreen(
             else if (turnInFlight) com.battlesbudz.jarvis.v2.voice.VoicePhase.PREPARING
             else com.battlesbudz.jarvis.v2.voice.VoicePhase.IDLE
         val visibleStatus = if (runtimeArmed) runtimeStatus else status
-        VoiceCallOverlayBubble(
+        VoiceCallOverlay.Bubble(
             phase = bubblePhase.label,
             status = visibleStatus,
             transcriptSpeaker = if (provisionalUser.isNotBlank()) "You" else turns.lastOrNull()?.role.orEmpty(),
