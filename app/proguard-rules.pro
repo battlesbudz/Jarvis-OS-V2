@@ -161,3 +161,6 @@
 # The separate Download/Choose journey renders the shipping model browser.
 -keep class com.battlesbudz.jarvis.v2.ui.ModelBrowserKt { *; }
 -keep class com.battlesbudz.jarvis.v2.ai.PhoneProfile { *; }
+# Dark-palette screenshot fixtures call this factory through the target class loader.
+-keep class androidx.compose.material3.ColorSchemeKt { *; }
+-keep class androidx.compose.material3.ColorScheme { *; }
