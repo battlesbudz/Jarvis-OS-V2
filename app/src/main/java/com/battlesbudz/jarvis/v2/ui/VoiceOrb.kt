@@ -20,12 +20,14 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.*
 
 /** Layered continuous wave contours: audio changes their shape, not just their opacity. */
 @Composable
-internal fun VoiceOrb(phase: String, level: Float, modifier: Modifier = Modifier) {
+internal fun VoiceOrb(phase: String, level: Float, modifier: Modifier = Modifier,
+    diameter: Dp = 250.dp, showPhaseLabel: Boolean = true) {
     val lavender = MaterialTheme.colorScheme.primary
     val violet = Color(0xFF956BFA)
     val blue = Color(0xFF89BFFF)
@@ -36,10 +38,12 @@ internal fun VoiceOrb(phase: String, level: Float, modifier: Modifier = Modifier
         animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing)), label = "wave flow")
     val amplitude = animateFloatAsState(if (reactive) level.coerceIn(0f, 1f) else 0f,
         spring(dampingRatio = .8f, stiffness = 300f), label = "audio envelope")
-    Column(modifier.fillMaxWidth().padding(vertical = 20.dp)
-        .semantics { contentDescription = "Voice call: $phase" },
-        horizontalAlignment = Alignment.CenterHorizontally) {
-        Canvas(Modifier.size(250.dp)) {
+    Column(
+        modifier.then(if (showPhaseLabel) Modifier.fillMaxWidth().padding(vertical = 20.dp) else Modifier.size(diameter))
+            .semantics { contentDescription = "Voice call: $phase" },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Canvas(Modifier.size(diameter)) {
             // Read animated values in the draw phase to avoid recomposing the screen every frame.
             val time = if (paused) 0f else motion.value
             val energy = amplitude.value
@@ -90,7 +94,7 @@ internal fun VoiceOrb(phase: String, level: Float, modifier: Modifier = Modifier
                     Color.Transparent)), style = Stroke(1.3.dp.toPx()))
             }
         }
-        Text(phase, modifier = Modifier.padding(top = 8.dp),
+        if (showPhaseLabel) Text(phase, modifier = Modifier.padding(top = 8.dp),
             style = MaterialTheme.typography.titleMedium, color = lavender)
     }
 }

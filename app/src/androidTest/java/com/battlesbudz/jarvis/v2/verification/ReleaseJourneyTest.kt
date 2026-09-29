@@ -33,6 +33,7 @@ import com.battlesbudz.jarvis.v2.chat.ConversationHistory
 import com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext
 import com.battlesbudz.jarvis.v2.memory.*
 import com.battlesbudz.jarvis.v2.ui.ConversationScreen
+import com.battlesbudz.jarvis.v2.ui.VoiceCallOverlayBubble
 import com.battlesbudz.jarvis.v2.ui.MemoryScreen
 import com.battlesbudz.jarvis.v2.voice.*
 import kotlinx.coroutines.CompletableDeferred
@@ -950,27 +951,43 @@ class ReleaseJourneyTest {
                         onEndVoice = { done -> ends.incrementAndGet(); done("Voice Call ended.") },
                         onOpenVoiceCalls = {},
                         resumedVoice = false,
-                        voiceContent = { visible, _, _, _, _ -> if (visible) androidx.compose.material3.Text("Controlled voice surface") },
+                        voiceContent = { visible, _, _, _ ->
+                            if (visible) VoiceCallOverlayBubble(
+                                phase = "Listening",
+                                status = VoiceSessionUi.status.value.ifBlank { "Voice Call is listening" },
+                                level = 0.2f,
+                                active = true,
+                                microphonePaused = false,
+                                canStart = false,
+                                stopReplyAvailable = false,
+                                onStart = {},
+                                onStopReply = {},
+                                onToggleMicrophone = {},
+                                onEndCall = { ends.incrementAndGet() }
+                            )
+                        },
                     )
                     }
                 }
             } }
             VoiceSessionUi.status.value = "Voice Call is listening — controlled fixture with a deliberately long status that must not hide End call on a narrow screen."
             VoiceSessionUi.armed.value = true
-            assertNotNull(find(By.text("Controlled voice surface")))
+            assertNotNull(find(By.res("voice_call_overlay")))
             device.pressBack()
             device.waitForIdle()
             assertEquals("Back must not end the active call", 0, ends.get())
+            assertNotNull("Back keeps the floating call bubble over chat", find(By.res("voice_call_overlay")))
             assertNotNull(find(By.res("voice_call_status")))
             val endBounds = find(By.res("voice_call_end")).visibleBounds
             assertTrue("End call must remain visible beside a long status", endBounds.width() > 0 && endBounds.right <= device.displayWidth)
             assertFalse("Unified chat has no mode tabs", device.hasObject(By.res("voice_tab")))
             assertEquals("Unified chat has no mode tabs", false, device.hasObject(By.res("chat_tab")))
             find(By.res("voice_call_open")).click()
-            assertNotNull(find(By.text("Controlled voice surface")))
+            assertNotNull(find(By.res("voice_call_overlay")))
             device.pressBack()
             device.waitForIdle()
-            assertEquals("Dismissing the call surface must not end the call", 0, ends.get())
+            assertEquals("Back leaves the call bubble open without ending the call", 0, ends.get())
+            assertNotNull(find(By.res("voice_call_overlay")))
             assertNotNull(find(By.res("voice_call_status")))
             assertNotNull(find(By.text("Attachments are unavailable during a voice call. End the call to add one.")))
             enterText(By.res("chat_composer"), "Synthetic typed call follow-up")
@@ -1047,7 +1064,7 @@ class ReleaseJourneyTest {
                 ConversationScreen(history, MutableStateFlow(false), MutableStateFlow(VoiceSessionState.PASSIVE_LISTENING),
                     onSend = { _, _ -> null }, selectedModel = LocalModelSpec("release-fixture", "release-fixture.bin", recommendedGpu = false),
                     onSelectConversation = { null }, onEndVoice = {}, onOpenVoiceCalls = {}, resumedVoice = false,
-                    voiceContent = { _, _, _, _, _ -> })
+                    voiceContent = { _, _, _, _ -> })
             } }
         } }
         assertTrue(find(By.res("reply_metrics_one")).text.contains("TTFT 0.12s"))
@@ -1065,9 +1082,10 @@ class ReleaseJourneyTest {
         repeat(20) { history.updateReply(history.current.value.id, "swipe-$it", "Scrollable message $it", true) }
         val busy = MutableStateFlow(false)
         val ends = AtomicInteger(0)
-        val minimizeCallback = AtomicReference<(() -> Unit)?>(null)
         try {
             VoiceSessionUi.armed.value = false
+            VoiceSessionUi.status.value = ""
+            VoiceSessionUi.phase.value = VoicePhase.IDLE
             activity.onActivity { host -> host.setContent {
                 MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
                     ConversationScreen(history, busy, MutableStateFlow(VoiceSessionState.ACTIVELY_LISTENING),
@@ -1075,49 +1093,57 @@ class ReleaseJourneyTest {
                         selectedModel = LocalModelSpec("release-fixture", "release-fixture.bin", recommendedGpu = false),
                         onSelectConversation = { null }, onEndVoice = { done -> ends.incrementAndGet(); done("") },
                         onOpenVoiceCalls = {}, resumedVoice = false,
-                        voiceContent = { visible, _, _, minimize, request ->
-                            minimizeCallback.set(minimize)
-                            if (visible) {
-                                androidx.compose.material3.Text("Call overlay request $request", Modifier.testTag("controlled_overlay"))
-                                androidx.compose.material3.Text("Minimize", Modifier.testTag("voice_call_minimize"))
-                            }
+                        voiceContent = { visible, _, _, _ ->
+                            if (visible) VoiceCallOverlayBubble(
+                                phase = VoiceSessionUi.phase.value.label,
+                                status = VoiceSessionUi.status.value.ifBlank { "Voice Call is listening" },
+                                level = VoiceSessionUi.level.value,
+                                active = VoiceSessionUi.armed.value,
+                                microphonePaused = VoiceSessionUi.paused.value,
+                                canStart = !VoiceSessionUi.armed.value,
+                                stopReplyAvailable = false,
+                                onStart = {},
+                                onStopReply = {},
+                                onToggleMicrophone = {},
+                                onEndCall = { ends.incrementAndGet() }
+                            )
                         })
                 } }
             } }
             enterText(By.res("chat_composer"), "Keep my draft")
             hideKeyboardWithoutNavigating() // Keep the activity alive when no IME was opened.
             device.waitForIdle()
-            fun swipe(left: Boolean, fraction: Float = 0.35f) {
-                val b = find(By.res("conversation_swipe_area")).visibleBounds
-                val start = b.left + b.width() * (if (left) 3 else 1) / 4
-                val end = b.left + b.width() * (if (left) 1 else 3) / 4
-                val y = b.top + (b.height() * fraction).roundToInt()
-                device.swipe(start, y, end, y, 25)
-                device.waitForIdle()
-            }
             assertNotNull(find(By.res("chat_voice_input")))
             busy.value = true
             assertFalse(waitUntilDisabled(By.res("voice_call_open")).isEnabled)
             busy.value = false
             enabled(By.res("voice_call_open"))
             find(By.res("voice_call_open")).click()
-            assertNotNull(find(By.res("controlled_overlay")))
-            assertTrue(find(By.res("controlled_overlay")).text.contains("request 1"))
+            assertNotNull("Voice button opens the in-window waveform bubble", find(By.res("voice_call_overlay")))
+            assertNotNull(find(By.res("voice_start")))
             assertNotNull("The separate dictation microphone stays in the composer", find(By.res("chat_voice_input")))
+            VoiceSessionUi.status.value = "Voice Call is listening · live transcript fixture"
+            VoiceSessionUi.phase.value = VoicePhase.LISTENING
             VoiceSessionUi.armed.value = true
             assertNotNull(find(By.res("voice_call_status")))
-            assertNotNull(find(By.res("voice_call_minimize")))
-            val minimize = checkNotNull(minimizeCallback.get()) { "Minimize callback was not captured" }
-            instrumentation.runOnMainSync { minimize.invoke() }
-            device.waitForIdle()
-            assertEquals("Keep my draft", find(By.res("chat_composer")).text)
-            assertEquals("Minimizing must preserve the active call", 0, ends.get())
+            assertNotNull(find(By.res("voice_call_orb")))
+            assertFalse("A minimize control is not part of the call overlay", device.hasObject(By.res("voice_call_minimize")))
+            history.updateReply(history.current.value.id, "streaming-voice", "Transcript is updating while I speak", false)
+            val liveTranscript = find(By.text("Transcript is updating while I speak"))
+            val overlayBounds = find(By.res("voice_call_overlay")).visibleBounds
+            val transcriptBounds = find(By.res("conversation_transcript")).visibleBounds
+            assertTrue("Waveform bubble must be visible in the chat window", overlayBounds.width() > 0 && overlayBounds.height() > 0)
+            assertTrue("The conversation viewport remains on screen under the bubble", transcriptBounds.width() > 0 && transcriptBounds.height() > 0)
+            assertTrue("The live chat transcript remains visible with the bubble", liveTranscript.visibleBounds.width() > 0)
+            assertTrue("The existing draft survives opening the bubble", find(By.res("chat_composer")).text.contains("Keep my draft"))
+            assertEquals("Keeping the bubble open must not end the call", 0, ends.get())
             find(By.res("voice_call_open")).click()
-            assertNotNull(find(By.res("controlled_overlay")))
+            assertNotNull(find(By.res("voice_call_overlay")))
             assertEquals(0, ends.get())
         } finally {
             VoiceSessionUi.armed.value = false
             VoiceSessionUi.status.value = ""
+            VoiceSessionUi.phase.value = VoicePhase.IDLE
         }
     }
 
@@ -1160,7 +1186,7 @@ class ReleaseJourneyTest {
                                 return "dictated words"
                             }
                         }
-                    }, voiceContent = { _, _, _, _, _ -> })
+                    }, voiceContent = { _, _, _, _ -> })
             } }
         } }
         }

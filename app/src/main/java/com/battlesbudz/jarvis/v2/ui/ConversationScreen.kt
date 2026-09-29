@@ -13,7 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import com.battlesbudz.jarvis.v2.chat.*
@@ -35,12 +34,11 @@ internal fun ConversationScreen(
     onOpenVoiceCalls: () -> Unit,
     resumedVoice: Boolean,
     dictationFactory: (() -> com.battlesbudz.jarvis.v2.voice.ChatDictation)? = null,
-    voiceContent: @Composable (visible: Boolean, settingsOpen: Boolean, dismissSettings: () -> Unit, returnToChat: () -> Unit, startRequest: Long) -> Unit
+    voiceContent: @Composable (visible: Boolean, settingsOpen: Boolean, dismissSettings: () -> Unit, startRequest: Long) -> Unit
 ) {
     val thread by history.current.collectAsState()
     val sending by busy.collectAsState()
     val armed by VoiceSessionUi.armed.collectAsState()
-    val voiceStatus by VoiceSessionUi.status.collectAsState()
     val voiceState by callState.collectAsState()
     var hadCall by remember { mutableStateOf(false) }
     var voiceVisible by rememberSaveable { mutableStateOf(false) }
@@ -64,20 +62,17 @@ internal fun ConversationScreen(
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    fun returnToChat() {
-        voiceVisible = false
-    }
     fun showVoice() {
         if (sending || inputBusy || voiceVisible) return
         voiceVisible = true
         if (!armed) callStartRequest++
     }
-    BackHandler(enabled = voiceVisible && !settings && !showHistory) { returnToChat() }
+    BackHandler(enabled = voiceVisible && !settings && !showHistory) { if (!armed) voiceVisible = false }
     LaunchedEffect(voiceState) {
         if (voiceState != VoiceSessionState.PASSIVE_LISTENING) hadCall = true
         else if (hadCall) {
             hadCall = false
-            returnToChat()
+            voiceVisible = false
         }
     }
     LaunchedEffect(resumedVoice) { if (resumedVoice) voiceVisible = true }
@@ -102,23 +97,6 @@ internal fun ConversationScreen(
                 color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
             TextButton(enabled = !inputBusy, onClick = { settings = true }) { Text("Settings") }
         }
-        if (armed) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Text(
-                    if (voiceStatus.isBlank()) "Voice call active" else "Voice call active · $voiceStatus",
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f).padding(end = 8.dp).testTag("voice_call_status")
-                )
-                TextButton(onClick = {
-                    onEndVoice { result -> if (result.isNotBlank()) error = result }
-                    voiceVisible = false
-                }, modifier = Modifier.testTag("voice_call_end")) { Text("End call") }
-            }
-        }
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = { showHistory = true }, enabled = !sending && !armed && !inputBusy) { Text("Conversations") }
             TextButton(onClick = { error = onSelectConversation(null) }, enabled = !sending && !armed && !inputBusy) { Text("New") }
@@ -127,7 +105,7 @@ internal fun ConversationScreen(
             Column(Modifier.fillMaxSize()) {
                 if (thread.messages.isEmpty()) Text("Type a message or start a voice call. It's all one conversation.",
                     modifier = Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth(),
+                LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().testTag("conversation_transcript"),
                     contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(thread.messages, key = { it.id }) { message ->
                         Surface(color = if (message.role == "You") MaterialTheme.colorScheme.secondaryContainer
@@ -198,7 +176,7 @@ internal fun ConversationScreen(
                         Row(Modifier.fillMaxWidth().imePadding().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             OutlinedTextField(value = draft, onValueChange = { draft = it }, placeholder = { Text("Message Jarvis") },
-                                modifier = Modifier.weight(1f).testTag("chat_composer"), maxLines = 5, enabled = !voiceVisible,
+                                modifier = Modifier.weight(1f).testTag("chat_composer"), maxLines = 5, enabled = !sending && !inputBusy && (!voiceVisible || armed),
                                 shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp), trailingIcon = voiceButton,
                                 leadingIcon = if (!armed && selectedModel.supportsVision) { {
                                     ChatAttachmentPicker(selectedModel, enabled = !sending && !voiceVisible && !inputBusy,
@@ -215,7 +193,7 @@ internal fun ConversationScreen(
                             val canSend = if (armed) draft.isNotBlank() && pendingAttachment == null
                             else (draft.isNotBlank() || pendingAttachment != null) &&
                                 (pendingAttachment == null || AttachmentPolicy.accepts(selectedModel, pendingAttachment.kind))
-                            FilledIconButton(enabled = canSend && !sending && !voiceVisible && !inputBusy, onClick = {
+                            FilledIconButton(enabled = canSend && !sending && !inputBusy && (!voiceVisible || armed), onClick = {
                                 error = onSend(draft, if (armed) null else pendingAttachment)
                                 if (error == null) { draft = ""; pendingUri = null }
                             }, modifier = Modifier.testTag("chat_send")) {
@@ -226,7 +204,7 @@ internal fun ConversationScreen(
                 }
             }
             // Keep the voice controller and shared Settings alive in both modes.
-                voiceContent(voiceVisible, settings, { settings = false }, { voiceVisible = false }, callStartRequest)
+                voiceContent(voiceVisible, settings, { settings = false }, callStartRequest)
         }
     }
     if (showHistory) AlertDialog(onDismissRequest = { showHistory = false }, title = { Text("Conversations") },

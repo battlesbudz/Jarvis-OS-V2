@@ -2,15 +2,13 @@ package com.battlesbudz.jarvis.v2.ui
 
 import com.battlesbudz.jarvis.v2.*
 import com.battlesbudz.jarvis.v2.voice.VoiceCallRecord
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
@@ -23,12 +21,113 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 
+
+@Composable
+internal fun VoiceCallOverlayBubble(
+    phase: String,
+    status: String,
+    level: Float,
+    active: Boolean,
+    microphonePaused: Boolean,
+    canStart: Boolean,
+    stopReplyAvailable: Boolean,
+    onStart: () -> Unit,
+    onStopReply: () -> Unit,
+    onToggleMicrophone: () -> Unit,
+    onEndCall: () -> Unit
+) {
+    // This layer fills the chat's existing window and paints no scrim. Touches outside
+    // the bubble still reach the conversation, so text stays readable and usable.
+    Box(Modifier.fillMaxSize().testTag("voice_call_overlay_layer")) {
+        androidx.compose.material3.Surface(
+            modifier = Modifier.align(Alignment.BottomEnd)
+                .imePadding()
+                .padding(end = 12.dp, bottom = 104.dp)
+                .widthIn(max = 340.dp)
+                .fillMaxWidth()
+                .testTag("voice_call_overlay"),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = .72f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .42f)),
+            tonalElevation = 2.dp,
+            shadowElevation = 12.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(start = 8.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                VoiceOrb(
+                    phase = phase,
+                    level = level,
+                    modifier = Modifier.testTag("voice_call_orb"),
+                    diameter = 56.dp,
+                    showPhaseLabel = false
+                )
+                Spacer(Modifier.width(6.dp))
+                Column(
+                    modifier = Modifier.weight(1f).padding(vertical = 4.dp),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        if (active) "Voice call active" else "Starting voice call",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    Text(
+                        status.ifBlank { phase },
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag("voice_call_status")
+                    )
+                    if (stopReplyAvailable) {
+                        TextButton(
+                            onClick = onStopReply,
+                            modifier = Modifier.heightIn(min = 32.dp).testTag("voice_call_stop_reply"),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) { Text("Stop reply · listen", maxLines = 1, style = MaterialTheme.typography.labelSmall) }
+                    }
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (active) {
+                        IconButton(
+                            onClick = onToggleMicrophone,
+                            modifier = Modifier.size(40.dp).testTag("voice_call_pause")
+                        ) {
+                            Text(
+                                if (microphonePaused) "▶" else "Ⅱ",
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.semantics {
+                                    contentDescription = if (microphonePaused) "Resume microphone" else "Pause microphone"
+                                }
+                            )
+                        }
+                        IconButton(
+                            onClick = onEndCall,
+                            modifier = Modifier.size(40.dp).testTag("voice_call_end")
+                        ) {
+                            Text(
+                                "×",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.semantics { contentDescription = "End call" }
+                            )
+                        }
+                    } else if (canStart) {
+                        Button(onClick = onStart, modifier = Modifier.testTag("voice_start")) { Text("Start") }
+                    } else {
+                        Text("…", style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 internal fun VoiceCallScreen(
@@ -36,7 +135,6 @@ internal fun VoiceCallScreen(
     settingsOpen: Boolean,
     memoryOpen: Boolean,
     onDismissSettings: () -> Unit,
-    onReturnToChat: () -> Unit,
     startRequest: Long,
     chatBusy: kotlinx.coroutines.flow.StateFlow<Boolean>,
     modelSelector: @Composable (Boolean) -> Unit,
@@ -142,74 +240,36 @@ internal fun VoiceCallScreen(
     LaunchedEffect(memoryOpen) {
         if (memoryOpen && settingsOpen) onDismissSettings()
     }
-    if (visible) Dialog(
-        onDismissRequest = onReturnToChat,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        androidx.compose.material3.Surface(
-            Modifier.fillMaxWidth(.92f).fillMaxHeight(.82f).testTag("voice_call_overlay"),
-            shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 8.dp
-        ) {
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp, vertical = 18.dp),
-                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Top
-            ) {
-                TextButton(onClick = onReturnToChat, modifier = Modifier.align(androidx.compose.ui.Alignment.End)
-                    .testTag("voice_call_minimize")) { Text("Minimize") }
-                Text("One conversation, out loud", style = MaterialTheme.typography.titleMedium)
-                Text("Your words are saved in chat. Minimize the call to keep chatting.",
-                    style = MaterialTheme.typography.bodySmall,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = Modifier.padding(top = 8.dp))
-                val phase = if (runtimeArmed) runtimePhase.label else "Ready"
-                VoiceOrb(phase, if (runtimeArmed) {
-                    if (runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING) playback.level else microphoneLevel
-                } else 0f, modifier = Modifier.testTag("voice_call_orb"))
-                if (!runtimeArmed) Button(
-                    onClick = { requestVoiceTurn(start = true) },
-                    enabled = !chatSending && !turnInFlight && !wakeTesting && !inputTesting && !audioPathTesting,
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp).testTag("voice_start")
-                ) { Text("Start voice session") }
-                if (runtimeArmed) {
-                    Text("Voice call active · ${runtimePhase.label}", style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.testTag("voice_call_status"))
-                    if (runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING ||
-                        runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.THINKING) {
-                        Button(onClick = { runtime.controls.trySend(com.battlesbudz.jarvis.v2.voice.VoiceControl.STOP_REPLY) },
-                            modifier = Modifier.fillMaxWidth()) { Text("Stop reply — listen to me") }
-                    }
-                    OutlinedButton(onClick = {
-                        runtime.controls.trySend(if (microphonePaused) com.battlesbudz.jarvis.v2.voice.VoiceControl.RESUME
-                            else com.battlesbudz.jarvis.v2.voice.VoiceControl.PAUSE)
-                    }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (microphonePaused) "Resume microphone" else "Pause microphone")
-                    }
-                }
-                if (runtimeArmed) {
-                    TextButton(
-                        onClick = {
-                            listening = false
-                            turnInFlight = false
-                            onEndVoiceCall { result -> status = result }
-                            onReturnToChat()
-                        },
-                        modifier = Modifier.padding(top = 4.dp).testTag("voice_call_end")
-                    ) {
-                        Text("End call · return to chat")
-                    }
-                }
-                val visibleStatus = if (runtimeArmed) runtimeStatus else status
-                if (visibleStatus.isNotBlank() && !visibleStatus.startsWith("Voice Call turn complete")) {
-                    Text(visibleStatus, style = MaterialTheme.typography.bodySmall)
-                }
+    if (visible) {
+        val bubblePhase = if (runtimeArmed) runtimePhase
+            else if (turnInFlight) com.battlesbudz.jarvis.v2.voice.VoicePhase.PREPARING
+            else com.battlesbudz.jarvis.v2.voice.VoicePhase.IDLE
+        val visibleStatus = if (runtimeArmed) runtimeStatus else status
+        VoiceCallOverlayBubble(
+            phase = bubblePhase.label,
+            status = visibleStatus,
+            level = if (runtimeArmed) {
+                if (runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING) playback.level else microphoneLevel
+            } else 0f,
+            active = runtimeArmed,
+            microphonePaused = microphonePaused,
+            canStart = !runtimeArmed && !chatSending && !turnInFlight && !wakeTesting && !inputTesting && !audioPathTesting,
+            stopReplyAvailable = runtimeArmed && (
+                runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING ||
+                    runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.THINKING
+                ),
+            onStart = { requestVoiceTurn(start = true) },
+            onStopReply = { runtime.controls.trySend(com.battlesbudz.jarvis.v2.voice.VoiceControl.STOP_REPLY) },
+            onToggleMicrophone = {
+                runtime.controls.trySend(if (microphonePaused) com.battlesbudz.jarvis.v2.voice.VoiceControl.RESUME
+                    else com.battlesbudz.jarvis.v2.voice.VoiceControl.PAUSE)
+            },
+            onEndCall = {
+                listening = false
+                turnInFlight = false
+                onEndVoiceCall { result -> status = result }
             }
-        }
+        )
     }
     if (settingsOpen) androidx.compose.material3.AlertDialog(
         onDismissRequest = { onStopWakeTest(); onDismissSettings() },

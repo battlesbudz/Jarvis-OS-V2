@@ -311,9 +311,9 @@ fun JarvisApp(
                             showingVoiceCalls = true
                         },
                         resumedVoice = resumedVoiceCall != null
-                    ) { visible, settingsOpen, dismissSettings, returnToChat, startRequest -> VoiceCallScreen(
+                    ) { visible, settingsOpen, dismissSettings, startRequest -> VoiceCallScreen(
                         visible = visible, settingsOpen = settingsOpen, memoryOpen = showingMemory,
-                        onDismissSettings = dismissSettings, onReturnToChat = returnToChat, startRequest = startRequest,
+                        onDismissSettings = dismissSettings, startRequest = startRequest,
                         chatBusy = chatBusy, modelSelector = modelSelector,
                         resumedCall = resumedVoiceCall,
                         onResumeConsumed = { resumedVoiceCall = null },
