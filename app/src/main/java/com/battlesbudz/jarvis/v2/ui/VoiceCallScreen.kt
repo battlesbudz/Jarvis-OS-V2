@@ -5,6 +5,7 @@ import com.battlesbudz.jarvis.v2.voice.VoiceCallRecord
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -78,7 +79,7 @@ internal fun VoiceCallScreen(
     var listening by remember { mutableStateOf(false) }
     var turnInFlight by remember { mutableStateOf(false) }
     var status by rememberSaveable { mutableStateOf("") }
-    var consumedStartRequest by rememberSaveable { mutableLongStateOf(0L) }
+    var consumedStartRequest by rememberSaveable { mutableStateOf(0L) }
     var turns by remember { mutableStateOf(resumedCall?.transcript.orEmpty().map { ChatEntry(it.role, it.text) }) }
     var provisionalUser by remember { mutableStateOf("") }
     fun requestVoiceTurn(start: Boolean) {
