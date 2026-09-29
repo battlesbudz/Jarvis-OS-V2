@@ -162,7 +162,7 @@ internal fun VoiceCallScreen(
                 TextButton(onClick = onReturnToChat, modifier = Modifier.align(androidx.compose.ui.Alignment.End)
                     .testTag("voice_call_minimize")) { Text("Minimize") }
                 Text("One conversation, out loud", style = MaterialTheme.typography.titleMedium)
-                Text("Your words are saved in chat. End the call to read or keep typing.",
+                Text("Your words are saved in chat. Minimize the call to keep chatting.",
                     style = MaterialTheme.typography.bodySmall,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     modifier = Modifier.padding(top = 8.dp))
