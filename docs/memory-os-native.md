@@ -103,6 +103,33 @@ Create a fixed local golden set with direct asks, paraphrases, implied reference
 
 Run offline/network-egress checks and measure cold-start and warm per-turn latency, peak RAM, storage/APK impact, and battery on the Fold 6. Keep emulator API 30 and API 35 journeys for lifecycle and integration coverage, but do not treat emulator numbers as physical-device performance evidence. Ship semantic recall only when quality beats the lexical-only baseline on implicit/paraphrased cases without increasing irrelevant injections and the target-device gates pass.
 
+### Alignment with Jarvis V1 G-Brain and Temporal Graph
+
+This plan follows V1's retrieval and trust contracts, adapted to Android-local storage. It does not copy V1's server stack or claim that V1's planned temporal graph was already implemented.
+
+**G-Brain reference and V1 implementation**
+
+Garry Tan's upstream [GBrain](https://github.com/garrytan/gbrain) is a markdown/page-centered memory system: pages hold current compiled truth and evidence timelines; typed links form a knowledge graph; search combines vector and keyword rankings with reciprocal-rank fusion (RRF), and can traverse graph edges for relationship questions. The upstream project is a design reference, not an Android dependency.
+
+Jarvis V1 implemented its own `server/brain/*` projection layer. Its [G-Brain implementation plan](https://github.com/battlesbudz/jarvis-os/blob/main/docs/gbrain-implementation-plan.md) records the landed Postgres projection tables and verified behavior: canonical memory remains authoritative; approved memories and people project into rebuildable pages, chunks, links, and page versions; canonical and G-Brain candidates fuse with RRF; provenance and fallback status are retained. V1 used hosted OpenAI embeddings and optional pgvector. V2 replaces that runtime with the local EmbeddingGemma/index path above while preserving the source-versus-derived boundary and hybrid retrieval behavior.
+
+Therefore, expand the V2 sidecar from a vector cache into a rebuildable G-Brain-style projection:
+- pages for approved memories and linked people/topics, each carrying canonical source IDs, review state, and provenance;
+- chunks with lexical index and local vectors;
+- explicit typed links/backlinks;
+- timeline entries for dated episodes and changing facts;
+- append-only derived page versions tied to source revisions.
+
+Retrieve canonical ledger records and projected pages as peer candidate sources. Use lexical and vector arms, then page-level RRF/deduplication; when a page points to a canonical memory, the canonical record remains authoritative and the selected result retains chunk/page provenance. Use stored typed links for relationship questions. Create links only from explicit approved relations or deterministic, reviewable evidence; similarity alone must not invent a relationship.
+
+**Temporal Graph status and V2 port**
+
+Jarvis V1's [Temporal Graph plan](https://github.com/battlesbudz/jarvis-os/blob/main/docs/memory-os-temporal-graph-plan.md) distinguishes time parsing, hot state, semantic recall, and a graph of changing entities/facts. It explicitly lists the Graphiti adapter and temporal query UX as later work. V1's `server/time/temporalContext.ts` resolves expressions such as “last month” into user-local time windows; that parser does not itself store or traverse a temporal knowledge graph.
+
+Keep the temporal layer separate from vector similarity. After the local G-Brain projection and hybrid recall work, add subject–predicate–object edges and event timeline records with both **observed/recorded time** and **valid time**, source IDs, confidence, and supersession. Support point-in-time questions (“what was true then?”), current-versus-past comparisons, and relationship changes with provenance. Reuse the temporal parser for query windows.
+
+Treat Graphiti as the V1 design target to evaluate, not as a completed V1 port or an assumed Android dependency. Add a proof-of-fit for an offline, on-device Graphiti deployment. If it cannot meet the no-network, storage, lifecycle, and Fold 6 performance constraints, implement the same narrow temporal-graph contract over the local SQLite projection. The JSON ledger remains the canonical truth either way; graph/index maintenance must be rebuildable and corrections/expiry/erasure must remove stale derived facts. Run consolidation as opportunistic Android background work while idle/charging, not as a server cron, and keep generated summaries reviewable and source-linked.
+
 **Research references**
 
 - [EmbeddingGemma model overview](https://ai.google.dev/gemma/docs/embeddinggemma)
