@@ -72,7 +72,9 @@ class JarvisModelSetupWorker(
             return Result.failure(workDataOf("error" to (error.message ?: "AI model setup failed.")))
         }
         check(gemma.isFile) { "AI model setup did not produce a model file." }
-        if (!inputData.getBoolean("prepare_voice", true)) return Result.success()
+        // The user may have chosen an installed model while this file transferred.
+        // Voice setup now belongs to that current session, not this old request.
+        if (!inputData.getBoolean("prepare_voice", true) || spec.id != models.selectedModel().id) return Result.success()
         try {
             val piper = voice.ensureReady(TtsEngine.PIPER_NORTHERN) { status ->
                 synchronized(progressLock) { stage = status; downloaded = 0L; total = -1L; publishProgress() }

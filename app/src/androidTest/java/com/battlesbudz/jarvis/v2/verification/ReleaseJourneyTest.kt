@@ -1158,6 +1158,7 @@ class ReleaseJourneyTest {
             find(By.res("voice_call_open")).click()
             assertNotNull(find(By.res("voice_call_overlay")))
             assertEquals(0, ends.get())
+            captureEvidence("test30_activeVoiceOrb")
         } finally {
             VoiceSessionUi.armed.value = false
             VoiceSessionUi.status.value = ""
