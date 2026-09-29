@@ -45,10 +45,8 @@ internal object VoiceCallOverlay {
     onToggleMicrophone: () -> Unit,
     onEndCall: () -> Unit,
     transcriptSpeaker: String = "",
-    transcript: String = "",
-    transcriptFlow: kotlinx.coroutines.flow.StateFlow<String>? = null
+    transcript: String = ""
 ) {
-    val renderedTranscript = transcriptFlow?.collectAsState()?.value ?: transcript
     // This layer fills the chat's existing window and paints no scrim. Touches outside
     // the bubble still reach the conversation, so text stays readable and usable.
     Box(Modifier.fillMaxSize().testTag("voice_call_overlay_layer")) {
@@ -92,7 +90,7 @@ internal object VoiceCallOverlay {
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         modifier = Modifier.testTag("voice_call_status")
                     )
-                    if (renderedTranscript.isNotBlank()) {
+                    if (transcript.isNotBlank()) {
                         Text(
                             transcriptSpeaker.ifBlank { "Transcript" },
                             style = MaterialTheme.typography.labelSmall,
@@ -100,7 +98,7 @@ internal object VoiceCallOverlay {
                             maxLines = 1
                         )
                         Text(
-                            renderedTranscript,
+                            transcript,
                             style = MaterialTheme.typography.bodySmall,
                             maxLines = 2,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
