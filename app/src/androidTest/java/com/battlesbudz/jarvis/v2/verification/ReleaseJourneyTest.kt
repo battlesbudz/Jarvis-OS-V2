@@ -8,7 +8,6 @@ import android.os.SystemClock
 import android.provider.MediaStore
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -1052,10 +1051,12 @@ class ReleaseJourneyTest {
                         selectedModel = LocalModelSpec("release-fixture", "release-fixture.bin", recommendedGpu = false),
                         onSelectConversation = { null }, onEndVoice = { done -> ends.incrementAndGet(); done("") },
                         onOpenVoiceCalls = {}, resumedVoice = false,
-                        voiceContent = { visible, _, _, minimize, request -> if (visible) Column {
-                            androidx.compose.material3.Text("Call overlay request $request", Modifier.testTag("controlled_overlay"))
-                            androidx.compose.material3.TextButton(onClick = minimize) { androidx.compose.material3.Text("Minimize") }
-                        } })
+                        voiceContent = { visible, _, _, minimize, request ->
+                            if (visible) {
+                                androidx.compose.material3.Text("Call overlay request $request", Modifier.testTag("controlled_overlay"))
+                                androidx.compose.material3.TextButton(onClick = minimize) { androidx.compose.material3.Text("Minimize") }
+                            }
+                        })
                 } }
             } }
             enterText(By.res("chat_composer"), "Keep my draft")
