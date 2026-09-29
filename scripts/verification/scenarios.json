@@ -33,6 +33,7 @@
     "test29_eachAssistantReplyKeepsPersistedMetricsAcrossReload",
     "test30_phoneCallOverlaysUnifiedChatAndKeepsVoiceNoteMic",
     "test31_voiceInputReviewsTextAndCancelPreservesDraft",
+    "test32_installedModelAndCompletedDownloadSurviveStoreRecreation",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

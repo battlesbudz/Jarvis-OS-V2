@@ -13,6 +13,10 @@ internal fun removeModelFiles(directory: File, fileName: String, cache: File) {
     modelFiles(directory, fileName).forEach {
         check(it.delete()) { "Could not delete ${it.name}. Please try again." }
     }
+    val chunks = File(directory, "$fileName.part.chunks")
+    check(!chunks.exists() || chunks.deleteRecursively()) {
+        "Could not remove the model download checkpoints. Please try again."
+    }
     check(!cache.exists() || cache.deleteRecursively()) {
         "Could not remove the model cache. Please try again."
     }

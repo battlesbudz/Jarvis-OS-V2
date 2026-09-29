@@ -153,3 +153,6 @@
 -keep interface com.battlesbudz.jarvis.v2.voice.ChatDictation { *; }
 # The raw-audio release journey validates the stored WAV through this shared API.
 -keep class com.battlesbudz.jarvis.v2.chat.AttachmentPolicy { *; }
+
+# Release storage recovery journey exercises the installed-file/preferences boundary.
+-keep class com.battlesbudz.jarvis.v2.ai.ModelStore { *; }

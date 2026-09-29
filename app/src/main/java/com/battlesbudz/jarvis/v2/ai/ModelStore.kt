@@ -11,6 +11,7 @@ import android.provider.OpenableColumns
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.CancellationException
 
 class ModelStore(context: Context) {
     private val downloader = ModelDownloader()
@@ -63,7 +64,9 @@ class ModelStore(context: Context) {
     }
 
     fun storedBytes(spec: LocalModelSpec): Long = modelFiles(modelDirectory, spec.fileName)
-        .sumOf { it.length() } + File(context.cacheDir, spec.id).let { cache ->
+        .sumOf { it.length() } + File(modelDirectory, "${spec.fileName}.part.chunks").let { chunks ->
+            if (chunks.exists()) chunks.walkTopDown().filter { it.isFile }.sumOf { it.length() } else 0L
+        } + File(context.cacheDir, spec.id).let { cache ->
             if (cache.exists()) cache.walkTopDown().filter { it.isFile }.sumOf { it.length() } else 0L
         }
 
@@ -196,7 +199,12 @@ class ModelStore(context: Context) {
             val url = requireNotNull(spec.downloadUrl) { "No automatic download is configured for ${spec.id}." }
             val destination = fileFor(spec)
             val temporary = File(modelDirectory, "${spec.fileName}.part")
-            downloader.download(
+            // A stopped worker may already have assembled the complete file.
+            // Verify it before contacting the host or restarting its transfer.
+            val completedDownload = temporary.isFile && spec.downloadBytes != null &&
+                temporary.length() == spec.downloadBytes && spec.expectedSha256 != null &&
+                temporary.sha256() == spec.expectedSha256
+            if (!completedDownload) downloader.download(
                 url = url,
                 temporary = temporary,
                 onProgress = onProgress,
@@ -206,12 +214,10 @@ class ModelStore(context: Context) {
             onStatus("Verifying the downloaded AI model…")
             val actualSha256 = temporary.sha256(onProgress)
             spec.expectedSha256?.let { expected ->
-                check(actualSha256.equals(expected, ignoreCase = true)) {
-                    "The downloaded model failed integrity verification."
+                if (!actualSha256.equals(expected, ignoreCase = true)) {
+                    temporary.delete()
+                    error("The downloaded model failed integrity verification. It was not installed. Retry the download.")
                 }
-            }
-            if (destination.exists()) check(destination.delete()) {
-                "Unable to replace the previous model file."
             }
             check(temporary.renameTo(destination)) { "Unable to finalize the downloaded model." }
             val key = fingerprintKey(spec)
@@ -223,12 +229,12 @@ class ModelStore(context: Context) {
                 .putBoolean("${key}_enforce_catalog_hash", true)
                 .putBoolean(smokeTestKey(spec), false)
                 .putBoolean("smoke_test_attempted_${spec.id}", false)
-                .apply()
+                .commit().also { check(it) { "The model was installed but its verification state could not be saved. Check the installed model again." } }
             destination
         } finally {
             endModelOperation()
         }
-    }
+    }.onFailure { if (it is CancellationException) throw it }
 
     private sealed interface DownloadLookupResult {
         data class Completed(val uri: Uri?) : DownloadLookupResult
@@ -240,7 +246,8 @@ class ModelStore(context: Context) {
         onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
         onStatus: (String) -> Unit
     ): File? {
-        val temporary = File(modelDirectory, "${spec.fileName}.part")
+        // Imports must never erase a resumable HTTP checkpoint.
+        val temporary = File.createTempFile("${spec.fileName}.import.", ".part", modelDirectory)
         return runCatching {
             temporary.delete()
             context.contentResolver.openInputStream(uri)?.use { input ->
@@ -268,7 +275,6 @@ class ModelStore(context: Context) {
                 !actualSha256.equals(spec.expectedSha256, ignoreCase = true)
             ) return@runCatching null
             val destination = fileFor(spec)
-            if (destination.exists()) check(destination.delete())
             check(temporary.renameTo(destination)) { "Unable to finalize the existing model file." }
             val key = fingerprintKey(spec)
             preferences.edit()
@@ -318,8 +324,8 @@ class ModelStore(context: Context) {
                 )?.use { cursor ->
                     if (cursor.moveToFirst()) cursor.getString(0) else null
                 }
-                require(selectedName == null || selectedName == spec.fileName) {
-                    "Select the ${spec.fileName} model file."
+                require(selectedName == null || selectedName in spec.importFileNames()) {
+                    "Select ${spec.importFileNames().joinToString(" or ")}."
                 }
                 val resolver = context.contentResolver
                 resolver.openInputStream(uri)?.use { input ->
@@ -327,6 +333,11 @@ class ModelStore(context: Context) {
                 } ?: error("Unable to open selected model file.")
                 require(temporary.length() > 0L) { "The selected model file is empty." }
                 val actualSha256 = temporary.sha256()
+                if (selectedName != null && selectedName != spec.fileName) {
+                    require(actualSha256.equals(spec.expectedSha256, ignoreCase = true)) {
+                        "The publisher file does not match the selected model. Select its exact model bundle."
+                    }
+                }
                 // An explicitly selected model is validated by the native
                 // Gemma smoke test below, not forced to match the catalog's
                 // download hash. This makes “import your own compatible Gemma” supported.

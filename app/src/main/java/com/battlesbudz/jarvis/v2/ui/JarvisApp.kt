@@ -68,7 +68,7 @@ fun JarvisApp(
     var selectedModel by remember { mutableStateOf(store.selectedModel()) }
     var selectionError by remember { mutableStateOf<String?>(null) }
     var pickerModelId by rememberSaveable { mutableStateOf<String?>(null) }
-    val gemmaReady = store.isUsable()
+    val gemmaReady = store.hasModel(selectedModel)
     var modelsReady by remember { mutableStateOf(store.isUsable()) }
     var smokeTestPassed by rememberSaveable { mutableStateOf(store.isUsable() && store.smokeTestPassed()) }
     var setupStatus by rememberSaveable { mutableStateOf(
@@ -192,6 +192,18 @@ fun JarvisApp(
     }
 
     val setupContext = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(selectedModel.id) {
+        // Upgrades/restored files can outlive their verification metadata.
+        // Recover the existing file off the UI thread before offering download.
+        if (store.hasModel(selectedModel) && !store.isUsable(selectedModel)) {
+            val recovered = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                if (!store.tryBeginModelOperation()) return@withContext null
+                try { store.verifyIntegrity(selectedModel) } finally { store.endModelOperation() }
+            }
+            modelsReady = store.isUsable(selectedModel)
+            if (recovered == false) setupStatus = "The installed model did not pass verification. Re-import it or delete it before downloading a replacement."
+        }
+    }
     LaunchedEffect(Unit) {
         androidx.work.WorkManager.getInstance(setupContext)
             .getWorkInfosForUniqueWorkFlow("jarvis-local-model-setup").collect { infos ->
@@ -347,7 +359,7 @@ fun JarvisApp(
             } else {
                 ModelSetup(
                     modelSelector = modelSelector,
-                    ready = modelsReady,
+                    ready = gemmaReady,
                     gemmaReady = gemmaReady,
                     downloadAvailable = !selectedModel.requiresAccess,
                     testing = smokeTestRunning,

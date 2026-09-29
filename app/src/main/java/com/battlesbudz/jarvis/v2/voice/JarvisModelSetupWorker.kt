@@ -37,12 +37,16 @@ class JarvisModelSetupWorker(
         var total = -1L
         var stage = "Preparing local Jarvis…"
         val progressLock = Any()
-        fun publishProgress() = runBlocking {
-            setProgress(workDataOf(
+        var lastProgressAt = 0L
+        fun publishProgress(force: Boolean = false) {
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (!force && now - lastProgressAt < 250L && downloaded != total) return
+            lastProgressAt = now
+            runBlocking { setProgress(workDataOf(
                 "stage" to stage,
                 "downloaded" to downloaded,
                 "total" to total
-            ))
+            )) }
         }
         val gemma = models.downloadOrReuse(
             spec = spec,
@@ -50,16 +54,17 @@ class JarvisModelSetupWorker(
                 synchronized(progressLock) {
                     downloaded = bytes
                     total = length
-                    if (!stage.contains("resumable parts", ignoreCase = true)) {
-                        stage = spec.id
-                    }
+                    // Retain the actual phase: hashing starts a new byte count,
+                    // but is verification, not a second download.
                     publishProgress()
                 }
             },
             onStatus = { status ->
                 synchronized(progressLock) {
                     stage = status
-                    publishProgress()
+                    downloaded = 0L
+                    total = -1L
+                    publishProgress(force = true)
                 }
             }
         ).getOrElse { error ->

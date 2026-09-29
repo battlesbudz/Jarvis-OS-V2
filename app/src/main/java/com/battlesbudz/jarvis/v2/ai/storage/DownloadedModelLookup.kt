@@ -12,11 +12,22 @@ import kotlin.coroutines.resume
 
 
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
+import com.battlesbudz.jarvis.v2.ai.importFileNames
 
 /** Exact-name Downloads queries only; never scans unrelated user storage. */
 internal class DownloadedModelLookup(context: Context) {
     private val context = context.applicationContext
-    suspend fun find(spec: LocalModelSpec): Uri? =
+    suspend fun find(spec: LocalModelSpec): Uri? {
+        for (name in spec.importFileNames()) {
+            // Generic publisher names identify multiple models; only explicit
+            // picker imports may use those, with the selected model's hash.
+            if (name != spec.fileName && name in setOf("model.litertlm", "model_block32.litertlm", "model_block128.litertlm")) continue
+            findExact(spec.copy(fileName = name))?.let { return it }
+        }
+        return null
+    }
+
+    private suspend fun findExact(spec: LocalModelSpec): Uri? =
         suspendCancellableCoroutine { continuation ->
             val cancellationSignal = CancellationSignal()
             continuation.invokeOnCancellation { cancellationSignal.cancel() }

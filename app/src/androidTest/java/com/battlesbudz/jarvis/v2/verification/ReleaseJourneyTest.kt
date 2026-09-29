@@ -1264,6 +1264,61 @@ class ReleaseJourneyTest {
         com.battlesbudz.jarvis.v2.chat.ChatMediaStore.discard(context, attachment)
     }
 
+    @Test fun test32_installedModelAndCompletedDownloadSurviveStoreRecreation() = runBlocking {
+        val bytes = ByteArray(4097) { (it % 251).toByte() }
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+        val spec = LocalModelSpec(
+            id = "verification-storage", fileName = "verification-storage.litertlm",
+            expectedSha256 = hash, recommendedGpu = false, downloadBytes = bytes.size.toLong(),
+            downloadUrl = "https://127.0.0.1:9/must-not-download.litertlm"
+        )
+        val store = com.battlesbudz.jarvis.v2.ai.ModelStore(context)
+        val file = store.fileFor(spec)
+        val preferences = context.getSharedPreferences("model_setup", android.content.Context.MODE_PRIVATE)
+        val key = "sha256_${spec.id}"
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, spec.fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/")
+        }
+        val uri = checkNotNull(context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
+        try {
+            checkNotNull(context.contentResolver.openOutputStream(uri)).use { it.write(bytes) }
+            assertTrue(store.importModel(uri, spec).isSuccess)
+            assertTrue(store.hasModel(spec))
+            assertTrue(com.battlesbudz.jarvis.v2.ai.ModelStore(context).isUsable(spec))
+            // Lose only verification metadata, as can happen on upgrade/restore.
+            preferences.edit().remove(key).remove("${key}_length").remove("${key}_modified").commit()
+            val restored = com.battlesbudz.jarvis.v2.ai.ModelStore(context)
+            assertTrue(restored.hasModel(spec))
+            assertFalse(restored.isUsable(spec))
+            assertTrue(restored.verifyIntegrity(spec))
+            assertTrue(restored.isUsable(spec))
+            assertTrue(restored.downloadOrReuse(spec).isSuccess)
+            assertArrayEquals(bytes, file.readBytes())
+            // Corrupt installed bytes must never be accepted as usable.
+            file.writeBytes(ByteArray(bytes.size))
+            preferences.edit().remove("${key}_modified").commit()
+            assertFalse(restored.verifyIntegrity(spec))
+            assertFalse(restored.isUsable(spec))
+            // A fully downloaded checkpoint installs without a network request.
+            file.delete()
+            File(file.parentFile, "${spec.fileName}.part").writeBytes(bytes)
+            context.contentResolver.delete(uri, null, null)
+            assertTrue(restored.downloadOrReuse(spec).isSuccess)
+            assertTrue(com.battlesbudz.jarvis.v2.ai.ModelStore(context).isUsable(spec))
+            assertArrayEquals(bytes, file.readBytes())
+        } finally {
+            context.contentResolver.delete(uri, null, null)
+            file.delete()
+            File(file.parentFile, "${spec.fileName}.part").delete()
+            val edit = preferences.edit()
+            preferences.all.keys.filter { it.contains(spec.id) }.forEach { edit.remove(it) }
+            edit.commit()
+        }
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()

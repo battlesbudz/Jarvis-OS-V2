@@ -4,6 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ModelCatalogTest {
+    @Test fun importsRecognizePublisherNamesWithoutLosingInstalledIdentity() {
+        val deepSeek = ModelCatalog.find("DeepSeek-R1-Distill-Qwen-1.5B")!!
+        assertEquals(setOf("DeepSeek-R1-Distill-Qwen-1.5B.litertlm",
+            "DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm"), deepSeek.importFileNames())
+        assertEquals(setOf("gemma-4-E2B-it.litertlm"), ModelCatalog.gemma4E2b.importFileNames())
+        val generic = ModelCatalog.qwen.first { it.id == "Qwen3-4B-Thinking-2507" }
+        assertTrue(generic.importFileNames().contains("model.litertlm"))
+        assertEquals("Qwen3-4B-Thinking-2507.litertlm", generic.fileName)
+    }
     @Test fun existingInstallationsKeepE2b() {
         assertEquals(ModelCatalog.gemma4E2b, ModelCatalog.resolve(null))
         assertEquals("gemma-4-E2B-it.litertlm", ModelCatalog.resolve(null).fileName)

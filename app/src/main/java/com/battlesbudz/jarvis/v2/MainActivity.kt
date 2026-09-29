@@ -460,12 +460,24 @@ class MainActivity : ComponentActivity() {
             .addTag(workName)
             .build()
         val workManager = WorkManager.getInstance(applicationContext)
-        workManager.enqueueUniqueWork(workName, ExistingWorkPolicy.KEEP, request)
         lifecycleScope.launch {
+            val observedId = withContext(Dispatchers.IO) {
+                val priorActive = workManager.getWorkInfosForUniqueWork(workName).get()
+                    .firstOrNull { !it.state.isFinished }?.id
+                workManager.enqueueUniqueWork(workName, ExistingWorkPolicy.KEEP, request).result.get()
+                val infos = workManager.getWorkInfosForUniqueWork(workName).get()
+                if (infos.any { it.id == request.id }) request.id else priorActive
+            }
+            if (observedId == null) {
+                onFinished("Could not identify the active model setup. Please retry.")
+                return@launch
+            }
             var terminal: WorkInfo? = null
             workManager.getWorkInfosForUniqueWorkFlow(workName)
                 .takeWhile { infos ->
-                    val info = infos.firstOrNull()
+                    // KEEP can attach to an already active request. Never consume
+                    // a previous completed request from this unique-work history.
+                    val info = infos.firstOrNull { it.id == observedId }
                     if (info != null) {
                         val stage = info.progress.getString("stage")
                         val downloaded = info.progress.getLong("downloaded", 0L)

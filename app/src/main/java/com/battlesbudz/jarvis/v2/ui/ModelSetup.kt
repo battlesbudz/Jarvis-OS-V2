@@ -121,6 +121,8 @@ private fun setupPhase(status: String): String = when {
         "Step 2 of 5: checking Downloads"
     status.contains("Importing", ignoreCase = true) -> "Step 3 of 5: importing the existing model"
     status.contains("Verifying", ignoreCase = true) -> "Step 4 of 5: verifying the model"
+    status.contains("Assembling", ignoreCase = true) -> "Step 3 of 5: assembling the downloaded model"
+    status.contains("Downloading", ignoreCase = true) -> "Downloading the model"
     status.contains("Loading ", ignoreCase = true) || status.contains("initializing", ignoreCase = true) ->
         "Step 5 of 5: initializing the selected model"
     status.contains("Downloading the local Jarvis voice model", ignoreCase = true) ->
