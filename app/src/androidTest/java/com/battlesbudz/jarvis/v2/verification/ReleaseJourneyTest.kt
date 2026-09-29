@@ -47,6 +47,7 @@ import org.junit.runners.MethodSorters
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 
 /** Real release UI/Android actions; controlled ToolCalls verify routing without model weights. */
@@ -1064,6 +1065,7 @@ class ReleaseJourneyTest {
         repeat(20) { history.updateReply(history.current.value.id, "swipe-$it", "Scrollable message $it", true) }
         val busy = MutableStateFlow(false)
         val ends = AtomicInteger(0)
+        val minimizeCallback = AtomicReference<(() -> Unit)?>(null)
         try {
             VoiceSessionUi.armed.value = false
             activity.onActivity { host -> host.setContent {
@@ -1074,9 +1076,10 @@ class ReleaseJourneyTest {
                         onSelectConversation = { null }, onEndVoice = { done -> ends.incrementAndGet(); done("") },
                         onOpenVoiceCalls = {}, resumedVoice = false,
                         voiceContent = { visible, _, _, minimize, request ->
+                            minimizeCallback.set(minimize)
                             if (visible) {
                                 androidx.compose.material3.Text("Call overlay request $request", Modifier.testTag("controlled_overlay"))
-                                androidx.compose.material3.TextButton(onClick = minimize) { androidx.compose.material3.Text("Minimize") }
+                                androidx.compose.material3.Text("Minimize", Modifier.testTag("voice_call_minimize"))
                             }
                         })
                 } }
@@ -1103,7 +1106,10 @@ class ReleaseJourneyTest {
             assertNotNull("The separate dictation microphone stays in the composer", find(By.res("chat_voice_input")))
             VoiceSessionUi.armed.value = true
             assertNotNull(find(By.res("voice_call_status")))
-            find(By.text("Minimize")).click()
+            assertNotNull(find(By.res("voice_call_minimize")))
+            val minimize = minimizeCallback.get() ?: fail("Minimize callback was not captured")
+            instrumentation.runOnMainSync { minimize.invoke() }
+            device.waitForIdle()
             assertEquals("Keep my draft", find(By.res("chat_composer")).text)
             assertEquals("Minimizing must preserve the active call", 0, ends.get())
             find(By.res("voice_call_open")).click()
