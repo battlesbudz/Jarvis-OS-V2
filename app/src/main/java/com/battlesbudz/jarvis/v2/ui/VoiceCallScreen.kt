@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
 
+@androidx.annotation.Keep
 @Composable
 internal fun VoiceCallOverlayBubble(
     phase: String,

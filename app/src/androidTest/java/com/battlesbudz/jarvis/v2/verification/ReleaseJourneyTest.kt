@@ -963,7 +963,9 @@ class ReleaseJourneyTest {
                                 onStart = {},
                                 onStopReply = {},
                                 onToggleMicrophone = {},
-                                onEndCall = { ends.incrementAndGet() }
+                                onEndCall = { ends.incrementAndGet() },
+                                transcriptSpeaker = "",
+                                transcript = ""
                             )
                         },
                     )
