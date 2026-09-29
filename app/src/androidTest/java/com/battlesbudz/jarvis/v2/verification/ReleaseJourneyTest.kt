@@ -1084,7 +1084,7 @@ class ReleaseJourneyTest {
         repeat(20) { history.updateReply(history.current.value.id, "swipe-$it", "Scrollable message $it", true) }
         val busy = MutableStateFlow(false)
         val ends = AtomicInteger(0)
-        var liveCaption = ""
+        val liveCaption = MutableStateFlow("")
         try {
             VoiceSessionUi.armed.value = false
             VoiceSessionUi.status.value = ""
@@ -1101,7 +1101,8 @@ class ReleaseJourneyTest {
                                 phase = "Listening",
                                 status = VoiceSessionUi.status.value.ifBlank { "Voice Call is listening" },
                                 transcriptSpeaker = "You",
-                                transcript = liveCaption,
+                                transcript = "",
+                                transcriptFlow = liveCaption,
                                 level = VoiceSessionUi.level.value,
                                 active = VoiceSessionUi.armed.value,
                                 microphonePaused = VoiceSessionUi.paused.value,
@@ -1131,7 +1132,7 @@ class ReleaseJourneyTest {
             VoiceSessionUi.phase.value = VoicePhase.LISTENING
             VoiceSessionUi.armed.value = true
             activity.onActivity {
-                liveCaption = "Live speech appears without minimizing"
+                liveCaption.value = "Live speech appears without minimizing"
                 history.updateReply(history.current.value.id, "streaming-voice", "Transcript is updating while I speak", false)
             }
             assertEquals("Live speech appears without minimizing", find(By.res("voice_call_live_transcript")).text)
