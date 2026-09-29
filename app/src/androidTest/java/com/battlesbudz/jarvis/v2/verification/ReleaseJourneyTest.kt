@@ -164,6 +164,28 @@ class ReleaseJourneyTest {
         throw AssertionError("Control did not become stably enabled: $selector")
     }
 
+    /** Waits for an async UI state update and verifies a fresh node remains disabled. */
+    private fun waitUntilDisabled(selector: BySelector): UiObject2 {
+        val deadline = SystemClock.uptimeMillis() + 15_000
+        while (SystemClock.uptimeMillis() < deadline) {
+            try {
+                val control = device.findObject(selector)
+                if (control != null && !control.isEnabled) {
+                    device.waitForIdle()
+                    SystemClock.sleep(300)
+                    val fresh = device.findObject(selector)
+                    if (fresh != null && !fresh.isEnabled) {
+                        return fresh
+                    }
+                }
+            } catch (_: StaleObjectException) {
+                // Re-query after Compose replaces the accessibility node.
+            }
+            SystemClock.sleep(100)
+        }
+        throw AssertionError("Control did not become stably disabled: $selector")
+    }
+
     private fun openBrowser() { find(By.res("model_browse")).click(); find(By.res("model_search")) }
 
     private fun clickEnabled(selector: BySelector) {
@@ -1072,7 +1094,7 @@ class ReleaseJourneyTest {
             }
             assertNotNull(find(By.res("chat_voice_input")))
             busy.value = true
-            assertFalse(find(By.res("voice_call_open")).isEnabled)
+            assertFalse(waitUntilDisabled(By.res("voice_call_open")).isEnabled)
             busy.value = false
             enabled(By.res("voice_call_open"))
             find(By.res("voice_call_open")).click()
