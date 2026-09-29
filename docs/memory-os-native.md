@@ -62,3 +62,52 @@ The merge preserves both parents: MemoryOS/audio `7a72dfe1fe0577f94e9da580af9b00
 The conversation implementation supplies finalized-input capture, one approved snapshot per ordinary turn, persisted history cutoffs, mutation/expiry delivery fences, persistent calls, and bounded typed/spoken follow-ups. The prior branch's reviewed local-personal-recall behavior is retained: matching approved personal facts bypass automatic references; explicit lookup and lookup confirmation retain references. Phone actions are authorized from the raw current request and receive no memory packet. An invalidated incremental input is closed and excluded from generation.
 
 `test28_voiceNavigationRetainsCallIdUntilExplicitEnd` preserves the prior branch's navigation contract in addition to the stronger controlled production surface journey `test27`. The merged contract contains 29 journeys per emulator variant. `MemoryRecallIntegrationTest` verifies pending/approved/erased routing and explicit lookup/action precedence. Fresh combined-commit CI is required; historical parent passes are not combined-revision evidence.
+
+## Plan to finish MemoryOS: local semantic and autonomous recall
+
+**Status:** planned follow-on work; the sections above describe the implemented native milestone. The current lexical path remains the working fallback until this plan is implemented.
+
+**Goal:** approved memories should be recalled during ordinary Chat and Voice turns when they are relevant, including paraphrased or implied references. Users should not have to say “remember” or explicitly request a memory search for relevant context to be available.
+
+### 1. Qualify the local embedding runtime
+
+Use **EmbeddingGemma 300M** as the first Android candidate. Google's current Text Embedder documentation supports the EmbeddingGemma 300M task artifact on Android through MediaPipe Tasks Text, including `TextFormatContext` for retrieval query/document roles. Use the app's Kotlin integration and a pinned, reviewed model artifact; do not send memory text or queries to a hosted embedding service.
+
+The model overview describes a 308M multilingual model, 768-to-128 output dimensions, and on-device/offline use. The Android task artifact has a 512-token sequence limit, even though the general model overview describes a longer context; verify tokenization and chunking against the exact artifact. Benchmark 768- and smaller-dimensional output, plus float and scalar-quantized vectors, against the same recall suite before choosing the stored representation. Precompute document vectors when a memory becomes eligible; only the current query needs to be embedded on a normal turn.
+
+Check warm and cold inference, peak memory, model storage/download size, battery, and voice-turn latency on the target Galaxy Z Fold 6. Google's published Text Embedder table reports 200 ms CPU latency on a Samsung S26 Ultra, which is a reference point, not a Fold 6 result. Choose whether the artifact is bundled or explicitly acquired once on device after measuring APK/storage impact; the resulting recall path must work offline. Audit dependency telemetry/network behavior and confirm no memory or query text leaves the device. Review Gemma Terms before commercial distribution. If EmbeddingGemma fails the device or licensing gates, benchmark BGE-small-en-v1.5 with ONNX Runtime Mobile as the English-only fallback; it needs its own tokenizer/pooling integration and quality test.
+
+### 2. Add a rebuildable local hybrid index
+
+Keep `memory-os.json` as the authoritative, inspectable ledger. Add a private local SQLite sidecar for retrieval fields, lexical search, and embedding blobs; treat the sidecar as derived data, never as the only copy of a memory. Begin with app-side cosine scoring over the bounded local corpus; add an approximate-nearest-neighbor index only if measurements show it is needed.
+
+Index only approved, active, non-expired memories. A vector row must be tied to the memory ID, ledger revision/content hash, embedding model and version, task-format/template version, and output dimension. Use the documented `RETRIEVAL_DOCUMENT` form when embedding a memory and `RETRIEVAL_QUERY` form for a user query; preserve the title/category and relevant time/relationship metadata in the document text. Keep the index in the same private local storage boundary as the ledger.
+
+Build deterministic index creation, schema migration, and full rebuild from the ledger. Approval adds a vector; rejection never does. Correction/supersession, expiry, erase, and erase-all must invalidate stale vectors and already-built packets using the existing generation/delivery fences. If an index is missing or corrupt, rebuild it or fall back to the lexical path with an explicit retrieval status; never silently treat an index failure as “no memories.”
+
+### 3. Retrieve autonomously on ordinary turns
+
+Run memory retrieval for every normal conversational turn, not only when the utterance contains a recall phrase. First route the raw current request through existing action selection and authorization. Then form a retrieval query from the current utterance and a bounded recent-conversation window so paraphrases, pronouns, and references like “that place we discussed” can resolve. Do not let retrieved memory change Kotlin tool authorization or give a tool permission.
+
+Use hybrid candidate generation: preserve deterministic exact/lexical matching for names, dates, and rare terms, and add dense cosine similarity for semantic matches. Combine ranks rather than adding uncalibrated scores. Rank or rerank with type/topic/person overlap, confidence/provenance, recency, and temporal validity; a newer memory must not override an older fact that is still valid for the question's time. Apply approval, expiry, deletion, and supersession filters before ranking. Inject only a small, relevance-thresholded set into the bounded, JSON-quoted historical context packet with source, recorded time, and applicable validity. If nothing clears the threshold, send no memory context. Preserve explicit lookup/reference behavior and the current raw-request-first trust boundary.
+
+### 4. Complete memory lifecycle and temporal meaning
+
+Keep capture and recall as separate paths. Extend local proposal generation beyond the current narrow deterministic “remember/preference” patterns, but keep inferred proposals pending user review unless a later, separately approved policy explicitly changes that rule. Index only after approval. Maintain the Wiki, source traceability, corrections, rejection, expiry, and deletion behavior.
+
+Add typed temporal and relationship fields needed to answer questions accurately: memory kind (identity/preference, episode, person/relationship, goal/plan, or procedure), subject/topic links, source and confidence, recorded time, valid-from/valid-until, and supersession/correction lineage. Preserve the distinction between when Jarvis learned something and when it was true. After autonomous recall passes its quality gates, add local consolidation (deduplication, summarization, promotion/demotion, decay, and charging/idle-time “dream” work) as a separate milestone. Consolidated facts remain traceable to source episodes and enter the same review path; consolidation must not silently approve or erase user memories.
+
+### 5. Prove quality and lifecycle safety
+
+Create a fixed local golden set with direct asks, paraphrases, implied references, pronouns/coreference, temporal questions, exact-name/date lookups, competing or corrected facts, and cases with no relevant memory. Compare hybrid retrieval with the existing lexical-only baseline. Record Recall@5, ranking quality, and irrelevant-memory injection rate, then set release thresholds against that fixed set. Require zero policy failures: pending/rejected/expired/superseded/erased memories never appear, corrections suppress stale values, and memory never authorizes an action. Add tests for index rebuild/migration, model-version changes, model-unavailable fallback, and delivery-fence invalidation after a memory mutation.
+
+Run offline/network-egress checks and measure cold-start and warm per-turn latency, peak RAM, storage/APK impact, and battery on the Fold 6. Keep emulator API 30 and API 35 journeys for lifecycle and integration coverage, but do not treat emulator numbers as physical-device performance evidence. Ship semantic recall only when quality beats the lexical-only baseline on implicit/paraphrased cases without increasing irrelevant injections and the target-device gates pass.
+
+**Research references**
+
+- [EmbeddingGemma model overview](https://ai.google.dev/gemma/docs/embeddinggemma)
+- [MediaPipe Text Embedder guide](https://developers.google.com/edge/mediapipe/solutions/text/text_embedder)
+- [EmbeddingGemma Android task artifact](https://huggingface.co/litert-community/embeddinggemma-300m)
+- [BGE-small-en-v1.5 model card](https://huggingface.co/BAAI/bge-small-en-v1.5)
+- [ONNX Runtime Mobile](https://onnxruntime.ai/docs/get-started/with-mobile.html)
+
