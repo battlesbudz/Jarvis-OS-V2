@@ -41,7 +41,9 @@ internal fun VoiceCallOverlayBubble(
     onStart: () -> Unit,
     onStopReply: () -> Unit,
     onToggleMicrophone: () -> Unit,
-    onEndCall: () -> Unit
+    onEndCall: () -> Unit,
+    transcriptSpeaker: String = "",
+    transcript: String = ""
 ) {
     // This layer fills the chat's existing window and paints no scrim. Touches outside
     // the bubble still reach the conversation, so text stays readable and usable.
@@ -54,7 +56,7 @@ internal fun VoiceCallOverlayBubble(
                 .fillMaxWidth()
                 .testTag("voice_call_overlay"),
             shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = .72f),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = .56f),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .42f)),
             tonalElevation = 2.dp,
             shadowElevation = 12.dp
@@ -86,6 +88,21 @@ internal fun VoiceCallOverlayBubble(
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         modifier = Modifier.testTag("voice_call_status")
                     )
+                    if (transcript.isNotBlank()) {
+                        Text(
+                            transcriptSpeaker.ifBlank { "Transcript" },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1
+                        )
+                        Text(
+                            transcript,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.testTag("voice_call_live_transcript")
+                        )
+                    }
                     if (stopReplyAvailable) {
                         TextButton(
                             onClick = onStopReply,
@@ -249,6 +266,8 @@ internal fun VoiceCallScreen(
         VoiceCallOverlayBubble(
             phase = bubblePhase.label,
             status = visibleStatus,
+            transcriptSpeaker = if (provisionalUser.isNotBlank()) "You" else turns.lastOrNull()?.role.orEmpty(),
+            transcript = provisionalUser.ifBlank { turns.lastOrNull()?.text.orEmpty() },
             level = if (runtimeArmed) {
                 if (runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING) playback.level else microphoneLevel
             } else 0f,

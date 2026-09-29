@@ -1082,6 +1082,7 @@ class ReleaseJourneyTest {
         repeat(20) { history.updateReply(history.current.value.id, "swipe-$it", "Scrollable message $it", true) }
         val busy = MutableStateFlow(false)
         val ends = AtomicInteger(0)
+        val liveCaption = androidx.compose.runtime.mutableStateOf("")
         try {
             VoiceSessionUi.armed.value = false
             VoiceSessionUi.status.value = ""
@@ -1097,6 +1098,8 @@ class ReleaseJourneyTest {
                             if (visible) VoiceCallOverlayBubble(
                                 phase = VoiceSessionUi.phase.value.label,
                                 status = VoiceSessionUi.status.value.ifBlank { "Voice Call is listening" },
+                                transcriptSpeaker = "You",
+                                transcript = liveCaption.value,
                                 level = VoiceSessionUi.level.value,
                                 active = VoiceSessionUi.armed.value,
                                 microphonePaused = VoiceSessionUi.paused.value,
@@ -1125,6 +1128,8 @@ class ReleaseJourneyTest {
             VoiceSessionUi.status.value = "Voice Call is listening · live transcript fixture"
             VoiceSessionUi.phase.value = VoicePhase.LISTENING
             VoiceSessionUi.armed.value = true
+            activity.onActivity { liveCaption.value = "Live speech appears without minimizing" }
+            assertEquals("Live speech appears without minimizing", find(By.res("voice_call_live_transcript")).text)
             assertNotNull(find(By.res("voice_call_status")))
             assertNotNull(find(By.res("voice_call_orb")))
             assertFalse("A minimize control is not part of the call overlay", device.hasObject(By.res("voice_call_minimize")))
