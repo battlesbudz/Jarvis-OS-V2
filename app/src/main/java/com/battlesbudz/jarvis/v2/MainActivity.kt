@@ -184,9 +184,10 @@ class MainActivity : ComponentActivity() {
                 },
                 onDeleteVoiceCall = { callId -> voiceCallStore.delete(callId) },
                 onRefreshVoiceCalls = { voiceCallStore.list() },
-                onDownloadGemma = { onProgress, onStatus, onFinished ->
-                    downloadGemmaAndTest(onProgress, onStatus, onFinished)
+                onDownloadGemma = { spec, onProgress, onStatus, onFinished ->
+                    downloadGemmaAndTest(spec, onProgress, onStatus, onFinished)
                 },
+                onCancelModelDownload = { WorkManager.getInstance(applicationContext).cancelUniqueWork("jarvis-local-model-setup") },
                 onImportModel = { uri, spec, report -> importModel(uri, spec, report) },
                 onCopyDiagnostics = { transcript -> copyDiagnostics(transcript) },
                 onExportSpeechAudio = { exportSpeechAudio() },
@@ -352,7 +353,7 @@ class MainActivity : ComponentActivity() {
             wakeTestJob?.isActive == true) {
             return "End the Jarvis session and any tests before switching AI models."
         }
-        if (!modelStore.tryBeginModelOperation()) return "Wait for model setup or testing to finish."
+        if (!modelStore.tryBeginModelSelection(spec)) return "This model is downloading or a model test is running. Choose another installed model."
         return try {
             conversationEngine?.close()
             conversationEngine = null
@@ -450,26 +451,30 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun downloadGemmaAndTest(
+        spec: com.battlesbudz.jarvis.v2.ai.LocalModelSpec,
         onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
         report: (String) -> Unit,
         onFinished: (String) -> Unit
     ) {
         val workName = "jarvis-local-model-setup"
         val request = OneTimeWorkRequestBuilder<com.battlesbudz.jarvis.v2.voice.JarvisModelSetupWorker>()
-            .setInputData(androidx.work.workDataOf("model_id" to modelStore.selectedModel().id))
+            .setInputData(androidx.work.workDataOf("model_id" to spec.id,
+                "prepare_voice" to (spec.id == modelStore.selectedModel().id)))
             .addTag(workName)
+            .addTag("model:${spec.id}")
             .build()
         val workManager = WorkManager.getInstance(applicationContext)
         lifecycleScope.launch {
             val observedId = withContext(Dispatchers.IO) {
                 val priorActive = workManager.getWorkInfosForUniqueWork(workName).get()
-                    .firstOrNull { !it.state.isFinished }?.id
+                    .firstOrNull { !it.state.isFinished }
+                if (priorActive != null && "model:${spec.id}" !in priorActive.tags) return@withContext null
                 workManager.enqueueUniqueWork(workName, ExistingWorkPolicy.KEEP, request).result.get()
                 val infos = workManager.getWorkInfosForUniqueWork(workName).get()
-                if (infos.any { it.id == request.id }) request.id else priorActive
+                if (infos.any { it.id == request.id }) request.id else priorActive?.id
             }
             if (observedId == null) {
-                onFinished("Could not identify the active model setup. Please retry.")
+                onFinished("Another download is running. Let it finish or cancel it before downloading this model.")
                 return@launch
             }
             var terminal: WorkInfo? = null
@@ -493,10 +498,12 @@ class MainActivity : ComponentActivity() {
                 .collect { }
             val result = terminal
             if (result?.state == WorkInfo.State.SUCCEEDED) {
-                runModelSmokeTest(report, onFinished)
+                // A background transfer must never close, load or test the user's current engine.
+                onFinished("${spec.id} downloaded. Choose it when you're ready.")
             } else {
                 val message = result?.outputData?.getString("error")
-                    ?: "Jarvis model setup did not complete."
+                    ?: if (result?.state == WorkInfo.State.CANCELLED) "Download cancelled. Saved progress can be resumed."
+                    else "Jarvis model setup did not complete."
                 report(message)
                 onFinished(message)
             }
@@ -508,7 +515,7 @@ class MainActivity : ComponentActivity() {
         spec: com.battlesbudz.jarvis.v2.ai.LocalModelSpec,
         report: (String) -> Unit
     ) {
-        val importJob = lifecycleScope.launch(Dispatchers.IO) {
+        lifecycleScope.launch(Dispatchers.IO) {
             val result = modelStore.importModel(uri, spec)
             withContext(Dispatchers.Main) {
                 if (result.isSuccess && spec.id == modelStore.selectedModel().id) {
@@ -523,13 +530,6 @@ class MainActivity : ComponentActivity() {
                         "Import failed: $message"
                     }
                 ))
-            }
-        }
-        if (spec.id == modelStore.selectedModel().id) {
-            importJob.invokeOnCompletion {
-                conversationEngine?.close()
-                conversationEngine = null
-                nativeConversationHasContext = false
             }
         }
     }

@@ -45,6 +45,7 @@ internal fun VoiceOrb(phase: String, level: Float, modifier: Modifier = Modifier
     ) {
         Canvas(Modifier.size(diameter)) {
             // Read animated values in the draw phase to avoid recomposing the screen every frame.
+            val drawingScale = size.minDimension / 250.dp.toPx()
             val time = if (paused) 0f else motion.value
             val energy = amplitude.value
             val radius = size.minDimension * .31f
@@ -62,7 +63,7 @@ internal fun VoiceOrb(phase: String, level: Float, modifier: Modifier = Modifier
                     val ripple = sin(angle * 3 + time * 2 + shift) * .52 +
                         sin(angle * 5 - time * 3 + shift) * .28 +
                         sin(angle * 2 + time - shift) * .20
-                    val distance = radius + layer * 1.4.dp.toPx() + ripple.toFloat() * depth
+                    val distance = radius + layer * (1.4.dp.toPx() * drawingScale) + ripple.toFloat() * depth
                     val x = center.x + cos(angle).toFloat() * distance
                     val y = center.y + sin(angle).toFloat() * distance
                     if (point == 0) path.moveTo(x, y) else path.lineTo(x, y)
@@ -72,10 +73,10 @@ internal fun VoiceOrb(phase: String, level: Float, modifier: Modifier = Modifier
                     lavender.copy(alpha = alpha), violet.copy(alpha = .65f * alpha)),
                     start = Offset(0f, size.height), end = Offset(size.width, 0f))
                 // Broad translucent contours create a soft halo without expensive blur filters.
-                drawPath(path, ink, alpha = .055f, style = Stroke(10.dp.toPx()))
-                drawPath(path, ink, alpha = .035f, style = Stroke(20.dp.toPx()))
+                drawPath(path, ink, alpha = .055f, style = Stroke((10.dp.toPx() * drawingScale)))
+                drawPath(path, ink, alpha = .035f, style = Stroke((20.dp.toPx() * drawingScale)))
                 drawPath(path, ink, alpha = .65f - layer * .09f,
-                    style = Stroke((1.8f - layer * .16f).dp.toPx()))
+                    style = Stroke(((1.8f - layer * .16f).dp.toPx() * drawingScale)))
             }
             // Fine, flowing ribbons cross the core; their height follows microphone/playback energy.
             repeat(3) { layer ->
@@ -86,12 +87,12 @@ internal fun VoiceOrb(phase: String, level: Float, modifier: Modifier = Modifier
                     val envelope = sin(PI * fraction).pow(2).toFloat()
                     val wave = sin(fraction * PI * 3 + time * 2 + layer * .8).toFloat()
                     val x = center.x - halfWidth + fraction * halfWidth * 2
-                    val y = center.y + wave * envelope * radius * (.08f + energy * .48f) + (layer - 1) * 3.dp.toPx()
+                    val y = center.y + wave * envelope * radius * (.08f + energy * .48f) + (layer - 1) * (3.dp.toPx() * drawingScale)
                     if (point == 0) path.moveTo(x, y) else path.lineTo(x, y)
                 }
                 drawPath(path, Brush.horizontalGradient(listOf(Color.Transparent,
                     lavender.copy(alpha = (.6f - layer * .12f) * alpha), blue.copy(alpha = .6f * alpha),
-                    Color.Transparent)), style = Stroke(1.3.dp.toPx()))
+                    Color.Transparent)), style = Stroke(1.(3.dp.toPx() * drawingScale)))
             }
         }
         if (showPhaseLabel) Text(phase, modifier = Modifier.padding(top = 8.dp),

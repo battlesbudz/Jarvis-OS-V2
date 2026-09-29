@@ -60,7 +60,8 @@ fun JarvisApp(
     onResumeVoiceCall: (VoiceCallRecord, (String?) -> Unit) -> Unit,
     onDeleteVoiceCall: (String) -> Unit,
     onRefreshVoiceCalls: () -> List<VoiceCallRecord>,
-    onDownloadGemma: ((Long, Long) -> Unit, (String) -> Unit, (String) -> Unit) -> Unit,
+    onDownloadGemma: (com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (Long, Long) -> Unit, (String) -> Unit, (String) -> Unit) -> Unit,
+    onCancelModelDownload: () -> Unit,
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onExportSpeechAudio: () -> Unit,
@@ -78,6 +79,8 @@ fun JarvisApp(
     var smokeTestRunning by remember { mutableStateOf(false) }
     var modelImportRunning by remember { mutableStateOf(store.importInProgress()) }
     var modelDownloadRunning by remember { mutableStateOf(false) }
+    var downloadingModelId by remember { mutableStateOf<String?>(null) }
+    var downloadNotice by remember { mutableStateOf("") }
     var automaticSmokeTestAttempted by remember { mutableStateOf(false) }
     var downloadBytes by remember { mutableStateOf(0L) }
     var downloadTotalBytes by remember { mutableStateOf(-1L) }
@@ -94,6 +97,23 @@ fun JarvisApp(
     val activeVoiceCall by com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.armed.collectAsState()
     val activeVoiceStatus by com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.status.collectAsState()
     var phone by remember { mutableStateOf(com.battlesbudz.jarvis.v2.ai.PhoneCheck.read(phoneContext)) }
+    val downloadModel: (com.battlesbudz.jarvis.v2.ai.LocalModelSpec) -> Unit = { spec ->
+        downloadBytes = 0L
+        downloadTotalBytes = -1L
+        downloadNotice = "Preparing ${spec.id}…"
+        onDownloadGemma(spec, { bytes, total ->
+            downloadBytes = bytes
+            downloadTotalBytes = total
+        }, { message ->
+            downloadNotice = message
+            if (spec.id == selectedModel.id) setupStatus = message
+        }, { result ->
+            downloadNotice = result
+            if (spec.id == selectedModel.id) setupStatus = result
+            modelsReady = store.isUsable()
+            smokeTestPassed = modelsReady && store.smokeTestPassed()
+        })
+    }
     val modelSelector: @Composable (Boolean) -> Unit = { enabled ->
         Column {
             Text("AI model", style = MaterialTheme.typography.titleMedium)
@@ -101,23 +121,28 @@ fun JarvisApp(
             var confirmingDelete by remember { mutableStateOf(false) }
             var detailsOpen by remember(selectedModel.id) { mutableStateOf(false) }
             var storageRevision by remember { mutableStateOf(0) }
-            val canManage = enabled && !smokeTestRunning && !modelImportRunning && !modelDownloadRunning
+            val canBrowse = !modelImportRunning
+            val canManage = enabled && !smokeTestRunning && !modelImportRunning
             val storedBytes = remember(selectedModel, storageRevision, modelImportRunning, modelDownloadRunning) {
                 store.storedBytes(selectedModel)
             }
-            LaunchedEffect(canManage) {
-                if (!canManage) { expanded = false; confirmingDelete = false }
+            LaunchedEffect(canBrowse, canManage) {
+                if (!canBrowse) expanded = false
+                if (!canManage) confirmingDelete = false
             }
             OutlinedButton(
-                enabled = canManage,
+                enabled = canBrowse,
                 onClick = { phone = com.battlesbudz.jarvis.v2.ai.PhoneCheck.read(phoneContext); expanded = true },
                 modifier = Modifier.fillMaxWidth().testTag("model_browse")
             ) { Text("Browse model families · ${com.battlesbudz.jarvis.v2.ai.ModelGuide.family(selectedModel)}") }
             Text(selectedModel.id, style = MaterialTheme.typography.titleSmall)
             ModelCompatibilityLabel(selectedModel)
-            if (expanded && canManage) ModelBrowser(
+            if (expanded && canBrowse) ModelBrowser(
                 phone = phone, selectedId = selectedModel.id,
                 isInstalled = { store.hasModel(it) },
+                selectionEnabled = canManage,
+                downloadingId = downloadingModelId,
+                onDownload = downloadModel,
                 onDismiss = { expanded = false },
                 onSelect = { spec ->
                     selectionError = onSelectModel(spec)
@@ -132,13 +157,22 @@ fun JarvisApp(
                 }
             )
             Text(if (store.hasModel(selectedModel)) "Installed" else "Not installed")
+            if (downloadingModelId != null) {
+                Text("Downloading $downloadingModelId", style = MaterialTheme.typography.bodySmall)
+                Text(downloadNotice, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                if (downloadTotalBytes > 0L) androidx.compose.material3.LinearProgressIndicator(
+                    progress = { (downloadBytes.toFloat() / downloadTotalBytes).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth())
+                androidx.compose.material3.TextButton(onClick = onCancelModelDownload,
+                    modifier = Modifier.testTag("model_cancel_download")) { Text("Cancel download") }
+            } else if (downloadNotice.isNotBlank()) Text(downloadNotice, style = MaterialTheme.typography.bodySmall)
             OutlinedButton(
-                enabled = !modelImportRunning && !modelDownloadRunning,
+                enabled = !modelImportRunning,
                 onClick = { showingMemory = true },
                 modifier = Modifier.fillMaxWidth().testTag("memory_open")
             ) { Text("Memory") }
             if (storedBytes > 0L) {
-                OutlinedButton(enabled = canManage, onClick = { confirmingDelete = true }) {
+                OutlinedButton(enabled = canManage && !modelDownloadRunning, onClick = { confirmingDelete = true }) {
                     Text("Delete model & cache · %.2f GB".format(java.util.Locale.US, storedBytes / 1_000_000_000.0))
                 }
             }
@@ -204,13 +238,19 @@ fun JarvisApp(
             if (recovered == false) setupStatus = "The installed model did not pass verification. Re-import it or delete it before downloading a replacement."
         }
     }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(selectedModel.id) {
         androidx.work.WorkManager.getInstance(setupContext)
             .getWorkInfosForUniqueWorkFlow("jarvis-local-model-setup").collect { infos ->
                 val active = infos.firstOrNull { !it.state.isFinished }
-                modelDownloadRunning = active != null
+                downloadingModelId = active?.progress?.getString("model_id")
+                    ?: active?.tags?.firstOrNull { it.startsWith("model:") }?.removePrefix("model:")
+                    ?: if (active != null) selectedModel.id else null
+                modelDownloadRunning = active != null && downloadingModelId == selectedModel.id
                 if (active != null) {
-                    active.progress.getString("stage")?.let { setupStatus = it }
+                    active.progress.getString("stage")?.let {
+                        downloadNotice = it
+                        if (modelDownloadRunning) setupStatus = it
+                    }
                     downloadBytes = active.progress.getLong("downloaded", 0L)
                     downloadTotalBytes = active.progress.getLong("total", -1L)
                 }
@@ -369,27 +409,7 @@ fun JarvisApp(
                     downloadTotalBytes = downloadTotalBytes,
                     status = setupStatus,
                     elapsedSeconds = setupElapsedSeconds,
-                    onDownload = {
-                        modelDownloadRunning = true
-                        downloadBytes = 0L
-                        downloadTotalBytes = -1L
-                        setupStatus = "Preparing local Jarvis…"
-                        onDownloadGemma({ downloaded, total ->
-                            downloadBytes = downloaded
-                            downloadTotalBytes = total
-                        }, { status ->
-                            setupStatus = status
-                        }) { result ->
-                            if (result.startsWith("Gemma found") || result.startsWith("Loading Gemma")) {
-                                downloadBytes = 0L
-                                downloadTotalBytes = -1L
-                            }
-                            modelDownloadRunning = false
-                            setupStatus = result
-                            modelsReady = store.isUsable()
-                            smokeTestPassed = modelsReady && store.smokeTestPassed()
-                        }
-                    },
+                    onDownload = { downloadModel(selectedModel) },
                     onPickGemma = { pickerModelId = selectedModel.id; gemmaPicker.launch(arrayOf("*/*")) },
                     onTest = {
                         smokeTestRunning = true

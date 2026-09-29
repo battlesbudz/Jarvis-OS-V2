@@ -47,102 +47,37 @@ internal object VoiceCallOverlay {
     transcriptSpeaker: String = "",
     transcript: String = ""
 ) {
-    // This layer fills the chat's existing window and paints no scrim. Touches outside
-    // the bubble still reach the conversation, so text stays readable and usable.
+    // Only the orb and its opaque control pill paint over the chat. The live
+    // transcript belongs to the conversation, rather than a duplicate overlay.
     Box(Modifier.fillMaxSize().testTag("voice_call_overlay_layer")) {
-        androidx.compose.material3.Surface(
-            modifier = Modifier.align(Alignment.BottomEnd)
-                .imePadding()
-                .padding(end = 12.dp, bottom = 104.dp)
-                .widthIn(max = 340.dp)
-                .fillMaxWidth()
-                .testTag("voice_call_overlay"),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = .56f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .42f)),
-            tonalElevation = 2.dp,
-            shadowElevation = 12.dp
-        ) {
-            Row(
-                modifier = Modifier.padding(start = 8.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                VoiceOrb(
-                    phase = phase,
-                    level = level,
-                    modifier = Modifier.testTag("voice_call_orb"),
-                    diameter = 56.dp,
-                    showPhaseLabel = false
-                )
-                Spacer(Modifier.width(6.dp))
-                Column(
-                    modifier = Modifier.weight(1f).padding(vertical = 4.dp),
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        if (active) "Voice call active" else "Starting voice call",
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                    Text(
-                        status.ifBlank { phase },
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        modifier = Modifier.testTag("voice_call_status")
-                    )
-                    if (transcript.isNotBlank()) {
-                        Text(
-                            transcriptSpeaker.ifBlank { "Transcript" },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1
-                        )
-                        Text(
-                            transcript,
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 2,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            modifier = Modifier.testTag("voice_call_live_transcript")
-                        )
-                    }
-                    if (stopReplyAvailable) {
-                        TextButton(
-                            onClick = onStopReply,
-                            modifier = Modifier.heightIn(min = 32.dp).testTag("voice_call_stop_reply"),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                        ) { Text("Stop reply · listen", maxLines = 1, style = MaterialTheme.typography.labelSmall) }
-                    }
-                }
+        Column(Modifier.align(Alignment.BottomEnd).imePadding()
+            .padding(end = 16.dp, bottom = 104.dp).width(112.dp).testTag("voice_call_overlay"),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            VoiceOrb(phase = phase, level = level, diameter = 100.dp, showPhaseLabel = false,
+                modifier = Modifier.testTag("voice_call_orb"))
+            androidx.compose.material3.Surface(shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 3.dp) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (active) {
-                        IconButton(
-                            onClick = onToggleMicrophone,
-                            modifier = Modifier.size(40.dp).testTag("voice_call_pause")
-                        ) {
-                            Text(
-                                if (microphonePaused) "▶" else "Ⅱ",
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.semantics {
+                    Text(phase, style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            .testTag("voice_call_status").semantics { contentDescription = status.ifBlank { phase } })
+                    Row(horizontalArrangement = Arrangement.Center) {
+                        if (active) {
+                            IconButton(onClick = onToggleMicrophone,
+                                modifier = Modifier.size(48.dp).testTag("voice_call_pause").semantics {
                                     contentDescription = if (microphonePaused) "Resume microphone" else "Pause microphone"
-                                }
-                            )
-                        }
-                        IconButton(
-                            onClick = onEndCall,
-                            modifier = Modifier.size(40.dp).testTag("voice_call_end")
-                        ) {
-                            Text(
-                                "×",
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.titleLarge,
-                                modifier = Modifier.semantics { contentDescription = "End call" }
-                            )
-                        }
-                    } else if (canStart) {
-                        Button(onClick = onStart, modifier = Modifier.testTag("voice_start")) { Text("Start") }
-                    } else {
-                        Text("…", style = MaterialTheme.typography.titleMedium)
+                                }) { Text(if (microphonePaused) "▶" else "Ⅱ") }
+                            IconButton(onClick = onEndCall,
+                                modifier = Modifier.size(48.dp).testTag("voice_call_end").semantics { contentDescription = "End call" }) {
+                                Text("×", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.titleLarge)
+                            }
+                        } else if (canStart) {
+                            TextButton(onClick = onStart, modifier = Modifier.testTag("voice_start")) { Text("Start") }
+                        } else Text("…", modifier = Modifier.padding(12.dp))
                     }
+                    if (stopReplyAvailable) TextButton(onClick = onStopReply,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.testTag("voice_call_stop_reply")) { Text("Stop reply", style = MaterialTheme.typography.labelSmall) }
                 }
             }
         }

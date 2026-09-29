@@ -12,6 +12,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 
 class ModelStore(context: Context) {
     private val downloader = ModelDownloader()
@@ -19,7 +20,7 @@ class ModelStore(context: Context) {
 
     private companion object {
         val activeImports = AtomicInteger(0)
-        val activeModelOperation = AtomicInteger(0)
+        val operations = ModelOperationGate()
     }
 
     private val preferences = context.getSharedPreferences("model_setup", Context.MODE_PRIVATE)
@@ -29,7 +30,7 @@ class ModelStore(context: Context) {
         if (activeImports.get() == 0 && preferences.getBoolean("import_in_progress", false)) {
             preferences.edit().putBoolean("import_in_progress", false).apply()
             modelDirectory.listFiles()
-                ?.filter { it.name.endsWith(".part") }
+                ?.filter { it.name.endsWith(".part") && ModelCatalog.all.none { spec -> it.name == "${spec.fileName}.part" } }
                 ?.forEach { it.delete() }
         }
     }
@@ -40,6 +41,7 @@ class ModelStore(context: Context) {
     fun selectModel(spec: LocalModelSpec) {
         require(ModelCatalog.find(spec.id) == spec) { "Unsupported model." }
         check(isModelOperationActive()) { "Model selection requires exclusive ownership." }
+        check(!operations.downloading(spec.id)) { "This model is still downloading. Choose an installed model or cancel its download." }
         check(preferences.edit().putString("selected_model", spec.id).commit()) {
             "Could not save the selected model."
         }
@@ -53,6 +55,7 @@ class ModelStore(context: Context) {
     fun deleteModel(spec: LocalModelSpec) {
         require(ModelCatalog.find(spec.id) == spec) { "Unsupported model." }
         check(isModelOperationActive()) { "Model deletion requires exclusive ownership." }
+        check(!operations.downloading(spec.id)) { "Cancel this model's download before deleting it." }
         removeModelFiles(modelDirectory, spec.fileName, File(context.cacheDir, spec.id))
         val key = fingerprintKey(spec)
         val editor = preferences.edit()
@@ -148,13 +151,17 @@ class ModelStore(context: Context) {
 
     fun importInProgress(): Boolean = preferences.getBoolean("import_in_progress", false)
 
-    fun tryBeginModelOperation(): Boolean = activeModelOperation.compareAndSet(0, 1)
+    fun tryBeginModelOperation(): Boolean = operations.tryBeginRuntime(selectedModel().id)
+
+    fun tryBeginModelSelection(spec: LocalModelSpec): Boolean = operations.tryBeginRuntime(spec.id)
 
     fun endModelOperation() {
-        activeModelOperation.set(0)
+        operations.endRuntime()
     }
 
-    fun isModelOperationActive(): Boolean = activeModelOperation.get() > 0
+    fun isModelOperationActive(): Boolean = operations.runtimeActive() || operations.downloading(selectedModel().id)
+
+    fun isDownloading(spec: LocalModelSpec): Boolean = operations.downloading(spec.id)
 
     /** Reuses a verified app copy, imports a matching local file, or downloads the pinned model. */
     suspend fun downloadOrReuse(
@@ -162,10 +169,18 @@ class ModelStore(context: Context) {
         onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit = { _, _ -> },
         onStatus: (String) -> Unit = {}
     ): Result<File> = runCatching {
-        check(tryBeginModelOperation()) { "Another model operation is still running." }
+        check(operations.tryBeginDownload(spec.id, selectedModel().id,
+            com.battlesbudz.jarvis.v2.conversation.ConversationWork.activeJobs.get() != 0)) {
+            "This model is currently in use or already downloading. Other models can still be used."
+        }
+        val transferContext = kotlinx.coroutines.currentCoroutineContext()
+        val reportProgress: (Long, Long) -> Unit = { bytes, total ->
+            transferContext.ensureActive()
+            onProgress(bytes, total)
+        }
         try {
             onStatus("Checking Jarvis’s app storage…")
-            if (verifyIntegrity(spec, onProgress)) {
+            if (verifyIntegrity(spec, reportProgress)) {
                 onProgress(fileFor(spec).length(), fileFor(spec).length())
                 return@runCatching fileFor(spec)
             }
@@ -191,7 +206,7 @@ class ModelStore(context: Context) {
             if (exactDownload != null) {
                 onStatus("Found ${spec.fileName} in Downloads. Verifying that exact file…")
                 onStatus("Importing the existing AI model from Downloads…")
-                val imported = importExactDownloadedModel(exactDownload, spec, onProgress, onStatus)
+                val imported = importExactDownloadedModel(exactDownload, spec, reportProgress, onStatus)
                 if (imported != null) return@runCatching imported
             }
             onStatus("No exact ${spec.fileName} file was found in Downloads. Starting the verified download…")
@@ -203,16 +218,16 @@ class ModelStore(context: Context) {
             // Verify it before contacting the host or restarting its transfer.
             val completedDownload = temporary.isFile && spec.downloadBytes != null &&
                 temporary.length() == spec.downloadBytes && spec.expectedSha256 != null &&
-                temporary.sha256() == spec.expectedSha256
+                temporary.sha256(reportProgress) == spec.expectedSha256
             if (!completedDownload) downloader.download(
                 url = url,
                 temporary = temporary,
-                onProgress = onProgress,
+                onProgress = reportProgress,
                 onStatus = onStatus
             )
             check(temporary.isFile && temporary.length() > 0L) { "The downloaded model is empty." }
             onStatus("Verifying the downloaded AI model…")
-            val actualSha256 = temporary.sha256(onProgress)
+            val actualSha256 = temporary.sha256(reportProgress)
             spec.expectedSha256?.let { expected ->
                 if (!actualSha256.equals(expected, ignoreCase = true)) {
                     temporary.delete()
@@ -232,7 +247,7 @@ class ModelStore(context: Context) {
                 .commit().also { check(it) { "The model was installed but its verification state could not be saved. Check the installed model again." } }
             destination
         } finally {
-            endModelOperation()
+            operations.endDownload(spec.id)
         }
     }.onFailure { if (it is CancellationException) throw it }
 
@@ -287,7 +302,7 @@ class ModelStore(context: Context) {
                 .putBoolean("smoke_test_attempted_${spec.id}", false)
                 .apply()
             destination
-        }.getOrNull().also {
+        }.onFailure { if (it is CancellationException) throw it }.getOrNull().also {
             if (it == null) temporary.delete()
         }
     }
@@ -305,7 +320,8 @@ class ModelStore(context: Context) {
         return runCatching {
             // Create the temporary file inside runCatching so storage errors
             // are returned through the UI callback instead of escaping launch.
-            check(tryBeginModelOperation()) { "Another model operation is still running." }
+            check(com.battlesbudz.jarvis.v2.conversation.ConversationWork.activeJobs.get() == 0 &&
+                operations.tryBeginRuntime(spec.id)) { "Another model operation is still running." }
             val temporary = try {
                 File.createTempFile("${spec.fileName}.", ".part", modelDirectory)
             } catch (error: Throwable) {

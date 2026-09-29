@@ -38,6 +38,7 @@ internal fun ConversationScreen(
 ) {
     val thread by history.current.collectAsState()
     val sending by busy.collectAsState()
+    val liveTranscript by VoiceSessionUi.liveTranscript.collectAsState()
     val armed by VoiceSessionUi.armed.collectAsState()
     val voiceState by callState.collectAsState()
     var hadCall by remember { mutableStateOf(false) }
@@ -87,8 +88,9 @@ internal fun ConversationScreen(
             keyboard?.hide()
         }
     }
-    LaunchedEffect(thread.id, thread.messages.lastOrNull()?.text) {
-        if (thread.messages.isNotEmpty()) listState.animateScrollToItem(thread.messages.lastIndex)
+    LaunchedEffect(thread.id, thread.messages.lastOrNull()?.text, liveTranscript, armed) {
+        if (armed && liveTranscript.isNotBlank()) listState.animateScrollToItem(thread.messages.size)
+        else if (thread.messages.isNotEmpty()) listState.animateScrollToItem(thread.messages.lastIndex)
     }
     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -106,7 +108,7 @@ internal fun ConversationScreen(
                 if (thread.messages.isEmpty()) Text("Type a message or start a voice call. It's all one conversation.",
                     modifier = Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().testTag("conversation_transcript"),
-                    contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = if (voiceVisible) 280.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(thread.messages, key = { it.id }) { message ->
                         Surface(color = if (message.role == "You") MaterialTheme.colorScheme.secondaryContainer
                             else MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium) {
@@ -126,6 +128,15 @@ internal fun ConversationScreen(
                                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("reply_metrics_${message.id}"))
                                 if (!message.complete && message.role == "Jarvis" && message.text.isNotBlank() && !sending)
                                     Text("Reply interrupted or not fully spoken", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                    if (armed && liveTranscript.isNotBlank()) item(key = "live_voice_transcript") {
+                        Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
+                            Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                                Text("You · Live transcript", style = MaterialTheme.typography.labelMedium)
+                                Text(liveTranscript, fontStyle = FontStyle.Italic,
+                                    modifier = Modifier.padding(top = 6.dp).testTag("voice_call_live_transcript"))
                             }
                         }
                     }

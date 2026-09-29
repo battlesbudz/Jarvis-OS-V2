@@ -14,6 +14,7 @@ class VoiceControlCancellation(val control: VoiceControl) : kotlinx.coroutines.C
 object VoiceSessionUi {
     val phase = MutableStateFlow(VoicePhase.IDLE)
     val status = MutableStateFlow("")
+    val liveTranscript = MutableStateFlow("")
     val level = MutableStateFlow(0f)
     val armed = MutableStateFlow(false)
     val paused = MutableStateFlow(false)
@@ -43,6 +44,7 @@ object VoiceSessionUi {
             message.startsWith("Processing") -> VoicePhase.THINKING
             else -> VoicePhase.PREPARING
         }
+        if (phase.value == VoicePhase.IDLE) liveTranscript.value = ""
         if (phase.value != VoicePhase.LISTENING && phase.value != VoicePhase.WAKE) level.value = 0f
     }
 }

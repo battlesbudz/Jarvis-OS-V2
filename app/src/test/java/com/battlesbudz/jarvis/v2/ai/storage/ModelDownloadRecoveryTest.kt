@@ -7,6 +7,8 @@ import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancelAndJoin
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -17,6 +19,9 @@ class ModelDownloadRecoveryTest {
         val ranges = Collections.synchronizedList(mutableListOf<Pair<Int, Int>>())
         val interrupt = AtomicBoolean(false)
         val wrongRange = AtomicBoolean(false)
+        val stall = AtomicBoolean(false)
+        val blocked = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
         val ignoreRange = AtomicBoolean(false)
         private val worker = thread(isDaemon = true) {
             while (!server.isClosed) {
@@ -44,13 +49,17 @@ class ModelDownloadRecoveryTest {
                                 val size = if (!probe && interrupt.get()) minOf(123, end - start + 1) else end - start + 1
                                 write(bytes, start, size)
                                 flush()
+                                if (!probe && stall.get()) {
+                                    blocked.countDown()
+                                    release.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                                }
                             }
                         }
                     }
                 }
             }
         }
-        override fun close() { server.close(); worker.join(2000) }
+        override fun close() { release.countDown(); server.close(); worker.join(2000) }
     }
 
     private fun fixture(block: suspend (Host, File) -> Unit) = runBlocking {
@@ -127,4 +136,21 @@ class ModelDownloadRecoveryTest {
         ModelDownloader(1).download(host.url, target, { _, _ -> }, {})
         assertArrayEquals(host.bytes, target.readBytes())
     }
+    @Test fun cancellingStalledNetworkReadClosesConnectionAndRetainsCheckpoint() = fixture { host, target ->
+        host.interrupt.set(true)
+        host.stall.set(true)
+        val job = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.currentCoroutineContext()).launch(kotlinx.coroutines.Dispatchers.IO) {
+            ModelDownloader().download(host.url, target, { _, _ -> }, {})
+        }
+        assertTrue(host.blocked.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        kotlinx.coroutines.withTimeout(10_000) { job.cancelAndJoin() }
+        assertTrue(job.isCancelled)
+        assertTrue(target.length() > 0)
+        host.stall.set(false)
+        host.interrupt.set(false)
+        host.release.countDown()
+        ModelDownloader().download(host.url, target, { _, _ -> }, {})
+        assertArrayEquals(host.bytes, target.readBytes())
+    }
+
 }

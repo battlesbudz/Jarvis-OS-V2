@@ -48,7 +48,7 @@ internal fun ModelSetup(
         verticalArrangement = Arrangement.Center
     ) {
         Text("Jarvis setup", style = MaterialTheme.typography.headlineMedium)
-        modelSelector(!testing && !importing && !downloading)
+        modelSelector(!testing && !importing)
         Text(
             if (gemmaReady) {
                 "The selected AI model is installed. Check it below to start chatting."

@@ -103,18 +103,23 @@ internal class ModelDownloader(
     private suspend fun discoverDownloadSize(url: String): Long {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            connectTimeout = 30_000
-            readTimeout = 60_000
+            connectTimeout = 10_000
+            readTimeout = 5_000
             instanceFollowRedirects = true
             setRequestProperty("Range", "bytes=0-0")
             setRequestProperty("Accept-Encoding", "identity")
         }
+        val disconnectOnCancel = disconnectOnCancellation(connection)
         return try {
             val responseCode = connection.responseCode
             if (responseCode != HttpURLConnection.HTTP_PARTIAL) return -1L
             val range = connection.getHeaderField("Content-Range") ?: return -1L
             range.substringAfterLast("/").toLongOrNull() ?: -1L
+        } catch (error: Exception) {
+            currentCoroutineContext().ensureActive()
+            throw error
         } finally {
+            disconnectOnCancel.cancel()
             connection.disconnect()
         }
     }
@@ -128,12 +133,13 @@ internal class ModelDownloader(
         val existingBytes = temporary.length()
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            connectTimeout = 30_000
-            readTimeout = 60_000
+            connectTimeout = 10_000
+            readTimeout = 5_000
             instanceFollowRedirects = true
             if (existingBytes > 0L) setRequestProperty("Range", "bytes=$existingBytes-")
             setRequestProperty("Accept-Encoding", "identity")
         }
+        val disconnectOnCancel = disconnectOnCancellation(connection)
         try {
             val responseCode = connection.responseCode
             val append = existingBytes > 0L && responseCode == HttpURLConnection.HTTP_PARTIAL
@@ -165,7 +171,11 @@ internal class ModelDownloader(
                 }
             }
             check(resolvedTotal <= 0L || downloadedBytes == resolvedTotal) { "The model download is incomplete. Retry to resume it." }
+        } catch (error: Exception) {
+            currentCoroutineContext().ensureActive()
+            throw error
         } finally {
+            disconnectOnCancel.cancel()
             connection.disconnect()
         }
     }
@@ -180,12 +190,13 @@ internal class ModelDownloader(
     ) {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            connectTimeout = 30_000
-            readTimeout = 60_000
+            connectTimeout = 10_000
+            readTimeout = 5_000
             instanceFollowRedirects = true
             setRequestProperty("Range", "bytes=$start-$end")
             setRequestProperty("Accept-Encoding", "identity")
         }
+        val disconnectOnCancel = disconnectOnCancellation(connection)
         try {
             check(connection.responseCode == HttpURLConnection.HTTP_PARTIAL) {
                 "The model host does not support resumable range downloads."
@@ -211,10 +222,19 @@ internal class ModelDownloader(
                 }
             }
             check(received == expectedBytes) { "The model download is incomplete. Retry to resume it." }
+        } catch (error: Exception) {
+            currentCoroutineContext().ensureActive()
+            throw error
         } finally {
+            disconnectOnCancel.cancel()
             connection.disconnect()
         }
     }
+
+    private suspend fun disconnectOnCancellation(connection: HttpURLConnection): Job =
+        CoroutineScope(currentCoroutineContext()).launch(start = CoroutineStart.UNDISPATCHED) {
+            try { awaitCancellation() } finally { connection.disconnect() }
+        }
 
     private fun parseRange(value: String?): Triple<Long, Long, Long> {
         val match = Regex("bytes (\\d+)-(\\d+)/(\\d+)").matchEntire(value.orEmpty())

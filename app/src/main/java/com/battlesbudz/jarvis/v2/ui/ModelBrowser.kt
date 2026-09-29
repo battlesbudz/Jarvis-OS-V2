@@ -29,7 +29,10 @@ internal fun ModelBrowser(
     selectedId: String,
     isInstalled: (LocalModelSpec) -> Boolean,
     onSelect: (LocalModelSpec) -> String?,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    selectionEnabled: Boolean = true,
+    downloadingId: String? = null,
+    onDownload: ((LocalModelSpec) -> Unit)? = null
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var family by rememberSaveable { mutableStateOf<String?>(null) }
@@ -129,11 +132,17 @@ internal fun ModelBrowser(
                                     ModelGuidance.storageNotice(spec, phone, installed)?.let {
                                         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                                     }
+                                    if (!installed && !spec.requiresAccess && onDownload != null) {
+                                        OutlinedButton(modifier = Modifier.fillMaxWidth().testTag("model_download_${spec.id}"), enabled = downloadingId == null, onClick = { onDownload(spec) }) {
+                                            Text(if (downloadingId == spec.id) "Downloading" else "Download")
+                                        }
+                                    }
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                         TextButton(onClick = { detailId = spec.id }, modifier = Modifier.testTag("model_details_${spec.id}")) {
                                             Text("Details")
                                         }
-                                        Button(modifier = Modifier.testTag("model_choose_${spec.id}"), onClick = { if (ModelCompatibility.assess(spec).confirmBeforeSelection) warningId = spec.id
+                                        Button(enabled = selectionEnabled && downloadingId != spec.id,
+                                            modifier = Modifier.testTag("model_choose_${spec.id}"), onClick = { if (ModelCompatibility.assess(spec).confirmBeforeSelection) warningId = spec.id
                                             else { error = onSelect(spec); if (error == null) onDismiss() } }) {
                                             Text(if (spec.id == selectedId) "Selected" else "Choose")
                                         }

@@ -43,6 +43,7 @@ class JarvisModelSetupWorker(
             if (!force && now - lastProgressAt < 250L && downloaded != total) return
             lastProgressAt = now
             runBlocking { setProgress(workDataOf(
+                "model_id" to spec.id,
                 "stage" to stage,
                 "downloaded" to downloaded,
                 "total" to total
@@ -71,6 +72,7 @@ class JarvisModelSetupWorker(
             return Result.failure(workDataOf("error" to (error.message ?: "AI model setup failed.")))
         }
         check(gemma.isFile) { "AI model setup did not produce a model file." }
+        if (!inputData.getBoolean("prepare_voice", true)) return Result.success()
         try {
             val piper = voice.ensureReady(TtsEngine.PIPER_NORTHERN) { status ->
                 synchronized(progressLock) { stage = status; downloaded = 0L; total = -1L; publishProgress() }

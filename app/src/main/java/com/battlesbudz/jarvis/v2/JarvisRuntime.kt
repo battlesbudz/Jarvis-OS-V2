@@ -124,6 +124,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     @Volatile internal var voiceSessionArmed = false
         set(value) {
             field = value
+            if (!value) com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.liveTranscript.value = ""
             com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.armed.value = value
         }
     @Volatile internal var sessionReport: (String) -> Unit = {}
@@ -586,7 +587,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             }
         }
         fun report(message: String) { sessionReport(message) }
-        fun onTranscript(role: String, text: String, complete: Boolean) { transcriptListener(role, text, complete) }
+        fun onTranscript(role: String, text: String, complete: Boolean) {
+            if (role == "You") com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.liveTranscript.value = if (complete) "" else text
+            transcriptListener(role, text, complete)
+        }
         fun onFinished(message: String) { finishedListener(message) }
         val comparison = com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.take(java.util.UUID.randomUUID().toString())
         val asrEngine = comparison?.request?.path?.captureEngine ?: com.battlesbudz.jarvis.v2.voice.AsrEngine.selected(applicationContext)

@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
@@ -1089,8 +1091,10 @@ class ReleaseJourneyTest {
             VoiceSessionUi.armed.value = false
             VoiceSessionUi.status.value = ""
             VoiceSessionUi.phase.value = VoicePhase.IDLE
+            VoiceSessionUi.liveTranscript.value = ""
             activity.onActivity { host -> host.setContent {
-                MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                val callArmed by VoiceSessionUi.armed.collectAsState()
+                MaterialTheme(colorScheme = androidx.compose.material3.darkColorScheme()) { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
                     ConversationScreen(history, busy, MutableStateFlow(VoiceSessionState.ACTIVELY_LISTENING),
                         onSend = { _, _ -> null },
                         selectedModel = LocalModelSpec("release-fixture", "release-fixture.bin", recommendedGpu = false),
@@ -1103,9 +1107,9 @@ class ReleaseJourneyTest {
                                 transcriptSpeaker = "You",
                                 transcript = liveCaption,
                                 level = VoiceSessionUi.level.value,
-                                active = VoiceSessionUi.armed.value,
+                                active = callArmed,
                                 microphonePaused = VoiceSessionUi.paused.value,
-                                canStart = !VoiceSessionUi.armed.value,
+                                canStart = !callArmed,
                                 stopReplyAvailable = false,
                                 onStart = {},
                                 onStopReply = {},
@@ -1133,14 +1137,20 @@ class ReleaseJourneyTest {
             activity.onActivity {
                 history.updateReply(history.current.value.id, "streaming-voice", "Transcript is updating while I speak", false)
             }
+            VoiceSessionUi.liveTranscript.value = liveCaption
             assertEquals("Live speech appears without minimizing", find(By.res("voice_call_live_transcript")).text)
             assertNotNull(find(By.res("voice_call_status")))
             assertNotNull(find(By.res("voice_call_orb")))
+            assertNotNull(find(By.res("voice_call_end")))
+            assertNotNull(find(By.res("voice_call_pause")))
             assertFalse("A minimize control is not part of the call overlay", device.hasObject(By.res("voice_call_minimize")))
             val liveTranscript = find(By.text("Transcript is updating while I speak"))
             val overlayBounds = find(By.res("voice_call_overlay")).visibleBounds
             val transcriptBounds = find(By.res("conversation_transcript")).visibleBounds
             assertTrue("Waveform bubble must be visible in the chat window", overlayBounds.width() > 0 && overlayBounds.height() > 0)
+            assertTrue("The floating orb must leave most chat width clear", overlayBounds.width() < transcriptBounds.width() / 2)
+            assertFalse("Live text must remain outside the floating controls", android.graphics.Rect.intersects(
+                find(By.res("voice_call_live_transcript")).visibleBounds, overlayBounds))
             assertTrue("The conversation viewport remains on screen under the bubble", transcriptBounds.width() > 0 && transcriptBounds.height() > 0)
             assertTrue("The live chat transcript remains visible with the bubble", liveTranscript.visibleBounds.width() > 0)
             assertTrue("The existing draft survives opening the bubble", find(By.res("chat_composer")).text.contains("Keep my draft"))
@@ -1152,6 +1162,7 @@ class ReleaseJourneyTest {
             VoiceSessionUi.armed.value = false
             VoiceSessionUi.status.value = ""
             VoiceSessionUi.phase.value = VoicePhase.IDLE
+            VoiceSessionUi.liveTranscript.value = ""
         }
     }
 
@@ -1306,6 +1317,17 @@ class ReleaseJourneyTest {
             file.delete()
             File(file.parentFile, "${spec.fileName}.part").writeBytes(bytes)
             context.contentResolver.delete(uri, null, null)
+            // Simulate the actual voice owner's native lease. Installing another
+            // model must neither reject the transfer nor release that lease.
+            val selectedId = restored.selectedModel().id
+            assertTrue(restored.tryBeginModelOperation())
+            try {
+                assertTrue(restored.downloadOrReuse(spec).isSuccess)
+                assertTrue("Download completion must preserve the voice owner's lock", restored.isModelOperationActive())
+                assertFalse(restored.tryBeginModelOperation())
+                assertEquals(selectedId, restored.selectedModel().id)
+            } finally { restored.endModelOperation() }
+            assertFalse(restored.isModelOperationActive())
             assertTrue(restored.downloadOrReuse(spec).isSuccess)
             assertTrue(com.battlesbudz.jarvis.v2.ai.ModelStore(context).isUsable(spec))
             assertArrayEquals(bytes, file.readBytes())
@@ -1317,6 +1339,36 @@ class ReleaseJourneyTest {
             preferences.all.keys.filter { it.contains(spec.id) }.forEach { edit.remove(it) }
             edit.commit()
         }
+    }
+
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @Test fun test33_downloadDoesNotSelectOrDismissCurrentModel() {
+        val selectedId = com.battlesbudz.jarvis.v2.ai.ModelStore(context).selectedModel().id
+        val requested = AtomicReference<String?>()
+        val choices = AtomicInteger(0)
+        val dismissals = AtomicInteger(0)
+        activity.onActivity { host -> host.setContent {
+            MaterialTheme(colorScheme = androidx.compose.material3.darkColorScheme()) {
+                com.battlesbudz.jarvis.v2.ui.ModelBrowser(
+                    phone = com.battlesbudz.jarvis.v2.ai.PhoneProfile("Release fixture", "Fixture", "Fixture",
+                        12_000_000_000L, 8_000_000_000L, 20_000_000_000L, true),
+                    selectedId = selectedId, isInstalled = { it.id == selectedId },
+                    onSelect = { choices.incrementAndGet(); null },
+                    onDismiss = { dismissals.incrementAndGet() },
+                    onDownload = { requested.set(it.id) })
+            }
+        } }
+        enterText(By.res("model_search"), "LFM2.5-230M")
+        hideKeyboardWithoutNavigating()
+        find(By.res("model_family_Liquid · LFM")).click()
+        scrollTo(By.res("model_download_LFM2.5-230M")).click()
+        assertEquals("LFM2.5-230M", requested.get())
+        assertEquals("Download must not choose the requested model", 0, choices.get())
+        assertEquals("Download must keep the browser available", 0, dismissals.get())
+        assertEquals(selectedId, com.battlesbudz.jarvis.v2.ai.ModelStore(context).selectedModel().id)
+        scrollTo(By.res("model_choose_LFM2.5-230M")).click()
+        assertEquals("Choosing remains a separate explicit action", 1, choices.get())
+        assertEquals(1, dismissals.get())
     }
 
     // Leave this selection in durable preferences for the controller's separate-process check.

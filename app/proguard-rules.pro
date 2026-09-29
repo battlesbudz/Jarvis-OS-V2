@@ -156,3 +156,8 @@
 
 # Release storage recovery journey exercises the installed-file/preferences boundary.
 -keep class com.battlesbudz.jarvis.v2.ai.ModelStore { *; }
+# The overlay journey observes the real armed StateFlow across its UI changes.
+-keep class androidx.compose.runtime.SnapshotStateKt { *; }
+# The separate Download/Choose journey renders the shipping model browser.
+-keep class com.battlesbudz.jarvis.v2.ui.ModelBrowserKt { *; }
+-keep class com.battlesbudz.jarvis.v2.ai.PhoneProfile { *; }
