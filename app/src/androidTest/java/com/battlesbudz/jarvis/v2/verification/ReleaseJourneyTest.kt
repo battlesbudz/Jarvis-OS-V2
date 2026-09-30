@@ -190,8 +190,10 @@ class ReleaseJourneyTest {
             // Text assignment is an idempotent replacement, so a fresh-node retry is safe.
             enabled(selector).text = value
         }
-        // Close the IME without navigating away before we need to reach controls below the editor.
-        device.pressKeyCode(android.view.KeyEvent.KEYCODE_ESCAPE)
+        // ACTION_SET_TEXT can leave the IME closed. Unconditional Escape dismisses the
+        // AlertDialog (retained build-842 evidence). Dismiss only a visible keyboard.
+        device.waitForIdle()
+        if (device.hasObject(By.pkg(java.util.regex.Pattern.compile(".*inputmethod.*")))) device.pressBack()
         device.waitForIdle()
     }
 

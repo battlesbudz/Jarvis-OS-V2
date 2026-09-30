@@ -75,7 +75,7 @@ Completed for the first phone-testable follow-on milestone:
 - Moved the production Memory wiki release journey onto SQLite and added migration/reopen, rollback/future-schema, capacity/concurrency Android acceptance. The named release contract has 33 tests per variant, plus the existing complete JVM/native/helper gate.
 - Added a Memory-branch-only GitHub prerelease job gated by signed build, both complete emulator suites and the exact-build receipt, to deliver the requested phone APK without opening or merging a PR.
 
-Validation status: the candidate must finish its exact-revision CI run before APK handoff. Controlled Android fixtures exercise real SQLite and the production UI, not model-generated extraction or phone hardware. The handoff will name the signed APK build/run and remaining physical-device checks.
+Validation: the signed candidate is handed off only after its exact-revision JVM/native checks, both Android suites and consolidated CI receipt pass. Build/run evidence is linked from the GitHub test release. Controlled Android fixtures exercise real SQLite and the production UI, not model-generated extraction or phone hardware. The handoff will name the signed APK build/run and remaining physical-device checks.
 
 Still to implement: source-event/episode storage and 90-day searchable archives; secret sanitization before archive writes; lock/sensitivity and inference semantics; automatic local extraction; embeddings and hybrid ordinary-turn retrieval; temporal entities/relations and GBrain projections; tappable reply memory badges; SMS/MMS/email/Messenger/calendar/contact adapters; proactive follow-up scheduling; indexed queries, scale benchmarks and downstream invalidation. SQLite is the canonical storage foundation for those tables, not their implementation. The existing conservative review/exclusion behavior remains in this APK until the new policy gates and extraction pipeline are complete.
 
@@ -83,7 +83,7 @@ Phone acceptance for this checkpoint: install the normal signed APK as an update
 
 ## Plan to finish MemoryOS: local capture, semantic recall, and temporal memory
 
-**Status:** first follow-on storage checkpoint implemented; remaining capabilities are planned. The original milestone above retains manual review and lexical retrieval; Android production storage now uses the SQLite checkpoint below. The decisions below were confirmed by Justin during the 2026-09-29 interview (America/New_York); they replace the older follow-on proposal that every extracted or inferred fact must wait for manual review. They do not claim that automatic capture, embeddings, or the temporal graph already work.
+**Status:** first follow-on storage checkpoint implemented; remaining capabilities are planned. The original milestone above retains manual review and lexical retrieval; Android production storage now uses the SQLite checkpoint above. The decisions below were confirmed by Justin during the 2026-09-29 interview (America/New_York); they replace the older follow-on proposal that every extracted or inferred fact must wait for manual review. They do not claim that automatic capture, embeddings, or the temporal graph already work.
 
 **Goal:** Jarvis should automatically retain useful information and recall relevant context during ordinary Chat and Voice turns, including paraphrases, implied references, and point-in-time questions. Memory, extraction, indexing, and inference run locally on Android. A hosted memory service is not required. Optional access to incoming external sources is separately authorized; saved local memory remains usable offline.
 
@@ -113,7 +113,7 @@ These are implementation requirements, not grants to connect accounts or enable 
 
 ### 1. Define scalable canonical storage and policy states
 
-The existing 1 MiB JSON ledger is the current milestone's authority, but it is not a suitable final store for a growing 90-day episode archive and long-lived fact history. The engineering direction for the complete feature is a private transactional SQLite ledger, with a verified migration of existing JSON records, IDs, revisions, review decisions, and opaque tombstones. Keep the original local ledger recoverable until migration verifies; do not silently drop records at the old capacity limit.
+The SQLite checkpoint now replaces the 1 MiB JSON ledger as Android production authority and includes validated legacy migration. Complete Memory OS still requires the additional canonical source, graph, queue and projection tables below, plus indexed reads and measured scale limits. Keep the original local ledger recoverable until migration verifies; do not silently drop records at the old capacity limit.
 
 Separate canonical records from rebuildable projections within the storage design:
 
@@ -229,7 +229,7 @@ Measure actual-model performance on the Fold 6 with real voice capture and simul
 
 ### Remaining engineering qualification
 
-The interview settles the user-facing rules. Implementation still requires evidence for the exact embedding artifact/runtime and extraction prompts; SQLite driver/encryption/migration; entity and relationship schema; deletion-suppression matching; numeric relevance/quality/capacity/latency thresholds; and SMS/MMS, email, Messenger, calendar/contacts access and coverage. Research and bounded device/source spikes should resolve these choices. Do not reopen already answered approval, retention, source scope, backup, or recall questions to avoid the engineering work.
+The interview settles the user-facing rules. Implementation still requires evidence for the exact embedding artifact/runtime and extraction prompts; additional SQLite schemas, encryption and scale policy; entity and relationship schema; deletion-suppression matching; numeric relevance/quality/capacity/latency thresholds; and SMS/MMS, email, Messenger, calendar/contacts access and coverage. Research and bounded device/source spikes should resolve these choices. Do not reopen already answered approval, retention, source scope, backup, or recall questions to avoid the engineering work.
 
 ### Research references
 

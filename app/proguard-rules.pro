@@ -161,3 +161,21 @@
 -keep,includedescriptorclasses class androidx.compose.runtime.SnapshotStateKt** {
     public static *** mutableStateOf*(...);
 }
+
+# The controlled shipping-parent fixture crosses these precise release ABI boundaries.
+# Build 842 removed ModelStore default wrappers and reshaped JarvisApp/VoicePlaybackFrame.
+-keep class com.battlesbudz.jarvis.v2.ai.ModelStore {
+    public <init>(...);
+    public java.io.File fileFor(...);
+    public boolean isUsable(...);
+    public static boolean isUsable$default(...);
+    public boolean smokeTestPassed(...);
+    public static boolean smokeTestPassed$default(...);
+}
+-keep class com.battlesbudz.jarvis.v2.ui.JarvisAppKt {
+    public static void JarvisApp(...);
+}
+-keep class com.battlesbudz.jarvis.v2.voice.TtsModelStore {
+    public <init>(...);
+}
+-keep class com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame { *; }
