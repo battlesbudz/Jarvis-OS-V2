@@ -159,12 +159,12 @@ internal fun JarvisRuntime.runConversationInternal(
                 if (directRequest != null) {
                     resetNativeConversation()
                     val result = kotlinx.coroutines.withContext(Dispatchers.Main) {
-                        com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
+                        executePhoneAction(directRequest,
                             executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
                                 this@runConversationInternal,
                                 canLaunchDirectly = { activityVisible }
                             )
-                        ).execute(directRequest).also {
+                        ).also {
                             // Persist the synchronous side effect before cancellable Main -> caller dispatch.
                             onActionResult(directRequest.name, it.message, it.succeeded)
                         }
@@ -555,11 +555,11 @@ internal fun JarvisRuntime.runConversationInternal(
                             dispatch = { request ->
                                 kotlinx.coroutines.withContext(Dispatchers.Main) {
                                     // Receipt and voice/text persistence occur in the same synchronous Main block.
-                                    com.battlesbudz.jarvis.v2.actions.MobileActionPipeline(
+                                    executePhoneAction(request,
                                         executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
                                             this@runConversationInternal, canLaunchDirectly = { activityVisible }
                                         )
-                                    ).execute(request).also { onActionResult(request.name, it.message, it.succeeded) }
+                                    ).also { onActionResult(request.name, it.message, it.succeeded) }
                                 }
                             },
                             nextCalls = { batch ->

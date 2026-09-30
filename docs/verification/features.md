@@ -2,6 +2,28 @@
 
 Update this file when adding a feature or learning a reproducible regression. A listed gap is not passing coverage.
 
+## Durable phone-action foundation (M1a)
+
+`ToolTaskLedger`, `FileToolTaskStore` and `JournaledActionPipeline` now persist dispatch
+intent before effects and typed executor outcomes afterward. `JarvisRuntime.executePhoneAction`
+is shared by the direct app fast path and text/voice model dispatch. `ToolTaskPersistenceTest`
+and `JournaledActionPipelineTest` cover reload, stale generations, concurrent store instances,
+corruption/schema/size/capacity failure closure, abandoned temps, write failures, permission
+denial, unknown completion and preserved cancellation/programming errors. Existing ledger,
+approval, ordered-action and accepted-voice checks remain required.
+
+Release `test30_phoneActionJournalPreservesReceiptsAndFencesUnknownEffects` uses the real
+Android volume executor and app-private storage. It verifies a persisted typed receipt,
+reopening/recovery fences, and corrupt storage preventing another volume effect. Reopening
+the file is a controlled restart simulation, not an actual process kill during a side effect.
+The separate-process `test90` selection journey remains unchanged. Exact-revision JVM,
+normal/compact builds, API 30/API 35 sandbox and consolidated receipt are pending.
+
+Limits: 512 attempts / 1 MiB, no automatic pruning or retries; capacity blocks new actions
+without effects. This slice pauses unfinished work rather than automatically resuming it.
+Task groups, durable grants/approvals, unknown-outcome reconciliation UI, retention/archival,
+proactive delivery and real model/device behavior remain unimplemented or unverified.
+
 ## Planned tools epic
 
 The [tools implementation plan](../plans/tools-implementation-plan.md) defines milestones M0–M8 and planned acceptance T01–T25 from the [completed design interview](../plans/tools-interview-decisions.md). These checks are not implemented or passing coverage. In particular, automatic memory will intentionally change the manual-review default described below; preserve historical tests/evidence and add explicit migration coverage when implementing M6. Extend this map with exact test names and run evidence as each milestone is built.
@@ -34,7 +56,7 @@ coverage remain pending.
 | Voice lifecycle and reply metrics | VoiceSessionController, ConversationHistory, LiteRtVoicePrefillSession, BargeInGate/NaturalBargeIn, PiperTextStream and ReplyMetrics checks cover per-reply JSON persistence, late playback after the next turn/restart, raw native timing before hidden-channel filtering, ASR interruption and sentence-first Piper submission | `test29` renders two distinct per-message metric footers and reloads persisted history | Physical Fold 6 route selection, Bluetooth, acoustic behavior, real-model timing and thermal behavior remain unverified. TTF-SW uses AudioTrack head progress as a playback proxy, not microphone acoustics. |
 | Packaging | Native ABI, Piper callback, compact APK equivalence checks | Signed normal and compact variants installed/launched | Device GPU/NPU compatibility and resource limits |
 
-The executable device contract is `scripts/verification/scenarios.json`, backed by `app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt`. All thirty named methods must finish successfully; skipped methods are failures. `test01`–`test24` remain the existing setup, tool, multi-action, and manager journeys; `test25` covers finalized text/voice memory approval and prompt context, `test26` correction/erase refresh, and `test27` the controlled production ConversationScreen state contract; `test25`–`test27` are controlled UI/memory-prompt checks, not microphone or model end-to-end tests. `test28` retains the existing VoiceNavigationPolicy call-ID contract, and `test29` verifies two distinct assistant-message metric footers and persisted reload. `test90` remains the process-restart selection check and intentionally leaves the selected model for the controller's process-restart check. The exact combined revision requires fresh Android CI; APK/build status comes from its exact run receipt. JVM/native tests run independently in the build job.
+The executable device contract is `scripts/verification/scenarios.json`, backed by `app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt`. All thirty-one named methods must finish successfully; skipped methods are failures. `test01`–`test24` remain the existing setup, tool, multi-action, and manager journeys; `test25` covers finalized text/voice memory approval and prompt context, `test26` correction/erase refresh, and `test27` the controlled production ConversationScreen state contract; `test25`–`test27` are controlled UI/memory-prompt checks, not microphone or model end-to-end tests. `test28` retains the existing VoiceNavigationPolicy call-ID contract, and `test29` verifies two distinct assistant-message metric footers and persisted reload. `test90` remains the process-restart selection check and intentionally leaves the selected model for the controller's process-restart check. The exact combined revision requires fresh Android CI; APK/build status comes from its exact run receipt. JVM/native tests run independently in the build job.
 
 Artifact consumers share the retry-safe selector and direct-ID downloader in `scripts/verification/artifacts.py`. For each requirement it binds run and SHA, selects the latest completed producer attempt, filters to artifacts in that producer's created-time window, and fails closed unless exactly one newest candidate remains. The downloader verifies the selected ZIP's declared size/digest and safely restores the expected flat or artifact-namespaced layout without forwarding the GitHub token to storage. Prior failed-attempt artifacts stay available for diagnosis. Run 751 replay reproduces the lower-ID case and selects artifact `10707864350`; focused helper and receipt checks cover the plumbing, while a new CI run is still pending. This is verification plumbing evidence and does not change the app or establish a green run 751.
 

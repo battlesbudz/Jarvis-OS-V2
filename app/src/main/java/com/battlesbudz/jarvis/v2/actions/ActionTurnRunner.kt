@@ -93,7 +93,7 @@ class ActionDispatchGate(
             ExecutionResult.Outcome.UNKNOWN_COMPLETION -> ToolTaskState.UNKNOWN_OUTCOME
             else -> ToolTaskState.FAILED
         }
-        return ledger.transition(running.id, running.generation, state, result.message)
+        return ledger.transition(running.id, running.generation, state, result.message, result.outcome)
     }
 }
 

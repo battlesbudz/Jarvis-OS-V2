@@ -106,6 +106,21 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     @Volatile internal var nativeMemoryStateToken: String? = null
     private val conversationMemory by lazy { ConversationMemory(AndroidMemoryOs.get(applicationContext)) }
     internal val actionIntentRouter = com.battlesbudz.jarvis.v2.actions.ActionIntentRouter()
+    private val phoneActionLedger by lazy {
+        com.battlesbudz.jarvis.v2.actions.ToolTaskLedger(
+            com.battlesbudz.jarvis.v2.actions.FileToolTaskStore(java.io.File(noBackupFilesDir, "phone-action-attempts.json"))
+        ).also { it.recoverAfterRestart() }
+    }
+
+    internal fun executePhoneAction(
+        request: com.battlesbudz.jarvis.v2.actions.ActionRequest,
+        executor: com.battlesbudz.jarvis.v2.actions.MobileActionExecutor
+    ): com.battlesbudz.jarvis.v2.actions.ExecutionResult = try {
+        com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline(phoneActionLedger, executor).execute(request)
+    } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+        com.battlesbudz.jarvis.v2.actions.ExecutionResult(false,
+            "The phone-action journal is unavailable, so I didn't start this action.")
+    }
     internal lateinit var sessionPreferences: android.content.SharedPreferences
     internal lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
     internal val conversationHistory = com.battlesbudz.jarvis.v2.chat.ConversationHistory(

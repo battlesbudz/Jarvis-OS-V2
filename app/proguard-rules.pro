@@ -45,6 +45,10 @@
 # Release instrumentation reaches the multi-action contract through the shared test DEX.
 -keep class com.battlesbudz.jarvis.v2.actions.ActionTurnPlan** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ActionTurnRunner** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ToolTask** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.FileToolTaskStore** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.InMemoryToolTaskStore** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.NativeActionDecoder { *; }
 -keep class com.battlesbudz.jarvis.v2.ai.ToolCall { *; }
 # Release instrumentation reads durable multi-action receipts after cancellation/recreation.

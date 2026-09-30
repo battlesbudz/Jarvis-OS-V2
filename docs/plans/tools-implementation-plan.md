@@ -5,6 +5,24 @@ Follow-up source baseline: `feature-tools` at `bfeca6d06dc3dba583e0f92e812046e9e
 Created: September 24, 2026. Updated: September 29, 2026 (America/New_York). Owner: Justin Battles.
 Status: existing tools scope retained; September 29 autonomous messaging/warm-inference requirements integrated. New phases below are planned, not implemented or verified by this documentation update.
 
+## Implementation checkpoint — September 30, 2026
+
+Continue in original milestone dependency order. The catalog/strict-decoder/model-pass and
+approval-contract baseline has historical green branch CI at `bfeca6d`. The next M1a slice
+implements durable per-phone-action attempts and integrates journaling into the shared
+text/voice dispatch and direct app fast path. Dispatch intent commits before Android effects;
+typed receipts commit afterward. Restarted running attempts become unknown-outcome;
+other unfinished attempts pause for future relevance/authority revalidation. Cancelled and
+completed attempts remain terminal. No external effect is replayed by recovery.
+
+This is a bounded foundation, pending exact-revision release CI. It does not complete M1a
+or A1: durable grants/exact-approval UI, task groups/steps, automatic safe resumption,
+delivery events, and supervisor scheduling remain next dependencies. The journal currently
+holds at most 512 attempts / 1 MiB and fails closed at capacity; retention/archival and a
+reconciliation surface must precede a general long-running task release. M1b–M8 and
+autonomous messaging/warm readiness remain planned. See the integration log and acceptance
+map for implementation/test details and the eventual exact run receipt.
+
 The [decision record](tools-interview-decisions.md) is authoritative for product choices. Background: [original audit](../research/feature-tools-audit-2026-09-24.md) and [AppFunctions landscape](../research/appfunctions-landscape-2026-09-24.md). Their API/access findings are dated research snapshots: revalidate when integrating, rather than assuming permanent availability.
 
 ## Product outcome and design tree
@@ -328,4 +346,3 @@ Measure baseline and updated runs on the same selected model/backend and compara
 For each phase record base/head, affected files, current gate status, exact CI run/artifact hashes, actual platform/model/device evidence, retained failures, known limitations and rollback. Keep new behavior separately controllable where practical; rollback must not discard tasks, transcript groups, receipt history or cancellation tombstones. Do not publish an APK or mark a milestone complete before the applicable delivery gates.
 
 Platform references checked September 29, 2026: [foreground service types](https://developer.android.com/develop/background-work/services/fgs/service-types), [Android foreground-service changes](https://developer.android.com/develop/background-work/services/fgs/changes), [alarms and reminder access](https://developer.android.com/develop/background-work/services/alarms), and [process lifecycle](https://developer.android.com/guide/components/activities/process-lifecycle). SDK-specific behavior is grounded in this branch's pinned adapter source; revalidate if the dependency changes.
-

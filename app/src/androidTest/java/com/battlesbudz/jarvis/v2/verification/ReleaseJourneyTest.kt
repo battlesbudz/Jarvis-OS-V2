@@ -1021,6 +1021,42 @@ class ReleaseJourneyTest {
         assertEquals(5.0, reloaded.current.value.messages.first { it.id == "two" }.metrics?.estimatedTokensPerSecond)
     }
 
+    @Test fun test30_phoneActionJournalPreservesReceiptsAndFencesUnknownEffects() {
+        val directory = File(context.noBackupFilesDir, "release-action-journal").apply { deleteRecursively(); mkdirs() }
+        val file = File(directory, "attempts.json")
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val ledger = ToolTaskLedger(FileToolTaskStore(file))
+        val pipeline = JournaledActionPipeline(ledger, AndroidMobileActionExecutor(context))
+        try {
+            assertTrue(pipeline.execute(ActionRequest("set_volume", mapOf("level" to "40"))).succeeded)
+            val actual = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            assertEquals((audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .4).roundToInt(), actual)
+            val receipt = ToolTaskLedger(FileToolTaskStore(file)).snapshot().single()
+            assertEquals(ToolTaskState.SUCCEEDED, receipt.state)
+            assertEquals(ExecutionResult.Outcome.SUCCEEDED, receipt.resultOutcome)
+
+            // Simulate process loss after persisted intent, without claiming a second effect ran.
+            val unfinished = ledger.create(ActionRequest("set_volume", mapOf("level" to "90")), ToolTaskState.RUNNING)
+            val reopened = ToolTaskLedger(FileToolTaskStore(file))
+            reopened.recoverAfterRestart()
+            assertEquals(receipt, reopened.get(receipt.id))
+            assertEquals(ToolTaskState.UNKNOWN_OUTCOME, reopened.get(unfinished.id)?.state)
+            assertNull(reopened.transition(unfinished.id, unfinished.generation, ToolTaskState.RUNNING))
+            assertEquals(actual, audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+
+            file.writeText("corrupt")
+            val rejected = JournaledActionPipeline(reopened, AndroidMobileActionExecutor(context))
+                .execute(ActionRequest("set_volume", mapOf("level" to "90")))
+            assertFalse(rejected.succeeded)
+            assertEquals(actual, audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            assertEquals("corrupt", file.readText())
+        } finally {
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
+            directory.deleteRecursively()
+        }
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()

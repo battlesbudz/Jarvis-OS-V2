@@ -2,6 +2,34 @@
 
 Epic: [#8](https://github.com/battlesbudz/Jarvis-OS-V2/issues/8). Implementation branch: `feature-tools`.
 
+## September 30 — M1a durable phone-action slice
+
+Intake head: `6ce979733b89ff488f9a0c44a55260b8e4efccc6`. Existing application baseline
+`bfeca6d` passed branch run [36179362325](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36179362325);
+that historical result does not verify this change. Source refresh: `audio-pr2` at
+`b54bb98bd1d0330d83a1ef381b0e7eb298a24863` (download fixture repair), Memory OS at
+`20bbcfc2efac96242161a10c100b6a9632683786` (SQLite/migration). Neither source is imported
+or advanced; this change touches only the action journal and its two shared runtime dispatch
+sites, preserving the current engine/voice/memory implementations.
+
+The next original M1a dependency is implemented before the newer autonomy phases:
+bounded app-private atomic JSON attempts, generation-fenced transitions, typed receipts,
+unknown-outcome recovery for running effects, and paused unfinished work. Disk commit must
+succeed before dispatch. A failed receipt write reports unknown completion without retry.
+The direct app fast path and shared text/voice model-directed actions use this journal.
+Cancellation/programming errors retain their propagation and leave unknown evidence.
+
+New focused JVM coverage and release journey `test30` are added without weakening existing
+checks. Hosted exact-revision build, both emulator variants and receipt remain pending.
+No local Android SDK/Gradle/Kotlin compiler is available. PStack's dependency planner was
+used; its coordinated native receipt is unavailable because the requested Terra route is
+not offered by this host. No actor/model provenance or independent-review receipt is claimed.
+
+M1a is partial: durable authority, task groups/steps, safe automatic resumption, retention,
+reconciliation UI and delivery projections remain dependencies. The journal caps at 512
+attempts / 1 MiB and fails closed at capacity. M1b phone/media additions, M1c screen control,
+M1d conversation/task controls, M2 workflows and A0–A6 autonomy are not complete.
+
 ## Baseline — 2026-09-24
 
 The tools planning head was `dcbaa66bcdfed0a3fad0f21740345a4c9a1b3876`.
