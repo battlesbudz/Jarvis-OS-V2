@@ -165,6 +165,7 @@
 # The controlled shipping-parent fixture crosses these precise release ABI boundaries.
 # Build 842 removed ModelStore default wrappers and reshaped JarvisApp/VoicePlaybackFrame.
 -keep class com.battlesbudz.jarvis.v2.ai.ModelStore {
+    public static int $stable;
     public <init>(...);
     public java.io.File fileFor(...);
     public boolean isUsable(...);
@@ -176,6 +177,7 @@
     public static void JarvisApp(...);
 }
 -keep class com.battlesbudz.jarvis.v2.voice.TtsModelStore {
+    public static int $stable;
     public <init>(...);
 }
 -keep class com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame { *; }
