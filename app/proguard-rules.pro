@@ -156,6 +156,8 @@
 # Inline Compose code in the separately shrunk release-test DEX invokes these
 # runtime helper owners through the target APK's class loader.
 -keep class androidx.compose.runtime.ComposablesKt { *; }
+-keep class androidx.compose.runtime.SnapshotStateKt** { *; }
+-keep interface androidx.compose.runtime.State { *; }
 -keep class androidx.compose.runtime.Updater { *; }
 
 # Preserve the destination branch navigation policy shared with release instrumentation.

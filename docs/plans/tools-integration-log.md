@@ -74,6 +74,18 @@ for spoken yes until `presentQuestion` explicitly marks that exact question as p
 creating a pending button alone cannot authorize a spoken choice. A focused JVM check
 covers that boundary. These production corrections require a fresh complete release gate.
 
+### Retained Build 854 shared-release-ABI failure
+
+Run [854](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36674011110) at
+`675b950` passed its signed build and JVM gate. Both API variants passed `test01`–`test31`,
+then crashed in `test32` at its direct Compose `collectAsState` call with
+`NoClassDefFoundError: androidx.compose.runtime.SnapshotStateKt`. This is the separate
+release-test DEX/shared-app ABI boundary, not a failing native recovery effect. Both
+device evidence archives were downloaded and their ZIP digests matched GitHub metadata.
+Preserve the observed `SnapshotStateKt` facade/parts and its returned `State` interface,
+matching the existing narrow Compose ABI rules. No scenario or assertion is removed.
+Publication remains blocked until a new exact-revision gate passes.
+
 ## September 30 — M1a durable phone-action slice
 
 Intake head: `6ce979733b89ff488f9a0c44a55260b8e4efccc6`. Existing application baseline
