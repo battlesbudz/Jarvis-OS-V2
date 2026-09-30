@@ -196,3 +196,8 @@
 # The reference journey invokes these narrow shipping API owners from its separate DEX.
 -keep class com.battlesbudz.jarvis.v2.ai.ReferencePdfText { *; }
 -keep class com.battlesbudz.jarvis.v2.memory.MemoryCaptureAcknowledgment { *; }
+
+# PDFBox's optional JPX image decoder is deliberately absent. ReferencePdfText
+# extracts embedded text only; it does not render images or perform OCR.
+# PDFBox supports this configuration and ignores JPX images without the decoder.
+-dontwarn com.gemalto.jp2.JP2Decoder
