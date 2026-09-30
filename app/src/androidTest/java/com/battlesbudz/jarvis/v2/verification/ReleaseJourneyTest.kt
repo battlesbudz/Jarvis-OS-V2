@@ -1247,6 +1247,7 @@ class ReleaseJourneyTest {
                         onEndVoiceCall = { done -> ends.incrementAndGet(); done("") },
                         onResumeVoiceCall = { _, done -> done(null) }, onDeleteVoiceCall = {}, onRefreshVoiceCalls = { emptyList() },
                         onDownloadGemma = { _, _, _, done -> done("Downloads are disabled in this route fixture.") },
+                        onCancelModelDownload = {},
                         onImportModel = { _, _, done -> done("Imports are disabled in this route fixture.") },
                         onCopyDiagnostics = {}, onExportSpeechAudio = {},
                     )
