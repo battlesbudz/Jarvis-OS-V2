@@ -36,10 +36,10 @@ internal fun MemoryArticle(
         } }
     }
     Column(Modifier.fillMaxSize()) {
-        TextButton(onClick = onBack, modifier = Modifier.testTag("memory_article_back")) { Text("${page.category.title}  /  ${page.title}") }
+        TextButton(onClick = onBack, modifier = Modifier.padding(horizontal = 16.dp).testTag("memory_article_back")) { Text("${page.category.title}  /  ${page.title}") }
         Text(page.title, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(horizontal = 16.dp))
         Text("${page.records.size} approved fact${if (page.records.size == 1) "" else "s"}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-        TabRow(tab) {
+        TabRow(tab, modifier = Modifier.padding(horizontal = 16.dp)) {
             Tab(tab == 0, { tab = 0 }, text = { Text("Article") }, modifier = Modifier.testTag("memory_article_tab"))
             Tab(tab == 1, { tab = 1 }, text = { Text("Sources") }, modifier = Modifier.testTag("memory_sources_tab"))
             Tab(tab == 2, { tab = 2 }, text = { Text("History") }, modifier = Modifier.testTag("memory_history_article_tab"))

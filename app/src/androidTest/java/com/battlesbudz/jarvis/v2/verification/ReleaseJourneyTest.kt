@@ -822,7 +822,7 @@ class ReleaseJourneyTest {
             enterText(By.res("memory_new_content"), "Bank account number 1234 5678 9012 3456")
             clickEnabled(By.res("memory_propose"))
             assertNotNull(find(By.res("memory_error")))
-            find(By.text("Cancel")).click()
+            clickEnabled(By.text("Cancel"))
 
             val now = System.currentTimeMillis()
             assertEquals(ConversationMemoryOutcome.PROPOSED, bridge.capture(FinalMemoryInput(
@@ -849,11 +849,11 @@ class ReleaseJourneyTest {
             // Exact wiki search opens the derived topic page; Sources exposes the capture provenance.
             clickEnabled(By.res("memory_wiki_tab"))
             searchMemory("sapphire notebooks", By.text(sapphire))
-            find(By.text(sapphire)).click()
+            clickEnabled(By.text(sapphire))
             assertNotNull(find(By.text("Preferences")))
-            find(By.res("memory_sources_tab")).click()
+            clickEnabled(By.res("memory_sources_tab"))
             assertNotNull(scrollTo(By.textStartsWith("Captured from Text conversation")))
-            find(By.res("memory_article_back")).click()
+            clickEnabled(By.res("memory_article_back"))
 
             // Explicit category/topic placement can be changed later and survives the store reload.
             addManual(atlas, "projects", "Atlas")
@@ -866,9 +866,10 @@ class ReleaseJourneyTest {
             assertNotNull(find(By.text("Review (0)")))
             clickEnabled(By.res("memory_wiki_tab"))
             searchMemory("atlas", By.text(atlas))
-            find(By.text(atlas)).click()
+            clickEnabled(By.text(atlas))
+            assertNotNull(find(By.res("memory_article_tab")))
             assertNotNull(find(By.text("Atlas")))
-            find(By.text(atlas)).click()
+            clickEnabled(By.text(atlas))
             assertNotNull(find(By.text("Memory detail")))
             clickEnabled(By.res("memory_organize"))
             assertNotNull(find(By.text("Organize memory")))
@@ -880,23 +881,24 @@ class ReleaseJourneyTest {
                 Until.gone(By.res("memory_organize_topic")), 15_000
             ))
             // Assignment moved the record from Atlas to Verified links and refreshed the page index.
-            find(By.res("memory_detail_back")).click()
+            clickEnabled(By.res("memory_detail_back"))
             searchMemory("atlas", By.text(atlas))
             assertNotNull(find(By.text("Verified links")))
-            find(By.text(atlas)).click()
+            clickEnabled(By.text(atlas))
             assertNotNull(find(By.text("Verified links")))
             assertNotNull(scrollTo(By.text("Linked pages")))
-            find(By.text("Cobalt")).click()
+            clickEnabled(By.text("Cobalt"))
             assertNotNull(find(By.text("Cobalt")))
             assertNotNull(scrollTo(By.text("Backlinks")))
             assertNotNull(scrollTo(By.text("Verified links")))
             captureEvidence("memory_wiki_linked_article")
-            find(By.res("memory_article_back")).click()
+            clickEnabled(By.res("memory_article_back"))
 
             // Corrections stay out of the index until reviewed, then supersede the old search hit.
             searchMemory("sapphire notebooks", By.text(sapphire))
-            find(By.text(sapphire)).click()
-            find(By.text(sapphire)).click()
+            clickEnabled(By.text(sapphire))
+            assertNotNull(find(By.res("memory_article_tab")))
+            clickEnabled(By.text(sapphire))
             clickEnabled(By.res("memory_correct"))
             assertNotNull(find(By.text("Correct memory")))
             enterText(By.res("memory_new_content"), indigo)
@@ -904,7 +906,7 @@ class ReleaseJourneyTest {
             assertTrue("Correction dialog did not close after its saved proposal", device.wait(
                 Until.gone(By.res("memory_new_content")), 15_000
             ))
-            find(By.res("memory_article_back")).click()
+            clickEnabled(By.res("memory_article_back"))
             approveOnlyPending()
             clickEnabled(By.res("memory_wiki_tab"))
             searchMemory("sapphire notebooks", By.text("No approved memories match that search."))
@@ -961,7 +963,7 @@ class ReleaseJourneyTest {
             enterText(By.res("memory_search_input"), "")
             clickEnabled(By.res("memory_erase_all"))
             assertNotNull(find(By.text("Erase all memories?")))
-            find(By.text("Cancel")).click()
+            clickEnabled(By.text("Cancel"))
             searchMemory("persistent amber tea", By.text(persistent))
             enterText(By.res("memory_search_input"), "")
             clickEnabled(By.res("memory_erase_all"))
