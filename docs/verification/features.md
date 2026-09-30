@@ -2,6 +2,15 @@
 
 Update this file when adding a feature or learning a reproducible regression. A listed gap is not passing coverage.
 
+## APK publication
+
+Every opted-in successful push or same-repository PR build publishes both signed APKs
+after the release build, API 30 normal/API 35 compact journeys and consolidated receipt
+pass. Feature branch pushes use a numbered release and identify their branch in its name.
+The Build 849 regression was an event-condition skip, despite passing verification;
+the corrected workflow retains all verification dependencies. Hosted proof is pending
+the correction's exact revision. Failed or skipped verification cannot publish an APK.
+
 ## Durable phone-action foundation (M1a)
 
 `ToolTaskLedger`, `FileToolTaskStore` and `JournaledActionPipeline` now persist dispatch

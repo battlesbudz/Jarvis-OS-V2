@@ -2,6 +2,16 @@
 
 Epic: [#8](https://github.com/battlesbudz/Jarvis-OS-V2/issues/8). Implementation branch: `feature-tools`.
 
+## September 30 — publish every verified build
+
+Justin clarified that each successful build must provide a numbered GitHub Release with
+normal and compact APKs for testing. Build 849 passed all release checks but its feature
+push failed the publication event condition. The `publish` job now accepts all opted-in
+push builds, retaining its build, both sandbox and consolidated receipt dependencies.
+Release names include the source branch. No PR or merge is needed for a feature release.
+Static workflow checks passed; hosted publication verification is pending this commit's run.
+The earlier no-release feature-branch behavior below is historical and superseded here.
+
 ## September 30 — M1a durable phone-action slice
 
 Intake head: `6ce979733b89ff488f9a0c44a55260b8e4efccc6`. Existing application baseline
@@ -41,7 +51,8 @@ streaming and persistent reply metrics) and `e3a68a0` (Compose test opt-in fix).
 
 `feature-tools` is explicitly added to both Android APK push routing and its build
 job condition. The existing build, API 30/API 35 sandbox, receipt and publication
-dependencies remain required. Branch CI does not create a PR or publish a release.
+dependencies remain required. At this baseline, branch CI did not create a PR or publish
+a release; the September 30 publication correction supersedes that release behavior.
 
 ## Sources to refresh through the epic
 
