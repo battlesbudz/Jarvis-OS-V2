@@ -104,6 +104,14 @@ checks the assistant route and preserves the missing-app failure. System assista
 and volume are restored. API 30 and API 35 must both pass on this revision. Real Gemma,
 physical microphone/speaker and Fold 6 Android 16 launches remain user-device checks.
 
+Build 862 retained a test-harness failure on both APIs: test34's first background launch
+and Settings screenshot succeeded, then its cleanup called ActivityScenario.recreate while
+Jarvis was STOPPED behind Settings. ActivityScenario timed out waiting for RESUMED and
+masked the journey result. The correction removes that unnecessary cleanup recreation;
+the existing @After still closes the scenario, and no side-effect/assertion/gate is removed.
+Failed evidence is retained in run 36771927618, API 30 artifact 11125096760 and API 35
+artifact 11125217008. A fresh exact-revision build and both full emulator suites are required.
+
 ## Planned tools epic
 
 The [tools implementation plan](../plans/tools-implementation-plan.md) defines milestones M0–M8 and planned acceptance T01–T25 from the [completed design interview](../plans/tools-interview-decisions.md). These checks are not implemented or passing coverage. In particular, automatic memory will intentionally change the manual-review default described below; preserve historical tests/evidence and add explicit migration coverage when implementing M6. Extend this map with exact test names and run evidence as each milestone is built.

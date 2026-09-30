@@ -1249,7 +1249,9 @@ class ReleaseJourneyTest {
                     device.executeShellCommand("settings put secure $key $value")
                 }
             }
-            activity.recreate()
+            // Settings is intentionally foreground and Jarvis is STOPPED. Recreating the
+            // stopped activity here waits for RESUMED and masks the real test result.
+            // @After closes this scenario; the next journey launches its own activity.
         }
     }
 
