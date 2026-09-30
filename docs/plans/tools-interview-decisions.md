@@ -1,6 +1,6 @@
 # Tools design: interview decision record
 
-Owner: Justin Battles. Interview completed September 24, 2026 (America/New_York).
+Owner: Justin Battles. Original interview completed September 24, 2026; autonomous messaging and warm-inference follow-up completed September 29, 2026 (America/New_York).
 Status: agreed product requirements, not evidence of implementation. This record and the [implementation plan](tools-implementation-plan.md) supersede conflicting proposals in the earlier research. In particular, automatic memory replaces routine manual memory approval, scripts are in scope, and external-agent access is deferred.
 
 ## Scope and integrations
@@ -37,16 +37,16 @@ Status: agreed product requirements, not evidence of implementation. This record
 | D18 | Run independent tasks concurrently; queue conflicting steps needing the same app or screen. |
 | D19 | Saying stop while Jarvis speaks silences speech; work continues unless cancellation explicitly targets tasks. |
 | D20 | Ending a voice call does not cancel accepted tasks or release active screen work prematurely. |
-| D21 | Automatically enter silently working mode when execution starts. Ignore ordinary speech until Hey Jarvis reactivates conversation; tasks keep running. |
-| D22 | During an active call, ask aloud when input is required, listen for the reply, then return to silent work. Completion updates go to chat. After the call ends, use notifications and chat. |
+| D21 | Retain an explicit silently-working mode that ignores ordinary speech until Hey Jarvis reactivates conversation. Starting work in an active conversational call must not automatically suppress listening or message readout. The September 29 conversational-call behavior supersedes the earlier unconditional task-start transition into silence. |
+| D22 | During an active conversational call, read successive progress/answer bubbles continuously, ask aloud when input is needed, and retain listening/barge-in. In explicit silently-working mode, a needed question may temporarily request an answer before returning to silence. After call end, use chat and notifications without unsolicited speech. This supersedes the earlier silent in-call completion rule. |
 | D23 | Ask before taking screen control while the user is using the phone. Approval spans the active task group/session, across apps, until revoked or the group finishes. |
 | D24 | Display a floating Stop button throughout screen control; it cancels the current task. Spoken stop your task cancels the current task; stop all tasks cancels all. Clarify if a verbal target is ambiguous. |
 | D25 | Pause screen actions during manual touch/navigation; independent background work continues. Resume after a configurable touch-idle interval with no countdown; re-observe the screen first. |
 | D26 | Release screen control when the group finishes and nothing remains. A later task group must not silently inherit an expired session. |
 | D27 | Resume safe unfinished work after process death/reboot; ask about uncertain outcomes before replay. |
 | D28 | Retry safely and try other permitted methods that preserve intent; ask if still blocked. Choose task-specific effort limits and ask if more work is worthwhile when progress stalls. |
-| D29 | Continue within Android battery/thermal limits unless the user stops tasks. Do not add an arbitrary low-battery pause preference. |
-| D30 | While locked, continue tasks and accept spoken confirmations where Android permits. General questions are open to anyone; actions and reading private information aloud require recognizing Justin's voice. Uncertain identity requires unlocking. Speaker recognition remains a device-validation dependency, not a claim of strong authentication. |
+| D29 | Keep the selected inference model ready between interactions, subject to Android memory/thermal limits. Below 20% battery while unplugged, unload at a safe native-idle boundary; reload on user interaction or charging. Preserve task checkpoints and independent permitted work while model-dependent work waits. This explicit September 29 choice supersedes the earlier prohibition on a low-battery preference. |
+| D30 | While locked, continue permitted tasks and accept spoken confirmations where Android permits. General questions are open to anyone; actions and non-sensitive private readout require recognizing Justin's voice, with uncertain identity requiring unlock. Sensitive remembered details always require unlocking (D61), even after a voice match. Speaker recognition remains a device-validation dependency and never bypasses platform authentication. |
 
 ## Workflow creation, scheduling, and interface
 
@@ -56,7 +56,7 @@ Status: agreed product requirements, not evidence of implementation. This record
 | D32 | Trigger by voice/text, approved schedules, approved events such as notifications/location, and suggestions the user approves. |
 | D33 | Run a missed routine automatically if still relevant; otherwise report missed. Assess current circumstances each time and ask if uncertain. All confirmation rules remain. |
 | D34 | Reminders should alert at the requested time; other routines may run in a reasonable window. Follow phone Do Not Disturb, without a separate Jarvis quiet-hours schedule. |
-| D35 | Chat/voice are the operational interface. Jarvis reports current work and step, updates task messages, and can initiate questions/follow-ups. Outside active conversation, send notifications plus chat messages, not unsolicited speech. |
+| D35 | Chat/voice are the operational interface. Retain addressable task status and deliver useful progress, questions, and answers as successive complete-thought messages. Active conversational calls automatically read across message boundaries. Outside calls, use chat and notifications without speech; during Do Not Disturb, post a silent notification immediately. Pending delivery survives interruptions and is revalidated before resuming. |
 | D36 | Settings contains Tools and Workflows, with saved workflows and connected apps/tools. No separate primary workspace is required. |
 | D37 | Web/app answers are concise, with source links or app references in chat. |
 | D38 | Completed task history retains summaries, completed steps, and errors. Discard retrieved content unless saved; do not retain complete raw tool transcripts by default. |
@@ -89,6 +89,26 @@ Status: agreed product requirements, not evidence of implementation. This record
 | D50 | Deliver usable, tested releases after each milestone. First milestone: reliable phone commands while conversation continues. |
 | D51 | First milestone includes opening apps, battery, volume; websites/settings/navigation destinations; play/pause/skip; approved tap/scroll/text input. Do not redefine this as only the existing three tools. |
 | D52 | Full agreed product scope is delivered incrementally; provider exposure and FunctionGemma are later milestones. Differentiate automated verification from actual model/device evidence. |
+
+## Autonomous messaging and warm inference — September 29 follow-up
+
+These confirmed choices extend D01–D52. Where they conflict with the September 24 interview, the newer choices govern. They do not broaden previously granted app access or remove D11's individual confirmations.
+
+| ID | Decision |
+|---|---|
+| D53 | Preparing an unsolicited message may review permitted information and use permitted read-only search/retrieval tools. It may not take new consequential actions; an independently enabled workflow still uses its own grants and D11 confirmations. |
+| D54 | Unprompted messages concern deadlines, important changes, or problems. Goal suggestions and casual check-ins are not the default. Progress/results for a user-requested task remain part of that task. |
+| D55 | Evaluate when new information arrives, not through periodic memory-review polling. Duplicate events and the assistant's own notifications must not create evaluation loops. |
+| D56 | Ordinary replies favor shorter content, with one complete thought per bubble and no fixed sentence limit. Preserve Jarvis's established tone and formatting; use a longer final explanation when necessary. Bubble boundaries do not require separate model turns. |
+| D57 | During an active conversational call, automatically continue reading into the next message using a continuous speech queue. Preserve the call, listening, and barge-in across bubble boundaries. |
+| D58 | An unrelated interruption gives the new question conversational priority while the original task remains admitted and independent work continues. One local inference engine is time-shared; background inference may yield while background I/O continues. |
+| D59 | Retain pending messages, completed results, task state, and delivery position through interruption. After the new request is handled, resume only relevant content; revise or suppress outdated updates and never rerun a completed action just to regenerate its explanation. Explicit speech-stop and task cancellation remain distinct controls. |
+| D60 | Outside calls, deliver a chat message plus notification without speech. During Do Not Disturb, post a silent notification immediately; do not defer it until Do Not Disturb ends or add separate quiet hours. Android notification permission and user channel settings still apply. |
+| D61 | Sensitive remembered details require unlocking. Lock-screen previews are generic and must not leak those details through notification extras, expanded views, progress text, or speech. |
+| D62 | Automatically schedule reminders for relevant known deadlines, even with no subsequent information. Deadline timer events are allowed; periodic memory reviews are not. Ambiguous dates/relevance require clarification; do not fabricate a deadline or modify an external calendar without its applicable authority. |
+| D63 | When Jarvis reopens after crash/restart, restore unfinished tasks and resume automatically if still relevant and permitted. Reconcile uncertain outcomes first; cancelled tasks stay cancelled. Apply low-battery readiness and unlock requirements during recovery. |
+
+Engineering defaults still to document and measure: reminder lead time and deduplication window, event coalescing, bounded storage and work budgets, and an interactive low-battery override that releases again at a safe idle boundary. These are not additional interview answers.
 
 ## Interpretation and unresolved engineering choices
 
