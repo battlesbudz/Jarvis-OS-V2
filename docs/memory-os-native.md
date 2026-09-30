@@ -63,9 +63,27 @@ The conversation implementation supplies finalized-input capture, one approved s
 
 `test28_voiceNavigationRetainsCallIdUntilExplicitEnd` preserves the prior branch's navigation contract in addition to the stronger controlled production surface journey `test27`. The merged contract contains 29 journeys per emulator variant. `MemoryRecallIntegrationTest` verifies pending/approved/erased routing and explicit lookup/action precedence. Fresh combined-commit CI is required; historical parent passes are not combined-revision evidence.
 
+## SQLite implementation checkpoint (2026-09-30)
+
+Completed for the first phone-testable follow-on milestone:
+
+- Introduced `MemoryPersistence` and a shared strict snapshot/record codec; the JSON store remains available for legacy migration and JVM regression tests.
+- Wired `AndroidMemoryOs` to transactional, private `noBackupFilesDir/memory-os.db`. Memories and erase tombstones are canonical separate rows, with indexed review/expiry columns and one committed generation. Only changed rows are written.
+- Added validated one-time schema-1/schema-2 JSON migration, preserving IDs, immutable fingerprints, review statuses, revisions, correction references, wiki organization, provenance, expiry and erase tombstones. Retire the old JSON/owned temporary files only after durable validation. A committed migration marker prevents a surviving stale JSON from restoring deleted memories.
+- Added fail-closed handling for corrupt migration, unknown SQLite versions and write failures. Erase either commits the lineage removal/tombstones/generation together or leaves the previous snapshot intact. Secure-delete is enabled and long-lived WAL is disabled; this does not promise forensic erasure from flash storage.
+- Removed the production JSON 1 MiB serialized-file ceiling. Existing 500-record and 2,000 combined record/tombstone caps remain intentionally enforced pending measured scale work; reads/lifecycle operations still use a full snapshot.
+- Moved the production Memory wiki release journey onto SQLite and added migration/reopen, rollback/future-schema, capacity/concurrency Android acceptance. The named release contract has 33 tests per variant, plus the existing complete JVM/native/helper gate.
+- Added a Memory-branch-only GitHub prerelease job gated by signed build, both complete emulator suites and the exact-build receipt, to deliver the requested phone APK without opening or merging a PR.
+
+Validation status: the candidate must finish its exact-revision CI run before APK handoff. Controlled Android fixtures exercise real SQLite and the production UI, not model-generated extraction or phone hardware. The handoff will name the signed APK build/run and remaining physical-device checks.
+
+Still to implement: source-event/episode storage and 90-day searchable archives; secret sanitization before archive writes; lock/sensitivity and inference semantics; automatic local extraction; embeddings and hybrid ordinary-turn retrieval; temporal entities/relations and GBrain projections; tappable reply memory badges; SMS/MMS/email/Messenger/calendar/contact adapters; proactive follow-up scheduling; indexed queries, scale benchmarks and downstream invalidation. SQLite is the canonical storage foundation for those tables, not their implementation. The existing conservative review/exclusion behavior remains in this APK until the new policy gates and extraction pipeline are complete.
+
+Phone acceptance for this checkpoint: install the normal signed APK as an update; open Memory, inspect existing approved/pending/history entries, add and approve a new fact, organize/correct it, close and reopen Jarvis, verify approved lexical recall, and erase it to check it stops ordinary recall. Do not uninstall first if testing migration: this selected device-only design does not restore memory after uninstall.
+
 ## Plan to finish MemoryOS: local capture, semantic recall, and temporal memory
 
-**Status:** planned follow-on work. The sections above describe the implemented native milestone, including its manual review requirements and lexical retrieval. The decisions below were confirmed by Justin during the 2026-09-29 interview (America/New_York); they replace the older follow-on proposal that every extracted or inferred fact must wait for manual review. They do not claim that automatic capture, embeddings, or the temporal graph already work.
+**Status:** first follow-on storage checkpoint implemented; remaining capabilities are planned. The original milestone above retains manual review and lexical retrieval; Android production storage now uses the SQLite checkpoint below. The decisions below were confirmed by Justin during the 2026-09-29 interview (America/New_York); they replace the older follow-on proposal that every extracted or inferred fact must wait for manual review. They do not claim that automatic capture, embeddings, or the temporal graph already work.
 
 **Goal:** Jarvis should automatically retain useful information and recall relevant context during ordinary Chat and Voice turns, including paraphrases, implied references, and point-in-time questions. Memory, extraction, indexing, and inference run locally on Android. A hosted memory service is not required. Optional access to incoming external sources is separately authorized; saved local memory remains usable offline.
 
@@ -221,3 +239,5 @@ The interview settles the user-facing rules. Implementation still requires evide
 - [BGE-small-en-v1.5 model card](https://huggingface.co/BAAI/bge-small-en-v1.5)
 - [ONNX Runtime Mobile](https://onnxruntime.ai/docs/get-started/with-mobile.html)
 - [Graphiti official repository](https://github.com/getzep/graphiti)
+
+Proactive scheduling clarification: a known relevant deadline may schedule a local reminder without another incoming message. New-information review remains event-driven; avoid periodic model polling. This scheduling behavior is planned, not part of the SQLite APK.

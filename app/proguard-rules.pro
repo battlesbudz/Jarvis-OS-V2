@@ -132,6 +132,10 @@
 # and Compose companion through the target APK's class loader. These are narrow
 # shared ABI owners observed in the release test DEX, not broad Compose keeps.
 -keep class com.battlesbudz.jarvis.v2.memory.MemoryStore$Read { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryStore { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryStore$Update { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryPersistence { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.SQLiteMemoryStore { *; }
 -keep class com.battlesbudz.jarvis.v2.memory.MemorySnapshot { *; }
 -keep class androidx.compose.runtime.Composer$Companion { *; }
 # The release-test inline Box composition also links these companion getters

@@ -8,7 +8,8 @@ object AndroidMemoryOs {
     @Volatile private var instance: MemoryOs? = null
 
     fun get(context: Context): MemoryOs = instance ?: synchronized(this) {
-        instance ?: MemoryOs(File(context.applicationContext.noBackupFilesDir, "memory-os.json"))
+        val directory = context.applicationContext.noBackupFilesDir
+        instance ?: MemoryOs(SQLiteMemoryStore(File(directory, "memory-os.db"), File(directory, "memory-os.json")))
             .also { instance = it }
     }
 }

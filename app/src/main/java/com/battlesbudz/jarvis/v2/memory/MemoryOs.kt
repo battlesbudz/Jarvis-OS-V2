@@ -5,7 +5,7 @@ import java.util.UUID
 import java.util.concurrent.CopyOnWriteArraySet
 
 /** Explicit-review memory lifecycle. It never observes chat/voice itself: callers must propose an event. */
-class MemoryOs(private val store: MemoryStore, private val clock: () -> Long = { System.currentTimeMillis() }) {
+class MemoryOs(private val store: MemoryPersistence, private val clock: () -> Long = { System.currentTimeMillis() }) {
     private val approvedStateObservers = CopyOnWriteArraySet<(String) -> Unit>()
 
     /** In-process fence notification after a durable approved-history mutation. Pending proposals never notify. */

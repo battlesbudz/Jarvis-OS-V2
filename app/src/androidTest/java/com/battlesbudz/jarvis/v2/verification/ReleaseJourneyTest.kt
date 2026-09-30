@@ -768,8 +768,9 @@ class ReleaseJourneyTest {
          * ConversationMemory inputs are deliberately finalized fixtures: this proves the
          * production capture boundary and review UI without claiming microphone/ASR/model work.
          */
-        val file = File(context.cacheDir, "release-memory-wiki-journey.json").apply { delete() }
-        val memoryOs = MemoryOs(file)
+        val file = File(context.cacheDir, "release-memory-wiki-journey.db").apply { delete() }
+        val store = SQLiteMemoryStore(file)
+        val memoryOs = MemoryOs(store)
         val bridge = ConversationMemory(memoryOs)
         val sapphire = "I prefer sapphire notebooks for verification"
         val cobalt = "My favorite color is cobalt"
@@ -945,7 +946,7 @@ class ReleaseJourneyTest {
             addManual(persistent, "preferences", "Tea")
             approveOnlyPending()
             activity.recreate()
-            val reloaded = checkNotNull(MemoryOs(file).read().snapshot)
+            val reloaded = SQLiteMemoryStore(file).use { checkNotNull(it.read().snapshot) }
             assertTrue("A separately opened store must retain the approved record after recreation",
                 reloaded.memories.any { it.content == persistent && it.reviewStatus == MemoryReviewStatus.APPROVED })
             assertTrue("Manual category/topic organization must also survive a separate store reopen",
@@ -984,7 +985,7 @@ class ReleaseJourneyTest {
             assertTrue("History erase confirmation must finish", device.wait(Until.gone(By.text("Erase all memories?")), 15_000))
             assertNotNull(find(By.text("No memory history yet.")))
         } finally {
-            file.delete()
+            store.close(); file.delete()
         }
     }
 
@@ -1256,6 +1257,121 @@ class ReleaseJourneyTest {
         val reloaded = ConversationHistory(prefs)
         assertEquals(12.5, reloaded.current.value.messages.first { it.id == "one" }.metrics?.estimatedTokensPerSecond)
         assertEquals(5.0, reloaded.current.value.messages.first { it.id == "two" }.metrics?.estimatedTokensPerSecond)
+    }
+
+    @Test fun test30_sqliteMigrationPreservesHistoryAndEraseAcrossReopen() {
+        val root = File(context.cacheDir, "release-sqlite-migration").apply { deleteRecursively(); mkdirs() }
+        val legacy = File(root, "memory-os.json")
+        val database = File(root, "memory-os.db")
+        val now = System.currentTimeMillis()
+        try {
+            val original = MemoryOs(legacy) { now }
+            val approved = original.propose(MemoryProposal("I prefer azure mugs", MemorySource("migration-approved", "manual", now))).memory!!
+            original.approve(approved.id)
+            val replacement = original.propose(MemoryProposal("I prefer jade mugs", MemorySource("migration-correction", "manual", now), correctsMemoryId = approved.id)).memory!!
+            original.approve(replacement.id)
+            val erasedProposal = MemoryProposal("An erased orchid note", MemorySource("migration-erased", "manual", now))
+            val erased = original.propose(erasedProposal).memory!!
+            original.delete(erased.id)
+            original.propose(MemoryProposal("Pending quartz note", MemorySource("migration-pending", "manual", now)))
+            val expected = checkNotNull(original.read().snapshot)
+            // Exercise the actual schema-1 migration path too, including optional older fields.
+            val json = org.json.JSONObject(legacy.readText()).apply { put("schemaVersion", 1) }
+            legacy.writeText(json.toString())
+            val oldBytes = legacy.readBytes()
+            SQLiteMemoryStore(database, legacy).use { storage ->
+                assertEquals(expected, storage.read().snapshot)
+                assertFalse("Retire the JSON only after a validated SQLite commit", legacy.exists())
+                val os = MemoryOs(storage) { now }
+                assertTrue(os.contextPacket("mugs", 900).packet!!.text.contains("jade mugs"))
+                assertFalse(os.contextPacket("mugs", 900).packet!!.text.contains("azure mugs"))
+                assertEquals(MemoryOutcome.DELETED, os.propose(erasedProposal).outcome)
+                assertEquals(MemoryOutcome.DELETED, os.delete(replacement.id).outcome)
+            }
+            // Simulate a stale pre-migration file surviving a crash: never import it twice.
+            legacy.writeBytes(oldBytes)
+            SQLiteMemoryStore(database, legacy).use { storage ->
+                val os = MemoryOs(storage) { now }
+                assertNotNull(os.read().snapshot)
+                assertFalse(legacy.exists())
+                assertTrue(os.contextPacket("mugs", 900).packet!!.memories.isEmpty())
+                assertEquals(MemoryOutcome.DELETED, os.propose(erasedProposal).outcome)
+                assertEquals(1, storage.read().snapshot!!.memories.size)
+                assertEquals(3, storage.read().snapshot!!.tombstones.size)
+            }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun test31_sqliteCorruptMigrationAndFailedEraseDoNotLoseData() {
+        val root = File(context.cacheDir, "release-sqlite-failure").apply { deleteRecursively(); mkdirs() }
+        val legacy = File(root, "memory-os.json")
+        val database = File(root, "memory-os.db")
+        val now = System.currentTimeMillis()
+        try {
+            legacy.writeText("{broken")
+            SQLiteMemoryStore(database, legacy).use { storage ->
+                assertNotNull(storage.read().error)
+                assertNull(storage.read().snapshot)
+                assertEquals("{broken", legacy.readText())
+            }
+            // Failed migration rolls back schema/data too; repair the source and retry safely.
+            legacy.delete()
+            val proposal = MemoryProposal("I prefer silver spoons", MemorySource("sqlite-failure-original", "manual", now))
+            val source = MemoryOs(legacy) { now }
+            val record = source.propose(proposal).memory!!
+            source.approve(record.id)
+            SQLiteMemoryStore(database, legacy).use { storage ->
+                val os = MemoryOs(storage) { now }
+                val before = checkNotNull(os.read().snapshot)
+                android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { db ->
+                    db.execSQL("CREATE TRIGGER reject_erasure BEFORE INSERT ON tombstones BEGIN SELECT RAISE(ABORT, 'injected write failure'); END")
+                }
+                assertEquals(MemoryOutcome.STORAGE_FAILURE, os.delete(record.id).outcome)
+                assertEquals("Rows and generation must roll back together", before, os.read().snapshot)
+                assertTrue(os.contextPacket("spoons", 900).packet!!.text.contains("silver spoons"))
+                android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { db -> db.execSQL("DROP TRIGGER reject_erasure") }
+                assertEquals(MemoryOutcome.DELETED, os.delete(record.id).outcome)
+            }
+            SQLiteMemoryStore(database).use { storage ->
+                assertTrue(storage.read().snapshot!!.memories.isEmpty())
+                assertEquals(MemoryOutcome.DELETED, MemoryOs(storage) { now }.propose(proposal).outcome)
+            }
+            // A future DB version must never be reset or treated as an empty ledger.
+            android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { it.version = 99 }
+            SQLiteMemoryStore(database).use { storage -> assertNotNull(storage.read().error) }
+            android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { assertEquals(99, it.version) }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun test32_sqliteExceedsLegacyByteLimitAndSerializesSeparateWriters() {
+        val root = File(context.cacheDir, "release-sqlite-capacity").apply { deleteRecursively(); mkdirs() }
+        val database = File(root, "memory-os.db")
+        val now = System.currentTimeMillis()
+        try {
+            SQLiteMemoryStore(database).use { storage ->
+                val seed = MemoryOs(storage) { now }.propose(MemoryProposal("Capacity seed", MemorySource("capacity-seed", "manual", now))).memory!!
+                // Controlled valid rows isolate the storage ceiling without 450 extraction calls.
+                val result = storage.update { before ->
+                    val records = (1..450).map { index -> seed.copy(id = java.util.UUID.randomUUID().toString(), content = "Capacity row $index " + "q".repeat(1950), source = seed.source.copy(eventId = java.util.UUID.randomUUID().toString().replace("-", "")), payloadFingerprint = null) }
+                    before.copy(generation = before.generation + 1, memories = before.memories + records) to records.size
+                }
+                assertEquals(450, result.value)
+                android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { db ->
+                    db.rawQuery("SELECT SUM(length(payload)) FROM memories", null).use { cursor -> cursor.moveToFirst(); assertTrue(cursor.getLong(0) > MemoryStore.MAX_STORE_BYTES) }
+                }
+            }
+            val pool = java.util.concurrent.Executors.newFixedThreadPool(4)
+            try {
+                val futures = (1..8).map { index -> pool.submit<MemoryOutcome> {
+                    SQLiteMemoryStore(database).use { storage -> MemoryOs(storage) { now }.propose(MemoryProposal("Concurrent writer $index", MemorySource("writer-$index", "manual", now))).outcome }
+                } }
+                futures.forEach { assertEquals(MemoryOutcome.CREATED, it.get(60, java.util.concurrent.TimeUnit.SECONDS)) }
+            } finally { pool.shutdownNow() }
+            SQLiteMemoryStore(database).use { storage ->
+                assertEquals(459, storage.read().snapshot!!.memories.size)
+                assertEquals(10L, storage.read().snapshot!!.generation)
+            }
+        } finally { root.deleteRecursively() }
     }
 
     // Leave this selection in durable preferences for the controller's separate-process check.

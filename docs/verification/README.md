@@ -9,7 +9,7 @@ Each same-repository PR update and push to `feature/**` triggers the existing `A
 1. Build native keyword checks, Python harness checks, all release JVM tests, the signed/minified release APK and its instrumentation APK.
 2. Build the compact release APK and compare native/DEX/assets with the normal variant.
 3. Run `android-sandbox.yml` on fresh GitHub Ubuntu runners with KVM. API 30 tests the normal APK; API 35 tests the compact APK. Google APIs x86_64 images supply ARM translation; the controller requires `arm64-v8a` in the runtime ABI list and fails if the image cannot run the shipping APK.
-4. Execute twenty-eight named release instrumentation scenarios, then kill/relaunch Jarvis in a separate process to check persisted selection. Retain screenshots, UI hierarchy, Android logs, test output, package metadata, APK hashes, source SHA and PR head.
+4. Execute all named release instrumentation scenarios in `scenarios.json`, then kill/relaunch Jarvis in a separate process to check persisted selection. Retain screenshots, UI hierarchy, Android logs, test output, package metadata, APK hashes, source SHA and PR head.
 5. Allow the existing publication jobs only after the build and both sandbox jobs pass. This creates a candidate for Justin's signoff; passing automation does not merge the PR or constitute product acceptance.
 
 No production signing secrets are passed to the emulator job. It consumes already signed artifacts. Evidence expires after 14 days; download it from the run when keeping a long-lived investigation. Test reports and APKs are associated with the same workflow run. On a PR run, `source_commit` is GitHub's tested PR merge commit and `pr_head` identifies the contributor branch revision. On a feature-branch push, `source_commit` is the exact pushed commit and `pr_head` is empty. Both conventions are intentional; do not substitute a branch-head pass for a combined merge-candidate pass.
@@ -123,3 +123,8 @@ Branches created from an older base must first receive the workflow update to op
 ## Memory Conversations merge verification
 
 The MemoryOS integration combines `7a72dfe` and build-768 `649f58c` on `feature/memory-os-v2`. The named contract now has 29 methods including the separate-process setup check. Build 768 passed 685 JVM tests and both 28-method emulator variants; those results do not verify this merge. Follow the exact merge commit's new Actions run through build, both emulator variants, and consolidated receipt. Publication remains skipped on feature pushes. The merge retains all build-768 acceptance and restores the destination navigation policy journey as `test28`.
+
+
+## Memory OS test APK publication
+
+For Justin's requested phone-testing handoff, only `feature/memory-os-v2` pushes additionally publish `memory-os-v2-build.<run number>` as a GitHub prerelease. Publication uses the exact same-run APK artifact and requires signed build, both sandbox variants, and consolidated receipt success. Other feature branches keep artifact-only behavior; main/audio/PR1 publication remains unchanged. No PR is created or merged. The SQLite checkpoint adds three explicit storage acceptance scenarios to the named contract (33 per variant).
