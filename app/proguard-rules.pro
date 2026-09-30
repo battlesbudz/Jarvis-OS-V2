@@ -41,7 +41,8 @@
 -keep class com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ActionRequest { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ActionValidation** { *; }
--keep class com.battlesbudz.jarvis.v2.actions.ExecutionResult { *; }
+# Release test DEX references the typed outcome enum as well as the existing constructor.
+-keep class com.battlesbudz.jarvis.v2.actions.ExecutionResult** { *; }
 # Release instrumentation reaches the multi-action contract through the shared test DEX.
 -keep class com.battlesbudz.jarvis.v2.actions.ActionTurnPlan** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ActionTurnRunner** { *; }
