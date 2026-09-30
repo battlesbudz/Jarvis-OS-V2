@@ -49,7 +49,7 @@ class ActionApprovalStore(
         var created: ActionApprovalRequest? = null
         store.updateJournal { j ->
             created = newApproval(j, taskId, stepId, provider, action, schemaVersion, now())
-            j.copy(approvals = replaceApprovals(j, checkNotNull(created)), activeQuestionId = created?.id)
+            j.copy(approvals = replaceApprovals(j, checkNotNull(created)), activeQuestionId = null)
         }
         return checkNotNull(created)
     }

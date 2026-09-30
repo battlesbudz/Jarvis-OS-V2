@@ -65,6 +65,15 @@ The fixture now has the same explicit opt-in used by the existing controlled UI 
 This is a test compilation repair, with no acceptance removed or weakened. Failed run logs
 and receipt artifact remain evidence; a new exact-revision full release run is required.
 
+### Migration and question-presentation closure
+
+Old unbound paused attempts are now visible and individually cancellable in the task
+panel; cancellation persists without hiding an unresolved unknown effect. The JVM and
+existing panel journey cover this migration edge. An approval request also remains inactive
+for spoken yes until `presentQuestion` explicitly marks that exact question as presented;
+creating a pending button alone cannot authorize a spoken choice. A focused JVM check
+covers that boundary. These production corrections require a fresh complete release gate.
+
 ## September 30 — M1a durable phone-action slice
 
 Intake head: `6ce979733b89ff488f9a0c44a55260b8e4efccc6`. Existing application baseline

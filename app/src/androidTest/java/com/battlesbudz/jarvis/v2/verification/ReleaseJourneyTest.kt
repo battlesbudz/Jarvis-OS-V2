@@ -1103,6 +1103,7 @@ class ReleaseJourneyTest {
         val group = ledger.admit(listOf(ActionRequest("set_volume", mapOf("level" to "25"))), "panel-thread", ToolAuthority.EXACT_APPROVAL)
         val pending = gate.prepare(checkNotNull(ledger.get(group.attemptIds.single())))
         val unknown = ledger.create(ActionRequest("read_battery"), ToolTaskState.RUNNING)
+        val legacy = ledger.create(ActionRequest("read_battery"))
         ledger.recoverAfterRestart()
         val journal = MutableStateFlow<ToolTaskJournal?>(ledger.journal())
         val effects = AtomicInteger(0)
@@ -1114,6 +1115,7 @@ class ReleaseJourneyTest {
                         .executeAttempt(a, a.approvalId?.let { approvals.get(it) })
                     "deny" -> a.approvalId?.let { approvals.deny(it) }
                     "checked" -> ledger.reconcileUnknown(id, generation)
+                    "cancel" -> ledger.cancelLegacyAttempt(id, generation)
                 }
                 journal.value = ledger.journal()
             }
@@ -1137,6 +1139,9 @@ class ReleaseJourneyTest {
             device.waitForIdle()
             assertTrue(checkNotNull(ToolTaskLedger(FileToolTaskStore(file)).get(unknown.id)).reconciled)
             assertEquals(1, effects.get())
+            find(By.res("task_cancel_${legacy.id}")).click()
+            device.waitForIdle()
+            assertEquals(ToolTaskState.CANCELLED, ToolTaskLedger(FileToolTaskStore(file)).get(legacy.id)?.state)
             val declined = ledger.admit(listOf(ActionRequest("read_battery")), "panel-thread", ToolAuthority.EXACT_APPROVAL)
             val choice = gate.prepare(checkNotNull(ledger.get(declined.attemptIds.single())))
             journal.value = ledger.journal()

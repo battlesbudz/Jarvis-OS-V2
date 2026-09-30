@@ -215,7 +215,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         if (!result.succeeded) phoneTaskError.value = result.message
                     }
                     "deny" -> a.approvalId?.let { approvals.deny(it) }
-                    "cancel" -> a.groupId?.let { phoneActionLedger.cancelGroup(it) }
+                    "cancel" -> if (a.groupId != null) phoneActionLedger.cancelGroup(a.groupId)
+                        else phoneActionLedger.cancelLegacyAttempt(a.id, a.generation)
                     "checked" -> if (phoneActionLedger.reconcileUnknown(a.id, a.generation)) a.groupId?.let { phoneActionLedger.cancelGroup(it) }
                     else -> return@launch
                 }

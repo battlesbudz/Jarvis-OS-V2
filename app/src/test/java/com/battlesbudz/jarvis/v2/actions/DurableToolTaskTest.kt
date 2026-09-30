@@ -256,4 +256,31 @@ class DurableToolTaskTest {
         assertTrue(pipeline.executeBound(ledger.attempt(group), ActionRequest("open_app", mapOf("app" to "Maps"))).succeeded)
         assertEquals("maps", (observed as MobileAction.OpenApp).appName)
     }
+
+    @Test fun legacyPausedWorkCanBeCancelledWithoutDismissingUnknownEffects() = withFile { file ->
+        val ledger = ToolTaskLedger(FileToolTaskStore(file))
+        val pending = ledger.create(battery)
+        val unknown = ledger.create(volume, ToolTaskState.UNKNOWN_OUTCOME)
+        ledger.recoverAfterRestart()
+        val paused = checkNotNull(ledger.get(pending.id))
+        assertEquals(ToolTaskState.PAUSED, paused.state)
+        assertTrue(ledger.cancelLegacyAttempt(paused.id, paused.generation))
+        assertFalse(ledger.cancelLegacyAttempt(unknown.id, unknown.generation))
+        val reopened = ToolTaskLedger(FileToolTaskStore(file))
+        reopened.recoverAfterRestart()
+        assertEquals(ToolTaskState.CANCELLED, reopened.get(paused.id)?.state)
+        assertEquals(ToolTaskState.UNKNOWN_OUTCOME, reopened.get(unknown.id)?.state)
+        assertNull(reopened.claim(paused.id, checkNotNull(reopened.get(paused.id)).generation))
+    }
+
+    @Test fun freshSpokenChoiceRequiresActualQuestionPresentation() {
+        val ledger = ToolTaskLedger()
+        val approvals = ActionApprovalStore(ledger.store)
+        val gate = ActionDispatchGate(approvals, ledger)
+        val pending = gate.prepare(ledger.create(battery))
+        assertNull(gate.authorizeSpoken(pending))
+        assertEquals(ApprovalDecision.AMBIGUOUS, approvals.spokenYes())
+        assertTrue(approvals.presentQuestion(pending.approval.id))
+        assertNotNull(gate.authorizeSpoken(pending))
+    }
 }

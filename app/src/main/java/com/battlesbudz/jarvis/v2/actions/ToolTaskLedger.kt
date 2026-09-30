@@ -119,7 +119,7 @@ class ToolTaskLedger(
                 approvalId = approval.id, actionRevision = approval.revision)
             dispatch = AuthorizedDispatch(waiting, approval)
             j.copy(attempts = j.attempts.map { if (it.id == id) waiting else it },
-                approvals = replaceApprovals(j, approval), activeQuestionId = approval.id,
+                approvals = replaceApprovals(j, approval), activeQuestionId = null,
                 events = j.events + waiting.event(ToolTaskEventKind.APPROVAL_REQUESTED))
         }
         return checkNotNull(dispatch)
@@ -198,6 +198,21 @@ class ToolTaskLedger(
                 approvals = j.approvals.map { if (it.id in ids && !it.consumed) it.copy(consumed = true, decision = ApprovalDecision.STALE) else it },
                 activeQuestionId = j.activeQuestionId?.takeUnless { it in ids },
                 events = j.events + attempts.filter { a -> j.attempts.find { it.id == a.id } != a }.map { it.event(ToolTaskEventKind.CANCELLED) })
+        }
+        return changed
+    }
+
+    fun cancelLegacyAttempt(id: String, expectedGeneration: Long): Boolean {
+        var changed = false
+        store.updateJournal { j ->
+            val a = j.attempts.find { it.id == id && it.generation == expectedGeneration && it.groupId == null &&
+                !it.state.isTerminal() && it.state != ToolTaskState.RUNNING } ?: return@updateJournal j
+            changed = true
+            val cancelled = a.advance(ToolTaskState.CANCELLED, "Cancelled before this action started.")
+            j.copy(attempts = j.attempts.map { if (it.id == id) cancelled else it },
+                approvals = j.approvals.map { if (it.id == a.approvalId && !it.consumed) it.copy(consumed = true, decision = ApprovalDecision.STALE) else it },
+                activeQuestionId = j.activeQuestionId?.takeUnless { it == a.approvalId },
+                events = j.events + cancelled.event(ToolTaskEventKind.CANCELLED))
         }
         return changed
     }

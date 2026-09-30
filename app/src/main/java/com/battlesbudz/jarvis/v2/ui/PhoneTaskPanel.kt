@@ -15,7 +15,8 @@ internal fun PhoneTaskPanel(journal: ToolTaskJournal?, conversationId: String, e
     onAction: (String, Long, String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val groups = journal?.groups.orEmpty().filter { it.conversationId == conversationId }.mapTo(hashSetOf()) { it.id }
-    val attempts = journal?.attempts.orEmpty().filter { it.groupId in groups || it.groupId == null && it.state == ToolTaskState.UNKNOWN_OUTCOME && !it.reconciled }
+    val attempts = journal?.attempts.orEmpty().filter { it.groupId in groups || it.groupId == null &&
+        it.state !in setOf(ToolTaskState.SUCCEEDED, ToolTaskState.FAILED, ToolTaskState.CANCELLED) && !it.reconciled }
     val unfinished = attempts.filter { it.state !in setOf(ToolTaskState.SUCCEEDED, ToolTaskState.FAILED, ToolTaskState.CANCELLED) && !it.reconciled }
     if (attempts.isNotEmpty() || error != null) TextButton(onClick = { open = true }, modifier = Modifier.testTag("phone_tasks_open")) {
         Text(if (error != null) "Phone tasks need attention" else "Phone tasks · ${unfinished.size} waiting")
@@ -38,7 +39,7 @@ internal fun PhoneTaskPanel(journal: ToolTaskJournal?, conversationId: String, e
                                 TextButton(onClick = { onAction(a.id, a.generation, "approve") }, modifier = Modifier.testTag("task_approve_${a.id}")) { Text("Approve") }
                                 TextButton(onClick = { onAction(a.id, a.generation, "deny") }, modifier = Modifier.testTag("task_deny_${a.id}")) { Text("Decline") }
                             }
-                        } else if (a.state in setOf(ToolTaskState.QUEUED, ToolTaskState.READY, ToolTaskState.PAUSED) && a.groupId != null) {
+                        } else if (a.state in setOf(ToolTaskState.QUEUED, ToolTaskState.READY, ToolTaskState.PAUSED)) {
                             TextButton(onClick = { onAction(a.id, a.generation, "cancel") }, modifier = Modifier.testTag("task_cancel_${a.id}")) { Text("Cancel task") }
                         }
                     }
