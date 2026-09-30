@@ -2,6 +2,7 @@ package com.battlesbudz.jarvis.v2.ai
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class TurnOrchestratorTest {
@@ -127,4 +128,33 @@ class TurnOrchestratorTest {
         assertTrue(turns.plan("Yes").kind != TurnKind.LOOKUP_CONFIRMATION)
     }
 
+    @Test fun acronymLookupAndNegativeCorrectionRetainConversationDomain() {
+        val turns = TurnOrchestrator(ReferenceGroundingClient())
+        val history = listOf("You" to "I'm making nutrients using Korean Natural Farming", "You" to "how do I make any of it? ingredients and ratios?")
+        val query = turns.plan("what is fpj", history).lookupQuery!!
+        assertTrue(query.contains("Korean Natural Farming"))
+        val retry = turns.plan("no", history + listOf("You" to "what is fpj", "Jarvis" to "FPJ is an actor."))
+        assertEquals(TurnKind.FACTUAL_LOCAL_FIRST, retry.kind)
+        assertTrue(retry.lookupQuery!!.contains("Korean Natural Farming"))
+    }
+    @Test fun recipesAreGroundedButCategoryRecallStaysLocal() {
+        val grounding = ReferenceGroundingClient()
+        assertTrue(grounding.shouldAutomaticallyLookup("how do you make water soluble calcium naturally?"))
+        assertFalse(grounding.shouldAutomaticallyLookup("what fruit do I like?"))
+    }
+    @Test fun replacementCorrectionLooksUpNewQuestionAndProcedureKeepsItsRequestedInput() {
+        val turns = TurnOrchestrator(ReferenceGroundingClient())
+        val history = listOf("You" to "what is fpj", "Jarvis" to "FPJ is an actor.")
+        assertTrue(turns.plan("No, what is water soluble calcium?", history).lookupQuery!!.contains("water soluble calcium"))
+        assertFalse(turns.plan("No, what is water soluble calcium?", history).lookupQuery!!.contains("fpj"))
+        assertTrue(turns.plan("how do you make water soluble calcium in KNF?").lookupQuery!!.contains("water soluble calcium"))
+    }
+    @Test fun topicSwitchDoesNotRequireOldDomainAndUrlOnlyTurnKeepsQuestion() {
+        val turns = TurnOrchestrator(ReferenceGroundingClient())
+        val history = listOf("You" to "I'm making nutrients using Korean Natural Farming", "You" to "Let's switch topics to cooking Italian food.")
+        assertFalse(turns.plan("how do I make pasta?", history).lookupQuery!!.contains("Korean Natural Farming"))
+        val source = turns.plan("https://example.org/reference.pdf", listOf("You" to "how do you make water soluble calcium?"))
+        assertTrue(source.lookupQuery!!.contains("water soluble calcium"))
+        assertTrue(source.lookupQuery!!.contains("https://example.org/reference.pdf"))
+    }
 }

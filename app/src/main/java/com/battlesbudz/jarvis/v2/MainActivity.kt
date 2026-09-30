@@ -138,6 +138,9 @@ class MainActivity : ComponentActivity() {
                 store = modelStore,
                 conversationHistory = runtime.conversationHistory,
                 chatBusy = runtime.chatBusy,
+                phoneTasks = runtime.phoneTasks,
+                phoneTaskError = runtime.phoneTaskError,
+                onPhoneTaskAction = runtime::phoneTaskAction,
                 callState = voiceSessionController.state,
                 onSendChat = runtime::sendChat,
                 onSelectConversation = runtime::selectConversation,
@@ -328,6 +331,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         runtime.activityVisible = true
+        runtime.resumePhoneTasksAfterUnlock()
     }
     override fun onPause() {
         runtime.activityVisible = false

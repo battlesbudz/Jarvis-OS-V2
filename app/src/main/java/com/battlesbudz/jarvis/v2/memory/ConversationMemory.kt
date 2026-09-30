@@ -4,8 +4,15 @@ package com.battlesbudz.jarvis.v2.memory
  * Boundary between finalized user conversation input and MemoryOS. It has no access to drafts,
  * assistant text, tool calls, or automatic model extraction; callers submit only final user input.
  */
-class ConversationMemory(private val memoryOs: MemoryOs) {
+class ConversationMemory(private val memoryOs: MemoryOs, private val sourceArchive: MemorySourceArchive? = null) {
     fun capture(input: FinalMemoryInput): ConversationMemoryResult {
+        // Store eligible finalized user sources even when they contain no deterministic fact.
+        // Source text never enters approvedContext; only an explicit history reader can access it.
+        val archived = sourceArchive?.captureSource(input)?.outcome
+        if (archived == SourceArchiveOutcome.EXCLUDED) return ConversationMemoryResult(ConversationMemoryOutcome.EXCLUDED, "Secret-bearing input is excluded from the memory archive.")
+        if (archived == SourceArchiveOutcome.STORAGE_FAILURE || archived == SourceArchiveOutcome.FULL) return ConversationMemoryResult(ConversationMemoryOutcome.STORAGE_FAILURE, "Memory source archive is unavailable; conversation continues.")
+        if (archived == SourceArchiveOutcome.CONFLICT) return ConversationMemoryResult(ConversationMemoryOutcome.CONFLICT, "Source event was already recorded with different content.")
+        if (archived == SourceArchiveOutcome.EXPIRED || archived == SourceArchiveOutcome.INVALID || archived == SourceArchiveOutcome.IGNORED) return ConversationMemoryResult(ConversationMemoryOutcome.IGNORED, "Source input is not eligible for archival or new memory.")
         val ignored = finalInputError(input)
         if (ignored != null) return ConversationMemoryResult(ConversationMemoryOutcome.IGNORED, ignored)
         if (MemoryPolicy.containsRawRestrictedContent(input.text)) return ConversationMemoryResult(ConversationMemoryOutcome.EXCLUDED, "Restricted content is never proposed as memory.")
@@ -19,6 +26,8 @@ class ConversationMemory(private val memoryOs: MemoryOs) {
                 input.callId?.trim()?.takeIf { it.isNotEmpty() }?.let { add(MemoryProvenance("call", it)) }
             },
         )
+        // Wiki suggestions are derived when rendering. Persisting them here would alter the identity
+        // of captures created before wiki support and break their replay/tombstones.
         val result = memoryOs.propose(MemoryProposal(candidate.content, source, candidate.category, candidate.tier, candidate.type, candidate.confidence))
         return when (result.outcome) {
             MemoryOutcome.CREATED, MemoryOutcome.ALREADY_RECORDED -> ConversationMemoryResult(ConversationMemoryOutcome.PROPOSED, result.message, result.memory)

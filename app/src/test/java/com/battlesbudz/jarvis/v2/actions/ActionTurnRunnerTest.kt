@@ -151,6 +151,51 @@ class ActionTurnRunnerTest {
         assertTrue(executed.isEmpty())
     }
 
+    @Test fun configuredModelPassBudgetCountsInitialGenerationAndNeverRequestsAnotherPastLimit() = kotlinx.coroutines.runBlocking {
+        val plan = ActionTurnPlan.parse("Read battery then set volume to 20 percent then open Settings")
+        val executed = mutableListOf<ActionRequest>()
+        var nextCalls = 0
+        val onePass = ActionTurnRunner(World(), maxModelPasses = 1).runNative(
+            plan, listOf(call("read_battery", "{}")),
+            dispatch = { request -> executed += request; ExecutionResult(true, "done") },
+            nextCalls = { nextCalls++; listOf(call("set_volume", "{\"level\":20}")) }
+        )
+        assertFalse(onePass.completed)
+        assertEquals(listOf(ActionRequest("read_battery")), executed)
+        assertEquals(0, nextCalls)
+
+        executed.clear()
+        val twoPass = ActionTurnRunner(World(), maxModelPasses = 2).runNative(
+            plan, listOf(call("read_battery", "{}")),
+            dispatch = { request -> executed += request; ExecutionResult(true, "done") },
+            nextCalls = {
+                nextCalls++
+                listOf(call("set_volume", "{\"level\":20}"))
+            }
+        )
+        assertFalse(twoPass.completed)
+        assertEquals(listOf(ActionRequest("read_battery"), ActionRequest("set_volume", mapOf("level" to "20"))), executed)
+        assertEquals(1, nextCalls)
+    }
+
+    @Test fun batchCanCompleteWithinConfiguredPassAndInvalidPassLimitsAreRejected() = kotlinx.coroutines.runBlocking {
+        val executed = mutableListOf<ActionRequest>()
+        var nextCalls = 0
+        val completed = ActionTurnRunner(World(), maxModelPasses = 1).runNative(
+            ActionTurnPlan.parse("Read battery then set volume to 20 percent"),
+            listOf(call("read_battery", "{}"), call("set_volume", "{\"level\":20}")),
+            dispatch = { request -> executed += request; ExecutionResult(true, "done") },
+            nextCalls = { nextCalls++; emptyList() }
+        )
+        assertTrue(completed.completed)
+        assertEquals(2, executed.size)
+        assertEquals(0, nextCalls)
+        for (limit in listOf(0, -1)) try {
+            ActionTurnRunner(World(), maxModelPasses = limit)
+            fail("limit $limit should fail")
+        } catch (_: IllegalArgumentException) { }
+    }
+
     @Test fun naturalBatteryPhrasesAndSafeRetryPrefixUseLiteralAppNames() {
         for (battery in listOf("tell me what my battery percentage is", "tell me what the battery level is", "what is my battery percentage", "how much battery do I have", "how much my battery", "how much battery is left", "how much battery does my phone have", "tell me how much battery I have left"))
             assertTrue(battery, ActionTurnPlan.parse(battery) is ActionTurnPlan.Ready)

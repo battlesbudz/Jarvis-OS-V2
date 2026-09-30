@@ -3,9 +3,9 @@ name: Android APK
 on:
   pull_request:
   push:
-    # Feature branches build/test without opening a PR or publishing a release.
+    # Every successful opted-in build publishes test APKs after verification.
     # PR runs separately verify GitHub's combined merge candidate.
-    branches: [main, PR1, 'feature/**']
+    branches: [main, PR1, feature-tools, 'feature/**']
 
 permissions:
   contents: read
@@ -17,6 +17,7 @@ jobs:
     if: >-
       (github.event_name == 'push' &&
        (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/PR1' ||
+        github.ref == 'refs/heads/feature-tools' ||
         startsWith(github.ref, 'refs/heads/feature/'))) ||
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository)
@@ -216,7 +217,7 @@ jobs:
   publish:
     name: Publish signed release APK
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository)
     needs: [build-release, verify-release, verification-receipt]
@@ -244,8 +245,50 @@ jobs:
         with:
           tag_name: ${{ github.event_name == 'pull_request' && format('audio-pr2-pr{0}-build.{1}', github.event.pull_request.number, github.run_number) || format('v0.1.0-build.{0}', github.run_number) }}
           target_commitish: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          name: Jarvis OS V2 ${{ github.event_name == 'pull_request' && 'Audio PR2' || 'test' }} build ${{ github.run_number }}
+          name: Jarvis OS V2 ${{ github.head_ref || github.ref_name }} build ${{ github.run_number }}
           generate_release_notes: true
+          files: dist/*.apk
+
+  publish-memory-test:
+    name: Publish Memory OS test APK
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/memory-os-v2'
+    needs: [build-release, verify-release, verification-receipt]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve exact release APK ID
+        id: artifacts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/verification/artifacts.py fetch --out artifact-manifest.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"
+          python3 scripts/verification/artifacts.py select --manifest artifact-manifest.json --run-id "$GITHUB_RUN_ID" --head-sha "$EXPECTED_HEAD" --require 'jarvis-os-v2-release-apk=Build signed release APK' --require-success --github-output "$GITHUB_OUTPUT"
+      - name: Download exact release APK
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/verification/artifacts.py download --manifest artifact-manifest.json --artifact-ids "${{ steps.artifacts.outputs.artifact_ids }}" --out dist --layout flat
+
+      - name: Publish GitHub Release APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: memory-os-v2-build.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: Jarvis OS V2 Memory OS test build ${{ github.run_number }}
+          prerelease: true
+          generate_release_notes: false
+          body: |
+            Conversation reliability test build: bounded user evidence, contextual factual lookup, correction handling, shared text/voice draft guards, truthful memory capture acknowledgments, and supplied PDF references.
+            Source: ${{ github.sha }}
+            Verification: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Both signed APK variants passed JVM/native checks, API 30/API 35 journeys, and consolidated evidence.
+            Pending proposals require review; conversation evidence does not become approved memory automatically.
+            Relevant evidence is required for factual answers. General live business/promotion discovery remains unavailable.
+            Embeddings, automatic extraction, temporal graph, and incoming message adapters remain planned.
+            Real model inference, physical audio, and Fold 6 performance require phone testing.
           files: dist/*.apk
 
   publish-pr-test:

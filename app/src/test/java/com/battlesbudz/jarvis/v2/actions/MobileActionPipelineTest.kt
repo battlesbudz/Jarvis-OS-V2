@@ -45,6 +45,7 @@ class MobileActionPipelineTest {
         val result = pipeline.execute(ActionRequest("set_volume", mapOf("level" to "40")))
         assertFalse(result.succeeded)
         assertEquals("Android denied permission to perform this action.", result.message)
+        assertEquals(ExecutionResult.Outcome.DENIED_PERMISSION, result.outcome)
     }
 
     @Test
@@ -57,6 +58,7 @@ class MobileActionPipelineTest {
         val result = pipeline.execute(ActionRequest("set_volume", mapOf("level" to "40")))
         assertFalse(result.succeeded)
         assertEquals("Android could not confirm that this action completed.", result.message)
+        assertEquals(ExecutionResult.Outcome.UNKNOWN_COMPLETION, result.outcome)
         assertEquals(1, attempts)
     }
 
@@ -71,6 +73,22 @@ class MobileActionPipelineTest {
         assertFalse(pipeline.execute(ActionRequest("set_volume", mapOf("level" to "40"))).succeeded)
         assertTrue(pipeline.execute(ActionRequest("read_battery")).succeeded)
         assertEquals(listOf(MobileAction.SetVolume(40), MobileAction.ReadBattery), attempted)
+    }
+
+    @Test
+    fun rejectedValidationHasItsOwnTypedOutcomeAndNoEffect() {
+        var calls = 0
+        val result = MobileActionPipeline { calls++; ExecutionResult(true, "unexpected") }
+            .execute(ActionRequest("set_volume", mapOf("level" to "101")))
+        assertFalse(result.succeeded)
+        assertEquals(ExecutionResult.Outcome.REJECTED_VALIDATION, result.outcome)
+        assertEquals(0, calls)
+    }
+
+    @Test
+    fun legacyConstructorKeepsSucceededAndOutcomeConsistent() {
+        assertEquals(ExecutionResult.Outcome.SUCCEEDED, ExecutionResult(true, "done").outcome)
+        assertEquals(ExecutionResult.Outcome.FAILED, ExecutionResult(false, "failed").outcome)
     }
 
     @Test

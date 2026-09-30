@@ -65,6 +65,9 @@ fun JarvisApp(
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onExportSpeechAudio: () -> Unit,
+    phoneTasks: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>? = null,
+    phoneTaskError: kotlinx.coroutines.flow.StateFlow<String?>? = null,
+    onPhoneTaskAction: (String, Long, String) -> Unit = { _, _, _ -> },
 ) {
     var selectedModel by remember { mutableStateOf(store.selectedModel()) }
     var selectionError by remember { mutableStateOf<String?>(null) }
@@ -87,6 +90,8 @@ fun JarvisApp(
     var setupElapsedSeconds by remember { mutableStateOf(0L) }
     var showingVoiceCalls by rememberSaveable { mutableStateOf(false) }
     var showingMemory by rememberSaveable { mutableStateOf(false) }
+    var memoryReturnToVoice by rememberSaveable { mutableStateOf(false) }
+    var memoryReturnToChat by rememberSaveable { mutableStateOf(false) }
     var voiceCalls by remember { mutableStateOf(initialVoiceCalls) }
     var selectedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
     var resumedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
@@ -356,13 +361,19 @@ fun JarvisApp(
                     )
                     else -> ConversationScreen(
                         history = conversationHistory, busy = chatBusy, callState = callState, onSend = onSendChat,
+                        phoneTasks = phoneTasks, phoneTaskError = phoneTaskError, onPhoneTaskAction = onPhoneTaskAction,
                         selectedModel = selectedModel,
                         onSelectConversation = onSelectConversation, onEndVoice = onEndVoiceCall,
                         onOpenVoiceCalls = {
                             voiceCalls = onRefreshVoiceCalls()
                             showingVoiceCalls = true
                         },
-                        resumedVoice = resumedVoiceCall != null
+                        resumedVoice = resumedVoiceCall != null,
+                        onOpenMemory = { showingMemory = true },
+                        forceVoiceDestination = memoryReturnToVoice,
+                        onForceVoiceConsumed = { memoryReturnToVoice = false },
+                        forceChatDestination = memoryReturnToChat,
+                        onForceChatConsumed = { memoryReturnToChat = false }
                     ) { visible, settingsOpen, dismissSettings, startRequest -> VoiceCallScreen(
                         visible = visible, settingsOpen = settingsOpen, memoryOpen = showingMemory,
                         onDismissSettings = dismissSettings, startRequest = startRequest,
@@ -386,6 +397,8 @@ fun JarvisApp(
                         callActive = activeVoiceCall,
                         callStatus = activeVoiceStatus,
                         onEndCall = onEndVoiceCall,
+                        onOpenChat = { memoryReturnToVoice = false; memoryReturnToChat = true; showingMemory = false },
+                        onOpenVoice = { memoryReturnToChat = false; memoryReturnToVoice = true; showingMemory = false },
                     )
                 }
             } else if (showingMemory) {
@@ -395,6 +408,8 @@ fun JarvisApp(
                     callActive = activeVoiceCall,
                     callStatus = activeVoiceStatus,
                     onEndCall = onEndVoiceCall,
+                    onOpenChat = { memoryReturnToVoice = false; memoryReturnToChat = true; showingMemory = false },
+                    onOpenVoice = { memoryReturnToChat = false; memoryReturnToVoice = true; showingMemory = false },
                 )
             } else {
                 ModelSetup(

@@ -34,6 +34,14 @@ internal fun ConversationScreen(
     onOpenVoiceCalls: () -> Unit,
     resumedVoice: Boolean,
     dictationFactory: (() -> com.battlesbudz.jarvis.v2.voice.ChatDictation)? = null,
+    onOpenMemory: () -> Unit = {},
+    forceVoiceDestination: Boolean = false,
+    onForceVoiceConsumed: () -> Unit = {},
+    forceChatDestination: Boolean = false,
+    onForceChatConsumed: () -> Unit = {},
+    phoneTasks: StateFlow<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>? = null,
+    phoneTaskError: StateFlow<String?>? = null,
+    onPhoneTaskAction: (String, Long, String) -> Unit = { _, _, _ -> },
     voiceContent: @Composable (visible: Boolean, settingsOpen: Boolean, dismissSettings: () -> Unit, startRequest: Long) -> Unit
 ) {
     val thread by history.current.collectAsState()
@@ -41,6 +49,8 @@ internal fun ConversationScreen(
     val liveTranscript by VoiceSessionUi.liveTranscript.collectAsState()
     val armed by VoiceSessionUi.armed.collectAsState()
     val voiceState by callState.collectAsState()
+    val taskJournal by (phoneTasks?.collectAsState() ?: remember { mutableStateOf<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>(null) })
+    val taskError by (phoneTaskError?.collectAsState() ?: remember { mutableStateOf<String?>(null) })
     var hadCall by remember { mutableStateOf(false) }
     var voiceVisible by rememberSaveable { mutableStateOf(false) }
     var callStartRequest by rememberSaveable { mutableLongStateOf(0L) }
@@ -77,6 +87,19 @@ internal fun ConversationScreen(
         }
     }
     LaunchedEffect(resumedVoice) { if (resumedVoice) voiceVisible = true }
+    LaunchedEffect(forceVoiceDestination) {
+        if (forceVoiceDestination) {
+            voiceVisible = true
+            onForceVoiceConsumed()
+        }
+    }
+    LaunchedEffect(forceChatDestination) {
+        if (forceChatDestination) {
+            // Chat stays visible beneath an active call; returning from Memory does not end it.
+            if (armed || resumedVoice) voiceVisible = true
+            onForceChatConsumed()
+        }
+    }
     LaunchedEffect(armed) {
         if (armed) voiceVisible = true
         else if (wasArmed) voiceVisible = false
@@ -97,6 +120,7 @@ internal fun ConversationScreen(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text("JARVIS", style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+            TextButton(enabled = !inputBusy, onClick = onOpenMemory, modifier = Modifier.testTag("memory_open")) { Text("Memory") }
             TextButton(enabled = !inputBusy, onClick = { settings = true }) { Text("Settings") }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -107,6 +131,7 @@ internal fun ConversationScreen(
             Column(Modifier.fillMaxSize()) {
                 if (thread.messages.isEmpty()) Text("Type a message or start a voice call. It's all one conversation.",
                     modifier = Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                PhoneTaskPanel(taskJournal, thread.id, taskError, onPhoneTaskAction)
                 LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().testTag("conversation_transcript"),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = if (voiceVisible) 280.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(thread.messages, key = { it.id }) { message ->

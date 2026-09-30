@@ -36,6 +36,14 @@ class TurnOrchestrator(
             pendingLookupSubject = null; activeSubject = null; activeSubjectQuestion = null
             return TurnPlan(TurnKind.NORMAL_CHAT, actionPlan = actionPlan)
         }
+        if (Regex("https://[^\\s<>]+", RegexOption.IGNORE_CASE).matches(prompt.trim())) {
+            val preceding = com.battlesbudz.jarvis.v2.chat.TurnContinuity.precedingSubstantiveRequest(prompt, history)
+            val question = preceding ?: "Summarize the supplied document"
+            val domain = com.battlesbudz.jarvis.v2.chat.TurnContinuity.lookupContext(question, history)
+            return TurnPlan(TurnKind.FACTUAL_LOCAL_FIRST,
+                lookupQuery = question + (domain?.let { "\nConversation domain: $it" } ?: "") + "\n" + prompt,
+                activeSubject = question)
+        }
         val confirmation = grounding.isLookupConfirmation(prompt)
         val explicit = grounding.isExplicitLookupRequest(prompt)
         val dialogue = DialogueContextPolicy.resolve(prompt, history)
@@ -87,7 +95,12 @@ class TurnOrchestrator(
             }
         }
 
-        val kind = if (grounding.shouldAutomaticallyLookup(prompt)) {
+        val replacementQuestion = Regex("(?i)^(?:no[,!]?\\s+)?(?:what|who|where|when|how|why|which)\\b|\\b(?:i meant|i was asking)\\b").containsMatchIn(prompt.trim())
+        val correctionQuestion = if (!replacementQuestion && com.battlesbudz.jarvis.v2.chat.TurnContinuity.isCorrection(prompt)) history.asReversed().firstOrNull {
+            it.first == "You" && it.second != prompt && !com.battlesbudz.jarvis.v2.chat.TurnContinuity.isCorrection(it.second)
+        }?.second?.takeIf { grounding.shouldAutomaticallyLookup(it) && !grounding.isExplicitLookupRequest(it) } else null
+        val factualPrompt = correctionQuestion ?: prompt
+        val kind = if (grounding.shouldAutomaticallyLookup(factualPrompt)) {
             TurnKind.FACTUAL_LOCAL_FIRST
         } else {
             TurnKind.NORMAL_CHAT
@@ -96,7 +109,9 @@ class TurnOrchestrator(
             // Deterministic factual routing must retrieve evidence before
             // Gemma answers; post-answer verification is too late to prevent
             // a confident hallucination from reaching the user.
-            activeSubject ?: prompt
+            val entityQuestion = Regex("(?i)^(?:who is|who was|who|what is|what was|tell me about|information about)\\b").containsMatchIn(factualPrompt.trim())
+            val subjectQuery = if (correctionQuestion != null || !entityQuestion || factualPrompt.length > 100) factualPrompt else activeSubject ?: factualPrompt
+            com.battlesbudz.jarvis.v2.chat.TurnContinuity.lookupContext(factualPrompt, history)?.let { subjectQuery + "\nConversation domain: " + it } ?: subjectQuery
         } else {
             null
         }
@@ -118,7 +133,7 @@ class TurnOrchestrator(
             normalized.contains("would you like me to search wikipedia") ||
             normalized.contains("would you like me to search wikidata")
         ) {
-            pendingLookupSubject = activeSubject ?: prompt
+            pendingLookupSubject = plan.lookupQuery ?: activeSubject ?: prompt
         } else {
             pendingLookupSubject = null
         }

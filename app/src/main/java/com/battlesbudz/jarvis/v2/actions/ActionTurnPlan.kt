@@ -5,7 +5,9 @@ import com.battlesbudz.jarvis.v2.ChatEntry
 /** An all-or-nothing interpretation of the user's final action request. */
 sealed interface ActionTurnPlan {
     data object NotAction : ActionTurnPlan
-    data class Ready(val steps: List<Step>) : ActionTurnPlan { init { require(steps.size in 1..3) } }
+    data class Ready(val steps: List<Step>, val batteryCondition: BatteryCondition? = null) : ActionTurnPlan {
+        init { require(steps.size in 1..3) }
+    }
     data class Rejected(val reason: String) : ActionTurnPlan
     data class Step(val request: ActionRequest, val sourceClause: String)
 
@@ -14,7 +16,16 @@ sealed interface ActionTurnPlan {
             confirmation(text, history)?.let { request ->
                 return Ready(listOf(Step(request, "Open " + request.arguments.getValue("app"))))
             }
-            val clauses = ActionRequestText.actionClauses(text)
+            val normalized = ActionRequestText.normalizedRequest(text)
+            // Quoted/hypothetical/negated speech must never become unconditional actions.
+            if (Regex("""(?i)\b(?:don't|do not|never)\b""").containsMatchIn(normalized)) return NotAction
+            val conditional = BatteryCondition.split(normalized)
+            if (conditional == null && Regex("""(?i)^(?:if|unless|when|after)\b.*\b(?:open|launch|start|set|read|check|tell)\b""")
+                    .containsMatchIn(normalized))
+                return Rejected("I can check a battery-percentage condition now; other conditions need a separate request.")
+            if (conditional != null && Regex("""(?i)\b(?:if|unless|when|after|else|otherwise)\b""").containsMatchIn(conditional.actions))
+                return Rejected("Please use one battery condition for this phone-action request.")
+            val clauses = ActionRequestText.actionClauses(conditional?.actions ?: text)
             if (clauses.isEmpty()) return NotAction
             // Do not apply action limits or condition rules to ordinary speech.
             if (clauses.none(::looksDirected)) return NotAction
@@ -26,7 +37,7 @@ sealed interface ActionTurnPlan {
                 request ?: return Rejected("I couldn't safely understand: $clause")
                 Step(request, clause)
             }
-            return Ready(steps)
+            return Ready(steps, conditional?.condition)
         }
 
         private fun looksDirected(clause: String): Boolean =
@@ -55,7 +66,7 @@ sealed interface ActionTurnPlan {
         }
 
         /** Whole phrase grammar: no substring/last-number recovery. */
-        private fun parseExactVolume(value: String): Int? {
+        internal fun parseExactVolume(value: String): Int? {
             val raw = value.trim().lowercase().removeSuffix("%").trim().removeSuffix("percent").trim()
             raw.toIntOrNull()?.let { return it.takeIf { level -> level in 0..100 } }
             if (raw.contains(Regex("[^a-z -]")) || raw.startsWith("negative") || raw.contains("hundred") && raw != "one hundred") return null

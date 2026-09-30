@@ -9,10 +9,14 @@ import kotlinx.coroutines.yield
 /** Shared bounded coordinator for production and deterministic JVM tests. */
 class ActionTurnRunner(
     private val executor: MobileActionExecutor,
-    private val maxModelPasses: Int = 6
+    internal val maxModelPasses: Int = 6
 ) {
+    init {
+        require(maxModelPasses > 0) { "maxModelPasses must be positive." }
+    }
     data class Receipt(val request: ActionRequest, val result: ExecutionResult)
-    data class Outcome(val receipts: List<Receipt>, val completed: Boolean, val stopped: Boolean, val message: String)
+    data class Outcome(val receipts: List<Receipt>, val completed: Boolean, val stopped: Boolean, val message: String,
+        val conditionResult: ExecutionResult? = null, val conditionMatched: Boolean? = null)
     sealed interface Batch {
         data class Accepted(val requests: List<ActionRequest>, val reported: List<ActionRequest>) : Batch
         data class Rejected(val message: String = "I couldn't verify the requested phone actions.") : Batch
@@ -20,6 +24,7 @@ class ActionTurnRunner(
 
     /** Validates every call before a caller is permitted to execute any of them. */
     fun validateBatch(plan: ActionTurnPlan.Ready, completed: List<Receipt>, calls: List<ToolCall>): Batch {
+        if (plan.batteryCondition != null) return Batch.Rejected("A battery condition needs a fresh Android reading before dispatch.")
         val remaining = plan.steps.drop(completed.size)
         if (calls.isEmpty() || remaining.isEmpty()) return Batch.Rejected()
         val requests = calls.map { NativeActionDecoder.decodeStrict(it) }
@@ -61,6 +66,75 @@ class ActionTurnRunner(
     }
 }
 
+/** Complete explicit phone plans already have exact authority; no model acknowledgements are needed. */
+suspend fun ActionTurnRunner.runValidated(
+    plan: ActionTurnPlan.Ready,
+    dispatch: suspend (ActionRequest) -> ExecutionResult,
+    checkBattery: suspend () -> ExecutionResult
+): ActionTurnRunner.Outcome {
+    currentCoroutineContext().ensureActive()
+    if (!plan.steps.all { it.request.isRoutineEligible() }) return ActionTurnRunner.Outcome(emptyList(), false, true,
+        "I couldn't validate all the requested phone actions. Nothing was started.")
+    val conditionResult = plan.batteryCondition?.let { checkBattery() }
+    currentCoroutineContext().ensureActive()
+    val matched = plan.batteryCondition?.let { condition ->
+        val percent = conditionResult?.batteryPercent
+        if (conditionResult?.succeeded != true || percent == null || percent !in 0..100)
+            return ActionTurnRunner.Outcome(emptyList(), false, true,
+                "I couldn't verify the battery condition. No requested actions were started.", conditionResult)
+        condition.matches(percent)
+    }
+    if (matched == false) return ActionTurnRunner.Outcome(emptyList(), true, false,
+        "${conditionResult!!.message} The condition was not met. Skipped: " +
+            plan.steps.joinToString { it.sourceClause } + ".", conditionResult, false)
+    val receipts = mutableListOf<ActionTurnRunner.Receipt>()
+    for (step in plan.steps) {
+        currentCoroutineContext().ensureActive()
+        val result = dispatch(step.request)
+        receipts += ActionTurnRunner.Receipt(step.request, result)
+        currentCoroutineContext().ensureActive()
+        if (!result.succeeded) return ActionTurnRunner.Outcome(receipts, false, true,
+            summary(receipts, plan.steps.drop(receipts.size)), conditionResult, matched)
+        yield()
+    }
+    return ActionTurnRunner.Outcome(receipts, true, false,
+        (listOfNotNull(conditionResult?.message) + receipts.map { it.result.message }).joinToString(" "),
+        conditionResult, matched)
+}
+
+
+data class AuthorizedDispatch(
+    val task: ToolTaskAttempt,
+    val approval: ActionApprovalRequest
+)
+
+class ActionDispatchGate(
+    private val approvals: ActionApprovalStore,
+    private val ledger: ToolTaskLedger
+) {
+    init { approvals.attach(ledger.store) }
+
+    fun prepare(task: ToolTaskAttempt, provider: String = "native", schemaVersion: Int = MobileToolCatalog.VERSION): AuthorizedDispatch {
+        require(ledger.get(task.id) == task)
+        return ledger.requestApproval(task.id, task.generation, provider, schemaVersion)
+    }
+
+    fun authorize(dispatch: AuthorizedDispatch, provider: String = "native",
+        schemaVersion: Int = MobileToolCatalog.VERSION): ToolTaskAttempt? {
+        if (ledger.get(dispatch.task.id) != dispatch.task) return null
+        return ledger.claim(dispatch.task.id, dispatch.task.generation, provider, schemaVersion, dispatch.approval)
+    }
+
+    fun complete(running: ToolTaskAttempt, result: ExecutionResult): ToolTaskAttempt? {
+        return ledger.finish(running, result)
+    }
+
+    fun authorizeSpoken(dispatch: AuthorizedDispatch): ToolTaskAttempt? {
+        if (ledger.get(dispatch.task.id) != dispatch.task) return null
+        return ledger.claim(dispatch.task.id, dispatch.task.generation, approval = dispatch.approval, spoken = true)
+    }
+}
+
 /** Suspended production path. Native generation happens only between accepted batches. */
 suspend fun ActionTurnRunner.runNative(
     plan: ActionTurnPlan,
@@ -72,7 +146,8 @@ suspend fun ActionTurnRunner.runNative(
         ?: return ActionTurnRunner.Outcome(emptyList(), false, true, (plan as? ActionTurnPlan.Rejected)?.reason.orEmpty())
     val receipts = mutableListOf<ActionTurnRunner.Receipt>()
     var calls = initialCalls
-    repeat(6) {
+    // `initialCalls` comes from the first generation and consumes the first pass.
+    for (pass in 0 until maxModelPasses) {
         currentCoroutineContext().ensureActive()
         val batch = validateBatch(ready, receipts, calls)
         if (batch is ActionTurnRunner.Batch.Rejected) return ActionTurnRunner.Outcome(receipts, false, true,
@@ -91,6 +166,8 @@ suspend fun ActionTurnRunner.runNative(
         }
         if (receipts.size == ready.steps.size) return ActionTurnRunner.Outcome(receipts, true, false,
             receipts.joinToString(" ") { it.result.message })
+        // Do not start another inference after the final configured model pass.
+        if (pass == maxModelPasses - 1) break
         currentCoroutineContext().ensureActive()
         yield()
         currentCoroutineContext().ensureActive()

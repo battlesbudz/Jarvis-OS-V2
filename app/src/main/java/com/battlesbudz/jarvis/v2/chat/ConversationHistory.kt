@@ -143,7 +143,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
     }
     @Synchronized fun context(excludingCall: String? = null): List<ChatEntry> =
         _current.value.messages.filter { (excludingCall == null || it.callId != excludingCall) && it.contextText.isNotBlank() }
-            .takeLast(24).map { ChatEntry(it.role, it.contextText) }
+            .takeLast(128).map { ChatEntry(it.role, it.contextText) }
 
     /**
      * Keeps visible history but fences pre-mutation prompt context by stable text IDs and original
@@ -177,7 +177,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
             (message.callId == null && message.id !in directIds) ||
                 (message.callId != null && message.sourceTimestampMs > callCutoff)
         }.filter { (excludingCall == null || it.callId != excludingCall) && it.contextText.isNotBlank() }
-            .takeLast(24).map { ChatEntry(it.role, it.contextText) }
+            .takeLast(128).map { ChatEntry(it.role, it.contextText) }
     }
 
     private fun replace(thread: ConversationThread, durable: Boolean = true) {

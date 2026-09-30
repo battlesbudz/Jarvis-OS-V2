@@ -1,6 +1,8 @@
 package com.battlesbudz.jarvis.v2.verification
 
 import android.content.Intent
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.ContentValues
 import android.media.AudioManager
 import android.os.BatteryManager
@@ -31,12 +33,15 @@ import com.battlesbudz.jarvis.v2.actions.*
 import com.battlesbudz.jarvis.v2.ai.ToolCall
 import com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
+import com.battlesbudz.jarvis.v2.ai.ModelCatalog
+import com.battlesbudz.jarvis.v2.ai.ModelStore
 import com.battlesbudz.jarvis.v2.chat.ConversationHistory
 import com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext
 import com.battlesbudz.jarvis.v2.memory.*
 import com.battlesbudz.jarvis.v2.ui.ConversationScreen
 import com.battlesbudz.jarvis.v2.ui.VoiceCallOverlay
 import com.battlesbudz.jarvis.v2.ui.MemoryScreen
+import com.battlesbudz.jarvis.v2.ui.JarvisApp
 import com.battlesbudz.jarvis.v2.voice.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
@@ -197,6 +202,23 @@ class ReleaseJourneyTest {
         device.waitForIdle()
     }
 
+    /** Category chips live in horizontal LazyRows, so vertical page seeking cannot reveal all of them. */
+    private fun clickHorizontalChip(strip: BySelector, target: BySelector) {
+        repeat(8) {
+            device.findObject(target)?.let { chip ->
+                if (chip.isEnabled && hasSafeTapBounds(chip)) {
+                    chip.click()
+                    device.waitForIdle()
+                    return
+                }
+            }
+            val row = find(strip).visibleBounds
+            device.swipe(row.right - 12, row.centerY(), row.left + 12, row.centerY(), 180)
+            device.waitForIdle()
+        }
+        clickEnabled(target)
+    }
+
     private fun enterText(selector: BySelector, value: String) {
         try {
             enabled(selector).text = value
@@ -204,15 +226,17 @@ class ReleaseJourneyTest {
             // Text assignment is an idempotent replacement, so a fresh-node retry is safe.
             enabled(selector).text = value
         }
-        // Close the IME without navigating away before we need to reach controls below the editor.
-        device.pressKeyCode(android.view.KeyEvent.KEYCODE_ESCAPE)
+        // ACTION_SET_TEXT can leave the IME closed. Unconditional Escape dismisses the
+        // AlertDialog (retained build-842 evidence). Dismiss only a visible keyboard.
+        device.waitForIdle()
+        if (device.hasObject(By.pkg(java.util.regex.Pattern.compile(".*inputmethod.*")))) device.pressBack()
         device.waitForIdle()
     }
 
     private fun searchMemory(query: String, expected: BySelector) {
         enterText(By.res("memory_search_input"), query)
-        clickEnabled(By.res("memory_search"))
-        // The enabled field proves the async search has replaced the prior rows before checking its result.
+        // Search is live in the wiki.  The adjacent action clears a search; it must not be
+        // tapped here or the assertion would inspect the unfiltered page.
         enabled(By.res("memory_search_input"))
         assertNotNull(scrollTo(expected))
     }
@@ -775,82 +799,237 @@ class ReleaseJourneyTest {
             audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
         }
     }
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     @Test fun test24_memoryManagerReviewsCorrectsSearchesAndErases() {
-        // Use only the release UI: memory implementation classes are intentionally shrinkable.
-        clickEnabled(By.res("memory_open"))
-        assertNotNull(find(By.text("Memory")))
+        /*
+         * This mounts the shipping MemoryScreen on a real, file-backed MemoryOs.  The two
+         * ConversationMemory inputs are deliberately finalized fixtures: this proves the
+         * production capture boundary and review UI without claiming microphone/ASR/model work.
+         */
+        val file = File(context.cacheDir, "release-memory-wiki-journey.db").apply { delete() }
+        val store = SQLiteMemoryStore(file)
+        val memoryOs = MemoryOs(store)
+        val bridge = ConversationMemory(memoryOs)
+        val sapphire = "I prefer sapphire notebooks for verification"
+        val cobalt = "My favorite color is cobalt"
+        val atlas = "Project Atlas uses [[Cobalt]]."
+        val cobaltNotes = "Cobalt reference notes for verification."
+        val indigo = "I prefer indigo notebooks for verification"
+        val persistent = "I prefer persistent amber tea for verification"
 
-        enterText(By.res("memory_new_content"), "Bank account number 1234 5678 9012 3456")
-        clickEnabled(By.res("memory_propose"))
-        assertNotNull(find(By.res("memory_error")))
-        enabled(By.res("memory_new_content"))
-        enterText(By.res("memory_new_content"), "Synthetic preference: teal notebooks.")
-        clickEnabled(By.res("memory_propose"))
-        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
-        // Saved mutations must settle and restore input; this catches a stuck busy lease.
-        enabled(By.res("memory_new_content"))
-        clickEnabled(By.res("memory_approve"))
-        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
+        fun mountMemoryWiki() {
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                    MemoryScreen(memoryOs = memoryOs, onBack = {})
+                } }
+            } }
+            assertNotNull(find(By.text("Memory")))
+        }
+        fun addManual(content: String, category: String, topic: String) {
+            clickEnabled(By.res("memory_new"))
+            assertNotNull(find(By.text("Add a memory")))
+            enterText(By.res("memory_new_content"), content)
+            clickHorizontalChip(By.res("memory_category_picker"), By.res("memory_category_$category"))
+            enterText(By.res("memory_topic_input"), topic)
+            clickEnabled(By.res("memory_propose"))
+            assertTrue("Add dialog did not close after its saved proposal", device.wait(
+                Until.gone(By.res("memory_new_content")), 15_000
+            ))
+        }
+        fun approveOnlyPending() {
+            clickEnabled(By.res("memory_review_tab"))
+            assertNotNull(find(By.text("Review (1)")))
+            clickEnabled(By.res("memory_approve"))
+            assertNotNull(find(By.text("Review (0)")))
+        }
 
-        searchMemory("teal", By.text("Synthetic preference: teal notebooks."))
-        clickEnabled(By.res("memory_correct"))
-        assertNotNull(scrollTo(By.text("This change will replace: Synthetic preference: teal notebooks.")))
-        enabled(By.res("memory_new_content"))
-        enterText(By.res("memory_new_content"), "Synthetic preference: indigo notebooks.")
-        clickEnabled(By.res("memory_propose"))
-        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-        clickEnabled(By.res("memory_approve"))
-        // The old approved row must become superseded before we treat the replacement as searchable.
-        assertNotNull(scrollTo(By.text("Superseded · Added from manual entry")))
-        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-        searchMemory("teal", By.text("No matching memories."))
-        assertFalse(device.hasObject(By.text("Synthetic preference: teal notebooks.")))
-        searchMemory("indigo", By.text("Synthetic preference: indigo notebooks."))
+        try {
+            // Keep the app-level entry and return route in the release journey before mounting
+            // the controlled, file-backed capture fixture below.
+            clickEnabled(By.res("memory_open"))
+            assertNotNull(find(By.text("Memory")))
+            clickEnabled(By.res("memory_back"))
+            assertNotNull(find(By.res("model_browse")))
+            mountMemoryWiki()
 
-        enterText(By.res("memory_new_content"), "Synthetic item to reject.")
-        clickEnabled(By.res("memory_propose"))
-        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-        clickEnabled(By.res("memory_reject"))
-        assertNotNull(scrollTo(By.text("Rejected · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
+            // Add remains a modal. Restricted content must stay visibly rejected in that modal.
+            clickEnabled(By.res("memory_new"))
+            assertNotNull(find(By.text("Add a memory")))
+            enterText(By.res("memory_new_content"), "Bank account number 1234 5678 9012 3456")
+            clickEnabled(By.res("memory_propose"))
+            assertNotNull(find(By.res("memory_error")))
+            clickEnabled(By.text("Cancel"))
 
-        // Cancellation must leave the saved records visible before the confirmed erase.
-        clickEnabled(By.res("memory_erase_all"))
-        assertNotNull(find(By.text("Erase all memories?")))
-        find(By.text("Cancel")).click()
-        device.waitForIdle()
-        enabled(By.res("memory_new_content"))
-        assertNotNull(scrollTo(By.text("Synthetic preference: indigo notebooks.")))
-        clickEnabled(By.res("memory_erase_all"))
-        assertNotNull(find(By.text("Erase all memories?")))
-        find(By.text("Erase all")).click()
-        device.waitForIdle()
-        assertNotNull(scrollTo(By.text("No memories have been added yet.")))
-        enabled(By.res("memory_new_content"))
+            val now = System.currentTimeMillis()
+            assertEquals(ConversationMemoryOutcome.PROPOSED, bridge.capture(FinalMemoryInput(
+                "release-wiki-text", "release-wiki-thread", null, ConversationMemorySource.TEXT,
+                "Remember $sapphire.", now
+            )).outcome)
+            assertEquals(ConversationMemoryOutcome.PROPOSED, bridge.capture(FinalMemoryInput(
+                "release-wiki-voice", "release-wiki-thread", "release-wiki-call", ConversationMemorySource.VOICE,
+                "$cobalt.", now + 1
+            )).outcome)
 
-        enterText(By.res("memory_new_content"), "Synthetic memory after erase.")
-        clickEnabled(By.res("memory_propose"))
-        assertNotNull(scrollTo(By.text("Pending · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-        clickEnabled(By.res("memory_approve"))
-        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
-        enabled(By.res("memory_new_content"))
-        assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
-        clickEnabled(By.res("memory_back"))
-        assertNotNull(find(By.text("Jarvis setup")))
-        activity.recreate()
-        clickEnabled(By.res("memory_open"))
-        assertNotNull(scrollTo(By.text("Approved · Added from manual entry")))
-        assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
-        enabled(By.res("memory_new_content"))
-        // The control assertion scrolls upward; return to the approved record for useful retained evidence.
-        assertNotNull(scrollTo(By.text("Synthetic memory after erase.")))
-        captureEvidence("memory_approved_after_recreation")
-        clickEnabled(By.res("memory_back"))
+            // Pending capture is reviewable but never part of Wiki search until a real Approve tap.
+            assertNotNull(find(By.text("Review (2)")))
+            searchMemory("sapphire notebooks", By.text("No approved memories match that search."))
+            enterText(By.res("memory_search_input"), "")
+            clickEnabled(By.res("memory_review_tab"))
+            assertNotNull(scrollTo(By.text(sapphire)))
+            captureEvidence("memory_wiki_review_pending")
+            clickEnabled(By.res("memory_approve"))
+            assertNotNull(find(By.text("Review (1)")))
+            clickEnabled(By.res("memory_approve"))
+            assertNotNull(find(By.text("Review (0)")))
+
+            // Exact wiki search opens the derived topic page; Sources exposes the capture provenance.
+            clickEnabled(By.res("memory_wiki_tab"))
+            searchMemory("sapphire notebooks", By.text(sapphire))
+            clickEnabled(By.text(sapphire))
+            assertNotNull(find(By.text("Preferences")))
+            clickEnabled(By.res("memory_sources_tab"))
+            assertNotNull(scrollTo(By.textStartsWith("Captured from Text conversation")))
+            clickEnabled(By.res("memory_article_back"))
+
+            // Explicit category/topic placement can be changed later and survives the store reload.
+            addManual(atlas, "projects", "Atlas")
+            addManual(cobaltNotes, "knowledge", "Cobalt")
+            clickEnabled(By.res("memory_review_tab"))
+            assertNotNull(find(By.text("Review (2)")))
+            clickEnabled(By.res("memory_approve"))
+            assertNotNull(find(By.text("Review (1)")))
+            clickEnabled(By.res("memory_approve"))
+            assertNotNull(find(By.text("Review (0)")))
+            clickEnabled(By.res("memory_wiki_tab"))
+            searchMemory("atlas", By.text(atlas))
+            clickEnabled(By.text(atlas))
+            assertNotNull(find(By.res("memory_article_tab")))
+            assertNotNull(find(By.text("Atlas")))
+            clickEnabled(By.text(atlas))
+            assertNotNull(find(By.text("Memory detail")))
+            clickEnabled(By.res("memory_organize"))
+            assertNotNull(find(By.text("Organize memory")))
+            clickHorizontalChip(By.res("memory_organize_category_picker"), By.res("memory_organize_category_knowledge"))
+            enterText(By.res("memory_organize_topic"), "Verified links")
+            captureEvidence("memory_wiki_organize_dialog")
+            clickEnabled(By.res("memory_assign"))
+            assertTrue("Organize dialog did not close after saving placement", device.wait(
+                Until.gone(By.res("memory_organize_topic")), 15_000
+            ))
+            // Assignment moved the record from Atlas to Verified links and refreshed the page index.
+            clickEnabled(By.res("memory_detail_back"))
+            searchMemory("atlas", By.text(atlas))
+            assertNotNull(find(By.text("Verified links")))
+            clickEnabled(By.text(atlas))
+            assertNotNull(find(By.text("Verified links")))
+            assertNotNull(scrollTo(By.text("Linked pages")))
+            clickEnabled(By.text("Cobalt"))
+            assertNotNull(find(By.text("Cobalt")))
+            assertNotNull(scrollTo(By.text("Backlinks")))
+            assertNotNull(scrollTo(By.text("Verified links")))
+            captureEvidence("memory_wiki_linked_article")
+            clickEnabled(By.res("memory_article_back"))
+
+            // Corrections stay out of the index until reviewed, then supersede the old search hit.
+            searchMemory("sapphire notebooks", By.text(sapphire))
+            clickEnabled(By.text(sapphire))
+            assertNotNull(find(By.res("memory_article_tab")))
+            clickEnabled(By.text(sapphire))
+            clickEnabled(By.res("memory_correct"))
+            assertNotNull(find(By.text("Correct memory")))
+            enterText(By.res("memory_new_content"), indigo)
+            clickEnabled(By.res("memory_propose"))
+            assertTrue("Correction dialog did not close after its saved proposal", device.wait(
+                Until.gone(By.res("memory_new_content")), 15_000
+            ))
+            clickEnabled(By.res("memory_article_back"))
+            approveOnlyPending()
+            clickEnabled(By.res("memory_wiki_tab"))
+            searchMemory("sapphire notebooks", By.text("No approved memories match that search."))
+            searchMemory("indigo notebooks", By.text(indigo))
+            clickEnabled(By.text(indigo))
+            assertNotNull(find(By.res("memory_article_tab")))
+            clickEnabled(By.text(indigo))
+            assertNotNull(find(By.text("This is a correction of an earlier saved fact.")))
+            val indigoId = checkNotNull(memoryOs.read().snapshot).memories.first { it.content == indigo }.id
+            clickEnabled(By.res("memory_delete"))
+            assertNotNull(find(By.text("Erase this memory?")))
+            clickEnabled(By.res("memory_delete_cancel"))
+            assertNotNull(find(By.text(indigo)))
+            clickEnabled(By.res("memory_delete"))
+            clickEnabled(By.res("memory_delete_confirm"))
+            assertTrue("Deletion confirmation must finish before returning from a removed article", device.wait(
+                Until.gone(By.text("Erase this memory?")), 15_000
+            ))
+            assertTrue("The deleted detail must leave the UI before optional article navigation", device.wait(
+                Until.gone(By.res("memory_detail_$indigoId")), 15_000
+            ))
+            // A deletion can remove the page that was open. Return only when the page remains.
+            device.findObject(By.res("memory_article_back"))?.click()
+            enabled(By.res("memory_search_input"))
+            searchMemory("indigo notebooks", By.text("No approved memories match that search."))
+            searchMemory("sapphire notebooks", By.text("No approved memories match that search."))
+            enterText(By.res("memory_search_input"), "")
+
+            // Rejected pending records are retained only in History, never in the wiki index.
+            addManual("Rejected private note for verification.", "knowledge", "Rejected")
+            clickEnabled(By.res("memory_review_tab"))
+            clickEnabled(By.res("memory_reject"))
+            assertNotNull(find(By.text("Review (0)")))
+            clickEnabled(By.res("memory_wiki_tab"))
+            searchMemory("rejected private note", By.text("No approved memories match that search."))
+            enterText(By.res("memory_search_input"), "")
+            clickEnabled(By.res("memory_history_tab"))
+            assertNotNull(scrollTo(By.text("Rejected private note for verification.")))
+            assertNotNull(scrollTo(By.textStartsWith("Rejected ·")))
+
+            // A fresh approved record survives Activity recreation using the same real store.
+            addManual(persistent, "preferences", "Tea")
+            approveOnlyPending()
+            activity.recreate()
+            val reloaded = SQLiteMemoryStore(file).use { checkNotNull(it.read().snapshot) }
+            assertTrue("A separately opened store must retain the approved record after recreation",
+                reloaded.memories.any { it.content == persistent && it.reviewStatus == MemoryReviewStatus.APPROVED })
+            assertTrue("Manual category/topic organization must also survive a separate store reopen",
+                reloaded.memories.any { it.content == atlas && it.wikiAssignment == MemoryWikiAssignment(WikiCategory.KNOWLEDGE, "Verified links") })
+            mountMemoryWiki()
+            clickEnabled(By.res("memory_wiki_tab"))
+            searchMemory("persistent amber tea", By.text(persistent))
+            captureEvidence("memory_wiki_reloaded_search")
+            enterText(By.res("memory_search_input"), "")
+            clickEnabled(By.res("memory_erase_all"))
+            assertNotNull(find(By.text("Erase all memories?")))
+            clickEnabled(By.text("Cancel"))
+            searchMemory("persistent amber tea", By.text(persistent))
+            enterText(By.res("memory_search_input"), "")
+            clickEnabled(By.res("memory_erase_all"))
+            clickEnabled(By.res("memory_delete_all_confirm"))
+            assertTrue("Erase-all confirmation must finish before checking the ledger", device.wait(
+                Until.gone(By.text("Erase all memories?")), 15_000
+            ))
+            clickEnabled(By.res("memory_history_tab"))
+            assertNotNull(find(By.text("No memory history yet.")))
+            clickEnabled(By.res("memory_wiki_tab"))
+            searchMemory("persistent amber tea", By.text("No approved memories match that search."))
+
+            // History keeps the bulk action even when no approved page exists.
+            // Remounting preserves rememberSaveable state; leave the search explicitly first.
+            enterText(By.res("memory_search_input"), "")
+            val pendingOnly = checkNotNull(memoryOs.propose(MemoryProposal("Pending ledger-only note", MemorySource("release-pending-only", "manual", System.currentTimeMillis()))).memory)
+            val rejectedOnly = checkNotNull(memoryOs.propose(MemoryProposal("Rejected ledger-only note", MemorySource("release-rejected-only", "manual", System.currentTimeMillis() + 1))).memory)
+            assertEquals(MemoryOutcome.REJECTED, memoryOs.reject(rejectedOnly.id, rejectedOnly.revision).outcome)
+            mountMemoryWiki()
+            clickEnabled(By.res("memory_history_tab"))
+            assertNotNull(scrollTo(By.text(pendingOnly.content)))
+            assertNotNull(scrollTo(By.text(rejectedOnly.content)))
+            clickEnabled(By.res("memory_erase_all"))
+            assertNotNull(find(By.text("Erase all memories?")))
+            clickEnabled(By.res("memory_delete_all_confirm"))
+            assertTrue("History erase confirmation must finish", device.wait(Until.gone(By.text("Erase all memories?")), 15_000))
+            assertNotNull(find(By.text("No memory history yet.")))
+        } finally {
+            store.close(); file.delete()
+        }
     }
 
     @Test fun test25_finalizedTextAndVoiceMemoryNeedsApprovalBeforePromptUse() {
@@ -935,6 +1114,8 @@ class ReleaseJourneyTest {
         val memoryBacks = AtomicInteger(0)
         val memoryFile = File(context.cacheDir, "release-memory-overlay.json").apply { delete() }
         val queueFull = AtomicBoolean(true)
+        val forceChat = androidx.compose.runtime.mutableStateOf(false)
+        val forceChatConsumed = AtomicInteger(0)
         try {
             activity.onActivity { host -> host.setContent {
                 MaterialTheme {
@@ -953,6 +1134,8 @@ class ReleaseJourneyTest {
                         onEndVoice = { done -> ends.incrementAndGet(); done("Voice Call ended.") },
                         onOpenVoiceCalls = {},
                         resumedVoice = false,
+                        forceChatDestination = forceChat.value,
+                        onForceChatConsumed = { forceChatConsumed.incrementAndGet(); forceChat.value = false },
                         voiceContent = { visible, _, _, _ ->
                             if (visible) VoiceCallOverlay.Bubble(
                                 phase = "Listening",
@@ -992,6 +1175,11 @@ class ReleaseJourneyTest {
             device.waitForIdle()
             assertEquals("Back leaves the call bubble open without ending the call", 0, ends.get())
             assertNotNull(find(By.res("voice_call_overlay")))
+            activity.onActivity { forceChat.value = true }
+            assertNotNull(find(By.res("chat_composer")))
+            assertTrue(device.wait(Until.hasObject(By.res("voice_call_overlay")), 15_000))
+            assertEquals("Returning from Memory preserves the active overlay", 1, forceChatConsumed.get())
+            assertEquals(0, ends.get())
             assertNotNull(find(By.res("voice_call_status")))
             assertNotNull(find(By.text("Attachments are unavailable during a voice call. End the call to add one.")))
             enterText(By.res("chat_composer"), "Synthetic typed call follow-up")
@@ -1006,6 +1194,88 @@ class ReleaseJourneyTest {
             find(By.res("voice_call_end")).click()
             assertEquals(1, ends.get())
             VoiceSessionUi.armed.value = false
+
+            // Mount the shipping parent with an isolated, explicitly seeded ready-state store.
+            // Its inert callbacks deliberately avoid native model, microphone, and download work.
+            val fixtureRoot = File(context.cacheDir, "release-jarvis-app-memory-route").apply { deleteRecursively(); mkdirs() }
+            val fixtureContext = object : ContextWrapper(context) {
+                override fun getApplicationContext(): Context = this
+                override fun getFilesDir(): File = File(fixtureRoot, "files").apply { mkdirs() }
+                override fun getCacheDir(): File = File(fixtureRoot, "cache").apply { mkdirs() }
+                override fun getSharedPreferences(name: String, mode: Int) = context.getSharedPreferences("release-jarvis-app-$name", mode)
+            }
+            val fixtureStore = ModelStore(fixtureContext)
+            val fixtureSpec = ModelCatalog.gemma4E2b
+            val fixturePrefs = fixtureContext.getSharedPreferences("model_setup", Context.MODE_PRIVATE)
+            fixturePrefs.edit().clear().commit()
+            val fixtureFile = fixtureStore.fileFor(fixtureSpec).apply { parentFile?.mkdirs(); writeText("ready-state fixture") }
+            fixturePrefs.edit()
+                .putString("selected_model", fixtureSpec.id)
+                .putString("sha256_${fixtureSpec.id}", "ready-state-fixture")
+                .putLong("sha256_${fixtureSpec.id}_length", fixtureFile.length())
+                .putLong("sha256_${fixtureSpec.id}_modified", fixtureFile.lastModified())
+                .putBoolean("sha256_${fixtureSpec.id}_invalid", false)
+                .putBoolean("smoke_test_passed_${fixtureSpec.id}", true)
+                .commit()
+            assertTrue("The isolated fixture must reach JarvisApp's ready branch", fixtureStore.isUsable() && fixtureStore.smokeTestPassed())
+            val appHistory = ConversationHistory(fixtureContext.getSharedPreferences("conversation-history", Context.MODE_PRIVATE))
+            val combinedTaskFile = File(fixtureRoot, "combined-tasks.json")
+            val combinedTaskStore = FileToolTaskStore(combinedTaskFile)
+            val combinedLedger = ToolTaskLedger(combinedTaskStore)
+            val combinedApprovals = ActionApprovalStore(combinedTaskStore)
+            val combinedGroup = combinedLedger.admit(listOf(ActionRequest("set_volume", mapOf("level" to "25"))),
+                appHistory.current.value.id, ToolAuthority.EXACT_APPROVAL)
+            val combinedChoice = ActionDispatchGate(combinedApprovals, combinedLedger)
+                .prepare(checkNotNull(combinedLedger.get(combinedGroup.attemptIds.single())))
+            val combinedJournal = MutableStateFlow<ToolTaskJournal?>(combinedLedger.journal())
+            val callsBeforeRoute = ends.get()
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                    JarvisApp(
+                        store = fixtureStore, conversationHistory = appHistory, chatBusy = busy, callState = callState,
+                        onSendChat = { _, _ -> null }, onSelectConversation = { null }, onSelectModel = { null }, onDeleteModel = { null },
+                        voicePlayback = MutableStateFlow(VoicePlaybackFrame()), voiceModelStore = TtsModelStore(fixtureContext),
+                        phoneTasks = combinedJournal,
+                        onPhoneTaskAction = { id, generation, command ->
+                            val attempt = combinedLedger.get(id)?.takeIf { it.generation == generation }
+                            if (command == "deny") attempt?.approvalId?.let { combinedApprovals.deny(it) }
+                            combinedJournal.value = combinedLedger.journal()
+                        },
+                        initialVoiceCalls = emptyList(), onRunModelSmokeTest = { done -> done("Ready-state fixture") },
+                        onVoiceTurn = { _, _, _, done -> done("Voice is disabled in this route fixture.") },
+                        onWakeTest = { _, done -> done() }, onStopWakeTest = {},
+                        onEndVoiceCall = { done -> ends.incrementAndGet(); done("") },
+                        onResumeVoiceCall = { _, done -> done(null) }, onDeleteVoiceCall = {}, onRefreshVoiceCalls = { emptyList() },
+                        onDownloadGemma = { _, _, _, done -> done("Downloads are disabled in this route fixture.") },
+                        onImportModel = { _, _, done -> done("Imports are disabled in this route fixture.") },
+                        onCopyDiagnostics = {}, onExportSpeechAudio = {},
+                    )
+                } }
+            } }
+            VoiceSessionUi.armed.value = true
+            assertNotNull(find(By.res("voice_call_overlay")))
+            assertNotNull(find(By.res("voice_call_status")))
+            clickEnabled(By.res("memory_open"))
+            assertNotNull(find(By.text("Memory")))
+            clickEnabled(By.res("memory_nav_chat"))
+            assertNotNull(find(By.res("chat_composer")))
+            assertEquals("The parent Memory-to-Chat route must preserve an active call", callsBeforeRoute, ends.get())
+            clickEnabled(By.res("phone_tasks_open"))
+            assertNotNull(find(By.text("Set media volume to 25%")))
+            assertNotNull(find(By.text("Waiting for your approval")))
+            clickEnabled(By.res("task_deny_${combinedChoice.task.id}"))
+            assertEquals(ToolTaskState.CANCELLED, combinedLedger.get(combinedChoice.task.id)?.state)
+            clickEnabled(By.text("Done"))
+            assertNotNull(find(By.res("voice_call_overlay")))
+            assertEquals("Task approval UI must not end the active call", callsBeforeRoute, ends.get())
+            assertNotNull(find(By.res("voice_call_overlay")))
+            clickEnabled(By.res("memory_open"))
+            clickEnabled(By.res("memory_nav_voice"))
+            assertNotNull(find(By.res("voice_call_overlay")))
+            assertNotNull("Voice and Chat now share the same transcript", find(By.res("chat_composer")))
+            assertEquals("Memory-to-Voice must preserve the same call", callsBeforeRoute, ends.get())
+            VoiceSessionUi.armed.value = false
+            fixtureRoot.deleteRecursively()
 
             activity.onActivity { host -> host.setContent {
                 MaterialTheme {
@@ -1370,6 +1640,467 @@ class ReleaseJourneyTest {
         scrollTo(By.res("model_choose_LFM2.5-230M")).click()
         assertEquals("Choosing remains a separate explicit action", 1, choices.get())
         assertEquals(1, dismissals.get())
+    }
+
+    @Test fun test34_sqliteMigrationPreservesHistoryAndEraseAcrossReopen() {
+        val root = File(context.cacheDir, "release-sqlite-migration").apply { deleteRecursively(); mkdirs() }
+        val legacy = File(root, "memory-os.json")
+        val database = File(root, "memory-os.db")
+        val now = System.currentTimeMillis()
+        try {
+            val original = MemoryOs(legacy) { now }
+            val approved = original.propose(MemoryProposal("I prefer azure mugs", MemorySource("migration-approved", "manual", now))).memory!!
+            original.approve(approved.id)
+            val replacement = original.propose(MemoryProposal("I prefer jade mugs", MemorySource("migration-correction", "manual", now), correctsMemoryId = approved.id)).memory!!
+            original.approve(replacement.id)
+            val erasedProposal = MemoryProposal("An erased orchid note", MemorySource("migration-erased", "manual", now))
+            val erased = original.propose(erasedProposal).memory!!
+            original.delete(erased.id)
+            original.propose(MemoryProposal("Pending quartz note", MemorySource("migration-pending", "manual", now)))
+            val expected = checkNotNull(original.read().snapshot)
+            // Exercise the actual schema-1 migration path too, including optional older fields.
+            val json = org.json.JSONObject(legacy.readText()).apply { put("schemaVersion", 1) }
+            legacy.writeText(json.toString())
+            val oldBytes = legacy.readBytes()
+            SQLiteMemoryStore(database, legacy).use { storage ->
+                assertEquals(expected, storage.read().snapshot)
+                assertFalse("Retire the JSON only after a validated SQLite commit", legacy.exists())
+                val os = MemoryOs(storage) { now }
+                assertTrue(os.contextPacket("mugs", 900).packet!!.text.contains("jade mugs"))
+                assertFalse(os.contextPacket("mugs", 900).packet!!.text.contains("azure mugs"))
+                assertEquals(MemoryOutcome.DELETED, os.propose(erasedProposal).outcome)
+                assertEquals(MemoryOutcome.DELETED, os.delete(replacement.id).outcome)
+            }
+            // Simulate a stale pre-migration file surviving a crash: never import it twice.
+            legacy.writeBytes(oldBytes)
+            SQLiteMemoryStore(database, legacy).use { storage ->
+                val os = MemoryOs(storage) { now }
+                assertNotNull(os.read().snapshot)
+                assertFalse(legacy.exists())
+                assertTrue(os.contextPacket("mugs", 900).packet!!.memories.isEmpty())
+                assertEquals(MemoryOutcome.DELETED, os.propose(erasedProposal).outcome)
+                assertEquals(1, storage.read().snapshot!!.memories.size)
+                assertEquals(3, storage.read().snapshot!!.tombstones.size)
+            }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun test35_sqliteCorruptMigrationAndFailedEraseDoNotLoseData() {
+        val root = File(context.cacheDir, "release-sqlite-failure").apply { deleteRecursively(); mkdirs() }
+        val legacy = File(root, "memory-os.json")
+        val database = File(root, "memory-os.db")
+        val now = System.currentTimeMillis()
+        try {
+            legacy.writeText("{broken")
+            SQLiteMemoryStore(database, legacy).use { storage ->
+                assertNotNull(storage.read().error)
+                assertNull(storage.read().snapshot)
+                assertEquals("{broken", legacy.readText())
+            }
+            // Failed migration rolls back schema/data too; repair the source and retry safely.
+            legacy.delete()
+            val proposal = MemoryProposal("I prefer silver spoons", MemorySource("sqlite-failure-original", "manual", now))
+            val source = MemoryOs(legacy) { now }
+            val record = source.propose(proposal).memory!!
+            source.approve(record.id)
+            SQLiteMemoryStore(database, legacy).use { storage ->
+                val os = MemoryOs(storage) { now }
+                val before = checkNotNull(os.read().snapshot)
+                android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { db ->
+                    db.execSQL("CREATE TRIGGER reject_erasure BEFORE INSERT ON tombstones BEGIN SELECT RAISE(ABORT, 'injected write failure'); END")
+                }
+                assertEquals(MemoryOutcome.STORAGE_FAILURE, os.delete(record.id).outcome)
+                assertEquals("Rows and generation must roll back together", before, os.read().snapshot)
+                assertTrue(os.contextPacket("spoons", 900).packet!!.text.contains("silver spoons"))
+                android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { db -> db.execSQL("DROP TRIGGER reject_erasure") }
+                assertEquals(MemoryOutcome.DELETED, os.delete(record.id).outcome)
+            }
+            SQLiteMemoryStore(database).use { storage ->
+                assertTrue(storage.read().snapshot!!.memories.isEmpty())
+                assertEquals(MemoryOutcome.DELETED, MemoryOs(storage) { now }.propose(proposal).outcome)
+            }
+            // A future DB version must never be reset or treated as an empty ledger.
+            android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { it.version = 99 }
+            SQLiteMemoryStore(database).use { storage -> assertNotNull(storage.read().error) }
+            android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { assertEquals(99, it.version) }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun test36_sqliteExceedsLegacyByteLimitAndSerializesSeparateWriters() {
+        val root = File(context.cacheDir, "release-sqlite-capacity").apply { deleteRecursively(); mkdirs() }
+        val database = File(root, "memory-os.db")
+        val now = System.currentTimeMillis()
+        try {
+            SQLiteMemoryStore(database).use { storage ->
+                val seed = MemoryOs(storage) { now }.propose(MemoryProposal("Capacity seed", MemorySource("capacity-seed", "manual", now))).memory!!
+                // Controlled valid rows isolate the storage ceiling without 450 extraction calls.
+                val result = storage.update { before ->
+                    val records = (1..450).map { index -> seed.copy(id = java.util.UUID.randomUUID().toString(), content = "Capacity row $index " + "q".repeat(1950), source = seed.source.copy(eventId = java.util.UUID.randomUUID().toString().replace("-", "")), payloadFingerprint = null) }
+                    before.copy(generation = before.generation + 1, memories = before.memories + records) to records.size
+                }
+                assertEquals(450, result.value)
+                android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { db ->
+                    db.rawQuery("SELECT SUM(length(payload)) FROM memories", null).use { cursor -> cursor.moveToFirst(); assertTrue(cursor.getLong(0) > MemoryStore.MAX_STORE_BYTES) }
+                }
+            }
+            val pool = java.util.concurrent.Executors.newFixedThreadPool(4)
+            try {
+                val futures = (1..8).map { index -> pool.submit<MemoryOutcome> {
+                    SQLiteMemoryStore(database).use { storage -> MemoryOs(storage) { now }.propose(MemoryProposal("Concurrent writer $index", MemorySource("writer-$index", "manual", now))).outcome }
+                } }
+                futures.forEach { assertEquals(MemoryOutcome.CREATED, it.get(60, java.util.concurrent.TimeUnit.SECONDS)) }
+            } finally { pool.shutdownNow() }
+            SQLiteMemoryStore(database).use { storage ->
+                assertEquals(459, storage.read().snapshot!!.memories.size)
+                assertEquals(10L, storage.read().snapshot!!.generation)
+            }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun test37_sourceArchiveRetainsExplicitHistoryAndExpiresWithoutFactLoss() {
+        val root = File(context.cacheDir, "release-source-archive").apply { deleteRecursively(); mkdirs() }
+        val database = File(root, "memory-os.db")
+        var now = System.currentTimeMillis()
+        val capturedAt = now
+        var unlocked = true
+        fun input(id: String, text: String) = FinalMemoryInput(id, "archive-conversation", "archive-call", ConversationMemorySource.TEXT, text, capturedAt)
+        val removed = input("archive-removed", "I prefer silver spoons")
+        try {
+            SQLiteMemoryStore(database, canReadSourceText = { unlocked }, archiveClock = { now }).use { storage ->
+                val os = MemoryOs(storage) { now }
+                val bridge = ConversationMemory(os, storage)
+                assertEquals(ConversationMemoryOutcome.IGNORED, bridge.capture(input("archive-episode", "We discussed sapphire notebook delivery yesterday")).outcome)
+                assertTrue(os.contextPacket("sapphire", 900).packet!!.memories.isEmpty())
+                assertEquals(1, storage.searchExplicitHistory("sapphire").episodes.size)
+                assertTrue(storage.searchExplicitHistory("%").episodes.isEmpty())
+                val fact = bridge.capture(removed).memory!!
+                os.approve(fact.id)
+                os.delete(fact.id)
+                assertTrue(os.contextPacket("spoons", 900).packet!!.memories.isEmpty())
+                assertEquals(1, storage.searchExplicitHistory("spoons").episodes.size)
+                bridge.capture(removed)
+                assertTrue("Retained source must not recreate an erased fact", os.read().snapshot!!.memories.isEmpty())
+                val retained = bridge.capture(input("archive-retained", "I prefer jade mugs")).memory!!
+                os.approve(retained.id)
+                unlocked = false
+                assertEquals(SourceArchiveOutcome.LOCKED, storage.searchExplicitHistory("jade").outcome)
+                assertTrue(storage.searchExplicitHistory("jade").episodes.isEmpty())
+                unlocked = true
+                now = capturedAt + com.battlesbudz.jarvis.v2.memory.MemoryArchivePolicy.RETENTION_MS - 1
+                assertEquals(1, storage.searchExplicitHistory("jade").episodes.size)
+                now++
+                assertTrue(storage.searchExplicitHistory("jade").episodes.isEmpty())
+                assertTrue(os.contextPacket("mugs", 900).packet!!.text.contains("jade mugs"))
+                assertEquals(SourceArchiveOutcome.EXPIRED, storage.captureSource(removed.copy(capturedAtMs = now)).outcome)
+                android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { db ->
+                    db.rawQuery("SELECT count(*), sum(text_bytes), count(text) FROM source_events", null).use {
+                        assertTrue(it.moveToFirst()); assertEquals(3, it.getInt(0)); assertEquals(0, it.getInt(1)); assertEquals(0, it.getInt(2))
+                    }
+                }
+            }
+            SQLiteMemoryStore(database, canReadSourceText = { true }, archiveClock = { now }).use { storage ->
+                assertTrue(storage.searchExplicitHistory("sapphire").episodes.isEmpty())
+                assertTrue(MemoryOs(storage) { now }.contextPacket("mugs", 900).packet!!.text.contains("jade mugs"))
+            }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun test38_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure() {
+        val root = File(context.cacheDir, "release-source-archive-failure").apply { deleteRecursively(); mkdirs() }
+        val database = File(root, "memory-os.db")
+        val now = System.currentTimeMillis()
+        fun input(id: String, text: String) = FinalMemoryInput(id, "archive-thread", null, ConversationMemorySource.TEXT, text, now)
+        try {
+            val before = SQLiteMemoryStore(database).use { storage ->
+                val os = MemoryOs(storage) { now }
+                val fact = os.propose(MemoryProposal("I prefer copper mugs", MemorySource("archive-v1-fact", "manual", now))).memory!!
+                os.approve(fact.id); os.read().snapshot!!
+            }
+            // Restore the exact v1 table layout to exercise the additive upgrade.
+            android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { db -> db.execSQL("DROP TABLE source_events"); db.version = 1 }
+            SQLiteMemoryStore(database, canReadSourceText = { true }, archiveClock = { now }).use { storage ->
+                assertEquals(before, storage.read().snapshot)
+                assertEquals(SourceArchiveOutcome.STORED, storage.captureSource(input("health", "My doctor appointment is Monday")).outcome)
+                assertEquals(SourceArchiveOutcome.ALREADY_RECORDED, storage.captureSource(input("health", "My doctor appointment is Monday")).outcome)
+                assertEquals(SourceArchiveOutcome.CONFLICT, storage.captureSource(input("health", "My doctor appointment is Tuesday")).outcome)
+                assertEquals(SourceArchiveOutcome.STORED, storage.captureSource(input("financial", "My bank balance is $500").copy(source = ConversationMemorySource.VOICE)).outcome)
+                assertEquals(ConversationMemorySource.VOICE, storage.searchExplicitHistory("bank balance").episodes.single().source)
+                listOf("PIN: 1234", "My password is x", "Card number 4111 1111 1111 1111", "x".repeat(4_000) + " password: hunter22").forEachIndexed { index, text ->
+                    assertEquals(SourceArchiveOutcome.EXCLUDED, storage.captureSource(input("secret-$index", text)).outcome)
+                }
+                assertEquals(SourceArchiveOutcome.IGNORED, storage.captureSource(input("draft", "tea").copy(complete = false)).outcome)
+                android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { db ->
+                    assertEquals(2, db.version)
+                    db.execSQL("CREATE TRIGGER reject_source BEFORE INSERT ON source_events BEGIN SELECT RAISE(ABORT, 'injected archive failure'); END")
+                }
+                assertEquals(SourceArchiveOutcome.STORAGE_FAILURE, storage.captureSource(input("failed", "We discussed amber notebooks")).outcome)
+                assertEquals(before, storage.read().snapshot)
+                assertTrue(storage.searchExplicitHistory("amber").episodes.isEmpty())
+                assertEquals(1, storage.searchExplicitHistory("Monday").episodes.size)
+                android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { db ->
+                    db.rawQuery("SELECT count(*) FROM source_events", null).use { assertTrue(it.moveToFirst()); assertEquals(2, it.getInt(0)) }
+                    db.execSQL("DROP TRIGGER reject_source")
+                }
+                assertEquals(SourceArchiveOutcome.STORED, storage.captureSource(input("failed", "We discussed amber notebooks")).outcome)
+            }
+            var reads = 0
+            SQLiteMemoryStore(database, canReadSourceText = { ++reads == 1 }, archiveClock = { now }).use { storage ->
+                assertEquals(SourceArchiveOutcome.LOCKED, storage.searchExplicitHistory("amber").outcome)
+            }
+            SQLiteMemoryStore(database).use { assertEquals(SourceArchiveOutcome.LOCKED, it.searchExplicitHistory("amber").outcome) }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun test39_referencePdfExtractionAndPendingAcknowledgmentUseReleaseCode() {
+        val bytes = instrumentation.context.assets.open("reference-fixture.pdf").use { it.readBytes() }
+        val text = com.battlesbudz.jarvis.v2.ai.ReferencePdfText.read(context, bytes)
+        assertTrue(text.contains("Fermented plant juice (FPJ)"))
+        assertTrue(text.contains("brown sugar"))
+        try {
+            com.battlesbudz.jarvis.v2.ai.ReferencePdfText.read(context, "not a PDF".toByteArray())
+            fail("Malformed PDF must not become reference evidence")
+        } catch (_: java.io.IOException) { }
+        val root = File(context.cacheDir, "ack-receipt-${System.nanoTime()}").apply { mkdirs() }
+        try {
+            val os = MemoryOs(File(root, "memory.json"))
+            val receipt = ConversationMemory(os).capture(FinalMemoryInput("ack", "conversation", source = ConversationMemorySource.TEXT,
+                text = "Remember I like apricots", capturedAtMs = System.currentTimeMillis()))
+            assertEquals(MemoryReviewStatus.PENDING, receipt.memory!!.reviewStatus)
+            assertEquals("I've added a pending memory for your review. It isn't approved yet.", MemoryCaptureAcknowledgment.reply(receipt))
+            assertTrue(os.contextPacket("what fruit do I like?", 1200).packet!!.memories.isEmpty())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun test40_phoneActionJournalPreservesReceiptsAndFencesUnknownEffects() {
+        val directory = File(context.noBackupFilesDir, "release-action-journal").apply { deleteRecursively(); mkdirs() }
+        val file = File(directory, "attempts.json")
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val ledger = ToolTaskLedger(FileToolTaskStore(file))
+        val pipeline = JournaledActionPipeline(ledger, AndroidMobileActionExecutor(context))
+        try {
+            assertTrue(pipeline.execute(ActionRequest("set_volume", mapOf("level" to "40"))).succeeded)
+            val actual = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            assertEquals((audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .4).roundToInt(), actual)
+            val receipt = ToolTaskLedger(FileToolTaskStore(file)).snapshot().single()
+            assertEquals(ToolTaskState.SUCCEEDED, receipt.state)
+            assertEquals(ExecutionResult.Outcome.SUCCEEDED, receipt.resultOutcome)
+
+            // Simulate process loss after persisted intent, without claiming a second effect ran.
+            val unfinished = ledger.create(ActionRequest("set_volume", mapOf("level" to "90")), ToolTaskState.RUNNING)
+            val reopened = ToolTaskLedger(FileToolTaskStore(file))
+            reopened.recoverAfterRestart()
+            assertEquals(receipt, reopened.get(receipt.id))
+            assertEquals(ToolTaskState.UNKNOWN_OUTCOME, reopened.get(unfinished.id)?.state)
+            assertNull(reopened.transition(unfinished.id, unfinished.generation, ToolTaskState.RUNNING))
+            assertEquals(actual, audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+
+            file.writeText("corrupt")
+            val rejected = JournaledActionPipeline(reopened, AndroidMobileActionExecutor(context))
+                .execute(ActionRequest("set_volume", mapOf("level" to "90")))
+            assertFalse(rejected.succeeded)
+            assertEquals(actual, audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            assertEquals("corrupt", file.readText())
+        } finally {
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun test41_taskRecoveryAndExactApprovalPreserveAndroidEffects() {
+        val directory = File(context.noBackupFilesDir, "release-task-owner").apply { deleteRecursively(); mkdirs() }
+        val file = File(directory, "journal.json")
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        try {
+            val ledger = ToolTaskLedger(FileToolTaskStore(file))
+            val group = ledger.admit(listOf(ActionRequest("set_volume", mapOf("level" to "40")), ActionRequest("read_battery")), "release-thread")
+            val pipeline = JournaledActionPipeline(ledger, AndroidMobileActionExecutor(context))
+            assertTrue(pipeline.executeAttempt(checkNotNull(ledger.get(group.attemptIds[0]))).succeeded)
+            val actual = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val reopened = ToolTaskLedger(FileToolTaskStore(file))
+            reopened.recoverAfterRestart()
+            assertEquals(ToolTaskState.READY, reopened.get(group.attemptIds[1])?.state)
+            val recovered = JournaledActionPipeline(reopened, AndroidMobileActionExecutor(context))
+            assertFalse(recovered.executeAttempt(checkNotNull(reopened.get(group.attemptIds[0]))).succeeded)
+            assertTrue(recovered.executeAttempt(checkNotNull(reopened.get(group.attemptIds[1]))).succeeded)
+            assertEquals(actual, audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            val approvalStore = ActionApprovalStore(FileToolTaskStore(file))
+            val gate = ActionDispatchGate(approvalStore, reopened)
+            val guarded = reopened.admit(listOf(ActionRequest("set_volume", mapOf("level" to "90"))), "release-thread", ToolAuthority.EXACT_APPROVAL)
+            val pending = gate.prepare(checkNotNull(reopened.get(guarded.attemptIds.single())))
+            assertFalse(recovered.executeAttempt(pending.task).succeeded)
+            assertNull(gate.authorize(pending, schemaVersion = MobileToolCatalog.VERSION + 1))
+            assertEquals(actual, audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            assertEquals(ApprovalDecision.DENIED, approvalStore.deny(pending.approval.id))
+            assertEquals(ToolTaskState.CANCELLED, ToolTaskLedger(FileToolTaskStore(file)).get(pending.task.id)?.state)
+            assertEquals(ApprovalDecision.DENIED, ActionApprovalStore(FileToolTaskStore(file)).get(pending.approval.id)?.decision)
+            assertEquals(2, reopened.journal().events.count { it.kind == ToolTaskEventKind.DISPATCHED })
+        } finally {
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
+            directory.deleteRecursively()
+        }
+    }
+
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @Test fun test42_taskPanelShowsExactChoiceAndReconcilesWithoutRetry() {
+        val file = File(context.cacheDir, "release-task-panel.json").apply { delete() }
+        val ledger = ToolTaskLedger(FileToolTaskStore(file))
+        val approvals = ActionApprovalStore(FileToolTaskStore(file))
+        val gate = ActionDispatchGate(approvals, ledger)
+        val group = ledger.admit(listOf(ActionRequest("set_volume", mapOf("level" to "25"))), "panel-thread", ToolAuthority.EXACT_APPROVAL)
+        val pending = gate.prepare(checkNotNull(ledger.get(group.attemptIds.single())))
+        val unknown = ledger.create(ActionRequest("read_battery"), ToolTaskState.RUNNING)
+        val legacy = ledger.create(ActionRequest("read_battery"))
+        ledger.recoverAfterRestart()
+        val journal = MutableStateFlow<ToolTaskJournal?>(ledger.journal())
+        val effects = AtomicInteger(0)
+        val decide: (String, Long, String) -> Unit = { id, generation, command ->
+            val a = ledger.get(id)?.takeIf { it.generation == generation }
+            if (a != null) {
+                when (command) {
+                    "approve" -> JournaledActionPipeline(ledger) { effects.incrementAndGet(); ExecutionResult(true, "25%") }
+                        .executeAttempt(a, a.approvalId?.let { approvals.get(it) })
+                    "deny" -> a.approvalId?.let { approvals.deny(it) }
+                    "checked" -> ledger.reconcileUnknown(id, generation)
+                    "cancel" -> ledger.cancelLegacyAttempt(id, generation)
+                }
+                journal.value = ledger.journal()
+            }
+        }
+        try {
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                    val snapshot by journal.collectAsState()
+                    com.battlesbudz.jarvis.v2.ui.PhoneTaskPanel(snapshot, "panel-thread", null, decide)
+                } }
+            } }
+            find(By.res("phone_tasks_open")).click()
+            assertNotNull(find(By.text("Set media volume to 25%")))
+            assertEquals(0, effects.get())
+            captureEvidence("phone_task_approval")
+            find(By.res("task_approve_${pending.task.id}")).click()
+            device.waitForIdle()
+            assertEquals(1, effects.get())
+            assertEquals(ToolTaskState.SUCCEEDED, ledger.get(pending.task.id)?.state)
+            find(By.res("task_checked_${unknown.id}")).click()
+            device.waitForIdle()
+            assertTrue(checkNotNull(ToolTaskLedger(FileToolTaskStore(file)).get(unknown.id)).reconciled)
+            assertEquals(1, effects.get())
+            find(By.res("task_cancel_${legacy.id}")).click()
+            device.waitForIdle()
+            assertEquals(ToolTaskState.CANCELLED, ToolTaskLedger(FileToolTaskStore(file)).get(legacy.id)?.state)
+            val declined = ledger.admit(listOf(ActionRequest("read_battery")), "panel-thread", ToolAuthority.EXACT_APPROVAL)
+            val choice = gate.prepare(checkNotNull(ledger.get(declined.attemptIds.single())))
+            journal.value = ledger.journal()
+            find(By.res("task_deny_${choice.task.id}")).click()
+            device.waitForIdle()
+            assertEquals(ToolTaskState.CANCELLED, ToolTaskLedger(FileToolTaskStore(file)).get(choice.task.id)?.state)
+            assertEquals(1, effects.get())
+        } finally { file.delete() }
+    }
+
+    @Test fun test43_conditionalAndCommaPlansUseRealAndroidWithoutModelCalls() = runBlocking {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true })
+        val battery = MobileActionPipeline(executor = executor).execute(ActionRequest("read_battery"))
+        assertTrue(battery.succeeded)
+        assertEquals(context.getSystemService(android.os.BatteryManager::class.java)
+            .getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY), battery.batteryPercent)
+        val percent = checkNotNull(battery.batteryPercent)
+        val directory = File(context.noBackupFilesDir, "conditional-journey").apply { deleteRecursively(); mkdirs() }
+        val ledger = ToolTaskLedger(FileToolTaskStore(File(directory, "journal.json")))
+        try {
+            val runner = ActionTurnRunner(executor)
+            val plan = ActionTurnPlan.parse("If my battery is at least $percent%, set volume to 40%, tell me my battery percentage, and open Settings") as ActionTurnPlan.Ready
+            var group: ToolTaskGroup? = null
+            var index = 0
+            val pipeline = JournaledActionPipeline(ledger, executor)
+            val outcome = runner.runValidated(plan, dispatch = { request ->
+                if (group == null) group = ledger.admit(plan.steps.map { it.request }, "conditional-thread", resumeAfterRestart = false)
+                pipeline.executeBound(checkNotNull(ledger.get(group!!.attemptIds[index++])), request)
+            }, checkBattery = { MobileActionPipeline(executor = executor).execute(ActionRequest("read_battery")) })
+            assertTrue(outcome.message, outcome.completed)
+            assertEquals(true, outcome.conditionMatched)
+            assertEquals(listOf("set_volume", "read_battery", "open_app"), outcome.receipts.map { it.request.name })
+            assertEquals((audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .4).roundToInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            assertEquals(percent, outcome.receipts[1].result.batteryPercent)
+            assertTrue(device.wait(Until.hasObject(By.pkg("com.android.settings")), 10_000))
+            device.pressBack()
+            activity.recreate()
+            val falseCondition = ActionTurnPlan.parse("If my battery is below 0 set volume to 90%") as ActionTurnPlan.Ready
+            val skipped = runner.runValidated(falseCondition, dispatch = { error("False condition dispatched") },
+                checkBattery = { MobileActionPipeline(executor = executor).execute(ActionRequest("read_battery")) })
+            assertTrue(skipped.completed)
+            assertEquals(false, skipped.conditionMatched)
+            assertTrue(skipped.receipts.isEmpty())
+            assertEquals((audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .4).roundToInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            assertEquals(3, ledger.snapshot().count { it.state == ToolTaskState.SUCCEEDED })
+        } finally {
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun test44_backgroundAssistantOpensAppAndFinishesOrderedPlanWithoutTap() = runBlocking {
+        val service = context.packageName + "/com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService"
+        val keys = listOf("assistant", "voice_interaction_service", "voice_recognition_service")
+        val saved = keys.associateWith { device.executeShellCommand("settings get secure $it").trim() }
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val diagnostics = mutableListOf<String>()
+        try {
+            // Configure the real system assistant on this disposable emulator, rather than
+            // giving the executor a fake foreground/launch exemption or using shell to launch.
+            device.executeShellCommand("settings put secure assistant $service")
+            device.executeShellCommand("settings put secure voice_interaction_service $service")
+            val readyBy = SystemClock.elapsedRealtime() + 10_000
+            while (!com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.isReady(context) &&
+                SystemClock.elapsedRealtime() < readyBy) SystemClock.sleep(100)
+            assertTrue("System must bind the selected assistant", com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.isReady(context))
+            device.pressHome()
+            assertFalse(device.hasObject(By.pkg(context.packageName)))
+            // Do not let the recent-foreground grace period prove the assistant route.
+            SystemClock.sleep(11_000)
+            val executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { false }, onDiagnostic = diagnostics::add)
+            val plan = ActionTurnPlan.parse("set volume to 40% then open Settings then tell me my battery") as ActionTurnPlan.Ready
+            val outcome = ActionTurnRunner(executor).runValidated(plan,
+                dispatch = { request -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    MobileActionPipeline(executor = executor).execute(request)
+                } }, checkBattery = { error("No conditional reading requested") })
+            assertTrue(outcome.message, outcome.completed)
+            assertEquals(listOf("set_volume", "open_app", "read_battery"), outcome.receipts.map { it.request.name })
+            assertEquals((audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .4).roundToInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            assertEquals(context.getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY), outcome.receipts.last().result.batteryPercent)
+            assertTrue("Background app command must really open Settings without notification interaction",
+                device.wait(Until.hasObject(By.pkg("com.android.settings")), 10_000))
+            assertTrue(diagnostics.any { "route=selected_assistant visible=false selected=true" in it })
+            captureEvidence("background_assistant_first_launch")
+            // A second command while Jarvis is still hidden must not fall back to a tap.
+            device.pressHome()
+            val again = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                MobileActionPipeline(executor = executor).execute(ActionRequest("open_app", mapOf("app" to "Settings")))
+            }
+            assertTrue(again.message, again.succeeded)
+            assertFalse(again.message.contains("tap", ignoreCase = true))
+            assertTrue(device.wait(Until.hasObject(By.pkg("com.android.settings")), 10_000))
+            val missing = MobileActionPipeline(executor = executor).execute(ActionRequest("open_app", mapOf("app" to "jarvis nonexistent fixture app")))
+            assertFalse(missing.succeeded)
+            assertTrue(missing.message.contains("could not find", ignoreCase = true))
+        } finally {
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
+            for ((key, value) in saved) {
+                if (value == "null" || value.isBlank()) device.executeShellCommand("settings delete secure $key")
+                else {
+                    require(value.matches(Regex("[a-zA-Z0-9_./:]+")))
+                    device.executeShellCommand("settings put secure $key $value")
+                }
+            }
+            // Settings is intentionally foreground and Jarvis is STOPPED. Recreating the
+            // stopped activity here waits for RESUMED and masks the real test result.
+            // @After closes this scenario; the next journey launches its own activity.
+        }
     }
 
     // Leave this selection in durable preferences for the controller's separate-process check.

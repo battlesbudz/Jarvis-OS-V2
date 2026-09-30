@@ -255,6 +255,19 @@ internal fun VoiceCallScreen(
             else "Select Jarvis under Digital assistant app in Android Settings."
         }
         TextButton(onClick = {
+            val roles = assistantContext.getSystemService(android.app.role.RoleManager::class.java)
+            if (roles.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT) &&
+                !roles.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT)) {
+                try {
+                    assistantSettingsLauncher.launch(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))
+                    assistantSettingsMessage = "Choose Jarvis for reliable hands-free app launches."
+                    return@TextButton
+                } catch (_: android.content.ActivityNotFoundException) {
+                    // Continue to the manufacturer default-app settings.
+                } catch (_: SecurityException) {
+                    // Continue to the public settings fallback.
+                }
+            }
             val actions = listOf(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS,
                 android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
             var opened = false

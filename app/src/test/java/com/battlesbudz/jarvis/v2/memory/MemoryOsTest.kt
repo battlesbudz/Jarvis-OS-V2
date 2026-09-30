@@ -130,5 +130,54 @@ class MemoryOsTest {
         assertEquals(MemoryReviewStatus.PENDING, os.read().snapshot!!.memories.first { it.id == pending.id }.reviewStatus)
     }
 
+    @Test fun explicitWikiAssignmentPersistsReopensAndInvalidatesApprovedFence() {
+        val file = temp(); val first = os(file)
+        val created = first.propose(MemoryProposal("Keeps Atlas plans", source("wiki"))).memory!!
+        first.approve(created.id)
+        val token = first.contextPacket("atlas", 100).stateToken
+        val changed = first.assignWiki(created.id, 2, MemoryWikiAssignment(WikiCategory.PROJECTS, " Atlas "))
+        assertEquals(MemoryOutcome.APPROVED, changed.outcome)
+        assertEquals("Atlas", MemoryOs(file) { now }.read().snapshot!!.memories.single().wikiAssignment!!.topic)
+        assertNotEquals(token, first.contextPacket("atlas", 100).stateToken)
+        assertEquals(MemoryOutcome.CONFLICT, first.assignWiki(created.id, 2, MemoryWikiAssignment(WikiCategory.KNOWLEDGE, "Other")).outcome)
+    }
+
+    @Test fun assignmentEditKeepsOriginalEventRetryAndErasureTombstoneIdempotent() {
+        val os = os(); val proposal = MemoryProposal("I prefer tea", source("replay"), wikiAssignment = MemoryWikiAssignment(WikiCategory.PREFERENCES, "Tea"))
+        val created = os.propose(proposal).memory!!
+        assertEquals(MemoryOutcome.APPROVED, os.approve(created.id).outcome)
+        assertEquals(MemoryOutcome.APPROVED, os.assignWiki(created.id, 2, MemoryWikiAssignment(WikiCategory.PREFERENCES, "Drinks")).outcome)
+        assertEquals(MemoryOutcome.ALREADY_RECORDED, os.propose(proposal).outcome)
+        assertEquals(MemoryOutcome.DELETED, os.delete(created.id).outcome)
+        assertEquals(MemoryOutcome.DELETED, os.propose(proposal).outcome)
+    }
+
+    @Test fun preWikiSchemaOneTombstoneUsesExactV2FingerprintAfterUpgrade() {
+        val file = temp()
+        val proposal = MemoryProposal("I prefer tea", source("old-utterance").copy(eventSource = "final_text_input"), category = MemoryCategory.PREFERENCE)
+        fun field(value: String?) = if (value == null) "N;" else "S${value.length}:$value"
+        val legacyFields = listOf(proposal.content, proposal.category.name, proposal.tier.name, proposal.type.name, proposal.confidence.toString(), null, null, proposal.source.eventSource, proposal.source.createdAtMs.toString(), proposal.source.sensitivity.name)
+        val encoded = "memory-fingerprint-v2|" + legacyFields.joinToString("") { field(it) } + "L0:"
+        val fingerprint = java.security.MessageDigest.getInstance("SHA-256").digest(encoded.toByteArray()).joinToString("") { "%02x".format(it) }
+        val tombstone = org.json.JSONObject().put("eventId", MemoryPolicy.sourceKey(proposal.source.eventId)).put("payloadFingerprint", fingerprint).put("erasedAtMs", now)
+        file.writeText(org.json.JSONObject().put("schemaVersion", 1).put("generation", 1).put("memories", org.json.JSONArray()).put("tombstones", org.json.JSONArray().put(tombstone)).toString())
+        val os = MemoryOs(file) { now + 1 }
+        assertEquals(MemoryOutcome.DELETED, os.propose(proposal).outcome)
+        assertTrue(os.read().snapshot!!.memories.isEmpty())
+    }
+
+    @Test fun legacyUnassignedRecordKeepsV2ReplayAcrossOrganizationAndErasure() {
+        val file = temp(); val store = MemoryStore(file); val original = MemoryProposal("I prefer tea", source("legacy"))
+        val opaque = original.copy(source = original.source.copy(eventId = MemoryPolicy.sourceKey(original.source.eventId)))
+        val legacy = MemoryRecord(java.util.UUID.randomUUID().toString(), opaque.content, opaque.category, opaque.tier, opaque.type, opaque.confidence, opaque.source, MemoryReviewStatus.APPROVED, now, now, 1)
+        assertNull(store.update { before -> before.copy(generation = 1, memories = listOf(legacy)) to Unit }.error)
+        val os = MemoryOs(file) { now }
+        assertEquals(MemoryOutcome.APPROVED, os.assignWiki(legacy.id, 1, MemoryWikiAssignment(WikiCategory.PREFERENCES, "Tea")).outcome)
+        assertEquals(MemoryOutcome.ALREADY_RECORDED, os.propose(original).outcome)
+        assertEquals(MemoryOutcome.DELETED, os.delete(legacy.id).outcome)
+        assertEquals(MemoryOutcome.DELETED, os.propose(original).outcome)
+        assertEquals(MemoryOutcome.CONFLICT, os.propose(original.copy(wikiAssignment = MemoryWikiAssignment(WikiCategory.PREFERENCES, "Drinks"))).outcome)
+    }
+
     private fun temp(): File = File.createTempFile("memory-os", ".json").apply { delete(); deleteOnExit() }
 }

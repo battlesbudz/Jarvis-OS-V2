@@ -10,7 +10,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 
-/** A notification tap is the Android-supported launch path while Jarvis is backgrounded. */
+/** An optional user shortcut, never a prerequisite for a background tool dispatch. */
 object AppLaunchNotification {
     fun offer(context: Context, intent: Intent, label: String): ExecutionResult {
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -32,7 +32,7 @@ object AppLaunchNotification {
                 .setContentTitle("Open $label")
                 .setContentText("Tap to open the app you requested.")
                 .setContentIntent(pending).setAutoCancel(true).setTimeoutAfter(60_000).build())
-            ExecutionResult(false, "I haven't opened $label yet. Android requires a tap while Jarvis is in the background. Tap the Open $label notification.")
+            ExecutionResult(false, "I offered an Open $label notification shortcut. You can tap it to open the app.")
         }.getOrElse { ExecutionResult(false, "I couldn't offer the $label shortcut. Return to Jarvis and ask again.") }
     }
 }

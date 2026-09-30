@@ -95,17 +95,146 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     internal var nativeConversationHasContext = false
     private var contextCallId: String? = null
     internal val shortTermContext = ShortTermConversationContext()
-    internal val referenceGrounding = ReferenceGroundingClient()
+    internal val referenceGrounding = ReferenceGroundingClient { bytes ->
+        com.battlesbudz.jarvis.v2.ai.ReferencePdfText.read(applicationContext, bytes)
+    }
     internal val factualityVerifier = com.battlesbudz.jarvis.v2.ai.FactualityVerifier()
     internal val turnOrchestrator = com.battlesbudz.jarvis.v2.ai.TurnOrchestrator(referenceGrounding)
     internal val promptBuilder = com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder(shortTermContext)
     private val memoryEpoch = java.util.concurrent.atomic.AtomicLong(0)
     private val memoryBoundaryPending = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val memoryCaptureReceipts = com.battlesbudz.jarvis.v2.memory.MemoryCaptureReceiptCache(
+        currentEpoch = { memoryEpoch.get() }, boundaryPending = { memoryBoundaryPending.get() })
     internal val memoryDeliveryFence = MemoryDeliveryFence()
     private val memoryHistoryCutoff = java.util.concurrent.atomic.AtomicBoolean(false)
     @Volatile internal var nativeMemoryStateToken: String? = null
-    private val conversationMemory by lazy { ConversationMemory(AndroidMemoryOs.get(applicationContext)) }
+    private val conversationMemory by lazy { ConversationMemory(AndroidMemoryOs.get(applicationContext), AndroidMemoryOs.sources(applicationContext)) }
     internal val actionIntentRouter = com.battlesbudz.jarvis.v2.actions.ActionIntentRouter()
+    private val phoneActionLedger by lazy {
+        com.battlesbudz.jarvis.v2.actions.ToolTaskLedger(
+            com.battlesbudz.jarvis.v2.actions.FileToolTaskStore(java.io.File(noBackupFilesDir, "phone-action-attempts.json"))
+        )
+    }
+    internal val phoneTasks = kotlinx.coroutines.flow.MutableStateFlow<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>(null)
+    internal val phoneTaskError = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
+    internal fun admitPhoneTask(plan: ActionTurnPlan.Ready, conversationId: String): String? = try {
+        phoneActionLedger.admit(plan.steps.map { it.request }, conversationId,
+            resumeAfterRestart = plan.batteryCondition == null).id.also { refreshPhoneTasks() }
+    } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+        phoneTaskError.value = "The action journal is unavailable. No new phone action was started."
+        null
+    }
+
+    internal fun refreshPhoneTasks() {
+        try { phoneTasks.value = phoneActionLedger.journal() }
+        catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+            phoneTaskError.value = "The action journal is unavailable. Phone actions are paused."
+        }
+    }
+
+    internal fun cancelPhoneTask(groupId: String) {
+        try { phoneActionLedger.cancelGroup(groupId) }
+        catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+            phoneTaskError.value = "I couldn't save the cancellation. No further action will start in this turn."
+        }
+        refreshPhoneTasks()
+    }
+
+    internal fun executePhoneAction(
+        request: com.battlesbudz.jarvis.v2.actions.ActionRequest,
+        executor: com.battlesbudz.jarvis.v2.actions.MobileActionExecutor,
+        groupId: String? = null,
+        stepIndex: Int = 0
+    ): com.battlesbudz.jarvis.v2.actions.ExecutionResult = try {
+        val pipeline = com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline(phoneActionLedger, executor)
+        if (groupId == null) pipeline.execute(request) else {
+            val journal = phoneActionLedger.journal()
+            val id = journal.groups.find { it.id == groupId }?.attemptIds?.getOrNull(stepIndex)
+            val attempt = journal.attempts.find { it.id == id }
+            if (attempt == null) com.battlesbudz.jarvis.v2.actions.ExecutionResult(false,
+                "The saved action no longer matches this request. I didn't start it.")
+            else pipeline.executeBound(attempt, request)
+        }
+    } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+        com.battlesbudz.jarvis.v2.actions.ExecutionResult(false,
+            "The phone-action journal is unavailable, so I didn't start this action.")
+    } finally { refreshPhoneTasks() }
+
+    /** Re-evaluate only at process startup or foreground/unlock; no periodic memory polling. */
+    internal fun resumePhoneTasksAfterUnlock() {
+        runtimeScope.launch(Dispatchers.Main) {
+            val keyguard = getSystemService(android.app.KeyguardManager::class.java)
+            if (keyguard?.isDeviceLocked == true) return@launch
+            try {
+                phoneActionLedger.pauseExpiredGroups()
+                val journal = phoneActionLedger.journal()
+                for (group in journal.groups) {
+                    if (conversationHistory.list().none { it.id == group.conversationId }) {
+                        phoneActionLedger.cancelGroup(group.id)
+                        continue
+                    }
+                    if (System.currentTimeMillis() >= group.expiresAtMs) continue
+                    for (id in group.attemptIds) {
+                        val attempt = phoneActionLedger.get(id) ?: break
+                        if (attempt.state == com.battlesbudz.jarvis.v2.actions.ToolTaskState.SUCCEEDED) continue
+                        if (attempt.state != com.battlesbudz.jarvis.v2.actions.ToolTaskState.READY) break
+                        val result = com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline(phoneActionLedger,
+                            com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(this@JarvisRuntime,
+                                canLaunchDirectly = { activityVisible }, onDiagnostic = diagnosticRecorder::recordImportant)).executeAttempt(attempt)
+                        projectPhoneTask(group.id, recovered = true)
+                        if (!result.succeeded) break
+                    }
+                }
+            } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+                phoneTaskError.value = "The action journal is unavailable. Phone actions are paused."
+            } finally { refreshPhoneTasks() }
+        }
+    }
+
+    private fun projectPhoneTask(groupId: String, recovered: Boolean = false) {
+        val j = phoneActionLedger.journal()
+        val group = j.groups.find { it.id == groupId } ?: return
+        val attempts = group.attemptIds.mapNotNull { id -> j.attempts.find { it.id == id } }
+        val receipts = attempts.mapNotNull { a -> a.result?.let {
+            com.battlesbudz.jarvis.v2.chat.ActionReceipt(a.request.name, it, a.state == com.battlesbudz.jarvis.v2.actions.ToolTaskState.SUCCEEDED) } }
+        val status = if (attempts.any { !it.state.isTerminalForUi() }) "Some steps are still waiting." else "Task finished."
+        conversationHistory.updateReply(group.conversationId, "phone-task:$groupId",
+            (if (recovered) "Recovered phone task. " else "Phone task. ") + status, true, receipts)
+    }
+
+    internal fun phoneTaskAction(id: String, generation: Long, command: String) {
+        runtimeScope.launch(Dispatchers.Main) {
+            phoneTaskError.value = null
+            try {
+                phoneActionLedger.pauseExpiredGroups()
+                val a = phoneActionLedger.get(id)?.takeIf { it.generation == generation } ?: return@launch
+                val approvals = com.battlesbudz.jarvis.v2.actions.ActionApprovalStore(phoneActionLedger.store)
+                when (command) {
+                    "approve" -> {
+                        if (getSystemService(android.app.KeyguardManager::class.java)?.isDeviceLocked == true) return@launch
+                        val approval = a.approvalId?.let { approvals.get(it) } ?: return@launch
+                        val result = com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline(phoneActionLedger,
+                            com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(this@JarvisRuntime,
+                                canLaunchDirectly = { activityVisible }, onDiagnostic = diagnosticRecorder::recordImportant)).executeAttempt(a, approval)
+                        if (!result.succeeded) phoneTaskError.value = result.message
+                    }
+                    "deny" -> a.approvalId?.let { approvals.deny(it) }
+                    "cancel" -> if (a.groupId != null) phoneActionLedger.cancelGroup(a.groupId)
+                        else phoneActionLedger.cancelLegacyAttempt(a.id, a.generation)
+                    "checked" -> if (phoneActionLedger.reconcileUnknown(a.id, a.generation)) a.groupId?.let { phoneActionLedger.cancelGroup(it) }
+                    else -> return@launch
+                }
+                a.groupId?.let { projectPhoneTask(it) }
+            } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+                phoneTaskError.value = "I couldn't save that decision. Please try again."
+            } finally { refreshPhoneTasks() }
+        }
+    }
+
+    private fun com.battlesbudz.jarvis.v2.actions.ToolTaskState.isTerminalForUi() = this in setOf(
+        com.battlesbudz.jarvis.v2.actions.ToolTaskState.SUCCEEDED, com.battlesbudz.jarvis.v2.actions.ToolTaskState.FAILED,
+        com.battlesbudz.jarvis.v2.actions.ToolTaskState.CANCELLED, com.battlesbudz.jarvis.v2.actions.ToolTaskState.UNKNOWN_OUTCOME)
     internal lateinit var sessionPreferences: android.content.SharedPreferences
     internal lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
     internal val conversationHistory = com.battlesbudz.jarvis.v2.chat.ConversationHistory(
@@ -147,6 +276,17 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             "${installedPackage.versionName} (${installedPackage.longVersionCode})")
         diagnosticRecorder.restore()
         diagnosticRecorder.recordPreviousProcessExit(applicationContext)
+        runtimeScope.launch(Dispatchers.Main) {
+            try {
+                phoneActionLedger.recoverAfterRestart()
+                phoneActionLedger.journal().groups.filter { group -> phoneActionLedger.snapshot().any {
+                    it.groupId == group.id && it.state != com.battlesbudz.jarvis.v2.actions.ToolTaskState.SUCCEEDED
+                } }.forEach { projectPhoneTask(it.id, recovered = true) }
+                resumePhoneTasksAfterUnlock()
+            } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+                phoneTaskError.value = "The action journal is unavailable. Phone actions are paused."
+            } finally { refreshPhoneTasks() }
+        }
         shortTermContext.restoreSummary(sessionPreferences.getString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, null))
         AndroidMemoryOs.get(applicationContext).addApprovedStateObserver {
             // Fence output immediately, then durably publish the context boundary off the caller
@@ -215,6 +355,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         }
     }
     @Volatile internal var activityVisible = false
+    @Volatile internal var lastPhoneActionStatus: com.battlesbudz.jarvis.v2.actions.PhoneActionStatus? = null
     @Volatile private var transcriptListener: (String, String, Boolean) -> Unit = { _, _, _ -> }
     @Volatile private var finishedListener: (String) -> Unit = {}
     fun attachUi(report: (String) -> Unit, transcript: (String, String, Boolean) -> Unit, finished: (String) -> Unit) {
@@ -262,18 +403,16 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             com.battlesbudz.jarvis.v2.voice.LiveReplyMetrics(replyId, threadId))
         val userMessageId = conversationHistory.appendUser(userText, attachment)
         val capturedAtMs = System.currentTimeMillis()
-        runtimeScope.launch(Dispatchers.IO) {
-            if (!captureFinalMemory(userMessageId, threadId, null,
-                    if (attachment?.kind == com.battlesbudz.jarvis.v2.chat.AttachmentKind.AUDIO) ConversationMemorySource.VOICE else ConversationMemorySource.TEXT,
-                    userText, capturedAtMs)) {
-                mainHandler.post { sessionReport("Memory proposal could not be saved; the conversation was sent normally.") }
-            }
-        }
         conversationHistory.updateReply(threadId, replyId, "", false)
         chatBusy.value = true
         runtimeScope.launch {
             val response = StringBuilder()
             try {
+                withContext(Dispatchers.IO) {
+                    captureFinalMemory(userMessageId, threadId, null,
+                        if (attachment?.kind == com.battlesbudz.jarvis.v2.chat.AttachmentKind.AUDIO) ConversationMemorySource.VOICE else ConversationMemorySource.TEXT,
+                        userText, capturedAtMs)
+                }
                 // Mode changes may leave a native voice session behind. App history is authoritative.
                 shortTermContext.clear()
                 resetNativeConversation()
@@ -384,6 +523,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             if (!conversationHistory.markMemoryContextCutoff(durable = true)) error("memory_context_cutoff_persist_failed")
             shortTermContext.clear()
             if (!sessionPreferences.edit().remove(ConversationPolicy.SHORT_TERM_SUMMARY_KEY).commit()) error("memory_summary_clear_failed")
+            memoryCaptureReceipts.clear()
             memoryHistoryCutoff.set(true)
             // Last: no fresh turn may pair the new approved token with pre-mutation context.
             memoryEpoch.incrementAndGet()
@@ -450,11 +590,17 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
 
     private fun captureFinalMemory(eventId: String, conversationId: String, callId: String?,
                                    source: ConversationMemorySource, text: String, capturedAtMs: Long): Boolean {
+        val captureEpoch = memoryEpoch.get()
         val result = conversationMemory.capture(FinalMemoryInput(eventId, conversationId, callId, source, text, capturedAtMs))
+        memoryCaptureReceipts.put(eventId, conversationId, text, captureEpoch, result)
+        diagnosticRecorder.recordImportant("Memory capture event=$eventId source=$source outcome=${result.outcome} reviewStatus=${result.memory?.reviewStatus ?: "none"}")
         val stored = result.outcome != com.battlesbudz.jarvis.v2.memory.ConversationMemoryOutcome.STORAGE_FAILURE
         if (!stored) diagnosticRecorder.recordImportant("Memory capture storage failure for finalized $source input; conversation continues.")
         return stored
     }
+
+    internal fun takeMemoryCaptureReceipt(text: String): com.battlesbudz.jarvis.v2.memory.ConversationMemoryResult? =
+        memoryCaptureReceipts.take(conversationHistory.current.value.id, text)
 
     fun onMicrophoneInterruption(interrupted: Boolean, reason: String) {
         activeVoiceOutput?.setInterrupted(interrupted)
@@ -1594,7 +1740,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             capturedSpeechEnds.remove(deferred.utteranceId)
                         ))
                     }
-                    val summary = acceptedVoiceSummary(expectedCallId)
+                    val replyIds = acceptedVoiceActions.tasks.value
+                        .filter { it.value.callId == expectedCallId && actionSession.ownsActionTask(it.id) }
+                        .map { it.value.replyId }.toSet()
+                    val summary = acceptedVoiceSummary(expectedCallId, replyIds, includeTerminalText = true)
                     voiceSessionController.setStateIfCurrent(expectedCallId, VoiceSessionState.ACTIVELY_LISTENING)
                     mainHandler.post { onTranscript("Jarvis", summary, true) }
                     finalMessage = "Voice Call accepted actions complete. Jarvis: $summary"
@@ -1955,6 +2104,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             val planned = accepted.plan.steps.map { it.request.name }
             val completedSteps = mutableListOf<String>()
             var allSucceeded = true
+            var validatedOutcome: com.battlesbudz.jarvis.v2.actions.ActionTurnRunner.Outcome? = null
             voiceSessionController.updateTaskForCall(accepted.callId, com.battlesbudz.jarvis.v2.voice.VoiceTaskStatus(
                 com.battlesbudz.jarvis.v2.voice.VoiceTaskState.WAITING_FOR_USER,
                 pendingSteps = planned
@@ -1996,6 +2146,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         updated
                     }
                 },
+                onPhonePlanFinished = { outcome ->
+                    validatedOutcome = outcome
+                    voiceSessionController.updateTerminalReplyTextForCall(accepted.callId, accepted.replyId, outcome.message)
+                },
                 frozenActionPlan = accepted.plan,
                 frozenVoiceFinal = true
             )
@@ -2012,18 +2166,18 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             try {
                 completed.await()
                 job.join()
-                completedSteps.size == planned.size && allSucceeded
+                validatedOutcome?.completed ?: (completedSteps.size == planned.size && allSucceeded)
             } finally {
                 val cancelledBeforeCleanup = !kotlin.coroutines.coroutineContext.isActive
                 withContext(kotlinx.coroutines.NonCancellable) {
                     if (!job.isCompleted) job.cancel()
                     job.join()
                     val state = when {
-                        completedSteps.size == planned.size && allSucceeded -> com.battlesbudz.jarvis.v2.voice.VoiceTaskState.COMPLETED
+                        (validatedOutcome?.completed ?: (completedSteps.size == planned.size && allSucceeded)) -> com.battlesbudz.jarvis.v2.voice.VoiceTaskState.COMPLETED
                         cancelledBeforeCleanup -> com.battlesbudz.jarvis.v2.voice.VoiceTaskState.CANCELLED
                         else -> com.battlesbudz.jarvis.v2.voice.VoiceTaskState.FAILED
                     }
-                    val remaining = planned.drop(completedSteps.size)
+                    val remaining = if (validatedOutcome?.completed == true) emptyList() else planned.drop(completedSteps.size)
                     voiceSessionController.updateTaskForCall(accepted.callId, com.battlesbudz.jarvis.v2.voice.VoiceTaskStatus(
                         state, completedSteps.toList(), remaining
                     ))
@@ -2066,7 +2220,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     private fun publishTerminalActionReports(
         session: com.battlesbudz.jarvis.v2.voice.ContinuousActionSession<AcceptedVoiceInvocation>, callId: String
     ) {
-        acceptedVoiceActions.tasks.value.filter { it.value.callId == callId && it.state.isTerminalActionState() }
+        acceptedVoiceActions.tasks.value.filter { it.value.callId == callId && it.state.isTerminalActionState() && session.ownsActionTask(it.id) }
             .forEach { task ->
                 val terminalText = persistTerminalActionReply(task)
                 if (!session.onTaskEvent(task.id, terminalText))
@@ -2083,7 +2237,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         val receipts = acceptedVoiceSummary(callId, setOf(invocation.replyId))
         val completed = voiceCallStore.list().firstOrNull { it.id == callId }?.transcript
             ?.firstOrNull { it.replyId == invocation.replyId }?.actions.orEmpty()
-        val remaining = invocation.plan.steps.map { it.request.name }.drop(completed.size)
+        val remaining = if (task.state == com.battlesbudz.jarvis.v2.actions.AcceptedActionState.COMPLETED) emptyList()
+            else invocation.plan.steps.map { it.request.name }.drop(completed.size)
         val terminal = when (task.state) {
             com.battlesbudz.jarvis.v2.actions.AcceptedActionState.CANCELLED -> "Cancelled; unattempted: ${remaining.joinToString()}."
             com.battlesbudz.jarvis.v2.actions.AcceptedActionState.INTERRUPTED -> "Interrupted; unattempted: ${remaining.joinToString()}."
@@ -2110,12 +2265,17 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             com.battlesbudz.jarvis.v2.actions.AcceptedActionState.CANCELLED,
             com.battlesbudz.jarvis.v2.actions.AcceptedActionState.INTERRUPTED)
 
-    private fun acceptedVoiceSummary(callId: String, onlyReplyIds: Set<String>? = null): String {
-        val replyIds = onlyReplyIds ?: acceptedVoiceActions.tasks.value.map { it.value }
-            .filter { it.callId == callId }.map { it.replyId }.toSet()
+    private fun acceptedVoiceSummary(callId: String, replyIds: Set<String>, includeTerminalText: Boolean = false): String {
+        if (includeTerminalText) return voiceCallStore.list().firstOrNull { it.id == callId }?.transcript
+            ?.filter { it.replyId in replyIds && it.generationComplete && it.text.isNotBlank() }
+            ?.joinToString(" ") { it.text }?.takeIf { it.isNotBlank() }
+            ?: "I couldn't complete the accepted phone action."
         val outcomes = voiceCallStore.list().firstOrNull { it.id == callId }?.transcript
             ?.filter { it.replyId in replyIds }?.flatMap { it.actions }.orEmpty()
         return outcomes.takeIf { it.isNotEmpty() }?.joinToString(" ") { it.message }
+            ?: voiceCallStore.list().firstOrNull { it.id == callId }?.transcript
+                ?.filter { it.replyId in replyIds && it.generationComplete && it.text.isNotBlank() }
+                ?.joinToString(" ") { it.text }?.takeIf { it.isNotBlank() }
             ?: "I couldn't complete the accepted phone action."
     }
 

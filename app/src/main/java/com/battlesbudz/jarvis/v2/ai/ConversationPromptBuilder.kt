@@ -14,7 +14,9 @@ class ConversationPromptBuilder(
         seedContext: Boolean,
         voice: Boolean = false,
         compactInstructions: Boolean = false,
-        memoryContext: String? = null
+        memoryContext: String? = null,
+        continuityContext: String? = null,
+        captureContext: String? = null
     ): String {
         val dialogue = DialogueContextPolicy.resolve(userPrompt, history.map { it.role to it.text })
         val dialogueInstruction = if (dialogue.recall)
@@ -22,7 +24,9 @@ class ConversationPromptBuilder(
         else dialogue.storyInstruction.orEmpty()
         val actionContext = actionResultContext?.let { "\n\n$it" }.orEmpty()
         // MemoryOS packets are quoted historical evidence, never instructions or tool authority.
-        val memorySection = memoryContext?.trim()?.takeIf { it.isNotBlank() }.orEmpty()
+        val memorySection = listOfNotNull(memoryContext?.trim()?.takeIf { it.isNotBlank() },
+            continuityContext,
+            captureContext).filter { it.isNotBlank() }.joinToString("\n\n")
         val sessionContext = if (seedContext) {
             shortTermContext.promptContext(history.map { it.role to it.text }, compact = voice || compactInstructions)
                 .let { if (compactInstructions) it.takeLast(600) else it }
