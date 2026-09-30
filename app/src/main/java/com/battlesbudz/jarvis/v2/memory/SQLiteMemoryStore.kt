@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
 import java.io.File
 import org.json.JSONObject
+import kotlin.concurrent.withLock
 
 /**
  * Device-local canonical ledger. Records and non-content erase tombstones are separate rows;
@@ -21,14 +22,14 @@ class SQLiteMemoryStore(
     // All instances for one canonical path therefore share the same in-process boundary.
     private val databaseLock = lockFor(file)
 
-    override fun read(): MemoryStore.Read = synchronized(databaseLock) { try {
+    override fun read(): MemoryStore.Read = databaseLock.withLock { try {
         val db = database()
         transaction(db) { purgeSourceText(db, archiveClock()); MemoryStore.Read(snapshot(db)) }
     } catch (e: Exception) {
         MemoryStore.Read(null, "Memory database is unavailable (${e.javaClass.simpleName}).")
     } }
 
-    override fun <T> update(block: (MemorySnapshot) -> Pair<MemorySnapshot, T>): MemoryStore.Update<T> = synchronized(databaseLock) { try {
+    override fun <T> update(block: (MemorySnapshot) -> Pair<MemorySnapshot, T>): MemoryStore.Update<T> = databaseLock.withLock { try {
         val db = database()
         transaction(db) {
             purgeSourceText(db, archiveClock())
@@ -46,10 +47,10 @@ class SQLiteMemoryStore(
         MemoryStore.Update(error = "Memory database update failed (${e.javaClass.simpleName}).")
     } }
 
-    override fun close() { synchronized(databaseLock) { connection?.close(); connection = null } }
+    override fun close() { databaseLock.withLock { connection?.close(); connection = null } }
 
     override fun captureSource(input: FinalMemoryInput): SourceArchiveCapture {
-        return synchronized(databaseLock) { try {
+        return databaseLock.withLock { try {
             val prepared = MemoryArchivePolicy.prepare(input, archiveClock())
             prepared.rejection?.let { return SourceArchiveCapture(it) }
             val episode = checkNotNull(prepared.episode)
@@ -81,7 +82,7 @@ class SQLiteMemoryStore(
     }
 
     override fun searchExplicitHistory(query: String, limit: Int): SourceArchiveSearch {
-        return synchronized(databaseLock) { try {
+        return databaseLock.withLock { try {
             if (query.isBlank() || query.length > MemoryArchivePolicy.MAX_QUERY_CHARS || limit !in 1..50) return SourceArchiveSearch(SourceArchiveOutcome.INVALID)
             if (!canReadSourceText()) return SourceArchiveSearch(SourceArchiveOutcome.LOCKED)
             val db = database()
@@ -105,7 +106,7 @@ class SQLiteMemoryStore(
         } catch (_: Exception) { SourceArchiveSearch(SourceArchiveOutcome.STORAGE_FAILURE) } }
     }
 
-    override fun purgeExpiredSources(): Boolean = synchronized(databaseLock) { try {
+    override fun purgeExpiredSources(): Boolean = databaseLock.withLock { try {
         val db = database()
         transaction(db) { purgeSourceText(db, archiveClock()) }
         true
@@ -231,10 +232,10 @@ class SQLiteMemoryStore(
 
     companion object {
         const val DATABASE_VERSION = 2
-        private val pathLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
-        private fun lockFor(file: File): Any {
+        private val pathLocks = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.locks.ReentrantLock>()
+        private fun lockFor(file: File): java.util.concurrent.locks.ReentrantLock {
             val path = try { file.canonicalPath } catch (_: Exception) { file.absoluteFile.normalize().path }
-            return pathLocks.computeIfAbsent(path) { Any() }
+            return pathLocks.computeIfAbsent(path) { java.util.concurrent.locks.ReentrantLock(true) }
         }
     }
 }

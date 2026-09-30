@@ -3,6 +3,11 @@ package com.battlesbudz.jarvis.v2.memory
 import java.security.MessageDigest
 
 object MemoryPolicy {
+    private val generatedIdPattern = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
+    private val eventKeyPattern = Regex("[0-9a-f]{32}")
+    private val fingerprintPattern = Regex("[0-9a-f]{64}")
+    private val metadataSeparatorPattern = Regex("[^a-z0-9]+")
+    private val restrictedMetadataTokens = listOf("bank", "banking", "financial", "transaction", "credit_card", "debit_card", "payroll", "brokerage", "restricted_source", "restricted_summary")
     const val MAX_CONTENT_CHARS = 2_000
     const val MAX_EVENT_ID_CHARS = 128
     const val MAX_EVENT_SOURCE_CHARS = 128
@@ -66,19 +71,18 @@ object MemoryPolicy {
         return if (assignment.topic.isBlank() || assignment.topic.length > 120) "Wiki topic must be 1-120 characters." else null
     }
 
-    fun isGeneratedMemoryId(value: String): Boolean = value.matches(Regex("[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"))
-    fun isOpaqueEventKey(value: String): Boolean = value.matches(Regex("[0-9a-f]{32}"))
-    fun isFingerprint(value: String): Boolean = value.matches(Regex("[0-9a-f]{64}"))
+    fun isGeneratedMemoryId(value: String): Boolean = generatedIdPattern.matches(value)
+    fun isOpaqueEventKey(value: String): Boolean = eventKeyPattern.matches(value)
+    fun isFingerprint(value: String): Boolean = fingerprintPattern.matches(value)
 
     fun isRestrictedMetadata(value: String): Boolean {
-        val normalized = value.lowercase().replace(Regex("[^a-z0-9]+"), "_")
-        return listOf("bank", "banking", "financial", "transaction", "credit_card", "debit_card", "payroll", "brokerage", "restricted_source", "restricted_summary").any { token -> normalized == token || normalized.contains("_${token}_") || normalized.startsWith("${token}_") || normalized.endsWith("_${token}") }
+        val normalized = value.lowercase().replace(metadataSeparatorPattern, "_")
+        return restrictedMetadataTokens.any { token -> normalized == token || normalized.contains("_${token}_") || normalized.startsWith("${token}_") || normalized.endsWith("_${token}") }
     }
 
-    /** Conservative bounded detectors, deliberately not a claim to detect every secret. */
-    fun containsRawRestrictedContent(content: String): Boolean {
-        val bounded = content.take(MAX_CONTENT_CHARS)
-        val patterns = listOf(
+    // Immutable compiled patterns are safe to share. Validation reads hundreds of records;
+    // recompiling all detectors for every field adds avoidable overhead to large snapshots.
+    private val rawRestrictedPatterns = listOf(
             "\\b(?:account|routing|card|debit|credit)\\s*(?:number|no\\.?|#|ending(?:\\s+in)?|last\\s+four)?\\s*[:#-]?\\s*(?:\\d[\\s-]?){4,}\\b",
             "\\blast\\s+four\\s*(?:digits?)?\\s*(?:are|is|[:#-])?\\s*(?:\\d[\\s-]?){4}\\b",
             "\\b(?:ssn|social security)\\b[\\s\\S]{0,40}\\d{3}[\\s-]?\\d{2}[\\s-]?\\d{4}\\b",
@@ -90,8 +94,12 @@ object MemoryPolicy {
             "^\\s*\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}\\s+.{2,}\\s+[-+]?\\$?\\d[\\d,]*(?:\\.\\d{2})?\\s*$",
             "^\\s*\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}\\s*,\\s*[^,\\n]{2,}\\s*,\\s*[-+]?\\$?\\d[\\d,]*(?:\\.\\d{2})?\\s*$",
             """\b(?:password|passcode|api[ _-]?key|access[ _-]?token|auth(?:entication)?[ _-]?token|secret)\b\s*(?:is|:|=)?\s*["']?[a-z0-9_./+=-]{6,}""",
-        )
-        return patterns.any { Regex(it, setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)).containsMatchIn(bounded) }
+        ).map { Regex(it, setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)) }
+
+    /** Conservative bounded detectors, deliberately not a claim to detect every secret. */
+    fun containsRawRestrictedContent(content: String): Boolean {
+        val bounded = content.take(MAX_CONTENT_CHARS)
+        return rawRestrictedPatterns.any { it.containsMatchIn(bounded) }
     }
 
     /** Opaque persisted event key: deletion never retains a caller supplied identifier. */

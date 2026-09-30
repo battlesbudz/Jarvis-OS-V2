@@ -83,7 +83,7 @@ Phone acceptance for this checkpoint: install the normal signed APK as an update
 
 ## Source archive checkpoint (next implementation step)
 
-Implemented following the SQLite foundation; exact signed CI for this addition is still required:
+Implemented following the SQLite foundation; handoff requires the exact signed CI receipt:
 
 - SQLite schema 2 adds source events with opaque event/conversation/call keys, original capture time, exact 90-day expiry, bounded text and immutable replay fingerprints. The additive schema-1 upgrade preserves the fact ledger and tombstones in one transaction.
 - Production finalized text/voice capture now archives eligible input even when it contains no deterministic fact. Drafts, failed recognition, invalid/future timestamps and oversized inputs are rejected. Detected passwords, payment identifiers and short access codes exclude the whole event before an archive write; the full bounded input is checked, including text past 2,000 characters.
@@ -99,7 +99,7 @@ Device-lock API reference: https://developer.android.com/reference/android/app/K
 
 ## Plan to finish MemoryOS: local capture, semantic recall, and temporal memory
 
-**Status:** SQLite foundation implemented; source-archive foundation implemented pending exact signed CI; remaining capabilities are planned. The original milestone above retains manual review and lexical retrieval; Android production storage now uses the SQLite checkpoint above. The decisions below were confirmed by Justin during the 2026-09-29 interview (America/New_York); they replace the older follow-on proposal that every extracted or inferred fact must wait for manual review. They do not claim that automatic capture, embeddings, or the temporal graph already work.
+**Status:** SQLite and source-archive foundations implemented; release verification is tracked in the acceptance map and exact-build receipt. Remaining capabilities are planned. The original milestone above retains manual review and lexical retrieval; Android production storage now uses the SQLite checkpoint above. The decisions below were confirmed by Justin during the 2026-09-29 interview (America/New_York); they replace the older follow-on proposal that every extracted or inferred fact must wait for manual review. They do not claim that automatic capture, embeddings, or the temporal graph already work.
 
 **Goal:** Jarvis should automatically retain useful information and recall relevant context during ordinary Chat and Voice turns, including paraphrases, implied references, and point-in-time questions. Memory, extraction, indexing, and inference run locally on Android. A hosted memory service is not required. Optional access to incoming external sources is separately authorized; saved local memory remains usable offline.
 

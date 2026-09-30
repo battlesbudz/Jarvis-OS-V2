@@ -975,6 +975,8 @@ class ReleaseJourneyTest {
             searchMemory("persistent amber tea", By.text("No approved memories match that search."))
 
             // History keeps the bulk action even when no approved page exists.
+            // Remounting preserves rememberSaveable state; leave the search explicitly first.
+            enterText(By.res("memory_search_input"), "")
             val pendingOnly = checkNotNull(memoryOs.propose(MemoryProposal("Pending ledger-only note", MemorySource("release-pending-only", "manual", System.currentTimeMillis()))).memory)
             val rejectedOnly = checkNotNull(memoryOs.propose(MemoryProposal("Rejected ledger-only note", MemorySource("release-rejected-only", "manual", System.currentTimeMillis() + 1))).memory)
             assertEquals(MemoryOutcome.REJECTED, memoryOs.reject(rejectedOnly.id, rejectedOnly.revision).outcome)
