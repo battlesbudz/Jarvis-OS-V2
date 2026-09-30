@@ -1094,6 +1094,7 @@ class ReleaseJourneyTest {
         }
     }
 
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     @Test fun test32_taskPanelShowsExactChoiceAndReconcilesWithoutRetry() {
         val file = File(context.cacheDir, "release-task-panel.json").apply { delete() }
         val ledger = ToolTaskLedger(FileToolTaskStore(file))

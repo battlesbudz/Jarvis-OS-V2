@@ -56,6 +56,15 @@ M2 workflow UI/scheduling and A0–A6 resident/proactive behavior remain open. M
 is not complete. PStack's coordinated Terra route remains unavailable on this host; no
 independent actor review or coordinated provenance receipt is claimed.
 
+### Retained Build 853 harness failure
+
+Run [853](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36672387929) tested
+`c199a6c`. Production Kotlin compiled; `compileReleaseAndroidTestKotlin` rejected new
+`test32`'s `testTagsAsResourceId` use without `ExperimentalComposeUiApi` opt-in (line 1122).
+The fixture now has the same explicit opt-in used by the existing controlled UI journeys.
+This is a test compilation repair, with no acceptance removed or weakened. Failed run logs
+and receipt artifact remain evidence; a new exact-revision full release run is required.
+
 ## September 30 — M1a durable phone-action slice
 
 Intake head: `6ce979733b89ff488f9a0c44a55260b8e4efccc6`. Existing application baseline
