@@ -8,30 +8,42 @@ Every opted-in successful push or same-repository PR build publishes both signed
 after the release build, API 30 normal/API 35 compact journeys and consolidated receipt
 pass. Feature branch pushes use a numbered release and identify their branch in its name.
 The Build 849 regression was an event-condition skip, despite passing verification;
-the corrected workflow retains all verification dependencies. Hosted proof is pending
-the correction's exact revision. Failed or skipped verification cannot publish an APK.
+the corrected workflow retains all verification dependencies. Build 851 (`ca99845`) passed
+and published both APKs in `v0.1.0-build.851`. Failed or skipped verification cannot publish an APK.
 
 ## Durable phone-action foundation (M1a)
 
-`ToolTaskLedger`, `FileToolTaskStore` and `JournaledActionPipeline` now persist dispatch
-intent before effects and typed executor outcomes afterward. `JarvisRuntime.executePhoneAction`
-is shared by the direct app fast path and text/voice model dispatch. `ToolTaskPersistenceTest`
-and `JournaledActionPipelineTest` cover reload, stale generations, concurrent store instances,
-corruption/schema/size/capacity failure closure, abandoned temps, write failures, permission
-denial, unknown completion and preserved cancellation/programming errors. Existing ledger,
-approval, ordered-action and accepted-voice checks remain required.
+`ToolTaskLedger`, `FileToolTaskStore` and `JournaledActionPipeline` persist ordered groups,
+steps, attempts, typed receipts, grant provenance, exact approval choices and bounded progress
+events. Dispatch and approval consumption are one transaction. The direct app fast path and
+model-directed text/voice path admit the same frozen native plan. Startup and foreground recovery
+recheck schema, exact scope, expiry, dependencies, conversation and unlock; no model is loaded
+for native recovery. Revised targets invalidate old choices. Disabling a routine pauses only
+its dependent unfinished steps. `DurableToolTaskTest` adds scope/revocation/expiry, forged/stale
+approval, atomic rollback/racing claims, question presentation, ordered resumption, migration,
+retention and cancellation coverage alongside the existing journal and voice tests.
 
 Release `test30_phoneActionJournalPreservesReceiptsAndFencesUnknownEffects` uses the real
 Android volume executor and app-private storage. It verifies a persisted typed receipt,
 reopening/recovery fences, and corrupt storage preventing another volume effect. Reopening
 the file is a controlled restart simulation, not an actual process kill during a side effect.
 The separate-process `test90` selection journey remains unchanged. Exact-revision JVM,
-normal/compact builds, API 30/API 35 sandbox and consolidated receipt are pending.
+normal/compact builds, API 30/API 35 sandbox and consolidated receipt are required on this revision.
 
-Limits: 512 attempts / 1 MiB, no automatic pruning or retries; capacity blocks new actions
-without effects. This slice pauses unfinished work rather than automatically resuming it.
-Task groups, durable grants/approvals, unknown-outcome reconciliation UI, retention/archival,
-proactive delivery and real model/device behavior remain unimplemented or unverified.
+`test31_taskRecoveryAndExactApprovalPreserveAndroidEffects` exercises real Android volume/battery,
+ordered file reopening and denied/schema-changed approval without another effect.
+`test32_taskPanelShowsExactChoiceAndReconcilesWithoutRetry` exercises the production task panel
+with controlled approvals/results, checks the exact volume target, durable decline and unknown
+acknowledgement without another execution. Its executor is a fixture; it does not load weights.
+
+Limits: three existing tools, one to three ordered steps, two-minute native relevance window,
+256 recent completed attempts and a 512-attempt / 1 MiB hard cap. Unfinished groups and unresolved
+unknown effects are protected from pruning; full protected capacity blocks new effects. Existing
+chat receipt retention continues. Routine grants are executor foundations, not a workflow editor
+or scheduler. D11 adapters remain unavailable, and cannot be admitted into native grants.
+The general background/model supervisor, notification outbox, proactive messaging and continuous
+multi-bubble speech remain later milestones. Actual process death during Android effects,
+real-model choice, physical audio and device performance remain unverified.
 
 ## Planned tools epic
 

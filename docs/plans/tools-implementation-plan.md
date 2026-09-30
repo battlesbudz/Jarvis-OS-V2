@@ -2,26 +2,35 @@
 
 Original planning baseline: `feature-tools` at `54f133f03d9d0c6fd44e424d96a8453bf7d4d24c`.
 Follow-up source baseline: `feature-tools` at `bfeca6d06dc3dba583e0f92e812046e9e73379f2`.
-Created: September 24, 2026. Updated: September 29, 2026 (America/New_York). Owner: Justin Battles.
+Created: September 24, 2026. Updated: September 30, 2026 (America/New_York). Owner: Justin Battles.
 Status: existing tools scope retained; September 29 autonomous messaging/warm-inference requirements integrated. New phases below are planned, not implemented or verified by this documentation update.
 
 ## Implementation checkpoint — September 30, 2026
 
-Continue in original milestone dependency order. The catalog/strict-decoder/model-pass and
-approval-contract baseline has historical green branch CI at `bfeca6d`. The next M1a slice
-implements durable per-phone-action attempts and integrates journaling into the shared
-text/voice dispatch and direct app fast path. Dispatch intent commits before Android effects;
-typed receipts commit afterward. Restarted running attempts become unknown-outcome;
-other unfinished attempts pause for future relevance/authority revalidation. Cancelled and
-completed attempts remain terminal. No external effect is replayed by recovery.
+M1a implementation is complete for the existing three native tools: typed outcomes,
+shared text/voice execution, durable ordered task groups/steps/attempts, exact approvals,
+bounded routine-grant provenance, progress events, restart recovery and retention.
+Approval consumption and dispatch intent commit together; revised targets, stale generations,
+expired/revoked grants and schema changes cannot dispatch. Consequential and unknown tools
+cannot borrow a native grant. The task panel displays exact choices, cancellation and
+unknown-outcome acknowledgement without automatic replay. Chat retains recovered receipts.
 
-This is a bounded foundation, pending exact-revision release CI. It does not complete M1a
-or A1: durable grants/exact-approval UI, task groups/steps, automatic safe resumption,
-delivery events, and supervisor scheduling remain next dependencies. The journal currently
-holds at most 512 attempts / 1 MiB and fails closed at capacity; retention/archival and a
-reconciliation surface must precede a general long-running task release. M1b–M8 and
-autonomous messaging/warm readiness remain planned. See the integration log and acceptance
-map for implementation/test details and the eventual exact run receipt.
+Safe native steps resume automatically on startup/foreground after unlock when their
+saved request, schema, grant, dependencies and originating conversation remain valid.
+Engineering default: these short phone plans have a two-minute relevance window starting
+at admission; expired plans and legacy unbound attempts pause for a fresh request. Running
+attempts recover as unknown, block dependent steps and require inspection rather than retry.
+The journal retains 256 recent completed attempts, preserving unfinished groups and unresolved
+unknown effects within the hard 512-attempt / 1 MiB bounds. Schema 1 migrates without replay.
+
+New JVM checks and release journeys `test31`/`test32` cover this implementation; release
+acceptance depends on the exact revision's normal/compact build, both emulator variants and
+consolidated receipt. M1 as a whole remains open: M1b destinations/media, M1c screen control,
+M1d task/conversation scheduling and M1e device validation follow in dependency order.
+M2 workflows and A0–A6 resident inference/proactive messaging are still planned. This native
+foundation does not claim a general model task supervisor or physical voice/model coverage.
+Every successful opted-in build now publishes both test APKs after verification; Build 851
+proved feature-branch publication without a PR or a main merge.
 
 The [decision record](tools-interview-decisions.md) is authoritative for product choices. Background: [original audit](../research/feature-tools-audit-2026-09-24.md) and [AppFunctions landscape](../research/appfunctions-landscape-2026-09-24.md). Their API/access findings are dated research snapshots: revalidate when integrating, rather than assuming permanent availability.
 

@@ -4,6 +4,11 @@ Epic: [#8](https://github.com/battlesbudz/Jarvis-OS-V2/issues/8). Implementation
 
 ## September 30 — publish every verified build
 
+Build [851](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36668555984) at
+`ca99845d368cfabcf76097404f26861e4477ffe9` passed the build, both emulator variants and
+receipt, then published normal/compact APKs in
+[v0.1.0-build.851](https://github.com/battlesbudz/Jarvis-OS-V2/releases/tag/v0.1.0-build.851).
+
 Justin clarified that each successful build must provide a numbered GitHub Release with
 normal and compact APKs for testing. Build 849 passed all release checks but its feature
 push failed the publication event condition. The `publish` job now accepts all opted-in
@@ -11,6 +16,45 @@ push builds, retaining its build, both sandbox and consolidated receipt dependen
 Release names include the source branch. No PR or merge is needed for a feature release.
 Static workflow checks passed; hosted publication verification is pending this commit's run.
 The earlier no-release feature-branch behavior below is historical and superseded here.
+
+## September 30 — finish M1a ownership and authority
+
+Intake head: `ca99845`. Refreshed audio remains `b54bb98`; Memory OS advanced to
+`90a83a8` (wiki-tab alignment/release Compose fixture fields). Neither source is imported
+or advanced by this action-owned change. This completes the M1a implementation before newer autonomy
+work. A schema 2 journal atomically persists task groups, ordered steps, attempts, exact
+approvals, routine-grant provenance and progress events. Schema 1 migrates conservatively.
+Normal text/voice and direct-app dispatch admit the frozen plan once; results bind to a
+unique attempt and generation. Approval consumption and dispatch eligibility commit together.
+Changed targets, stale buttons, mismatched tasks/providers/schemas, expiry, revoked grants,
+competing spoken questions and failed writes cannot authorize effects. No native grant can
+admit an unknown or consequential tool. Revocation pauses dependent future steps; completed
+receipts and independent work remain intact.
+
+At startup/foreground, unlocked, relevant native steps resume in order after authority,
+schema, dependency and origin checks. The conservative engineering default is a two-minute
+validity window for short phone plans; the general relevance planner is a later supervisor
+dependency. Unknown effects and legacy unbound work are not replayed. A chat task panel
+shows the exact target and current approval choices, cancellation and acknowledgement of
+an inspected unknown result. Acknowledgement records reconciliation without granting retry.
+Recovered task summaries and receipts project into their original chat. Retention keeps
+256 recent completed attempts and protects unfinished/unknown groups within 512 attempts
+and 1 MiB; full protected capacity still fails closed. Existing chat receipts survive pruning.
+
+Acceptance: JVM tests cover ordered ownership, generation/racing approval claims, atomic
+rollback, revised targets, framed fingerprints, denial, expiry/scope/revocation, cancellation,
+restart, legacy migration and retention. Android `test31` exercises volume/battery and
+approval denial with real Android executors; `test32` exercises the production panel with
+controlled receipts and confirms no retry on reconciliation. The named release contract has
+33 methods per variant. The existing phone-action and accepted-voice regressions remain
+required. Hosted release/JVM, both emulator variants and consolidated receipt must verify
+the exact candidate; no local Kotlin/Gradle/Android SDK exists. Real weights, physical
+audio, actual process death during a side effect and device performance remain unverified.
+
+M1b phone/media, M1c screen control, M1d task/conversation scheduling, M1e device validation,
+M2 workflow UI/scheduling and A0–A6 resident/proactive behavior remain open. M1 as a whole
+is not complete. PStack's coordinated Terra route remains unavailable on this host; no
+independent actor review or coordinated provenance receipt is claimed.
 
 ## September 30 — M1a durable phone-action slice
 

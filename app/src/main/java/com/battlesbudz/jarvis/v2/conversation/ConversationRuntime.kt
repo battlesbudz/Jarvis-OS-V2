@@ -35,6 +35,9 @@ internal fun JarvisRuntime.runConversationInternal(
         /** Binds an ordinary answer's exact voice output to its mutation/expiry delivery ticket. */
         onMemoryBound: (com.battlesbudz.jarvis.v2.memory.MemoryDeliveryFence.Ticket, MemoryTurnContext) -> Unit = { _, _ -> }
     ): Job? {
+        val phoneTaskConversationId = conversationHistory.current.value.id
+        var phoneTaskGroupId: String? = null
+        var phoneTaskStep = 0
         var memoryTurnContext: MemoryTurnContext? = null
         var memoryDeliveryTicket: com.battlesbudz.jarvis.v2.memory.MemoryDeliveryFence.Ticket? = null
         fun buildTurnPrompt(userPrompt: String, actionResultContext: String?,
@@ -159,11 +162,13 @@ internal fun JarvisRuntime.runConversationInternal(
                 if (directRequest != null) {
                     resetNativeConversation()
                     val result = kotlinx.coroutines.withContext(Dispatchers.Main) {
-                        executePhoneAction(directRequest,
+                        phoneTaskGroupId = admitPhoneTask(checkNotNull(guardedFrozenVoicePlan), phoneTaskConversationId)
+                        if (phoneTaskGroupId == null) com.battlesbudz.jarvis.v2.actions.ExecutionResult(false,
+                            "I couldn't save this phone action, so I didn't start it.") else executePhoneAction(directRequest,
                             executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
                                 this@runConversationInternal,
                                 canLaunchDirectly = { activityVisible }
-                            )
+                            ), groupId = phoneTaskGroupId
                         ).also {
                             // Persist the synchronous side effect before cancellable Main -> caller dispatch.
                             onActionResult(directRequest.name, it.message, it.succeeded)
@@ -555,10 +560,12 @@ internal fun JarvisRuntime.runConversationInternal(
                             dispatch = { request ->
                                 kotlinx.coroutines.withContext(Dispatchers.Main) {
                                     // Receipt and voice/text persistence occur in the same synchronous Main block.
-                                    executePhoneAction(request,
+                                    if (phoneTaskGroupId == null) phoneTaskGroupId = admitPhoneTask(actionPlan, phoneTaskConversationId)
+                                    if (phoneTaskGroupId == null) com.battlesbudz.jarvis.v2.actions.ExecutionResult(false,
+                                        "I couldn't save this phone action, so I didn't start it.") else executePhoneAction(request,
                                         executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
                                             this@runConversationInternal, canLaunchDirectly = { activityVisible }
-                                        )
+                                        ), groupId = phoneTaskGroupId, stepIndex = phoneTaskStep++
                                     ).also { onActionResult(request.name, it.message, it.succeeded) }
                                 }
                             },
@@ -576,6 +583,7 @@ internal fun JarvisRuntime.runConversationInternal(
                             }
                         )
                         actionName = actionPlan.steps.joinToString(",") { it.request.name }
+                        if (outcome.stopped) phoneTaskGroupId?.let { cancelPhoneTask(it) }
                         actionResultMessage = outcome.message
                         actionResultForGemma = outcome.message
                         diagnosticRecorder.recordImportant("Action turn\nuser=${prompt.take(500)}\n" +
@@ -826,9 +834,11 @@ internal fun JarvisRuntime.runConversationInternal(
                 )
                 mainHandler.post { finish(finalResponse) }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                phoneTaskGroupId?.let { cancelPhoneTask(it) }
                 lastLiveRate?.let { onLiveInference(null, null, it, true) }
                 throw cancelled
             } catch (error: Throwable) {
+                phoneTaskGroupId?.let { cancelPhoneTask(it) }
                 lastLiveRate?.let { onLiveInference(null, null, it, true) }
                 comparison?.put("generation_error", error.message ?: error.javaClass.simpleName)
                 incrementalVoice?.close()

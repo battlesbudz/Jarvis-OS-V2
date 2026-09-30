@@ -64,6 +64,9 @@ fun JarvisApp(
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onExportSpeechAudio: () -> Unit,
+    phoneTasks: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>? = null,
+    phoneTaskError: kotlinx.coroutines.flow.StateFlow<String?>? = null,
+    onPhoneTaskAction: (String, Long, String) -> Unit = { _, _, _ -> },
 ) {
     var selectedModel by remember { mutableStateOf(store.selectedModel()) }
     var selectionError by remember { mutableStateOf<String?>(null) }
@@ -304,6 +307,7 @@ fun JarvisApp(
                     )
                     else -> ConversationScreen(
                         history = conversationHistory, busy = chatBusy, callState = callState, onSend = onSendChat,
+                        phoneTasks = phoneTasks, phoneTaskError = phoneTaskError, onPhoneTaskAction = onPhoneTaskAction,
                         selectedModel = selectedModel,
                         onSelectConversation = onSelectConversation, onEndVoice = onEndVoiceCall,
                         onOpenVoiceCalls = {

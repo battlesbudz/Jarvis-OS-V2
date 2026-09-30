@@ -109,18 +109,126 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     private val phoneActionLedger by lazy {
         com.battlesbudz.jarvis.v2.actions.ToolTaskLedger(
             com.battlesbudz.jarvis.v2.actions.FileToolTaskStore(java.io.File(noBackupFilesDir, "phone-action-attempts.json"))
-        ).also { it.recoverAfterRestart() }
+        )
+    }
+    internal val phoneTasks = kotlinx.coroutines.flow.MutableStateFlow<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>(null)
+    internal val phoneTaskError = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
+    internal fun admitPhoneTask(plan: ActionTurnPlan.Ready, conversationId: String): String? = try {
+        phoneActionLedger.admit(plan.steps.map { it.request }, conversationId).id.also { refreshPhoneTasks() }
+    } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+        phoneTaskError.value = "The action journal is unavailable. No new phone action was started."
+        null
+    }
+
+    internal fun refreshPhoneTasks() {
+        try { phoneTasks.value = phoneActionLedger.journal() }
+        catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+            phoneTaskError.value = "The action journal is unavailable. Phone actions are paused."
+        }
+    }
+
+    internal fun cancelPhoneTask(groupId: String) {
+        try { phoneActionLedger.cancelGroup(groupId) }
+        catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+            phoneTaskError.value = "I couldn't save the cancellation. No further action will start in this turn."
+        }
+        refreshPhoneTasks()
     }
 
     internal fun executePhoneAction(
         request: com.battlesbudz.jarvis.v2.actions.ActionRequest,
-        executor: com.battlesbudz.jarvis.v2.actions.MobileActionExecutor
+        executor: com.battlesbudz.jarvis.v2.actions.MobileActionExecutor,
+        groupId: String? = null,
+        stepIndex: Int = 0
     ): com.battlesbudz.jarvis.v2.actions.ExecutionResult = try {
-        com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline(phoneActionLedger, executor).execute(request)
+        val pipeline = com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline(phoneActionLedger, executor)
+        if (groupId == null) pipeline.execute(request) else {
+            val journal = phoneActionLedger.journal()
+            val id = journal.groups.find { it.id == groupId }?.attemptIds?.getOrNull(stepIndex)
+            val attempt = journal.attempts.find { it.id == id }
+            if (attempt == null) com.battlesbudz.jarvis.v2.actions.ExecutionResult(false,
+                "The saved action no longer matches this request. I didn't start it.")
+            else pipeline.executeBound(attempt, request)
+        }
     } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
         com.battlesbudz.jarvis.v2.actions.ExecutionResult(false,
             "The phone-action journal is unavailable, so I didn't start this action.")
+    } finally { refreshPhoneTasks() }
+
+    /** Re-evaluate only at process startup or foreground/unlock; no periodic memory polling. */
+    internal fun resumePhoneTasksAfterUnlock() {
+        runtimeScope.launch(Dispatchers.Main) {
+            val keyguard = getSystemService(android.app.KeyguardManager::class.java)
+            if (keyguard?.isDeviceLocked == true) return@launch
+            try {
+                phoneActionLedger.pauseExpiredGroups()
+                val journal = phoneActionLedger.journal()
+                for (group in journal.groups) {
+                    if (conversationHistory.list().none { it.id == group.conversationId }) {
+                        phoneActionLedger.cancelGroup(group.id)
+                        continue
+                    }
+                    if (System.currentTimeMillis() >= group.expiresAtMs) continue
+                    for (id in group.attemptIds) {
+                        val attempt = phoneActionLedger.get(id) ?: break
+                        if (attempt.state == com.battlesbudz.jarvis.v2.actions.ToolTaskState.SUCCEEDED) continue
+                        if (attempt.state != com.battlesbudz.jarvis.v2.actions.ToolTaskState.READY) break
+                        val result = com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline(phoneActionLedger,
+                            com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(this@JarvisRuntime,
+                                canLaunchDirectly = { activityVisible })).executeAttempt(attempt)
+                        projectPhoneTask(group.id, recovered = true)
+                        if (!result.succeeded) break
+                    }
+                }
+            } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+                phoneTaskError.value = "The action journal is unavailable. Phone actions are paused."
+            } finally { refreshPhoneTasks() }
+        }
     }
+
+    private fun projectPhoneTask(groupId: String, recovered: Boolean = false) {
+        val j = phoneActionLedger.journal()
+        val group = j.groups.find { it.id == groupId } ?: return
+        val attempts = group.attemptIds.mapNotNull { id -> j.attempts.find { it.id == id } }
+        val receipts = attempts.mapNotNull { a -> a.result?.let {
+            com.battlesbudz.jarvis.v2.chat.ActionReceipt(a.request.name, it, a.state == com.battlesbudz.jarvis.v2.actions.ToolTaskState.SUCCEEDED) } }
+        val status = if (attempts.any { !it.state.isTerminalForUi() }) "Some steps are still waiting." else "Task finished."
+        conversationHistory.updateReply(group.conversationId, "phone-task:$groupId",
+            (if (recovered) "Recovered phone task. " else "Phone task. ") + status, true, receipts)
+    }
+
+    internal fun phoneTaskAction(id: String, generation: Long, command: String) {
+        runtimeScope.launch(Dispatchers.Main) {
+            phoneTaskError.value = null
+            try {
+                phoneActionLedger.pauseExpiredGroups()
+                val a = phoneActionLedger.get(id)?.takeIf { it.generation == generation } ?: return@launch
+                val approvals = com.battlesbudz.jarvis.v2.actions.ActionApprovalStore(phoneActionLedger.store)
+                when (command) {
+                    "approve" -> {
+                        if (getSystemService(android.app.KeyguardManager::class.java)?.isDeviceLocked == true) return@launch
+                        val approval = a.approvalId?.let { approvals.get(it) } ?: return@launch
+                        val result = com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline(phoneActionLedger,
+                            com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(this@JarvisRuntime,
+                                canLaunchDirectly = { activityVisible })).executeAttempt(a, approval)
+                        if (!result.succeeded) phoneTaskError.value = result.message
+                    }
+                    "deny" -> a.approvalId?.let { approvals.deny(it) }
+                    "cancel" -> a.groupId?.let { phoneActionLedger.cancelGroup(it) }
+                    "checked" -> if (phoneActionLedger.reconcileUnknown(a.id, a.generation)) a.groupId?.let { phoneActionLedger.cancelGroup(it) }
+                    else -> return@launch
+                }
+                a.groupId?.let { projectPhoneTask(it) }
+            } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+                phoneTaskError.value = "I couldn't save that decision. Please try again."
+            } finally { refreshPhoneTasks() }
+        }
+    }
+
+    private fun com.battlesbudz.jarvis.v2.actions.ToolTaskState.isTerminalForUi() = this in setOf(
+        com.battlesbudz.jarvis.v2.actions.ToolTaskState.SUCCEEDED, com.battlesbudz.jarvis.v2.actions.ToolTaskState.FAILED,
+        com.battlesbudz.jarvis.v2.actions.ToolTaskState.CANCELLED, com.battlesbudz.jarvis.v2.actions.ToolTaskState.UNKNOWN_OUTCOME)
     internal lateinit var sessionPreferences: android.content.SharedPreferences
     internal lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
     internal val conversationHistory = com.battlesbudz.jarvis.v2.chat.ConversationHistory(
@@ -161,6 +269,17 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             "${installedPackage.versionName} (${installedPackage.longVersionCode})")
         diagnosticRecorder.restore()
         diagnosticRecorder.recordPreviousProcessExit(applicationContext)
+        runtimeScope.launch(Dispatchers.Main) {
+            try {
+                phoneActionLedger.recoverAfterRestart()
+                phoneActionLedger.journal().groups.filter { group -> phoneActionLedger.snapshot().any {
+                    it.groupId == group.id && it.state != com.battlesbudz.jarvis.v2.actions.ToolTaskState.SUCCEEDED
+                } }.forEach { projectPhoneTask(it.id, recovered = true) }
+                resumePhoneTasksAfterUnlock()
+            } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+                phoneTaskError.value = "The action journal is unavailable. Phone actions are paused."
+            } finally { refreshPhoneTasks() }
+        }
         shortTermContext.restoreSummary(sessionPreferences.getString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, null))
         AndroidMemoryOs.get(applicationContext).addApprovedStateObserver {
             // Fence output immediately, then durably publish the context boundary off the caller

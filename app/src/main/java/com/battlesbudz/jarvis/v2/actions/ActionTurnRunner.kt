@@ -74,26 +74,26 @@ class ActionDispatchGate(
     private val approvals: ActionApprovalStore,
     private val ledger: ToolTaskLedger
 ) {
+    init { approvals.attach(ledger.store) }
+
     fun prepare(task: ToolTaskAttempt, provider: String = "native", schemaVersion: Int = MobileToolCatalog.VERSION): AuthorizedDispatch {
-        require(task.state == ToolTaskState.QUEUED || task.state == ToolTaskState.READY || task.state == ToolTaskState.WAITING_APPROVAL)
-        val waiting = ledger.transition(task.id, task.generation, ToolTaskState.WAITING_APPROVAL)
-            ?: error("Task attempt changed before approval could be requested.")
-        val approval = approvals.request(waiting.id, "dispatch", provider, waiting.request, schemaVersion)
-        return AuthorizedDispatch(waiting, approval)
+        require(ledger.get(task.id) == task)
+        return ledger.requestApproval(task.id, task.generation, provider, schemaVersion)
     }
 
-    fun authorize(dispatch: AuthorizedDispatch): ToolTaskAttempt? {
-        if (approvals.consume(dispatch.approval.id, dispatch.approval.fingerprint) != ApprovalDecision.APPROVED) return null
-        return ledger.transition(dispatch.task.id, dispatch.task.generation, ToolTaskState.RUNNING)
+    fun authorize(dispatch: AuthorizedDispatch, provider: String = "native",
+        schemaVersion: Int = MobileToolCatalog.VERSION): ToolTaskAttempt? {
+        if (ledger.get(dispatch.task.id) != dispatch.task) return null
+        return ledger.claim(dispatch.task.id, dispatch.task.generation, provider, schemaVersion, dispatch.approval)
     }
 
     fun complete(running: ToolTaskAttempt, result: ExecutionResult): ToolTaskAttempt? {
-        val state = when (result.outcome) {
-            ExecutionResult.Outcome.SUCCEEDED -> ToolTaskState.SUCCEEDED
-            ExecutionResult.Outcome.UNKNOWN_COMPLETION -> ToolTaskState.UNKNOWN_OUTCOME
-            else -> ToolTaskState.FAILED
-        }
-        return ledger.transition(running.id, running.generation, state, result.message, result.outcome)
+        return ledger.finish(running, result)
+    }
+
+    fun authorizeSpoken(dispatch: AuthorizedDispatch): ToolTaskAttempt? {
+        if (ledger.get(dispatch.task.id) != dispatch.task) return null
+        return ledger.claim(dispatch.task.id, dispatch.task.generation, approval = dispatch.approval, spoken = true)
     }
 }
 

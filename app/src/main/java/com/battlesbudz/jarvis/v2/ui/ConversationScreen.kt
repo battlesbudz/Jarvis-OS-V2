@@ -38,6 +38,9 @@ internal fun ConversationScreen(
     onEndVoice: ((String) -> Unit) -> Unit,
     onOpenVoiceCalls: () -> Unit,
     resumedVoice: Boolean,
+    phoneTasks: StateFlow<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>? = null,
+    phoneTaskError: StateFlow<String?>? = null,
+    onPhoneTaskAction: (String, Long, String) -> Unit = { _, _, _ -> },
     voiceContent: @Composable (visible: Boolean, settingsOpen: Boolean, dismissSettings: () -> Unit, returnToChat: () -> Unit) -> Unit
 ) {
     val thread by history.current.collectAsState()
@@ -45,6 +48,8 @@ internal fun ConversationScreen(
     val armed by VoiceSessionUi.armed.collectAsState()
     val voiceStatus by VoiceSessionUi.status.collectAsState()
     val voiceState by callState.collectAsState()
+    val taskJournal by (phoneTasks?.collectAsState() ?: remember { mutableStateOf<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>(null) })
+    val taskError by (phoneTaskError?.collectAsState() ?: remember { mutableStateOf<String?>(null) })
     var hadCall by remember { mutableStateOf(false) }
     var voiceVisible by rememberSaveable { mutableStateOf(false) }
     var wasArmed by remember { mutableStateOf(armed) }
@@ -139,6 +144,7 @@ internal fun ConversationScreen(
                 .then(if (voiceVisible) Modifier.clearAndSetSemantics { } else Modifier)) {
                 if (thread.messages.isEmpty()) Text("Type a message or switch to Voice call. It's all one conversation.",
                     modifier = Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                PhoneTaskPanel(taskJournal, thread.id, taskError, onPhoneTaskAction)
                 LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(thread.messages, key = { it.id }) { message ->

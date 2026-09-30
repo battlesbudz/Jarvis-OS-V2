@@ -50,6 +50,13 @@
 -keep class com.battlesbudz.jarvis.v2.actions.FileToolTaskStore** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.InMemoryToolTaskStore** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ToolAuthority { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ToolActionGrant { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ActionApproval** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ApprovalDecision { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ActionDispatchGate { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AuthorizedDispatch { *; }
+-keep class com.battlesbudz.jarvis.v2.ui.PhoneTaskPanelKt { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.NativeActionDecoder { *; }
 -keep class com.battlesbudz.jarvis.v2.ai.ToolCall { *; }
 # Release instrumentation reads durable multi-action receipts after cancellation/recreation.

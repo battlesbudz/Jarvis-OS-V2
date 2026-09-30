@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -1055,6 +1057,93 @@ class ReleaseJourneyTest {
             audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
             directory.deleteRecursively()
         }
+    }
+
+    @Test fun test31_taskRecoveryAndExactApprovalPreserveAndroidEffects() {
+        val directory = File(context.noBackupFilesDir, "release-task-owner").apply { deleteRecursively(); mkdirs() }
+        val file = File(directory, "journal.json")
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        try {
+            val ledger = ToolTaskLedger(FileToolTaskStore(file))
+            val group = ledger.admit(listOf(ActionRequest("set_volume", mapOf("level" to "40")), ActionRequest("read_battery")), "release-thread")
+            val pipeline = JournaledActionPipeline(ledger, AndroidMobileActionExecutor(context))
+            assertTrue(pipeline.executeAttempt(checkNotNull(ledger.get(group.attemptIds[0]))).succeeded)
+            val actual = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val reopened = ToolTaskLedger(FileToolTaskStore(file))
+            reopened.recoverAfterRestart()
+            assertEquals(ToolTaskState.READY, reopened.get(group.attemptIds[1])?.state)
+            val recovered = JournaledActionPipeline(reopened, AndroidMobileActionExecutor(context))
+            assertFalse(recovered.executeAttempt(checkNotNull(reopened.get(group.attemptIds[0]))).succeeded)
+            assertTrue(recovered.executeAttempt(checkNotNull(reopened.get(group.attemptIds[1]))).succeeded)
+            assertEquals(actual, audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            val approvalStore = ActionApprovalStore(FileToolTaskStore(file))
+            val gate = ActionDispatchGate(approvalStore, reopened)
+            val guarded = reopened.admit(listOf(ActionRequest("set_volume", mapOf("level" to "90"))), "release-thread", ToolAuthority.EXACT_APPROVAL)
+            val pending = gate.prepare(checkNotNull(reopened.get(guarded.attemptIds.single())))
+            assertFalse(recovered.executeAttempt(pending.task).succeeded)
+            assertNull(gate.authorize(pending, schemaVersion = MobileToolCatalog.VERSION + 1))
+            assertEquals(actual, audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            assertEquals(ApprovalDecision.DENIED, approvalStore.deny(pending.approval.id))
+            assertEquals(ToolTaskState.CANCELLED, ToolTaskLedger(FileToolTaskStore(file)).get(pending.task.id)?.state)
+            assertEquals(ApprovalDecision.DENIED, ActionApprovalStore(FileToolTaskStore(file)).get(pending.approval.id)?.decision)
+            assertEquals(2, reopened.journal().events.count { it.kind == ToolTaskEventKind.DISPATCHED })
+        } finally {
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun test32_taskPanelShowsExactChoiceAndReconcilesWithoutRetry() {
+        val file = File(context.cacheDir, "release-task-panel.json").apply { delete() }
+        val ledger = ToolTaskLedger(FileToolTaskStore(file))
+        val approvals = ActionApprovalStore(FileToolTaskStore(file))
+        val gate = ActionDispatchGate(approvals, ledger)
+        val group = ledger.admit(listOf(ActionRequest("set_volume", mapOf("level" to "25"))), "panel-thread", ToolAuthority.EXACT_APPROVAL)
+        val pending = gate.prepare(checkNotNull(ledger.get(group.attemptIds.single())))
+        val unknown = ledger.create(ActionRequest("read_battery"), ToolTaskState.RUNNING)
+        ledger.recoverAfterRestart()
+        val journal = MutableStateFlow<ToolTaskJournal?>(ledger.journal())
+        val effects = AtomicInteger(0)
+        val decide: (String, Long, String) -> Unit = { id, generation, command ->
+            val a = ledger.get(id)?.takeIf { it.generation == generation }
+            if (a != null) {
+                when (command) {
+                    "approve" -> JournaledActionPipeline(ledger) { effects.incrementAndGet(); ExecutionResult(true, "25%") }
+                        .executeAttempt(a, a.approvalId?.let { approvals.get(it) })
+                    "deny" -> a.approvalId?.let { approvals.deny(it) }
+                    "checked" -> ledger.reconcileUnknown(id, generation)
+                }
+                journal.value = ledger.journal()
+            }
+        }
+        try {
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                    val snapshot by journal.collectAsState()
+                    com.battlesbudz.jarvis.v2.ui.PhoneTaskPanel(snapshot, "panel-thread", null, decide)
+                } }
+            } }
+            find(By.res("phone_tasks_open")).click()
+            assertNotNull(find(By.text("Set media volume to 25%")))
+            assertEquals(0, effects.get())
+            captureEvidence("phone_task_approval")
+            find(By.res("task_approve_${pending.task.id}")).click()
+            device.waitForIdle()
+            assertEquals(1, effects.get())
+            assertEquals(ToolTaskState.SUCCEEDED, ledger.get(pending.task.id)?.state)
+            find(By.res("task_checked_${unknown.id}")).click()
+            device.waitForIdle()
+            assertTrue(checkNotNull(ToolTaskLedger(FileToolTaskStore(file)).get(unknown.id)).reconciled)
+            assertEquals(1, effects.get())
+            val declined = ledger.admit(listOf(ActionRequest("read_battery")), "panel-thread", ToolAuthority.EXACT_APPROVAL)
+            val choice = gate.prepare(checkNotNull(ledger.get(declined.attemptIds.single())))
+            journal.value = ledger.journal()
+            find(By.res("task_deny_${choice.task.id}")).click()
+            device.waitForIdle()
+            assertEquals(ToolTaskState.CANCELLED, ToolTaskLedger(FileToolTaskStore(file)).get(choice.task.id)?.state)
+            assertEquals(1, effects.get())
+        } finally { file.delete() }
     }
 
     // Leave this selection in durable preferences for the controller's separate-process check.
