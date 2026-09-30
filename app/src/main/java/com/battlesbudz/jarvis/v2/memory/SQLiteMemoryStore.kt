@@ -46,7 +46,11 @@ class SQLiteMemoryStore(private val file: File, private val legacyFile: File? = 
         try {
             // Avoid a long-lived WAL containing old memory payloads; scrub deleted SQLite cells.
             db.disableWriteAheadLogging()
-            db.execSQL("PRAGMA secure_delete=ON")
+            // This pragma returns a row even when assigning it. Android execSQL rejects
+            // statements with results; use a query and verify the requested setting.
+            db.rawQuery("PRAGMA secure_delete=ON", null).use {
+                require(it.moveToFirst() && it.getInt(0) == 1) { "Memory secure-delete unavailable" }
+            }
             db.execSQL("PRAGMA synchronous=FULL")
             transaction(db) {
                 when (db.version) {
