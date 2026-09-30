@@ -63,13 +63,71 @@ The conversation implementation supplies finalized-input capture, one approved s
 
 `test28_voiceNavigationRetainsCallIdUntilExplicitEnd` preserves the prior branch's navigation contract in addition to the stronger controlled production surface journey `test27`. The merged contract contains 29 journeys per emulator variant. `MemoryRecallIntegrationTest` verifies pending/approved/erased routing and explicit lookup/action precedence. Fresh combined-commit CI is required; historical parent passes are not combined-revision evidence.
 
-## Plan to finish MemoryOS: local semantic and autonomous recall
+## Plan to finish MemoryOS: local capture, semantic recall, and temporal memory
 
-**Status:** planned follow-on work; the sections above describe the implemented native milestone. The current lexical path remains the working fallback until this plan is implemented.
+**Status:** planned follow-on work. The sections above describe the implemented native milestone, including its manual review requirements and lexical retrieval. The decisions below were confirmed by Justin during the 2026-09-29 interview (America/New_York); they replace the older follow-on proposal that every extracted or inferred fact must wait for manual review. They do not claim that automatic capture, embeddings, or the temporal graph already work.
 
-**Goal:** approved memories should be recalled during ordinary Chat and Voice turns when they are relevant, including paraphrased or implied references. Users should not have to say “remember” or explicitly request a memory search for relevant context to be available.
+**Goal:** Jarvis should automatically retain useful information and recall relevant context during ordinary Chat and Voice turns, including paraphrases, implied references, and point-in-time questions. Memory, extraction, indexing, and inference run locally on Android. A hosted memory service is not required. Optional access to incoming external sources is separately authorized; saved local memory remains usable offline.
 
-### 1. Qualify the local embedding runtime
+### Confirmed user behavior
+
+| Area | Decision |
+| --- | --- |
+| Ordinary personal facts | Save automatically; Justin can inspect, correct, or delete them. |
+| Sensitive facts | Automatically save relevant health, financial, and family facts. Sensitivity controls access rather than forcing every fact into review. |
+| Secrets | Exclude passwords, payment card numbers, and access codes entirely from memory, including retained source text, indexes, summaries, and memory diagnostics. |
+| Inferences | Save and recall supported conclusions as explicitly tentative inferences; do not present them as directly stated or confirmed facts. |
+| Source conflicts | Prefer what Justin explicitly told Jarvis over conflicting outside information when reconciling personal memory. Retain the outside assertion with its source and disagreement, rather than silently overwriting Justin's statement. |
+| Changes over time | Keep prior values as dated history when a fact changes. Distinguish a genuine change from a correction of an erroneous fact. |
+| Jarvis conversations | Capture finalized text and voice transcripts. Keep source text searchable for 90 days; retain useful saved facts afterward. This does not authorize retaining raw voice audio. |
+| Incoming sources | Include SMS/MMS, email, Facebook Messenger, calendar, and contacts after the user grants access. Collect relevant new information automatically. WhatsApp, Telegram, and standalone document ingestion were not selected for this initial scope. |
+| Screens and other notifications | Capture only during approved phone tasks. The separately authorized message-source adapters may receive new message events in the background. |
+| Initial message history | New messages only after connection; do not backfill existing SMS, email, or Messenger history. |
+| Message evidence | Jarvis's local copies of message text expire after 90 days; useful saved facts remain. This retention rule does not delete messages from their original apps or services. |
+| Locked phone | Require unlocking before speaking, displaying, or delivering sensitive details to model context. Non-sensitive personal recall can remain available. Sensitive notifications use a generic preview until unlock. |
+| Recovery | Keep memory only on this device. No memory backup, export/import, multi-device sync, or remote recovery is included in this selected scope. |
+| Delete a saved fact | Remove the saved fact and its derived records while preserving source text for the remainder of its 90-day retention window. |
+| Recall after deletion | Retained text supporting a deleted fact can surface only when Justin explicitly asks about that history. It is excluded from ordinary automatic recall and cannot automatically recreate the deleted fact. |
+| Explainability | Replies using memory show a small tappable memory/source badge with the supporting records, source, dates, and uncertainty. |
+| Proactive use | Relevant follow-ups may produce notifications outside conversations. Memory emits evidence-backed events to the existing autonomy runtime; it does not create a second agent or independently authorize actions. |
+
+These are implementation requirements, not grants to connect accounts or enable Android permissions now. Account and source permissions are selected in setup. A source that is unavailable, incomplete, or revoked must expose that state rather than appear connected and empty.
+
+### 1. Define scalable canonical storage and policy states
+
+The existing 1 MiB JSON ledger is the current milestone's authority, but it is not a suitable final store for a growing 90-day episode archive and long-lived fact history. The engineering direction for the complete feature is a private transactional SQLite ledger, with a verified migration of existing JSON records, IDs, revisions, review decisions, and opaque tombstones. Keep the original local ledger recoverable until migration verifies; do not silently drop records at the old capacity limit.
+
+Separate canonical records from rebuildable projections within the storage design:
+
+- source events and episodes, with source IDs, capture time, source/event time, bounded sanitized text, sensitivity, and an explicit raw-text expiry;
+- fact assertions and revisions, with subject/topic, kind, value, source support, statement versus inference, confidence, acceptance origin, validity, and correction lineage;
+- entity identities and aliases, typed relationships, dated events, goals/commitments, and applicable procedural records;
+- source-to-fact dependencies, deletion/suppression tombstones, adapter cursors, and durable extraction/index-maintenance jobs;
+- derived G-Brain-style pages, chunks, links, timelines, page versions, lexical indexes, and vectors.
+
+Automatic acceptance under the interview policy must be a distinct recorded origin; it must not impersonate an actual manual approval tap. Keep manual review available for user edits and unresolved cases. Pending/rejected candidates are not eligible facts. Accepted assertions, usable tentative inferences, historical facts, corrected errors, and deleted facts require separate query eligibility rules. Sensitivity is independent of those states.
+
+Use transactions for canonical writes, revision changes, and durable queued work. Tag every derived row with canonical IDs/revisions, content hash, index format, and embedding model/version. Reject stale projections during reads. Define idempotent recovery after process death, interrupted migration, low storage, or a partial rebuild; an async indexing failure cannot lose the canonical memory.
+
+Rebuild projections from retained canonical facts and source metadata after raw episode text expires. Keeping useful facts beyond 90 days must not depend on retaining their original transcript forever. A source badge must honestly show when its original excerpt has expired.
+
+### 2. Capture and extract locally
+
+Persist a sanitized source event before queuing bounded local extraction. Extend capture beyond the existing narrow remember/preference patterns. Use the app's selected local reasoning model as the first extraction candidate, beginning with the established Gemma E2B configuration; the extractor must remain replaceable through the runtime. EmbeddingGemma is a retrieval model, not the fact or relationship extractor.
+
+The extraction contract must distinguish:
+
+- statements by Justin, attributed statements by another person, and direct evidence from an authorized source;
+- a present fact, historical event, intention, goal, commitment, preference, or procedure;
+- negation, hypothetical discussion, quoted material, jokes, and uncertain speech transcription;
+- a supported tentative inference versus an asserted fact;
+- a changed value versus a correction of information that was wrong.
+
+Assistant-generated answers must not become independent evidence of facts about the user. Preserve source spans and attribution so an extraction can be inspected and corrected. Automatically accepted sensitive facts remain sensitive throughout derived summaries, graphs, and context packets. Secret exclusion occurs before persistent source capture and before producing embeddings or memory summaries.
+
+Extract in resumable batches that yield to active chat, voice, and tool work. Do not add a second blocking language-model pass to every reply without physical-device evidence that its delay is acceptable. If extraction cannot run, retain the eligible source event until its normal expiry and show queued/degraded status. The app must remain conversational while indexing or consolidating.
+
+### 3. Qualify the local embedding runtime
 
 Use **EmbeddingGemma 300M** as the first Android candidate. Google's current Text Embedder documentation supports the EmbeddingGemma 300M task artifact on Android through MediaPipe Tasks Text, including `TextFormatContext` for retrieval query/document roles. Use the app's Kotlin integration and a pinned, reviewed model artifact; do not send memory text or queries to a hosted embedding service.
 
@@ -77,60 +135,85 @@ The model overview describes a 308M multilingual model, 768-to-128 output dimens
 
 Check warm and cold inference, peak memory, model storage/download size, battery, and voice-turn latency on the target Galaxy Z Fold 6. Google's published Text Embedder table reports 200 ms CPU latency on a Samsung S26 Ultra, which is a reference point, not a Fold 6 result. Choose whether the artifact is bundled or explicitly acquired once on device after measuring APK/storage impact; the resulting recall path must work offline. Audit dependency telemetry/network behavior and confirm no memory or query text leaves the device. Review Gemma Terms before commercial distribution. If EmbeddingGemma fails the device or licensing gates, benchmark BGE-small-en-v1.5 with ONNX Runtime Mobile as the English-only fallback; it needs its own tokenizer/pooling integration and quality test.
 
-### 2. Add a rebuildable local hybrid index
+Measure the embedding runtime alongside the actual selected language model, ASR, TTS, and active voice session. Include residency/eviction, CPU/GPU contention, thermal behavior, and low-memory recovery; a standalone embedding benchmark does not establish complete-app performance. Document the corpus sizes used for exact cosine search, and choose an ANN index only when the measured corpus/latency limit requires it.
 
-Keep `memory-os.json` as the authoritative, inspectable ledger. Add a private local SQLite sidecar for retrieval fields, lexical search, and embedding blobs; treat the sidecar as derived data, never as the only copy of a memory. Begin with app-side cosine scoring over the bounded local corpus; add an approximate-nearest-neighbor index only if measurements show it is needed.
+### 4. Build autonomous hybrid retrieval and context assembly
 
-Index only approved, active, non-expired memories. A vector row must be tied to the memory ID, ledger revision/content hash, embedding model and version, task-format/template version, and output dimension. Use the documented `RETRIEVAL_DOCUMENT` form when embedding a memory and `RETRIEVAL_QUERY` form for a user query; preserve the title/category and relevant time/relationship metadata in the document text. Keep the index in the same private local storage boundary as the ledger.
+Run retrieval for ordinary conversational turns. Define the pipeline precisely: the raw current request establishes intent and the permitted action boundary; memory is then retrieved before final response planning and argument generation. Kotlin policy and the Tool Gateway enforce authorization from the current request. A remembered preference, source message, or tentative inference cannot grant permission for an action.
 
-Build deterministic index creation, schema migration, and full rebuild from the ledger. Approval adds a vector; rejection never does. Correction/supersession, expiry, erase, and erase-all must invalidate stale vectors and already-built packets using the existing generation/delivery fences. If an index is missing or corrupt, rebuild it or fall back to the lexical path with an explicit retrieval status; never silently treat an index failure as “no memories.”
+Use a bounded recent-conversation window to resolve references, with an explicit query planner for exact recall, semantic recall, relationships, temporal questions, and goals/commitments. Do not let an earlier topic dominate the embedding for the current question. Preserve exact/lexical matching for names, dates, and rare terms, and combine it with dense similarity and bounded graph expansion.
 
-### 3. Retrieve autonomously on ordinary turns
+Retrieve canonical facts and G-Brain projections as peer candidate sources; retain canonical authority and source/chunk/page provenance when deduplicating. Use RRF or equivalent rank fusion for candidate combination, then separately calibrate relevance filtering. A fused rank score is not a probability that a memory is relevant. Set candidate limits, graph traversal limits, reranking rules, and inclusion thresholds from a fixed evaluation corpus.
 
-Run memory retrieval for every normal conversational turn, not only when the utterance contains a recall phrase. First route the raw current request through existing action selection and authorization. Then form a retrieval query from the current utterance and a bounded recent-conversation window so paraphrases, pronouns, and references like “that place we discussed” can resolve. Do not let retrieved memory change Kotlin tool authorization or give a tool permission.
+Use two runtime-enforced query modes:
 
-Use hybrid candidate generation: preserve deterministic exact/lexical matching for names, dates, and rare terms, and add dense cosine similarity for semantic matches. Combine ranks rather than adding uncalibrated scores. Rank or rerank with type/topic/person overlap, confidence/provenance, recency, and temporal validity; a newer memory must not override an older fact that is still valid for the question's time. Apply approval, expiry, deletion, and supersession filters before ranking. Inject only a small, relevance-thresholded set into the bounded, JSON-quoted historical context packet with source, recorded time, and applicable validity. If nothing clears the threshold, send no memory context. Preserve explicit lookup/reference behavior and the current raw-request-first trust boundary.
+- **Ordinary context:** eligible current facts, appropriately dated historical facts when the question calls for them, labeled tentative inferences, and eligible recent episodes. Suppress source spans and derivatives associated with deleted facts.
+- **Explicit source-history search:** the user explicitly requests the retained original history. This can return surviving source text about a deleted saved fact, clearly attributed as historical source material. It still applies secret, sensitivity, retention, and unlock restrictions. It does not restore the saved fact.
 
-### 4. Complete memory lifecycle and temporal meaning
+An inferred retrieval intent or instructions inside a stored source must not bypass the explicit-history restriction. If the user's request is ambiguous, clarify rather than automatically revealing suppressed source text.
 
-Keep capture and recall as separate paths. Extend local proposal generation beyond the current narrow deterministic “remember/preference” patterns, but keep inferred proposals pending user review unless a later, separately approved policy explicitly changes that rule. Index only after approval. Maintain the Wiki, source traceability, corrections, rejection, expiry, and deletion behavior.
+Build a small evidence packet using the actual selected model's token budget, with dates, source IDs, statement/inference labels, and uncertainty. Retain JSON quoting and the untrusted historical-data boundary. If no evidence clears relevance thresholds, send no memory context. If retrieval is unavailable, report degradation and use the existing lexical fallback under the same policies; do not label failure as an empty memory.
 
-Add typed temporal and relationship fields needed to answer questions accurately: memory kind (identity/preference, episode, person/relationship, goal/plan, or procedure), subject/topic links, source and confidence, recorded time, valid-from/valid-until, and supersession/correction lineage. Preserve the distinction between when Jarvis learned something and when it was true. After autonomous recall passes its quality gates, add local consolidation (deduplication, summarization, promotion/demotion, decay, and charging/idle-time “dream” work) as a separate milestone. Consolidated facts remain traceable to source episodes and enter the same review path; consolidation must not silently approve or erase user memories.
+### 5. Implement G-Brain and temporal graph behavior natively
 
-### 5. Prove quality and lifecycle safety
+Garry Tan's upstream [GBrain](https://github.com/garrytan/gbrain) remains a design reference for pages, compiled facts, evidence timelines, typed links, hybrid search, and graph expansion. Jarvis V1 implemented its own derived Postgres projection; the [V1 G-Brain plan](https://github.com/battlesbudz/jarvis-os/blob/main/docs/gbrain-implementation-plan.md) records pages/chunks/links/versions, canonical-plus-derived retrieval fusion, provenance, hosted embeddings, and optional pgvector. V2 preserves canonical-versus-derived authority while replacing the server runtime with local storage and models.
 
-Create a fixed local golden set with direct asks, paraphrases, implied references, pronouns/coreference, temporal questions, exact-name/date lookups, competing or corrected facts, and cases with no relevant memory. Compare hybrid retrieval with the existing lexical-only baseline. Record Recall@5, ranking quality, and irrelevant-memory injection rate, then set release thresholds against that fixed set. Require zero policy failures: pending/rejected/expired/superseded/erased memories never appear, corrections suppress stale values, and memory never authorizes an action. Add tests for index rebuild/migration, model-version changes, model-unavailable fallback, and delivery-fence invalidation after a memory mutation.
+The local projection must include source-linked pages, lexical/vector chunks, explicit typed links/backlinks, dated timelines, and source-revision-linked page versions. Remove or regenerate all derived versions that expose a deleted or corrected fact. Vector similarity alone cannot create a factual relationship.
 
-Run offline/network-egress checks and measure cold-start and warm per-turn latency, peak RAM, storage/APK impact, and battery on the Fold 6. Keep emulator API 30 and API 35 journeys for lifecycle and integration coverage, but do not treat emulator numbers as physical-device performance evidence. Ship semantic recall only when quality beats the lexical-only baseline on implicit/paraphrased cases without increasing irrelevant injections and the target-device gates pass.
+The [V1 Temporal Graph plan](https://github.com/battlesbudz/jarvis-os/blob/main/docs/memory-os-temporal-graph-plan.md) lists its Graphiti adapter and full temporal-query experience as later work. Its time-phrase parser is not a stored knowledge graph. Graphiti is a temporal-data/retrieval design reference for V2; qualify the needed behavior as native Kotlin/SQLite rather than making a Python graph service part of the offline core.
 
-### Alignment with Jarvis V1 G-Brain and Temporal Graph
+Specify versioned subject-predicate-object assertions and timeline events with both recorded time and valid time, source support, confidence, sensitivity, and statement/inference labels. Preserve approximate/unknown dates, source timezone, user-local query timezone, intervals, and repeated occurrences. Do not invent a validity date just because an extraction ran today.
 
-This plan follows V1's retrieval and trust contracts, adapted to Android-local storage. It does not copy V1's server stack or claim that V1's planned temporal graph was already implemented.
+Define entity resolution before graph ingestion: stable IDs, aliases, ambiguous same-name people, and reversible merge/split operations. Do not merge people based on a name match alone. Specify relationship types and cardinality, plus query/traversal limits.
 
-**G-Brain reference and V1 implementation**
+A changed fact closes the prior applicable validity interval and adds the new state while preserving dated history. An erroneous fact is marked corrected and must not be described as having been true previously. Outside assertions remain attributed and cannot silently overwrite Justin's explicit personal-memory statement. Historical queries may retrieve prior valid states; ordinary current-state queries must not present superseded states as current.
 
-Garry Tan's upstream [GBrain](https://github.com/garrytan/gbrain) is a markdown/page-centered memory system: pages hold current compiled truth and evidence timelines; typed links form a knowledge graph; search combines vector and keyword rankings with reciprocal-rank fusion (RRF), and can traverse graph edges for relationship questions. The upstream project is a design reference, not an Android dependency.
+### 6. Implement retention, forgetting, and privacy across every copy
 
-Jarvis V1 implemented its own `server/brain/*` projection layer. Its [G-Brain implementation plan](https://github.com/battlesbudz/jarvis-os/blob/main/docs/gbrain-implementation-plan.md) records the landed Postgres projection tables and verified behavior: canonical memory remains authoritative; approved memories and people project into rebuildable pages, chunks, links, and page versions; canonical and G-Brain candidates fuse with RRF; provenance and fallback status are retained. V1 used hosted OpenAI embeddings and optional pgvector. V2 replaces that runtime with the local EmbeddingGemma/index path above while preserving the source-versus-derived boundary and hybrid retrieval behavior.
+Source text expires 90 days after capture. Enforce expiry in every read path even if Android background maintenance is delayed. Purge raw text and raw-text-derived archive indexes/caches, while retaining eligible saved facts, fact history, and minimal provenance needed to explain them. Do not silently refresh the retention clock by rereading or summarizing an old source.
 
-Therefore, expand the V2 sidecar from a vector cache into a rebuildable G-Brain-style projection:
-- pages for approved memories and linked people/topics, each carrying canonical source IDs, review state, and provenance;
-- chunks with lexical index and local vectors;
-- explicit typed links/backlinks;
-- timeline entries for dated episodes and changing facts;
-- append-only derived page versions tied to source revisions.
+Deleting a fact removes its canonical saved content and all normal-recall vectors, pages, graph edges, summaries, cached packets, and model-context references derived from it. Preserve supporting source text only within its remaining retention window and only for explicit history search. Persist content-free suppression metadata tied to source IDs/spans and fact lineage so maintenance/re-extraction cannot resurrect the deleted fact. Qualify duplicate-source matching and deletion propagation before claiming this guarantee.
 
-Retrieve canonical ledger records and projected pages as peer candidate sources. Use lexical and vector arms, then page-level RRF/deduplication; when a page points to a canonical memory, the canonical record remains authoritative and the selected result retains chunk/page provenance. Use stored typed links for relationship questions. Create links only from explicit approved relations or deterministic, reviewable evidence; similarity alone must not invent a relationship.
+Use the same revision/delivery fences for edits, erasure, expiry, model switching, and device lock changes. Test deletion or locking during retrieval, generation, displayed streaming output, and TTS. A packet that was valid when built is not sufficient authority to reveal sensitive or deleted information later.
 
-**Temporal Graph status and V2 port**
+Keep stores, sidecars, archives, and temporary files in app-private storage excluded from backup and transfer. Qualify encryption at rest and local Android key handling; no external memory account or recovery service is part of this scope. Enforce the actual current device-lock state, not merely whether the phone has been unlocked once since boot. Sensitive source snippets, facts, prompts, badges, and notification previews must all obey the unlock rule.
 
-Jarvis V1's [Temporal Graph plan](https://github.com/battlesbudz/jarvis-os/blob/main/docs/memory-os-temporal-graph-plan.md) distinguishes time parsing, hot state, semantic recall, and a graph of changing entities/facts. It explicitly lists the Graphiti adapter and temporal query UX as later work. V1's `server/time/temporalContext.ts` resolves expressions such as “last month” into user-local time windows; that parser does not itself store or traverse a temporal knowledge graph.
+Consolidation may deduplicate, summarize, and lower the relevance of stale records while retaining source lineage and tentative-inference labels. It cannot upgrade an inference to a confirmed statement or silently destroy saved facts/history. Run maintenance opportunistically with durable jobs; required privacy/expiry rules must also be enforced synchronously on access.
 
-Keep the temporal layer separate from vector similarity. After the local G-Brain projection and hybrid recall work, add subject–predicate–object edges and event timeline records with both **observed/recorded time** and **valid time**, source IDs, confidence, and supersession. Support point-in-time questions (“what was true then?”), current-versus-past comparisons, and relationship changes with provenance. Reuse the temporal parser for query windows.
+### 7. Add authorized source adapters and autonomy integration
 
-Treat Graphiti as the V1 temporal-data and retrieval design reference, not as the Android runtime choice. The official Graphiti project is a Python framework (Python 3.10+) whose documented deployments use graph databases such as Neo4j, FalkorDB, or Neptune; it offers a FalkorDBLite option that still requires Python 3.12+. The project does not document Android support or provide a Kotlin SDK. Its default LLM and embedding providers are OpenAI, though alternatives can be configured. An Android app could call a separately hosted Graphiti service, but that adds a networked service and is outside Jarvis's offline, no-required-backend core. V2 should implement the needed temporal-graph contract natively in Kotlin over the local SQLite projection: versioned subject–predicate–object edges, event timelines, valid-time and observed-time, provenance, point-in-time queries, and stale-fact invalidation. Keep Graphiti as a reference for behavior; revisit a remote adapter only if the product later allows an optional backend. The JSON ledger remains canonical; graph/index maintenance must be rebuildable and corrections/expiry/erasure must remove stale derived facts. Run consolidation as opportunistic Android background work while idle/charging, not as a server cron, and keep generated summaries reviewable and source-linked.
+Implement new-event adapters for SMS/MMS, email, Messenger, calendar, and contacts, plus capture from approved task screens/notifications. Establish consent, per-source/account scope, stable IDs, startup cursors, edits/deletions, reconnection, duplicate delivery, and revocation behavior. Initial message connections establish a baseline without importing old messages.
 
-**Research references**
+Qualify actual Android permission/role requirements and the available access method for each source. Notification previews may be truncated, missing, or unavailable; they must not be represented as complete message bodies or complete coverage. Email providers/accounts are chosen during connection; assess the supported provider adapter and access scopes before promising its availability. Source-network access and on-device memory processing are separate boundaries; never send stored memories or recall queries to hosted embedding/LLM services.
+
+Memory updates may emit deduplicated evidence-backed follow-up events to the shared autonomy runtime on feature-tools. Integrate with the separately established runtime behavior: proactive review on new information, chat plus notification without speech when no voice call is active, silent immediate notifications during Do Not Disturb, and unloading the model below 20% battery while unplugged until interaction or charging. Memory capture/index jobs must coordinate with that model lifecycle and prioritize foreground conversation. Read-only preparation follows permitted-tool rules; consequential actions still require the existing authorization and confirmation policy.
+
+A memory-driven notification must respect deletion suppression, source uncertainty, relevance, sensitivity, device lock, and source permission revocation. Show the same inspectable memory/source evidence badge in the associated chat entry. The memory branch must not create an independent tool executor or permission system.
+
+### 8. Verification and implementation sequence
+
+Implement and verify in dependent milestones:
+
+1. Scalable canonical storage/migration, policy states, local event capture/extraction, secret exclusion, 90-day retention, and forgetting/unlock fences.
+2. Local embeddings, rebuildable hybrid indexes, every-turn retrieval, token-budgeted context, and source badges.
+3. G-Brain projections, entity resolution, temporal graph/history, relationship queries, and local consolidation.
+4. Source adapters and event-driven proactive integration, with an explicit capability/coverage receipt per source.
+
+Update the repository acceptance map and journeys as behavior actually lands; the historical review-only milestone tests are not evidence for this new contract. Follow the repository's Jarvis verification workflow for code changes and APK candidates.
+
+Use a privacy-safe fixed golden corpus plus held-out cases to evaluate capture precision, missed facts, extraction attribution, entity resolution, date/interval correctness, Recall@5, ranking quality, answer grounding, irrelevant-memory injection, and inference labeling. Include negatives, paraphrases, coreference, conflicting sources, changed versus erroneous facts, deleted facts still present in raw archives, and no-relevant-memory turns. Fix numeric quality and latency thresholds after establishing the baseline and before release evaluation; do not choose them retrospectively to pass a build.
+
+Require zero lifecycle/policy failures: secrets never persist; sensitive content never appears while locked; pending/rejected/deleted facts never enter ordinary context; deleted supporting source text appears only in explicit permitted history searches; corrected errors do not become past truths; legitimate prior states remain available for dated questions; expiry holds even when cleanup is delayed; and memory never grants tool authorization.
+
+Test first connection without backfill, source disconnect/revocation, duplicate deliveries, process death, low storage, interrupted migrations/rebuilds, model-version/dimension changes, unavailable models, context invalidation, and retained-source re-extraction after deletion. Verify the offline core and content-free diagnostics.
+
+Measure actual-model performance on the Fold 6 with real voice capture and simultaneous selected model/ASR/TTS workload, warm/cold retrieval, corpus growth, peak RAM, battery, thermal effects, and app responsiveness during indexing. Keep API 30/API 35 emulator journeys for integration coverage, and record exact-build signed release evidence. Neither fixtures nor emulator passes prove physical audio, real extraction quality, or target-device performance.
+
+### Remaining engineering qualification
+
+The interview settles the user-facing rules. Implementation still requires evidence for the exact embedding artifact/runtime and extraction prompts; SQLite driver/encryption/migration; entity and relationship schema; deletion-suppression matching; numeric relevance/quality/capacity/latency thresholds; and SMS/MMS, email, Messenger, calendar/contacts access and coverage. Research and bounded device/source spikes should resolve these choices. Do not reopen already answered approval, retention, source scope, backup, or recall questions to avoid the engineering work.
+
+### Research references
 
 - [EmbeddingGemma model overview](https://ai.google.dev/gemma/docs/embeddinggemma)
 - [MediaPipe Text Embedder guide](https://developers.google.com/edge/mediapipe/solutions/text/text_embedder)
@@ -138,4 +221,3 @@ Treat Graphiti as the V1 temporal-data and retrieval design reference, not as th
 - [BGE-small-en-v1.5 model card](https://huggingface.co/BAAI/bge-small-en-v1.5)
 - [ONNX Runtime Mobile](https://onnxruntime.ai/docs/get-started/with-mobile.html)
 - [Graphiti official repository](https://github.com/getzep/graphiti)
-
