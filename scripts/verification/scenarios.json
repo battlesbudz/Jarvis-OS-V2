@@ -34,6 +34,8 @@
     "test30_sqliteMigrationPreservesHistoryAndEraseAcrossReopen",
     "test31_sqliteCorruptMigrationAndFailedEraseDoNotLoseData",
     "test32_sqliteExceedsLegacyByteLimitAndSerializesSeparateWriters",
+    "test33_sourceArchiveRetainsExplicitHistoryAndExpiresWithoutFactLoss",
+    "test34_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

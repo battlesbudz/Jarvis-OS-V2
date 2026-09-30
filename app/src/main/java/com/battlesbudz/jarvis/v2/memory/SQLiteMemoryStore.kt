@@ -10,19 +10,28 @@ import org.json.JSONObject
  * mutations and generation changes share one SQLite transaction. Indexes are rebuildable later.
  * A committed migration marker prevents a surviving legacy file from resurrecting erased data.
  */
-class SQLiteMemoryStore(private val file: File, private val legacyFile: File? = null) : MemoryPersistence, AutoCloseable {
+class SQLiteMemoryStore(
+    private val file: File,
+    private val legacyFile: File? = null,
+    private val canReadSourceText: () -> Boolean = { false },
+    private val archiveClock: () -> Long = { System.currentTimeMillis() },
+) : MemoryPersistence, MemorySourceArchive, AutoCloseable {
     private var connection: SQLiteDatabase? = null
+    // Android configures journal mode while opening, before a transaction can serialize writers.
+    // All instances for one canonical path therefore share the same in-process boundary.
+    private val databaseLock = lockFor(file)
 
-    @Synchronized override fun read(): MemoryStore.Read = try {
+    override fun read(): MemoryStore.Read = synchronized(databaseLock) { try {
         val db = database()
-        transaction(db) { MemoryStore.Read(snapshot(db)) }
+        transaction(db) { purgeSourceText(db, archiveClock()); MemoryStore.Read(snapshot(db)) }
     } catch (e: Exception) {
         MemoryStore.Read(null, "Memory database is unavailable (${e.javaClass.simpleName}).")
-    }
+    } }
 
-    @Synchronized override fun <T> update(block: (MemorySnapshot) -> Pair<MemorySnapshot, T>): MemoryStore.Update<T> = try {
+    override fun <T> update(block: (MemorySnapshot) -> Pair<MemorySnapshot, T>): MemoryStore.Update<T> = synchronized(databaseLock) { try {
         val db = database()
         transaction(db) {
+            purgeSourceText(db, archiveClock())
             val before = snapshot(db)
             val (after, value) = block(before)
             if (after != before) {
@@ -35,9 +44,83 @@ class SQLiteMemoryStore(private val file: File, private val legacyFile: File? = 
     } catch (e: Exception) {
         // Never include SQL/payload text in UI errors or claim a failed transaction succeeded.
         MemoryStore.Update(error = "Memory database update failed (${e.javaClass.simpleName}).")
+    } }
+
+    override fun close() { synchronized(databaseLock) { connection?.close(); connection = null } }
+
+    override fun captureSource(input: FinalMemoryInput): SourceArchiveCapture {
+        return synchronized(databaseLock) { try {
+            val prepared = MemoryArchivePolicy.prepare(input, archiveClock())
+            prepared.rejection?.let { return SourceArchiveCapture(it) }
+            val episode = checkNotNull(prepared.episode)
+            val db = database()
+            transaction(db) {
+                purgeSourceText(db, archiveClock())
+                val previous = db.rawQuery("SELECT fingerprint, expires_at_ms FROM source_events WHERE event_key=?", arrayOf(episode.eventKey)).use {
+                    if (it.moveToFirst()) it.getString(0) to it.getLong(1) else null
+                }
+                if (previous != null) return@transaction SourceArchiveCapture(when {
+                    previous.second <= archiveClock() -> SourceArchiveOutcome.EXPIRED
+                    previous.first == episode.fingerprint -> SourceArchiveOutcome.ALREADY_RECORDED
+                    else -> SourceArchiveOutcome.CONFLICT
+                })
+                val capacity = db.rawQuery("SELECT count(*), coalesce(sum(text_bytes),0) FROM source_events", null).use {
+                    check(it.moveToFirst()); it.getLong(0) to it.getLong(1)
+                }
+                val bytes = episode.text.toByteArray(Charsets.UTF_8).size
+                if (capacity.first >= MemoryArchivePolicy.MAX_EVENTS || capacity.second + bytes > MemoryArchivePolicy.MAX_TEXT_BYTES) return@transaction SourceArchiveCapture(SourceArchiveOutcome.FULL)
+                if (episode.expiresAtMs <= archiveClock()) return@transaction SourceArchiveCapture(SourceArchiveOutcome.EXPIRED)
+                db.insertOrThrow("source_events", null, ContentValues().apply {
+                    put("event_key", episode.eventKey); put("conversation_key", episode.conversationKey); put("call_key", episode.callKey)
+                    put("source", episode.source.name); put("captured_at_ms", episode.capturedAtMs); put("expires_at_ms", episode.expiresAtMs)
+                    put("text", episode.text); put("text_bytes", bytes); put("fingerprint", episode.fingerprint)
+                })
+                SourceArchiveCapture(SourceArchiveOutcome.STORED)
+            }
+        } catch (_: Exception) { SourceArchiveCapture(SourceArchiveOutcome.STORAGE_FAILURE) } }
     }
 
-    @Synchronized override fun close() { connection?.close(); connection = null }
+    override fun searchExplicitHistory(query: String, limit: Int): SourceArchiveSearch {
+        return synchronized(databaseLock) { try {
+            if (query.isBlank() || query.length > MemoryArchivePolicy.MAX_QUERY_CHARS || limit !in 1..50) return SourceArchiveSearch(SourceArchiveOutcome.INVALID)
+            if (!canReadSourceText()) return SourceArchiveSearch(SourceArchiveOutcome.LOCKED)
+            val db = database()
+            transaction(db) {
+                val now = archiveClock()
+                purgeSourceText(db, now)
+                val rows = db.rawQuery("SELECT event_key, conversation_key, call_key, source, captured_at_ms, expires_at_ms, text, fingerprint FROM source_events WHERE text IS NOT NULL AND expires_at_ms>? AND instr(lower(text),lower(?))>0 ORDER BY captured_at_ms DESC, event_key LIMIT ?", arrayOf(now.toString(), query.trim(), limit.toString())).use { cursor ->
+                    buildList {
+                        while (cursor.moveToNext()) {
+                            add(SourceEpisode(cursor.getString(0), cursor.getString(1), if (cursor.isNull(2)) null else cursor.getString(2), ConversationMemorySource.valueOf(cursor.getString(3)), cursor.getLong(4), cursor.getLong(5), cursor.getString(6), cursor.getString(7)))
+                        }
+                    }
+                }
+                // Locking/expiry while the query runs must not disclose a now-ineligible result.
+                if (!canReadSourceText()) SourceArchiveSearch(SourceArchiveOutcome.LOCKED)
+                else {
+                    val completedAtMs = archiveClock()
+                    SourceArchiveSearch(null, rows.filter { it.expiresAtMs > completedAtMs })
+                }
+            }
+        } catch (_: Exception) { SourceArchiveSearch(SourceArchiveOutcome.STORAGE_FAILURE) } }
+    }
+
+    override fun purgeExpiredSources(): Boolean = synchronized(databaseLock) { try {
+        val db = database()
+        transaction(db) { purgeSourceText(db, archiveClock()) }
+        true
+    } catch (_: Exception) { false } }
+
+    private fun purgeSourceText(db: SQLiteDatabase, nowMs: Long) {
+        require(nowMs > 0)
+        // Retain only opaque event metadata after expiry so retries cannot restart retention.
+        db.execSQL("UPDATE source_events SET text=NULL, text_bytes=0 WHERE expires_at_ms<=? AND text IS NOT NULL", arrayOf(nowMs))
+    }
+
+    private fun createSourceArchive(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE source_events (event_key TEXT PRIMARY KEY NOT NULL, conversation_key TEXT NOT NULL, call_key TEXT, source TEXT NOT NULL CHECK(source IN ('TEXT','VOICE')), captured_at_ms INTEGER NOT NULL CHECK(captured_at_ms>0), expires_at_ms INTEGER NOT NULL CHECK(expires_at_ms>captured_at_ms), text TEXT, text_bytes INTEGER NOT NULL CHECK(text_bytes>=0), fingerprint TEXT NOT NULL)")
+        db.execSQL("CREATE INDEX source_events_expiry ON source_events(expires_at_ms)")
+    }
 
     private fun database(): SQLiteDatabase {
         connection?.let { return it }
@@ -68,9 +151,18 @@ class SQLiteMemoryStore(private val file: File, private val legacyFile: File? = 
                         db.execSQL("INSERT INTO memory_meta VALUES(1, 0, 1)")
                         persist(db, MemorySnapshot(0, emptyList(), emptyList()), imported)
                         require(snapshot(db) == imported) { "Memory migration validation failed" }
+                        createSourceArchive(db)
                         db.version = DATABASE_VERSION
                     }
-                    DATABASE_VERSION -> snapshot(db) // Missing/malformed schema must fail closed.
+                    1 -> {
+                        snapshot(db)
+                        createSourceArchive(db)
+                        db.version = DATABASE_VERSION
+                    }
+                    DATABASE_VERSION -> {
+                        snapshot(db) // Missing/malformed schema must fail closed.
+                        db.rawQuery("SELECT event_key, conversation_key, call_key, source, captured_at_ms, expires_at_ms, text, text_bytes, fingerprint FROM source_events LIMIT 0", null).use { }
+                    }
                     else -> error("Unsupported memory database version")
                 }
             }
@@ -137,5 +229,12 @@ class SQLiteMemoryStore(private val file: File, private val legacyFile: File? = 
         finally { db.endTransaction() }
     }
 
-    companion object { const val DATABASE_VERSION = 1 }
+    companion object {
+        const val DATABASE_VERSION = 2
+        private val pathLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
+        private fun lockFor(file: File): Any {
+            val path = try { file.canonicalPath } catch (_: Exception) { file.absoluteFile.normalize().path }
+            return pathLocks.computeIfAbsent(path) { Any() }
+        }
+    }
 }

@@ -104,7 +104,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     internal val memoryDeliveryFence = MemoryDeliveryFence()
     private val memoryHistoryCutoff = java.util.concurrent.atomic.AtomicBoolean(false)
     @Volatile internal var nativeMemoryStateToken: String? = null
-    private val conversationMemory by lazy { ConversationMemory(AndroidMemoryOs.get(applicationContext)) }
+    private val conversationMemory by lazy { ConversationMemory(AndroidMemoryOs.get(applicationContext), AndroidMemoryOs.sources(applicationContext)) }
     internal val actionIntentRouter = com.battlesbudz.jarvis.v2.actions.ActionIntentRouter()
     internal lateinit var sessionPreferences: android.content.SharedPreferences
     internal lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder

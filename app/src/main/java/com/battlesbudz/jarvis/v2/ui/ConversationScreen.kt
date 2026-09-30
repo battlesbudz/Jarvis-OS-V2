@@ -216,7 +216,7 @@ internal fun ConversationScreen(
             // Keep the voice controller and shared Settings alive in both modes.
             voiceContent(voiceVisible, settings, { settings = false }, ::returnToChat)
         }
-        NavigationBar {
+        NavigationBar(modifier = Modifier.padding(horizontal = 16.dp)) {
             NavigationBarItem(selected = !voiceVisible, onClick = ::returnToChat, icon = {}, label = { Text("Chat") }, modifier = Modifier.testTag("conversation_nav_chat"))
             NavigationBarItem(selected = voiceVisible, onClick = {
                 VoiceNavigationPolicy.dispatch(VoiceNavigationPolicy.Transition.SHOW_VOICE) { onEndVoice {} }

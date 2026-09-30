@@ -181,3 +181,14 @@
     public <init>(...);
 }
 -keep class com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame { *; }
+
+# The archive checkpoint is exercised through these exact release-test boundaries.
+-keep class com.battlesbudz.jarvis.v2.memory.MemorySourceArchive { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.SourceArchiveOutcome { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.SourceArchiveCapture { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.SourceArchiveSearch { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.SourceEpisode { *; }
+# WorkManager restores the persisted worker by class name after process death.
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryArchiveMaintenanceWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}

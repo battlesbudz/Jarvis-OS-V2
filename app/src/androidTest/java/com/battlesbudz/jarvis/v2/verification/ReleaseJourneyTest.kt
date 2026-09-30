@@ -909,8 +909,9 @@ class ReleaseJourneyTest {
             clickEnabled(By.res("memory_wiki_tab"))
             searchMemory("sapphire notebooks", By.text("No approved memories match that search."))
             searchMemory("indigo notebooks", By.text(indigo))
-            find(By.text(indigo)).click()
-            find(By.text(indigo)).click()
+            clickEnabled(By.text(indigo))
+            assertNotNull(find(By.res("memory_article_tab")))
+            clickEnabled(By.text(indigo))
             assertNotNull(find(By.text("This is a correction of an earlier saved fact.")))
             val indigoId = checkNotNull(memoryOs.read().snapshot).memories.first { it.content == indigo }.id
             clickEnabled(By.res("memory_delete"))
@@ -1373,6 +1374,100 @@ class ReleaseJourneyTest {
                 assertEquals(459, storage.read().snapshot!!.memories.size)
                 assertEquals(10L, storage.read().snapshot!!.generation)
             }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun test33_sourceArchiveRetainsExplicitHistoryAndExpiresWithoutFactLoss() {
+        val root = File(context.cacheDir, "release-source-archive").apply { deleteRecursively(); mkdirs() }
+        val database = File(root, "memory-os.db")
+        var now = System.currentTimeMillis()
+        val capturedAt = now
+        var unlocked = true
+        fun input(id: String, text: String) = FinalMemoryInput(id, "archive-conversation", "archive-call", ConversationMemorySource.TEXT, text, capturedAt)
+        val removed = input("archive-removed", "I prefer silver spoons")
+        try {
+            SQLiteMemoryStore(database, canReadSourceText = { unlocked }, archiveClock = { now }).use { storage ->
+                val os = MemoryOs(storage) { now }
+                val bridge = ConversationMemory(os, storage)
+                assertEquals(ConversationMemoryOutcome.IGNORED, bridge.capture(input("archive-episode", "We discussed sapphire notebook delivery yesterday")).outcome)
+                assertTrue(os.contextPacket("sapphire", 900).packet!!.memories.isEmpty())
+                assertEquals(1, storage.searchExplicitHistory("sapphire").episodes.size)
+                assertTrue(storage.searchExplicitHistory("%").episodes.isEmpty())
+                val fact = bridge.capture(removed).memory!!
+                os.approve(fact.id)
+                os.delete(fact.id)
+                assertTrue(os.contextPacket("spoons", 900).packet!!.memories.isEmpty())
+                assertEquals(1, storage.searchExplicitHistory("spoons").episodes.size)
+                bridge.capture(removed)
+                assertTrue("Retained source must not recreate an erased fact", os.read().snapshot!!.memories.isEmpty())
+                val retained = bridge.capture(input("archive-retained", "I prefer jade mugs")).memory!!
+                os.approve(retained.id)
+                unlocked = false
+                assertEquals(SourceArchiveOutcome.LOCKED, storage.searchExplicitHistory("jade").outcome)
+                assertTrue(storage.searchExplicitHistory("jade").episodes.isEmpty())
+                unlocked = true
+                now = capturedAt + com.battlesbudz.jarvis.v2.memory.MemoryArchivePolicy.RETENTION_MS - 1
+                assertEquals(1, storage.searchExplicitHistory("jade").episodes.size)
+                now++
+                assertTrue(storage.searchExplicitHistory("jade").episodes.isEmpty())
+                assertTrue(os.contextPacket("mugs", 900).packet!!.text.contains("jade mugs"))
+                assertEquals(SourceArchiveOutcome.EXPIRED, storage.captureSource(removed.copy(capturedAtMs = now)).outcome)
+                android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { db ->
+                    db.rawQuery("SELECT count(*), sum(text_bytes), count(text) FROM source_events", null).use {
+                        assertTrue(it.moveToFirst()); assertEquals(3, it.getInt(0)); assertEquals(0, it.getInt(1)); assertEquals(0, it.getInt(2))
+                    }
+                }
+            }
+            SQLiteMemoryStore(database, canReadSourceText = { true }, archiveClock = { now }).use { storage ->
+                assertTrue(storage.searchExplicitHistory("sapphire").episodes.isEmpty())
+                assertTrue(MemoryOs(storage) { now }.contextPacket("mugs", 900).packet!!.text.contains("jade mugs"))
+            }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun test34_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure() {
+        val root = File(context.cacheDir, "release-source-archive-failure").apply { deleteRecursively(); mkdirs() }
+        val database = File(root, "memory-os.db")
+        val now = System.currentTimeMillis()
+        fun input(id: String, text: String) = FinalMemoryInput(id, "archive-thread", null, ConversationMemorySource.TEXT, text, now)
+        try {
+            val before = SQLiteMemoryStore(database).use { storage ->
+                val os = MemoryOs(storage) { now }
+                val fact = os.propose(MemoryProposal("I prefer copper mugs", MemorySource("archive-v1-fact", "manual", now))).memory!!
+                os.approve(fact.id); os.read().snapshot!!
+            }
+            // Restore the exact v1 table layout to exercise the additive upgrade.
+            android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { db -> db.execSQL("DROP TABLE source_events"); db.version = 1 }
+            SQLiteMemoryStore(database, canReadSourceText = { true }, archiveClock = { now }).use { storage ->
+                assertEquals(before, storage.read().snapshot)
+                assertEquals(SourceArchiveOutcome.STORED, storage.captureSource(input("health", "My doctor appointment is Monday")).outcome)
+                assertEquals(SourceArchiveOutcome.ALREADY_RECORDED, storage.captureSource(input("health", "My doctor appointment is Monday")).outcome)
+                assertEquals(SourceArchiveOutcome.CONFLICT, storage.captureSource(input("health", "My doctor appointment is Tuesday")).outcome)
+                assertEquals(SourceArchiveOutcome.STORED, storage.captureSource(input("financial", "My bank balance is $500").copy(source = ConversationMemorySource.VOICE)).outcome)
+                assertEquals(ConversationMemorySource.VOICE, storage.searchExplicitHistory("bank balance").episodes.single().source)
+                listOf("PIN: 1234", "My password is x", "Card number 4111 1111 1111 1111", "x".repeat(4_000) + " password: hunter22").forEachIndexed { index, text ->
+                    assertEquals(SourceArchiveOutcome.EXCLUDED, storage.captureSource(input("secret-$index", text)).outcome)
+                }
+                assertEquals(SourceArchiveOutcome.IGNORED, storage.captureSource(input("draft", "tea").copy(complete = false)).outcome)
+                android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { db ->
+                    assertEquals(2, db.version)
+                    db.execSQL("CREATE TRIGGER reject_source BEFORE INSERT ON source_events BEGIN SELECT RAISE(ABORT, 'injected archive failure'); END")
+                }
+                assertEquals(SourceArchiveOutcome.STORAGE_FAILURE, storage.captureSource(input("failed", "We discussed amber notebooks")).outcome)
+                assertEquals(before, storage.read().snapshot)
+                assertTrue(storage.searchExplicitHistory("amber").episodes.isEmpty())
+                assertEquals(1, storage.searchExplicitHistory("Monday").episodes.size)
+                android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, 0).use { db ->
+                    db.rawQuery("SELECT count(*) FROM source_events", null).use { assertTrue(it.moveToFirst()); assertEquals(2, it.getInt(0)) }
+                    db.execSQL("DROP TRIGGER reject_source")
+                }
+                assertEquals(SourceArchiveOutcome.STORED, storage.captureSource(input("failed", "We discussed amber notebooks")).outcome)
+            }
+            var reads = 0
+            SQLiteMemoryStore(database, canReadSourceText = { ++reads == 1 }, archiveClock = { now }).use { storage ->
+                assertEquals(SourceArchiveOutcome.LOCKED, storage.searchExplicitHistory("amber").outcome)
+            }
+            SQLiteMemoryStore(database).use { assertEquals(SourceArchiveOutcome.LOCKED, it.searchExplicitHistory("amber").outcome) }
         } finally { root.deleteRecursively() }
     }
 

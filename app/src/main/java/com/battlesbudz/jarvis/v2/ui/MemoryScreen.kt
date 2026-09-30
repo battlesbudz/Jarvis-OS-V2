@@ -198,7 +198,7 @@ internal fun MemoryScreen(
                     }
                 }
             }
-            NavigationBar {
+            NavigationBar(modifier = Modifier.padding(horizontal = 16.dp)) {
                 NavigationBarItem(selected = false, onClick = onOpenChat, icon = {}, label = { Text("Chat") }, modifier = Modifier.testTag("memory_nav_chat"))
                 NavigationBarItem(selected = false, onClick = onOpenVoice, icon = {}, label = { Text("Voice") }, modifier = Modifier.testTag("memory_nav_voice"))
                 NavigationBarItem(selected = true, onClick = {}, icon = {}, label = { Text("Memory") }, modifier = Modifier.testTag("memory_nav_memory"))

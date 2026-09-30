@@ -81,9 +81,25 @@ Still to implement: source-event/episode storage and 90-day searchable archives;
 
 Phone acceptance for this checkpoint: install the normal signed APK as an update; open Memory, inspect existing approved/pending/history entries, add and approve a new fact, organize/correct it, close and reopen Jarvis, verify approved lexical recall, and erase it to check it stops ordinary recall. Do not uninstall first if testing migration: this selected device-only design does not restore memory after uninstall.
 
+## Source archive checkpoint (next implementation step)
+
+Implemented following the SQLite foundation; exact signed CI for this addition is still required:
+
+- SQLite schema 2 adds source events with opaque event/conversation/call keys, original capture time, exact 90-day expiry, bounded text and immutable replay fingerprints. The additive schema-1 upgrade preserves the fact ledger and tombstones in one transaction.
+- Production finalized text/voice capture now archives eligible input even when it contains no deterministic fact. Drafts, failed recognition, invalid/future timestamps and oversized inputs are rejected. Detected passwords, payment identifiers and short access codes exclude the whole event before an archive write; the full bounded input is checked, including text past 2,000 characters.
+- Source reads have a separate explicit-history API. All source text is treated as personal and requires the current device to be unlocked in this checkpoint; lock is checked before and after the query. These sources do not enter ordinary recall, approved packets, model prompts or proactive notifications.
+- Read/write paths remove expired text. A daily WorkManager maintenance job retries cleanup without a model; Android may delay it, so access-time filtering independently enforces expiry. Opaque expired-event metadata remains to prevent retries from renewing the retention window. Useful approved facts survive source expiry.
+- Erasing a saved fact retains its source text within the original window for explicit history access, while the existing fact tombstone prevents replay from recreating it. This is not yet duplicate-source or inferred-derivative suppression for the future extraction/index pipeline.
+- Archive capacity is bounded to 20,000 source-event metadata rows and 16 MiB of live UTF-8 text, with 32,768 characters per event and at most 50 results per explicit query. A full archive reports failure instead of dropping prior sources. Lexical history search is a literal substring baseline, not a semantic index or scale qualification.
+- Added six JVM policy/boundary cases and Android `test33`/`test34` for source capture, source/fact separation, erasure, exact expiry, reopen, lock races, v1 migration, secret exclusion, duplicate/conflict handling and write rollback. The next release contract requires 35 journeys per variant.
+
+Still required: user-facing history search and source badges; privacy-safe migration/retention of the separate existing `ConversationHistory` copies; broader secret-detection qualification; sensitive fact/inference states and all output delivery fences; durable extraction jobs; duplicate-source suppression; external source adapters; embeddings, graph and proactive integration. This checkpoint does not claim complete app-wide secret exclusion or transcript retention: the new archive is protected, while the existing chat/history copies need the next privacy integration. The detector is a conservative bounded baseline, not a guarantee for unlabeled or obfuscated secrets.
+
+Device-lock API reference: https://developer.android.com/reference/android/app/KeyguardManager . Use current `isDeviceLocked`/`isKeyguardLocked`, not a since-boot unlock flag.
+
 ## Plan to finish MemoryOS: local capture, semantic recall, and temporal memory
 
-**Status:** first follow-on storage checkpoint implemented; remaining capabilities are planned. The original milestone above retains manual review and lexical retrieval; Android production storage now uses the SQLite checkpoint above. The decisions below were confirmed by Justin during the 2026-09-29 interview (America/New_York); they replace the older follow-on proposal that every extracted or inferred fact must wait for manual review. They do not claim that automatic capture, embeddings, or the temporal graph already work.
+**Status:** SQLite foundation implemented; source-archive foundation implemented pending exact signed CI; remaining capabilities are planned. The original milestone above retains manual review and lexical retrieval; Android production storage now uses the SQLite checkpoint above. The decisions below were confirmed by Justin during the 2026-09-29 interview (America/New_York); they replace the older follow-on proposal that every extracted or inferred fact must wait for manual review. They do not claim that automatic capture, embeddings, or the temporal graph already work.
 
 **Goal:** Jarvis should automatically retain useful information and recall relevant context during ordinary Chat and Voice turns, including paraphrases, implied references, and point-in-time questions. Memory, extraction, indexing, and inference run locally on Android. A hosted memory service is not required. Optional access to incoming external sources is separately authorized; saved local memory remains usable offline.
 
