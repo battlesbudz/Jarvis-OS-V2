@@ -8,7 +8,8 @@ import kotlin.math.round
 
 class AndroidMobileActionExecutor(
     private val context: Context,
-    private val canLaunchDirectly: () -> Boolean = { false }
+    private val canLaunchDirectly: () -> Boolean = { false },
+    private val onDiagnostic: (String) -> Unit = {}
 ) : MobileActionExecutor {
     private val appResolver = InstalledAppResolver(context)
     override fun execute(action: MobileAction): ExecutionResult = when (action) {
@@ -57,18 +58,32 @@ class AndroidMobileActionExecutor(
                     resolution.app.packageName,
                     resolution.app.activityName
                 )
-                if (!canLaunchDirectly()) {
+                val visible = canLaunchDirectly()
+                val assistantSelected = com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.isSelected(context)
+                val assistantResult = if (!visible)
                     com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.launch(context, launchIntent, resolution.app.label)
-                        ?: AppLaunchNotification.offer(context, launchIntent, resolution.app.label)
+                else null
+                if (assistantResult != null) {
+                    onDiagnostic("App launch route=selected_assistant visible=$visible selected=$assistantSelected app=${resolution.app.packageName} result=${assistantResult.succeeded}")
+                    assistantResult
                 } else try {
+                    // Activity visibility alone does not describe Android's launch eligibility.
+                    // A recently used activity, system binding, or user-granted exemption may
+                    // allow this explicit command. Let Android evaluate the real request.
                     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(launchIntent)
-                    ExecutionResult(true, "Opening ${resolution.app.label}.")
+                    onDiagnostic("App launch route=${if (visible) "visible_activity" else "background_request"} visible=$visible selected=$assistantSelected app=${resolution.app.packageName} result=submitted foregroundTransition=unobserved")
+                    // startActivity returns void, and BAL denials may be silent. A background
+                    // submission must not be described as a verified foreground transition.
+                    ExecutionResult(true, if (visible) "Opening ${resolution.app.label}."
+                        else "Requested opening ${resolution.app.label}.")
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     throw cancelled
                 } catch (error: android.content.ActivityNotFoundException) {
+                    onDiagnostic("App launch result=rejected type=ActivityNotFoundException app=${resolution.app.packageName}")
                     ExecutionResult(false, "Could not open ${resolution.app.label}: ${error.message ?: "Android rejected the launch."}")
                 } catch (error: SecurityException) {
+                    onDiagnostic("App launch result=rejected type=SecurityException app=${resolution.app.packageName}")
                     ExecutionResult(false, "Could not open ${resolution.app.label}: ${error.message ?: "Android rejected the launch."}")
                 }
             }

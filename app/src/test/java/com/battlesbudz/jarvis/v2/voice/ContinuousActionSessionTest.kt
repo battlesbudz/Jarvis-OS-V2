@@ -14,6 +14,46 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ContinuousActionSessionTest {
+    @Test fun newSessionOwnsOnlyNewCommandsAndDoesNotRestoreDeliveredOldReports() = runBlocking {
+        val queue = AcceptedActionQueue<String>()
+        val first = ContinuousActionSession(queue)
+        assertTrue(first.reserveActionAdmission("facebook"))
+        queue.admit("facebook", "u-facebook", "Facebook")
+        queue.start { true }.join()
+        first.onTaskEvent("facebook", "Opening Facebook.")
+        val report = checkNotNull(first.nextDelivery())
+        assertTrue(first.markDelivered(report.attemptId, setOf("facebook")))
+        assertTrue(first.ownsActionTask("facebook"))
+
+        val second = ContinuousActionSession(queue)
+        assertFalse(second.ownsActionTask("facebook"))
+        assertTrue(second.reserveActionAdmission("instagram"))
+        queue.admit("instagram", "u-instagram", "Instagram")
+        queue.start { true }.join()
+        queue.tasks.value.filter { second.ownsActionTask(it.id) }.forEach {
+            second.onTaskEvent(it.id, "Requested opening ${it.value}.")
+        }
+        assertEquals(listOf("instagram"), checkNotNull(second.nextDelivery()).reports.map { it.taskId })
+        queue.close()
+    }
+
+    @Test fun interruptedReportRemainsOwnedButRejectedAdmissionDoesNot() = runBlocking {
+        val queue = AcceptedActionQueue<String>()
+        val session = ContinuousActionSession(queue)
+        session.reserveActionAdmission("accepted")
+        queue.admit("accepted", "u", "Accepted")
+        queue.start { true }.join()
+        session.onTaskEvent("accepted", "Accepted result.")
+        val report = checkNotNull(session.nextDelivery())
+        session.interruptDelivery(report.attemptId)
+        assertTrue(session.ownsActionTask("accepted"))
+        assertEquals("accepted", checkNotNull(session.nextDelivery()).reports.single().taskId)
+        session.reserveActionAdmission("rejected")
+        assertTrue(session.abandonActionAdmission("rejected"))
+        assertFalse(session.ownsActionTask("rejected"))
+        queue.close()
+    }
+
     @Test fun captureRemainsActiveAndFollowupIsAdmittedWhileFirstTaskBlocks() = runBlocking {
         val queue = AcceptedActionQueue<String>()
         val session = ContinuousActionSession(queue)

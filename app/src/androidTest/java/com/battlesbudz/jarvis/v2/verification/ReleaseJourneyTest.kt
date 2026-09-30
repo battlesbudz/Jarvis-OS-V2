@@ -1195,6 +1195,64 @@ class ReleaseJourneyTest {
         }
     }
 
+    @Test fun test34_backgroundAssistantOpensAppAndFinishesOrderedPlanWithoutTap() = runBlocking {
+        val service = context.packageName + "/com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService"
+        val keys = listOf("assistant", "voice_interaction_service", "voice_recognition_service")
+        val saved = keys.associateWith { device.executeShellCommand("settings get secure $it").trim() }
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val diagnostics = mutableListOf<String>()
+        try {
+            // Configure the real system assistant on this disposable emulator, rather than
+            // giving the executor a fake foreground/launch exemption or using shell to launch.
+            device.executeShellCommand("settings put secure assistant $service")
+            device.executeShellCommand("settings put secure voice_interaction_service $service")
+            val readyBy = SystemClock.elapsedRealtime() + 10_000
+            while (!com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.isReady(context) &&
+                SystemClock.elapsedRealtime() < readyBy) SystemClock.sleep(100)
+            assertTrue("System must bind the selected assistant", com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.isReady(context))
+            device.pressHome()
+            assertFalse(device.hasObject(By.pkg(context.packageName)))
+            // Do not let the recent-foreground grace period prove the assistant route.
+            SystemClock.sleep(11_000)
+            val executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { false }, onDiagnostic = diagnostics::add)
+            val plan = ActionTurnPlan.parse("set volume to 40% then open Settings then tell me my battery") as ActionTurnPlan.Ready
+            val outcome = ActionTurnRunner(executor).runValidated(plan,
+                dispatch = { request -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    MobileActionPipeline(executor = executor).execute(request)
+                } }, checkBattery = { error("No conditional reading requested") })
+            assertTrue(outcome.message, outcome.completed)
+            assertEquals(listOf("set_volume", "open_app", "read_battery"), outcome.receipts.map { it.request.name })
+            assertEquals((audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .4).roundToInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            assertEquals(context.getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY), outcome.receipts.last().result.batteryPercent)
+            assertTrue("Background app command must really open Settings without notification interaction",
+                device.wait(Until.hasObject(By.pkg("com.android.settings")), 10_000))
+            assertTrue(diagnostics.any { "route=selected_assistant visible=false selected=true" in it })
+            captureEvidence("background_assistant_first_launch")
+            // A second command while Jarvis is still hidden must not fall back to a tap.
+            device.pressHome()
+            val again = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                MobileActionPipeline(executor = executor).execute(ActionRequest("open_app", mapOf("app" to "Settings")))
+            }
+            assertTrue(again.message, again.succeeded)
+            assertFalse(again.message.contains("tap", ignoreCase = true))
+            assertTrue(device.wait(Until.hasObject(By.pkg("com.android.settings")), 10_000))
+            val missing = MobileActionPipeline(executor = executor).execute(ActionRequest("open_app", mapOf("app" to "jarvis nonexistent fixture app")))
+            assertFalse(missing.succeeded)
+            assertTrue(missing.message.contains("could not find", ignoreCase = true))
+        } finally {
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
+            for ((key, value) in saved) {
+                if (value == "null" || value.isBlank()) device.executeShellCommand("settings delete secure $key")
+                else {
+                    require(value.matches(Regex("[a-zA-Z0-9_./:]+")))
+                    device.executeShellCommand("settings put secure $key $value")
+                }
+            }
+            activity.recreate()
+        }
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()

@@ -244,6 +244,11 @@ class ContinuousActionSession<T>(
         !detached && outstandingReportObligationsLocked() < reportCapacity
     }
 
+    /** Only this session's admissions belong in its terminal scan and final summary. */
+    fun ownsActionTask(taskId: String): Boolean = synchronized(lock) {
+        taskId in reservedReportTaskIds || taskId in knownReportTaskIds || taskId in deliveredReportTaskIds
+    }
+
     /**
      * Queue one visible local clarification/rejection for speech after accepted work settles.
      * It is separate from reserved executor reports so a full accepted batch can still explain

@@ -12,10 +12,13 @@ class JarvisInteractionService : VoiceInteractionService() {
     override fun onShutdown() { if (active === this) active = null; super.onShutdown() }
     override fun onDestroy() { if (active === this) active = null; super.onDestroy() }
     companion object {
-        private var active: JarvisInteractionService? = null
+        @Volatile private var active: JarvisInteractionService? = null
+        fun isSelected(context: Context): Boolean =
+            isActiveService(context, ComponentName(context, JarvisInteractionService::class.java))
+        fun isReady(context: Context): Boolean = active != null && isSelected(context)
         fun launch(context: Context, intent: Intent, label: String): ExecutionResult? {
             val service = active ?: return null
-            if (!isActiveService(context, ComponentName(context, JarvisInteractionService::class.java))) return null
+            if (!isSelected(context)) return null
             return runCatching {
                 // User's explicit app command reaches this on the main thread, after validation.
                 service.startActivity(Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

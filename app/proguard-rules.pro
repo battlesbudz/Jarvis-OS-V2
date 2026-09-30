@@ -163,3 +163,6 @@
 
 # Preserve the destination branch navigation policy shared with release instrumentation.
 -keep class com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicy** { *; }
+
+# Shared assistant readiness API used by the separately shrunk release journey.
+-keep class com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService** { *; }

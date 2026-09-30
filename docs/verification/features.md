@@ -71,6 +71,39 @@ API 30 evidence is retained from artifact 11080861694 of run 36676486374. New ex
 JVM/native/build, both emulators and receipt are required before publication. Physical
 ASR/TTS, Fold 6 behavior and model-generated calls remain unverified.
 
+## Build 859 background dispatch and report repair — exact CI pending
+
+The supplied 859 call proves the battery comparison and three-step parser worked: battery
+78 matched below 80, and the later plan was volume → Facebook → battery. The app launch
+was converted to a notification before Android evaluated it, and the failure stopped the
+battery step. New action sessions also re-imported every earlier terminal task in the call;
+Gemma subsequently claimed the failed sequence was complete.
+
+The executor now uses the system-bound selected assistant when ready and otherwise submits
+the explicit normal activity request. Hiding Jarvis's screen alone no longer forces a
+notification or stops a sequence. Background fallback receipts say “Requested opening”:
+Android's void startActivity API can silently block a launch, so dispatch is not proof of
+an actual foreground transition. Actual exceptions and missing apps remain failures.
+Diagnostics distinguish visible, selected-assistant and background-request routes, selection,
+visibility and submission. The settings button requests the standard assistant role before
+manufacturer settings fallback; no per-command notification interaction is introduced.
+
+Terminal report scans and final chat summaries use only the current action session's task
+IDs. In-session interrupted reports stay pending until actual completed playback; already
+reported earlier requests are not resurrected by the next command. Short status follow-ups,
+including the logged “Well”, use the latest runtime-owned executor outcome before model
+streaming. Different conversations and intervening unrelated user turns do not reuse it.
+
+`ContinuousActionSessionTest` covers old/new sessions, completed delivery, interrupted
+report retention and rejected admission. `PhoneActionStatusReplyTest` covers failed,
+successful, skipped and unrelated follow-ups. New registered release `test34` binds the real
+assistant on the disposable Android device, hides Jarvis beyond the recent-foreground grace
+period, then executes volume → Settings → battery and a second background launch without
+a notification tap. It asserts Settings really becomes visible, reads actual battery/volume,
+checks the assistant route and preserves the missing-app failure. System assistant settings
+and volume are restored. API 30 and API 35 must both pass on this revision. Real Gemma,
+physical microphone/speaker and Fold 6 Android 16 launches remain user-device checks.
+
 ## Planned tools epic
 
 The [tools implementation plan](../plans/tools-implementation-plan.md) defines milestones M0–M8 and planned acceptance T01–T25 from the [completed design interview](../plans/tools-interview-decisions.md). These checks are not implemented or passing coverage. In particular, automatic memory will intentionally change the manual-review default described below; preserve historical tests/evidence and add explicit migration coverage when implementing M6. Extend this map with exact test names and run evidence as each milestone is built.
@@ -103,7 +136,7 @@ coverage remain pending.
 | Voice lifecycle and reply metrics | VoiceSessionController, ConversationHistory, LiteRtVoicePrefillSession, BargeInGate/NaturalBargeIn, PiperTextStream and ReplyMetrics checks cover per-reply JSON persistence, late playback after the next turn/restart, raw native timing before hidden-channel filtering, ASR interruption and sentence-first Piper submission | `test29` renders two distinct per-message metric footers and reloads persisted history | Physical Fold 6 route selection, Bluetooth, acoustic behavior, real-model timing and thermal behavior remain unverified. TTF-SW uses AudioTrack head progress as a playback proxy, not microphone acoustics. |
 | Packaging | Native ABI, Piper callback, compact APK equivalence checks | Signed normal and compact variants installed/launched | Device GPU/NPU compatibility and resource limits |
 
-The executable device contract is `scripts/verification/scenarios.json`, backed by `app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt`. All thirty-four named methods must finish successfully; skipped methods are failures. `test01`–`test24` remain the existing setup, tool, multi-action, and manager journeys; `test25` covers finalized text/voice memory approval and prompt context, `test26` correction/erase refresh, and `test27` the controlled production ConversationScreen state contract; `test25`–`test27` are controlled UI/memory-prompt checks, not microphone or model end-to-end tests. `test28` retains the existing VoiceNavigationPolicy call-ID contract, and `test29` verifies two distinct assistant-message metric footers and persisted reload. `test90` remains the process-restart selection check and intentionally leaves the selected model for the controller's process-restart check. The exact combined revision requires fresh Android CI; APK/build status comes from its exact run receipt. JVM/native tests run independently in the build job.
+The executable device contract is `scripts/verification/scenarios.json`, backed by `app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt`. All thirty-five named methods must finish successfully; skipped methods are failures. `test01`–`test24` remain the existing setup, tool, multi-action, and manager journeys; `test25` covers finalized text/voice memory approval and prompt context, `test26` correction/erase refresh, and `test27` the controlled production ConversationScreen state contract; `test25`–`test27` are controlled UI/memory-prompt checks, not microphone or model end-to-end tests. `test28` retains the existing VoiceNavigationPolicy call-ID contract, and `test29` verifies two distinct assistant-message metric footers and persisted reload. `test90` remains the process-restart selection check and intentionally leaves the selected model for the controller's process-restart check. The exact combined revision requires fresh Android CI; APK/build status comes from its exact run receipt. JVM/native tests run independently in the build job.
 
 Artifact consumers share the retry-safe selector and direct-ID downloader in `scripts/verification/artifacts.py`. For each requirement it binds run and SHA, selects the latest completed producer attempt, filters to artifacts in that producer's created-time window, and fails closed unless exactly one newest candidate remains. The downloader verifies the selected ZIP's declared size/digest and safely restores the expected flat or artifact-namespaced layout without forwarding the GitHub token to storage. Prior failed-attempt artifacts stay available for diagnosis. Run 751 replay reproduces the lower-ID case and selects artifact `10707864350`; focused helper and receipt checks cover the plumbing, while a new CI run is still pending. This is verification plumbing evidence and does not change the app or establish a green run 751.
 

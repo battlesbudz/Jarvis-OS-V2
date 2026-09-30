@@ -177,7 +177,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         if (attempt.state != com.battlesbudz.jarvis.v2.actions.ToolTaskState.READY) break
                         val result = com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline(phoneActionLedger,
                             com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(this@JarvisRuntime,
-                                canLaunchDirectly = { activityVisible })).executeAttempt(attempt)
+                                canLaunchDirectly = { activityVisible }, onDiagnostic = diagnosticRecorder::recordImportant)).executeAttempt(attempt)
                         projectPhoneTask(group.id, recovered = true)
                         if (!result.succeeded) break
                     }
@@ -212,7 +212,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         val approval = a.approvalId?.let { approvals.get(it) } ?: return@launch
                         val result = com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline(phoneActionLedger,
                             com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(this@JarvisRuntime,
-                                canLaunchDirectly = { activityVisible })).executeAttempt(a, approval)
+                                canLaunchDirectly = { activityVisible }, onDiagnostic = diagnosticRecorder::recordImportant)).executeAttempt(a, approval)
                         if (!result.succeeded) phoneTaskError.value = result.message
                     }
                     "deny" -> a.approvalId?.let { approvals.deny(it) }
@@ -350,6 +350,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         }
     }
     @Volatile internal var activityVisible = false
+    @Volatile internal var lastPhoneActionStatus: com.battlesbudz.jarvis.v2.actions.PhoneActionStatus? = null
     @Volatile private var transcriptListener: (String, String, Boolean) -> Unit = { _, _, _ -> }
     @Volatile private var finishedListener: (String) -> Unit = {}
     fun attachUi(report: (String) -> Unit, transcript: (String, String, Boolean) -> Unit, finished: (String) -> Unit) {
@@ -1724,7 +1725,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             capturedSpeechEnds.remove(deferred.utteranceId)
                         ))
                     }
-                    val summary = acceptedVoiceSummary(expectedCallId)
+                    val replyIds = acceptedVoiceActions.tasks.value
+                        .filter { it.value.callId == expectedCallId && actionSession.ownsActionTask(it.id) }
+                        .map { it.value.replyId }.toSet()
+                    val summary = acceptedVoiceSummary(expectedCallId, replyIds, includeTerminalText = true)
                     voiceSessionController.setStateIfCurrent(expectedCallId, VoiceSessionState.ACTIVELY_LISTENING)
                     mainHandler.post { onTranscript("Jarvis", summary, true) }
                     finalMessage = "Voice Call accepted actions complete. Jarvis: $summary"
@@ -2201,7 +2205,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     private fun publishTerminalActionReports(
         session: com.battlesbudz.jarvis.v2.voice.ContinuousActionSession<AcceptedVoiceInvocation>, callId: String
     ) {
-        acceptedVoiceActions.tasks.value.filter { it.value.callId == callId && it.state.isTerminalActionState() }
+        acceptedVoiceActions.tasks.value.filter { it.value.callId == callId && it.state.isTerminalActionState() && session.ownsActionTask(it.id) }
             .forEach { task ->
                 val terminalText = persistTerminalActionReply(task)
                 if (!session.onTaskEvent(task.id, terminalText))
@@ -2246,9 +2250,11 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             com.battlesbudz.jarvis.v2.actions.AcceptedActionState.CANCELLED,
             com.battlesbudz.jarvis.v2.actions.AcceptedActionState.INTERRUPTED)
 
-    private fun acceptedVoiceSummary(callId: String, onlyReplyIds: Set<String>? = null): String {
-        val replyIds = onlyReplyIds ?: acceptedVoiceActions.tasks.value.map { it.value }
-            .filter { it.callId == callId }.map { it.replyId }.toSet()
+    private fun acceptedVoiceSummary(callId: String, replyIds: Set<String>, includeTerminalText: Boolean = false): String {
+        if (includeTerminalText) return voiceCallStore.list().firstOrNull { it.id == callId }?.transcript
+            ?.filter { it.replyId in replyIds && it.generationComplete && it.text.isNotBlank() }
+            ?.joinToString(" ") { it.text }?.takeIf { it.isNotBlank() }
+            ?: "I couldn't complete the accepted phone action."
         val outcomes = voiceCallStore.list().firstOrNull { it.id == callId }?.transcript
             ?.filter { it.replyId in replyIds }?.flatMap { it.actions }.orEmpty()
         return outcomes.takeIf { it.isNotEmpty() }?.joinToString(" ") { it.message }

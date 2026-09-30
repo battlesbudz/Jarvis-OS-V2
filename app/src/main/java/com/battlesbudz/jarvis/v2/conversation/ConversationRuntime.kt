@@ -168,7 +168,8 @@ internal fun JarvisRuntime.runConversationInternal(
                     val coordinator = com.battlesbudz.jarvis.v2.actions.ActionTurnRunner(
                         com.battlesbudz.jarvis.v2.actions.MobileActionExecutor { error("Dispatch is runtime-owned") })
                     val executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
-                        this@runConversationInternal, canLaunchDirectly = { activityVisible })
+                        this@runConversationInternal, canLaunchDirectly = { activityVisible },
+                        onDiagnostic = diagnosticRecorder::recordImportant)
                     val outcome = coordinator.runValidated(plan,
                         checkBattery = { kotlinx.coroutines.withContext(Dispatchers.Main) {
                             executePhoneAction(com.battlesbudz.jarvis.v2.actions.ActionRequest("read_battery"), executor)
@@ -182,6 +183,8 @@ internal fun JarvisRuntime.runConversationInternal(
                             }
                         } })
                     if (outcome.stopped) phoneTaskGroupId?.let { cancelPhoneTask(it) }
+                    lastPhoneActionStatus = com.battlesbudz.jarvis.v2.actions.PhoneActionStatus(
+                        phoneTaskConversationId, prompt, outcome.message)
                     onPhonePlanFinished(outcome)
                     diagnosticRecorder.recordImportant("Action turn\nbuild=${BuildConfig.VERSION_CODE} user=${prompt.take(1000)}\n" +
                         "steps=${plan.steps.map { it.request }} condition=${plan.batteryCondition} matched=${outcome.conditionMatched}\n" +
@@ -190,6 +193,16 @@ internal fun JarvisRuntime.runConversationInternal(
                         "completed=${outcome.completed} result=${outcome.message}")
                     turnOrchestrator.recordResponse(prompt, outcome.message, turnPlan)
                     mainHandler.post { finish(outcome.message) }
+                    return@launch
+                }
+                val phoneStatusReply = if (imageUri == null && audioUri == null && comparison == null)
+                    com.battlesbudz.jarvis.v2.actions.PhoneActionStatusReply.resolve(prompt, phoneTaskConversationId,
+                        history.map { it.role to it.text }, lastPhoneActionStatus) else null
+                if (phoneStatusReply != null) {
+                    incrementalVoice?.close()
+                    resetNativeConversation()
+                    diagnosticRecorder.recordImportant("Phone status follow-up: source=executor_receipt modelInvoked=false")
+                    mainHandler.post { finish(phoneStatusReply) }
                     return@launch
                 }
                 if (!modelStore.verifyIntegrity(modelStore.selectedModel())) {
@@ -583,7 +596,8 @@ internal fun JarvisRuntime.runConversationInternal(
                                     if (phoneTaskGroupId == null) com.battlesbudz.jarvis.v2.actions.ExecutionResult(false,
                                         "I couldn't save this phone action, so I didn't start it.") else executePhoneAction(request,
                                         executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
-                                            this@runConversationInternal, canLaunchDirectly = { activityVisible }
+                                            this@runConversationInternal, canLaunchDirectly = { activityVisible },
+                                            onDiagnostic = diagnosticRecorder::recordImportant
                                         ), groupId = phoneTaskGroupId, stepIndex = phoneTaskStep++
                                     ).also { onActionResult(request.name, it.message, it.succeeded) }
                                 }
