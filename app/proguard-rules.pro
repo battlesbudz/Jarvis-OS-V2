@@ -192,3 +192,7 @@
 -keep class com.battlesbudz.jarvis.v2.memory.MemoryArchiveMaintenanceWorker {
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
+
+# The reference journey invokes these narrow shipping API owners from its separate DEX.
+-keep class com.battlesbudz.jarvis.v2.ai.ReferencePdfText { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryCaptureAcknowledgment { *; }

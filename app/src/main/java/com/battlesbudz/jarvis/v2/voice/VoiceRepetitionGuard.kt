@@ -13,13 +13,15 @@ class VoiceRepetitionGuard(user: String, previousReply: String?, private val emi
     /** Optional evidence/knowledge-gap policy, applied to complete sentences before publication. */
     var isPublishable: (String) -> Boolean = { true }
     private var policyRejected = false
+    private var codeFence = false
+    var preserveFormatting: Boolean = false
     var suppressedSentences = 0
         private set
     var acceptedSentences = 0
         private set
     fun discardPending() { pending.clear() }
     val text: String get() = accepted.toString()
-    val needsRepair: Boolean get() = suppressedSentences > 0 && text.isBlank()
+    val needsRepair: Boolean get() = (suppressedSentences > 0 || policyRejected) && text.isBlank()
 
     fun accept(chunk: String) {
         if (chunk.isEmpty()) return
@@ -55,15 +57,22 @@ class VoiceRepetitionGuard(user: String, previousReply: String?, private val emi
     }
     private fun publish(candidate: String) {
         val phrase = candidate.trim()
-        if (phrase.isBlank()) return
-        if (!isPublishable(phrase)) { policyRejected = true; return }
-        if (references.any { duplicates(phrase, it) }) { suppressedSentences++; return }
-        val output = (if (accepted.isEmpty()) "" else " ") + phrase
+        if (phrase.isBlank()) {
+            if (preserveFormatting && accepted.isNotEmpty()) { accepted.append(candidate); emit(candidate) }
+            return
+        }
+        val fence = preserveFormatting && phrase.startsWith("```")
+        val literal = preserveFormatting && (codeFence || fence)
+        if (!literal && !isPublishable(phrase)) { policyRejected = true; return }
+        if (!literal && references.any { duplicates(phrase, it) }) { suppressedSentences++; return }
+        val output = if (preserveFormatting) candidate else (if (accepted.isEmpty()) "" else " ") + phrase
         accepted.append(output)
         acceptedSentences++
-        references += phrase
+        if (fence) codeFence = !codeFence
+        if (!literal) references += phrase
         emit(output)
     }
+
     companion object {
         /** A checked phrase is complete; make its boundary visible to the speech chunker now. */
         fun speechReady(phrase: String): String = phrase.trim() + " "

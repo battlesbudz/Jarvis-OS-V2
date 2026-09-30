@@ -1475,6 +1475,26 @@ class ReleaseJourneyTest {
         } finally { root.deleteRecursively() }
     }
 
+    @Test fun test35_referencePdfExtractionAndPendingAcknowledgmentUseReleaseCode() {
+        val bytes = instrumentation.context.assets.open("reference-fixture.pdf").use { it.readBytes() }
+        val text = com.battlesbudz.jarvis.v2.ai.ReferencePdfText.read(context, bytes)
+        assertTrue(text.contains("Fermented plant juice (FPJ)"))
+        assertTrue(text.contains("brown sugar"))
+        try {
+            com.battlesbudz.jarvis.v2.ai.ReferencePdfText.read(context, "not a PDF".toByteArray())
+            fail("Malformed PDF must not become reference evidence")
+        } catch (_: java.io.IOException) { }
+        val root = File(context.cacheDir, "ack-receipt-${System.nanoTime()}").apply { mkdirs() }
+        try {
+            val os = MemoryOs(File(root, "memory.json"))
+            val receipt = ConversationMemory(os).capture(FinalMemoryInput("ack", "conversation", source = ConversationMemorySource.TEXT,
+                text = "Remember I like apricots", capturedAtMs = System.currentTimeMillis()))
+            assertEquals(MemoryReviewStatus.PENDING, receipt.memory!!.reviewStatus)
+            assertEquals("I've added a pending memory for your review. It isn't approved yet.", MemoryCaptureAcknowledgment.reply(receipt))
+            assertTrue(os.contextPacket("what fruit do I like?", 1200).packet!!.memories.isEmpty())
+        } finally { root.deleteRecursively() }
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()

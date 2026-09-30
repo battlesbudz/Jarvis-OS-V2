@@ -95,12 +95,16 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     internal var nativeConversationHasContext = false
     private var contextCallId: String? = null
     internal val shortTermContext = ShortTermConversationContext()
-    internal val referenceGrounding = ReferenceGroundingClient()
+    internal val referenceGrounding = ReferenceGroundingClient { bytes ->
+        com.battlesbudz.jarvis.v2.ai.ReferencePdfText.read(applicationContext, bytes)
+    }
     internal val factualityVerifier = com.battlesbudz.jarvis.v2.ai.FactualityVerifier()
     internal val turnOrchestrator = com.battlesbudz.jarvis.v2.ai.TurnOrchestrator(referenceGrounding)
     internal val promptBuilder = com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder(shortTermContext)
     private val memoryEpoch = java.util.concurrent.atomic.AtomicLong(0)
     private val memoryBoundaryPending = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val memoryCaptureReceipts = com.battlesbudz.jarvis.v2.memory.MemoryCaptureReceiptCache(
+        currentEpoch = { memoryEpoch.get() }, boundaryPending = { memoryBoundaryPending.get() })
     internal val memoryDeliveryFence = MemoryDeliveryFence()
     private val memoryHistoryCutoff = java.util.concurrent.atomic.AtomicBoolean(false)
     @Volatile internal var nativeMemoryStateToken: String? = null
@@ -261,16 +265,14 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             com.battlesbudz.jarvis.v2.voice.LiveReplyMetrics(replyId, threadId))
         val userMessageId = conversationHistory.appendUser(userText, attachment)
         val capturedAtMs = System.currentTimeMillis()
-        runtimeScope.launch(Dispatchers.IO) {
-            if (!captureFinalMemory(userMessageId, threadId, null, ConversationMemorySource.TEXT, userText, capturedAtMs)) {
-                mainHandler.post { sessionReport("Memory proposal could not be saved; the conversation was sent normally.") }
-            }
-        }
         conversationHistory.updateReply(threadId, replyId, "", false)
         chatBusy.value = true
         runtimeScope.launch {
             val response = StringBuilder()
             try {
+                withContext(Dispatchers.IO) {
+                    captureFinalMemory(userMessageId, threadId, null, ConversationMemorySource.TEXT, userText, capturedAtMs)
+                }
                 // Mode changes may leave a native voice session behind. App history is authoritative.
                 shortTermContext.clear()
                 resetNativeConversation()
@@ -381,6 +383,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             if (!conversationHistory.markMemoryContextCutoff(durable = true)) error("memory_context_cutoff_persist_failed")
             shortTermContext.clear()
             if (!sessionPreferences.edit().remove(ConversationPolicy.SHORT_TERM_SUMMARY_KEY).commit()) error("memory_summary_clear_failed")
+            memoryCaptureReceipts.clear()
             memoryHistoryCutoff.set(true)
             // Last: no fresh turn may pair the new approved token with pre-mutation context.
             memoryEpoch.incrementAndGet()
@@ -447,11 +450,17 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
 
     private fun captureFinalMemory(eventId: String, conversationId: String, callId: String?,
                                    source: ConversationMemorySource, text: String, capturedAtMs: Long): Boolean {
+        val captureEpoch = memoryEpoch.get()
         val result = conversationMemory.capture(FinalMemoryInput(eventId, conversationId, callId, source, text, capturedAtMs))
+        memoryCaptureReceipts.put(eventId, conversationId, text, captureEpoch, result)
+        diagnosticRecorder.recordImportant("Memory capture event=$eventId source=$source outcome=${result.outcome} reviewStatus=${result.memory?.reviewStatus ?: "none"}")
         val stored = result.outcome != com.battlesbudz.jarvis.v2.memory.ConversationMemoryOutcome.STORAGE_FAILURE
         if (!stored) diagnosticRecorder.recordImportant("Memory capture storage failure for finalized $source input; conversation continues.")
         return stored
     }
+
+    internal fun takeMemoryCaptureReceipt(text: String): com.battlesbudz.jarvis.v2.memory.ConversationMemoryResult? =
+        memoryCaptureReceipts.take(conversationHistory.current.value.id, text)
 
     fun onMicrophoneInterruption(interrupted: Boolean, reason: String) {
         activeVoiceOutput?.setInterrupted(interrupted)

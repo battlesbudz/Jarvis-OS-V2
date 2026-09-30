@@ -38,7 +38,7 @@ object MemoryRetrieval {
     private fun personalRecall(query: String): ((MemoryRecord) -> Boolean)? {
         val normalized = query.lowercase().trim().replace(Regex("\\s+"), " ").trimEnd('?', '.', '!')
         return when {
-            Regex("^what do i (?:like|love|prefer|enjoy|hate|dislike)$").matches(normalized) ->
+            Regex("^what(?: [a-z]+){0,3} (?:do|did) i (?:like|love|prefer|enjoy|hate|dislike)$|^i like what$").matches(normalized) ->
                 { memory -> memory.category == MemoryCategory.PREFERENCE }
             Regex("^(?:what(?:'s| is) |do you know )?my favorite(?: .+)?$").matches(normalized) ->
                 { memory -> memory.category == MemoryCategory.PREFERENCE && preferenceMarker.containsMatchIn(memory.content) }

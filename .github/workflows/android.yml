@@ -280,11 +280,12 @@ jobs:
           prerelease: true
           generate_release_notes: false
           body: |
-            SQLite memory and protected source-archive milestone for phone testing. Existing memories migrate on first access.
+            Conversation reliability test build: bounded user evidence, contextual factual lookup, correction handling, shared text/voice draft guards, truthful memory capture acknowledgments, and supplied PDF references.
             Source: ${{ github.sha }}
             Verification: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
             Both signed APK variants passed JVM/native checks, API 30/API 35 journeys, and consolidated evidence.
-            Source archive capture/expiry is included; user-facing history search and app-wide history privacy integration remain planned.
+            Pending proposals require review; conversation evidence does not become approved memory automatically.
+            Relevant evidence is required for factual answers. General live business/promotion discovery remains unavailable.
             Embeddings, automatic extraction, temporal graph, and incoming message adapters remain planned.
             Real model inference, physical audio, and Fold 6 performance require phone testing.
           files: dist/*.apk

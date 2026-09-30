@@ -8,6 +8,20 @@ import org.junit.Test
 import java.lang.reflect.Proxy
 
 class ConversationHistoryTest {
+    @Test fun personalStatementSurvivesThirtyTurnsButEraseBoundaryStillWins() {
+        val history = ConversationHistory(preferences())
+        history.appendUser("I like apricots")
+        repeat(30) { index ->
+            history.appendUser("Question $index")
+            history.updateReply(history.current.value.id, "reply-$index", "Answer $index", true)
+        }
+        assertTrue(history.contextAfterMemoryCutoff().any { it.text == "I like apricots" })
+        assertTrue(history.markMemoryContextCutoff(durable = true))
+        assertTrue(history.contextAfterMemoryCutoff().isEmpty())
+        history.appendUser("Fresh topic")
+        assertEquals(listOf("Fresh topic"), history.contextAfterMemoryCutoff().map { it.text })
+    }
+
     @Test fun textVoiceTextPersistsInOneThreadWithoutDuplicateCallSnapshots() {
         val prefs = preferences()
         val history = ConversationHistory(prefs)
