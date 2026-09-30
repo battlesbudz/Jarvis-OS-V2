@@ -17,10 +17,10 @@ class AndroidMobileActionExecutor(
             val percent = batteryManager?.getIntProperty(
                 BatteryManager.BATTERY_PROPERTY_CAPACITY
             )
-            if (percent == null || percent < 0) {
+            if (percent == null || percent !in 0..100) {
                 ExecutionResult(false, "Battery status is unavailable.")
             } else {
-                ExecutionResult(true, "Battery is at $percent percent.")
+                ExecutionResult.battery(percent)
             }
         }
         is MobileAction.SetVolume -> {

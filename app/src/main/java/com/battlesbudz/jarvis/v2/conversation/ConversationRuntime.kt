@@ -6,6 +6,7 @@ import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
 import androidx.lifecycle.lifecycleScope
 import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
 import com.battlesbudz.jarvis.v2.actions.runNative
+import com.battlesbudz.jarvis.v2.actions.runValidated
 import com.battlesbudz.jarvis.v2.memory.MemoryTurnContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -25,6 +26,7 @@ internal fun JarvisRuntime.runConversationInternal(
         onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit = {},
         onLiveInference: (submittedAtMs: Long?, firstTokenAtMs: Long?, estimatedTokensPerSecond: Double?, durable: Boolean) -> Unit = { _, _, _, _ -> },
         onActionResult: (String, String, Boolean) -> Unit = { _, _, _ -> },
+        onPhonePlanFinished: (com.battlesbudz.jarvis.v2.actions.ActionTurnRunner.Outcome) -> Unit = {},
         audioUri: Uri? = null,
         /** A queue admission freezes authorization before it waits for native ownership. */
         frozenActionPlan: com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready? = null,
@@ -93,12 +95,6 @@ internal fun JarvisRuntime.runConversationInternal(
         val invocation = runtimeScope.launch(Dispatchers.Default) {
             var lastLiveRate: Double? = null
             try {
-                if (!modelStore.verifyIntegrity(modelStore.selectedModel())) {
-                    incrementalVoice?.close()
-                    conversationEngine?.close()
-                    conversationEngine = null
-                    error("The selected model file changed or failed integrity verification. Re-import it.")
-                }
                 // Reject only an exceptionally large single message before
                 // routing or executing a phone side effect. Retained history is
                 // handled by compaction below and must not reject a short follow-up.
@@ -130,7 +126,10 @@ internal fun JarvisRuntime.runConversationInternal(
                 val requestedActionPlan = frozenActionPlan ?: turnPlan.actionPlan
                 diagnosticRecorder.record("Action route plan=${requestedActionPlan.javaClass.simpleName} " +
                     "steps=${(requestedActionPlan as? com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready)?.steps?.map { it.request.name } ?: emptyList<String>()} " +
-                    "lookup=${turnPlan.lookupQuery != null}")
+                    "lookup=${turnPlan.lookupQuery != null} " +
+                    "build=${BuildConfig.VERSION_CODE} user=${prompt.take(1000)} " +
+                    "condition=${(requestedActionPlan as? com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready)?.batteryCondition} " +
+                    "reason=${(requestedActionPlan as? com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Rejected)?.reason}")
                 if (requestedActionPlan is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Rejected) {
                     incrementalVoice?.close()
                     resetNativeConversation()
@@ -154,30 +153,50 @@ internal fun JarvisRuntime.runConversationInternal(
                 }
                 var preparedTextInput = incrementalVoice?.takeIf { imageUri == null && requestedActionPlan !is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready }
                 if (preparedTextInput == null) incrementalVoice?.close()
-                val directRequest = if (comparison != null || imageUri != null || audioUri != null) null else
-                    com.battlesbudz.jarvis.v2.actions.DirectAppCommand.parse(prompt)?.takeIf { direct ->
-                        (requestedActionPlan as? com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready)
-                            ?.takeIf { it.steps.size == 1 }?.steps?.single()?.request == direct
+                // The whole literal request is validated before any effect. Text and final voice
+                // use the same native path, including models which do not emit function calls.
+                if (guardedFrozenVoicePlan != null) {
+                    val plan = guardedFrozenVoicePlan
+                    if ((voiceAudio != null || frozenVoiceFinal) && !plan.steps.all { step ->
+                            com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard.allows(
+                                step.sourceClause, step.request.name, step.request.arguments)
+                        }) {
+                        mainHandler.post { finish("I couldn't verify that final spoken phone request. Please say it again.") }
+                        return@launch
                     }
-                if (directRequest != null) {
                     resetNativeConversation()
-                    val result = kotlinx.coroutines.withContext(Dispatchers.Main) {
-                        phoneTaskGroupId = admitPhoneTask(checkNotNull(guardedFrozenVoicePlan), phoneTaskConversationId)
-                        if (phoneTaskGroupId == null) com.battlesbudz.jarvis.v2.actions.ExecutionResult(false,
-                            "I couldn't save this phone action, so I didn't start it.") else executePhoneAction(directRequest,
-                            executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
-                                this@runConversationInternal,
-                                canLaunchDirectly = { activityVisible }
-                            ), groupId = phoneTaskGroupId
-                        ).also {
-                            // Persist the synchronous side effect before cancellable Main -> caller dispatch.
-                            onActionResult(directRequest.name, it.message, it.succeeded)
-                        }
-                    }
-                    diagnosticRecorder.recordImportant("Action\nuser=${prompt.take(500)}\nrequest=$directRequest\nsucceeded=${result.succeeded}\nresult=${result.message}")
-                    turnOrchestrator.recordResponse(prompt, result.message, turnPlan)
-                    mainHandler.post { finish(result.message) }
+                    val coordinator = com.battlesbudz.jarvis.v2.actions.ActionTurnRunner(
+                        com.battlesbudz.jarvis.v2.actions.MobileActionExecutor { error("Dispatch is runtime-owned") })
+                    val executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
+                        this@runConversationInternal, canLaunchDirectly = { activityVisible })
+                    val outcome = coordinator.runValidated(plan,
+                        checkBattery = { kotlinx.coroutines.withContext(Dispatchers.Main) {
+                            executePhoneAction(com.battlesbudz.jarvis.v2.actions.ActionRequest("read_battery"), executor)
+                        } },
+                        dispatch = { request -> kotlinx.coroutines.withContext(Dispatchers.Main) {
+                            if (phoneTaskGroupId == null) phoneTaskGroupId = admitPhoneTask(plan, phoneTaskConversationId)
+                            if (phoneTaskGroupId == null) com.battlesbudz.jarvis.v2.actions.ExecutionResult(false,
+                                "I couldn't save this phone action, so I didn't start it.")
+                            else executePhoneAction(request, executor, phoneTaskGroupId, phoneTaskStep++).also {
+                                onActionResult(request.name, it.message, it.succeeded)
+                            }
+                        } })
+                    if (outcome.stopped) phoneTaskGroupId?.let { cancelPhoneTask(it) }
+                    onPhonePlanFinished(outcome)
+                    diagnosticRecorder.recordImportant("Action turn\nbuild=${BuildConfig.VERSION_CODE} user=${prompt.take(1000)}\n" +
+                        "steps=${plan.steps.map { it.request }} condition=${plan.batteryCondition} matched=${outcome.conditionMatched}\n" +
+                        "conditionResult=${outcome.conditionResult?.message}\n" +
+                        "receipts=${outcome.receipts.map { it.request to (it.result.outcome to it.result.message) }}\n" +
+                        "completed=${outcome.completed} result=${outcome.message}")
+                    turnOrchestrator.recordResponse(prompt, outcome.message, turnPlan)
+                    mainHandler.post { finish(outcome.message) }
                     return@launch
+                }
+                if (!modelStore.verifyIntegrity(modelStore.selectedModel())) {
+                    incrementalVoice?.close()
+                    conversationEngine?.close()
+                    conversationEngine = null
+                    error("The selected model file changed or failed integrity verification. Re-import it.")
                 }
                 // Read one approved snapshot only for an ordinary answer, after raw action routing
                 // and before lookup or any prompt-size/retry calculation. Pending proposals never

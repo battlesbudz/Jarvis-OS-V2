@@ -191,3 +191,22 @@ indexing, search and lifecycle repairs`). That source is not imported into this 
 action-contract slice. Revisit its wiki category/topic/source/link/index/history and
 navigation changes at M6 and the shared UI boundary, after checking that source's CI
 and the combined-revision tests.
+
+## Conditional/multiple phone-action repair — 2026-09-30
+
+Starting head: `5b2db514ca416d9b32eface711a2ffee5cdba946` on `feature-tools`.
+Preserved the newer M1a durable task/approval code beyond Build 851. Immediate current
+battery conditions and comma-separated plans now use direct validated text/final-voice
+execution, typed numeric Android readings, durable step receipts, stop-on-failure and
+restart fencing for conditional groups. General workflows/schedulers and new tools
+remain outside this repair. Added ConditionalActionPlanTest and release test33; updated
+the named scenario contract without removing existing checks.
+
+The retained Build 857 API 30 artifact (11080861694, run 36676486374) shows test32's
+visible task-dialog buttons lacked exported resource IDs. Enabled resource-tag semantics
+inside the production dialog root. Both failed emulator jobs remain historical evidence;
+this correction requires the new exact-head full gate. Focused local Kotlin/JUnit checks
+and Python helper checks pass; hosted Android evidence is pending at commit intake.
+
+PStack Work Port planning/evidence tools were used. Full Terra companion coordination
+is unavailable on this host, so no independent actor/model review receipt is claimed.

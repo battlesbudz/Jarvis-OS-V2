@@ -9,7 +9,7 @@ class ActionIntentRouter {
         history: List<ChatEntry>
     ): com.battlesbudz.jarvis.v2.ai.ToolCall? {
         val planned = ActionTurnPlan.parse(prompt, history)
-        val request = (planned as? ActionTurnPlan.Ready)?.takeIf { it.steps.size == 1 }?.steps?.single()?.request
+        val request = (planned as? ActionTurnPlan.Ready)?.takeIf { it.steps.size == 1 && it.batteryCondition == null }?.steps?.single()?.request
             ?: return null
         return com.battlesbudz.jarvis.v2.ai.ToolCall(request.name, JSONObject(request.arguments).toString())
     }
@@ -21,7 +21,7 @@ class ActionIntentRouter {
         call: com.battlesbudz.jarvis.v2.ai.ToolCall
     ): Boolean {
         val plan = ActionTurnPlan.parse(prompt, history) as? ActionTurnPlan.Ready ?: return false
-        if (plan.steps.size != 1) return false
+        if (plan.steps.size != 1 || plan.batteryCondition != null) return false
         val expected = plan.steps.single().request
         val proposed = NativeActionDecoder.decodeStrict(call) ?: return false
         if (expected.name != proposed.name) return false

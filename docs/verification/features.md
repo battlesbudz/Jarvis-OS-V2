@@ -45,6 +45,32 @@ The general background/model supervisor, notification outbox, proactive messagin
 multi-bubble speech remain later milestones. Actual process death during Android effects,
 real-model choice, physical audio and device performance remain unverified.
 
+## Conditional and multiple-action repair — exact CI pending
+
+The reported `if my battery is less than 60 open Facebook` now produces a bounded
+current-battery predicate and one literal app request. A fresh typed Android battery
+receipt determines whether to run or skip the whole plan. Up to three directed actions
+accept comma, and, and then separators and execute in order through the durable ledger
+without a Gemma function-call round trip. Failure/cancellation stop later steps; false
+conditions finish as explicit skips rather than fabricated execution receipts. Conditions
+are checked at execution time; unfinished conditional groups pause after process restart.
+This is an immediate request, not a background trigger or general workflow scheduler.
+
+`ConditionalActionPlanTest` checks the exact report, comparison boundaries, unless,
+suffix conditions, comma sequences, final-voice source guard, unsupported/invalid input,
+typed readings, no model bypass, failure/cancellation, explicit repetition and restart
+fencing. `test33_conditionalAndCommaPlansUseRealAndroidWithoutModelCalls` reads actual
+Android battery, executes volume → battery → Settings, and checks a false predicate
+leaves volume unchanged. Earlier single/multiple-action tests remain required. Runtime
+diagnostics include the build, literal request, predicate, decision and actual receipts.
+
+Build 857 failed test32 on both emulator variants: the task dialog displayed its buttons
+but omitted their resource test IDs in its separate Compose semantics root. The repair
+enables tag export inside that dialog; no assertion or acceptance threshold was removed.
+API 30 evidence is retained from artifact 11080861694 of run 36676486374. New exact-head
+JVM/native/build, both emulators and receipt are required before publication. Physical
+ASR/TTS, Fold 6 behavior and model-generated calls remain unverified.
+
 ## Planned tools epic
 
 The [tools implementation plan](../plans/tools-implementation-plan.md) defines milestones M0–M8 and planned acceptance T01–T25 from the [completed design interview](../plans/tools-interview-decisions.md). These checks are not implemented or passing coverage. In particular, automatic memory will intentionally change the manual-review default described below; preserve historical tests/evidence and add explicit migration coverage when implementing M6. Extend this map with exact test names and run evidence as each milestone is built.
@@ -77,7 +103,7 @@ coverage remain pending.
 | Voice lifecycle and reply metrics | VoiceSessionController, ConversationHistory, LiteRtVoicePrefillSession, BargeInGate/NaturalBargeIn, PiperTextStream and ReplyMetrics checks cover per-reply JSON persistence, late playback after the next turn/restart, raw native timing before hidden-channel filtering, ASR interruption and sentence-first Piper submission | `test29` renders two distinct per-message metric footers and reloads persisted history | Physical Fold 6 route selection, Bluetooth, acoustic behavior, real-model timing and thermal behavior remain unverified. TTF-SW uses AudioTrack head progress as a playback proxy, not microphone acoustics. |
 | Packaging | Native ABI, Piper callback, compact APK equivalence checks | Signed normal and compact variants installed/launched | Device GPU/NPU compatibility and resource limits |
 
-The executable device contract is `scripts/verification/scenarios.json`, backed by `app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt`. All thirty-one named methods must finish successfully; skipped methods are failures. `test01`–`test24` remain the existing setup, tool, multi-action, and manager journeys; `test25` covers finalized text/voice memory approval and prompt context, `test26` correction/erase refresh, and `test27` the controlled production ConversationScreen state contract; `test25`–`test27` are controlled UI/memory-prompt checks, not microphone or model end-to-end tests. `test28` retains the existing VoiceNavigationPolicy call-ID contract, and `test29` verifies two distinct assistant-message metric footers and persisted reload. `test90` remains the process-restart selection check and intentionally leaves the selected model for the controller's process-restart check. The exact combined revision requires fresh Android CI; APK/build status comes from its exact run receipt. JVM/native tests run independently in the build job.
+The executable device contract is `scripts/verification/scenarios.json`, backed by `app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt`. All thirty-four named methods must finish successfully; skipped methods are failures. `test01`–`test24` remain the existing setup, tool, multi-action, and manager journeys; `test25` covers finalized text/voice memory approval and prompt context, `test26` correction/erase refresh, and `test27` the controlled production ConversationScreen state contract; `test25`–`test27` are controlled UI/memory-prompt checks, not microphone or model end-to-end tests. `test28` retains the existing VoiceNavigationPolicy call-ID contract, and `test29` verifies two distinct assistant-message metric footers and persisted reload. `test90` remains the process-restart selection check and intentionally leaves the selected model for the controller's process-restart check. The exact combined revision requires fresh Android CI; APK/build status comes from its exact run receipt. JVM/native tests run independently in the build job.
 
 Artifact consumers share the retry-safe selector and direct-ID downloader in `scripts/verification/artifacts.py`. For each requirement it binds run and SHA, selects the latest completed producer attempt, filters to artifacts in that producer's created-time window, and fails closed unless exactly one newest candidate remains. The downloader verifies the selected ZIP's declared size/digest and safely restores the expected flat or artifact-namespaced layout without forwarding the GitHub token to storage. Prior failed-attempt artifacts stay available for diagnosis. Run 751 replay reproduces the lower-ID case and selects artifact `10707864350`; focused helper and receipt checks cover the plumbing, while a new CI run is still pending. This is verification plumbing evidence and does not change the app or establish a green run 751.
 

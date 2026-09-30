@@ -7,10 +7,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import com.battlesbudz.jarvis.v2.actions.*
 
 @Composable
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 internal fun PhoneTaskPanel(journal: ToolTaskJournal?, conversationId: String, error: String?,
     onAction: (String, Long, String) -> Unit) {
     var open by remember { mutableStateOf(false) }
@@ -23,7 +26,9 @@ internal fun PhoneTaskPanel(journal: ToolTaskJournal?, conversationId: String, e
     }
     if (open) AlertDialog(onDismissRequest = { open = false }, title = { Text("Phone tasks") },
         confirmButton = { TextButton(onClick = { open = false }) { Text("Done") } }, text = {
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 400.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Dialog content is a separate semantics root from the activity.
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 400.dp).semantics { testTagsAsResourceId = true },
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error) } }
                 items((unfinished + attempts.filterNot { it in unfinished }.takeLast(3)).distinctBy { it.id }, key = { it.id }) { a ->
                     Column(Modifier.fillMaxWidth().testTag("phone_task_${a.id}")) {

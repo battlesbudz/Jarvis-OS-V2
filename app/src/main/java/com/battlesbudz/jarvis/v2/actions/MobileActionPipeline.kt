@@ -9,7 +9,8 @@ fun interface MobileActionExecutor {
 class ExecutionResult private constructor(
     val succeeded: Boolean,
     val message: String,
-    val outcome: Outcome
+    val outcome: Outcome,
+    val batteryPercent: Int? = null
 ) {
     enum class Outcome { SUCCEEDED, FAILED, REJECTED_VALIDATION, DENIED_PERMISSION, UNKNOWN_COMPLETION }
 
@@ -21,6 +22,13 @@ class ExecutionResult private constructor(
     )
 
     constructor(outcome: Outcome, message: String) : this(outcome == Outcome.SUCCEEDED, message, outcome)
+
+    companion object {
+        fun battery(percent: Int): ExecutionResult {
+            require(percent in 0..100)
+            return ExecutionResult(true, "Battery is at $percent percent.", Outcome.SUCCEEDED, percent)
+        }
+    }
 }
 
 class MobileActionPipeline(

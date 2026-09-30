@@ -86,7 +86,8 @@ class FileToolTaskStore(
                     reconciled = a.optBoolean("reconciled")) },
                 groups = if (version == 1) emptyList() else root.getJSONArray("groups").objects { g -> ToolTaskGroup(
                     g.getString("id"), g.getString("conversationId"), g.getString("summary"),
-                    g.getJSONArray("attemptIds").strings(), g.strictLong("createdAtMs"), g.strictLong("expiresAtMs"), g.getBoolean("cancelled")) },
+                    g.getJSONArray("attemptIds").strings(), g.strictLong("createdAtMs"), g.strictLong("expiresAtMs"), g.getBoolean("cancelled"),
+                    if (g.has("resumeAfterRestart")) g.get("resumeAfterRestart").also { require(it is Boolean) } as Boolean else true) },
                 approvals = if (version == 1) emptyList() else root.getJSONArray("approvals").objects { a -> ActionApprovalRequest(
                     a.getString("id"), a.getString("taskId"), a.getString("stepId"), a.getString("provider"),
                     a.getJSONObject("action").request(), a.getInt("schemaVersion"), a.strictLong("revision"),
@@ -180,7 +181,7 @@ class FileToolTaskStore(
             .put("actionRevision", a.actionRevision).put("reconciled", a.reconciled) }))
         .put("groups", JSONArray(j.groups.map { g -> JSONObject().put("id", g.id).put("conversationId", g.conversationId)
             .put("summary", g.summary).put("attemptIds", JSONArray(g.attemptIds)).put("createdAtMs", g.createdAtMs)
-            .put("expiresAtMs", g.expiresAtMs).put("cancelled", g.cancelled) }))
+            .put("expiresAtMs", g.expiresAtMs).put("cancelled", g.cancelled).put("resumeAfterRestart", g.resumeAfterRestart) }))
         .put("approvals", JSONArray(j.approvals.map { a -> JSONObject().put("id", a.id).put("taskId", a.taskId)
             .put("stepId", a.stepId).put("provider", a.provider).put("action", a.action.json()).put("schemaVersion", a.schemaVersion)
             .put("revision", a.revision).put("fingerprint", a.fingerprint).put("createdAtMs", a.createdAtMs)

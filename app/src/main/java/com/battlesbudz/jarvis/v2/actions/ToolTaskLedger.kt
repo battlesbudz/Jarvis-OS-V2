@@ -65,7 +65,7 @@ class ToolTaskLedger(
     /** Admit the full ordered plan once, before its first native effect. */
     fun admit(requests: List<ActionRequest>, conversationId: String,
         authority: ToolAuthority = ToolAuthority.USER_REQUEST, grantId: String? = null,
-        validForMs: Long = 120_000): ToolTaskGroup {
+        validForMs: Long = 120_000, resumeAfterRestart: Boolean = true): ToolTaskGroup {
         require(requests.size in 1..3 && requests.all { it.isRoutineEligible() })
         require(conversationId.length in 1..256 && validForMs > 0)
         require(authority != ToolAuthority.ROUTINE || grantId != null)
@@ -74,7 +74,7 @@ class ToolTaskLedger(
         val attempts = requests.map { request -> ToolTaskAttempt(UUID.randomUUID().toString(), 0,
             ToolTaskState.QUEUED, request.frozen(), at, at, groupId = groupId, authority = authority, grantId = grantId) }
         val group = ToolTaskGroup(groupId, conversationId, requests.joinToString(", ") { it.name }.take(256),
-            attempts.map { it.id }, at, Math.addExact(at, validForMs))
+            attempts.map { it.id }, at, Math.addExact(at, validForMs), resumeAfterRestart = resumeAfterRestart)
         store.updateJournal { j ->
             if (authority == ToolAuthority.ROUTINE) require(attempts.all { granted(it, j, at) })
             j.copy(attempts = j.attempts + attempts, groups = j.groups + group,
@@ -268,6 +268,8 @@ class ToolTaskLedger(
             val context = before.copy(attempts = recovered)
             recovered = recovered.map { a ->
                 if (a.state.isTerminal() || a.state == ToolTaskState.PAUSED) a
+                else if (context.groups.any { it.id == a.groupId && !it.resumeAfterRestart })
+                    a.advance(ToolTaskState.PAUSED, "The earlier battery condition needs a fresh request after restarting.")
                 else if (a.authority == ToolAuthority.EXACT_APPROVAL && a.groupId != null && eligible(a, context, now(), checkDependencies = false))
                     if (a.state == ToolTaskState.WAITING_APPROVAL) a else a.advance(ToolTaskState.WAITING_APPROVAL)
                 else if (a.groupId != null && eligible(a, context, now(), checkDependencies = false))

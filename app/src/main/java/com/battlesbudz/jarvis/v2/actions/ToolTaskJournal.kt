@@ -11,7 +11,8 @@ data class ToolTaskJournal(
 )
 data class ToolTaskGroup(
     val id: String, val conversationId: String, val summary: String, val attemptIds: List<String>,
-    val createdAtMs: Long, val expiresAtMs: Long, val cancelled: Boolean = false
+    val createdAtMs: Long, val expiresAtMs: Long, val cancelled: Boolean = false,
+    val resumeAfterRestart: Boolean = true
 )
 enum class ToolAuthority { USER_REQUEST, EXACT_APPROVAL, ROUTINE }
 data class ToolActionGrant(

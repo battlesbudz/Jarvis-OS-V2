@@ -45,6 +45,7 @@
 -keep class com.battlesbudz.jarvis.v2.actions.ExecutionResult** { *; }
 # Release instrumentation reaches the multi-action contract through the shared test DEX.
 -keep class com.battlesbudz.jarvis.v2.actions.ActionTurnPlan** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.BatteryCondition** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ActionTurnRunner** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ToolTask** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.FileToolTaskStore** { *; }

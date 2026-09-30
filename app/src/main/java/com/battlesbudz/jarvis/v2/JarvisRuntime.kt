@@ -115,7 +115,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     internal val phoneTaskError = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 
     internal fun admitPhoneTask(plan: ActionTurnPlan.Ready, conversationId: String): String? = try {
-        phoneActionLedger.admit(plan.steps.map { it.request }, conversationId).id.also { refreshPhoneTasks() }
+        phoneActionLedger.admit(plan.steps.map { it.request }, conversationId,
+            resumeAfterRestart = plan.batteryCondition == null).id.also { refreshPhoneTasks() }
     } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
         phoneTaskError.value = "The action journal is unavailable. No new phone action was started."
         null
@@ -2084,6 +2085,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             val planned = accepted.plan.steps.map { it.request.name }
             val completedSteps = mutableListOf<String>()
             var allSucceeded = true
+            var validatedOutcome: com.battlesbudz.jarvis.v2.actions.ActionTurnRunner.Outcome? = null
             voiceSessionController.updateTaskForCall(accepted.callId, com.battlesbudz.jarvis.v2.voice.VoiceTaskStatus(
                 com.battlesbudz.jarvis.v2.voice.VoiceTaskState.WAITING_FOR_USER,
                 pendingSteps = planned
@@ -2125,6 +2127,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         updated
                     }
                 },
+                onPhonePlanFinished = { outcome ->
+                    validatedOutcome = outcome
+                    voiceSessionController.updateTerminalReplyTextForCall(accepted.callId, accepted.replyId, outcome.message)
+                },
                 frozenActionPlan = accepted.plan,
                 frozenVoiceFinal = true
             )
@@ -2141,18 +2147,18 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             try {
                 completed.await()
                 job.join()
-                completedSteps.size == planned.size && allSucceeded
+                validatedOutcome?.completed ?: (completedSteps.size == planned.size && allSucceeded)
             } finally {
                 val cancelledBeforeCleanup = !kotlin.coroutines.coroutineContext.isActive
                 withContext(kotlinx.coroutines.NonCancellable) {
                     if (!job.isCompleted) job.cancel()
                     job.join()
                     val state = when {
-                        completedSteps.size == planned.size && allSucceeded -> com.battlesbudz.jarvis.v2.voice.VoiceTaskState.COMPLETED
+                        (validatedOutcome?.completed ?: (completedSteps.size == planned.size && allSucceeded)) -> com.battlesbudz.jarvis.v2.voice.VoiceTaskState.COMPLETED
                         cancelledBeforeCleanup -> com.battlesbudz.jarvis.v2.voice.VoiceTaskState.CANCELLED
                         else -> com.battlesbudz.jarvis.v2.voice.VoiceTaskState.FAILED
                     }
-                    val remaining = planned.drop(completedSteps.size)
+                    val remaining = if (validatedOutcome?.completed == true) emptyList() else planned.drop(completedSteps.size)
                     voiceSessionController.updateTaskForCall(accepted.callId, com.battlesbudz.jarvis.v2.voice.VoiceTaskStatus(
                         state, completedSteps.toList(), remaining
                     ))
@@ -2212,7 +2218,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         val receipts = acceptedVoiceSummary(callId, setOf(invocation.replyId))
         val completed = voiceCallStore.list().firstOrNull { it.id == callId }?.transcript
             ?.firstOrNull { it.replyId == invocation.replyId }?.actions.orEmpty()
-        val remaining = invocation.plan.steps.map { it.request.name }.drop(completed.size)
+        val remaining = if (task.state == com.battlesbudz.jarvis.v2.actions.AcceptedActionState.COMPLETED) emptyList()
+            else invocation.plan.steps.map { it.request.name }.drop(completed.size)
         val terminal = when (task.state) {
             com.battlesbudz.jarvis.v2.actions.AcceptedActionState.CANCELLED -> "Cancelled; unattempted: ${remaining.joinToString()}."
             com.battlesbudz.jarvis.v2.actions.AcceptedActionState.INTERRUPTED -> "Interrupted; unattempted: ${remaining.joinToString()}."
@@ -2245,6 +2252,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         val outcomes = voiceCallStore.list().firstOrNull { it.id == callId }?.transcript
             ?.filter { it.replyId in replyIds }?.flatMap { it.actions }.orEmpty()
         return outcomes.takeIf { it.isNotEmpty() }?.joinToString(" ") { it.message }
+            ?: voiceCallStore.list().firstOrNull { it.id == callId }?.transcript
+                ?.filter { it.replyId in replyIds && it.generationComplete && it.text.isNotBlank() }
+                ?.joinToString(" ") { it.text }?.takeIf { it.isNotBlank() }
             ?: "I couldn't complete the accepted phone action."
     }
 

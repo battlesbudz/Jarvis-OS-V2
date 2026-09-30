@@ -1152,6 +1152,49 @@ class ReleaseJourneyTest {
         } finally { file.delete() }
     }
 
+    @Test fun test33_conditionalAndCommaPlansUseRealAndroidWithoutModelCalls() = runBlocking {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true })
+        val battery = MobileActionPipeline(executor = executor).execute(ActionRequest("read_battery"))
+        assertTrue(battery.succeeded)
+        assertEquals(context.getSystemService(android.os.BatteryManager::class.java)
+            .getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY), battery.batteryPercent)
+        val percent = checkNotNull(battery.batteryPercent)
+        val directory = File(context.noBackupFilesDir, "conditional-journey").apply { deleteRecursively(); mkdirs() }
+        val ledger = ToolTaskLedger(FileToolTaskStore(File(directory, "journal.json")))
+        try {
+            val runner = ActionTurnRunner(executor)
+            val plan = ActionTurnPlan.parse("If my battery is at least $percent%, set volume to 40%, tell me my battery percentage, and open Settings") as ActionTurnPlan.Ready
+            var group: ToolTaskGroup? = null
+            var index = 0
+            val pipeline = JournaledActionPipeline(ledger, executor)
+            val outcome = runner.runValidated(plan, dispatch = { request ->
+                if (group == null) group = ledger.admit(plan.steps.map { it.request }, "conditional-thread", resumeAfterRestart = false)
+                pipeline.executeBound(checkNotNull(ledger.get(group!!.attemptIds[index++])), request)
+            }, checkBattery = { MobileActionPipeline(executor = executor).execute(ActionRequest("read_battery")) })
+            assertTrue(outcome.message, outcome.completed)
+            assertEquals(true, outcome.conditionMatched)
+            assertEquals(listOf("set_volume", "read_battery", "open_app"), outcome.receipts.map { it.request.name })
+            assertEquals((audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .4).roundToInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            assertEquals(percent, outcome.receipts[1].result.batteryPercent)
+            assertTrue(device.wait(Until.hasObject(By.pkg("com.android.settings")), 10_000))
+            device.pressBack()
+            activity.recreate()
+            val falseCondition = ActionTurnPlan.parse("If my battery is below 0 set volume to 90%") as ActionTurnPlan.Ready
+            val skipped = runner.runValidated(falseCondition, dispatch = { error("False condition dispatched") },
+                checkBattery = { MobileActionPipeline(executor = executor).execute(ActionRequest("read_battery")) })
+            assertTrue(skipped.completed)
+            assertEquals(false, skipped.conditionMatched)
+            assertTrue(skipped.receipts.isEmpty())
+            assertEquals((audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .4).roundToInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+            assertEquals(3, ledger.snapshot().count { it.state == ToolTaskState.SUCCEEDED })
+        } finally {
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
+            directory.deleteRecursively()
+        }
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()
