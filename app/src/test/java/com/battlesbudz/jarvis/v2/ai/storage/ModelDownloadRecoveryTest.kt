@@ -139,10 +139,13 @@ class ModelDownloadRecoveryTest {
     @Test fun cancellingStalledNetworkReadClosesConnectionAndRetainsCheckpoint() = fixture { host, target ->
         host.interrupt.set(true)
         host.stall.set(true)
+        val written = java.util.concurrent.CountDownLatch(1)
         val job = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.currentCoroutineContext()).launch(kotlinx.coroutines.Dispatchers.IO) {
-            ModelDownloader().download(host.url, target, { _, _ -> }, {})
+            ModelDownloader().download(host.url, target, { bytes, _ -> if (bytes > 0) written.countDown() }, {})
         }
         assertTrue(host.blocked.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        assertTrue("Cancel only after the downloader has persisted resumable bytes",
+            written.await(5, java.util.concurrent.TimeUnit.SECONDS))
         kotlinx.coroutines.withTimeout(10_000) { job.cancelAndJoin() }
         assertTrue(job.isCancelled)
         assertTrue(target.length() > 0)
