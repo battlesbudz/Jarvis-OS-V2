@@ -2146,10 +2146,27 @@ class ReleaseJourneyTest {
             bounds.centerY() >= viewport.top + 24 && bounds.centerY() <= viewport.bottom - 24
     }
 
+    /** Observe actual visible content; Compose need not emit a UiAutomator scroll event. */
+    private fun benchmarkViewportSignature(list: UiObject2): String {
+        val viewport = list.visibleBounds
+        val rows = mutableListOf<String>()
+        fun visit(node: UiObject2, depth: Int) {
+            if (depth > 12 || rows.size >= 256) return
+            val bounds = node.visibleBounds
+            if (bounds.width() <= 0 || bounds.height() <= 0 ||
+                !android.graphics.Rect.intersects(viewport, bounds)) return
+            rows.add("${node.resourceName}|${node.text}|$bounds")
+            node.children.forEach { visit(it, depth + 1) }
+        }
+        list.children.forEach { visit(it, 0) }
+        return rows.joinToString("\n")
+    }
+
     private fun benchmarkFindVisible(selector: BySelector, towardTop: Boolean, inDialog: Boolean,
         deadline: Long, swipes: AtomicInteger): UiObject2 {
         var direction = if (towardTop) Direction.UP else Direction.DOWN
         var reversedAtEdge = false
+        var unchangedGestures = 0
         while (SystemClock.uptimeMillis() < deadline) {
             try {
                 val control = device.findObject(selector)
@@ -2169,20 +2186,35 @@ class ReleaseJourneyTest {
                 check(viewport.width() > 0 && viewport.height() > 96) { "Benchmark scroll viewport is unavailable" }
                 val bounds = control?.visibleBounds
                 if (bounds != null) direction = if (bounds.centerY() < viewport.centerY()) Direction.UP else Direction.DOWN
-                // Overlapping, controlled scrolls avoid skipping a short metric row.
-                // The return value supplies an explicit edge instead of repeating a
-                // search direction forever when a target is absent from composition.
+                // Dispatch physical gestures as the older release journeys do. The
+                // UiObject2.scroll result conflates a missing accessibility event with
+                // an actual edge, so determine progress from fresh visible content.
+                val before = benchmarkViewportSignature(list)
+                val lowY = viewport.top + viewport.height() * 3 / 4
+                val highY = viewport.top + viewport.height() * 3 / 10
+                val fromY = if (direction == Direction.DOWN) lowY else highY
+                val toY = if (direction == Direction.DOWN) highY else lowY
                 val scrollStarted = SystemClock.uptimeMillis()
-                val canStillScroll = list.scroll(direction, 0.45f, 1200)
-                android.util.Log.i("JarvisVerification", "benchmark_navigation selector=$selector direction=$direction canStillScroll=$canStillScroll gestures=${swipes.get()} gestureMs=${SystemClock.uptimeMillis() - scrollStarted} remainingMs=${deadline - SystemClock.uptimeMillis()}")
+                check(device.swipe(viewport.centerX(), fromY, viewport.centerX(), toY, 35)) {
+                    "Benchmark swipe dispatch failed"
+                }
                 device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
                 if (SystemClock.uptimeMillis() >= deadline) break
+                SystemClock.sleep(150)
                 val fresh = device.findObject(selector)
                 if (fresh != null && benchmarkHasSafeBounds(fresh)) return fresh
-                if (!canStillScroll && fresh == null) {
+                val freshList = device.findObject(By.res("pipeline_benchmark_screen"))
+                    ?.findObject(By.scrollable(true))
+                val after = freshList?.let { benchmarkViewportSignature(it) }
+                val moved = after != null && after != before
+                unchangedGestures = if (moved) 0 else unchangedGestures + 1
+                android.util.Log.i("JarvisVerification", "benchmark_navigation selector=$selector direction=$direction moved=$moved unchangedGestures=$unchangedGestures gestures=${swipes.get()} gestureMs=${SystemClock.uptimeMillis() - scrollStarted} remainingMs=${deadline - SystemClock.uptimeMillis()}")
+                // Require two observed stationary gestures before reversing once.
+                if (after != null && unchangedGestures >= 2) {
                     if (reversedAtEdge) break
                     direction = if (direction == Direction.UP) Direction.DOWN else Direction.UP
                     reversedAtEdge = true
+                    unchangedGestures = 0
                 }
             } catch (_: StaleObjectException) {
                 // Re-query after scrolling or recomposition, before dispatching any tap.
