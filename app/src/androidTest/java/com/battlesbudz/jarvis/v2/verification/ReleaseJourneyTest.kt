@@ -49,6 +49,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import org.junit.*
 import org.junit.Assert.*
 import org.junit.rules.TestName
@@ -2114,6 +2115,99 @@ class ReleaseJourneyTest {
         }
     }
 
+    /** Benchmark-only navigation: Compose may export descendants wholly outside a LazyColumn. */
+    private fun benchmarkScrollAncestor(control: UiObject2): UiObject2? {
+        var ancestor = control.parent
+        repeat(40) {
+            val current = ancestor ?: return null
+            if (current.isScrollable) return current
+            ancestor = current.parent
+        }
+        throw AssertionError("Benchmark control has an unexpectedly deep ancestor chain")
+    }
+
+    private fun benchmarkHasSafeBounds(control: UiObject2): Boolean {
+        val bounds = control.visibleBounds
+        val viewport = android.graphics.Rect(24, 24, device.displayWidth - 24, device.displayHeight - 24)
+        var ancestor = control.parent
+        var depth = 0
+        while (ancestor != null && depth++ < 40) {
+            val current = ancestor
+            if (current.isScrollable && !viewport.intersect(current.visibleBounds)) viewport.setEmpty()
+            ancestor = current.parent
+        }
+        if (ancestor != null) return false
+        // Requiring vertical room also rejects a partially clipped descendant whose
+        // accessibility rectangle was truncated exactly at the viewport edge.
+        return bounds.width() > 0 && bounds.height() > 0 && viewport.contains(bounds) &&
+            bounds.top >= viewport.top + 12 && bounds.bottom <= viewport.bottom - 12 &&
+            bounds.centerX() >= viewport.left + 24 && bounds.centerX() <= viewport.right - 24 &&
+            bounds.centerY() >= viewport.top + 24 && bounds.centerY() <= viewport.bottom - 24
+    }
+
+    private fun benchmarkFindVisible(selector: BySelector, towardTop: Boolean, inDialog: Boolean,
+        deadline: Long, swipes: AtomicInteger): UiObject2 {
+        while (SystemClock.uptimeMillis() < deadline) {
+            try {
+                val control = device.findObject(selector)
+                if (control != null && benchmarkHasSafeBounds(control)) return control
+                if (inDialog) {
+                    SystemClock.sleep(100)
+                    continue
+                }
+                val list = if (control != null) benchmarkScrollAncestor(control)
+                    else device.findObject(By.res("pipeline_benchmark_screen"))?.findObject(By.scrollable(true))
+                if (list == null) {
+                    SystemClock.sleep(100)
+                    continue
+                }
+                if (swipes.incrementAndGet() > 14) break
+                val viewport = list.visibleBounds
+                check(viewport.width() > 0 && viewport.height() > 96) { "Benchmark scroll viewport is unavailable" }
+                val bounds = control?.visibleBounds
+                val upward = if (bounds == null) towardTop else bounds.centerY() < viewport.centerY()
+                val upper = viewport.top + viewport.height() / 4
+                val lower = viewport.bottom - viewport.height() / 4
+                device.swipe(viewport.centerX(), if (upward) upper else lower,
+                    viewport.centerX(), if (upward) lower else upper, 25)
+                device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
+            } catch (_: StaleObjectException) {
+                // Re-query after scrolling or recomposition, before dispatching any tap.
+            }
+        }
+        throw AssertionError("Benchmark control did not become fully visible: $selector")
+    }
+
+    private fun benchmarkScrollTo(selector: BySelector, towardTop: Boolean = false): UiObject2 =
+        benchmarkFindVisible(selector, towardTop, false, SystemClock.uptimeMillis() + 15_000, AtomicInteger())
+
+    private fun benchmarkClickEnabled(selector: BySelector, towardTop: Boolean = false, inDialog: Boolean = false) {
+        val deadline = SystemClock.uptimeMillis() + 15_000
+        val swipes = AtomicInteger()
+        while (SystemClock.uptimeMillis() < deadline) {
+            var ready: UiObject2? = null
+            try {
+                val control = benchmarkFindVisible(selector, towardTop, inDialog, deadline, swipes)
+                if (control.isEnabled) {
+                    val before = control.visibleBounds
+                    device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
+                    SystemClock.sleep(300)
+                    val fresh = device.findObject(selector)
+                    if (SystemClock.uptimeMillis() < deadline && fresh != null && fresh.isEnabled &&
+                        benchmarkHasSafeBounds(fresh) && fresh.visibleBounds == before) ready = fresh
+                } else SystemClock.sleep(100)
+            } catch (_: StaleObjectException) {
+                // Re-query stale nodes only before dispatching the physical tap.
+            }
+            ready?.let {
+                it.click() // Exactly one tap; a dispatch error is never retried.
+                device.waitForIdle()
+                return
+            }
+        }
+        throw AssertionError("Benchmark control did not become stably enabled inside its viewport: $selector")
+    }
+
     /** Controlled observations exercise the release dashboard; they are not model/audio performance evidence. */
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     @Test fun test45_pipelineBenchmarksScoreOriginalAsrPersistAndExportRedactedEvidence() = runBlocking {
@@ -2164,18 +2258,18 @@ class ReleaseJourneyTest {
                     tokenTelemetrySource = "unavailable_fixture_no_native_token_ids"))), hypothesis = originalAsr)
             store.flush()
             render(store)
-            clickEnabled(By.res("pipeline_benchmark_sample_$completedId"))
-            clickEnabled(By.res("benchmark_environment_NOISY"))
-            clickEnabled(By.res("pipeline_benchmark_reference"))
+            benchmarkClickEnabled(By.res("pipeline_benchmark_sample_$completedId"))
+            benchmarkClickEnabled(By.res("benchmark_environment_NOISY"))
+            benchmarkClickEnabled(By.res("pipeline_benchmark_reference"))
             assertTrue(find(By.text("Original ASR: $originalAsr")).text.contains(originalAsr))
             assertFalse(find(By.res("pipeline_benchmark_reference_score")).isEnabled)
             find(By.res("pipeline_benchmark_reference_text")).text = reference
             hideKeyboardWithoutNavigating()
             assertFalse("Typing a reference is insufficient without explicit verification",
                 find(By.res("pipeline_benchmark_reference_score")).isEnabled)
-            clickEnabled(By.res("pipeline_benchmark_reference_verify"))
-            clickEnabled(By.res("pipeline_benchmark_reference_score"))
-            assertTrue(scrollTo(By.res("pipeline_benchmark_status")).text.contains("WER 25.0%"))
+            benchmarkClickEnabled(By.res("pipeline_benchmark_reference_verify"), inDialog = true)
+            benchmarkClickEnabled(By.res("pipeline_benchmark_reference_score"), inDialog = true)
+            assertTrue(benchmarkScrollTo(By.res("pipeline_benchmark_status"), towardTop = true).text.contains("WER 25.0%"))
             val scored = store.samples.value.single { it.turnId == completedId }
             val score = requireNotNull(scored.accuracy)
             assertEquals(4, score.referenceWords)
@@ -2185,23 +2279,24 @@ class ReleaseJourneyTest {
             assertNull("Original ASR content must not become retained content", score.hypothesis)
 
             // A completed pipeline can still have an incorrect result: human review is independent.
-            clickEnabled(By.res("benchmark_quality_task_FAIL"))
-            clickEnabled(By.res("benchmark_quality_intent_PASS"))
-            clickEnabled(By.res("benchmark_quality_factuality_FAIL"))
-            assertFalse(scrollTo(By.res("pipeline_benchmark_quality_save")).isEnabled)
-            clickEnabled(By.res("pipeline_benchmark_quality_verify"))
-            clickEnabled(By.res("pipeline_benchmark_quality_save"))
+            benchmarkClickEnabled(By.res("benchmark_quality_task_FAIL"))
+            benchmarkClickEnabled(By.res("benchmark_quality_intent_PASS"))
+            benchmarkClickEnabled(By.res("benchmark_quality_factuality_FAIL"))
+            assertFalse(benchmarkScrollTo(By.res("pipeline_benchmark_quality_save")).isEnabled)
+            benchmarkClickEnabled(By.res("pipeline_benchmark_quality_verify"))
+            benchmarkClickEnabled(By.res("pipeline_benchmark_quality_save"))
+            withTimeout(5_000) { store.samples.first { turns -> turns.single { it.turnId == completedId }.quality != null } }
             val quality = store.samples.value.single { it.turnId == completedId }.quality!!
             assertEquals(PipelineBenchmarkVerdict.FAIL, quality.taskVerdict)
             assertEquals(PipelineBenchmarkVerdict.PASS, quality.intentVerdict)
             assertEquals(PipelineBenchmarkVerdict.FAIL, quality.factualityVerdict)
             assertEquals(PipelineBenchmarkOutcome.COMPLETE, store.samples.value.single { it.turnId == completedId }.outcome)
             assertEquals(PipelineBenchmarkEnvironment.NOISY, store.samples.value.single { it.turnId == completedId }.environment)
-            assertNotNull(scrollTo(By.text("tts_load_ms: unavailable")))
+            assertNotNull(benchmarkScrollTo(By.text("tts_load_ms: unavailable")))
             captureEvidence("pipeline_benchmark_verified_reference_and_review")
 
-            clickEnabled(By.res("pipeline_benchmark_copy_json"))
-            assertEquals("Redacted JSON report copied.", scrollTo(By.res("pipeline_benchmark_status")).text)
+            benchmarkClickEnabled(By.res("pipeline_benchmark_copy_json"), towardTop = true)
+            assertEquals("Redacted JSON report copied.", benchmarkScrollTo(By.res("pipeline_benchmark_status"), towardTop = true).text)
             val clipboard = AtomicReference<String>()
             activity.onActivity { host ->
                 clipboard.set(host.getSystemService(android.content.ClipboardManager::class.java)
@@ -2231,11 +2326,11 @@ class ReleaseJourneyTest {
             assertNull("Original transcript is process-only and is not restored from disk", restored.hypothesis(completedId))
             assertEquals(PipelineBenchmarkOutcome.CANCELLED, restored.samples.value.single { it.turnId == cancelledId }.outcome)
             render(restored)
-            clickEnabled(By.res("pipeline_benchmark_sample_$completedId"))
-            assertFalse(scrollTo(By.res("pipeline_benchmark_reference")).isEnabled)
+            benchmarkClickEnabled(By.res("pipeline_benchmark_sample_$completedId"))
+            assertFalse(benchmarkScrollTo(By.res("pipeline_benchmark_reference")).isEnabled)
             captureEvidence("pipeline_benchmark_restored_redacted_scores")
-            clickEnabled(By.res("pipeline_benchmark_reset"))
-            clickEnabled(By.res("pipeline_benchmark_reset_confirm"))
+            benchmarkClickEnabled(By.res("pipeline_benchmark_reset"), towardTop = true)
+            benchmarkClickEnabled(By.res("pipeline_benchmark_reset_confirm"), inDialog = true)
             assertNotNull(find(By.text("No pipeline measurements yet. Complete a text or voice turn, then return here.")))
             restored.flush()
             assertTrue(AndroidPipelineBenchmarkStore(fixtureContext).samples.value.isEmpty())
