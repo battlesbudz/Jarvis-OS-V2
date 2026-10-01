@@ -2129,10 +2129,15 @@ class ReleaseJourneyTest {
         val reference = "alpha beta gamma delta"
         fun render(value: AndroidPipelineBenchmarkStore) {
             activity.onActivity { host -> host.setContent {
-                MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
-                    PipelineBenchmarkScreen(value, onClose = {})
-                } }
+                // A restored store represents a new process: do not reuse the prior
+                // screen's remembered selection, status or reference-dialog state.
+                androidx.compose.runtime.key(value) {
+                    MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                        PipelineBenchmarkScreen(value, onClose = {})
+                    } }
+                }
             } }
+            device.waitForIdle()
             find(By.res("pipeline_benchmark_screen"))
         }
         try {
