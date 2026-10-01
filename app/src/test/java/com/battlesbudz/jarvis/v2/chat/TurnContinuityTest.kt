@@ -35,4 +35,10 @@ class TurnContinuityTest {
         assertTrue(TurnContinuity.lookupContext("what is fpj?", listOf("You" to "New topic: Korean Natural Farming"))!!.contains("Korean Natural Farming"))
         assertEquals("Let's talk about Korean Natural Farming", TurnContinuity.precedingSubstantiveRequest("https://example.org/ref.pdf", history + listOf("You" to "no")))
     }
+    @Test fun disputedAsrDateIsCorrectionAndSourceSelectionIsNotAQuestion() {
+        assertTrue(TurnContinuity.isCorrection("I didn't say anything about a year."))
+        val history = listOf("You" to "Where was the first one opened?", "You" to "Use Wikipedia.")
+        assertEquals("Where was the first one opened?", TurnContinuity.precedingSubstantiveRequest("https://example.org/article", history))
+    }
+
 }

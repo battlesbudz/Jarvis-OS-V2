@@ -7,6 +7,10 @@ import java.io.File
 class WhisperTranscriber(private val directory: File, live: Boolean = true, log: (String) -> Unit = {}, modelSession: VoiceModelSession? = null, private val audioEvidence: RecognitionAudioEvidence? = null, warmProbe: Boolean = false) : StreamingTranscriber {
     init { require(!warmProbe || (!live && modelSession != null)) }
     private val audio = RollingAudioBuffer(AudioFormat(16_000), maxDurationMs = 25_000)
+    // Whisper's background windows previously retained all idle room noise and
+    // endpoint silence. Apply the same external acoustic window as Moonshine;
+    // final-only probes without observeSpeech() still receive their complete PCM.
+    private val speechGate = ExternalSpeechGate()
     private fun createRecognizer() = OfflineRecognizer(config = OfflineRecognizerConfig(
         modelConfig = OfflineModelConfig(whisper = OfflineWhisperModelConfig(
             encoder = File(directory, "base.en-encoder.int8.onnx").path,
@@ -18,18 +22,31 @@ class WhisperTranscriber(private val directory: File, live: Boolean = true, log:
     private var healthy = true
     private fun releaseRecognizer() { if (lease != null) lease.finish(healthy) else recognizer.release() }
     private var closed = false
+    private val directWork = AsrRecognitionWorkAccumulator("whisper_batch_decode_callback_wall")
     private val streaming = if (live) AsyncWhisperSession(::decode, ::releaseRecognizer, log) else null
+    override val recognitionWorkMetrics get() = streaming?.recognitionWorkMetrics ?: directWork.snapshot()
     override val noTextSilenceMs: Long get() = 900
     override fun prepareForBoundedProbe(maxAudioMs: Long): String {
         check(streaming == null && audio.sizeBytes() == 0L)
         require(maxAudioMs in 1..4000)
         return "whisper_final_only_v1"
     }
-    override fun observeSpeech(speech: Boolean) { streaming?.observeSpeech(speech) }
+    override fun observeSpeech(speech: Boolean) {
+        if (streaming != null) streaming.observeSpeech(speech) else speechGate.observe(speech)
+    }
     override fun accept(pcm: ByteArray): String = accept(pcm, true)
-    override fun accept(pcm: ByteArray, allowPartial: Boolean): String { check(!closed); if (streaming != null) return streaming.accept(pcm, allowPartial); audio.append(pcm); return "" }
-    override fun finish(): String = streaming?.finish() ?: decode(audio.snapshot())
-    override fun recover(pcm: ByteArray): String = streaming?.recover(pcm) ?: decode(pcm)
+    override fun accept(pcm: ByteArray, allowPartial: Boolean): String {
+        check(!closed)
+        if (streaming != null) return streaming.accept(pcm, allowPartial)
+        audio.append(speechGate.accept(pcm))
+        return ""
+    }
+    override fun finish(): String {
+        if (streaming != null) return streaming.finish()
+        val snapshot = audio.snapshot()
+        return directWork.measure(AsrRecognitionWorkAccumulator.Phase.FINAL, snapshot.size / 2) { decode(snapshot) }
+    }
+    override fun recover(pcm: ByteArray): String = streaming?.recover(pcm) ?: directWork.measure(AsrRecognitionWorkAccumulator.Phase.RECOVERY, pcm.size / 2) { decode(pcm) }
     private fun decode(pcm: ByteArray): String {
         check(!closed)
         if (pcm.isEmpty()) return ""
@@ -42,7 +59,7 @@ class WhisperTranscriber(private val directory: File, live: Boolean = true, log:
         } catch (error: Throwable) { healthy = false; throw error }
         finally { stream.release() }
     }
-    override fun close() { if (!closed) { if (streaming != null) streaming.close() else releaseRecognizer(); closed = true; audio.clear() } }
+    override fun close() { if (!closed) { if (streaming != null) streaming.close() else releaseRecognizer(); closed = true; audio.clear(); speechGate.clear() } }
 }
 
 internal fun pcmFloats(pcm: ByteArray): FloatArray = FloatArray(pcm.size / 2) { i ->

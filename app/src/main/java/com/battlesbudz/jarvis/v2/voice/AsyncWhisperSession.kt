@@ -8,10 +8,14 @@ import java.util.concurrent.Future
 internal class AsyncWhisperSession(
     private val decode: (ByteArray) -> String,
     private val release: () -> Unit,
-    private val log: (String) -> Unit = {}
+    private val log: (String) -> Unit = {},
+    workClockNs: () -> Long = System::nanoTime
 ) : StreamingTranscriber {
+    private val work = AsrRecognitionWorkAccumulator("whisper_batch_decode_callback_wall", workClockNs)
+    override val recognitionWorkMetrics get() = work.snapshot()
     private val worker = Executors.newSingleThreadExecutor { task -> Thread(task, "jarvis-whisper").apply { isDaemon = true } }
     private var audio = RollingAudioBuffer(AudioFormat(16000), maxDurationMs = 25000)
+    private val speechGate = ExternalSpeechGate()
     private var active = false
     private var total = 0L
     private var scheduled = 0L
@@ -24,6 +28,7 @@ internal class AsyncWhisperSession(
     private data class Result(val end: Long, val text: String)
     override val noTextSilenceMs: Long get() = 900
     override fun observeSpeech(speech: Boolean) {
+        speechGate.observe(speech)
         if (speech && !active) {
             val tail = audio.snapshot().takeLast(38400).toByteArray()
             audio.clear(); audio.append(tail); total = tail.size.toLong(); active = true
@@ -33,7 +38,8 @@ internal class AsyncWhisperSession(
     override fun accept(pcm: ByteArray, allowPartial: Boolean): String {
         check(!closed && !sealed)
         failure?.let { throw IllegalStateException("Whisper background decoding failed", it) }
-        audio.append(pcm); total += pcm.size
+        val qualified = speechGate.accept(pcm)
+        audio.append(qualified); total += qualified.size
         if (allowPartial && active && total >= 48000 && total - scheduled >= 38400 && inFlight?.isDone != false) {
             val snapshot = audio.snapshot(); val end = total
             scheduled = end
@@ -41,7 +47,7 @@ internal class AsyncWhisperSession(
             inFlight = worker.submit {
                 try {
                     val began = System.nanoTime()
-                    val text = decode(snapshot)
+                    val text = work.measure(AsrRecognitionWorkAccumulator.Phase.PARTIAL, snapshot.size / 2) { decode(snapshot) }
                     stable = agreeingPrefix(latest.text, text)
                     latest = Result(end, text)
                     log("whisper_partial recognition=provisional queueWaitMs=${(began - queuedAt) / 1_000_000} audioMs=${snapshot.size / 32} decodeMs=${(System.nanoTime()-began)/1_000_000} stableChars=${stable.length} pendingWindows=0")
@@ -59,18 +65,20 @@ internal class AsyncWhisperSession(
             failure?.let { throw IllegalStateException("Whisper background decoding failed", it) }
             val reused = latest.end == end
             val began = System.nanoTime()
-            val result = if (reused) latest.text else decode(snapshot)
+            val result = if (reused) latest.text else work.measure(AsrRecognitionWorkAccumulator.Phase.FINAL, snapshot.size / 2) { decode(snapshot) }
             log("whisper_final recognition=committed reused=$reused queueWaitMs=$queueWaitMs audioMs=${snapshot.size / 32} decodeMs=${(System.nanoTime()-began)/1_000_000}")
             result
         }.get()
     }
-    override fun recover(pcm: ByteArray): String = worker.submit<String> { decode(pcm) }.get()
+    override fun recover(pcm: ByteArray): String = worker.submit<String> {
+        work.measure(AsrRecognitionWorkAccumulator.Phase.RECOVERY, pcm.size / 2) { decode(pcm) }
+    }.get()
     override fun close() {
         if (closed) return
         closed = true
         // Never release a recognizer underneath an in-flight JNI call.
         try { worker.submit { release() }.get() }
-        finally { worker.shutdown(); audio.clear() }
+        finally { worker.shutdown(); audio.clear(); speechGate.clear() }
     }
     companion object {
         fun agreeingPrefix(previous: String, current: String): String {

@@ -1,6 +1,8 @@
 package com.battlesbudz.jarvis.v2.conversation
 
 import android.net.Uri
+import com.battlesbudz.jarvis.v2.diagnostics.newPipelineBenchmark
+import com.battlesbudz.jarvis.v2.diagnostics.finishPipelineResources
 import com.battlesbudz.jarvis.v2.*
 import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
 import androidx.lifecycle.lifecycleScope
@@ -35,7 +37,8 @@ internal fun JarvisRuntime.runConversationInternal(
         /** The call owner holds the one model lease and joins this invocation before restart. */
         callOwned: Boolean = false,
         /** Binds an ordinary answer's exact voice output to its mutation/expiry delivery ticket. */
-        onMemoryBound: (com.battlesbudz.jarvis.v2.memory.MemoryDeliveryFence.Ticket, MemoryTurnContext) -> Unit = { _, _ -> }
+        onMemoryBound: (com.battlesbudz.jarvis.v2.memory.MemoryDeliveryFence.Ticket, MemoryTurnContext) -> Unit = { _, _ -> },
+        benchmarkCapture: com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkCapture? = null
     ): Job? {
         var continuityContext = ""
         var captureContext = ""
@@ -57,6 +60,20 @@ internal fun JarvisRuntime.runConversationInternal(
         } ?: ConversationPolicy.CONVERSATION_COMPACTION_LIMIT
         val latencyStarted = System.nanoTime()
         val latencyId = java.util.UUID.randomUUID().toString()
+        val benchmark = benchmarkCapture ?: newPipelineBenchmark(latencyId,
+            if (voiceAudio != null) "voice_reply" else if (callOwned) "typed_in_call" else "text")
+        val ownsBenchmark = benchmarkCapture == null
+        var benchmarkOutcome = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome.COMPLETE
+        var benchmarkFailure: String? = null
+        var benchmarkEngine: LiteRtLmEngine? = null
+        fun finishBenchmark() {
+            benchmark.metric("reply_processing_ms", (System.nanoTime() - latencyStarted) / 1_000_000)
+            benchmark.noteOutcome(benchmarkOutcome, benchmarkFailure)
+            if (ownsBenchmark) {
+                finishPipelineResources(benchmark)
+                benchmark.finish(benchmarkOutcome, failureCode = benchmarkFailure)?.let { pipelineBenchmarkStore.append(it) }
+            }
+        }
         var loadMs = 0L
         var lookupMs = 0L
         val inferencePasses = mutableListOf<com.battlesbudz.jarvis.v2.diagnostics.InferenceTiming>()
@@ -64,7 +81,10 @@ internal fun JarvisRuntime.runConversationInternal(
         fun elapsed() = (System.nanoTime() - latencyStarted) / 1_000_000
         fun deliverToken(text: String) {
             val publish = {
-                if (firstVisibleMs == null && text.isNotBlank()) firstVisibleMs = elapsed()
+                if (firstVisibleMs == null && text.isNotBlank()) {
+                    firstVisibleMs = elapsed()
+                    benchmark.mark("first_reply_text")
+                }
                 onToken(text)
             }
             val ticket = memoryDeliveryTicket
@@ -73,7 +93,10 @@ internal fun JarvisRuntime.runConversationInternal(
         }
         fun finish(text: String) {
             val publish = {
-                if (firstVisibleMs == null && text.isNotBlank()) firstVisibleMs = elapsed()
+                if (firstVisibleMs == null && text.isNotBlank()) {
+                    firstVisibleMs = elapsed()
+                    benchmark.mark("first_reply_text")
+                }
                 onLatency(com.battlesbudz.jarvis.v2.diagnostics.TurnLatency(latencyId, elapsed(),
                     firstVisibleMs, loadMs, lookupMs, inferencePasses.toList()))
                 comparison?.put("answer", text)
@@ -87,32 +110,48 @@ internal fun JarvisRuntime.runConversationInternal(
                 onComplete("Memory changed while I was responding. Please ask again.")
             }
         }
+        fun postFinish(text: String) {
+            if (text.isNotBlank()) benchmark.mark("first_reply_text_ready")
+            mainHandler.post { finish(text) }
+        }
+        fun postToken(text: String) {
+            if (text.isNotBlank()) benchmark.mark("first_reply_text_ready")
+            mainHandler.post { deliverToken(text) }
+        }
         if (voiceAudio == null && frozenActionPlan == null && !callOwned && modelStore.isModelOperationActive()) {
+            benchmarkOutcome = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome.REJECTED
+            benchmarkFailure = "model_operation_busy"
             finish("A voice or model operation is still active. Please finish it first.")
+            finishBenchmark()
             return null
         }
         if (!ConversationWork.activeJobs.compareAndSet(0, 1)) {
+            benchmarkOutcome = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome.REJECTED
+            benchmarkFailure = "conversation_busy"
             finish("The previous response is still finishing. Please try again in a moment.")
+            finishBenchmark()
             return null
         }
         val invocation = runtimeScope.launch(Dispatchers.Default) {
             var lastLiveRate: Double? = null
+            benchmark.mark("request_processing_started")
+            benchmark.metric("request_queue_ms", elapsed())
             try {
                 // Reject only an exceptionally large single message before
                 // routing or executing a phone side effect. Retained history is
                 // handled by compaction below and must not reject a short follow-up.
                 if (prompt.length > ConversationPolicy.MAX_USER_PROMPT_CHARS) {
+                    benchmarkOutcome = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome.REJECTED
+                    benchmarkFailure = "request_too_large"
                     diagnosticRecorder.record(
                         "Turn rejected before action routing\\n" +
                             "userLength=${prompt.length}\\n" +
                             "reason=single user message exceeds safe mobile budget"
                     )
-                    mainHandler.post {
-                        finish(
+                    postFinish(
                             "That request is too large for the local model's safe mobile budget. " +
                                 "Please send it in smaller parts."
-                        )
-                    }
+                    )
                     return@launch
                 }
 
@@ -134,11 +173,13 @@ internal fun JarvisRuntime.runConversationInternal(
                     "condition=${(requestedActionPlan as? com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready)?.batteryCondition} " +
                     "reason=${(requestedActionPlan as? com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Rejected)?.reason}")
                 if (requestedActionPlan is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Rejected) {
+                    benchmarkOutcome = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome.REJECTED
+                    benchmarkFailure = "action_plan_rejected"
                     incrementalVoice?.close()
                     resetNativeConversation()
                     val rejection = requestedActionPlan.reason
                     turnOrchestrator.recordResponse(prompt, rejection, turnPlan)
-                    mainHandler.post { finish(rejection) }
+                    postFinish(rejection)
                     return@launch
                 }
                 val guardedFrozenVoicePlan = requestedActionPlan as? com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready
@@ -147,11 +188,13 @@ internal fun JarvisRuntime.runConversationInternal(
                         com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard.allows(
                             step.sourceClause, step.request.name, step.request.arguments)
                     }) {
+                    benchmarkOutcome = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome.REJECTED
+                    benchmarkFailure = "final_voice_guard_rejected"
                     incrementalVoice?.close()
                     resetNativeConversation()
                     val rejection = "I couldn't verify that final spoken phone request. Please say it again."
                     diagnosticRecorder.recordImportant("Voice action rejected: final source-clause guard failed")
-                    mainHandler.post { finish(rejection) }
+                    postFinish(rejection)
                     return@launch
                 }
                 var preparedTextInput = incrementalVoice?.takeIf { imageUri == null && requestedActionPlan !is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready }
@@ -164,7 +207,7 @@ internal fun JarvisRuntime.runConversationInternal(
                             com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard.allows(
                                 step.sourceClause, step.request.name, step.request.arguments)
                         }) {
-                        mainHandler.post { finish("I couldn't verify that final spoken phone request. Please say it again.") }
+                        postFinish("I couldn't verify that final spoken phone request. Please say it again.")
                         return@launch
                     }
                     resetNativeConversation()
@@ -173,6 +216,8 @@ internal fun JarvisRuntime.runConversationInternal(
                     val executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(
                         this@runConversationInternal, canLaunchDirectly = { activityVisible },
                         onDiagnostic = diagnosticRecorder::recordImportant)
+                    val actionStarted = System.nanoTime()
+                    benchmark.mark("tool_execution_started")
                     val outcome = coordinator.runValidated(plan,
                         checkBattery = { kotlinx.coroutines.withContext(Dispatchers.Main) {
                             executePhoneAction(com.battlesbudz.jarvis.v2.actions.ActionRequest("read_battery"), executor)
@@ -185,6 +230,18 @@ internal fun JarvisRuntime.runConversationInternal(
                                 onActionResult(request.name, it.message, it.succeeded)
                             }
                         } })
+                    benchmark.mark("tool_execution_finished")
+                    benchmark.metric("tool_execution_ms", (System.nanoTime() - actionStarted) / 1_000_000)
+                    benchmark.metric("tool_requested_steps", plan.steps.size)
+                    benchmark.metric("tool_executed_steps", outcome.receipts.size)
+                    benchmark.metric("tool_succeeded_steps", outcome.receipts.count { it.result.succeeded })
+                    benchmark.metric("tool_failed_steps", outcome.receipts.count { !it.result.succeeded })
+                    benchmark.metric("tool_condition_matched", outcome.conditionMatched?.let { if (it) 1 else 0 })
+                    benchmark.configuration("tool_result_provenance", "android_executor_receipts_not_model_claims")
+                    if (!outcome.completed) {
+                        benchmarkOutcome = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome.ERROR
+                        benchmarkFailure = "tool_execution_incomplete"
+                    }
                     if (outcome.stopped) phoneTaskGroupId?.let { cancelPhoneTask(it) }
                     lastPhoneActionStatus = com.battlesbudz.jarvis.v2.actions.PhoneActionStatus(
                         phoneTaskConversationId, prompt, outcome.message)
@@ -195,7 +252,7 @@ internal fun JarvisRuntime.runConversationInternal(
                         "receipts=${outcome.receipts.map { it.request to (it.result.outcome to it.result.message) }}\n" +
                         "completed=${outcome.completed} result=${outcome.message}")
                     turnOrchestrator.recordResponse(prompt, outcome.message, turnPlan)
-                    mainHandler.post { finish(outcome.message) }
+                    postFinish(outcome.message)
                     return@launch
                 }
                 val phoneStatusReply = if (imageUri == null && audioUri == null && comparison == null)
@@ -205,7 +262,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     incrementalVoice?.close()
                     resetNativeConversation()
                     diagnosticRecorder.recordImportant("Phone status follow-up: source=executor_receipt modelInvoked=false")
-                    mainHandler.post { finish(phoneStatusReply) }
+                    postFinish(phoneStatusReply)
                     return@launch
                 }
                 if (!modelStore.verifyIntegrity(modelStore.selectedModel())) {
@@ -219,7 +276,11 @@ internal fun JarvisRuntime.runConversationInternal(
                 // invalidate it; an approved mutation fences later tokens and forces a fresh context.
                 if (requestedActionPlan !is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready) {
                     val memoryBudget = (contextLimit / 5).coerceIn(240, 1_200)
+                    val memoryStarted = System.nanoTime()
+                    benchmark.mark("memory_retrieval_started")
                     memoryTurnContext = freshMemoryTurnContext(prompt, memoryBudget)
+                    benchmark.mark("memory_retrieval_finished")
+                    benchmark.metric("memory_retrieval_ms", (System.nanoTime() - memoryStarted) / 1_000_000)
                     if (memoryTurnContext == null) {
                         // A failed store read must not reuse a resident native conversation seeded
                         // with an earlier approved packet. Keep the user-visible failure explicit.
@@ -228,7 +289,7 @@ internal fun JarvisRuntime.runConversationInternal(
                         memoryDeliveryFence.invalidate()
                         nativeMemoryStateToken = null
                         resetNativeConversation()
-                        mainHandler.post { finish("Memory context is unavailable right now; please try again after storage recovers.") }
+                        postFinish("Memory context is unavailable right now; please try again after storage recovers.")
                         return@launch
                     }
                     if (adoptMemoryState(memoryTurnContext!!)) {
@@ -247,7 +308,7 @@ internal fun JarvisRuntime.runConversationInternal(
                         resetNativeConversation()
                         turnOrchestrator.recordResponse(prompt, repeatReply, turnPlan)
                         diagnosticRecorder.record("Dialogue recall: source=latest_visible_reply chars=${repeatReply.length}")
-                        mainHandler.post { finish(repeatReply) }
+                        postFinish(repeatReply)
                         return@launch
                     }
                 }
@@ -262,7 +323,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     val acknowledgment = captureReceipt?.let(com.battlesbudz.jarvis.v2.memory.MemoryCaptureAcknowledgment::reply)
                         ?: "I couldn't verify that a memory proposal was saved. Please try again."
                     turnOrchestrator.recordResponse(prompt, acknowledgment, turnPlan)
-                    mainHandler.post { finish(acknowledgment) }
+                    postFinish(acknowledgment)
                     return@launch
                 }
                 if (com.battlesbudz.jarvis.v2.chat.TurnContinuity.isCorrection(prompt)) {
@@ -279,6 +340,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     phoneAction = requestedActionPlan is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready
                 )
                 val lookupStarted = System.nanoTime()
+                if (turnPlan.lookupQuery != null) benchmark.mark("reference_lookup_started")
                 val referenceContext = turnPlan.lookupQuery?.takeUnless { personalMemoryRecall }?.let {
                     if (voiceAudio != null) activeVoiceOutput?.acknowledgeConfirmedTurn()
                     referenceGrounding.fetchIfRequested(it)?.context
@@ -286,6 +348,11 @@ internal fun JarvisRuntime.runConversationInternal(
                 if (turnPlan.lookupQuery != null) diagnosticRecorder.recordSummary(
                     "Voice lookup durationMs=${(System.nanoTime() - lookupStarted) / 1_000_000} success=${!referenceContext.isNullOrBlank()}")
 
+                if (turnPlan.lookupQuery != null) {
+                    benchmark.mark("reference_lookup_finished")
+                    benchmark.metric("reference_lookup_ms", (System.nanoTime() - lookupStarted) / 1_000_000)
+                    benchmark.metric("reference_lookup_evidence_found", if (referenceContext.isNullOrBlank()) 0 else 1)
+                }
                 lookupMs += if (turnPlan.lookupQuery != null) (System.nanoTime() - lookupStarted) / 1_000_000 else 0L
 
                 // Automatic factual routing owns the lookup decision. If the
@@ -300,11 +367,9 @@ internal fun JarvisRuntime.runConversationInternal(
                             "user=${prompt.take(1_000)}\\n" +
                             "lookupQuery=${turnPlan.lookupQuery?.take(1_000)}"
                     )
-                    mainHandler.post {
-                        finish(if (com.battlesbudz.jarvis.v2.chat.TurnContinuity.isCorrection(prompt))
+                    postFinish(if (com.battlesbudz.jarvis.v2.chat.TurnContinuity.isCorrection(prompt))
                             "I can't verify my earlier claim from relevant evidence, so it should not be treated as fact."
                         else "I couldn't find relevant reference evidence for that question. I can't verify the answer yet.")
-                    }
                     return@launch
                 }
 
@@ -317,11 +382,9 @@ internal fun JarvisRuntime.runConversationInternal(
                             "lookupQuery=${turnPlan.lookupQuery?.take(1_000)}\\n" +
                             "reason=reference source returned no evidence"
                     )
-                    mainHandler.post {
-                        finish(
+                    postFinish(
                             "I couldn't reach Wikipedia right now. Please check your connection and try again."
-                        )
-                    }
+                    )
                     return@launch
                 }
 
@@ -404,6 +467,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 // Conversation is reset only when the bounded context needs
                 // to be compacted or an isolated retry is required.
                 val loadingStarted = System.nanoTime()
+                benchmark.mark("model_load_started")
                 val engineWasLoaded = conversationEngine != null
                 val engine = conversationEngine ?: LiteRtLmEngine(
                     modelStore.selectedModel().id,
@@ -421,6 +485,11 @@ internal fun JarvisRuntime.runConversationInternal(
                     conversationCharacters = 0
                 }
                 if (!engineWasLoaded) loadMs += (System.nanoTime() - loadingStarted) / 1_000_000
+                benchmark.mark("model_load_finished")
+                benchmark.metric("reply_model_load_ms", loadMs)
+                benchmarkEngine = engine
+                engine.onBenchmarkSubmission = benchmark::submission
+                engine.benchmarkPurpose = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkPurpose.ANSWER
                 if (voiceAudio == null && !callOwned) {
                     var textSubmission = 0
                     engine.onPromptSubmitted = { exact, audioBytes ->
@@ -443,7 +512,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 val voiceRepetitionGuard = if (requestedActionPlan is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.NotAction && imageUri == null && audioUri == null) {
                     com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard(
                         prompt, safeHistory.lastOrNull { it.role == "Jarvis" }?.text,
-                        emit = { safe -> mainHandler.post { deliverToken(if (voiceAudio != null) com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard.speechReady(safe) else safe) } }).also { it.preserveFormatting = voiceAudio == null }
+                        emit = { safe -> postToken(if (voiceAudio != null) com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard.speechReady(safe) else safe) }).also { it.preserveFormatting = voiceAudio == null }
                 } else null
                 if (voiceAudio != null) diagnosticRecorder.record("Voice sentence streaming: " +
                     "suppliedReference=$streamGroundedVoice actionGuard=$allowTools")
@@ -459,7 +528,7 @@ internal fun JarvisRuntime.runConversationInternal(
                         requestedActionPlan !is com.battlesbudz.jarvis.v2.actions.ActionTurnPlan.Ready
                     ) {
                         if (voiceRepetitionGuard != null) voiceRepetitionGuard.accept(safeText)
-                        else mainHandler.post { deliverToken(safeText) }
+                        else postToken(safeText)
                     }
                 }
                 var seedContext = !nativeConversationHasContext
@@ -471,6 +540,10 @@ internal fun JarvisRuntime.runConversationInternal(
                 )
                 turnPlan.activeSubject?.let {
                     submittedPrompt += "\n\nResolved subject for this turn: " + it
+                }
+                turnPlan.resolvedQuestion?.let {
+                    submittedPrompt += "\n\nResolved current question: $it\nAnswer this question using relevant reference evidence. " +
+                        "The raw speech transcript and earlier assistant claims are not verified facts."
                 }
                 submittedPrompt += referenceContext?.let { "\n\n$it" }.orEmpty()
                 if (submittedPrompt.length + ConversationPolicy.GENERATION_HEADROOM >
@@ -489,6 +562,10 @@ internal fun JarvisRuntime.runConversationInternal(
                     )
                     turnPlan.activeSubject?.let {
                         submittedPrompt += "\n\nResolved subject for this turn: " + it
+                    }
+                    turnPlan.resolvedQuestion?.let {
+                        submittedPrompt += "\n\nResolved current question: $it\nAnswer this question using relevant reference evidence. " +
+                            "The raw speech transcript and earlier assistant claims are not verified facts."
                     }
                     submittedPrompt += referenceContext?.let { "\n\n$it" }.orEmpty()
                 }
@@ -526,6 +603,8 @@ internal fun JarvisRuntime.runConversationInternal(
                         "latestReplyIncluded=${latestReply?.takeIf { it.isNotBlank() }?.let(submittedPrompt::contains)} " +
                         "latestReplyChars=${latestReply?.length ?: 0} scope=assembled_prompt nativeContext=$nativeConversationHasContext")
                 }
+                val attachmentStarted = System.nanoTime()
+                if (imageUri != null || audioUri != null) benchmark.mark("attachment_preparation_started")
                 val imageBytes = imageUri?.let { uri ->
                     openVisionInputStream(uri)?.use { input ->
                         com.battlesbudz.jarvis.v2.chat.AttachmentPolicy.readBounded(input)
@@ -536,7 +615,15 @@ internal fun JarvisRuntime.runConversationInternal(
                         ?.also { com.battlesbudz.jarvis.v2.chat.AttachmentPolicy.validateAudio(it) }
                         ?: error("The selected audio could not be read.")
                 }
+                if (imageUri != null || audioUri != null) {
+                    benchmark.mark("attachment_preparation_finished")
+                    benchmark.metric("attachment_preparation_ms", (System.nanoTime() - attachmentStarted) / 1_000_000)
+                    benchmark.metric("submitted_image_bytes", imageBytes?.size)
+                    benchmark.metric("submitted_audio_file_bytes", attachedAudio?.size)
+                    benchmark.configuration("native_multimodal_encoder_timing", "unavailable_in_sdk")
+                }
                 fun recordInference(label: String, result: com.battlesbudz.jarvis.v2.ai.GenerationResult) {
+                    benchmark.metric("inference_passes_completed", inferencePasses.size + 1)
                     comparison?.put("inference_" + label, "nativeTTFTMs=${result.timeToFirstTokenMs} totalMs=${result.totalGenerationTimeMs} nativeSubmitMs=${result.nativeSubmitMs} firstCallbackMs=${result.firstCallbackMs}")
                     inferencePasses += com.battlesbudz.jarvis.v2.diagnostics.InferenceTiming.from(
                         label, result, prepared = false)
@@ -588,6 +675,7 @@ internal fun JarvisRuntime.runConversationInternal(
                         diagnosticRecorder.recordSummary("Voice incremental fallback: reason=${error.javaClass.simpleName} " +
                             "message=${error.message?.take(300)} policy=final_text_once audioBytes=0")
                         incrementalFallbackUsed = true
+                        engine.benchmarkPurpose = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkPurpose.RETRY
                         engine.generate(submittedPrompt, acceptVoiceToken)
                     }
                 } else if (voiceAudio != null) {
@@ -678,6 +766,7 @@ internal fun JarvisRuntime.runConversationInternal(
                         
                         The previous output contained an invalid tool call. Answer the user's current message directly as normal text. Do not call a tool.
                     """.trimIndent()
+                    engine.benchmarkPurpose = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkPurpose.RETRY
                     generated = if (attachedAudio != null) {
                         engine.generateAudio(retryPrompt, attachedAudio, streamFilter::accept)
                     } else if (imageBytes != null) {
@@ -707,6 +796,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     // catches confident-looking entity or historical errors
                     // that phrase matching cannot detect.
                     resetNativeConversation()
+                    engine.benchmarkPurpose = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkPurpose.DRAFT
                     val verdict = engine.generate(
                         prompt = factualityVerifier.buildPrompt(prompt, localAnswer),
                         onToken = {}
@@ -735,6 +825,7 @@ internal fun JarvisRuntime.runConversationInternal(
                             promptHistory,
                             seedContext = true
                         ) + "\n\n" + fallbackContext
+                        engine.benchmarkPurpose = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkPurpose.RETRY
                         generated = if (imageBytes != null) {
                             engine.generate(
                                 prompt = fallbackPrompt,
@@ -786,6 +877,7 @@ internal fun JarvisRuntime.runConversationInternal(
                             seedContext = true
                         ) + "\n\n" + retryContext + "\n\n" +
                             "The previous draft was not acceptable. Answer from the reference evidence above. Do not mention your knowledge base or ask whether to search."
+                        engine.benchmarkPurpose = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkPurpose.RETRY
                         generated = if (imageBytes != null) {
                             engine.generate(
                                 prompt = retryPrompt,
@@ -824,6 +916,7 @@ internal fun JarvisRuntime.runConversationInternal(
                                 "Resolve follow-ups using the dialogue above. " + com.battlesbudz.jarvis.v2.chat.AnswerQualityPolicy.repairInstruction("repetition_or_unhelpful_draft")
                             // Disable native tool production as well as keeping repair outside dispatch.
                             engine.setToolsEnabled(false)
+                            engine.benchmarkPurpose = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkPurpose.RETRY
                             val repair = com.battlesbudz.jarvis.v2.voice.VoiceRepetitionRepair.run(voiceRepetitionGuard) { emit ->
                                 engine.generate(prompt = repairPrompt, onToken = emit)
                             }
@@ -884,7 +977,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     // answer assembled from erased/corrected approved memory.
                     resetNativeConversation()
                     shortTermContext.clear()
-                    mainHandler.post { finish("Memory changed while I was responding. Please ask again.") }
+                    postFinish("Memory changed while I was responding. Please ask again.")
                     return@launch
                 }
                 turnOrchestrator.recordResponse(prompt, finalResponse, turnPlan)
@@ -901,12 +994,16 @@ internal fun JarvisRuntime.runConversationInternal(
                         "repeatedFragment=$repeatedFragment\n" +
                         "conversationCharacters=$conversationCharacters"
                 )
-                mainHandler.post { finish(finalResponse) }
+                postFinish(finalResponse)
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                benchmarkOutcome = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome.CANCELLED
+                benchmarkFailure = cancelled.javaClass.simpleName
                 phoneTaskGroupId?.let { cancelPhoneTask(it) }
                 lastLiveRate?.let { onLiveInference(null, null, it, true) }
                 throw cancelled
             } catch (error: Throwable) {
+                benchmarkOutcome = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome.ERROR
+                benchmarkFailure = error.javaClass.simpleName
                 phoneTaskGroupId?.let { cancelPhoneTask(it) }
                 lastLiveRate?.let { onLiveInference(null, null, it, true) }
                 comparison?.put("generation_error", error.message ?: error.javaClass.simpleName)
@@ -923,8 +1020,11 @@ internal fun JarvisRuntime.runConversationInternal(
                         "imageAttached=${imageUri != null}\n" +
                         "error=${error.stackTraceToString().take(4_000)}"
                 )
-                mainHandler.post { finish("I could not load the local model: ${error.message ?: "unknown error"}") }
+                postFinish("I could not load the local model: ${error.message ?: "unknown error"}")
             } finally {
+                benchmark.mark("request_processing_finished")
+                finishBenchmark()
+                if (ownsBenchmark) benchmarkEngine?.onBenchmarkSubmission = {}
                 conversationEngine?.onInferenceProgress = {}
                 if (voiceAudio == null && !callOwned) conversationEngine?.onPromptSubmitted = { _, _ -> }
                 incrementalVoice?.close()

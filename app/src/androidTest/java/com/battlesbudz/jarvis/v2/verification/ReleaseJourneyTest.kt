@@ -42,6 +42,8 @@ import com.battlesbudz.jarvis.v2.ui.ConversationScreen
 import com.battlesbudz.jarvis.v2.ui.VoiceCallOverlay
 import com.battlesbudz.jarvis.v2.ui.MemoryScreen
 import com.battlesbudz.jarvis.v2.ui.JarvisApp
+import com.battlesbudz.jarvis.v2.ui.PipelineBenchmarkScreen
+import com.battlesbudz.jarvis.v2.diagnostics.*
 import com.battlesbudz.jarvis.v2.voice.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
@@ -2109,6 +2111,131 @@ class ReleaseJourneyTest {
             // Settings is intentionally foreground and Jarvis is STOPPED. Recreating the
             // stopped activity here waits for RESUMED and masks the real test result.
             // @After closes this scenario; the next journey launches its own activity.
+        }
+    }
+
+    /** Controlled observations exercise the release dashboard; they are not model/audio performance evidence. */
+    @Test fun test45_pipelineBenchmarksScoreOriginalAsrPersistAndExportRedactedEvidence() = runBlocking {
+        val directory = File(context.cacheDir, "release-pipeline-benchmarks").apply { deleteRecursively(); mkdirs() }
+        val fixtureContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun getNoBackupFilesDir(): File = directory
+        }
+        val store = AndroidPipelineBenchmarkStore(fixtureContext)
+        val completedId = "completed-benchmark-fixture"
+        val cancelledId = "cancelled-benchmark-fixture"
+        val originalAsr = "alpha beta wrong delta"
+        val reference = "alpha beta gamma delta"
+        fun render(value: AndroidPipelineBenchmarkStore) {
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                    PipelineBenchmarkScreen(value, onClose = {})
+                } }
+            } }
+            find(By.res("pipeline_benchmark_screen"))
+        }
+        try {
+            store.clear()
+            val provenance = store.captureProvenance(
+                models = mapOf("asr" to PipelineBenchmarkModel("controlled-whisper-fixture", runtime = "fixture")),
+                configuration = mapOf("evidence" to "controlled_release_fixture_not_model_or_device_performance"))
+            store.append(PipelineBenchmarkTurn(
+                turnId = cancelledId, channel = "voice", capturedAtEpochMs = 1,
+                provenance = provenance, outcome = PipelineBenchmarkOutcome.CANCELLED,
+                clock = "controlled_fixture_monotonic", stageOffsetsMs = mapOf("turn_started" to 0, "turn_finished" to 500),
+                failureCode = "fixture_cancelled"))
+            store.append(PipelineBenchmarkTurn(
+                turnId = completedId, channel = "voice", capturedAtEpochMs = 2,
+                provenance = provenance, outcome = PipelineBenchmarkOutcome.COMPLETE,
+                clock = "controlled_fixture_monotonic",
+                stageOffsetsMs = mapOf("turn_started" to 0, "microphone_ready" to 20, "recognition_finalized" to 200,
+                    "reply_dispatched" to 210, "first_reply_text" to 350, "turn_finished" to 900),
+                asr = PipelineBenchmarkAsr("controlled-whisper-fixture", inputAudioMs = 400, decodeWorkMs = 200,
+                    transcriptCharacters = originalAsr.length),
+                submissions = listOf(PipelineBenchmarkSubmission(
+                    "fixture-submission", PipelineBenchmarkPurpose.ANSWER, PipelineBenchmarkOutcome.COMPLETE,
+                    firstTokenMs = 100, totalGenerationMs = 300, estimatedOutputTokens = 3,
+                    tokenTelemetrySource = "unavailable_fixture_no_native_token_ids"))), hypothesis = originalAsr)
+            store.flush()
+            render(store)
+            clickEnabled(By.res("pipeline_benchmark_sample_$completedId"))
+            clickEnabled(By.res("benchmark_environment_NOISY"))
+            clickEnabled(By.res("pipeline_benchmark_reference"))
+            assertTrue(find(By.text("Original ASR: $originalAsr")).text.contains(originalAsr))
+            assertFalse(find(By.res("pipeline_benchmark_reference_score")).isEnabled)
+            find(By.res("pipeline_benchmark_reference_text")).text = reference
+            hideKeyboardWithoutNavigating()
+            assertFalse("Typing a reference is insufficient without explicit verification",
+                find(By.res("pipeline_benchmark_reference_score")).isEnabled)
+            clickEnabled(By.res("pipeline_benchmark_reference_verify"))
+            clickEnabled(By.res("pipeline_benchmark_reference_score"))
+            assertTrue(scrollTo(By.res("pipeline_benchmark_status")).text.contains("WER 25.0%"))
+            val scored = store.samples.value.single { it.turnId == completedId }
+            val score = requireNotNull(scored.accuracy)
+            assertEquals(4, score.referenceWords)
+            assertEquals(1, score.wordSubstitutions)
+            assertEquals(0.25, score.wer!!, 0.000001)
+            assertNull("Verified reference words must not become retained content", score.reference)
+            assertNull("Original ASR content must not become retained content", score.hypothesis)
+
+            // A completed pipeline can still have an incorrect result: human review is independent.
+            clickEnabled(By.res("benchmark_quality_task_FAIL"))
+            clickEnabled(By.res("benchmark_quality_intent_PASS"))
+            clickEnabled(By.res("benchmark_quality_factuality_FAIL"))
+            assertFalse(scrollTo(By.res("pipeline_benchmark_quality_save")).isEnabled)
+            clickEnabled(By.res("pipeline_benchmark_quality_verify"))
+            clickEnabled(By.res("pipeline_benchmark_quality_save"))
+            val quality = store.samples.value.single { it.turnId == completedId }.quality!!
+            assertEquals(PipelineBenchmarkVerdict.FAIL, quality.taskVerdict)
+            assertEquals(PipelineBenchmarkVerdict.PASS, quality.intentVerdict)
+            assertEquals(PipelineBenchmarkVerdict.FAIL, quality.factualityVerdict)
+            assertEquals(PipelineBenchmarkOutcome.COMPLETE, store.samples.value.single { it.turnId == completedId }.outcome)
+            assertEquals(PipelineBenchmarkEnvironment.NOISY, store.samples.value.single { it.turnId == completedId }.environment)
+            assertNotNull(scrollTo(By.text("tts_load_ms: unavailable")))
+            captureEvidence("pipeline_benchmark_verified_reference_and_review")
+
+            clickEnabled(By.res("pipeline_benchmark_copy_json"))
+            assertEquals("Redacted JSON report copied.", scrollTo(By.res("pipeline_benchmark_status")).text)
+            val clipboard = AtomicReference<String>()
+            activity.onActivity { host ->
+                clipboard.set(host.getSystemService(android.content.ClipboardManager::class.java)
+                    .primaryClip?.getItemAt(0)?.coerceToText(host)?.toString().orEmpty())
+            }
+            val export = org.json.JSONObject(clipboard.get())
+            assertFalse(export.getJSONObject("privacy").getBoolean("textIncluded"))
+            assertFalse(clipboard.get().contains(originalAsr))
+            assertFalse(clipboard.get().contains(reference))
+            assertEquals(2, export.getJSONObject("allAttempts").getInt("turnCount"))
+            assertEquals(1, export.getJSONObject("allAttempts").getJSONObject("outcomes").getInt("CANCELLED"))
+            assertEquals(1, export.getJSONObject("completedTurns").getInt("turnCount"))
+            val exportedCompleted = (0 until export.getJSONArray("turns").length())
+                .map { export.getJSONArray("turns").getJSONObject(it) }.single { it.getString("turnId") == completedId }
+            assertTrue("Missing playback measurements remain JSON null", exportedCompleted.isNull("tts"))
+            assertTrue("Token estimates do not invent native counts", exportedCompleted.getJSONArray("submissions")
+                .getJSONObject(0).isNull("exactOutputTokens"))
+            assertEquals(0.25, export.getJSONObject("allAttempts").getDouble("corpusWer"), 0.000001)
+
+            store.flush()
+            val restored = AndroidPipelineBenchmarkStore(fixtureContext)
+            val persisted = restored.samples.value.single { it.turnId == completedId }
+            assertEquals(scored.accuracy, persisted.accuracy)
+            assertEquals(quality, persisted.quality)
+            assertEquals(PipelineBenchmarkEnvironment.NOISY, persisted.environment)
+            assertNull(persisted.metrics()["endpoint_to_first_answer_playback_ms"])
+            assertNull("Original transcript is process-only and is not restored from disk", restored.hypothesis(completedId))
+            assertEquals(PipelineBenchmarkOutcome.CANCELLED, restored.samples.value.single { it.turnId == cancelledId }.outcome)
+            render(restored)
+            clickEnabled(By.res("pipeline_benchmark_sample_$completedId"))
+            assertFalse(scrollTo(By.res("pipeline_benchmark_reference")).isEnabled)
+            captureEvidence("pipeline_benchmark_restored_redacted_scores")
+            clickEnabled(By.res("pipeline_benchmark_reset"))
+            clickEnabled(By.res("pipeline_benchmark_reset_confirm"))
+            assertNotNull(find(By.text("No pipeline measurements yet. Complete a text or voice turn, then return here.")))
+            restored.flush()
+            assertTrue(AndroidPipelineBenchmarkStore(fixtureContext).samples.value.isEmpty())
+        } finally {
+            store.clear()
+            directory.deleteRecursively()
         }
     }
 

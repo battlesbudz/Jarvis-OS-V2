@@ -13,12 +13,17 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                        /** Action mode listens while native work is silent; its ASR budget is independent of Piper. */
                        asrOnly: Boolean = false,
                        /** The action pump can swap its report ledger/output without restarting ASR. */
-                       outputProvider: () -> PiperVoiceOutput = { output }): CapturedVoiceTurn = recoverReplyListener(log) {
+                       outputProvider: () -> PiperVoiceOutput = { output },
+                       onReady: () -> Unit = {},
+                       /** Original finalized ASR and its acoustic end, before echo resolution or control routing. */
+                       onMetrics: (AsrCaptureMetrics, String, Long?) -> Unit = { _, _, _ -> }): CapturedVoiceTurn = recoverReplyListener(log) {
         supervisorScope {
             MicrophoneInterruptionMonitor.awaitAvailable()
+            val profile = SpeechCaptureProfile.selected(context)
             val input = inputFactory?.invoke() ?: AndroidAudioInput(this,
                 audioManager = context.getSystemService(AudioManager::class.java),
-                echoCancellation = true, noiseSuppression = true, log = log)
+                echoCancellation = true, communicationInput = profile.communicationInput,
+                noiseSuppression = profile.noiseSuppression, log = log)
             val confirmed = CompletableDeferred<Unit>()
             var naturalReference: String? = null
             var confirmedNaturalText = ""
@@ -57,15 +62,18 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                         }
                         confirm()
                     }, log = log)
-            val capture = AudioTurnCapture(gated, this,
+            lateinit var capture: AudioTurnCapture
+            capture = AudioTurnCapture(gated, this,
                 createDetector = { SileroSpeechDetector.create(context.assets) },
                 createTranscriber = { LazyStreamingTranscriber { asrEngine.create(asrDirectory, log = log, modelSession = modelSession) } }, log = log,
                 allowAudioOnlyTurns = true,
                 guardFollowupSpeech = true,
                 initialConfirmedSpeech = { confirmedNaturalText },
+                onMetrics = { metrics, originalText -> onMetrics(metrics, originalText, capture.lastSpeechAtMs) },
                 onPartialTranscript = { text -> onPartialTranscript(text) })
             try {
                 capture.start(initialSilenceTimeoutMs = null)
+                onReady()
                 log("barge_capture_ready keywordReadiness=reported_separately naturalSpeechReady=false")
                 // Observe capture failures while waiting for speech, too.
                 val completion = async { capture.awaitTurnCompletion() }

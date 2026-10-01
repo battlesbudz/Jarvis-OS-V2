@@ -2,6 +2,8 @@ package com.battlesbudz.jarvis.v2.voice
 
 /** One utterance; accept returns a replaceable hypothesis, finish seals dictation. */
 interface StreamingTranscriber : AutoCloseable {
+    /** Null means the backend has no measured recognizer-work instrumentation. */
+    val recognitionWorkMetrics: AsrRecognitionWorkMetrics? get() = null
     val noTextSilenceMs: Long get() = 3000
     val segmentSoftLimitMs: Long get() = 15_000
     val segmentHardLimitMs: Long get() = 22_000

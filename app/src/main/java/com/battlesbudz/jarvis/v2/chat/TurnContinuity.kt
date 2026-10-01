@@ -7,7 +7,7 @@ import org.json.JSONObject
 object TurnContinuity {
     fun isCorrection(text: String): Boolean = !Regex("(?i)^no (?:problem|worries|thanks)\\b").containsMatchIn(text.trim()) && Regex(
         "(?i)^(?:no\\b|not true\\b|wrong\\b|that(?:'s| is) (?:wrong|incorrect)\\b)|" +
-            "\\b(?:stop repeating|don'?t (?:lie|repeat)|you (?:said|claimed)|i (?:was|am) asking|i meant|i said)\\b"
+            "\\b(?:stop repeating|don'?t (?:lie|repeat)|you (?:said|claimed)|i (?:was|am) asking|i meant|i said|i didn['’]?t say|i did not say)\\b"
     ).containsMatchIn(text.trim())
 
     fun section(prompt: String, history: List<Pair<String, String>>, maxChars: Int = 1600): String {
@@ -40,6 +40,8 @@ object TurnContinuity {
         currentTopicHistory(history).asReversed().firstOrNull { (role, content) ->
             role == "You" && content != prompt &&
                 !Regex("(?i)^(?:no|wrong|not true|that is wrong|that's wrong|yes|okay|ok|thanks|thank you)[.!?]*$").matches(content.trim()) &&
+                !(com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient().isExplicitLookupRequest(content) &&
+                    com.battlesbudz.jarvis.v2.ai.TurnQuestionPolicy.lookupPayload(content) == null) &&
                 !Regex("https://[^\\s<>]+", RegexOption.IGNORE_CASE).matches(content.trim())
         }?.second
 

@@ -12,6 +12,7 @@ internal fun VoiceInputSettings(enabled: Boolean, onBusy: (Boolean) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var selected by remember { mutableStateOf(AsrEngine.selected(context)) }
+    var captureProfile by remember { mutableStateOf(SpeechCaptureProfile.selected(context)) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     LaunchedEffect(busy) { onBusy(busy) }
@@ -34,6 +35,15 @@ internal fun VoiceInputSettings(enabled: Boolean, onBusy: (Boolean) -> Unit) {
             }) { Text("Use ${engine.label}") }
         }
         Text("Both transcribe your voice on this phone. Moonshine transcribes as you speak; Whisper confirms the text when you finish.", style = MaterialTheme.typography.bodySmall)
+        Text("Microphone: ${captureProfile.label}")
+        SpeechCaptureProfile.entries.forEach { profile ->
+            TextButton(enabled = enabled && !busy && captureProfile != profile, onClick = {
+                SpeechCaptureProfile.select(context, profile)
+                captureProfile = profile
+                message = "${profile.label} will apply when the next voice call opens its microphone."
+            }) { Text("Use ${profile.label}") }
+        }
+        Text("Speech clarity preserves speech detail. Call noise reduction uses the phone's communication processing. Compare verified transcripts to find which works better on your phone.", style = MaterialTheme.typography.bodySmall)
         if (busy) TextButton(onClick = { task?.cancel(); message = "Stopped." }) { Text("Cancel") }
         if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
     }

@@ -235,3 +235,9 @@
 
 # Shared assistant readiness API used by the separately shrunk release journey.
 -keep class com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService** { *; }
+
+# Controlled release benchmark journey crosses the independently shrunk test
+# DEX into the shipping DTOs, persisted store, and dashboard composable.
+-keep class com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmark** { *; }
+-keep class com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore { *; }
+-keep class com.battlesbudz.jarvis.v2.ui.PipelineBenchmarkScreenKt { *; }

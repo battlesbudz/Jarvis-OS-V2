@@ -309,6 +309,7 @@ internal fun VoiceCallScreen(
             Text(if (diagnosticsOpen) "Hide development diagnostics" else "Development diagnostics")
         }
         if (diagnosticsOpen) {
+            PipelineBenchmarkCard(enabled = !chatSending && !runtimeArmed && !turnInFlight)
             CallEvidenceExport(enabled = !chatSending && !runtimeArmed && !turnInFlight)
             LiveComparisonCard(enabled = !chatSending && !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting)
             AudioPathDiagnosticCard(enabled = !chatSending && !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting,

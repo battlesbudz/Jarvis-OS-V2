@@ -18,7 +18,9 @@ class QuietSpeechAudioInput(private val input: AudioInput, private val log: (Str
     override suspend fun stop() = input.stop()
     override fun chunks() = input.chunks().map { pcm ->
         gain.apply(pcm).also {
-            if (++chunks % 10 == 0) log("quiet_speech_gain gain=${gain.currentGain} inputRms=${gain.inputRms} noiseFloorRms=${gain.noiseFloorRms}")
+            // This percentile includes speech. It must not be presented as the
+            // VAD-qualified room floor or a foreground/background SNR estimate.
+            if (++chunks % 10 == 0) log("quiet_speech_gain gain=${gain.currentGain} inputRms=${gain.inputRms} levelPercentileRms=${gain.noiseFloorRms}")
         }
     }
 }

@@ -17,6 +17,8 @@ class SegmentedTranscriber(
     private var sealed = false
     private var last = ""
     private var finalSegment = ""
+    private val workLedger = AsrRecognitionWorkLedger()
+    override val recognitionWorkMetrics get() = workLedger.withActive(current?.recognitionWorkMetrics, current != null)
     val segments get() = text.segments
     val issue get() = text.issue
     override val noTextSilenceMs get() = current?.noTextSilenceMs ?: 3000L
@@ -47,6 +49,7 @@ class SegmentedTranscriber(
             text.commit(finalized, nextOverlaps = hard)
             current = null
             engine.close() // Release before constructing the next stream, including Whisper workers.
+            workLedger.retain(engine.recognitionWorkMetrics)
             replay = if (hard) overlap.snapshot() else byteArrayOf()
             overlap.clear(); silenceBytes = 0; segmentHadSpeech = false
             last = text.partial("")
@@ -82,6 +85,7 @@ class SegmentedTranscriber(
             text.commit(finalSegment, nextOverlaps = false)
             current = null
             owned.close()
+            workLedger.retain(owned.recognitionWorkMetrics)
         }
         sealed = false; replay = byteArrayOf(); segmentBytes = 0
         segmentHadSpeech = false; silenceBytes = 0; overlap.clear()
@@ -90,6 +94,10 @@ class SegmentedTranscriber(
         if (closed) return
         closed = true
         val owned = current; current = null
-        try { owned?.close() } finally { overlap.clear(); replay = byteArrayOf() }
+        try { owned?.close() }
+        finally {
+            if (owned != null) workLedger.retain(owned.recognitionWorkMetrics)
+            overlap.clear(); replay = byteArrayOf()
+        }
     }
 }

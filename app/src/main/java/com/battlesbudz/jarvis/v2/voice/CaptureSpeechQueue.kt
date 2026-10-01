@@ -20,7 +20,7 @@ internal class CaptureSpeechQueue(
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val onDecision: (ByteArray, SpeechDecision, SpeechDecision, Double) -> Unit = { _, _, _, _ -> }
 ) {
-    data class Frame(val pcm: ByteArray, val decision: SpeechDecision, val capturedAtMs: Long, val sequence: Long?)
+    data class Frame(val pcm: ByteArray, val decision: SpeechDecision, val capturedAtMs: Long, val sequence: Long?, val noiseFloorRms: Double = 0.0)
     init { input.deferConsumptionAcknowledgement() }
     private val pendingBytes = AtomicLong()
     val bufferedAudioMs: Long get() = pendingBytes.get() / 32 + input.bufferedAudioMs
@@ -29,6 +29,14 @@ internal class CaptureSpeechQueue(
         private set
     @Volatile var latestSpeechAtMs: Long? = null
         private set
+    @Volatile private var latestPossibleSpeechAtMs: Long? = null
+    @Volatile private var classificationInProgress = false
+
+    /** Classified silence need not reopen a sealed ASR stream. Hardware audio that
+     * has not reached VAD, confirmed continuation, and a still-pending onset do. */
+    fun requiresEndpointDrain(lastConsumedAudioAtMs: Long): Boolean =
+        classificationInProgress || input.bufferedAudioMs > 0 ||
+            latestPossibleSpeechAtMs?.let { it > lastConsumedAudioAtMs } == true
 
     fun frames(): Flow<Frame> = flow {
         val gate = CaptureSpeechGate(input.captureNoiseProfile)
@@ -39,9 +47,14 @@ internal class CaptureSpeechQueue(
                 "Recognition queue exceeded 25 seconds; incomplete command must not be submitted"
             }
             val capturedAt = input.lastChunkCaptureTimeMs ?: nowMs()
+            classificationInProgress = true
             val raw = detector.accept(pcm)
             val signal = Pcm16Signal.measure(pcm)
             val decision = gate.accept(raw, signal.rms, capturedAt)
+            // Weak VAD may become a corroborated whisper after ASR sees it. Do
+            // not skip that queued PCM just because it lacks strong confirmation.
+            if (decision.isSpeech || decision.probability >= .15f) latestPossibleSpeechAtMs = capturedAt
+            classificationInProgress = false
             onDecision(pcm, raw, decision, gate.noiseFloorRms)
             if (raw.probability >= 0.15f && decision.probability == 0f &&
                 (lastNoiseLogAt == null || capturedAt - lastNoiseLogAt!! >= 1000)) {
@@ -61,7 +74,7 @@ internal class CaptureSpeechQueue(
                         "recognitionBacklogMs=$bufferedAudioMs targetSilenceMs=$targetSilenceMs")
                 }
             }
-            emit(Frame(pcm, decision, capturedAt, input.lastChunkSequence))
+            emit(Frame(pcm, decision, capturedAt, input.lastChunkSequence, gate.noiseFloorRms))
         }
     }.buffer(Channel.UNLIMITED).flowOn(dispatcher)
 
