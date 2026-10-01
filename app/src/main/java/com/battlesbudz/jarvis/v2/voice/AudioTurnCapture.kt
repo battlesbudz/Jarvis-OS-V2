@@ -42,7 +42,7 @@ class AudioTurnCapture(
     private val captionOnly: Boolean = false,
     private val onAcousticDecision: (ByteArray, SpeechDecision, SpeechDecision, Double) -> Unit = { _, _, _, _ -> }
 ) {
-    private val pcm = RollingAudioBuffer(maxDurationMs = maxAudioDurationMs)
+    private val pcm = RollingAudioBuffer(maxDurationMs = maxAudioDurationMs.toLong())
     private var capturedPcmBytes = 0L
     val audioIsComplete: Boolean get() = capturedPcmBytes <= maxAudioDurationMs.toLong() * 32
     @Volatile var recognitionIssue: String? = null
