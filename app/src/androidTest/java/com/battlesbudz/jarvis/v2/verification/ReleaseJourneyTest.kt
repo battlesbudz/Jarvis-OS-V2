@@ -2115,6 +2115,7 @@ class ReleaseJourneyTest {
     }
 
     /** Controlled observations exercise the release dashboard; they are not model/audio performance evidence. */
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     @Test fun test45_pipelineBenchmarksScoreOriginalAsrPersistAndExportRedactedEvidence() = runBlocking {
         val directory = File(context.cacheDir, "release-pipeline-benchmarks").apply { deleteRecursively(); mkdirs() }
         val fixtureContext = object : ContextWrapper(context) {
