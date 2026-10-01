@@ -241,3 +241,9 @@
 -keep class com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmark** { *; }
 -keep class com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore { *; }
 -keep class com.battlesbudz.jarvis.v2.ui.PipelineBenchmarkScreenKt { *; }
+
+# Build 878: the separate release-test DEX reads the input-mode companion and
+# renders the shipping settings composable. Preserve these precise shared ABI
+# owners; all other voice/UI code remains eligible for release optimization.
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceInputMode** { *; }
+-keep class com.battlesbudz.jarvis.v2.ui.VoiceInputSettingsKt { *; }

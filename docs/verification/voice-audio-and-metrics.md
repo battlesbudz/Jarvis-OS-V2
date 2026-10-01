@@ -33,6 +33,8 @@ Tap an assistant reply's existing metrics footer for its full measurements and c
 
 All prior release journeys remain required. Signed normal and compact APKs, both emulator suites and the consolidated exact-run receipt gate publication. Physical echo, real Gemma/Whisper accuracy, GPU/runtime behavior and speed comparisons remain unverified until phone tests; synthetic fixture values are not performance claims.
 
+Build 878 passed 929 release JVM tests and built both signed variants. Both sandbox runs passed the conversation export journey but failed test47 before rendering settings: the separately shrunk test APK referenced a removed VoiceInputMode companion field (NoSuchFieldError). Its [retained evidence](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36926255369) is a failure, not a verified release. The repair preserves the precise VoiceInputMode and VoiceInputSettingsKt shared ABI owners, without removing or weakening any scenario. The repaired revision requires a new full release gate.
+
 ## Workflow provenance
 
 ECG/PStack planning guidance was consulted. Native work agents implemented voice reliability, direct audio integration and benchmark persistence, with an independent review of the combined change. This is not a completed PStack coordinated receipt: the companion's requested Terra implementation route was unavailable, so no model-dispatch/usage receipt is fabricated. GitHub's signed-release and exact-build verification receipts remain the release evidence.
