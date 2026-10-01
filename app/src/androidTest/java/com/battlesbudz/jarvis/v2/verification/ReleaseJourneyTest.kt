@@ -959,8 +959,13 @@ class ReleaseJourneyTest {
             clickEnabled(By.res("memory_delete"))
             assertNotNull(find(By.text("Erase this memory?")))
             clickEnabled(By.res("memory_delete_cancel"))
+            assertTrue("Cancelled erase dialog must close before reopening", device.wait(
+                Until.gone(By.text("Erase this memory?")), 15_000
+            ))
             assertNotNull(find(By.text(indigo)))
             clickEnabled(By.res("memory_delete"))
+            // Await the modal before a scroll-capable helper can dispatch a gesture.
+            assertNotNull(find(By.res("memory_delete_confirm")))
             clickEnabled(By.res("memory_delete_confirm"))
             assertTrue("Deletion confirmation must finish before returning from a removed article", device.wait(
                 Until.gone(By.text("Erase this memory?")), 15_000
@@ -1992,22 +1997,30 @@ class ReleaseJourneyTest {
             assertNotNull(find(By.text("Set media volume to 25%")))
             assertEquals(0, effects.get())
             captureEvidence("phone_task_approval")
-            find(By.res("task_approve_${pending.task.id}")).click()
-            device.waitForIdle()
+            clickEnabled(By.res("task_approve_${pending.task.id}"))
+            assertTrue("Approved choice must finish before checking its effect", device.wait(
+                Until.gone(By.res("task_approve_${pending.task.id}")), 15_000
+            ))
             assertEquals(1, effects.get())
             assertEquals(ToolTaskState.SUCCEEDED, ledger.get(pending.task.id)?.state)
-            find(By.res("task_checked_${unknown.id}")).click()
-            device.waitForIdle()
+            clickEnabled(By.res("task_checked_${unknown.id}"))
+            assertTrue("Reconciliation must finish before reopening the ledger", device.wait(
+                Until.gone(By.res("task_checked_${unknown.id}")), 15_000
+            ))
             assertTrue(checkNotNull(ToolTaskLedger(FileToolTaskStore(file)).get(unknown.id)).reconciled)
             assertEquals(1, effects.get())
-            find(By.res("task_cancel_${legacy.id}")).click()
-            device.waitForIdle()
+            clickEnabled(By.res("task_cancel_${legacy.id}"))
+            assertTrue("Cancellation must finish before reopening the ledger", device.wait(
+                Until.gone(By.res("task_cancel_${legacy.id}")), 15_000
+            ))
             assertEquals(ToolTaskState.CANCELLED, ToolTaskLedger(FileToolTaskStore(file)).get(legacy.id)?.state)
             val declined = ledger.admit(listOf(ActionRequest("read_battery")), "panel-thread", ToolAuthority.EXACT_APPROVAL)
             val choice = gate.prepare(checkNotNull(ledger.get(declined.attemptIds.single())))
             journal.value = ledger.journal()
-            find(By.res("task_deny_${choice.task.id}")).click()
-            device.waitForIdle()
+            clickEnabled(By.res("task_deny_${choice.task.id}"))
+            assertTrue("Decline must finish before reopening the ledger", device.wait(
+                Until.gone(By.res("task_deny_${choice.task.id}")), 15_000
+            ))
             assertEquals(ToolTaskState.CANCELLED, ToolTaskLedger(FileToolTaskStore(file)).get(choice.task.id)?.state)
             assertEquals(1, effects.get())
         } finally { file.delete() }
