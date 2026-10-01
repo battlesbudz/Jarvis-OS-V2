@@ -774,13 +774,14 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         val whisperCaptions = com.battlesbudz.jarvis.v2.voice.VoiceInputMode.captions(applicationContext)
         var directAudioTurn = comparison?.request?.path == com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.Path.GEMMA_DIRECT ||
             (comparison == null && queuedTypedInput == null && voiceInputMode == com.battlesbudz.jarvis.v2.voice.VoiceInputMode.GEMMA_AUDIO)
-        val captionAsrEnabled = comparison?.request?.path?.usesAudio != true && (!directAudioTurn || whisperCaptions)
+        val captionAsrEnabled = com.battlesbudz.jarvis.v2.voice.GemmaAudioInputPolicy.usesRecognizer(
+            directAudioTurn, whisperCaptions, comparison?.request?.path?.usesAudio == true)
         val asrEngine = comparison?.request?.path?.captureEngine ?: if (directAudioTurn)
             com.battlesbudz.jarvis.v2.voice.AsrEngine.WHISPER else com.battlesbudz.jarvis.v2.voice.AsrEngine.selected(applicationContext)
         val ttsEngine = ttsComparisonStore.selectedEngine()
         val asrTurnId = comparison?.id ?: java.util.UUID.randomUUID().toString()
         val turnTrace = com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace(asrTurnId)
-        val benchmark = newPipelineBenchmark(asrTurnId, "voice", asrEngine, ttsEngine)
+        val benchmark = newPipelineBenchmark(asrTurnId, "voice", if (captionAsrEnabled) asrEngine else null, ttsEngine)
         benchmark.configuration("voice_input_mode", if (directAudioTurn) "gemma_audio" else "transcribed_text")
         benchmark.configuration("caption_engine", if (directAudioTurn && captionAsrEnabled) "whisper_base_en" else if (directAudioTurn) "off" else asrEngine.id)
         benchmark.configuration("caption_authorizes_request", "false")
@@ -867,8 +868,11 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 }
                 operationOwned = true
                 voicePlayback.value = com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame()
-                status("Preparing speech recognition…")
-                val asrDirectory = asrEngine.prepare(applicationContext, ::status)
+                status(if (captionAsrEnabled) "Preparing speech recognition…" else "Preparing audio understanding…")
+                val replyAsrEnabled = captionAsrEnabled
+                val asrDirectory = if (replyAsrEnabled) asrEngine.prepare(applicationContext, ::status) else null
+                benchmark.configuration("asr_work_scope", if (replyAsrEnabled) "caption_and_verified_interruption" else "disabled_entire_call_turn_keyword_vad_only")
+                benchmark.configuration("natural_interruption_asr", replyAsrEnabled.toString())
                 diagnosticRecorder.record("Voice ASR selected engine=${asrEngine.id} model=${asrEngine.modelVersion} turn=$asrTurnId")
                 check(modelStore.verifyIntegrity(modelStore.selectedModel())) { "The selected model failed integrity verification." }
                 val selectedSpec = modelStore.selectedModel()
@@ -972,8 +976,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 val voiceHistory = if (comparison != null) emptyList() else
                     (conversationHistory.context(excludingCall = expectedCallId) +
                         voiceSessionController.conversationContext().map { ChatEntry(it.role, it.text) }).takeLast(24)
-                // Keep the normal resident interruption recognizer available for audio-only input paths.
-                if (comparison?.request?.path?.usesAudio == true) asrEngine.create(asrDirectory, modelSession = models).close()
+                // Audio-only trials retain keyword/VAD interruption without warming a recognizer.
                 diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId engine=${ttsEngine.id} " +
                     "speechPolicy=piper-natural-v1")
                 val output = PiperVoiceOutput(ttsDirectory.path, engine = ttsEngine,
@@ -1110,11 +1113,11 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         status(if (recovering) "Retrying speech recognition…" else "Voice Call is listening — speak now.")
                     },
                     createTranscriber = if (!captionAsrEnabled) null else {
-                        { asrEngine.create(asrDirectory, log = { diagnosticRecorder.recordSummary("Voice input: $it") }, modelSession = models) }
+                        { asrEngine.create(requireNotNull(asrDirectory), log = { diagnosticRecorder.recordSummary("Voice input: $it") }, modelSession = models) }
                     },
                     onMetrics = { metrics, text ->
                         benchmarkHypothesis = text
-                        benchmark.asr(com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkAsr(
+                        if (captionAsrEnabled) benchmark.asr(com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkAsr(
                             if (captionAsrEnabled) asrEngine.id else "none", loadMs = metrics.modelLoadMs, captureReadyMs = metrics.captureReadyMs,
                             inputAudioMs = metrics.recognitionWork?.takeIf { it.complete }?.submittedAudioMs,
                             decodeWorkMs = metrics.recognitionWork?.takeIf { it.complete }?.workMs,
@@ -2123,6 +2126,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     },
                     listen = { confirmed ->
                         listenBenchmarkedReply(output, asrDirectory, confirmed, asrEngine = asrEngine, trace = turnTrace,
+                            recognitionEnabled = replyAsrEnabled,
                             inputFactory = { callResources.borrowMicrophone("reply", communication = true) }, modelSession = models,
                             onPartialTranscript = { text ->
                                 mainHandler.post {

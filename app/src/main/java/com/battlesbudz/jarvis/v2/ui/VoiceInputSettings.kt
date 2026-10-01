@@ -38,7 +38,7 @@ internal fun VoiceInputSettings(enabled: Boolean, onBusy: (Boolean) -> Unit) {
                 })
                 Text("Whisper live captions")
             }
-            Text("Turn captions off to compare direct audio without caption processing. Gemma's final transcription updates your message after answer generation.", style = MaterialTheme.typography.bodySmall)
+            Text("Turn captions off to skip all Whisper/Moonshine loading and recognition. Interrupt using Hey Jarvis or stop; natural speech interruption is disabled in this benchmark mode. Gemma's final transcription updates your message after answer generation.", style = MaterialTheme.typography.bodySmall)
         }
         Text("Speech recognition: ${selected.label}")
         AsrEngine.entries.forEach { engine ->

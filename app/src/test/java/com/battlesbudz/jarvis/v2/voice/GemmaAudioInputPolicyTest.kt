@@ -4,6 +4,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class GemmaAudioInputPolicyTest {
+    @Test fun captionsOffDisablesRecognizerAcrossCaptureAndInterruption() {
+        assertFalse(GemmaAudioInputPolicy.usesRecognizer(directAudio = true, captions = false))
+        assertTrue(GemmaAudioInputPolicy.usesRecognizer(directAudio = true, captions = true))
+        assertTrue(GemmaAudioInputPolicy.usesRecognizer(directAudio = false, captions = false))
+        assertFalse(GemmaAudioInputPolicy.usesRecognizer(directAudio = true, captions = true, nativeAudioComparison = true))
+    }
     @Test fun completeShortAudioUsesRecordingNotCaption() {
         assertNull(GemmaAudioInputPolicy.rejection(true, true, 16044))
         assertTrue(GemmaAudioInputPolicy.REQUEST.contains("current request is the audio"))

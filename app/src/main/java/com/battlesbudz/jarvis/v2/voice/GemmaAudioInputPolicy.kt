@@ -2,6 +2,9 @@ package com.battlesbudz.jarvis.v2.voice
 
 internal object GemmaAudioInputPolicy {
     // Leave room below the native 30-second limit for framing; never submit a rolling tail.
+    /** One shared switch gates download, main captions and all reply recognition probes. */
+    fun usesRecognizer(directAudio: Boolean, captions: Boolean, nativeAudioComparison: Boolean = false): Boolean =
+        !nativeAudioComparison && (!directAudio || captions)
     const val PENDING_TRANSCRIPT = "[Audio request; final transcription pending]"
     fun isPendingTranscript(role: String, text: String): Boolean = role == "You" && text == PENDING_TRANSCRIPT
     const val MAX_CAPTURE_MS = 28_000

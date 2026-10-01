@@ -16,7 +16,7 @@ private data class ReplyAsrObservation(val metrics: AsrCaptureMetrics, val text:
 /** One independent capture observation. Reply output/tool work is measured by its own owner. */
 internal suspend fun JarvisRuntime.listenBenchmarkedReply(
     output: PiperVoiceOutput,
-    asrDirectory: File,
+    asrDirectory: File?,
     onConfirmed: () -> Unit,
     asrEngine: AsrEngine = AsrEngine.MOONSHINE,
     onPartialTranscript: (String) -> Unit = {},
@@ -24,6 +24,7 @@ internal suspend fun JarvisRuntime.listenBenchmarkedReply(
     inputFactory: (suspend () -> AudioInput)? = null,
     modelSession: VoiceModelSession? = null,
     asrOnly: Boolean = false,
+    recognitionEnabled: Boolean = true,
     outputProvider: () -> PiperVoiceOutput = { output },
     log: (String) -> Unit = {}
 ): CapturedVoiceTurn {
@@ -31,7 +32,7 @@ internal suspend fun JarvisRuntime.listenBenchmarkedReply(
     val callId = voiceSessionController.currentCallId()
     val epoch = pipelineBenchmarkStore.hypothesisEpoch()
     val benchmark = runCatching { newPipelineBenchmark(id,
-        if (asrOnly) "voice_followup_capture" else "voice_reply_capture", asr = asrEngine) }.getOrNull()
+        if (asrOnly) "voice_followup_capture" else "voice_reply_capture", asr = if (recognitionEnabled) asrEngine else null) }.getOrNull()
     val lastAsr = AtomicReference<ReplyAsrObservation?>(null)
     val lastReadyAt = AtomicLong(0)
     val confirmed = AtomicBoolean(false)
@@ -50,6 +51,7 @@ internal suspend fun JarvisRuntime.listenBenchmarkedReply(
             else if (profile.communicationInput) "VOICE_COMMUNICATION" else "VOICE_RECOGNITION")
         benchmark?.configuration("noise_suppression_requested", if (inputFactory != null) "caller_managed" else profile.noiseSuppression.toString())
         benchmark?.configuration("capture_source_provenance", if (inputFactory != null) "actual_retained_source_not_observed_by_wrapper" else "selected_profile_requested")
+        benchmark?.configuration("asr_work_scope", if (recognitionEnabled) "verified_interruption_and_final_capture" else "disabled_keyword_vad_only")
         benchmark?.configuration("asr_snapshot_scope", "last_finalized_capture_attempt")
         benchmark?.configuration("preconfirmation_probe_work", "outside_capture_asr_metrics_not_measured_here")
     }
@@ -71,7 +73,7 @@ internal suspend fun JarvisRuntime.listenBenchmarkedReply(
         }, asrEngine = asrEngine, onPartialTranscript = { text ->
             if (text.isNotBlank()) benchmark?.mark("listener_first_asr_partial")
             onPartialTranscript(text)
-        }, trace = trace, inputFactory = inputFactory, modelSession = modelSession, asrOnly = asrOnly,
+        }, trace = trace, inputFactory = inputFactory, modelSession = modelSession, asrOnly = asrOnly, recognitionEnabled = recognitionEnabled,
             outputProvider = outputProvider,
             onReady = {
                 readinessCount.incrementAndGet()
@@ -117,7 +119,8 @@ internal suspend fun JarvisRuntime.listenBenchmarkedReply(
             lastAsr.get()?.let {
                 benchmark?.markAt("recognition_finalized", it.finalizedAtMs)
                 it.speechEndedAtMs?.let { speechEnd -> benchmark?.markAt("speech_ended", speechEnd) }
-                benchmark?.recordReplyCaptureAsr(asrEngine, it.metrics, it.text.length)
+                if (recognitionEnabled) benchmark?.recordReplyCaptureAsr(asrEngine, it.metrics, it.text.length)
+                else benchmark?.metric("audio_capture_ms", it.metrics.audioMs)
             }
             if (lastAsr.get()?.speechEndedAtMs == null) resultSpeechEnd?.let { benchmark?.markAt("speech_ended", it) }
             benchmark?.metric("listener_ready_attempts", readinessCount.get())
@@ -126,7 +129,7 @@ internal suspend fun JarvisRuntime.listenBenchmarkedReply(
             benchmark?.mark("capture_consumer_released")
             benchmark?.let { finishPipelineResources(it) }
             benchmark?.finish(outcome, callId, failureCode)?.let {
-                pipelineBenchmarkStore.append(it, lastAsr.get()?.text, expectedHypothesisEpoch = epoch)
+                pipelineBenchmarkStore.append(it, if (recognitionEnabled) lastAsr.get()?.text else null, expectedHypothesisEpoch = epoch)
             }
         }.onFailure { diagnosticRecorder.recordImportant("Reply capture benchmark failed: ${it.javaClass.simpleName}") }
     }
