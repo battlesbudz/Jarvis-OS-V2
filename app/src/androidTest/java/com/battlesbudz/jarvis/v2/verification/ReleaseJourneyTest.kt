@@ -1116,6 +1116,7 @@ class ReleaseJourneyTest {
         val queueFull = AtomicBoolean(true)
         val forceChat = androidx.compose.runtime.mutableStateOf(false)
         val forceChatConsumed = AtomicInteger(0)
+        val forceChatAcknowledged = java.util.concurrent.CountDownLatch(1)
         try {
             activity.onActivity { host -> host.setContent {
                 MaterialTheme {
@@ -1135,7 +1136,11 @@ class ReleaseJourneyTest {
                         onOpenVoiceCalls = {},
                         resumedVoice = false,
                         forceChatDestination = forceChat.value,
-                        onForceChatConsumed = { forceChatConsumed.incrementAndGet(); forceChat.value = false },
+                        onForceChatConsumed = {
+                            forceChatConsumed.incrementAndGet()
+                            forceChat.value = false
+                            forceChatAcknowledged.countDown()
+                        },
                         voiceContent = { visible, _, _, _ ->
                             if (visible) VoiceCallOverlay.Bubble(
                                 phase = "Listening",
@@ -1176,6 +1181,9 @@ class ReleaseJourneyTest {
             assertEquals("Back leaves the call bubble open without ending the call", 0, ends.get())
             assertNotNull(find(By.res("voice_call_overlay")))
             activity.onActivity { forceChat.value = true }
+            // These views already exist in unified chat; wait for the new request itself.
+            assertTrue("Memory return must be consumed before checking the shared call surface",
+                forceChatAcknowledged.await(15, java.util.concurrent.TimeUnit.SECONDS))
             assertNotNull(find(By.res("chat_composer")))
             assertTrue(device.wait(Until.hasObject(By.res("voice_call_overlay")), 15_000))
             assertEquals("Returning from Memory preserves the active overlay", 1, forceChatConsumed.get())

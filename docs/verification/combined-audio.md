@@ -19,6 +19,7 @@ Parent build results are historical evidence, not verification of this combined 
 - Retain both the Memory continuity/capture prompt context and Tools' task-group/step ownership. Memory never grants action authority.
 - Carry Memory's retained IME helper correction: an accessibility text replacement must not send Escape when the keyboard is absent. Audio's Download/Choose test retains every assertion.
 - Preserve every source branch's named release journey. The unified map is common test01–29, Audio test30–33, Memory test34–39, Tools test40–44, and separate-process test90: 45 total. Renumbering changes names only; no test is dropped or skipped. test27 also exercises a pending Tools approval in the shipping parent while returning from Memory during an active overlay call, declining it without effects or call termination.
+- The controlled Memory-return fixture awaits its consumption callback explicitly. The composer and overlay already exist in unified chat, so their visibility alone does not prove a new return request was consumed. Build 864 exposed that synchronization race on both variants; the callback count, overlay visibility and call-end assertions remain intact.
 - Preserve the union of release class-loader/worker/PDF keep rules and gated APK publication. The historical branch-deletion workflow only triggers on its original `feature-tools` path event and cannot run from this Audio integration.
 
 ## Verification and delivery
