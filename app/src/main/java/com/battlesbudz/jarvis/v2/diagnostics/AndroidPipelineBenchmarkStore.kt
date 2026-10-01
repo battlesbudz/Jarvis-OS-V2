@@ -26,11 +26,10 @@ import java.io.File
 class AndroidPipelineBenchmarkStore(context: Context) {
     private val app = context.applicationContext
     private val archive = PipelineBenchmarkArchive(File(app.noBackupFilesDir, "pipeline-benchmarks-v1.json"))
-    private val loaded = archive.read()
-    private val retained = PipelineBenchmarkBuffer(archive, loaded.samples)
+    private val retained = PipelineBenchmarkJournal(File(app.noBackupFilesDir, "pipeline-benchmarks-v2"), archive)
     private val mutableSamples = MutableStateFlow(retained.samples())
     val samples: StateFlow<List<PipelineBenchmarkTurn>> = mutableSamples.asStateFlow()
-    private val mutableStorageStatus = MutableStateFlow(loaded.error)
+    private val mutableStorageStatus = MutableStateFlow(retained.status)
     val storageStatus: StateFlow<String?> = mutableStorageStatus.asStateFlow()
     private val monitor = Any()
     private val disk = Mutex()
@@ -42,18 +41,16 @@ class AndroidPipelineBenchmarkStore(context: Context) {
     val hypothesisGeneration: StateFlow<Long> = mutableHypothesisGeneration.asStateFlow()
     private var revision = 0L
     private var persistedRevision = 0L
-    init { writer.launch { for (ignored in pending) flush() } }
+    init { revision = 1L; pending.trySend(Unit); writer.launch { for (ignored in pending) flush() } }
 
     fun append(turn: PipelineBenchmarkTurn, hypothesis: String? = null, expectedHypothesisEpoch: Long = hypothesisEpoch()) {
         synchronized(monitor) {
-            if (!retained.append(turn)) {
-                mutableStorageStatus.value = "An oversized benchmark record was skipped. Previously retained measurements remain available."
-                return
-            }
+            val accepted = retained.append(turn)
+            mutableStorageStatus.value = retained.status
             val next = retained.samples()
             mutableSamples.value = next
             hypotheses.keys.retainAll(next.map { it.turnId }.toSet())
-            if (hypothesis != null && expectedHypothesisEpoch == mutableHypothesisGeneration.value && hypothesis.length <= 4096 && next.any { it.turnId == turn.turnId }) {
+            if (accepted && hypothesis != null && expectedHypothesisEpoch == mutableHypothesisGeneration.value && hypothesis.length <= 4096 && next.any { it.turnId == turn.turnId }) {
                 hypotheses[turn.turnId] = hypothesis
                 while (hypotheses.size > 32 || hypotheses.values.sumOf { it.length } > 32_768) hypotheses.remove(hypotheses.keys.first())
             }
@@ -128,16 +125,17 @@ class AndroidPipelineBenchmarkStore(context: Context) {
             val snapshot = synchronized(monitor) { revision to retained.prepared() }
             if (snapshot.first == persistedRevision) return@withLock
             try {
-                archive.writePrepared(snapshot.second)
+                retained.writePrepared(snapshot.second)
                 persistedRevision = snapshot.first
-                mutableStorageStatus.value = null
+                mutableStorageStatus.value = retained.status
             } catch (_: Exception) {
                 mutableStorageStatus.value = "Benchmark storage failed. Current samples remain in memory; export them before closing Jarvis."
             }
         }
     }
 
-    fun report(): PipelineBenchmarkReport = PipelineBenchmarkReport(samples.value, System.currentTimeMillis())
+    fun report(conversationId: String? = null, callId: String? = null, turnId: String? = null): PipelineBenchmarkReport =
+        PipelineBenchmarkReport(PipelineBenchmarkSelection.select(samples.value, conversationId, callId, turnId), System.currentTimeMillis())
     fun exportJson(): String = report().toJson(includeText = false).toString(2)
     fun exportCsv(): String = report().toCsv()
 
@@ -171,6 +169,8 @@ class AndroidPipelineBenchmarkStore(context: Context) {
             "process_java_used_memory_bytes" to (runtime.totalMemory() - runtime.freeMemory()).toDouble(),
             "process_native_allocated_memory_bytes" to Debug.getNativeHeapAllocatedSize().toDouble(),
             "process_pss_kib" to Debug.getPss().toDouble(),
+            "process_cpu_time_ms" to android.os.Process.getElapsedCpuTime().toDouble(),
+            "battery_percent" to app.getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).takeIf { it in 0..100 }?.toDouble(),
             "thermal_status" to app.getSystemService(PowerManager::class.java).currentThermalStatus.toDouble())
     }.getOrDefault(emptyMap())
 }

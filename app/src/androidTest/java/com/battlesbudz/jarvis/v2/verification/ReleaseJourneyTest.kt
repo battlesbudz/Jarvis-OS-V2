@@ -2298,12 +2298,12 @@ class ReleaseJourneyTest {
                 models = mapOf("asr" to PipelineBenchmarkModel("controlled-whisper-fixture", runtime = "fixture")),
                 configuration = mapOf("evidence" to "controlled_release_fixture_not_model_or_device_performance"))
             store.append(PipelineBenchmarkTurn(
-                turnId = cancelledId, channel = "voice", capturedAtEpochMs = 1,
+                turnId = cancelledId, channel = "voice", capturedAtEpochMs = System.currentTimeMillis() - 1,
                 provenance = provenance, outcome = PipelineBenchmarkOutcome.CANCELLED,
                 clock = "controlled_fixture_monotonic", stageOffsetsMs = mapOf("turn_started" to 0, "turn_finished" to 500),
                 failureCode = "fixture_cancelled"))
             store.append(PipelineBenchmarkTurn(
-                turnId = completedId, channel = "voice", capturedAtEpochMs = 2,
+                turnId = completedId, channel = "voice", capturedAtEpochMs = System.currentTimeMillis(),
                 provenance = provenance, outcome = PipelineBenchmarkOutcome.COMPLETE,
                 clock = "controlled_fixture_monotonic",
                 stageOffsetsMs = mapOf("turn_started" to 0, "microphone_ready" to 20, "recognition_finalized" to 200,
@@ -2395,6 +2395,94 @@ class ReleaseJourneyTest {
         } finally {
             store.clear()
             directory.deleteRecursively()
+        }
+    }
+
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @Test fun test46_replyMetricsExportOnlyTheirConversationAcrossReload() = runBlocking {
+        val directory = File(context.cacheDir, "release-conversation-benchmarks").apply { deleteRecursively(); mkdirs() }
+        val fixtureContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun getNoBackupFilesDir(): File = directory
+        }
+        val prefs = context.getSharedPreferences("release-benchmark-conversation", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val history = ConversationHistory(prefs)
+        val thread = history.current.value.id
+        val reply = "conversation-benchmark-reply"
+        history.syncCall(VoiceCallRecord("benchmark-call", System.currentTimeMillis(), conversationId = thread,
+            transcript = listOf(TranscriptEntry("Jarvis", "Measured reply", replyId = reply,
+                metrics = ReplyMetrics().submitted(100).firstRawToken(200)))))
+        val row = history.current.value.messages.single()
+        assertEquals(reply, ConversationHistory(prefs).current.value.messages.single().sourceReplyId)
+        val store = AndroidPipelineBenchmarkStore(fixtureContext)
+        try {
+            val provenance = store.captureProvenance(configuration = mapOf("reply_id" to reply, "evidence" to "controlled_fixture"))
+            for (conversation in listOf(thread, "other-conversation")) store.append(PipelineBenchmarkTurn(
+                turnId = "attempt-$conversation", channel = "text", capturedAtEpochMs = System.currentTimeMillis(),
+                provenance = provenance, outcome = PipelineBenchmarkOutcome.COMPLETE,
+                clock = "controlled_fixture", stageOffsetsMs = mapOf("turn_started" to 0, "turn_finished" to 200),
+                conversationId = conversation))
+            store.flush()
+            val restored = AndroidPipelineBenchmarkStore(fixtureContext)
+            assertEquals(1, restored.report(conversationId = thread).turns.size)
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                    ConversationScreen(history, MutableStateFlow(false), MutableStateFlow(VoiceSessionState.PASSIVE_LISTENING),
+                        onSend = { _, _ -> null }, selectedModel = LocalModelSpec("release-fixture", "fixture.bin", recommendedGpu = false),
+                        onSelectConversation = { null }, onEndVoice = {}, onOpenVoiceCalls = {}, resumedVoice = false,
+                        pipelineBenchmarkStore = restored, voiceContent = { _, _, _, _ -> })
+                } }
+            } }
+            find(By.res("reply_metrics_${row.id}")).click()
+            find(By.res("pipeline_benchmark_screen"))
+            benchmarkClickEnabled(By.res("pipeline_benchmark_copy_json"), towardTop = true)
+            find(By.res("pipeline_benchmark_status"))
+            val clipboard = AtomicReference<String>()
+            activity.onActivity { host -> clipboard.set(host.getSystemService(android.content.ClipboardManager::class.java)
+                .primaryClip?.getItemAt(0)?.coerceToText(host)?.toString().orEmpty()) }
+            val report = org.json.JSONObject(clipboard.get())
+            assertEquals(1, report.getJSONArray("turns").length())
+            assertEquals(thread, report.getJSONArray("turns").getJSONObject(0).getString("conversationId"))
+            assertFalse(clipboard.get().contains("other-conversation"))
+            assertFalse(clipboard.get().contains("Measured reply"))
+            captureEvidence("conversation_scoped_benchmark_export")
+            benchmarkClickEnabled(By.res("pipeline_benchmark_close"), towardTop = true)
+            assertNotNull(find(By.res("chat_composer")))
+        } finally { store.clear(); directory.deleteRecursively(); prefs.edit().clear().commit() }
+    }
+
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @Test fun test47_audioInputChoiceAndDisplayCaptionTogglePersistWithoutLoadingModels() {
+        val originalMode = VoiceInputMode.selected(context)
+        val originalCaptions = VoiceInputMode.captions(context)
+        fun render() {
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                    androidx.compose.foundation.lazy.LazyColumn {
+                        item { com.battlesbudz.jarvis.v2.ui.VoiceInputSettings(enabled = true, onBusy = {}) }
+                    }
+                } }
+            } }
+            device.waitForIdle()
+        }
+        try {
+            VoiceInputMode.select(context, VoiceInputMode.TRANSCRIBED_TEXT)
+            VoiceInputMode.captions(context, true)
+            render()
+            find(By.text("Use Gemma audio understanding")).click()
+            assertEquals(VoiceInputMode.GEMMA_AUDIO, VoiceInputMode.selected(context))
+            find(By.res("gemma_whisper_captions")).click()
+            assertFalse(VoiceInputMode.captions(context))
+            render()
+            assertFalse(find(By.res("gemma_whisper_captions")).isChecked)
+            assertNotNull(find(By.textContains("Whisper captions are display-only")))
+            captureEvidence("gemma_audio_display_caption_settings")
+            find(By.text("Use Speech recognition")).click()
+            assertEquals(VoiceInputMode.TRANSCRIBED_TEXT, VoiceInputMode.selected(context))
+        } finally {
+            VoiceInputMode.select(context, originalMode)
+            VoiceInputMode.captions(context, originalCaptions)
         }
     }
 

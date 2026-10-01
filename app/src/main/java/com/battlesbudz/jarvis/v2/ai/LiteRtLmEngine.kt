@@ -34,17 +34,24 @@ class LiteRtLmEngine(
 ) : LocalModelEngine, Closeable {
     private companion object { val initializationLock = Any() }
     private val modelSpec = ModelCatalog.resolve(modelId)
-    private val engine = Engine(
-        EngineConfig(
-            modelPath = modelPath,
-            cacheDir = java.io.File(cacheDir, modelId).apply { mkdirs() }.path,
-            backend = if (useGpu) Backend.GPU() else Backend.CPU(),
-            visionBackend = if (visionEnabled) Backend.GPU() else null,
-            audioBackend = if (audioEnabled) Backend.CPU() else null,
-            maxNumImages = if (visionEnabled) 1 else null,
-            maxNumTokens = modelSpec.contextTokens
-        )
-    )
+    @OptIn(ExperimentalApi::class)
+    private val engine = synchronized(initializationLock) {
+        // The SDK reads this global flag while constructing the native engine.
+        // Keep it scoped to our constructor and restore it on every exit.
+        val previousBenchmark = ExperimentalFlags.enableBenchmark
+        try {
+            ExperimentalFlags.enableBenchmark = true
+            Engine(EngineConfig(
+                modelPath = modelPath,
+                cacheDir = java.io.File(cacheDir, modelId).apply { mkdirs() }.path,
+                backend = if (useGpu) Backend.GPU() else Backend.CPU(),
+                visionBackend = if (visionEnabled) Backend.GPU() else null,
+                audioBackend = if (audioEnabled) Backend.CPU() else null,
+                maxNumImages = if (visionEnabled) 1 else null,
+                maxNumTokens = modelSpec.contextTokens
+            ))
+        } finally { ExperimentalFlags.enableBenchmark = previousBenchmark }
+    }
     private var conversation: com.google.ai.edge.litertlm.Conversation? = null
     private val closed = AtomicBoolean(false)
 
@@ -222,6 +229,7 @@ class LiteRtLmEngine(
         var nativeSubmitMs: Long? = null
         var benchmarkOutcome = PipelineBenchmarkOutcome.ERROR
         var benchmarkError: Throwable? = null
+        var nativeTokens: NativeTokenTelemetry? = null
 
         val responses = Channel<Message>(Channel.UNLIMITED)
         val terminal = CompletableDeferred<Unit>()
@@ -267,6 +275,9 @@ class LiteRtLmEngine(
                 }
             }
             benchmarkOutcome = PipelineBenchmarkOutcome.COMPLETE
+            // Read only after the terminal callback and before closing/resetting this
+            // exact conversation. Cancelled/error turns must not reuse prior counters.
+            nativeTokens = readNativeTelemetry(activeConversation)
         } catch (error: Throwable) {
             benchmarkError = error
             benchmarkOutcome = if (error is CancellationException) PipelineBenchmarkOutcome.CANCELLED else PipelineBenchmarkOutcome.ERROR
@@ -286,7 +297,8 @@ class LiteRtLmEngine(
                 }
                 responses.cancel()
             } } finally {
-                benchmark.finish(benchmarkOutcome, output.length, promptChars, streamEvents, error = benchmarkError)
+                benchmark.finish(benchmarkOutcome, output.length, promptChars, streamEvents, error = benchmarkError,
+                    nativeTokens = nativeTokens)
             }
         }
 
@@ -318,6 +330,17 @@ class LiteRtLmEngine(
 
     private fun String.streamEventsFallback(): Int =
         trim().split(Regex("\\s+")).count().coerceAtLeast(1)
+
+    @OptIn(ExperimentalApi::class)
+    private fun readNativeTelemetry(active: com.google.ai.edge.litertlm.Conversation): NativeTokenTelemetry? {
+        val began = System.nanoTime()
+        return runCatching {
+            val measured = active.getBenchmarkInfo()
+            NativeTokenTelemetry.checked(measured.lastPrefillTokenCount, measured.lastDecodeTokenCount,
+                measured.timeToFirstTokenInSecond, measured.lastPrefillTokensPerSecond,
+                measured.lastDecodeTokensPerSecond, (System.nanoTime() - began) / 1_000_000.0)
+        }.getOrNull()
+    }
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {

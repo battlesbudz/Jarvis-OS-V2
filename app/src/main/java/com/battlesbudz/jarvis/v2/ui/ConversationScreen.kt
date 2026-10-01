@@ -2,6 +2,9 @@ package com.battlesbudz.jarvis.v2.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -42,9 +45,14 @@ internal fun ConversationScreen(
     phoneTasks: StateFlow<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>? = null,
     phoneTaskError: StateFlow<String?>? = null,
     onPhoneTaskAction: (String, Long, String) -> Unit = { _, _, _ -> },
+    pipelineBenchmarkStore: com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore? = null,
     voiceContent: @Composable (visible: Boolean, settingsOpen: Boolean, dismissSettings: () -> Unit, startRequest: Long) -> Unit
 ) {
     val thread by history.current.collectAsState()
+    var benchmarkReply by remember { mutableStateOf<String?>(null) }
+    if (benchmarkReply != null && pipelineBenchmarkStore != null) Dialog(onDismissRequest = { benchmarkReply = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize()) { PipelineBenchmarkScreen(pipelineBenchmarkStore, onClose = { benchmarkReply = null }, resetEnabled = false, conversationId = thread.id, initialTurnId = benchmarkReply) }
+    }
     val sending by busy.collectAsState()
     val liveTranscript by VoiceSessionUi.liveTranscript.collectAsState()
     val armed by VoiceSessionUi.armed.collectAsState()
@@ -152,7 +160,7 @@ internal fun ConversationScreen(
                                     Text((message.metrics ?: com.battlesbudz.jarvis.v2.diagnostics.ReplyMetrics.unavailable).summary(),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("reply_metrics_${message.id}"))
+                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).clickable(enabled = pipelineBenchmarkStore != null) { benchmarkReply = message.sourceReplyId ?: message.id }.testTag("reply_metrics_${message.id}"))
                                 if (!message.complete && message.role == "Jarvis" && message.text.isNotBlank() && !sending)
                                     Text("Reply interrupted or not fully spoken", style = MaterialTheme.typography.labelSmall)
                             }

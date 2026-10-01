@@ -103,6 +103,22 @@ class NativeInferenceMeasurementTest {
         assertEquals(1024.0, record.measurements["audio_bytes"]!!, 0.0)
         assertEquals("IllegalArgumentException", record.metadata["error_type"])
         assertFalse(record.metadata.values.any { it.contains("private error text") })
-        assertEquals("unavailable_litert_android_no_token_ids", record.tokenTelemetrySource)
+        assertEquals("unavailable_for_this_inference_path_or_outcome", record.tokenTelemetrySource)
+    }
+
+    @Test fun nativeCountersRemainSeparateFromCallbackTimingAndEstimates() {
+        var record: PipelineBenchmarkSubmission? = null
+        val benchmark = NativeInferenceBenchmark("gemma", PipelineBenchmarkPurpose.ANSWER,
+            PipelineBenchmarkWarmState.WARM, "audio_text", sink = { record = it })
+        benchmark.finish(PipelineBenchmarkOutcome.COMPLETE, 80, 20, 2,
+            nativeTokens = NativeTokenTelemetry.checked(18, 12, 0.2, 100.0, 40.0, 0.1))
+        val measured = requireNotNull(record)
+        assertEquals(18, measured.exactInputTokens)
+        assertEquals(12, measured.exactOutputTokens)
+        assertEquals(20, measured.estimatedOutputTokens)
+        assertEquals(200.0, measured.measurements["native_ttft_ms"]!!, 0.0)
+        assertEquals(40.0, measured.measurements["native_decode_tokens_per_second"]!!, 0.0)
+        assertNull("SDK relative TTFT cannot be subtracted from a callback clock", measured.exactDecodeTokensPerSecond)
+        assertTrue(measured.tokenTelemetrySource!!.contains("getBenchmarkInfo"))
     }
 }

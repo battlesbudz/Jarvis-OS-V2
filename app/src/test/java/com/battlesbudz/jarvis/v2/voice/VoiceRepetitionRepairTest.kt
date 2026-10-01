@@ -93,4 +93,36 @@ class VoiceRepetitionRepairTest {
         VoiceRepetitionRepair.run(blocked) { result("<tool_call>open_app.</tool_call>") }
         assertEquals("", blocked.text)
     }
+    @Test fun repairAfterValidOpeningStopsSecondLoopAndCleansGeneration() = runBlocking {
+        val guard = VoiceRepetitionGuard("Opinion?", null) {}
+        try { guard.accept("Vaping needs care. " + "nicotine- ".repeat(100)) }
+        catch (_: VoiceRepetitionGuard.RunawayLoop) {}
+        assertTrue(guard.needsRepair)
+        var cleaned = false
+        val outcome = VoiceRepetitionRepair.run(guard) { emit ->
+            try {
+                emit("A useful consideration ")
+                while (true) emit("nicotine- ")
+                @Suppress("UNREACHABLE_CODE") result("")
+            } finally { cleaned = true }
+        }
+        assertTrue(cleaned)
+        assertEquals("runaway_repetition", outcome.reason)
+        assertTrue(guard.loopDetected)
+        assertEquals("Vaping needs care.", guard.finish())
+    }
+
+    @Test fun validOpeningDoesNotPreventBoundedRecovery() = runBlocking {
+        val guard = VoiceRepetitionGuard("Opinion?", null) {}
+        try { guard.accept("Vaping needs care. " + "nicotine- ".repeat(100)) }
+        catch (_: VoiceRepetitionGuard.RunawayLoop) {}
+        val outcome = VoiceRepetitionRepair.run(guard) { emit ->
+            emit("There are several risks to consider.")
+            result("There are several risks to consider.")
+        }
+        assertEquals("completed", outcome.reason)
+        assertFalse(guard.needsRepair)
+        assertEquals("Vaping needs care. There are several risks to consider.", guard.text)
+    }
+
 }

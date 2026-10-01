@@ -48,14 +48,24 @@ internal fun PipelineBenchmarkCard(enabled: Boolean) {
 /** Metrics are redacted; entering a reference explicitly scores the original ASR output only. */
 @Composable
 @OptIn(ExperimentalComposeUiApi::class)
-fun PipelineBenchmarkScreen(store: AndroidPipelineBenchmarkStore, onClose: () -> Unit, resetEnabled: Boolean = true) {
+fun PipelineBenchmarkScreen(store: AndroidPipelineBenchmarkStore, onClose: () -> Unit, resetEnabled: Boolean = true,
+    conversationId: String? = null, callId: String? = null, initialTurnId: String? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val samples by store.samples.collectAsState()
+    val allSamples by store.samples.collectAsState()
+    var scoped by remember(conversationId, callId) { mutableStateOf(conversationId != null || callId != null) }
+    val samples = remember(allSamples, scoped, conversationId, callId) {
+        PipelineBenchmarkSelection.select(allSamples, conversationId.takeIf { scoped }, callId.takeIf { scoped })
+    }
     val storageStatus by store.storageStatus.collectAsState()
     val hypothesisEpoch by store.hypothesisGeneration.collectAsState()
     var status by remember { mutableStateOf("") }
-    var selectedId by remember { mutableStateOf<String?>(null) }
+    var selectedId by remember { mutableStateOf(initialTurnId) }
+    LaunchedEffect(initialTurnId, samples) {
+        if (initialTurnId != null && selectedId == initialTurnId) {
+            PipelineBenchmarkSelection.select(samples, turnId = initialTurnId).firstOrNull()?.let { selectedId = it.turnId }
+        }
+    }
     var showReset by remember { mutableStateOf(false) }
     var referenceId by remember { mutableStateOf<String?>(null) }
     var pendingExport by remember { mutableStateOf<String?>(null) }
@@ -128,7 +138,11 @@ fun PipelineBenchmarkScreen(store: AndroidPipelineBenchmarkStore, onClose: () ->
         }
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
-                Text("${samples.size} recent attempts · at most 500 records / 2 MiB retained across restarts")
+                Text("${samples.size} retained attempts · 90-day retention · 128 MiB / 100,000 attempts capacity")
+                Text("Capacity rejects new records visibly; it does not evict existing attempts. Expired records are pruned. Legacy exports have no conversation linkage unless recorded.", style = MaterialTheme.typography.bodySmall)
+                if (conversationId != null || callId != null) TextButton(onClick = { scoped = !scoped }, modifier = Modifier.testTag("pipeline_benchmark_scope")) {
+                    Text(if (scoped) "Export scope: this conversation/call · Show all" else "Export scope: all benchmarks · Show this conversation/call")
+                }
                 Text("Automatic observations cover every completed, cancelled and failed attempt collected by this build. A live conversation is observational data, not a controlled benchmark corpus.", style = MaterialTheme.typography.bodySmall)
                 Text("Exports contain model/build/device settings, measurements and optional reviewed scores. Prompts, transcripts, reference text and audio are omitted.", style = MaterialTheme.typography.bodySmall)
                 Text("Unobserved values stay unavailable. Token estimates are separate from native token counts. Playback-head latency is a device playback proxy; actual acoustic onset is unmeasured.", style = MaterialTheme.typography.bodySmall)
@@ -156,7 +170,7 @@ fun PipelineBenchmarkScreen(store: AndroidPipelineBenchmarkStore, onClose: () ->
             item { BenchmarkSummary(report) }
             item { Text("Recent samples · latest 50 shown; exports include all retained samples", style = MaterialTheme.typography.titleMedium) }
             if (samples.isEmpty()) item { Text("No pipeline measurements yet. Complete a text or voice turn, then return here.") }
-            items(samples.takeLast(50).asReversed(), key = { it.turnId }) { sample ->
+            items(PipelineBenchmarkSelection.select(samples, turnId = initialTurnId).takeIf { initialTurnId != null }.orEmpty().plus(samples.takeLast(50)).distinctBy { it.turnId }.asReversed(), key = { it.turnId }) { sample ->
                 OutlinedCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         TextButton(onClick = { selectedId = if (selectedId == sample.turnId) null else sample.turnId },
@@ -182,7 +196,10 @@ fun PipelineBenchmarkScreen(store: AndroidPipelineBenchmarkStore, onClose: () ->
                             }
                             BenchmarkQualityReview(sample) { store.setQuality(sample.turnId, it) }
                             Text("Measured pipeline values", style = MaterialTheme.typography.titleSmall)
-                            sample.metrics().forEach { (key, value) -> Text("$key: ${number(value)}", style = MaterialTheme.typography.bodySmall) }
+                            sample.metrics().forEach { (key, value) ->
+                                Text("$key: ${number(value)}", style = MaterialTheme.typography.bodySmall)
+                                PipelineBenchmarkDefinitions.notes[key]?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+                            }
                             sample.submissions.forEach { submission ->
                                 Text("${submission.purpose} · ${submission.outcome} · ${submission.warmState} · ${submission.modelId ?: "model unavailable"}", style = MaterialTheme.typography.titleSmall)
                                 submission.metrics().forEach { (key, value) -> Text("$key: ${number(value)}", style = MaterialTheme.typography.bodySmall) }

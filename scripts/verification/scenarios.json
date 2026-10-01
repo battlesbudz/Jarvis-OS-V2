@@ -47,6 +47,8 @@
     "test43_conditionalAndCommaPlansUseRealAndroidWithoutModelCalls",
     "test44_backgroundAssistantOpensAppAndFinishesOrderedPlanWithoutTap",
     "test45_pipelineBenchmarksScoreOriginalAsrPersistAndExportRedactedEvidence",
+    "test46_replyMetricsExportOnlyTheirConversationAcrossReload",
+    "test47_audioInputChoiceAndDisplayCaptionTogglePersistWithoutLoadingModels",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

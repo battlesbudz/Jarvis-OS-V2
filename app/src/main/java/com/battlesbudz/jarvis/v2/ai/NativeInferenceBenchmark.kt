@@ -29,7 +29,8 @@ internal class NativeInferenceBenchmark(
         prefillMs: Long? = null,
         prefillChunks: Int? = null,
         error: Throwable? = null,
-        generationAttempted: Boolean = true
+        generationAttempted: Boolean = true,
+        nativeTokens: NativeTokenTelemetry? = null
     ) {
         if (!reported.compareAndSet(false, true)) return
         val measured = measurement.snapshot(outputChars)
@@ -45,10 +46,10 @@ internal class NativeInferenceBenchmark(
             prefillMs = prefillMs,
             nativeSubmitMs = measured.nativeSubmitMs,
             promptCharacters = promptChars,
-            // Android LiteRT-LM does not expose token IDs or the tokenizer's counts.
-            exactInputTokens = null,
-            exactOutputTokens = null,
-            tokenTelemetrySource = "unavailable_litert_android_no_token_ids",
+            exactInputTokens = nativeTokens?.inputTokens,
+            exactOutputTokens = nativeTokens?.outputTokens,
+            tokenTelemetrySource = if (nativeTokens != null) "litertlm_0.16_conversation_getBenchmarkInfo_last_decode"
+                else "unavailable_for_this_inference_path_or_outcome",
             estimatedOutputTokens = measured.estimatedOutputTokens.takeIf { generationAttempted },
             estimatedDecodeTokensPerSecond = measured.estimatedRawDecodeTokensPerSecond.takeIf { generationAttempted },
             streamEvents = streamEvents,
@@ -66,7 +67,11 @@ internal class NativeInferenceBenchmark(
                 "audio_bytes" to audioBytes.toDouble(),
                 "image_bytes" to imageBytes.toDouble(),
                 "engine_initialization_ms" to initializationMs?.toDouble(),
-                "prefill_chunks" to prefillChunks?.toDouble()
+                "prefill_chunks" to prefillChunks?.toDouble(),
+                "native_ttft_ms" to nativeTokens?.timeToFirstTokenMs,
+                "native_prefill_tokens_per_second" to nativeTokens?.prefillTokensPerSecond,
+                "native_decode_tokens_per_second" to nativeTokens?.decodeTokensPerSecond,
+                "native_telemetry_read_ms" to nativeTokens?.readMs
             ),
             metadata = buildMap {
                 put("input_mode", mode)
@@ -79,6 +84,9 @@ internal class NativeInferenceBenchmark(
                 put("callback_intervals_policy", "native_callback_chunks_nearest_rank_prefix_cap_4096")
                 put("warm_state_policy", "engine_instance_first_submission_not_disk_cache")
                 put("initialization_scope", "engine_initialize_wall_including_lock_wait_excluding_engine_constructor")
+                put("native_tokens_scope", if (nativeTokens != null) "completed_conversation_last_prefill_and_decode"
+                    else "not_exposed_raw_session_or_incomplete_submission")
+                put("native_ttft_clock", "sdk_internal_relative_duration_not_callback_clock")
                 error?.let { put("error_type", it.javaClass.simpleName) }
             }
         )

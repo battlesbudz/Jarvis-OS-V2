@@ -71,6 +71,7 @@ class ConversationHistoryTest {
         val restored = ConversationHistory(prefs).current.value.messages
         assertEquals(9.5, restored.first { it.id == "text" }.metrics?.estimatedTokensPerSecond)
         assertEquals(900L, restored.first { it.callId == "call" }.metrics?.firstReplyPlaybackAtMs)
+        assertEquals("reply", restored.first { it.callId == "call" }.sourceReplyId)
         assertEquals("next turn", restored.last().text)
     }
 

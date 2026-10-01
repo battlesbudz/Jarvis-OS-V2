@@ -24,6 +24,11 @@ internal fun JarvisRuntime.runConversationInternal(
         incrementalVoice: com.battlesbudz.jarvis.v2.voice.IncrementalVoiceInput? = null,
         voiceAudio: ByteArray? = null,
         voiceAudioIsComplete: Boolean = true,
+        /** Original audio is authoritative; caption text must never route tools or lookup. */
+        directVoiceAudio: Boolean = false,
+        replyIdentity: String? = null,
+        conversationIdentity: String? = null,
+        callIdentity: String? = null,
         comparison: com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.Trial? = null,
         onLatency: (com.battlesbudz.jarvis.v2.diagnostics.TurnLatency) -> Unit = {},
         onLiveInference: (submittedAtMs: Long?, firstTokenAtMs: Long?, estimatedTokensPerSecond: Double?, durable: Boolean) -> Unit = { _, _, _, _ -> },
@@ -42,7 +47,7 @@ internal fun JarvisRuntime.runConversationInternal(
     ): Job? {
         var continuityContext = ""
         var captureContext = ""
-        val phoneTaskConversationId = conversationHistory.current.value.id
+        val phoneTaskConversationId = conversationIdentity ?: conversationHistory.current.value.id
         var phoneTaskGroupId: String? = null
         var phoneTaskStep = 0
         var memoryTurnContext: MemoryTurnContext? = null
@@ -59,9 +64,13 @@ internal fun JarvisRuntime.runConversationInternal(
             minOf(ConversationPolicy.CONVERSATION_COMPACTION_LIMIT, it * 3 - if (imageUri != null) 1800 else 0)
         } ?: ConversationPolicy.CONVERSATION_COMPACTION_LIMIT
         val latencyStarted = System.nanoTime()
-        val latencyId = java.util.UUID.randomUUID().toString()
+        val latencyId = replyIdentity ?: java.util.UUID.randomUUID().toString()
         val benchmark = benchmarkCapture ?: newPipelineBenchmark(latencyId,
             if (voiceAudio != null) "voice_reply" else if (callOwned) "typed_in_call" else "text")
+        if (benchmarkCapture == null) {
+            benchmark.configuration("reply_id", latencyId)
+            benchmark.configuration("conversation_id", phoneTaskConversationId)
+        }
         val ownsBenchmark = benchmarkCapture == null
         var benchmarkOutcome = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome.COMPLETE
         var benchmarkFailure: String? = null
@@ -71,7 +80,7 @@ internal fun JarvisRuntime.runConversationInternal(
             benchmark.noteOutcome(benchmarkOutcome, benchmarkFailure)
             if (ownsBenchmark) {
                 finishPipelineResources(benchmark)
-                benchmark.finish(benchmarkOutcome, failureCode = benchmarkFailure)?.let { pipelineBenchmarkStore.append(it) }
+                benchmark.finish(benchmarkOutcome, callId = callIdentity, failureCode = benchmarkFailure)?.let { pipelineBenchmarkStore.append(it) }
             }
         }
         var loadMs = 0L
@@ -160,8 +169,10 @@ internal fun JarvisRuntime.runConversationInternal(
                 var actionName: String? = null
                 // All routing, recall, and summaries must observe the persistent post-memory
                 // boundary. Visible transcript stays intact; only prompt context is filtered.
-                var safeHistory = conversationHistory.contextAfterMemoryCutoff()
-                val turnPlan = if (comparison != null || imageUri != null || audioUri != null) com.battlesbudz.jarvis.v2.ai.TurnPlan(com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT)
+                var safeHistory = conversationHistory.contextAfterMemoryCutoff().filterNot {
+                    directVoiceAudio && com.battlesbudz.jarvis.v2.voice.GemmaAudioInputPolicy.isPendingTranscript(it.role, it.text)
+                }
+                val turnPlan = if (directVoiceAudio || comparison != null || imageUri != null || audioUri != null) com.battlesbudz.jarvis.v2.ai.TurnPlan(com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT)
                     else turnOrchestrator.plan(prompt, safeHistory.map { it.role to it.text })
                 if (voiceAudio != null && turnPlan.lookupQuery == null) activeVoiceOutput?.acknowledgeConfirmedTurn()
                 // Parse the completed request before any direct shortcut, lookup, or model side effect.
@@ -255,7 +266,7 @@ internal fun JarvisRuntime.runConversationInternal(
                     postFinish(outcome.message)
                     return@launch
                 }
-                val phoneStatusReply = if (imageUri == null && audioUri == null && comparison == null)
+                val phoneStatusReply = if (!directVoiceAudio && imageUri == null && audioUri == null && comparison == null)
                     com.battlesbudz.jarvis.v2.actions.PhoneActionStatusReply.resolve(prompt, phoneTaskConversationId,
                         history.map { it.role to it.text }, lastPhoneActionStatus) else null
                 if (phoneStatusReply != null) {
@@ -298,7 +309,9 @@ internal fun JarvisRuntime.runConversationInternal(
                         resetNativeConversation()
                         // Expiry-token adoption can publish a fresh persistent cutoff. Reload
                         // before any recall/retry prompt observes retained dialogue.
-                        safeHistory = conversationHistory.contextAfterMemoryCutoff()
+                        safeHistory = conversationHistory.contextAfterMemoryCutoff().filterNot {
+                    directVoiceAudio && com.battlesbudz.jarvis.v2.voice.GemmaAudioInputPolicy.isPendingTranscript(it.role, it.text)
+                }
                     }
                     memoryDeliveryTicket = memoryDeliveryFence.ticket(memoryTurnContext!!.expiresAtMs)
                     onMemoryBound(memoryDeliveryTicket!!, memoryTurnContext!!)
@@ -639,7 +652,7 @@ internal fun JarvisRuntime.runConversationInternal(
                             "decodeTokensPerSecondEstimated=${result.decodeTokensPerSecond ?: -1.0}"
                     )
                 }
-                val directAudioComparison = comparison?.request?.path == com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.Path.GEMMA_DIRECT
+                val directAudioComparison = directVoiceAudio || comparison?.request?.path == com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.Path.GEMMA_DIRECT
                 comparison?.mark("answer_submit")
                 // Native edges are durable; interim decode rate is throttled progress only.
                 val liveRate = com.battlesbudz.jarvis.v2.ai.LiveTokenRateEstimator {
@@ -661,13 +674,14 @@ internal fun JarvisRuntime.runConversationInternal(
                     streamFilter.accept(token)
                 }
                 diagnosticRecorder.recordSummary("Inference input: mode=" +
-                    (if (directAudioComparison) "diagnostic_direct_audio" else if (textInput != null) "incremental_text"
+                    (if (directAudioComparison) if (directVoiceAudio) "gemma_direct_audio" else "diagnostic_direct_audio" else if (textInput != null) "incremental_text"
                         else if (voiceAudio != null) "voice_text"
                         else if (imageBytes != null) "image_text" else if (attachedAudio != null) "audio_file_text" else "text") +
                     " audioBytes=${if (directAudioComparison) voiceAudio?.size ?: 0 else attachedAudio?.size ?: 0} retainedAudioBytes=${voiceAudio?.size ?: 0} promptChars=${submittedPrompt.length}" +
                     " nativeAudioEncodeMs=${if (directAudioComparison || attachedAudio != null) "unavailable" else "not_used"} queueMs=unavailable")
                 var incrementalFallbackUsed = false
-                var generated = if (directAudioComparison) {
+                var runawayLoopStopped = false
+                var generated = try { if (directAudioComparison) {
                     engine.generateAudio(submittedPrompt, requireNotNull(voiceAudio), acceptVoiceToken)
                 } else if (textInput != null) {
                     engine.onPromptSubmitted(submittedPrompt, 0)
@@ -694,7 +708,16 @@ internal fun JarvisRuntime.runConversationInternal(
                         onToken = acceptVoiceToken
                     )
                 }
-                recordInference("answer", generated)
+                } catch (loop: com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard.RunawayLoop) {
+                    // The adapter cancels and joins native work before this catch. The guard
+                    // never publishes its looping suffix, so the speech channel contains only
+                    // accepted text; preserve that opening while restarting a bounded answer.
+                    runawayLoopStopped = true
+                    benchmark.configuration("generation_recovery_reason", "runaway_repetition")
+                    diagnosticRecorder.recordImportant("Runaway repetition cancelled before speech publication; preserving valid opening.")
+                    com.battlesbudz.jarvis.v2.ai.GenerationResult(voiceRepetitionGuard?.text.orEmpty(), -1L, null)
+                }
+                if (!runawayLoopStopped) recordInference("answer", generated)
                 onLiveInference(null, null, generated.decodeTokensPerSecond ?: lastLiveRate, true)
                 var nativeConversationContainsCurrentTurn = textInput == null || incrementalFallbackUsed
                 val actionPlan = requestedActionPlan
@@ -767,7 +790,9 @@ internal fun JarvisRuntime.runConversationInternal(
                         The previous output contained an invalid tool call. Answer the user's current message directly as normal text. Do not call a tool.
                     """.trimIndent()
                     engine.benchmarkPurpose = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkPurpose.RETRY
-                    generated = if (attachedAudio != null) {
+                    generated = if (directAudioComparison) {
+                        engine.generateAudio(retryPrompt, requireNotNull(voiceAudio), streamFilter::accept)
+                    } else if (attachedAudio != null) {
                         engine.generateAudio(retryPrompt, attachedAudio, streamFilter::accept)
                     } else if (imageBytes != null) {
                         engine.generate(
@@ -900,7 +925,12 @@ internal fun JarvisRuntime.runConversationInternal(
                     cleanedResponse = "I couldn't produce a verified answer from the available reference evidence. Please try again."
                 }
                 if (voiceRepetitionGuard != null && actionResultMessage == null) {
-                    cleanedResponse = voiceRepetitionGuard.finish(cleanedResponse)
+                    cleanedResponse = try { voiceRepetitionGuard.finish(cleanedResponse) }
+                    catch (loop: com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard.RunawayLoop) {
+                        runawayLoopStopped = true
+                        benchmark.configuration("generation_recovery_reason", "runaway_repetition")
+                        voiceRepetitionGuard.text
+                    }
                     if (voiceRepetitionGuard.needsRepair) {
                         diagnosticRecorder.recordImportant("Voice repetition blocked: sentences=${voiceRepetitionGuard.suppressedSentences}; streaming one bounded read-only repair.")
                         val repairStarted = System.nanoTime()
@@ -912,13 +942,15 @@ internal fun JarvisRuntime.runConversationInternal(
                                 "\n" + referenceContext.orEmpty() + "\n" +
                                 "\nYour previous draft repeated the user or an earlier reply and was suppressed. " +
                                 "Give a NEW direct answer to the CURRENT question in one or two sentences. " +
+                                "Already delivered opening: ${voiceRepetitionGuard.text.take(600)}. Continue without repeating it. " +
                                 "Do not recap, apologize, quote earlier sentences, or call tools. " +
                                 "Resolve follow-ups using the dialogue above. " + com.battlesbudz.jarvis.v2.chat.AnswerQualityPolicy.repairInstruction("repetition_or_unhelpful_draft")
                             // Disable native tool production as well as keeping repair outside dispatch.
                             engine.setToolsEnabled(false)
                             engine.benchmarkPurpose = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkPurpose.RETRY
                             val repair = com.battlesbudz.jarvis.v2.voice.VoiceRepetitionRepair.run(voiceRepetitionGuard) { emit ->
-                                engine.generate(prompt = repairPrompt, onToken = emit)
+                                if (directAudioComparison) engine.generateAudio(repairPrompt, requireNotNull(voiceAudio), emit)
+                                else engine.generate(prompt = repairPrompt, onToken = emit)
                             }
                             repair.generation?.let { recordInference("repetition repair", it) }
                             diagnosticRecorder.recordImportant("Voice repetition repair ended reason=${repair.reason} " +
@@ -931,6 +963,7 @@ internal fun JarvisRuntime.runConversationInternal(
                             nativeConversationContainsCurrentTurn = false
                         }
                         if (voiceRepetitionGuard.text.length == beforeRepair) {
+                            voiceRepetitionGuard.beginRepair()
                             for (fallback in listOf("I couldn't produce a fresh answer to that.",
                                 "I'm stuck on that question at the moment.", "I don't have a useful new answer yet.")) {
                                 voiceRepetitionGuard.accept(fallback)

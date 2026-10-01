@@ -22,6 +22,8 @@ class PiperVoiceOutput internal constructor(
     private val modelSession: VoiceModelSession? = null,
     private val deliveryLedger: SpeechDeliveryLedger? = null,
     private val onPlaybackEnded: () -> Unit = {},
+    /** Includes audible wait fillers as well as answers; survives into the next capture. */
+    private val onEchoReference: (String) -> Unit = {},
     private val acknowledgeDelays: Boolean = false,
     private val playbackVolume: () -> String = { "unavailable" },
     private val audioTrace: SpeechAudioTrace? = null,
@@ -36,6 +38,10 @@ class PiperVoiceOutput internal constructor(
     @Volatile private var stopped = false
     @Volatile private var audioTrack: AudioTrack? = null
     private val speaking = AtomicBoolean(false)
+    private val playbackBoundaryReported = AtomicBoolean(false)
+    private fun reportPlaybackEnded() {
+        if (recentSpokenText().isNotBlank() && playbackBoundaryReported.compareAndSet(false, true)) onPlaybackEnded()
+    }
     private val sentenceRefilling = java.util.concurrent.atomic.AtomicBoolean(false)
     private val gapCuePlaying = AtomicBoolean(false)
     private val playbackLock = Any()
@@ -45,7 +51,7 @@ class PiperVoiceOutput internal constructor(
     private val spokenReference = StringBuilder()
     fun recentSpokenText(): String = synchronized(spokenReference) { spokenReference.toString() }
     private fun rememberPlayback(text: String) = synchronized(spokenReference) {
-        if (text.isNotBlank()) spokenReference.append(" ").append(text)
+        if (text.isNotBlank()) { spokenReference.append(" ").append(text); onEchoReference(text) }
         if (spokenReference.length > 1600) spokenReference.delete(0, spokenReference.length - 1600)
     }
     private suspend fun playCachedCue(audio: SpeechAudio) {
@@ -126,6 +132,7 @@ class PiperVoiceOutput internal constructor(
     override suspend fun speak(chunks: Flow<String>, onChunkStarted: (String) -> Unit) = coroutineScope {
         check(speaking.compareAndSet(false, true)) { "Voice output is already active." }
         stopped = false
+        playbackBoundaryReported.set(false)
         stoppedPlaybackHead.set(0)
         val speechScope = this
         if (acknowledgeDelays) {
@@ -520,7 +527,7 @@ class PiperVoiceOutput internal constructor(
                     }
                     draining.set(true)
                     completed = drainAudioTrack(framesWritten, outputSampleRate, playbackSpeed)
-                    if (completed) onPlaybackEnded()
+                    if (completed) reportPlaybackEnded()
                     if (!completed && !stopped) error("AudioTrack playback timed out before all speech was consumed.")
                 }
                 finalUnderruns = audioTrack?.underrunCount ?: 0
@@ -534,6 +541,7 @@ class PiperVoiceOutput internal constructor(
             stopped = true
             // Unblock the native producer waiting on a full queue before joining its native owner.
             withContext(NonCancellable) { acknowledgement.close() }
+            reportPlaybackEnded()
             audio.cancel()
             tokens.cancel()
             withContext(NonCancellable) { playbackMonitor?.cancelAndJoin() }
@@ -576,6 +584,7 @@ class PiperVoiceOutput internal constructor(
     }
 
     override fun stopSpeaking() {
+        val wasActive = speaking.get() && !stopped
         stopped = true
         // Never release an AudioTrack while its writer is using it.
         synchronized(playbackLock) {
@@ -588,6 +597,7 @@ class PiperVoiceOutput internal constructor(
             }
             deliveryLedger?.advance(stoppedPlaybackHead.get().coerceAtMost(writtenFrames), SpeechDeliveryState.INTERRUPTED)
         }
+        if (wasActive) reportPlaybackEnded()
     }
 
     fun release() { stopSpeaking() }

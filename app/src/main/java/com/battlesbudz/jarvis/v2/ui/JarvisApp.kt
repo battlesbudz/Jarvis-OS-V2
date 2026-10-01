@@ -373,7 +373,8 @@ fun JarvisApp(
                         forceVoiceDestination = memoryReturnToVoice,
                         onForceVoiceConsumed = { memoryReturnToVoice = false },
                         forceChatDestination = memoryReturnToChat,
-                        onForceChatConsumed = { memoryReturnToChat = false }
+                        onForceChatConsumed = { memoryReturnToChat = false },
+                        pipelineBenchmarkStore = JarvisRuntime.get(phoneContext.applicationContext).pipelineBenchmarkStore
                     ) { visible, settingsOpen, dismissSettings, startRequest -> VoiceCallScreen(
                         visible = visible, settingsOpen = settingsOpen, memoryOpen = showingMemory,
                         onDismissSettings = dismissSettings, startRequest = startRequest,

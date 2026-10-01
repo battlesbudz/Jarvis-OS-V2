@@ -45,6 +45,19 @@ class VoiceSessionController(
         if (complete) checkpoint() else store.saveProgress(requireActiveCall())
     }
 
+    /** Replace only the user entry paired with this exact reply, never append a second user turn. */
+    @Synchronized fun updateUserTranscriptForReply(callId: String, replyId: String, text: String): Boolean {
+        if (text.isBlank() || activeCall?.id != callId) return false
+        val call = requireActiveCall()
+        val replyIndex = call.transcript.indexOfFirst { it.replyId == replyId && it.role == "Jarvis" }
+        if (replyIndex <= 0 || call.transcript[replyIndex - 1].role != "You") return false
+        val entries = call.transcript.toMutableList()
+        entries[replyIndex - 1] = entries[replyIndex - 1].copy(text = text, complete = true, generationComplete = true)
+        activeCall = call.copy(transcript = entries)
+        checkpoint()
+        return true
+    }
+
     /** Stable reply IDs separate generation, audio delivery and tool receipts. */
     @Synchronized fun beginReply(callId: String, replyId: String) {
         if (activeCall?.id != callId) return

@@ -56,6 +56,6 @@ class PipelineBenchmarkCapture(
         val resolvedOutcome = if (outcome in setOf(PipelineBenchmarkOutcome.COMPLETE, PipelineBenchmarkOutcome.UNKNOWN)) childOutcome ?: outcome else outcome
         return PipelineBenchmarkTurn(turnId, callId, channel, capturedAtEpochMs, provenance, resolvedOutcome,
             clock = "System.nanoTime", stageOffsetsMs = stages.toMap(), observedMetrics = measurements.toMap(),
-            asr = asr, tts = tts, submissions = passes.values.toList(), failureCode = failureCode ?: childFailure)
+            asr = asr, tts = tts, submissions = passes.values.toList(), failureCode = failureCode ?: childFailure, conversationId = provenance.configuration["conversation_id"])
     }
 }

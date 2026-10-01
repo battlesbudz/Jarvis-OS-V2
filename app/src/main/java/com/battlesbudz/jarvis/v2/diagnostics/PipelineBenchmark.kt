@@ -129,6 +129,7 @@ data class PipelineBenchmarkSubmission(
         "estimatedDecodeTokensPerSecond" to estimatedDecodeTokensPerSecond, "streamEvents" to streamEvents)
         .put("measurements", benchmarkNumericMap(measurements)).put("metadata", JSONObject(metadata.toSortedMap()))
         .put("nativeFirstOutputTokenMs", nativeFirstOutputTokenMs ?: JSONObject.NULL)
+        .put("metricStatus", PipelineBenchmarkDefinitions.statuses(metrics()))
     companion object {
         fun read(j: JSONObject) = PipelineBenchmarkSubmission(j.getString("submissionId"),
             PipelineBenchmarkPurpose.valueOf(j.getString("purpose")), PipelineBenchmarkOutcome.valueOf(j.getString("outcome")),
@@ -204,12 +205,24 @@ data class PipelineBenchmarkTurn(
     val submissions: List<PipelineBenchmarkSubmission> = emptyList(),
     val accuracy: PipelineBenchmarkAccuracy? = null,
     val failureCode: String? = null,
-    val quality: PipelineBenchmarkQuality? = null
+    val quality: PipelineBenchmarkQuality? = null,
+    val conversationId: String? = null
 ) {
     init { require(turnId.isNotBlank()); require(stageOffsetsMs.values.all { it >= 0 }); require(submissions.map { it.submissionId }.distinct().size == submissions.size) }
     /** Text-free structural metrics. The first reply events must already exclude acknowledgement/filler. */
     fun metrics(): Map<String, Double?> = linkedMapOf<String, Double?>(
+        "process_cpu_work_ms" to benchmarkDuration(observedMetrics["process_cpu_time_ms_before"]?.toLong(), observedMetrics["process_cpu_time_ms_after"]?.toLong()).benchmarkNumber(),
         "turn_total_ms" to stageOffsetsMs["turn_finished"].benchmarkNumber(),
+        "model_load_ms" to span("model_load_started", "model_load_finished"),
+        "llm_setup_ms" to span("llm_setup_started", "llm_setup_finished"),
+        "attachment_preparation_ms" to span("attachment_preparation_started", "attachment_preparation_finished"),
+        "memory_retrieval_ms" to span("memory_retrieval_started", "memory_retrieval_finished"),
+        "reference_lookup_ms" to span("reference_lookup_started", "reference_lookup_finished"),
+        "tool_execution_ms" to span("tool_execution_started", "tool_execution_finished"),
+        "audio_fallback_ms" to span("audio_fallback_started", "audio_fallback_finished"),
+        "gemma_final_caption_ms" to span("gemma_final_caption_started", "gemma_final_caption_finished"),
+        "endpoint_to_preparation_sealed_ms" to span("recognition_finalized", "preparation_sealed"),
+        "request_processing_ms" to span("request_processing_started", "request_processing_finished"),
         "microphone_ready_ms" to stageOffsetsMs["microphone_ready"].benchmarkNumber(),
         "first_reply_text_ready_ms" to stageOffsetsMs["first_reply_text_ready"].benchmarkNumber(),
         "endpoint_to_first_answer_text_ready_ms" to span("recognition_finalized", "first_reply_text_ready"),
@@ -231,10 +244,11 @@ data class PipelineBenchmarkTurn(
     ).also { it.putAll(observedMetrics.mapValues { (_,v) -> v?.takeIf(Double::isFinite) }) }
     private fun span(start: String, end: String): Double? = benchmarkDuration(stageOffsetsMs[start], stageOffsetsMs[end]).benchmarkNumber()
     fun json(includeText: Boolean = false): JSONObject = benchmarkJson("turnId" to turnId, "callId" to callId,
-        "channel" to channel, "capturedAtEpochMs" to capturedAtEpochMs, "outcome" to outcome.name,
+        "conversationId" to conversationId, "channel" to channel, "capturedAtEpochMs" to capturedAtEpochMs, "outcome" to outcome.name,
         "environment" to environment.name, "clock" to clock, "failureCode" to failureCode)
         .put("provenance", provenance.json()).put("stageOffsetsMs", JSONObject(stageOffsetsMs.toSortedMap()))
         .put("observedMetrics", benchmarkNumericMap(observedMetrics))
+        .put("metricStatus", PipelineBenchmarkDefinitions.statuses(metrics()))
         .put("asr", asr?.json() ?: JSONObject.NULL).put("tts", tts?.json() ?: JSONObject.NULL)
         .put("submissions", JSONArray().also { a -> submissions.forEach { a.put(it.json()) } })
         .put("accuracy", accuracy?.json(includeText) ?: JSONObject.NULL)
@@ -253,7 +267,7 @@ data class PipelineBenchmarkTurn(
                 j.optJSONObject("asr")?.let(PipelineBenchmarkAsr::read), j.optJSONObject("tts")?.let(PipelineBenchmarkTts::read),
                 (0 until passes.length()).map { PipelineBenchmarkSubmission.read(passes.getJSONObject(it)) },
                 j.optJSONObject("accuracy")?.let(PipelineBenchmarkAccuracy::read), j.benchmarkString("failureCode"),
-                j.optJSONObject("quality")?.let(PipelineBenchmarkQuality::read))
+                j.optJSONObject("quality")?.let(PipelineBenchmarkQuality::read), j.benchmarkString("conversationId"))
         }
     }
 }

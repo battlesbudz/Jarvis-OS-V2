@@ -1,0 +1,38 @@
+# Voice audio and benchmark checkpoint
+
+## Intended behavior
+
+The build 874 log contains a correct final vaping transcript followed by generated unfinished `nicotine-` loops and a 31.5-second speech-supply gap. It demonstrates a model-output loop passed to synthesis. Earlier thinking transcripts and reported self-echo need further physical evidence; the supplied latest-turn log does not establish the acoustic cause of those earlier errors.
+
+The speech guard now detects adjacent single-word and short-phrase loops before an unfinished passage becomes queued speech, cancels native generation, and permits one bounded repair even after a valid opening. A second loop stops rather than continuing queued nonsense. Natural long responses remain permitted. The capture-profile identity now controls recorder reuse, and the next ordinary listener retains a bounded playback-reference tail for conservative echo rejection. Speech clarity remains selectable; it is not claimed to improve recognition on every device.
+
+## Settings and audio authority
+
+Open Voice Call settings → Voice input → **Use Gemma audio understanding**. Enable **Whisper live captions** for provisional display; disable it to remove ASR work from normal audio capture. Gemma receives the original recording with instructions and prior conversation. Provisional captions never substitute for the current spoken request or authorize phone actions. A final isolated Gemma transcription updates the paired saved user message after answer generation. This extra pass has its own benchmark purpose and timing. Piper remains the output voice.
+
+The native model supports bounded recordings rather than unrestricted streaming audio. This implementation accepts complete recordings up to an explicit 28-second safety limit, rejects longer/incomplete input visibly, and never silently answers from only a rolling tail. It does not wait 28 or 30 seconds to answer a shorter completed request. The experimental mode answers questions; use speech-recognition mode for phone actions. Unsupported models reject with an explanation. Whisper's provisional live updates use overlapping rolling windows and share one microphone recorder.
+
+## Access and documentation
+
+Tap an assistant reply's existing metrics footer for its full measurements and conversation-scoped export. Saved call details also provide a call-scoped benchmark button. The Pipeline benchmarks screen supports JSON/CSV copy, save and share, with a Show all scope toggle. Reports include raw measurements, statuses, definitions, comparable groups, sample counts and percentiles. See [pipeline-benchmarks.md](pipeline-benchmarks.md) for clock definitions, missing-value policy, retention, scoring and the comparison procedure.
+
+## Acceptance matrix
+
+| Behavior | Evidence required | Failure case |
+|---|---|---|
+| Loop stops before broken suffix is spoken; one repair retains valid prefix | JVM guard/repair tests; runtime release compilation; actual model/phone follow-up | Token-split nicotine loop, repair loops again |
+| Capture-profile switch recreates retained recorder | JVM routed-recorder test; phone confirmation | Same call still uses previous profile |
+| Echo-only playback-tail transcript rejected, distinct user request retained | JVM echo policy tests; physical Fold 6 test | Own spoken clause becomes a new request |
+| Whisper display captions cannot become current audio prompt/actions | Pure policy/prompt tests plus release code inspection; actual model follow-up | Wrong caption says thinking, audio says vaping |
+| Captions-off capture submits complete audio with no ASR preparation | Release wiring; physical timing | Caption model loaded despite toggle off |
+| Final caption updates saved paired message | Controller regression; actual Gemma follow-up | Duplicate user message or unrelated turn replacement |
+| Reply-footer opens only its conversation's retained metrics | Named Android test46 on both shipping variants | Another conversation's rows exported |
+| Audio mode and caption preference survive UI rebuild | Named Android test47 on both shipping variants | Toggle silently returns to on |
+| Journal survives partial failure/reset, capacity refusal and migration | JVM journal tests | Reset data resurrects on restart |
+| Native counts/rates never mixed with callback clocks | JVM telemetry tests; pinned SDK release compile | Callback chunks treated as tokens |
+
+All prior release journeys remain required. Signed normal and compact APKs, both emulator suites and the consolidated exact-run receipt gate publication. Physical echo, real Gemma/Whisper accuracy, GPU/runtime behavior and speed comparisons remain unverified until phone tests; synthetic fixture values are not performance claims.
+
+## Workflow provenance
+
+ECG/PStack planning guidance was consulted. Native work agents implemented voice reliability, direct audio integration and benchmark persistence, with an independent review of the combined change. This is not a completed PStack coordinated receipt: the companion's requested Terra implementation route was unavailable, so no model-dispatch/usage receipt is fabricated. GitHub's signed-release and exact-build verification receipts remain the release evidence.

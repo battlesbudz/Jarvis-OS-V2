@@ -66,7 +66,7 @@ data class PipelineBenchmarkReport(val turns: List<PipelineBenchmarkTurn>, val e
     fun toJson(includeText: Boolean = false): JSONObject = JSONObject()
         .put("schema", SCHEMA).put("schemaVersion", SCHEMA_VERSION).put("exportedAtEpochMs", exportedAtEpochMs)
         .put("privacy", benchmarkJson("textIncluded" to includeText, "pcmIncluded" to false, "promptsIncluded" to false))
-        .put("methodology", methodology())
+        .put("methodology", methodology()).put("metricDefinitions", PipelineBenchmarkDefinitions.json())
         .put("allAttempts", aggregate().json())
         .put("completedTurns", aggregate(turns.filter { it.outcome == PipelineBenchmarkOutcome.COMPLETE }).json())
         .put("comparableGroups", JSONArray().also { a -> turns.groupBy { comparableGroupKey(it) }.toSortedMap().forEach { (key,group) ->
@@ -89,14 +89,14 @@ data class PipelineBenchmarkReport(val turns: List<PipelineBenchmarkTurn>, val e
 
     /** One row per turn plus one per native submission. Empty numeric cells mean unknown, not zero. */
     fun toCsv(): String {
-        val fixed = listOf("row_type", "turn_id", "call_id", "captured_at_epoch_ms", "channel", "environment", "outcome",
+        val fixed = listOf("row_type", "turn_id", "call_id", "conversation_id", "captured_at_epoch_ms", "channel", "environment", "outcome",
             "submission_id", "purpose", "warm_state", "model_id", "group_key", "build_name", "build_code", "source_commit",
             "device_manufacturer", "device_model", "android_version", "sdk_level", "abi", "thermal_status", "battery_percent",
             "power_save_mode", "provenance_json", "clock", "failure_code", "reference_provenance", "normalization",
             "reference_words", "word_substitutions", "word_deletions", "word_insertions", "reference_characters",
             "character_substitutions", "character_deletions", "character_insertions", "false_positive_words", "false_positive_characters",
             "human_task_verdict", "human_intent_verdict", "human_factuality_verdict", "quality_reference_provenance",
-            "token_telemetry_source", "submission_metadata_json")
+            "token_telemetry_source", "submission_metadata_json", "turn_metric_status_json", "submission_metric_status_json")
         val turnKeys = turns.flatMap { it.metrics().keys }.distinct().sorted()
         val submissionKeys = turns.flatMap { it.submissions }.flatMap { it.metrics().keys }.distinct().sorted()
         val columns = fixed + turnKeys.map { "turn.$it" } + submissionKeys.map { "submission.$it" }
@@ -104,7 +104,7 @@ data class PipelineBenchmarkReport(val turns: List<PipelineBenchmarkTurn>, val e
             appendLine(columns.joinToString(",", transform = ::csvCell))
             turns.forEach { turn ->
                 val p = turn.provenance
-                val base = mapOf<String, Any?>("turn_id" to turn.turnId, "call_id" to turn.callId, "captured_at_epoch_ms" to turn.capturedAtEpochMs,
+                val base = mapOf<String, Any?>("turn_id" to turn.turnId, "call_id" to turn.callId, "conversation_id" to turn.conversationId, "captured_at_epoch_ms" to turn.capturedAtEpochMs,
                     "channel" to turn.channel, "environment" to turn.environment.name, "outcome" to turn.outcome.name,
                     "group_key" to comparableGroupKey(turn), "build_name" to p.buildName, "build_code" to p.buildCode,
                     "source_commit" to p.sourceCommit, "device_manufacturer" to p.deviceManufacturer, "device_model" to p.deviceModel,
@@ -120,12 +120,12 @@ data class PipelineBenchmarkReport(val turns: List<PipelineBenchmarkTurn>, val e
                     "character_insertions" to accuracy?.characterInsertions, "false_positive_words" to accuracy?.falsePositiveWords,
                     "false_positive_characters" to accuracy?.falsePositiveCharacters, "human_task_verdict" to turn.quality?.taskVerdict?.name,
                     "human_intent_verdict" to turn.quality?.intentVerdict?.name, "human_factuality_verdict" to turn.quality?.factualityVerdict?.name,
-                    "quality_reference_provenance" to turn.quality?.referenceProvenance) + turn.metrics().mapKeys { "turn.${it.key}" }
+                    "quality_reference_provenance" to turn.quality?.referenceProvenance, "turn_metric_status_json" to PipelineBenchmarkDefinitions.statuses(turn.metrics()).toString()) + turn.metrics().mapKeys { "turn.${it.key}" }
                 appendLine(columns.joinToString(",") { csvCell(turnRow[it]?.toString().orEmpty()) })
                 turn.submissions.forEach { s ->
                     val row = base + mapOf("row_type" to "submission", "submission_id" to s.submissionId,
                         "outcome" to s.outcome.name, "purpose" to s.purpose.name, "warm_state" to s.warmState.name, "model_id" to s.modelId,
-                        "token_telemetry_source" to s.tokenTelemetrySource, "submission_metadata_json" to JSONObject(s.metadata.toSortedMap()).toString()) + s.metrics().mapKeys { "submission.${it.key}" }
+                        "token_telemetry_source" to s.tokenTelemetrySource, "submission_metadata_json" to JSONObject(s.metadata.toSortedMap()).toString(), "submission_metric_status_json" to PipelineBenchmarkDefinitions.statuses(s.metrics()).toString()) + s.metrics().mapKeys { "submission.${it.key}" }
                     appendLine(columns.joinToString(",") { csvCell(row[it]?.toString().orEmpty()) })
                 }
             }
@@ -133,16 +133,16 @@ data class PipelineBenchmarkReport(val turns: List<PipelineBenchmarkTurn>, val e
     }
     companion object {
         const val SCHEMA = "jarvis.pipeline.benchmark"
-        const val SCHEMA_VERSION = 1
+        const val SCHEMA_VERSION = 2
         /** Correlation-only metadata is retained on raw rows but must not split comparable measurements. */
         private val identityConfigurationKeys = setOf(
-            "parent_task_ids", "reply_id", "utterance_id", "returned_utterance_id",
+            "conversation_id", "parent_task_ids", "reply_id", "utterance_id", "returned_utterance_id",
             "result_utterance_id", "result_captured_at_epoch_ms", "linked_reply_turn_id"
         )
         private fun comparisonConfiguration(configuration: Map<String, String>): Map<String, String> =
             configuration.filterKeys { it !in identityConfigurationKeys }
         fun read(j: JSONObject): PipelineBenchmarkReport {
-            require(j.getString("schema") == SCHEMA && j.getInt("schemaVersion") == SCHEMA_VERSION) { "Unsupported benchmark schema" }
+            require(j.getString("schema") == SCHEMA && j.getInt("schemaVersion") in 1..SCHEMA_VERSION) { "Unsupported benchmark schema" }
             val a = j.getJSONArray("turns")
             return PipelineBenchmarkReport((0 until a.length()).map { PipelineBenchmarkTurn.read(a.getJSONObject(it)) }, j.getLong("exportedAtEpochMs"))
         }

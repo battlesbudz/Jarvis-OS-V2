@@ -18,7 +18,7 @@ class PipelineBenchmarkArchive(
     internal data class Prepared(val sample: PipelineBenchmarkTurn, val json: String, val bytes: Int)
     internal fun prepare(sample: PipelineBenchmarkTurn): Prepared {
         val safe = sample.copy(accuracy = sample.accuracy?.copy(reference = null, hypothesis = null))
-        val json = safe.json(includeText = false).toString()
+        val json = safe.json(includeText = false).withoutDerivedMetricStatus().toString()
         return Prepared(safe, json, json.toByteArray(Charsets.UTF_8).size)
     }
     internal val envelopeBytes: Int get() = PREFIX.toByteArray(Charsets.UTF_8).size + SUFFIX.length

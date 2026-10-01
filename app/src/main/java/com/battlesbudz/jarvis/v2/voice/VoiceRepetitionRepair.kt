@@ -12,6 +12,7 @@ internal object VoiceRepetitionRepair {
 
     suspend fun run(guard: VoiceRepetitionGuard, timeoutMs: Long = 10_000,
                     generate: suspend ((String) -> Unit) -> GenerationResult): Outcome {
+        guard.beginRepair()
         val before = guard.acceptedSentences
         var chars = 0
         var streamed = false
@@ -44,6 +45,8 @@ internal object VoiceRepetitionRepair {
                 if (result.toolCalls.isEmpty()) guard.finish()
                 Outcome("completed", result)
             } ?: Outcome("timeout", null)
+        } catch (_: VoiceRepetitionGuard.RunawayLoop) {
+            Outcome("runaway_repetition", null)
         } catch (_: ControlOutput) {
             Outcome("control_output", null)
         } catch (_: LimitReached) {

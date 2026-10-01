@@ -37,6 +37,11 @@ internal fun VoiceCallDetailScreen(
     var resuming by remember(call.id) { mutableStateOf(false) }
     var resumeError by remember(call.id) { mutableStateOf<String?>(null) }
     val scrollState = rememberScrollState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var showBenchmarks by remember { mutableStateOf(false) }
+    if (showBenchmarks) androidx.compose.ui.window.Dialog(onDismissRequest = { showBenchmarks = false }, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        androidx.compose.material3.Surface(Modifier.fillMaxSize()) { PipelineBenchmarkScreen(JarvisRuntime.get(context.applicationContext).pipelineBenchmarkStore, onClose = { showBenchmarks = false }, resetEnabled = false, callId = call.id) }
+    }
     Column(
         Modifier.fillMaxSize().safeDrawingPadding().padding(28.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -51,6 +56,7 @@ internal fun VoiceCallDetailScreen(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        TextButton(onClick = { showBenchmarks = true }) { Text("Call benchmarks · view / export") }
         Column(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(8.dp)
