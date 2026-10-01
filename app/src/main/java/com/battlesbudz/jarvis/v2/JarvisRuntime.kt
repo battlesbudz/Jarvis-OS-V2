@@ -1259,7 +1259,15 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     recognitionIssue = com.battlesbudz.jarvis.v2.voice.GemmaAudioInputPolicy.retainedAudioIssue(
                         recognitionIssue, engine.audioEnabled, audioIsComplete, audioBytes.size)
                 }
+                val finalizedCaptionPreview = com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.liveTranscript.value
                 if (activeVoiceCapture === activeCapture) activeVoiceCapture = null
+                if (directAudioTurn) mainHandler.post {
+                    // Retire this capture's provisional preview at its endpoint. A later
+                    // interruption may already own a new preview; never clear that text.
+                    if (voiceSessionController.currentCallId() == expectedCallId) {
+                        com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.liveTranscript.compareAndSet(finalizedCaptionPreview, "")
+                    }
+                }
                 status("Processing your Voice Call turn locally…")
                 if (correction == null && !activeCapture.hasSpeech) {
                     benchmarkOutcome = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome.NO_SPEECH
@@ -2061,6 +2069,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                 benchmark.configuration("gemma_final_caption_scope", "separate_audio_transcription_after_answer_not_answer_input")
                                 engine.onInferenceProgress = {}
                                 engine.benchmarkPurpose = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkPurpose.TRANSCRIPTION_FALLBACK
+                                var finalCaptionPublished = false
                                 try {
                                     resetNativeConversation()
                                     engine.setToolsEnabled(false)
@@ -2071,6 +2080,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                     if (heard.toolCalls.isEmpty() && com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.hasTranscript(finalCaption) &&
                                         !com.battlesbudz.jarvis.v2.voice.TranscriptContent.isSoundOnly(finalCaption)) {
                                         if (voiceSessionController.updateUserTranscriptForReply(expectedCallId, asrTurnId, finalCaption)) {
+                                            finalCaptionPublished = true
                                             diagnosticRecorder.recordTurnEvidence(asrTurnId, "gemma_final_caption", "whisper=$asrTranscript\ngemma=$finalCaption")
                                             captureFinalMemory(correction?.utteranceId ?: asrTurnId, conversationHistory.current.value.id,
                                                 expectedCallId, ConversationMemorySource.VOICE, finalCaption,
@@ -2089,6 +2099,11 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                     benchmark.configuration("gemma_final_caption_result", error.javaClass.simpleName)
                                     diagnosticRecorder.recordImportant("Gemma final caption failed; answer preserved reason=${error.javaClass.simpleName}")
                                 } finally {
+                                    if (!finalCaptionPublished) runCatching {
+                                        voiceSessionController.updateUserTranscriptForReply(expectedCallId, asrTurnId,
+                                            com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.UNTRANSCRIBED,
+                                            expectedText = com.battlesbudz.jarvis.v2.voice.GemmaAudioInputPolicy.PENDING_TRANSCRIPT)
+                                    }.onFailure { diagnosticRecorder.recordImportant("Gemma caption status could not be saved reason=${it.javaClass.simpleName}") }
                                     resetNativeConversation()
                                     engine.benchmarkPurpose = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkPurpose.ANSWER
                                     benchmark.mark("gemma_final_caption_finished")

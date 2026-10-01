@@ -46,11 +46,12 @@ class VoiceSessionController(
     }
 
     /** Replace only the user entry paired with this exact reply, never append a second user turn. */
-    @Synchronized fun updateUserTranscriptForReply(callId: String, replyId: String, text: String): Boolean {
+    @Synchronized fun updateUserTranscriptForReply(callId: String, replyId: String, text: String, expectedText: String? = null): Boolean {
         if (text.isBlank() || activeCall?.id != callId) return false
         val call = requireActiveCall()
         val replyIndex = call.transcript.indexOfFirst { it.replyId == replyId && it.role == "Jarvis" }
         if (replyIndex <= 0 || call.transcript[replyIndex - 1].role != "You") return false
+        if (expectedText != null && call.transcript[replyIndex - 1].text != expectedText) return false
         val entries = call.transcript.toMutableList()
         entries[replyIndex - 1] = entries[replyIndex - 1].copy(text = text, complete = true, generationComplete = true)
         activeCall = call.copy(transcript = entries)
