@@ -24,6 +24,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.StaleObjectException
@@ -2147,6 +2148,8 @@ class ReleaseJourneyTest {
 
     private fun benchmarkFindVisible(selector: BySelector, towardTop: Boolean, inDialog: Boolean,
         deadline: Long, swipes: AtomicInteger): UiObject2 {
+        var direction = if (towardTop) Direction.UP else Direction.DOWN
+        var reversedAtEdge = false
         while (SystemClock.uptimeMillis() < deadline) {
             try {
                 val control = device.findObject(selector)
@@ -2165,12 +2168,22 @@ class ReleaseJourneyTest {
                 val viewport = list.visibleBounds
                 check(viewport.width() > 0 && viewport.height() > 96) { "Benchmark scroll viewport is unavailable" }
                 val bounds = control?.visibleBounds
-                val upward = if (bounds == null) towardTop else bounds.centerY() < viewport.centerY()
-                val upper = viewport.top + viewport.height() / 4
-                val lower = viewport.bottom - viewport.height() / 4
-                device.swipe(viewport.centerX(), if (upward) upper else lower,
-                    viewport.centerX(), if (upward) lower else upper, 25)
+                if (bounds != null) direction = if (bounds.centerY() < viewport.centerY()) Direction.UP else Direction.DOWN
+                // Overlapping, controlled scrolls avoid skipping a short metric row.
+                // The return value supplies an explicit edge instead of repeating a
+                // search direction forever when a target is absent from composition.
+                val scrollStarted = SystemClock.uptimeMillis()
+                val canStillScroll = list.scroll(direction, 0.45f, 1200)
+                android.util.Log.i("JarvisVerification", "benchmark_navigation selector=$selector direction=$direction canStillScroll=$canStillScroll gestures=${swipes.get()} gestureMs=${SystemClock.uptimeMillis() - scrollStarted} remainingMs=${deadline - SystemClock.uptimeMillis()}")
                 device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
+                if (SystemClock.uptimeMillis() >= deadline) break
+                val fresh = device.findObject(selector)
+                if (fresh != null && benchmarkHasSafeBounds(fresh)) return fresh
+                if (!canStillScroll && fresh == null) {
+                    if (reversedAtEdge) break
+                    direction = if (direction == Direction.UP) Direction.DOWN else Direction.UP
+                    reversedAtEdge = true
+                }
             } catch (_: StaleObjectException) {
                 // Re-query after scrolling or recomposition, before dispatching any tap.
             }
