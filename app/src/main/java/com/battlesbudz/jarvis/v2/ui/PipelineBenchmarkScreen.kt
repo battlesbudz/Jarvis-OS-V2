@@ -13,8 +13,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -44,6 +47,7 @@ internal fun PipelineBenchmarkCard(enabled: Boolean) {
 
 /** Metrics are redacted; entering a reference explicitly scores the original ASR output only. */
 @Composable
+@OptIn(ExperimentalComposeUiApi::class)
 fun PipelineBenchmarkScreen(store: AndroidPipelineBenchmarkStore, onClose: () -> Unit, resetEnabled: Boolean = true) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -117,7 +121,7 @@ fun PipelineBenchmarkScreen(store: AndroidPipelineBenchmarkStore, onClose: () ->
             finally { exporting = false }
         }
     }
-    Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp).testTag("pipeline_benchmark_screen")) {
+    Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp).semantics { testTagsAsResourceId = true }.testTag("pipeline_benchmark_screen")) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Pipeline benchmarks", style = MaterialTheme.typography.titleLarge)
             TextButton(onClick = onClose, modifier = Modifier.testTag("pipeline_benchmark_close")) { Text("Done") }
@@ -190,7 +194,7 @@ fun PipelineBenchmarkScreen(store: AndroidPipelineBenchmarkStore, onClose: () ->
         }
     }
     referenceId?.let { id -> BenchmarkReferenceDialog(id, store, onDismiss = { referenceId = null }) { message -> status = message } }
-    if (showReset) AlertDialog(onDismissRequest = { showReset = false }, title = { Text("Reset retained benchmarks?") },
+    if (showReset) AlertDialog(modifier = Modifier.semantics { testTagsAsResourceId = true }, onDismissRequest = { showReset = false }, title = { Text("Reset retained benchmarks?") },
         text = { Text("Delete the retained measurements and reviewed scores. Export a report first if you need them for comparison.") },
         confirmButton = { TextButton(onClick = {
             showReset = false
@@ -200,6 +204,7 @@ fun PipelineBenchmarkScreen(store: AndroidPipelineBenchmarkStore, onClose: () ->
 }
 
 @Composable
+@OptIn(ExperimentalComposeUiApi::class)
 private fun BenchmarkReferenceDialog(id: String, store: AndroidPipelineBenchmarkStore, onDismiss: () -> Unit, onStatus: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val epoch by store.hypothesisGeneration.collectAsState()
@@ -210,7 +215,7 @@ private fun BenchmarkReferenceDialog(id: String, store: AndroidPipelineBenchmark
     var verified by remember(id) { mutableStateOf(false) }
     var error by remember(id) { mutableStateOf("") }
     LaunchedEffect(epoch) { if (epoch != openedEpoch) onDismiss() }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Verify what you actually said") }, text = {
+    AlertDialog(modifier = Modifier.semantics { testTagsAsResourceId = true }, onDismissRequest = onDismiss, title = { Text("Verify what you actually said") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Original ASR: ${store.hypothesis(id).orEmpty()}", style = MaterialTheme.typography.bodySmall)
             Text("Use the exact words spoken in this capture. This reference only scores recognition; it is never sent to a model or retained as transcript text.", style = MaterialTheme.typography.bodySmall)
