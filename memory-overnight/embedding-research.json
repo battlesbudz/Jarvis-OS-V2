@@ -1,0 +1,134 @@
+{
+  "ticket": "ticket3dd46d4d341f4a2e9c051973e36902d2",
+  "checked_at": "2026-10-02",
+  "scope": "Read-only repository and primary-source research; public SDK/model artifact inspection. No inference, account login, gated download, license acceptance, source edit, or remote embedding performed.",
+  "decision": "Implement a dedicated local MemoryEmbedder using the official EmbeddingGemma .task bundle with pinned com.google.mediapipe:tasks-text:1.0.0. Current Google Android docs explicitly support this bundle; do not load arbitrary raw EmbeddingGemma .tflite files in TextEmbedder. Retain a working, explicitly reported lexical-only mode whenever installation, validation, runtime, privacy qualification, or index coverage is unavailable.",
+  "artifact": {
+    "url": "https://storage.googleapis.com/mediapipe-models/text_embedder/embedding_gemma/int4int8/latest/embedding_gemma.task?generation=1782238479465541",
+    "gcs_generation": "1782238479465541",
+    "sha256": "913b7a1edc7c7c3d1da3979ec1d0648ed9e0a370f181bb59ab177ca4b97707ad",
+    "bytes": 183816181,
+    "local_path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/embedding-sdk/embedding_gemma.task",
+    "format": "ZIP task bundle: gemma.tflite, manifest.pb, sentencepiece.model",
+    "members": [
+      {
+        "name": "gemma.tflite",
+        "bytes": 179132472,
+        "sha256": "ad09e81557203cb0e177abf9bf8727dfe138a7d394aa0f70f0b2ed16432e121a"
+      },
+      {
+        "name": "sentencepiece.model",
+        "bytes": 4683319,
+        "sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7"
+      }
+    ],
+    "hf_equivalent": {
+      "repo": "litert-community/embeddinggemma-300m",
+      "revision": "29888fcee3216acadc7e844906e5fe0d79a61875",
+      "file": "embeddinggemma-300M_seq512_mixed-precision.tflite",
+      "evidence": "Public HF API LFS SHA256 matches embedded gemma.tflite exactly. HF weights access remains gated; no HF gate accepted."
+    },
+    "quantization": "mixed int4/int8; published e4_a8_f4_p4",
+    "input_shape": [
+      1,
+      512
+    ],
+    "output_shape": [
+      1,
+      768
+    ],
+    "model_sha_evidence": "Calculated over complete generation-pinned public Google download. GCS ETag is not substituted for SHA256.",
+    "metadata_receipt": "embedding-sdk/embedding_gemma.task.receipt.json",
+    "static_inspection": "embedding-sdk/tflite-structure.json"
+  },
+  "sdk": {
+    "coordinate": "com.google.mediapipe:tasks-text:1.0.0",
+    "aar_sha256": "300c3ed4669ef76d48633b8a5f236b71f26c94a4f5717b79d3f999af95f0b3a6",
+    "aar_bytes": 28065666,
+    "evidence": "Official Google Maven metadata, POM, downloaded classes.jar and v1.0.0 Java source checked. Not inferred from latest.release.",
+    "dependencies": [
+      "tasks-core:1.0.0",
+      "androidx.annotation:annotation:1.1.0",
+      "com.google.guava:guava:27.0.1-android"
+    ],
+    "tasks_core_dependencies": [
+      "flogger:0.6",
+      "flogger-system-backend:0.6",
+      "guava:27.0.1-android",
+      "protobuf-javalite:4.26.1",
+      "com.google.android.datatransport:transport-api:3.0.0",
+      "com.google.android.datatransport:transport-backend-cct:3.1.0",
+      "com.google.android.datatransport:transport-runtime:3.1.0"
+    ],
+    "exact_kotlin": [
+      "import com.google.mediapipe.tasks.text.textembedder.TextEmbedder",
+      "val embedder = TextEmbedder.createFromFile(context, validatedTaskFile /* java.io.File */)",
+      "val queryContext = TextEmbedder.TextFormatContext.builder().setTaskType(TextEmbedder.EmbeddingType.RETRIEVAL_QUERY).setRole(TextEmbedder.TextRole.QUERY).build()",
+      "val documentContext = TextEmbedder.TextFormatContext.builder().setTaskType(TextEmbedder.EmbeddingType.RETRIEVAL_DOCUMENT).setRole(TextEmbedder.TextRole.DOCUMENT).setTitle(title.ifBlank { \"none\" }).build()",
+      "val vector = embedder.embed(rawText, queryContext).embeddingResult().embeddings().single().floatEmbedding()",
+      "embedder.close()"
+    ],
+    "doc_error": "Android guide snippet uses TextFormatContext.EmbeddingType. Actual 1.0.0 AAR/source declares TextEmbedder.EmbeddingType; TextFormatContext and TextRole are also nested inside TextEmbedder.",
+    "normalization": "CreateFromFile defaults quantize=false,l2Normalize=false. Bundle already performs pooling, dense projections, normalization: do not mean-pool returned vectors or prepend prompt twice. Validate 768 finite floats and nonzero norm. If storing 256/512/128 MRL dimensions, take first d values and L2 re-normalize, and record d in index identity. Prefer full 768 for first measured baseline.",
+    "tokenization": "Bundled SentencePiece tokenizer. v1.0.0 GeckoPreprocessorCalculator encodes formatted text, requires token_ids.size()+2 <= max_seq_len, then adds BOS and EOS and pads with tokenizer pad_id. With this artifact, at most 510 formatted-text tokens plus BOS/EOS = 512. Overlong input raises an error (despite defensive truncation inside GetPaddedTokens); do not rely on silent truncation. Query/document prefixes count toward capacity. Split/bound chunks with actual tokenizer or handle overlength as explicit unavailable/rechunk outcome. Upstream architecture maximum 2048 is not this artifact capacity.",
+    "prompts": {
+      "query": "task: search result | query: {content}",
+      "document": "title: {title or none} | text: {content}"
+    },
+    "pooling_evidence": "Static TFLite tail includes masked sum/division, two FULLY_CONNECTED ops, squared norm/reduction/epsilon/rsqrt/multiply producing [1,768]. This is static artifact inspection, not numerical runtime verification.",
+    "privacy": "Official notice states input text stays on device but performance/utilization metrics go to Google. Do not claim no network behavior. No supported telemetry opt-out verified here. Audit released binary/manifest and privacy requirements before enabling; consider isolated no-network process or a reviewed telemetry-free source build if strict no-egress is required. Merely excluding transport dependencies is not established safe and may break runtime."
+  },
+  "repo": {
+    "found": "The requested names ModelDownloadManager/LocalModelRuntime do not exist in this checkout. Actual equivalents are ModelDownloader, ModelStore, LocalModelEngine and LiteRtLmEngine.",
+    "paths": [
+      "app/src/main/java/com/battlesbudz/jarvis/v2/ai/storage/ModelDownloader.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/ai/ModelStore.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/ai/LocalModelEngine.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/ai/LiteRtLmEngine.kt",
+      "app/build.gradle.kts"
+    ],
+    "existing_dependencies": [
+      "com.google.ai.edge.litertlm:litertlm-android:0.16.0",
+      "sherpa-onnx:v1.13.7@aar"
+    ],
+    "integration": "LocalModelEngine is text generation only; add separate embedding runtime rather than switching the selected chat model. Reuse resumable transfer and SHA256 helpers via an embedding-specific store/catalog. ModelStore generic explicit import permits arbitrary hashes after native chat smoke tests: do not reuse that acceptance rule for embedding identity. Require exact pinned SHA and size before installation. Retain separate model lifecycle and indexed-document generation.",
+    "runtime": "Serialize embedder creation/embed/close on an off-main worker. Coordinate foreground voice/chat priority and power/unload policy. Native synchronous inference cannot be assumed cancelled by coroutine timeout; do not race close with active inference. Reject stale results after mutation, erase, expiry, lock or model/index identity change.",
+    "index": "Persist rebuildable vectors with model SHA, tokenizer SHA, dimension, prompt version, source/chunk ID and canonical record revision. On identity mismatch rebuild. Apply policy/sensitivity/deletion/expiry fences before candidate retrieval and again before delivery. Hybrid ranking must preserve lexical results while semantic index builds.",
+    "install": "Use explicit on-device acquisition/import, atomic temp-file verification/install, exact pinned digest and size, storage/progress/error UI. Download should contain no memory/query content. Never automatically accept a gated license.",
+    "fallback": "Return explicit availability such as NOT_INSTALLED, INDEX_BUILDING, READY, FAILED and lexicalOnly status; keep approved eligible keyword retrieval functional. Do not produce hash-based pseudo-embeddings or label fixture-generated vectors as real EmbeddingGemma coverage.",
+    "packaging": "Resolve and inspect JNI/dependency conflicts with existing LiteRT-LM and Sherpa setup. Repository already handles duplicate ONNX library symbols; do not add ONNX fallback without renewed native compatibility work."
+  },
+  "coverage": {
+    "verified": [
+      "Primary documentation route",
+      "Released 1.0.0 class availability/source signatures",
+      "Artifact and SDK SHA256",
+      "Task contents and matching HF payload/tokenizer identities",
+      "Static input/output shapes and postprocessing tail"
+    ],
+    "pending": [
+      "Actual Android initialization/inference",
+      "Numerical output norm and golden query-document vectors",
+      "Cold/warm latency and memory/battery on Galaxy Z Fold 6",
+      "Concurrent chat/voice and resource lifecycle",
+      "Telemetry/network audit of final app",
+      "Recall@5/ranking and no-relevant-memory quality baseline",
+      "Offline and erased/locked/expired result fences"
+    ],
+    "release_rule": "Report all real-model coverage pending until real on-device inference and exact-revision tests pass; static inspection is not inference. Google S26 Ultra 200ms task number is reference evidence only."
+  },
+  "sources": [
+    "https://developers.google.com/edge/mediapipe/solutions/text/text_embedder",
+    "https://developers.google.com/edge/mediapipe/solutions/text/text_embedder/android",
+    "https://ai.google.dev/gemma/docs/embeddinggemma/model_card",
+    "https://huggingface.co/litert-community/embeddinggemma-300m",
+    "https://huggingface.co/api/models/litert-community/embeddinggemma-300m?blobs=true",
+    "https://dl.google.com/dl/android/maven2/com/google/mediapipe/tasks-text/maven-metadata.xml",
+    "https://dl.google.com/dl/android/maven2/com/google/mediapipe/tasks-text/1.0.0/tasks-text-1.0.0.pom",
+    "https://dl.google.com/dl/android/maven2/com/google/mediapipe/tasks-core/1.0.0/tasks-core-1.0.0.pom",
+    "https://raw.githubusercontent.com/google-ai-edge/mediapipe/v1.0.0/mediapipe/tasks/java/com/google/mediapipe/tasks/text/textembedder/TextEmbedder.java",
+    "https://raw.githubusercontent.com/google-ai-edge/mediapipe/v1.0.0/mediapipe/tasks/cc/text/text_embedder/text_embedder_graph.cc",
+    "https://developers.google.com/edge/mediapipe/solutions/tasks#mediapipe_tasks_privacy_notice",
+    "https://raw.githubusercontent.com/google-ai-edge/mediapipe/v1.0.0/mediapipe/calculators/tensor/gecko_preprocessor_calculator.cc"
+  ]
+}
