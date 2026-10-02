@@ -1,0 +1,362 @@
+{
+  "actor_identity_assurance": "operator-supplied native-session provenance; not authentication",
+  "base_head": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "id": "f35cf4d78fbd44b59e9670bc749ba15b",
+  "integration_head": "f85cae2b264b19dac595519b14bd03023fa9928f",
+  "integration_tree": "d1bbd1a6eadf286b2970d81f199e8228fc6d5362",
+  "integration_worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/f35cf4d78fbd44b59e9670bc749ba15b/integration",
+  "issues": [
+    "Successful complete verification is missing",
+    "Coordination has not reached ready_for_signoff",
+    "Independent exact-revision review is missing or blocking"
+  ],
+  "precheck": {
+    "argv": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "complete": true,
+    "exit_code": 0,
+    "head": "f85cae2b264b19dac595519b14bd03023fa9928f",
+    "log_bytes": 0,
+    "log_path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/logs/f35cf4d78fbd44b59e9670bc749ba15b/precheck.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "reason": null,
+    "tree": "d1bbd1a6eadf286b2970d81f199e8228fc6d5362"
+  },
+  "ready_for_user_review": false,
+  "recovery_limitation": "A force-killed coordinator may leave child processes running; inspect and stop them manually before a new run",
+  "release_approved": false,
+  "repository": "/workspace/scratch/d20772bd92e6/jarvis-memory-overnight",
+  "review": {
+    "actor": "/root/jarvis_privacy_review",
+    "findings": [
+      {
+        "detail": "R1 remains incomplete. sourceBearingEnvelope() lines 146-149 only recognizes selected key=value fields and the exact-prompt marker. Existing production paths still truncate arbitrary exception text under formats it does not recognize: ConversationRuntime.kt lines 551-552 uses message=${error.message?.take(300)}; JarvisRuntime.kt line 1863 uses \"Voice turn failed: ${error.stackTraceToString().take(4000)}\"; MainActivity.kt line 178 uses the corresponding \"Voice resume failed:\" stack excerpt. For an exception message beginning \"tiny \" followed by enough benign text and ending \"password: tiny\" beyond the relevant truncation point, the complete source would be excluded but these envelopes retain tiny with no marker, do not match sourceBearingEnvelope, and are persisted by wrap and retained by readSafe without full-source proof. A source-level equivalent regex check confirms these actual caller shapes bypass the filter. The new fixtures cover key=value Turn failed but omit these real failure paths. Within current scope, fail closed for the remaining legacy source-bearing exception formats or route allowed Runtime callers through complete-source validation; do not broadly trust arbitrary labels or remove frozen assertions.",
+        "path": "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+        "severity": "blocking"
+      },
+      {
+        "detail": "R4: The repair unconditionally removes exact prompt diagnostics for every ordinary typed chat, including benign inputs within retention. The unchanged real caller ConversationRuntime.kt lines 387-395 calls recordInferencePrompt with \"--- Exact submitted text begins ---\". recordInferencePrompt lines 20-22 supplies no completeSources, so sourceBearingEnvelope is always true and wrap lines 131-133 always emits EXCLUDED. Only the two Runtime voice/accepted-action callers use recordSourceInferencePrompt. The frozen synthetic DiagnosticRecorderTest prompt lacks the production marker, so it still passes while the production typed feature is lost; the new test explicitly expects this real typed shape to be excluded. This violates the accepted benign exact-prompt persistence requirement rather than merely dropping legacy excerpts. Preserve full-original-source proof and benign typed exact diagnostic capture through a trusted runtime/recorder handoff within authorized paths; allowing arbitrary marker-shaped source text is not a fix. If that cannot be done within current scope, record the scope conflict instead of treating the regression as accepted.",
+        "path": "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+        "severity": "blocking"
+      },
+      {
+        "detail": "Identity correction: integration f85cae2b264b19dac595519b14bd03023fa9928f has actual parent cb7ad9e3e0ae544e7c7b9f6d8dd95ca797834acf, whose parent is base cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de. It is not a sole-direct-base-parent commit as stated in dispatch text. Remote 88087d929491978d67cfa843189c23648bd74531 does have sole direct base parent. Integration and remote still share exact full tree d1bbd1a6eadf286b2970d81f199e8228fc6d5362, and full base-to-candidate scope/frozen checks pass. Retain this real two-commit integration ancestry in receipts; this is not itself a product defect.",
+        "path": "privacy-integration-2.json",
+        "severity": "advisory"
+      }
+    ],
+    "head": "f85cae2b264b19dac595519b14bd03023fa9928f",
+    "summary": "Rejected on two diagnostic defects: the legacy source-envelope filter still misses real pre-truncated exception payloads, and the generic typed onPromptSubmitted path now loses every benign exact prompt because it lacks the new full-source binding. Summary exact-text/source proof plus persistent fingerprint tombstones addresses the first review\u2019s demonstrated clock-reset/Bundle mismatch paths in static review; Runtime also removes the epoch metadata that falsely excluded ordinary voice prompts. No new blocker was identified in those two repair areas, but they remain unexecuted Kotlin/Android behavior. Full tree, 14-path scope, frozen files and original 36 Android journey preservation pass. Integration ancestry differs from the dispatch claim and is recorded accurately. No CI/device qualification or approval is claimed.",
+    "usage_effort": "high",
+    "usage_model": "gpt-6-astra",
+    "usage_ticket_id": "670d971f4e2948699d7751deafa3f204"
+  },
+  "run_id": "f35cf4d78fbd44b59e9670bc749ba15b",
+  "schema": 1,
+  "state": "blocked",
+  "unattended_execution": false,
+  "units": {
+    "privacy": {
+      "actor": "/root/jarvis_privacy_coder",
+      "allowed_paths": [
+        "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+        "docs/memory-os-native.md",
+        "docs/verification/features.md",
+        "scripts/verification/scenarios.json"
+      ],
+      "base_head": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+      "changed_paths": [
+        "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+        "docs/memory-os-native.md",
+        "docs/verification/features.md",
+        "scripts/verification/scenarios.json"
+      ],
+      "commits": [
+        "1e8b90800007ce9ffede53b686b187460fcb3b99",
+        "ee1153cc8e6227497ce56663e398df38f11e3715"
+      ],
+      "head": "ee1153cc8e6227497ce56663e398df38f11e3715",
+      "state": "submitted",
+      "usage_effort": "high",
+      "usage_model": "gpt-6.1-sol",
+      "usage_ticket_id": "6e7101b166e042adbaccca27d6b6fbbd",
+      "worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/f35cf4d78fbd44b59e9670bc749ba15b/unit-privacy"
+    }
+  },
+  "usage": {
+    "active_reservations": 1,
+    "actual_total_tokens": null,
+    "billing_note": "Local estimates and admission limits; actual native billing is unavailable.",
+    "cost": null,
+    "deadline_exhausted": false,
+    "dispatches": 6,
+    "measured_ticket_count": 0,
+    "measured_tokens": 0,
+    "model_effort_counts": {
+      "gpt-6-astra/high": 4,
+      "gpt-6.1-sol/high": 2
+    },
+    "outcomes": {
+      "failed": 1,
+      "success": 4
+    },
+    "overrun": false,
+    "pro_remaining_allowance": null,
+    "remaining_admission_tokens": 229000,
+    "reserved_tokens": 12000,
+    "retained_unknown_reservation_tokens": 59000,
+    "schema": 1,
+    "scope_hash": "f6ac0b3f7ce87afbef7d4ba045ce5a2b2e3a073631c7850c11c7234c70d4e4d0",
+    "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+    "spec": {
+      "deadline": 1791010800.0,
+      "max_concurrent": 4,
+      "max_dispatches": 24,
+      "max_reserved_tokens": 300000,
+      "routing_policy": "usage-conscious-v2",
+      "schema": 1
+    },
+    "stored_deadline": 1791010800.0,
+    "tickets": [
+      {
+        "actor_id": "/root/jarvis_memory_architecture",
+        "completed_at": 1790977271.563279,
+        "completed_hash": "ca814229caf3113f4c27806a005dca25c0950b51ef24c0d83d864d6b63601db3",
+        "created_at": 1790976973.5790482,
+        "id": "5c8f4851f4c9413f825c6f1b80801e4d",
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6-astra",
+          "reason": "planning policy",
+          "reasoning_effort": "high"
+        },
+        "observed_effort": "high",
+        "observed_model": "gpt-6-astra",
+        "operation": "plan:architecture",
+        "outcome": "success",
+        "receipt_id": null,
+        "request_hash": "3bd6ad8437ab9cca4d155dcbcd9b898d5743cf4894e12ff0b62125a829493265",
+        "request_key": "architecture",
+        "reserved_tokens": 6500,
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "state": "completed",
+        "task": {
+          "allowed_paths": [],
+          "complexity": "routine",
+          "task_kind": "planning"
+        },
+        "usage": null
+      },
+      {
+        "actor_id": "/root/jarvis_embedding_research",
+        "completed_at": 1790977341.0840213,
+        "completed_hash": "77cb501c8166617d24169e2b94b80620dd1598b1fa314ee5911b83ca7de4e781",
+        "created_at": 1790976973.5795786,
+        "id": "3dd46d4d341f4a2e9c051973e36902d2",
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6-astra",
+          "reason": "planning policy",
+          "reasoning_effort": "high"
+        },
+        "observed_effort": "high",
+        "observed_model": "gpt-6-astra",
+        "operation": "plan:embedding-research",
+        "outcome": "success",
+        "receipt_id": null,
+        "request_hash": "debe64dd9a74705407c502f0c1e7ccde46a390e0ef5a4b7df7f3d93de3f00d1e",
+        "request_key": "embedding-research",
+        "reserved_tokens": 4500,
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "state": "completed",
+        "task": {
+          "allowed_paths": [],
+          "complexity": "routine",
+          "task_kind": "planning"
+        },
+        "usage": null
+      },
+      {
+        "actor_id": "/root/jarvis_privacy_coder",
+        "completed_at": 1790978233.6969485,
+        "completed_hash": "b7c3a90a0d87d410bc78577326c3dbbde91120e4b60bcdad5bbd3736c22fcf98",
+        "created_at": 1790977271.5806286,
+        "id": "60ca21bea1294c90bfcfaa2912008860",
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6.1-sol",
+          "reason": "complex implementation",
+          "reasoning_effort": "high"
+        },
+        "observed_effort": "high",
+        "observed_model": "gpt-6.1-sol",
+        "operation": "prepare:95d900f74f6446e08d1ee7e8015ba76d:privacy",
+        "outcome": "success",
+        "receipt_id": "5528c1a91a6ab2ee6275ece4d705d466df76ade1ed6d1c1c3aa034e872b3cfa0",
+        "request_hash": "c91af82de6ea50faebdeac8bb9a87fe876a96c03561a9974f33e3b1f569d2599",
+        "request_key": "privacy-1",
+        "reserved_tokens": 18000,
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "state": "completed",
+        "task": {
+          "allowed_paths": [
+            "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+            "docs/memory-os-native.md",
+            "docs/verification/features.md",
+            "scripts/verification/scenarios.json"
+          ],
+          "complexity": "complex",
+          "task_kind": "implementation"
+        },
+        "usage": null
+      },
+      {
+        "actor_id": "/root/jarvis_privacy_review",
+        "completed_at": 1790978773.6469178,
+        "completed_hash": "c13bc7f4f744587bcb854ab4beb989f3c0eb94090f76890b1762ad09d7a54fa0",
+        "created_at": 1790978392.9562085,
+        "id": "7e585da2a02047e48fdc969dd948aa8f",
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6-astra",
+          "reason": "review policy",
+          "reasoning_effort": "high"
+        },
+        "observed_effort": "high",
+        "observed_model": "gpt-6-astra",
+        "operation": "review:95d900f74f6446e08d1ee7e8015ba76d",
+        "outcome": "failed",
+        "receipt_id": "e4454b99daf4522769d41c0450decee6590b9036bfd5d66d7440b82d7e6a5b5c",
+        "request_hash": "bac3a3b4f6e96026be66c53d816e48f71066e3497fe37184b1c74817197578d6",
+        "request_key": "privacy-review-1",
+        "reserved_tokens": 12000,
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "state": "completed",
+        "task": {
+          "allowed_paths": [],
+          "complexity": "routine",
+          "task_kind": "review"
+        },
+        "usage": null
+      },
+      {
+        "actor_id": "/root/jarvis_privacy_coder",
+        "completed_at": 1790979473.5931292,
+        "completed_hash": "5a97ec8ae13c5533a33109f4a5660164bcee66652c64fabb7027ac5943044580",
+        "created_at": 1790978839.5873473,
+        "id": "6e7101b166e042adbaccca27d6b6fbbd",
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6.1-sol",
+          "reason": "complex implementation",
+          "reasoning_effort": "high"
+        },
+        "observed_effort": "high",
+        "observed_model": "gpt-6.1-sol",
+        "operation": "prepare:f35cf4d78fbd44b59e9670bc749ba15b:privacy",
+        "outcome": "success",
+        "receipt_id": "6a92cada37ed4780cc366ca7ace695ad8951febe03a85aa24c1665f78888cfb1",
+        "request_hash": "bf7a6d3b0f5327f2d2a275d501ca8ca89f3fb28a04955862d3ec339a5d01bf1c",
+        "request_key": "privacy-coding-2",
+        "reserved_tokens": 18000,
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "state": "completed",
+        "task": {
+          "allowed_paths": [
+            "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+            "docs/memory-os-native.md",
+            "docs/verification/features.md",
+            "scripts/verification/scenarios.json"
+          ],
+          "complexity": "complex",
+          "task_kind": "implementation"
+        },
+        "usage": null
+      },
+      {
+        "actor_id": "/root/jarvis_privacy_review",
+        "completed_at": null,
+        "completed_hash": null,
+        "created_at": 1790979623.4235888,
+        "id": "670d971f4e2948699d7751deafa3f204",
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6-astra",
+          "reason": "review policy",
+          "reasoning_effort": "high"
+        },
+        "observed_effort": "high",
+        "observed_model": "gpt-6-astra",
+        "operation": "review:f35cf4d78fbd44b59e9670bc749ba15b",
+        "outcome": null,
+        "receipt_id": null,
+        "request_hash": "17c9b4dbc9d86b6b0388695e05de2cff9e2415e3c49ea497985f091962139908",
+        "request_key": "privacy-review-2",
+        "reserved_tokens": 12000,
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "state": "bound",
+        "task": {
+          "allowed_paths": [],
+          "complexity": "routine",
+          "task_kind": "review"
+        },
+        "usage": null
+      }
+    ],
+    "token_budget_exhausted": false,
+    "total_commitment_tokens": 71000,
+    "usage_complete": false
+  },
+  "verification": null,
+  "verification_process": {
+    "automatic_crash_cleanup": false,
+    "normal_cleanup_completed": true,
+    "pid": 87,
+    "process_group": 87,
+    "started_at": 1790979473.537796
+  },
+  "workspace_isolation": "detached Git worktrees; not a process or credential sandbox"
+}
