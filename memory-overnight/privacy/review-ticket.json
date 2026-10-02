@@ -1,5 +1,5 @@
 {
-  "actor_id": null,
+  "actor_id": "/root/jarvis_privacy_review",
   "completed_at": null,
   "completed_hash": null,
   "created_at": 1790978392.9562085,
@@ -10,8 +10,8 @@
     "reason": "review policy",
     "reasoning_effort": "high"
   },
-  "observed_effort": null,
-  "observed_model": null,
+  "observed_effort": "high",
+  "observed_model": "gpt-6-astra",
   "operation": "review:95d900f74f6446e08d1ee7e8015ba76d",
   "outcome": null,
   "receipt_id": null,
@@ -19,7 +19,7 @@
   "request_key": "privacy-review-1",
   "reserved_tokens": 12000,
   "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
-  "state": "reserved",
+  "state": "bound",
   "task": {
     "allowed_paths": [],
     "complexity": "routine",
