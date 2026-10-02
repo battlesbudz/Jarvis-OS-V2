@@ -1,0 +1,105 @@
+{
+  "base": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "elements": [
+    {
+      "mode": "100644",
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "sha": "ba612ef6a221c9c206801f3c9752cec7d7e388ae",
+      "sha256": "0305d89c253ea297d92661ecc859e9914298d5725d7b4f9d1aa13ddc5ee49f1c",
+      "type": "blob"
+    },
+    {
+      "mode": "100644",
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+      "sha": "0f87f052dd6b05305196e97e9df54074fa13eb43",
+      "sha256": "f529166899a16b4c9df019a2e5e63da444b6dbfb0ab149abb1e5e863b8d42df6",
+      "type": "blob"
+    },
+    {
+      "mode": "100644",
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+      "sha": "c8bd5a62315cad0b69d47e4fb75c633e3f3c1cc0",
+      "sha256": "6534000388d96cfe6979f9fde908d214ed95c69b0947001d42dc3e7f32a11436",
+      "type": "blob"
+    },
+    {
+      "mode": "100644",
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+      "sha": "86f37bd8582cbf050e00489549e13281cce6e7fa",
+      "sha256": "89f5e3b78c5e5cae5fee007ffb9fe144f04a6bfcf74c260811971f30092032aa",
+      "type": "blob"
+    },
+    {
+      "mode": "100644",
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+      "sha": "7dc0b131966a73803db7f9997ee9993abb989750",
+      "sha256": "f2e9ac8162144ec637ea5167ff6427c5ffd6b779acbfb76ba942737b2ccb1e52",
+      "type": "blob"
+    },
+    {
+      "mode": "100644",
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+      "sha": "774e1b76df6b677792d97378e62ee652f2d596f6",
+      "sha256": "c724e05974518cae5670c7133f0897cf82a964a444ec3b51ba5602cfb2febdbf",
+      "type": "blob"
+    },
+    {
+      "mode": "100644",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+      "sha": "8f35e0df55f9cbbb482204f503c4b97d9be23ff6",
+      "sha256": "adb32f1e19b0e0c73aff136f2daa36c48e2213637858c2cf36ecaed0fc20461a",
+      "type": "blob"
+    },
+    {
+      "mode": "100644",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+      "sha": "fee6c9e49cf97e9e9e7269a2d18bd3a4d21ace7e",
+      "sha256": "9790be7752d7148b4d3cd379cfa4e0a014f2ac64e2a4a37a50ba21081bcb0248",
+      "type": "blob"
+    },
+    {
+      "mode": "100644",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+      "sha": "db8a556fe1f3e3da5a978dc074de207d3815888e",
+      "sha256": "c0406c3e743c9cf963d28ec83f7c8f0b9f62f02cc20ad03a765c5e2f45cc61e9",
+      "type": "blob"
+    },
+    {
+      "mode": "100644",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+      "sha": "11b7cfc04842c2db15cebb0fbd173627db2eaace",
+      "sha256": "08c0f61cec87f986a31d02ba1e1f9fe7ea5dd5847e29026a4a601c1811ca947b",
+      "type": "blob"
+    },
+    {
+      "mode": "100644",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+      "sha": "f846008868b77ed765064e1f912265ecb4b4a5bb",
+      "sha256": "fc14540c30353ba2e39144aa06ac7a3589e519b3a9c78d2ce74c270019095bcb",
+      "type": "blob"
+    },
+    {
+      "mode": "100644",
+      "path": "docs/memory-os-native.md",
+      "sha": "26b663d9f427eb0ee76ff31b894570e06aa42650",
+      "sha256": "b993bdd0e454dbc3da70a35261e61af59f19284547461c312c5c6aa3a8b0d25d",
+      "type": "blob"
+    },
+    {
+      "mode": "100644",
+      "path": "docs/verification/features.md",
+      "sha": "bfe551c5cace04282a4e15475c460cce2ff8863f",
+      "sha256": "5292e9caf95f71711a94a979513a116a0261b7af48680e28a2afdf05376ba043",
+      "type": "blob"
+    },
+    {
+      "mode": "100644",
+      "path": "scripts/verification/scenarios.json",
+      "sha": "e4607a6ab80fd0304987fe994b0e2b1a74d66dca",
+      "sha256": "d4bff017c7618ae27f1b897eaaebf128fe5b5b919718b9d1622d10d7c5e0fe50",
+      "type": "blob"
+    }
+  ],
+  "local_head": "e1e8e27e8e38b0ef30f74c5369a277baa0c19694",
+  "local_tree": "50074ee571c7a85a2b6db721e35501a8bce7d235"
+}
