@@ -1,0 +1,6 @@
+tree d1bbd1a6eadf286b2970d81f199e8228fc6d5362
+parent cb7ad9e3e0ae544e7c7b9f6d8dd95ca797834acf
+author ChatGPT Work <noreply@openai.com> 1790979386 -0400
+committer PStack Work Port <pstack-port@localhost> 1790979473 -0400
+
+Bind diagnostic source proof and retain exact summary lineage

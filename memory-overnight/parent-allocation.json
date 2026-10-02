@@ -1,10 +1,10 @@
 {
   "actual_usage": null,
-  "note": "Original reserves retained; second coding attempt charged18000. Feature repair deadline not extended.",
+  "note": "All unknown consumed coding/review reservations retained; native289000 remains suballocation.",
   "original_deadline": 1791010800.0,
   "original_scope": "7c0594eb67cc49e39dad6d80d726e395",
   "status": {
-    "active_reservations": 1,
+    "active_reservations": 0,
     "actual_total_tokens": null,
     "billing_note": "Local estimates and admission limits; actual native billing is unavailable.",
     "cost": null,
@@ -18,13 +18,13 @@
     },
     "outcomes": {
       "failed": 1,
-      "success": 3
+      "success": 4
     },
     "overrun": false,
     "pro_remaining_allowance": null,
     "remaining_admission_tokens": 241000,
-    "reserved_tokens": 18000,
-    "retained_unknown_reservation_tokens": 41000,
+    "reserved_tokens": 0,
+    "retained_unknown_reservation_tokens": 59000,
     "schema": 1,
     "scope_hash": "f6ac0b3f7ce87afbef7d4ba045ce5a2b2e3a073631c7850c11c7234c70d4e4d0",
     "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
@@ -171,8 +171,8 @@
       },
       {
         "actor_id": "/root/jarvis_privacy_coder",
-        "completed_at": null,
-        "completed_hash": null,
+        "completed_at": 1790979473.5931292,
+        "completed_hash": "5a97ec8ae13c5533a33109f4a5660164bcee66652c64fabb7027ac5943044580",
         "created_at": 1790978839.5873473,
         "id": "6e7101b166e042adbaccca27d6b6fbbd",
         "manifest": {
@@ -184,13 +184,13 @@
         "observed_effort": "high",
         "observed_model": "gpt-6.1-sol",
         "operation": "prepare:f35cf4d78fbd44b59e9670bc749ba15b:privacy",
-        "outcome": null,
-        "receipt_id": null,
+        "outcome": "success",
+        "receipt_id": "6a92cada37ed4780cc366ca7ace695ad8951febe03a85aa24c1665f78888cfb1",
         "request_hash": "bf7a6d3b0f5327f2d2a275d501ca8ca89f3fb28a04955862d3ec339a5d01bf1c",
         "request_key": "privacy-coding-2",
         "reserved_tokens": 18000,
         "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
-        "state": "bound",
+        "state": "completed",
         "task": {
           "allowed_paths": [
             "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",

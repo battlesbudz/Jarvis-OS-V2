@@ -1,0 +1,76 @@
+{
+  "attempt": 2,
+  "status": "repaired_committed_pending_independent_review_and_exact_head_verification",
+  "actor": "/root/jarvis_privacy_coder",
+  "ticket_id": "6e7101b166e042adbaccca27d6b6fbbd",
+  "coordinator_run": "f35cf4d78fbd44b59e9670bc749ba15b",
+  "requested_route": "gpt-6.1-sol/high",
+  "actual_provider_usage": "unknown",
+  "base_commit": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "adopted_original_commit": "048ae9eb65e27b9e70d141634c42bedae5aa9edb",
+  "cherry_pick_commit": "1e8b90800007ce9ffede53b686b187460fcb3b99",
+  "repair_commit": "ee1153cc8e6227497ce56663e398df38f11e3715",
+  "source_head_commit": "ee1153cc8e6227497ce56663e398df38f11e3715",
+  "source_tree": "d1bbd1a6eadf286b2970d81f199e8228fc6d5362",
+  "worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/f35cf4d78fbd44b59e9670bc749ba15b/unit-privacy",
+  "worktree_clean": true,
+  "changed_paths": [
+    "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+    "docs/memory-os-native.md",
+    "docs/verification/features.md",
+    "scripts/verification/scenarios.json"
+  ],
+  "original_feature_deadline": 1790980871.5799441,
+  "hard_stop_epoch": 1791010800,
+  "review_findings_addressed": {
+    "R1": "Recorder identifies legacy source-bearing excerpt envelopes (including escaped newlines) and excludes them without full-source proof; a typed exact-prompt path scans complete finalized original fields and issues a fingerprint/capture binding used again on restore. Runtime fallback omits pre-truncated heard-text payload. Generic benign events/numeric inference metrics retain full-entry direct scanning; frozen DiagnosticRecorderTest unchanged.",
+    "R2": "SummaryProof has a private constructor and is issued only for exact compaction of complete timestamped source copies plus a text-bound eligible parent. Stored exact text/source fingerprint binding is validated on read. Rejection/expiry/remove/clear preserve content-free lineages/tombstones and old capture metadata. Runtime compares in-memory Bundle/restored text with the valid bound stored capsule and sends mismatches through proof validation. Same bound eligible text saves retain their original clock; independently proven different fresh compaction can create a different lineage, blocked stale fingerprints cannot.",
+    "R3": "Runtime normal voice envelope no longer incorporates contextProvenance epoch fields or unrelated input-context metadata. It supplies complete raw-ASR/resolved/finalized source fields to typed recorder validation; accepted-action prompts use their original reply timestamp and complete accepted input. Actual source-shaped epoch strings remain scanned and excluded."
+  },
+  "new_regressions": [
+    "Real caller-shaped Action/Action turn/lookup/retry/Turn/Turn failed/audio-fallback excerpts with a secret value in the prefix and marker only beyond 2000 characters",
+    "Typed full-source suffix-secret exclusion and benign real-epoch voice exact-prompt persistence/restore",
+    "Arbitrary user/source-shaped epoch text receives no exemption",
+    "Advanced current history clock after summary expiry plus unchanged stale and reworded stale capsule writes",
+    "Different saved Bundle text cannot inherit an eligible stored binding",
+    "Remove/clear/process restore keep content-free lineage and clock, while independent fresh exact compaction remains usable",
+    "Android test36 additionally exercises proof-bound summaries and stale summary rejection through actual SharedPreferences"
+  ],
+  "checks_performed": [
+    "git cherry-pick of original actual commit: succeeded as distinct commit",
+    "git diff --check: exit 0",
+    "Source-integrity script: exact 14 allowed paths from original base",
+    "Original 36 Android method bodies/file preserved byte-for-byte after removing only new test36",
+    "37 unique scenarios; original names/order/other manifest fields unchanged",
+    "Existing ConversationHistoryTest assertion lines unchanged; only original approved clock fixture migration retained",
+    "Both documentation files append-only",
+    "Static boundary checks found typed proof binding and verified Runtime contextProvenance()/heard.text.take(1000) absent",
+    "Clean worktree after genuine repair commit"
+  ],
+  "checks_not_performed": [
+    "Frozen full harness",
+    "Kotlin compilation",
+    "Release JVM/native/helper checks",
+    "Signed normal/compact build qualification",
+    "API 30/API 35 all named journeys",
+    "Separate-process restart and consolidated CI receipt",
+    "Real model/physical audio/sensitive-lock-TTS-race/target-device qualification"
+  ],
+  "review_notes": [
+    "Source-bearing legacy diagnostics from outside the allowed paths conservatively lose source payloads until they provide recorder-bound full-source evidence. Useful generic benign and numeric metric records remain.",
+    "Summary compaction remains conservative and can be unavailable for histories that cannot recreate the exact capsule; it does not infer provenance from a current clock alone.",
+    "Fingerprint ledgers are bounded at 20000 entries and fail closed for new entries at capacity.",
+    "This report is a code handoff, not privacy acceptance, CI success or device qualification. Independent review precedes full exact-head hosted verification."
+  ],
+  "created_at_utc": "2026-10-02T22:17:22.218366+00:00"
+}

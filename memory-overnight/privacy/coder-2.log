@@ -1,0 +1,17 @@
+Repair attempt 2 operation log; command/script operation summaries, with actual tool execution bodies retained in the conversation transcript.
+No SDK/Gradle/kotlinc installation or execution; no full frozen harness or GitHub writes. Original deadlines retained.
+1. cat privacy-repair-control.json privacy-review-report.json: read bound scope/deadlines and all three blocking findings.
+2. git status --short; git cherry-pick 048ae9eb65e27b9e70d141634c42bedae5aa9edb: succeeded in fresh exact-base worktree as distinct adoption commit.
+3. sed/rg read-only searches of actual ConversationRuntime diagnostic excerpts, Runtime voice callbacks/finalization/accepted prompts, SourceTextPersistencePolicy, relevant tests.
+4. Python edits added private exact summary compaction proofs, durable text/source bindings/tombstones, Runtime Bundle text binding, legacy diagnostic envelope exclusion, complete-source prompt binding and removal of voice epoch metadata/fallback excerpts.
+5. Python edits added regressions to the allowed new JVM privacy files and enhanced only new Android test36; original Android methods/registration names unchanged.
+6. Python appended repair status/acceptance notes to both allowed documentation paths.
+7. rg/sed manual source review; corrected unchanged-summary save handling, staged multiple tombstones, clear preservation, and restoration of an accepted in-memory summary after rejection callbacks.
+8. git diff --check repeatedly: exit 0.
+9. Python source-integrity script compared original base with final candidate: exact 14 paths; original 36 Android bodies byte-identical; 37 unique registered journeys; original scenario names/order/fields and history assertions preserved; docs append-only. Exit 0. These are static source checks, not Kotlin execution.
+10. git add exactly eight repair-modified paths within the allowed 14; git commit -m "Bind diagnostic source proof and retain exact summary lineage": succeeded.
+11. git rev-parse HEAD, HEAD^{tree}, HEAD^ and git status --short: actual identities recorded below, clean worktree.
+Original base: cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de
+Cherry-pick commit: 1e8b90800007ce9ffede53b686b187460fcb3b99
+Repair/source head: ee1153cc8e6227497ce56663e398df38f11e3715
+Source tree: d1bbd1a6eadf286b2970d81f199e8228fc6d5362

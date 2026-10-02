@@ -1,0 +1,403 @@
+{
+  "attempts": {
+    "integrate": 1,
+    "precheck": 1,
+    "prepare:privacy": 1
+  },
+  "deadline": 1790980871.5865657,
+  "events": [
+    {
+      "at": 1790978839.5865686,
+      "detail": {
+        "spec_hash": "f83e9ff47407b99f5ac8e3a73280bec9a8aa6c2c09909633d9c4ae005779dabc"
+      },
+      "event": "started"
+    },
+    {
+      "at": 1790978839.5975173,
+      "detail": {
+        "operation": "prepare:privacy"
+      },
+      "event": "operation_started"
+    },
+    {
+      "at": 1790978839.6791728,
+      "detail": {},
+      "event": "unit_allocated"
+    },
+    {
+      "at": 1790979473.2638888,
+      "detail": {
+        "actor": "/root/jarvis_privacy_coder",
+        "head": "ee1153cc8e6227497ce56663e398df38f11e3715",
+        "unit": "privacy"
+      },
+      "event": "unit_submitted"
+    },
+    {
+      "at": 1790979473.3449154,
+      "detail": {
+        "operation": "integrate"
+      },
+      "event": "operation_started"
+    },
+    {
+      "at": 1790979473.390714,
+      "detail": {
+        "path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/f35cf4d78fbd44b59e9670bc749ba15b/integration"
+      },
+      "event": "integration_workspace_created"
+    },
+    {
+      "at": 1790979473.5054226,
+      "detail": {},
+      "event": "integrated"
+    },
+    {
+      "at": 1790979473.536222,
+      "detail": {
+        "operation": "precheck"
+      },
+      "event": "operation_started"
+    },
+    {
+      "at": 1790979473.5377996,
+      "detail": {
+        "pid": 87
+      },
+      "event": "precheck_process_started"
+    },
+    {
+      "at": 1790979473.5592422,
+      "detail": {
+        "returncode": 0
+      },
+      "event": "precheck_process_stopped"
+    },
+    {
+      "at": 1790979473.5600863,
+      "detail": {
+        "exit_code": 0
+      },
+      "event": "precheck_recorded"
+    },
+    {
+      "at": 1790979473.591765,
+      "detail": {},
+      "event": "prechecked"
+    }
+  ],
+  "id": "f35cf4d78fbd44b59e9670bc749ba15b",
+  "integration_head": "f85cae2b264b19dac595519b14bd03023fa9928f",
+  "integration_tree": "d1bbd1a6eadf286b2970d81f199e8228fc6d5362",
+  "integration_worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/f35cf4d78fbd44b59e9670bc749ba15b/integration",
+  "issue": null,
+  "precheck": {
+    "argv": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "complete": true,
+    "exit_code": 0,
+    "head": "f85cae2b264b19dac595519b14bd03023fa9928f",
+    "log_bytes": 0,
+    "log_path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/logs/f35cf4d78fbd44b59e9670bc749ba15b/precheck.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "reason": null,
+    "tree": "d1bbd1a6eadf286b2970d81f199e8228fc6d5362"
+  },
+  "release_approved": false,
+  "review": null,
+  "run_id": "f35cf4d78fbd44b59e9670bc749ba15b",
+  "schema": 1,
+  "spec": {
+    "base_head": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+    "frozen_paths": [
+      ".github/workflows/android-sandbox.yml",
+      ".github/workflows/android.yml",
+      "AGENTS.md",
+      "app/build.gradle.kts",
+      "app/proguard-rules.pro",
+      "app/src/androidTest/assets/reference-fixture.pdf",
+      "app/src/main/AndroidManifest.xml",
+      "app/src/test/java/ai/moonshine/voice/MoonshineUpdateCadenceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/actions/AcceptedActionQueueTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/actions/ActionIntentRouterTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/actions/ActionTurnRunnerTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/actions/DirectAppCommandTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/actions/MobileActionPipelineTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/actions/MobileActionValidatorTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/actions/NativeToolJourneyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/CompactChatPromptTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ConversationPromptBuilderTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/DialogueContextPolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/GemmaSessionTextTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/InferenceProgressTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/LastReplyRecallTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/LiteRtVoicePrefillSessionTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ModelCatalogTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ModelCompatibilityTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ModelConversationConfigTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ModelGuidanceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ReferenceEvidencePolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/SuppliedReferenceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/TemplateVoiceSessionTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/TurnOrchestratorTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/VoiceInputPromptTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/VoicePromptTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/storage/ModelRemovalTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/ai/storage/ModelStorageTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/chat/AnswerQualityPolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/chat/AttachmentPolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/chat/CompactVoiceContextTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/chat/TurnContinuityTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/TurnLatencyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/ConversationMemoryTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryArchivePolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryCaptureAcknowledgmentTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryCaptureReceiptCacheTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryDeliveryFenceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryPolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryRecallIntegrationTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryRetrievalTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryTurnContextTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryWikiTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/AdaptiveTurnEndTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/AsrComparisonStoreTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/AsyncWhisperSessionTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/AudioTurnCaptureTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/BargeInAudioInputTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/BargeInDiagnosticEvidenceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/BargeInGateTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/BoundedInterruptionRecognizerTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CallAdapterClipRecognitionTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CallInputQueueTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CallLifetimePolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CallModelSlotTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CallTurnOwnerTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CandidateConfirmationTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CaptureRecognitionBudgetTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CaptureSpeechGateTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CaptureSpeechQueueTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CoalescingVoiceCallStoreTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/ContinuousActionSessionTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/DelayedAcknowledgementTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/DiagnosticClipRecognitionTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/DuplexAudioEvidenceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/DuplexPlaybackBudgetTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/DuplexRouteLeaseTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/EchoArchiveReaderTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/ExternalSpeechGateTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/FillerAudioCacheTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/FillerPcmTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/FinalVoiceToolGuardTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/FollowupSpeechEvidenceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/FrameSpeechDetectorTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/GroundedVoiceSentenceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/IncrementalVoiceInputTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/InterruptionProbeBudgetTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/KeyboardMicrophoneRequestTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/KeywordBargeInAudioInputTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/KeywordPrimingTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/LiveCallAudioEvidenceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/LiveReplyMetricsTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/LongUtteranceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/MicrophoneHandoffTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/MicrophoneInterruptionPolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/MicrophonePolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/MicrophonePreferenceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/NativeAudioQueueTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/NaturalBargeInAudioInputTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/NaturalCorrectionTextTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PacedStreamingTranscriberTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/Pcm16SignalTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PcmChunkAssemblerTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PiperTextStreamTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PlaybackBufferPolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PlaybackClockTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PlaybackDrainTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PlaybackHistoryTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PreparedSpeechOpeningTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/QuietSpeechEvidenceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/QuietSpeechGainTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/RecognitionAudioEvidenceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/RecognizedInterruptionWordsTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/ReplyInterruptionTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/ReplyListenerRecoveryTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/RetiredVoiceFilesTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/RollingAudioBufferTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/RoutedAudioInputTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SentenceGapWaiterTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SherpaPcmCallbackTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SherpaTtsConfigTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpeechAudioTraceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpeechChunkerTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpeechDeliveryLedgerTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpokenCaptionTimelineTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpokenVolumeLevelTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/TranscriptContentTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/TtsComparisonStoreTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceActionControlTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceAudioSessionTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallPolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallResumerTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStoreTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceInterruptionTestTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceNavigationPolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceRepetitionGuardTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceRepetitionRepairTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceSessionControllerTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceSessionUiTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceStopRequestTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceTranscriptResolverTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceTurnCoordinatorTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceTurnTraceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceWorkSchedulerTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/WakeWordGateTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/WordErrorRateTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/comparison/LiveComparisonTest.kt",
+      "build.gradle.kts",
+      "gradle.properties",
+      "scripts/apk_size_report.py",
+      "scripts/build_sherpa.py",
+      "scripts/check_asr_apk.py",
+      "scripts/check_asr_onset.py",
+      "scripts/check_compact_apk.py",
+      "scripts/check_keyword_models.py",
+      "scripts/check_tts_callback.py",
+      "scripts/d2-replay/README.md",
+      "scripts/d2-replay/call_adapter.py",
+      "scripts/d2-replay/common.py",
+      "scripts/d2-replay/raw_bypass.py",
+      "scripts/d2-replay/raw_native_gate.py",
+      "scripts/d2-replay/whisper_control.py",
+      "scripts/microwakeword_test.cpp",
+      "scripts/prepare_moonshine_sdk.py",
+      "scripts/prepare_sherpa_sdk.py",
+      "scripts/sherpa_jni_profile.py",
+      "scripts/sherpa_required_symbols.json",
+      "scripts/test_apk_size_report.py",
+      "scripts/test_compact_apk.py",
+      "scripts/test_native_dependencies.py",
+      "scripts/test_sherpa_jni_profile.py",
+      "scripts/test_verification.py",
+      "scripts/test_verification_receipt.py",
+      "scripts/verification/android.py",
+      "scripts/verification/artifacts.py",
+      "scripts/verification/local_gate.py",
+      "scripts/verification/receipt.py",
+      "scripts/verification/repair.py",
+      "scripts/verification/test_artifacts.py",
+      "settings.gradle.kts"
+    ],
+    "goal": "Close persisted secret/90-day retention bypasses in history, calls, diagnostics and summaries, original-time read/write/load/replay fences; preserve benign diagnostic prompts and accepted receipts. Add privacy JVM tests and additive Android test36/scenario. Existing ConversationHistoryTest assertions stay; only artificial epoch/future timestamp fixtures may use deterministic advancing clock. Mandatory completion: independent exact-candidate review, frozen local Python harness suite, then full exact-remote signed release JVM/native/helpers, API30/API35 all named journeys and consolidated receipt. No fixture/old CI substitution; real-model/Fold6 performance remains separately unqualified.",
+    "max_attempts": 3,
+    "max_seconds": 2032,
+    "preflight_argv": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "repository": "/workspace/scratch/d20772bd92e6/jarvis-memory-overnight",
+    "review_stage": "before_verification",
+    "reviewer": "/root/jarvis_privacy_review",
+    "schema": 1,
+    "units": [
+      {
+        "allowed_paths": [
+          "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+          "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+          "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+          "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+          "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+          "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+          "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+          "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+          "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+          "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+          "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+          "docs/memory-os-native.md",
+          "docs/verification/features.md",
+          "scripts/verification/scenarios.json"
+        ],
+        "complexity": "complex",
+        "depends_on": [],
+        "id": "privacy",
+        "task_kind": "implementation"
+      }
+    ],
+    "usage_scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+    "verification_argv": [
+      "python3",
+      "-B",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "scripts",
+      "-p",
+      "test_*.py"
+    ]
+  },
+  "state": "prechecked",
+  "units": {
+    "privacy": {
+      "actor": "/root/jarvis_privacy_coder",
+      "allowed_paths": [
+        "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+        "docs/memory-os-native.md",
+        "docs/verification/features.md",
+        "scripts/verification/scenarios.json"
+      ],
+      "base_head": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+      "changed_paths": [
+        "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+        "docs/memory-os-native.md",
+        "docs/verification/features.md",
+        "scripts/verification/scenarios.json"
+      ],
+      "commits": [
+        "1e8b90800007ce9ffede53b686b187460fcb3b99",
+        "ee1153cc8e6227497ce56663e398df38f11e3715"
+      ],
+      "head": "ee1153cc8e6227497ce56663e398df38f11e3715",
+      "state": "submitted",
+      "usage_effort": "high",
+      "usage_model": "gpt-6.1-sol",
+      "usage_ticket_id": "6e7101b166e042adbaccca27d6b6fbbd",
+      "worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/f35cf4d78fbd44b59e9670bc749ba15b/unit-privacy"
+    }
+  },
+  "verification": null,
+  "verification_process": {
+    "automatic_crash_cleanup": false,
+    "normal_cleanup_completed": true,
+    "pid": 87,
+    "process_group": 87,
+    "started_at": 1790979473.537796
+  }
+}
