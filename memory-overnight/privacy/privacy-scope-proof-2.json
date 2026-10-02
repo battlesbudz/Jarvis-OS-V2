@@ -1,0 +1,741 @@
+{
+  "actual_sha": "88087d929491978d67cfa843189c23648bd74531",
+  "base": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "changed_paths": [
+    "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+    "docs/memory-os-native.md",
+    "docs/verification/features.md",
+    "scripts/verification/scenarios.json"
+  ],
+  "clean": true,
+  "frozen_identical": true,
+  "frozen_paths": [
+    {
+      "entry_sha256": "e41611754e2a006193ef9c1e3d47060eb50ba803b17dd638aad92c3b83219e79",
+      "path": ".github/workflows/android-sandbox.yml"
+    },
+    {
+      "entry_sha256": "f4cdac1debd3c3376826fc1ec8dae5e7f9476deae41539bb5050c2b803038b09",
+      "path": ".github/workflows/android.yml"
+    },
+    {
+      "entry_sha256": "569b654bde828b26fd9db4f8ee4de58d9af9055b36358c789763050db8f50a3f",
+      "path": "AGENTS.md"
+    },
+    {
+      "entry_sha256": "f1c207a487021b15a99af1e0e8ab528d895df83664fbfc5adbb10118596c5498",
+      "path": "app/build.gradle.kts"
+    },
+    {
+      "entry_sha256": "c3896da423cd466d9028ae48a000ccfb9046be213ca5636fcd5d174d490f91e0",
+      "path": "app/proguard-rules.pro"
+    },
+    {
+      "entry_sha256": "1234091b0bb6bed7d69de72ece478ea499257c65af98346a6c55834ba1d5cb6e",
+      "path": "app/src/androidTest/assets/reference-fixture.pdf"
+    },
+    {
+      "entry_sha256": "026b6c9f1c13f63f8946346bf9b615effd306bbb41f706b91b48bcb045925e94",
+      "path": "app/src/main/AndroidManifest.xml"
+    },
+    {
+      "entry_sha256": "0dada2d6d3ebbe3c9d17ec3041dfe58d6ba2a2f57f68868cfa92cc6afab0252e",
+      "path": "app/src/test/java/ai/moonshine/voice/MoonshineUpdateCadenceTest.kt"
+    },
+    {
+      "entry_sha256": "c28db9c70006fbbde058d8fb10105565e3d21011d5d44d9e92b27c7fb6e4d4c4",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/actions/AcceptedActionQueueTest.kt"
+    },
+    {
+      "entry_sha256": "95445900a6fdbd69f64e78baac0de43b2e40d499e84f002f1c66ead811feec7a",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/actions/ActionIntentRouterTest.kt"
+    },
+    {
+      "entry_sha256": "6c8d1a79e615532aef00a272458bd0718234e35709fb203c02f678b3f4861384",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/actions/ActionTurnRunnerTest.kt"
+    },
+    {
+      "entry_sha256": "db021a007dd3aac6a4d249bdf314ddaa72536c1ad5ec22040197ee710af39383",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/actions/DirectAppCommandTest.kt"
+    },
+    {
+      "entry_sha256": "53b846b18c6da10500953b6568d18640a2043db1410178552ca00c6b1084aca6",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/actions/MobileActionPipelineTest.kt"
+    },
+    {
+      "entry_sha256": "607e98423b0e6b0e595748cbeedacc33ede58a05c690d663c05faf4c0fa111e3",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/actions/MobileActionValidatorTest.kt"
+    },
+    {
+      "entry_sha256": "3942a8b5263e676377cc67b186440689a86c760c6139985ee7f2af1e390c1b65",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/actions/NativeToolJourneyTest.kt"
+    },
+    {
+      "entry_sha256": "2cea2f73546d8480d6485217fc4d01e965fb1b26db6d9c6a3b8bd03d94bcf3b7",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/CompactChatPromptTest.kt"
+    },
+    {
+      "entry_sha256": "916b0d90e578b83daab5b3df0ff3ce1d02930ee638c63bde76953c4d9d873c8e",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ConversationPromptBuilderTest.kt"
+    },
+    {
+      "entry_sha256": "4342808aa31dbcd296aed128d35e93f61795d1fa764452488a7ff148ac08224b",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/DialogueContextPolicyTest.kt"
+    },
+    {
+      "entry_sha256": "f4b798b37104749b8b5461ca27c5da362fe86673a8601e5af67663800a0fd713",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/GemmaSessionTextTest.kt"
+    },
+    {
+      "entry_sha256": "997aa09d5029f7bf32740e087ecac92544bd826eed9b5bc60101979e2c00ac91",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/InferenceProgressTest.kt"
+    },
+    {
+      "entry_sha256": "538e33b9d2e578f9cc6d9d1bda2f08a031e8e74ad4a662ea0d8a91d728feca0a",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/LastReplyRecallTest.kt"
+    },
+    {
+      "entry_sha256": "637c6656a646ba3cab8bd2ce391692e40c8aabebe4375d687dd66ac1541577a8",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/LiteRtVoicePrefillSessionTest.kt"
+    },
+    {
+      "entry_sha256": "80eea5040acae8d525fe5389e4102bfa351b530316b2d6e652136f1c38309231",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ModelCatalogTest.kt"
+    },
+    {
+      "entry_sha256": "76fe62701eb65183cf45b94bbf38b27c653c63299c94c1f3c64d839d20bffced",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ModelCompatibilityTest.kt"
+    },
+    {
+      "entry_sha256": "d7b368612e9fdad3d1e38a5df79d48139488b8b6da28398beaf1a940bf22a364",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ModelConversationConfigTest.kt"
+    },
+    {
+      "entry_sha256": "7df2b8e357dc175226df2985195b2ae4de9632299ca903552f57f19fa5a2925b",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ModelGuidanceTest.kt"
+    },
+    {
+      "entry_sha256": "f1e5713a078a99420c77a3040a7b552ee541d00bc2e66b2e6f1b8519630d110c",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ReferenceEvidencePolicyTest.kt"
+    },
+    {
+      "entry_sha256": "caa861c48e842a43b6cbdf101b9b6ca5b2c5be909603a1185cb9dd1bd7283aec",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/SuppliedReferenceTest.kt"
+    },
+    {
+      "entry_sha256": "616f15fd8fdff7e35353f5c18aeed445858ee217f46dabe55e3549c48b04604a",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/TemplateVoiceSessionTest.kt"
+    },
+    {
+      "entry_sha256": "f866b179cf726a80b24ee3ac703683fa666fe909790eb5d278c5fcfa79017ee2",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/TurnOrchestratorTest.kt"
+    },
+    {
+      "entry_sha256": "dff9cc42ba0b2bbf3fd3ba942ca66e98dd5d45d9953eb2bdfdb576530d89ee20",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/VoiceInputPromptTest.kt"
+    },
+    {
+      "entry_sha256": "795968926016542baf84d7f75f43945f1ca446c8c690a9df32be50454c4e61cd",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/VoicePromptTest.kt"
+    },
+    {
+      "entry_sha256": "0ff41826e6faf36b0d82a2cd23a90a921fa88c3b95f69ca999e171a86f2fb561",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/storage/ModelRemovalTest.kt"
+    },
+    {
+      "entry_sha256": "255dca199207676550b29a7de6941f124fb1940bbdba9948abbfeb0f57527fea",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/storage/ModelStorageTest.kt"
+    },
+    {
+      "entry_sha256": "90f54dc4e3d06b49663e2df6868fa2705f0038d8212c9da436638267fce21e7f",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/chat/AnswerQualityPolicyTest.kt"
+    },
+    {
+      "entry_sha256": "dc0188cd4992517f44d27d77f12d25568cde3d102ea4ed21a39eb0eabaf565a6",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/chat/AttachmentPolicyTest.kt"
+    },
+    {
+      "entry_sha256": "b0c0d11fb12bd7cfccd7765ca5e02cdd9f2a2b17ce1688d55631dd94bc2635e8",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/chat/CompactVoiceContextTest.kt"
+    },
+    {
+      "entry_sha256": "7c5fb924ca51e2ceaad2ed277dd21e1d3ba53e43fe67a1a7411754025fe5399e",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/chat/TurnContinuityTest.kt"
+    },
+    {
+      "entry_sha256": "cebd2fdb1c44266c467502ffb0d0aa581cf82a8b9a1e3518fd7c7cfb89c525b5",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderTest.kt"
+    },
+    {
+      "entry_sha256": "31c90a1c7eaa7186fe2fe6149ef413aeb2e4a02c0495e21fc58ccda8c954f6c3",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/TurnLatencyTest.kt"
+    },
+    {
+      "entry_sha256": "b118bf5a7f22c5e42f1009a17e417351c8e2e2018f875bd50d7498d62ca9bbaf",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/ConversationMemoryTest.kt"
+    },
+    {
+      "entry_sha256": "8f91d77488eef31d6e05c0a679487cdf46ca2f092f5ff5f93cba882fdccc76bf",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryArchivePolicyTest.kt"
+    },
+    {
+      "entry_sha256": "6d0042e8b1dc69c8dec5743d7dd225803268cfb842020ed4d4b9c08c1855a798",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryCaptureAcknowledgmentTest.kt"
+    },
+    {
+      "entry_sha256": "2f8e935ccb249e8b5330a7a3997da119b359151d51fdba774a33120bfbc21b3a",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryCaptureReceiptCacheTest.kt"
+    },
+    {
+      "entry_sha256": "625142a6292d93a76ad31e5cf304b8405edcbef452723a3466a6ca558f50f245",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryDeliveryFenceTest.kt"
+    },
+    {
+      "entry_sha256": "09cca4e46ca4ffa5c9cfcc00c39495f3d34d5f8b470a4032ce0c20112720b8c8",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt"
+    },
+    {
+      "entry_sha256": "5d522da3c98c8b449badc469f470a0819b291bd0603e37baee6e28a14ad80f4c",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryPolicyTest.kt"
+    },
+    {
+      "entry_sha256": "5b03ca48e38fef20ac1fd69ca66f23086a996ee9195ba7d8c406068f897a51ae",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryRecallIntegrationTest.kt"
+    },
+    {
+      "entry_sha256": "9b981e5ab55cc37d22be21bc06b60f636b20ef538f5d7baf66c93be63822d9f4",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryRetrievalTest.kt"
+    },
+    {
+      "entry_sha256": "a2bbc05624420fdc0febbaaceda085969948a43aa20828f3915d5af6c0bdfcc8",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt"
+    },
+    {
+      "entry_sha256": "1f0231f924e78a591aeed68c495532ee017ff102167fe07636abf0b90b652c31",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryTurnContextTest.kt"
+    },
+    {
+      "entry_sha256": "84c41dcc8ce8b604c9d7e3c8247b60de9909a135ceb1f83548b2f44f9dfce7fe",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryWikiTest.kt"
+    },
+    {
+      "entry_sha256": "c69003328439dffc1943c3a19967eb31e9d780149f309173237e37b93e6f7697",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/AdaptiveTurnEndTest.kt"
+    },
+    {
+      "entry_sha256": "f5414ce02277e0dbbfcf6f204e02eedf9cb8314dc8e53f26ae605a4bc97dfed8",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/AsrComparisonStoreTest.kt"
+    },
+    {
+      "entry_sha256": "485b3bceca68bb675d856b8010dc6e21ada8c78ed163476be55b9dcc75396820",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/AsyncWhisperSessionTest.kt"
+    },
+    {
+      "entry_sha256": "750285543c85c6441ba650d584964b4f871bca9b34eb1d778426aff5978f452a",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/AudioTurnCaptureTest.kt"
+    },
+    {
+      "entry_sha256": "dd62f59e0f47f32f6dcbcac17bd3999ed441d7e0581f7de3ad2880bde6e4f1a7",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/BargeInAudioInputTest.kt"
+    },
+    {
+      "entry_sha256": "b7c0ab0f54df127ff79d947338d3dfbcc140c6fd54cd5aa45510f9835668c18c",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/BargeInDiagnosticEvidenceTest.kt"
+    },
+    {
+      "entry_sha256": "361183d1e5d44a48a05438c71312b7fccd573fc5fcc3b56630cf7b10024f9427",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/BargeInGateTest.kt"
+    },
+    {
+      "entry_sha256": "c91cbb49fc4cc75603d74f334c20efc30f149e0b21510dadce6c297a0ecf944a",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/BoundedInterruptionRecognizerTest.kt"
+    },
+    {
+      "entry_sha256": "6a55dfe7c961b7c215e85d955ff98c265f0f86cd4c88b4941ad8e2c7046f486e",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CallAdapterClipRecognitionTest.kt"
+    },
+    {
+      "entry_sha256": "3e988dc5e2ac0bd8f1cd5149f327beff97fd4f3b2eef10531f0086c51aad9e70",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CallInputQueueTest.kt"
+    },
+    {
+      "entry_sha256": "130150b93d9e753ca7fee286b01f44b6323b3313ece533523e863b9715d461b0",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CallLifetimePolicyTest.kt"
+    },
+    {
+      "entry_sha256": "299231dce9c87a9f04900f3d58c5133921f817554bff1e5a8e81029f7a8420cf",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CallModelSlotTest.kt"
+    },
+    {
+      "entry_sha256": "ac9afa5ed850e0f02d8c6320b5bf2ab4bdd4eb1017e04493a568367177faa0ed",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CallTurnOwnerTest.kt"
+    },
+    {
+      "entry_sha256": "2c20d1455db5e975f421130a4a331bec6635af50932b3fd23f1a1921367554b6",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CandidateConfirmationTest.kt"
+    },
+    {
+      "entry_sha256": "565f6503eddbea392525ebbd1e0207b1b623d6e777a5936e51087ea09a7628eb",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CaptureRecognitionBudgetTest.kt"
+    },
+    {
+      "entry_sha256": "861e60d71cdef439fcecde172029d378ab1d19acad6ca86c61ca41ed8acb4fa9",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CaptureSpeechGateTest.kt"
+    },
+    {
+      "entry_sha256": "2ea233887e887e3519db261feb58df0eb6d049397f919f8bbd96d21651af44ca",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CaptureSpeechQueueTest.kt"
+    },
+    {
+      "entry_sha256": "083b02c53d480f1b25493e03a812a88f3a7ea76eef0de3cc40ea77d800b8ad38",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CoalescingVoiceCallStoreTest.kt"
+    },
+    {
+      "entry_sha256": "8bc3a84ee4e52db34217b0ed133704fa98ec71cad962109e63ee4a17be7418ed",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/ContinuousActionSessionTest.kt"
+    },
+    {
+      "entry_sha256": "f15da3afbc1578870fd8b1a5ec3bbfe7e59a7e36dcb9d373c904dcb19a21f25a",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/DelayedAcknowledgementTest.kt"
+    },
+    {
+      "entry_sha256": "6285ef6c74e37c977e01e218a104bc3f319032d5fc280cd2a0845ed882e2867b",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/DiagnosticClipRecognitionTest.kt"
+    },
+    {
+      "entry_sha256": "a84dfbd73b0a45549393358f7af32d38a97d34614c9a93ecf4ebd08632161e7b",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/DuplexAudioEvidenceTest.kt"
+    },
+    {
+      "entry_sha256": "5b147952ce468bc20328d0c14cd2ee75d4e6bb2f2cb0148dc64e4375d3f946fa",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/DuplexPlaybackBudgetTest.kt"
+    },
+    {
+      "entry_sha256": "d6358887fb26e2f71576a9f569f1a110ecd48d9165c2bc15b65a3455d4b3aa9f",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/DuplexRouteLeaseTest.kt"
+    },
+    {
+      "entry_sha256": "1193911c7059510392078199b07eb2f4f66cd4f385ef4309aba190082f6ceff1",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/EchoArchiveReaderTest.kt"
+    },
+    {
+      "entry_sha256": "2406a0e8016b3ab51571eb91de393941a12c1fbb8edf14b84dd2211d90c47bd6",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/ExternalSpeechGateTest.kt"
+    },
+    {
+      "entry_sha256": "2012553290b233cdc075688bb632488ff8464fae8adec6198e827e9e64a991cc",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/FillerAudioCacheTest.kt"
+    },
+    {
+      "entry_sha256": "2afed57ad56ce4b8ca011fbc5d4e5accf6a3e8bf285b02077f76368c390fc93f",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/FillerPcmTest.kt"
+    },
+    {
+      "entry_sha256": "0ed8cb19832a041dcf7451dfd3ef453b04a7a46769f9757a12758a6a7f314e85",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/FinalVoiceToolGuardTest.kt"
+    },
+    {
+      "entry_sha256": "24c1353236732c878d7cd886a71421d5568d23e2765fe6047afa105320213f0e",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/FollowupSpeechEvidenceTest.kt"
+    },
+    {
+      "entry_sha256": "b7ebe3d9a66a4fde6d56bc71025135797071e9c9aa8ef569d16012f456665fcd",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/FrameSpeechDetectorTest.kt"
+    },
+    {
+      "entry_sha256": "28f79cf417c03dfb31ca8c4ec77a4942cb6fa4ea975cbd6c11e8592b708caf37",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/GroundedVoiceSentenceTest.kt"
+    },
+    {
+      "entry_sha256": "06c0fcc2f5f1ab5cda0a657839691fb7b65f2946e99949cea355df1e95b68c3b",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/IncrementalVoiceInputTest.kt"
+    },
+    {
+      "entry_sha256": "80186ad0b24a391e9058a0c47f82a6eceb67264f5e481e0758f9f3ff9ad86839",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/InterruptionProbeBudgetTest.kt"
+    },
+    {
+      "entry_sha256": "1728172d75412648b522354e3c6585b0cde5280e800e626fe5de3f1b4fdab734",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/KeyboardMicrophoneRequestTest.kt"
+    },
+    {
+      "entry_sha256": "6ccd6badab598ecdafa75e438e3618221fddf31996faf40a410c30d6fed639a2",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/KeywordBargeInAudioInputTest.kt"
+    },
+    {
+      "entry_sha256": "82cc402f19fa81ba1392d9a41277520c903c418f09b31c29bf7672e997d1ad22",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/KeywordPrimingTest.kt"
+    },
+    {
+      "entry_sha256": "15502203b8c4dee5d3f83929573e944282b98363b8a7d3c136452b28a061e974",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/LiveCallAudioEvidenceTest.kt"
+    },
+    {
+      "entry_sha256": "86b50b037282235b4315f55a6264af4a427d8839bbe2391cd671123d706b3382",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/LiveReplyMetricsTest.kt"
+    },
+    {
+      "entry_sha256": "7b16fb73d02395fa6094dc41a3d7c9ac7556f934f2ee7c35b4f79b41a80bc52e",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/LongUtteranceTest.kt"
+    },
+    {
+      "entry_sha256": "69e6ade98e713e91928697d06e654c3e7249a7ab17212f5359a4e2cf0776e5cc",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/MicrophoneHandoffTest.kt"
+    },
+    {
+      "entry_sha256": "18e7ac98bff0bc6e43c64fdb7f7a5f45f41e89726523c72c260cb3c886ac1ff4",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/MicrophoneInterruptionPolicyTest.kt"
+    },
+    {
+      "entry_sha256": "f2fa6248e45b5c868b7b98e5948ad452e2f0427a12bcffde03b94cc768cbc3c4",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/MicrophonePolicyTest.kt"
+    },
+    {
+      "entry_sha256": "8adcfb54febc1328d8499876c0878a7e5e67642d9d2bde734a0d3f31b2616a50",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/MicrophonePreferenceTest.kt"
+    },
+    {
+      "entry_sha256": "4234f56e3f5af39b468c8fb6619483e5721b02df81bb3da0835f39417be27ecc",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/NativeAudioQueueTest.kt"
+    },
+    {
+      "entry_sha256": "6ce5c9d86937a32b5bcb1198175bd5f37807e62810f3540c2e8fef763ac374fc",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/NaturalBargeInAudioInputTest.kt"
+    },
+    {
+      "entry_sha256": "454ec1cd6f87f5febb17e8464ee667776ce59b7daa3f54c4e5f9f92eb17edddc",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/NaturalCorrectionTextTest.kt"
+    },
+    {
+      "entry_sha256": "6bccaa650b0c40fbd46aa1dffa3ddf46b10f72c71c599ced5c28e2f51565e45d",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PacedStreamingTranscriberTest.kt"
+    },
+    {
+      "entry_sha256": "1f7cc94b87a6cc34ba8c524e20a07e459227e585a6817af4532f6a9919969a79",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/Pcm16SignalTest.kt"
+    },
+    {
+      "entry_sha256": "4e750273fba24df1f430e60ace678a51439f75ab0ccaf0b4d021f248e6be3f7c",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PcmChunkAssemblerTest.kt"
+    },
+    {
+      "entry_sha256": "d58c4af5c1e136f4b8f04aa75d0ba3008e5498d1f0bdc81fe7635119bbc4c94a",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PiperTextStreamTest.kt"
+    },
+    {
+      "entry_sha256": "10cd1cd958ba79b77f1e4531d3015e99d950446cc2ecb6e52859e806c5fe6587",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PlaybackBufferPolicyTest.kt"
+    },
+    {
+      "entry_sha256": "cf60c27d494cf8668782bc0f059ac251fefb5de0cca83af948216de637b2fd99",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PlaybackClockTest.kt"
+    },
+    {
+      "entry_sha256": "558711725e4c59b45de0eaa6e00658b0de75a8423ac8c13cec7bfb6d1e97f8f3",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PlaybackDrainTest.kt"
+    },
+    {
+      "entry_sha256": "9df602d59e8faaf4c38887564ed256cd80b66001deb8c9e443ba1855fd84f9ca",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PlaybackHistoryTest.kt"
+    },
+    {
+      "entry_sha256": "4bc88133c8662bc69c9c5c1fc26f29dd8c2fa568379167efb50ccb3278ecb063",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PreparedSpeechOpeningTest.kt"
+    },
+    {
+      "entry_sha256": "f4dd41b05148c07bb336a8fce8bd3ecad8811628fa6ca5a4ecfd815f1699edc3",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/QuietSpeechEvidenceTest.kt"
+    },
+    {
+      "entry_sha256": "9cf0be252ff4ef243635101c6322c405458d50c0de962741bb8fe06c159bbab3",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/QuietSpeechGainTest.kt"
+    },
+    {
+      "entry_sha256": "be521dd8422195041a017f6c47c7f80332f8f198efd02474e0ecbc9f05b1f6e9",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/RecognitionAudioEvidenceTest.kt"
+    },
+    {
+      "entry_sha256": "3fdfc336251e2632d92b108a4c8111b79bc174036883fa88d4b3509532944a42",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/RecognizedInterruptionWordsTest.kt"
+    },
+    {
+      "entry_sha256": "dd3f7e7b472b5a639858c786283ae5746b2343b69f463cd7234ffee9189daafe",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/ReplyInterruptionTest.kt"
+    },
+    {
+      "entry_sha256": "092e1ac8e2821073f838d4d1bfe9fd21a5e48b5dc3fd974f01d73b0f6286f590",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/ReplyListenerRecoveryTest.kt"
+    },
+    {
+      "entry_sha256": "3274cb26c609b5a5d860da1f4201086b3c66843b5af395c12da17550f6aee8cb",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/RetiredVoiceFilesTest.kt"
+    },
+    {
+      "entry_sha256": "bc1493c29ca1f4a96003fed986e816fa2282bf91fbb26d8e0f1668dad4ed1613",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/RollingAudioBufferTest.kt"
+    },
+    {
+      "entry_sha256": "26674595e675240c945a7b1041dc89008878d1bbf59cf2f32bc3e7625c4d8c9e",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/RoutedAudioInputTest.kt"
+    },
+    {
+      "entry_sha256": "2b5c4b975245f15d46e9e2bd737fb39eeaa5c3a30d3a907b637d31271b222ba7",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SentenceGapWaiterTest.kt"
+    },
+    {
+      "entry_sha256": "1286ba6b584ff506b3c6a3784173177ad54560ecf6b6c464338ee074ad282c4b",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SherpaPcmCallbackTest.kt"
+    },
+    {
+      "entry_sha256": "4dd03f9116f835ab6327931019a88db40fbbb4597ef4c0f018cd2363411fcf40",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SherpaTtsConfigTest.kt"
+    },
+    {
+      "entry_sha256": "96cf840695c70a634af6700c0bec8d0705e5e99e3da0538839599b2a14eaab4f",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpeechAudioTraceTest.kt"
+    },
+    {
+      "entry_sha256": "262d371daab9682730e2a543ba4e9cf84c66ffaf29f94762f5a08deaa74a1f57",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpeechChunkerTest.kt"
+    },
+    {
+      "entry_sha256": "1c397f9cc9290a6956a96769f0ee8396b64361626a08fde0ffbacd5ba559e343",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpeechDeliveryLedgerTest.kt"
+    },
+    {
+      "entry_sha256": "e001ccfab3225a2e9243a6f156b4463491f1184496a73a52998a05d24b4103f2",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpokenCaptionTimelineTest.kt"
+    },
+    {
+      "entry_sha256": "c9db65ad6ac03474815411c7c73ad3e3df8ff8c7436757bea0203c533189b551",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpokenVolumeLevelTest.kt"
+    },
+    {
+      "entry_sha256": "da8085414537c197eea9aae0681328ec2d9f06d7dd631efb2f2c16f240550ad9",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/TranscriptContentTest.kt"
+    },
+    {
+      "entry_sha256": "5cc6d6cdb0fe232d4185f759c0990f9ec7304294305e7d507adc01dd7bd6087f",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/TtsComparisonStoreTest.kt"
+    },
+    {
+      "entry_sha256": "74bc806d4e5d1f0e1ba584a6383f07f709e086b3593f611fb1e5130907c754f4",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceActionControlTest.kt"
+    },
+    {
+      "entry_sha256": "e58c230a8803dac283fcb9f2a32507fc8b6df8c208b104a623f916c64d72610b",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceAudioSessionTest.kt"
+    },
+    {
+      "entry_sha256": "05ec334aad968823afc93cc0de02c23d527c6de37ac87a6ef34d5e9a296de9c9",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallPolicyTest.kt"
+    },
+    {
+      "entry_sha256": "a5484ae5f5157482801326e75fd31930623eddcbb3b03e9ffe8381302b230b4f",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallResumerTest.kt"
+    },
+    {
+      "entry_sha256": "186d970c7fae7aa04eb8f59b1a260daf7ddadbd198f66874a84b10ee0cfba665",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStoreTest.kt"
+    },
+    {
+      "entry_sha256": "cf013153f74a4dfde1a99cf5d25fbc143e2b2cdac99312fb1c6a194b59a69beb",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceInterruptionTestTest.kt"
+    },
+    {
+      "entry_sha256": "35af218ba7fc7a6809fa67cd4b94aaf3cf612bcc9ce12a5f13c2b3a6f1241ec3",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceNavigationPolicyTest.kt"
+    },
+    {
+      "entry_sha256": "f46c5a82d50fdd9eda35ba2c6f20a8a029f030d72d626154884a1661e25d4e83",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceRepetitionGuardTest.kt"
+    },
+    {
+      "entry_sha256": "2a4896943d1bc0da77c631c41eb8fc092b0cb44aa4235e8aa0a631bf30e807e4",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceRepetitionRepairTest.kt"
+    },
+    {
+      "entry_sha256": "33339f8eaba5de322e9be607fe0201855dd112f5e9d4af0a8600cc0e259e970e",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceSessionControllerTest.kt"
+    },
+    {
+      "entry_sha256": "2061da3e51d54da3029a2d28945efbb53572258cde8dd5886ae0af512fbca1f1",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceSessionUiTest.kt"
+    },
+    {
+      "entry_sha256": "d8dfd216d101332c15f6596bc66797682c5eb2268621543707018ddfe60e86ac",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceStopRequestTest.kt"
+    },
+    {
+      "entry_sha256": "b2e8b6b7d5becce95c954ddbd3b685667f7feeda9cbf902e61e99efd793004cd",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceTranscriptResolverTest.kt"
+    },
+    {
+      "entry_sha256": "d4950582445042ad3dbf1aeda4483f972d0bfd1cb8cfefde3dd008b5f571489e",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceTurnCoordinatorTest.kt"
+    },
+    {
+      "entry_sha256": "f5ec0fd22e034cf3acd9cff809606a030c421fb69dc206e933af8c2293186631",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceTurnTraceTest.kt"
+    },
+    {
+      "entry_sha256": "62924c3847586fe976465eecb922115ee6891c025bfeaef68a538cedb38f1c10",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceWorkSchedulerTest.kt"
+    },
+    {
+      "entry_sha256": "fd347773fe601f1af9e5ffbfa24c8ab1b7da4fbdd6f4e344d49c884ee3c694bd",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/WakeWordGateTest.kt"
+    },
+    {
+      "entry_sha256": "433423b56f3ab42e71ef1bc03e587722dfeaae1731da69db1bc23ac6bc62ad35",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/WordErrorRateTest.kt"
+    },
+    {
+      "entry_sha256": "cef58421e18bf271dd656bd3d1f46a1276c2980bb83baf3ebf81749e22bf0133",
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/comparison/LiveComparisonTest.kt"
+    },
+    {
+      "entry_sha256": "af2353187b10ed481d2d4da3770e7ed1027c7a7ccf020f48b4a54b695c5d36a0",
+      "path": "build.gradle.kts"
+    },
+    {
+      "entry_sha256": "480f79b27bbbe665133ee637cf3a09e3b090c794275eba048e2f5c90a9760923",
+      "path": "gradle.properties"
+    },
+    {
+      "entry_sha256": "7c66178a4bffdf536dd7f687e1361a9a03103fa7c218f2c9d0054af7ee584eaf",
+      "path": "scripts/apk_size_report.py"
+    },
+    {
+      "entry_sha256": "52482a421c908c8228d8b784e65c2f26a87c238f380dfcc3ff28986659b9a7de",
+      "path": "scripts/build_sherpa.py"
+    },
+    {
+      "entry_sha256": "ea241977c0785f060032e3b9a4ddece584e6ea72c1edd6028361079d4712c677",
+      "path": "scripts/check_asr_apk.py"
+    },
+    {
+      "entry_sha256": "31476e69359a0a263b29b675f5adacd3387bca8f4588371a8a444d936258c168",
+      "path": "scripts/check_asr_onset.py"
+    },
+    {
+      "entry_sha256": "24d13b8bd4ade59ce020704ad0131ca58df39809576fd6ada656c849f2a9d005",
+      "path": "scripts/check_compact_apk.py"
+    },
+    {
+      "entry_sha256": "b602f82df87205949910c6d2c67e3a1b3c877ba76d42ce218b50a8cb7b24cabb",
+      "path": "scripts/check_keyword_models.py"
+    },
+    {
+      "entry_sha256": "dd90f4ce67330f701622394db318b0c3c728f8f64e386539b7f6601973cbac7a",
+      "path": "scripts/check_tts_callback.py"
+    },
+    {
+      "entry_sha256": "1cf5445a817b0ae5184bd7edf95732907abd3bfeea69bed269dc8b951217f157",
+      "path": "scripts/d2-replay/README.md"
+    },
+    {
+      "entry_sha256": "18144529881f9be72376b607bc15042d8ed0ec024e1feafb3f059081d20fb0f5",
+      "path": "scripts/d2-replay/call_adapter.py"
+    },
+    {
+      "entry_sha256": "f9e4d4d29c95408419be26210f07b0aa087a28bfffa2898179f44bb49a2e3f8c",
+      "path": "scripts/d2-replay/common.py"
+    },
+    {
+      "entry_sha256": "7fed797600e01613f2bd142c037817117c04ba1fb4b129d6b6cf228d39059fa8",
+      "path": "scripts/d2-replay/raw_bypass.py"
+    },
+    {
+      "entry_sha256": "610a08d7eeaba7b187bdf5432b7785b7bcacb5f8b091f4d304093db84b5dd20f",
+      "path": "scripts/d2-replay/raw_native_gate.py"
+    },
+    {
+      "entry_sha256": "a0f9409c707571274cf6c85057fb1840908abf36a54e762293fadbdfd988b055",
+      "path": "scripts/d2-replay/whisper_control.py"
+    },
+    {
+      "entry_sha256": "ac720d6cb3756f432344d9a59c05bf7abb9b0a60c718015f2cc9b04ff4b6e47b",
+      "path": "scripts/microwakeword_test.cpp"
+    },
+    {
+      "entry_sha256": "0910aa55d65b72822dcb5ed8e71b554bd98361706df52fd045b377a808eee739",
+      "path": "scripts/prepare_moonshine_sdk.py"
+    },
+    {
+      "entry_sha256": "f259fe84aaab1141d3409ce2253ee3243873f15b380e27eefeceb5148673539e",
+      "path": "scripts/prepare_sherpa_sdk.py"
+    },
+    {
+      "entry_sha256": "b1b539f404b05658ee316abab7341e26811b6dd5912651f43f1b567481f17f7e",
+      "path": "scripts/sherpa_jni_profile.py"
+    },
+    {
+      "entry_sha256": "f7d0ec14a9a4be0083f1d4af73312988a509bb60418f2afd363974a962c2f648",
+      "path": "scripts/sherpa_required_symbols.json"
+    },
+    {
+      "entry_sha256": "04968f0d7b279375c7f42f34df92bd08b3728c58028a3d05a002ad2ca27197b9",
+      "path": "scripts/test_apk_size_report.py"
+    },
+    {
+      "entry_sha256": "7cacc626d256caaf3f52efaf94897fa3083ba6154e8859c30913dbf652651838",
+      "path": "scripts/test_compact_apk.py"
+    },
+    {
+      "entry_sha256": "561c5e82d2fa2c42c268b82dc643ae9e4f30cac5a025bfc4c4ea3be97da566b8",
+      "path": "scripts/test_native_dependencies.py"
+    },
+    {
+      "entry_sha256": "26ecef9a31f3b18aed8b6480e765f97d5ebeb1a6b8012c67190ebc8af507bc44",
+      "path": "scripts/test_sherpa_jni_profile.py"
+    },
+    {
+      "entry_sha256": "d269c94bd5e588e7c5de255ba9cb8cb10f32d74ba009618f91062338dec6142c",
+      "path": "scripts/test_verification.py"
+    },
+    {
+      "entry_sha256": "682997f3a363b0a44d0806123281b8ad7e545e893e21eb037cd32b4f7c0cc184",
+      "path": "scripts/test_verification_receipt.py"
+    },
+    {
+      "entry_sha256": "76585e888978160bb3482e4d229494461c7a2ac066c1c7bc59302deca45e3c9a",
+      "path": "scripts/verification/android.py"
+    },
+    {
+      "entry_sha256": "b2db8f6dc22805393befe85c9ffcf3b2a8ef582625683b62524b95e70fd71e30",
+      "path": "scripts/verification/artifacts.py"
+    },
+    {
+      "entry_sha256": "1091fdaec6845644754e4ce6972ef24ecb93b48449ba0051fa78f2adf5d172a2",
+      "path": "scripts/verification/local_gate.py"
+    },
+    {
+      "entry_sha256": "bc1db3d7c5e28653ef0fd000f0d1285d4d24f41539ad039285c740f3a87399cb",
+      "path": "scripts/verification/receipt.py"
+    },
+    {
+      "entry_sha256": "9e86b81a13146a212a024db523c1d7bb58a8d7e1468798838a695213a0207a4b",
+      "path": "scripts/verification/repair.py"
+    },
+    {
+      "entry_sha256": "7fb7c81dd2f7aca1e88920e7fcc906664f1a6abb937e15e60ff9f7474a54c18e",
+      "path": "scripts/verification/test_artifacts.py"
+    },
+    {
+      "entry_sha256": "e1722a41cef1903d08c6e3edbaafe5cb9b66b4a594fe7312808958f4af09d66f",
+      "path": "settings.gradle.kts"
+    }
+  ],
+  "tree": "d1bbd1a6eadf286b2970d81f199e8228fc6d5362"
+}

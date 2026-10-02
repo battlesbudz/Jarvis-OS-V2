@@ -1,0 +1,137 @@
+{
+  "schema": 1,
+  "attempt": 2,
+  "base": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "coding_head": "ee1153cc8e6227497ce56663e398df38f11e3715",
+  "coordinator_head": "f85cae2b264b19dac595519b14bd03023fa9928f",
+  "actual_remote_head": "88087d929491978d67cfa843189c23648bd74531",
+  "actual_remote_tree": "d1bbd1a6eadf286b2970d81f199e8228fc6d5362",
+  "branch": "feature/memory-os-overnight-candidate-privacy-20261002-2",
+  "tree_binding": "byte-identical Git blob and full tree hashes",
+  "actual_git_commit": {
+    "sha": "88087d929491978d67cfa843189c23648bd74531",
+    "node_id": "C_kwDOUMXdPNoAKDg4MDg3ZDkyOTQ5MTk3OGQ2N2NmYTg0MzE4OWMyMzY0OGJkNzQ1MzE",
+    "url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/git/commits/88087d929491978d67cfa843189c23648bd74531",
+    "html_url": "https://github.com/battlesbudz/Jarvis-OS-V2/commit/88087d929491978d67cfa843189c23648bd74531",
+    "author": {
+      "name": "battlesbudz",
+      "email": "battlesbudz@gmail.com",
+      "date": "2026-10-02T22:19:48Z"
+    },
+    "committer": {
+      "name": "battlesbudz",
+      "email": "battlesbudz@gmail.com",
+      "date": "2026-10-02T22:19:48Z"
+    },
+    "tree": {
+      "sha": "d1bbd1a6eadf286b2970d81f199e8228fc6d5362",
+      "url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/git/trees/d1bbd1a6eadf286b2970d81f199e8228fc6d5362"
+    },
+    "message": "Repair diagnostic full-source proof and immutable summary lineage",
+    "parents": [
+      {
+        "sha": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+        "url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/git/commits/cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+        "html_url": "https://github.com/battlesbudz/Jarvis-OS-V2/commit/cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de"
+      }
+    ],
+    "verification": {
+      "verified": false,
+      "reason": "unsigned",
+      "signature": null,
+      "payload": null,
+      "verified_at": null
+    }
+  },
+  "manifest": {
+    "base": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+    "elements": [
+      {
+        "mode": "100644",
+        "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+        "sha": "0b205acced787acb0c8ea291305b01ef56aa8825",
+        "type": "blob"
+      },
+      {
+        "mode": "100644",
+        "path": "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+        "sha": "3a624ebc42171802849e990995829cf5fb593465",
+        "type": "blob"
+      },
+      {
+        "mode": "100644",
+        "path": "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+        "sha": "c8bd5a62315cad0b69d47e4fb75c633e3f3c1cc0",
+        "type": "blob"
+      },
+      {
+        "mode": "100644",
+        "path": "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+        "sha": "84697595dbdb3cad7b6bba94276b879096e55ebb",
+        "type": "blob"
+      },
+      {
+        "mode": "100644",
+        "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+        "sha": "8fc6468748d9943fe2a3aa656beeaa196d34fc1e",
+        "type": "blob"
+      },
+      {
+        "mode": "100644",
+        "path": "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+        "sha": "774e1b76df6b677792d97378e62ee652f2d596f6",
+        "type": "blob"
+      },
+      {
+        "mode": "100644",
+        "path": "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+        "sha": "8f35e0df55f9cbbb482204f503c4b97d9be23ff6",
+        "type": "blob"
+      },
+      {
+        "mode": "100644",
+        "path": "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+        "sha": "fee6c9e49cf97e9e9e7269a2d18bd3a4d21ace7e",
+        "type": "blob"
+      },
+      {
+        "mode": "100644",
+        "path": "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+        "sha": "3127d13f8f52fd75c53a5b37b28ecb38ba831334",
+        "type": "blob"
+      },
+      {
+        "mode": "100644",
+        "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+        "sha": "0e02fa4df008be9ee27b6a056fdcfd8aa9ead1b9",
+        "type": "blob"
+      },
+      {
+        "mode": "100644",
+        "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+        "sha": "f846008868b77ed765064e1f912265ecb4b4a5bb",
+        "type": "blob"
+      },
+      {
+        "mode": "100644",
+        "path": "docs/memory-os-native.md",
+        "sha": "f7010e672a5b744a774d603326e77196340b0270",
+        "type": "blob"
+      },
+      {
+        "mode": "100644",
+        "path": "docs/verification/features.md",
+        "sha": "67b15c159ce303b0083adf572f7916e120a8ee32",
+        "type": "blob"
+      },
+      {
+        "mode": "100644",
+        "path": "scripts/verification/scenarios.json",
+        "sha": "e4607a6ab80fd0304987fe994b0e2b1a74d66dca",
+        "type": "blob"
+      }
+    ],
+    "local_head": "f85cae2b264b19dac595519b14bd03023fa9928f",
+    "local_tree": "d1bbd1a6eadf286b2970d81f199e8228fc6d5362"
+  }
+}
