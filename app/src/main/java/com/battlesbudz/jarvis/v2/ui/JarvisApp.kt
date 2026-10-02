@@ -1,23 +1,17 @@
 package com.battlesbudz.jarvis.v2.ui
 
-import com.battlesbudz.jarvis.v2.*
+import com.battlesbudz.jarvis.v2.ChatEntry
+import com.battlesbudz.jarvis.v2.JarvisRuntime
 import com.battlesbudz.jarvis.v2.voice.VoiceCallRecord
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Box
-import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,18 +19,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import com.battlesbudz.jarvis.v2.ai.ModelCatalog
 import com.battlesbudz.jarvis.v2.ai.ModelStore
 import com.battlesbudz.jarvis.v2.memory.AndroidMemoryOs
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.collect
-import androidx.compose.foundation.lazy.items
-
 
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
@@ -69,25 +57,11 @@ fun JarvisApp(
     phoneTaskError: kotlinx.coroutines.flow.StateFlow<String?>? = null,
     onPhoneTaskAction: (String, Long, String) -> Unit = { _, _, _ -> },
 ) {
-    var selectedModel by remember { mutableStateOf(store.selectedModel()) }
-    var selectionError by remember { mutableStateOf<String?>(null) }
+    val setup = rememberModelSetupState(store, ModelSetupActions(
+        select = onSelectModel, delete = onDeleteModel, test = onRunModelSmokeTest,
+        download = onDownloadGemma, cancelDownload = onCancelModelDownload, importModel = onImportModel,
+    ))
     var pickerModelId by rememberSaveable { mutableStateOf<String?>(null) }
-    val gemmaReady = store.hasModel(selectedModel)
-    var modelsReady by remember { mutableStateOf(store.isUsable()) }
-    var smokeTestPassed by rememberSaveable { mutableStateOf(store.isUsable() && store.smokeTestPassed()) }
-    var setupStatus by rememberSaveable { mutableStateOf(
-        if (store.smokeTestAttempted() && !store.smokeTestPassed())
-            "The last model test did not pass or was interrupted. Retry the test or select another model."
-        else "") }
-    var smokeTestRunning by remember { mutableStateOf(false) }
-    var modelImportRunning by remember { mutableStateOf(store.importInProgress()) }
-    var modelDownloadRunning by remember { mutableStateOf(false) }
-    var downloadingModelId by remember { mutableStateOf<String?>(null) }
-    var downloadNotice by remember { mutableStateOf("") }
-    var automaticSmokeTestAttempted by remember { mutableStateOf(false) }
-    var downloadBytes by remember { mutableStateOf(0L) }
-    var downloadTotalBytes by remember { mutableStateOf(-1L) }
-    var setupElapsedSeconds by remember { mutableStateOf(0L) }
     var showingVoiceCalls by rememberSaveable { mutableStateOf(false) }
     var showingMemory by rememberSaveable { mutableStateOf(false) }
     var memoryReturnToVoice by rememberSaveable { mutableStateOf(false) }
@@ -96,300 +70,90 @@ fun JarvisApp(
     var selectedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
     var resumedVoiceCall by remember { mutableStateOf<VoiceCallRecord?>(null) }
 
-    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val phoneContext = androidx.compose.ui.platform.LocalContext.current
     val memoryOs = remember(phoneContext.applicationContext) { AndroidMemoryOs.get(phoneContext.applicationContext) }
     val activeVoiceCall by com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.armed.collectAsState()
     val activeVoiceStatus by com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.status.collectAsState()
-    var phone by remember { mutableStateOf(com.battlesbudz.jarvis.v2.ai.PhoneCheck.read(phoneContext)) }
-    val downloadModel: (com.battlesbudz.jarvis.v2.ai.LocalModelSpec) -> Unit = { spec ->
-        downloadBytes = 0L
-        downloadTotalBytes = -1L
-        downloadNotice = "Preparing ${spec.id}…"
-        onDownloadGemma(spec, { bytes, total ->
-            downloadBytes = bytes
-            downloadTotalBytes = total
-        }, { message ->
-            downloadNotice = message
-            if (spec.id == selectedModel.id) setupStatus = message
-        }, { result ->
-            downloadNotice = result
-            if (spec.id == selectedModel.id) setupStatus = result
-            modelsReady = store.isUsable()
-            smokeTestPassed = modelsReady && store.smokeTestPassed()
-        })
-    }
     val modelSelector: @Composable (Boolean) -> Unit = { enabled ->
-        Column {
-            Text("AI model", style = MaterialTheme.typography.titleMedium)
-            var expanded by remember { mutableStateOf(false) }
-            var confirmingDelete by remember { mutableStateOf(false) }
-            var detailsOpen by remember(selectedModel.id) { mutableStateOf(false) }
-            var storageRevision by remember { mutableStateOf(0) }
-            val canBrowse = !modelImportRunning
-            val canManage = enabled && !smokeTestRunning && !modelImportRunning
-            val storedBytes = remember(selectedModel, storageRevision, modelImportRunning, modelDownloadRunning) {
-                store.storedBytes(selectedModel)
-            }
-            LaunchedEffect(canBrowse, canManage) {
-                if (!canBrowse) expanded = false
-                if (!canManage) confirmingDelete = false
-            }
-            OutlinedButton(
-                enabled = canBrowse,
-                onClick = { phone = com.battlesbudz.jarvis.v2.ai.PhoneCheck.read(phoneContext); expanded = true },
-                modifier = Modifier.fillMaxWidth().testTag("model_browse")
-            ) { Text("Browse model families · ${com.battlesbudz.jarvis.v2.ai.ModelGuide.family(selectedModel)}") }
-            Text(selectedModel.id, style = MaterialTheme.typography.titleSmall)
-            ModelCompatibilityLabel(selectedModel)
-            if (expanded && canBrowse) ModelBrowser(
-                phone = phone, selectedId = selectedModel.id,
-                isInstalled = { store.hasModel(it) },
-                selectionEnabled = canManage,
-                downloadingId = downloadingModelId,
-                onDownload = downloadModel,
-                onDismiss = { expanded = false },
-                onSelect = { spec ->
-                    selectionError = onSelectModel(spec)
-                    if (selectionError == null) {
-                        selectedModel = store.selectedModel()
-                        modelsReady = store.isUsable()
-                        smokeTestPassed = store.isUsable() && store.smokeTestPassed()
-                        automaticSmokeTestAttempted = false
-                        setupStatus = "Selected ${selectedModel.id}."
-                    }
-                    selectionError
-                }
-            )
-            Text(if (store.hasModel(selectedModel)) "Installed" else "Not installed")
-            if (downloadingModelId != null) {
-                Text("Downloading $downloadingModelId", style = MaterialTheme.typography.bodySmall)
-                Text(downloadNotice, style = MaterialTheme.typography.bodySmall, maxLines = 2)
-                if (downloadTotalBytes > 0L) androidx.compose.material3.LinearProgressIndicator(
-                    progress = { (downloadBytes.toFloat() / downloadTotalBytes).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth())
-                androidx.compose.material3.TextButton(onClick = onCancelModelDownload,
-                    modifier = Modifier.testTag("model_cancel_download")) { Text("Cancel download") }
-            } else if (downloadNotice.isNotBlank()) Text(downloadNotice, style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(
-                enabled = !modelImportRunning,
-                onClick = { showingMemory = true },
-                modifier = Modifier.fillMaxWidth().testTag("memory_open")
-            ) { Text("Memory") }
-            if (storedBytes > 0L) {
-                OutlinedButton(enabled = canManage && !modelDownloadRunning, onClick = { confirmingDelete = true }) {
-                    Text("Delete model & cache · %.2f GB".format(java.util.Locale.US, storedBytes / 1_000_000_000.0))
-                }
-            }
-            if (confirmingDelete && canManage) {
-                androidx.compose.material3.AlertDialog(
-                    onDismissRequest = { confirmingDelete = false },
-                    title = { Text("Delete ${selectedModel.id}?") },
-                    text = { Text("Remove this model and its cache from Jarvis to free phone storage. You can download it again later. Any original file in Downloads stays there.") },
-                    confirmButton = {
-                        androidx.compose.material3.TextButton(onClick = {
-                            confirmingDelete = false
-                            selectionError = onDeleteModel(selectedModel)
-                            storageRevision++
-                            modelsReady = store.isUsable()
-                            smokeTestPassed = modelsReady && store.smokeTestPassed()
-                            automaticSmokeTestAttempted = false
-                            if (selectionError == null) setupStatus = "${selectedModel.id} deleted. Choose an installed model or download one."
-                        }) { Text("Delete") }
-                    },
-                    dismissButton = {
-                        androidx.compose.material3.TextButton(onClick = { confirmingDelete = false }) { Text("Cancel") }
-                    }
-                )
-            }
-            if (selectedModel.requiresAccess) {
-                Text("Publisher approval required. Accept the model terms in your browser, download its file, then use Import below.",
-                    style = MaterialTheme.typography.bodySmall)
-                androidx.compose.material3.TextButton(onClick = {
-                    selectedModel.downloadUrl?.substringBefore("/resolve/")?.let { url ->
-                        runCatching { uriHandler.openUri(url) }.onFailure { selectionError = "Could not open the publisher page." }
-                    }
-                }) { Text("Open publisher page") }
-            }
-            Text(com.battlesbudz.jarvis.v2.ai.ModelGuide.quickUse(selectedModel), style = MaterialTheme.typography.bodyMedium)
-            Text(com.battlesbudz.jarvis.v2.ai.ModelGuide.inputsLabel(selectedModel), style = MaterialTheme.typography.labelSmall)
-            com.battlesbudz.jarvis.v2.ai.ModelGuide.visibleLimitation(selectedModel)?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall)
-            }
-            if (!store.hasModel(selectedModel)) selectedModel.downloadBytes?.let {
-                Text("Download: ${com.battlesbudz.jarvis.v2.ai.ModelGuidance.gb(it)}", style = MaterialTheme.typography.bodySmall)
-            }
-            com.battlesbudz.jarvis.v2.ai.ModelGuidance.storageNotice(selectedModel, phone, store.hasModel(selectedModel))?.let {
-                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            }
-            androidx.compose.material3.TextButton(onClick = { detailsOpen = true }, modifier = Modifier.testTag("selected_model_details")) {
-                Text("Model details")
-            }
-            if (detailsOpen) ModelDetails(selectedModel, phone) { detailsOpen = false }
-            selectionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        }
-    }
-
-    val setupContext = androidx.compose.ui.platform.LocalContext.current
-    LaunchedEffect(selectedModel.id) {
-        // Upgrades/restored files can outlive their verification metadata.
-        // Recover the existing file off the UI thread before offering download.
-        if (store.hasModel(selectedModel) && !store.isUsable(selectedModel)) {
-            val recovered = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                if (!store.tryBeginModelOperation()) return@withContext null
-                try { store.verifyIntegrity(selectedModel) } finally { store.endModelOperation() }
-            }
-            modelsReady = store.isUsable(selectedModel)
-            if (recovered == false) setupStatus = "The installed model did not pass verification. Re-import it or delete it before downloading a replacement."
-        }
-    }
-    LaunchedEffect(selectedModel.id) {
-        androidx.work.WorkManager.getInstance(setupContext)
-            .getWorkInfosForUniqueWorkFlow("jarvis-local-model-setup").collect { infos ->
-                val active = infos.firstOrNull { !it.state.isFinished }
-                downloadingModelId = active?.progress?.getString("model_id")
-                    ?: active?.tags?.firstOrNull { it.startsWith("model:") }?.removePrefix("model:")
-                    ?: if (active != null) selectedModel.id else null
-                modelDownloadRunning = active != null && downloadingModelId == selectedModel.id
-                if (active != null) {
-                    active.progress.getString("stage")?.let {
-                        downloadNotice = it
-                        if (modelDownloadRunning) setupStatus = it
-                    }
-                    downloadBytes = active.progress.getLong("downloaded", 0L)
-                    downloadTotalBytes = active.progress.getLong("total", -1L)
-                }
-            }
-    }
-
-    LaunchedEffect(modelDownloadRunning) {
-        if (!modelDownloadRunning) {
-            setupElapsedSeconds = 0L
-            return@LaunchedEffect
-        }
-        val startedAt = System.currentTimeMillis()
-        while (true) {
-            setupElapsedSeconds = (System.currentTimeMillis() - startedAt) / 1_000L
-            delay(1_000L)
-        }
-    }
-
-    // An import can finish after the previous Activity is destroyed during
-    // rotation/fold changes. Keep the replacement screen synchronized with
-    // the durable files even when the old callback was cancelled.
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(500)
-            modelsReady = store.isUsable()
-            modelImportRunning = store.importInProgress()
-            smokeTestPassed = modelsReady && store.smokeTestPassed()
-        }
-    }
-
-    LaunchedEffect(modelsReady, smokeTestPassed, modelDownloadRunning, smokeTestRunning) {
-        if (!modelsReady) automaticSmokeTestAttempted = false
-        if (modelsReady && !smokeTestPassed && !modelDownloadRunning &&
-            !smokeTestRunning && !automaticSmokeTestAttempted && !store.smokeTestAttempted()
-        ) {
-            automaticSmokeTestAttempted = true
-            smokeTestRunning = true
-            onRunModelSmokeTest { result ->
-                smokeTestRunning = false
-                setupStatus = result
-                smokeTestPassed = store.isUsable() && store.smokeTestPassed()
-            }
-        }
-    }
-
-    val importModel: (Uri?, com.battlesbudz.jarvis.v2.ai.LocalModelSpec) -> Unit = { uri, spec ->
-        if (uri != null) {
-            modelImportRunning = true
-            setupStatus = "Importing local model…"
-            onImportModel(uri, spec) { result ->
-                modelImportRunning = false
-                setupStatus = result
-                if (result == "Model imported successfully.") {
-                    modelsReady = store.isUsable()
-                    setupStatus = "${selectedModel.id} imported. Test it to start chatting."
-                }
-            }
-        }
+        ModelSelectionSection(setup, enabled, onOpenMemory = { showingMemory = true })
     }
     val gemmaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        importModel(uri, ModelCatalog.resolve(pickerModelId))
+        setup.importModel(uri, ModelCatalog.resolve(pickerModelId))
     }
 
     MaterialTheme(
         colorScheme = darkColorScheme()
     ) {
         Surface(modifier = Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
-            if (modelsReady && smokeTestPassed) {
+            if (setup.modelsReady && setup.smokeTestPassed) {
                 Box(Modifier.fillMaxSize()) {
                     Box(Modifier.fillMaxSize().then(if (showingMemory) Modifier.clearAndSetSemantics { } else Modifier)) {
-                    when {
-                    selectedVoiceCall != null -> {
-                        val selected = requireNotNull(selectedVoiceCall)
-                        VoiceCallDetailScreen(
-                            call = selected,
-                            onBack = { selectedVoiceCall = null },
-                            onContinueChat = {
-                                conversationHistory.openCall(selected)
-                                onSelectConversation(conversationHistory.current.value.id)
-                                selectedVoiceCall = null
-                                showingVoiceCalls = false
-                            },
-                            onResume = { done ->
-                                onResumeVoiceCall(selected) { error ->
-                                    done(error)
-                                    if (error == null) {
-                                        resumedVoiceCall = selected
+                        when {
+                            selectedVoiceCall != null -> {
+                                val selected = requireNotNull(selectedVoiceCall)
+                                VoiceCallDetailScreen(
+                                    call = selected,
+                                    onBack = { selectedVoiceCall = null },
+                                    onContinueChat = {
+                                        conversationHistory.openCall(selected)
+                                        onSelectConversation(conversationHistory.current.value.id)
                                         selectedVoiceCall = null
                                         showingVoiceCalls = false
+                                    },
+                                    onResume = { done ->
+                                        onResumeVoiceCall(selected) { error ->
+                                            done(error)
+                                            if (error == null) {
+                                                resumedVoiceCall = selected
+                                                selectedVoiceCall = null
+                                                showingVoiceCalls = false
+                                            }
+                                        }
                                     }
-                                }
+                                )
                             }
-                        )
-                    }
-                    showingVoiceCalls -> VoiceCallsScreen(
-                        calls = voiceCalls,
-                        onBack = { showingVoiceCalls = false },
-                        onSelect = { selectedVoiceCall = it },
-                        onDelete = {
-                            onDeleteVoiceCall(it)
-                            voiceCalls = onRefreshVoiceCalls()
+                            showingVoiceCalls -> VoiceCallsScreen(
+                                calls = voiceCalls,
+                                onBack = { showingVoiceCalls = false },
+                                onSelect = { selectedVoiceCall = it },
+                                onDelete = {
+                                    onDeleteVoiceCall(it)
+                                    voiceCalls = onRefreshVoiceCalls()
+                                }
+                            )
+                            else -> ConversationScreen(
+                                history = conversationHistory, busy = chatBusy, callState = callState, onSend = onSendChat,
+                                phoneTasks = phoneTasks, phoneTaskError = phoneTaskError, onPhoneTaskAction = onPhoneTaskAction,
+                                selectedModel = setup.selectedModel,
+                                onSelectConversation = onSelectConversation, onEndVoice = onEndVoiceCall,
+                                onOpenVoiceCalls = {
+                                    voiceCalls = onRefreshVoiceCalls()
+                                    showingVoiceCalls = true
+                                },
+                                resumedVoice = resumedVoiceCall != null,
+                                onOpenMemory = { showingMemory = true },
+                                forceVoiceDestination = memoryReturnToVoice,
+                                onForceVoiceConsumed = { memoryReturnToVoice = false },
+                                forceChatDestination = memoryReturnToChat,
+                                onForceChatConsumed = { memoryReturnToChat = false },
+                                pipelineBenchmarkStore = JarvisRuntime.get(phoneContext.applicationContext).pipelineBenchmarkStore
+                            ) { visible, settingsOpen, dismissSettings, startRequest ->
+                                VoiceCallScreen(
+                                    visible = visible, settingsOpen = settingsOpen, memoryOpen = showingMemory,
+                                    onDismissSettings = dismissSettings, startRequest = startRequest,
+                                    chatBusy = chatBusy, modelSelector = modelSelector,
+                                    resumedCall = resumedVoiceCall,
+                                    onResumeConsumed = { resumedVoiceCall = null },
+                                    voicePlayback = voicePlayback,
+                                    onVoiceTurn = onVoiceTurn,
+                                    onWakeTest = onWakeTest,
+                                    onStopWakeTest = onStopWakeTest,
+                                    onEndVoiceCall = onEndVoiceCall,
+                                    onCopyDiagnostics = onCopyDiagnostics,
+                                    onExportSpeechAudio = onExportSpeechAudio
+                                )
+                            }
                         }
-                    )
-                    else -> ConversationScreen(
-                        history = conversationHistory, busy = chatBusy, callState = callState, onSend = onSendChat,
-                        phoneTasks = phoneTasks, phoneTaskError = phoneTaskError, onPhoneTaskAction = onPhoneTaskAction,
-                        selectedModel = selectedModel,
-                        onSelectConversation = onSelectConversation, onEndVoice = onEndVoiceCall,
-                        onOpenVoiceCalls = {
-                            voiceCalls = onRefreshVoiceCalls()
-                            showingVoiceCalls = true
-                        },
-                        resumedVoice = resumedVoiceCall != null,
-                        onOpenMemory = { showingMemory = true },
-                        forceVoiceDestination = memoryReturnToVoice,
-                        onForceVoiceConsumed = { memoryReturnToVoice = false },
-                        forceChatDestination = memoryReturnToChat,
-                        onForceChatConsumed = { memoryReturnToChat = false },
-                        pipelineBenchmarkStore = JarvisRuntime.get(phoneContext.applicationContext).pipelineBenchmarkStore
-                    ) { visible, settingsOpen, dismissSettings, startRequest -> VoiceCallScreen(
-                        visible = visible, settingsOpen = settingsOpen, memoryOpen = showingMemory,
-                        onDismissSettings = dismissSettings, startRequest = startRequest,
-                        chatBusy = chatBusy, modelSelector = modelSelector,
-                        resumedCall = resumedVoiceCall,
-                        onResumeConsumed = { resumedVoiceCall = null },
-                        voicePlayback = voicePlayback,
-                        onVoiceTurn = onVoiceTurn,
-                        onWakeTest = onWakeTest,
-                        onStopWakeTest = onStopWakeTest,
-                        onEndVoiceCall = onEndVoiceCall,
-                        onCopyDiagnostics = onCopyDiagnostics,
-                        onExportSpeechAudio = onExportSpeechAudio
-                    ) }
-                    }
                     }
                     // Keep the conversation and voice controller composed beneath this review surface.
                     if (showingMemory) MemoryScreen(
@@ -415,28 +179,19 @@ fun JarvisApp(
             } else {
                 ModelSetup(
                     modelSelector = modelSelector,
-                    ready = gemmaReady,
-                    gemmaReady = gemmaReady,
-                    downloadAvailable = !selectedModel.requiresAccess,
-                    testing = smokeTestRunning,
-                    importing = modelImportRunning,
-                    downloading = modelDownloadRunning,
-                    downloadBytes = downloadBytes,
-                    downloadTotalBytes = downloadTotalBytes,
-                    status = setupStatus,
-                    elapsedSeconds = setupElapsedSeconds,
-                    onDownload = { downloadModel(selectedModel) },
-                    onPickGemma = { pickerModelId = selectedModel.id; gemmaPicker.launch(arrayOf("*/*")) },
-                    onTest = {
-                        smokeTestRunning = true
-                        onRunModelSmokeTest.invoke { result ->
-                            smokeTestRunning = false
-                            setupStatus = result
-                            if (store.isUsable() && store.smokeTestPassed()) {
-                                smokeTestPassed = true
-                            }
-                        }
-                    }
+                    ready = setup.modelInstalled,
+                    gemmaReady = setup.modelInstalled,
+                    downloadAvailable = !setup.selectedModel.requiresAccess,
+                    testing = setup.smokeTestRunning,
+                    importing = setup.modelImportRunning,
+                    downloading = setup.modelDownloadRunning,
+                    downloadBytes = setup.downloadBytes,
+                    downloadTotalBytes = setup.downloadTotalBytes,
+                    status = setup.setupStatus,
+                    elapsedSeconds = setup.setupElapsedSeconds,
+                    onDownload = { setup.download(setup.selectedModel) },
+                    onPickGemma = { pickerModelId = setup.selectedModel.id; gemmaPicker.launch(arrayOf("*/*")) },
+                    onTest = setup::test
                 )
             }
         }

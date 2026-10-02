@@ -1,7 +1,5 @@
 package com.battlesbudz.jarvis.v2.voice
 
-import android.media.AudioAttributes
-import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Build
 import com.k2fsa.sherpa.onnx.GenerationConfig
@@ -34,6 +32,7 @@ class PiperVoiceOutput internal constructor(
     private val log: (String) -> Unit = {}
 ) : VoiceOutput {
     private val numThreads = 4
+    private val audioTrackFactory = SpeechAudioTrackFactory(log)
     private val evidenceStream = LiveCallAudioEvidence.newStream("answer")
     @Volatile private var stopped = false
     @Volatile private var audioTrack: AudioTrack? = null
@@ -117,7 +116,6 @@ class PiperVoiceOutput internal constructor(
         currentCoroutineContext().ensureActive()
     }
 
-    private class FillerSuperseded : RuntimeException()
     private data class SynthesizedPhrase(
         val index: Int,
         val text: String,
@@ -221,45 +219,14 @@ class PiperVoiceOutput internal constructor(
                 log("tts_engine_preload_finished loadMs=$loadMs reused=${engineLease?.reused == true}")
                 val generation = GenerationConfig(silenceScale = 1f, sid = speakerId)
                 onReady()
-                fun synthesize(text: String, optionalFiller: Boolean = false): SpeechAudio {
-                    owner.ensureActive()
-                    val started = System.nanoTime()
-                    log("tts_generation_started chars=${text.length} preview=${text.take(80)} api=generateWithConfig")
-                    val generated = if (optionalFiller) {
-                        // Stable Java callback; no PCM is played or cached until this preparation completes.
-                        val callback = SherpaPcmCallback {
-                            if (stopped || !owner.isActive || firstTextAt.get() != 0L) 0 else 1
-                        }
-                        val result = tts.generateWithConfigAndCallback(text, generation, callback)
-                        callback.failure?.let { throw it }
-                        owner.ensureActive()
-                        if (stopped || firstTextAt.get() != 0L) throw FillerSuperseded()
-                        result
-                    } else tts.generateWithConfig(text, generation)
-                    owner.ensureActive()
-                    val rate = generated.sampleRate
-                    check(rate > 0) { "Voice model returned an invalid sample rate." }
-                    check(generated.samples.all { it.isFinite() }) { "Voice model returned non-finite PCM." }
-                    val pcm = ShortArray(generated.samples.size) { i ->
-                        (generated.samples[i].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
-                    }
-                    val peak = generated.samples.maxOfOrNull { kotlin.math.abs(it) } ?: 0f
-                    val rms = kotlin.math.sqrt(generated.samples.sumOf { it.toDouble() * it } /
-                        generated.samples.size.coerceAtLeast(1))
-                    val nonFinite = generated.samples.count { !it.isFinite() }
-                    val clipped = generated.samples.count { kotlin.math.abs(it) >= 1f }
-                    val leading = pcm.indexOfFirst { kotlin.math.abs(it.toInt()) >= 64 }.let { if (it < 0) pcm.size else it }
-                    val trailing = pcm.indexOfLast { kotlin.math.abs(it.toInt()) >= 64 }.let { pcm.size - it - 1 }
-                    log("tts_pcm_level rms=$rms peak=$peak frames=${pcm.size} nonFinite=$nonFinite clipped=$clipped " +
-                        "leadingSilenceMs=${leading * 1000L / rate} trailingSilenceMs=${trailing * 1000L / rate}")
-                    return SpeechAudio(text, rate, pcm, elapsedMs(started))
-                }
+                val synthesizer = PiperSpeechSynthesizer(tts, generation, owner,
+                    stopped = { stopped }, answerTextReady = { firstTextAt.get() != 0L }, log = log)
                 fun prepareAcknowledgement(text: String) {
                     try {
                         val key = fillerCacheKey(text)
                         val cached = acknowledgementCache[key] ?: run {
                             log("acknowledgement_cache_preparing text=$text")
-                            FillerPcm.prepare(synthesize(text, optionalFiller = true))
+                            FillerPcm.prepare(synthesizer.synthesize(text, optionalFiller = true))
                         }.also {
                             check(it.sampleRate > 0 && it.pcm.size in 1..it.sampleRate * 4) {
                                 "Generated filler exceeded its four-second duration budget."
@@ -271,7 +238,7 @@ class PiperVoiceOutput internal constructor(
                         acknowledgement.prepare(cached)
                         runCatching { fillerDiskCache.write(key, cached) }
                             .onFailure { log("acknowledgement_cache_persist_failed reason=${it.message}") }
-                    } catch (_: FillerSuperseded) {
+                    } catch (_: PiperSpeechSynthesizer.FillerSuperseded) {
                         log("acknowledgement_preparation_yielded reason=answer_text_ready partial_not_cached=true")
                     } catch (cancelled: CancellationException) { throw cancelled }
                     catch (error: Exception) {
@@ -288,7 +255,7 @@ class PiperVoiceOutput internal constructor(
                         log("piper_passage_submit index=$index chars=${text.length} nativeMaxNumSentences=0")
                         if (index == 0) log("piper_opening_wait_ms=${firstTextAt.get().takeIf { it != 0L }?.let(::elapsedMs)} chars=${text.length}")
                     }
-                    val result = synthesize(text)
+                    val result = synthesizer.synthesize(text)
                     if (stopped) return
                     val phraseIndex = index++
                     if (phraseIndex == 0) {
@@ -424,7 +391,7 @@ class PiperVoiceOutput internal constructor(
                     }
                     awaitPlaybackPermission()
                     if (stopped) break
-                    val track = audioTrack ?: createTrack(phrase.sampleRate, phrase.pcm.size).also {
+                    val track = audioTrack ?: audioTrackFactory.create(phrase.sampleRate, phrase.pcm.size).also {
                         synchronized(playbackLock) { audioTrack = it }
                         // Native sample-rate playback: no time stretching or experimental pace.
                         synchronized(playbackLock) { if (!interrupted && !stopped) it.play() }
@@ -560,7 +527,7 @@ class PiperVoiceOutput internal constructor(
             val outputRoute = audioTrack?.routedDevice?.let { "type=${it.type} id=${it.id}" }
             finalUnderruns = audioTrack?.underrunCount ?: finalUnderruns
             synchronized(playbackLock) {
-                audioTrack?.stopSafely()
+                audioTrack?.let(audioTrackFactory::releaseAfterWriterStops)
                 audioTrack = null
             }
             withContext(NonCancellable) { collectTokens.cancelAndJoin(); producer.cancelAndJoin() }
@@ -615,52 +582,4 @@ class PiperVoiceOutput internal constructor(
         return drained
     }
 
-    private fun createTrack(sampleRate: Int, firstPhraseFrames: Int): AudioTrack {
-        log("audio_track_create sampleRate=$sampleRate usage=${CallAudioRouting.usage}")
-        val minBuffer = AudioTrack.getMinBufferSize(
-            sampleRate,
-            AudioFormat.CHANNEL_OUT_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
-        )
-        // Two seconds of device buffering complements the bounded PCM queue.
-        // It absorbs scheduling jitter, but cannot compensate for sustained slow synthesis.
-        val bufferSize = maxOf(minBuffer, sampleRate * 2 * 2)
-        log("audio_track_buffer minBytes=$minBuffer selectedBytes=$bufferSize bufferMs=${bufferSize * 1_000L / (sampleRate * 2)}")
-        return AudioTrack.Builder()
-            .setAudioAttributes(
-                    AudioAttributes.Builder()
-                    .setUsage(CallAudioRouting.usage)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setSampleRate(sampleRate)
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build()
-            )
-            .setBufferSizeInBytes(bufferSize)
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .build().also { track ->
-                check(track.state == AudioTrack.STATE_INITIALIZED) {
-                    "AudioTrack could not initialize for Piper output."
-                }
-                if (Build.VERSION.SDK_INT >= 31) {
-                    val requested = PlaybackDrain.startThreshold(sampleRate, firstPhraseFrames)
-                    val actual = track.setStartThresholdInFrames(requested)
-                    log("audio_start_threshold requestedFrames=$requested actualFrames=$actual capacityFrames=${track.bufferCapacityInFrames}")
-                } else {
-                    log("audio_start_threshold legacy=true capacityFrames=${track.bufferCapacityInFrames}")
-                }
-                track.setVolume(1.0f)
-                log("audio_track_ready state=${track.state} sampleRate=$sampleRate buffer=$bufferSize")
-            }
-    }
-
-    private fun AudioTrack.stopSafely() {
-        runCatching { pause() }
-        runCatching { flush() }
-        runCatching { release() }
-    }
 }
