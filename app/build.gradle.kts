@@ -126,3 +126,12 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }
+
+// Build 880's cold compiler report attributes 2,004.688 s to the JVM backend;
+// GC used only 24.193 s. Avoid the optional Kotlin bytecode optimizer on the
+// very large voice coroutine. R8 release optimization/minification stays on.
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    if (name == "compileReleaseKotlin") {
+        compilerOptions.freeCompilerArgs.add("-Xno-optimize")
+    }
+}

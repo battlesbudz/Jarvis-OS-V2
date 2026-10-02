@@ -13,9 +13,18 @@ mkdir -p "$diagnostics"
 vmstat -w 5 > "$diagnostics/vmstat.txt" &
 vmstat_pid=$!
 (
+  sample=0
   while true; do
     date -u
     ps -C java -o pid,pcpu,pmem,rss,etime,comm || true
+    # Capture the compiler's actual busy stack if a future compile stalls.
+    if (( sample % 6 == 0 )) && command -v jps >/dev/null && command -v jcmd >/dev/null; then
+      while read -r compiler_pid; do
+        timeout 10s jcmd "$compiler_pid" Thread.print > "$diagnostics/kotlin-threads-$compiler_pid-$sample.txt" 2>&1 || true
+        timeout 10s jcmd "$compiler_pid" GC.heap_info > "$diagnostics/kotlin-heap-$compiler_pid-$sample.txt" 2>&1 || true
+      done < <(jps -l | awk '/org.jetbrains.kotlin.daemon.KotlinCompileDaemon/ {print $1}')
+    fi
+    sample=$((sample + 1))
     sleep 30
   done
 ) > "$diagnostics/java-processes.txt" &

@@ -29,6 +29,20 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Restore Kotlin incremental compilation state
+        uses: actions/cache@v4
+        with:
+          # No APKs, test reports, signing material or configuration cache.
+          path: |
+            .gradle/8.10.2/executionHistory/
+            .gradle/kotlin/
+            app/build/kotlin/compileReleaseKotlin/
+            app/build/tmp/kotlin-classes/release/
+            app/build/intermediates/javac/release/
+          key: kotlin-incremental-v1-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-${{ hashFiles('gradle.properties', 'build.gradle.kts', 'app/build.gradle.kts', 'settings.gradle.kts') }}-${{ github.sha }}
+          restore-keys: |
+            kotlin-incremental-v1-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-${{ hashFiles('gradle.properties', 'build.gradle.kts', 'app/build.gradle.kts', 'settings.gradle.kts') }}-
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
