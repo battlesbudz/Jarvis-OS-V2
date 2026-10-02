@@ -1,19 +1,19 @@
 {
   "actual_usage": null,
-  "note": "All unknown consumed coding/review reservations retained; native289000 remains suballocation.",
+  "note": "Second review12000 charged; all earlier estimates retained. Native289000 remains original300000 suballocation.",
   "original_deadline": 1791010800.0,
   "original_scope": "7c0594eb67cc49e39dad6d80d726e395",
   "status": {
-    "active_reservations": 0,
+    "active_reservations": 1,
     "actual_total_tokens": null,
     "billing_note": "Local estimates and admission limits; actual native billing is unavailable.",
     "cost": null,
     "deadline_exhausted": false,
-    "dispatches": 5,
+    "dispatches": 6,
     "measured_ticket_count": 0,
     "measured_tokens": 0,
     "model_effort_counts": {
-      "gpt-6-astra/high": 3,
+      "gpt-6-astra/high": 4,
       "gpt-6.1-sol/high": 2
     },
     "outcomes": {
@@ -22,8 +22,8 @@
     },
     "overrun": false,
     "pro_remaining_allowance": null,
-    "remaining_admission_tokens": 241000,
-    "reserved_tokens": 0,
+    "remaining_admission_tokens": 229000,
+    "reserved_tokens": 12000,
     "retained_unknown_reservation_tokens": 59000,
     "schema": 1,
     "scope_hash": "f6ac0b3f7ce87afbef7d4ba045ce5a2b2e3a073631c7850c11c7234c70d4e4d0",
@@ -212,10 +212,39 @@
           "task_kind": "implementation"
         },
         "usage": null
+      },
+      {
+        "actor_id": "/root/jarvis_privacy_review",
+        "completed_at": null,
+        "completed_hash": null,
+        "created_at": 1790979623.4235888,
+        "id": "670d971f4e2948699d7751deafa3f204",
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6-astra",
+          "reason": "review policy",
+          "reasoning_effort": "high"
+        },
+        "observed_effort": "high",
+        "observed_model": "gpt-6-astra",
+        "operation": "review:f35cf4d78fbd44b59e9670bc749ba15b",
+        "outcome": null,
+        "receipt_id": null,
+        "request_hash": "17c9b4dbc9d86b6b0388695e05de2cff9e2415e3c49ea497985f091962139908",
+        "request_key": "privacy-review-2",
+        "reserved_tokens": 12000,
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "state": "bound",
+        "task": {
+          "allowed_paths": [],
+          "complexity": "routine",
+          "task_kind": "review"
+        },
+        "usage": null
       }
     ],
     "token_budget_exhausted": false,
-    "total_commitment_tokens": 59000,
+    "total_commitment_tokens": 71000,
     "usage_complete": false
   }
 }
