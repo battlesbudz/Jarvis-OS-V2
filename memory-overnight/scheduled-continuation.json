@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "created_and_enabled_confirmed": true,
+  "schedule": "BEGIN:VEVENT\nDTSTART;TZID=America/New_York:20261002T180000\nRRULE:FREQ=HOURLY;COUNT=10\nEND:VEVENT",
+  "final_return_local": "2026-10-03T03:00:00-04:00",
+  "coding_cutoff": 1791010800,
+  "initial_continuation_run_observed": false,
+  "note": "Creation confirms a schedule, not execution or repeated overnight reliability. Each return restores the immutable GitHub checkpoint; no source coding or dispatch at/after the cutoff."
+}

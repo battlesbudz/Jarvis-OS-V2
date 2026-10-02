@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "pstack_repository": "battlesbudz/pstack-work-port",
+  "pull_request": 1,
+  "merged": true,
+  "merged_head": "e62a0f7a5e7314b7221fbbfe21b8b5d3e6fb9d49",
+  "ci_run": 37067728594,
+  "ci_job": 111039587608,
+  "ci_conclusion": "success",
+  "ci_observed_test_count": 285,
+  "ci_url": "https://github.com/battlesbudz/pstack-work-port/actions/runs/37067728594",
+  "render_deployment": "pending Render connection",
+  "observed_public_version": "0.6.0",
+  "companion_enforced_sha": "52f049503cdd551326d02759f2d2d9e99a9cd706",
+  "companion_version": "0.12.0",
+  "contract": "1.2",
+  "route_policy": "usage-conscious-v2"
+}
