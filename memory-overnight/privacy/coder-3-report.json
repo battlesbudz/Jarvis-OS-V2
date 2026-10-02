@@ -1,0 +1,121 @@
+{
+  "attempt": 3,
+  "dispatch": "privacy-coding-3",
+  "actor": "/root/jarvis_privacy_coder",
+  "ticket_id": "7e70a09be7bd47689c5331abf76705a3",
+  "coordinator_run": "f97878388bb945dab3631856c13d52d8",
+  "requested_route": "gpt-6.1-sol/high",
+  "actual_provider_usage": "unknown",
+  "status": "final_bounded_repair_committed_pending_independent_review_and_exact_head_CI",
+  "base_commit": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "source_head_commit": "b1db24a70f86812fba68e2152af750dd2a0604a8",
+  "source_tree": "c5eaa67b6d4529bb9456ceaf1586e9178f0e8d6a",
+  "actual_ancestry": [
+    {
+      "commit": "b1db24a70f86812fba68e2152af750dd2a0604a8",
+      "parents": [
+        "e055830a66dc0711e214a3d8b160c16e4cba4205"
+      ]
+    },
+    {
+      "commit": "e055830a66dc0711e214a3d8b160c16e4cba4205",
+      "parents": [
+        "5a43d6d736a09867f97027459068fd066d8201e4"
+      ]
+    },
+    {
+      "commit": "5a43d6d736a09867f97027459068fd066d8201e4",
+      "parents": [
+        "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de"
+      ]
+    }
+  ],
+  "adopted_original_chain": [
+    "1e8b90800007ce9ffede53b686b187460fcb3b99",
+    "ee1153cc8e6227497ce56663e398df38f11e3715"
+  ],
+  "adoption_commits_in_this_worktree": [
+    "5a43d6d736a09867f97027459068fd066d8201e4",
+    "e055830a66dc0711e214a3d8b160c16e4cba4205"
+  ],
+  "identity_note": "The adoption is a distinct two-commit cherry-pick chain. Final source identity was re-read after resume; an earlier transient tool output named 21889ec, while the authoritative final head is b1db24a70f86812fba68e2152af750dd2a0604a8. No original/adopted/final SHA equality is assumed.",
+  "worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/f97878388bb945dab3631856c13d52d8/unit-privacy",
+  "worktree_clean": true,
+  "changed_paths": [
+    "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+    "docs/memory-os-native.md",
+    "docs/verification/features.md",
+    "scripts/verification/scenarios.json"
+  ],
+  "original_feature_deadline": 1790980871.5799441,
+  "hard_stop_epoch": 1791010800,
+  "repairs": {
+    "R1": "Removed partial marker blacklist. Generic record/important/summary/evidence freeform payloads fail closed regardless of message=, colon, escaped newline, arbitrary label or other format. Only a complete strict numeric inference schema can establish a generic content-free metric binding. Every restored non-placeholder row requires a recorder-issued fingerprint/capture binding; evidence keys are content-free hashes.",
+    "R4": "recordInferencePrompt uses its existing complete-untruncated-submission API contract, scans the entire entry including production exact-prompt delimiters and issues a restore binding. Frozen exact-prompt tests stay unchanged. Arbitrary timestamp-like source strings are still scanned; no marker/substr exemption exists.",
+    "Prior_R2_R3": "Private exact-summary compaction proof, exact text/source binding and durable tombstones are retained. Runtime voice full-source ASR/resolved/final-input validation and omission of voice epoch metadata are retained.",
+    "Build888_release_shrinking": "Added androidx.annotation.Keep on SourceTextPersistencePolicy, SummarySource, BoundSummary, SummaryProof, SummaryProof companion and SummaryPreferences for separately compiled release instrumentation. Existing ReplyMetrics uses the same annotation import/pattern; no dependencies, proguard or build files changed. Current binary behavior still requires exact-head release rerun."
+  },
+  "regression_additions": [
+    "Actual typed production exact-callback envelope survives snapshot/restore within retention and expires on the original clock",
+    "message= and Voice turn failed:/Voice resume failed: exception prefixes with secret markers beyond truncation",
+    "All generic channels and legacy restore reject arbitrary freeform excerpts regardless of labels",
+    "Strict production Inference numeric schema retains TTFT/duration/token/throughput metrics across restore",
+    "Source-shaped epoch text inside the complete exact prompt receives no metadata exemption"
+  ],
+  "static_checks": [
+    "Final worktree clean",
+    "Full base..head diff exactly matches allowed14 paths",
+    "Original entire Android file byte-identical after removing only new test36; all original36 method bodies/assertions preserved",
+    "37 unique scenarios; all original names/order/other manifest fields preserved",
+    "Existing ConversationHistoryTest assertion lines unchanged",
+    "Both documentation files append-only",
+    "git diff --check base..HEAD exit0",
+    "Source annotation inspection confirms object and all directly referenced nested release instrumentation types/companion kept",
+    "Existing androidx.annotation.Keep import/pattern confirmed in ReplyMetrics; no dependency edit",
+    "Authoritative final commit/tree and every actual parent in the three-commit adopted+repair ancestry re-read from git"
+  ],
+  "retained_failed_evidence": {
+    "run": "Build888",
+    "run_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37070012200",
+    "source_commit": "7c4741644bcee78754b48692a76344755fc3e234",
+    "receipt_passed": false,
+    "release_approved": false,
+    "jvm_reported": {
+      "passed": true,
+      "tests": 759,
+      "suites": 144
+    },
+    "android_result": "Both API30 normal and API35 compact reported new test36 NoClassDefFoundError SourceTextPersistencePolicy; parent reported all original36 passed. This is an older failed candidate, not final-tree evidence.",
+    "files": [
+      "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/privacy-build888-api30-instrumentation.txt",
+      "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/privacy-build888-ci-receipt.json"
+    ]
+  },
+  "not_executed_for_final_tree": [
+    "Kotlin compilation",
+    "Full frozen harness",
+    "Release JVM/native/helper tests",
+    "Signed normal/compact release qualification",
+    "API30/API35 37 journeys and separate-process restart",
+    "Consolidated exact-head CI receipt",
+    "Real model/physical audio/sensitive-lock-TTS-race/target-device qualification"
+  ],
+  "remaining_risks": [
+    "Generic diagnostic narrative detail is intentionally excluded; only the strict inference benchmark schema currently retains generic metrics. Additional content-free metric schemas require explicit contracts.",
+    "Summary availability remains conservative; no timestamp-only capsule acceptance was restored.",
+    "Content-free binding/tombstone ledgers remain bounded and fail closed at capacity.",
+    "Annotation fix is source-reviewed only; exact release shrinker/instrumentation compatibility remains unverified.",
+    "This final coding handoff does not establish privacy acceptance, hosted CI success or device qualification. No GitHub write, new actor or new attempt was performed during resume."
+  ],
+  "created_at_utc": "2026-10-02T23:05:30.424728+00:00"
+}

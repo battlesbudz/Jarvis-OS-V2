@@ -1,0 +1,21 @@
+Final bounded attempt3 operation log (operation summaries; full command/script bodies retained in tool transcript).
+No new dispatch/attempt on resume; original feature/global deadlines retained. No SDK/Gradle/kotlinc installation, tests, full harness, GitHub writes or additional actors.
+1. Read privacy-repair-control-3.json and privacy-review-2-report.json with cat.
+2. git cherry-pick 1e8b90800007ce9ffede53b686b187460fcb3b99 ee1153cc8e6227497ce56663e398df38f11e3715: adopted genuine two-commit chain as distinct 5a43d6d/e055830 commits.
+3. Read actual generic/exact diagnostic contract, production inference labels and new regressions with rg/sed.
+4. Python targeted edits replaced source-envelope blacklist by API-contract proof/default rejection; retained strict numeric Inference schema and complete exact-prompt contract. Added caller-shaped typed/message=/colon/freeform/restore regression fixtures only in allowed new privacy tests.
+5. Added content-free evidence keys and preserved exact source fingerprint/capture bindings on restore.
+6. Received actual failed Build888 release evidence. Added @Keep to SourceTextPersistencePolicy and directly referenced nested source/proof/preferences/companion types within the allowed policy path. Existing ReplyMetrics annotation pattern used; proguard/build files untouched.
+7. Appended truthful final-repair/Build888-failure notes to allowed documentation.
+8. git diff --check and Python static source-integrity comparison: exactly14 paths; original36 Android methods/file recovered byte-for-byte;37 unique scenarios; old order/fields/history assertions preserved; docs append-only.
+9. git add scoped final repair files and git commit -m "Enforce diagnostic API contracts and preserve release privacy types". An earlier transient output named21889ec; authoritative resumed head below differs and was independently git-read, not treated as a preserved original SHA.
+10. Resume read-only checks: git status --short, git rev-parse HEAD HEAD^{tree}, git log --format=%H %P base..HEAD; rg @Keep types and existing ReplyMetrics import; cat actual Build888 CI receipt.
+11. Repeated full exact14-path/base, old36 journey/scenario/history assertion, append-only docs and @Keep static checks against authoritative final head; git diff --check base..HEAD exit0. No code edits on resume.
+12. Wrote factual privacy-coder-3-report.json and this log outside code; older reports/evidence retained.
+Original base: cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de
+Authoritative final head: b1db24a70f86812fba68e2152af750dd2a0604a8
+Final tree: c5eaa67b6d4529bb9456ceaf1586e9178f0e8d6a
+Actual ancestry newest first:
+b1db24a70f86812fba68e2152af750dd2a0604a8 parents=e055830a66dc0711e214a3d8b160c16e4cba4205
+e055830a66dc0711e214a3d8b160c16e4cba4205 parents=5a43d6d736a09867f97027459068fd066d8201e4
+5a43d6d736a09867f97027459068fd066d8201e4 parents=cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de

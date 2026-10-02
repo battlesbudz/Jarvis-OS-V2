@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "goal": "source-privacy",
+  "status": "blocked",
+  "final_candidate": "bdec0bb9951e98ea9f54b0dafb297274f9f4e2aa",
+  "final_tree": "c5eaa67b6d4529bb9456ceaf1586e9178f0e8d6a",
+  "coding_attempts_consumed": 3,
+  "feature_deadline": 1790980871.5799441,
+  "feature_deadline_expired": true,
+  "final_candidate_reviewed": false,
+  "final_candidate_tested": false,
+  "accepted_branch_advanced": false,
+  "reason": "The third and final bounded repair was committed before handoff, but its Coordinator integration, independent review, frozen harness and exact-head Android CI were not completed before the original 60-minute feature deadline. Resetting attempts or renewing that deadline is forbidden.",
+  "retained_failed_ci": {
+    "run": 37070012200,
+    "candidate": "7c4741644bcee78754b48692a76344755fc3e234",
+    "jvm_tests": 759,
+    "jvm_failures": 0,
+    "android_failure": "New test36 could not load SourceTextPersistencePolicy after release shrinking; the final candidate adds @Keep but has not been qualified."
+  },
+  "next_authorized_action": "A future user-authorized qualification window can adopt the preserved final candidate, charge fresh bounded reservations transparently, perform distinct review, run the frozen harness and require a green exact-head signed Android release gate."
+}
