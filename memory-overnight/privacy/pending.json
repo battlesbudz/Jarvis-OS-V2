@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "goal": "source-privacy",
+  "candidate": "7c4741644bcee78754b48692a76344755fc3e234",
+  "review_dispatch": "privacy-review-1",
+  "review_status": "active",
+  "ci": {
+    "run_id": 37070012200,
+    "number": 888,
+    "status": "in_progress",
+    "conclusion": null,
+    "head": "7c4741644bcee78754b48692a76344755fc3e234"
+  },
+  "accepted_head": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "completion": false,
+  "deadline": 1791010800
+}
