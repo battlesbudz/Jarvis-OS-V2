@@ -22,7 +22,7 @@ jobs:
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: read
     steps:
@@ -48,6 +48,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
+          # Only trusted same-repository runs reach this job. Persist PR caches too.
+          cache-read-only: false
 
       - name: Verify interruption keyword models in native engine
         run: |
@@ -79,7 +81,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_VERSION_CODE: ${{ github.run_number }}
           ANDROID_VERSION_NAME: 0.1.0-build.${{ github.run_number }}
-        run: gradle --no-daemon testReleaseUnitTest assembleRelease assembleReleaseAndroidTest
+        run: bash scripts/ci_gradle.sh release testReleaseUnitTest assembleRelease assembleReleaseAndroidTest
 
       - name: Upload release instrumentation APK
         uses: actions/upload-artifact@v4
@@ -146,7 +148,7 @@ jobs:
           ANDROID_VERSION_CODE: ${{ github.run_number }}
           ANDROID_VERSION_NAME: 0.1.0-build.${{ github.run_number }}
         run: |
-          gradle --no-daemon -PcompactApk=true assembleRelease
+          bash scripts/ci_gradle.sh compact -PcompactApk=true assembleRelease
           cp app/build/outputs/apk/release/app-release.apk artifact/app-compact.apk
           python3 scripts/check_compact_apk.py artifact/app-release.apk artifact/app-compact.apk
           python3 scripts/check_asr_apk.py artifact/app-compact.apk
@@ -169,6 +171,18 @@ jobs:
           name: jarvis-os-v2-release-apk
           path: artifact/*.apk
           if-no-files-found: error
+
+      - name: Retain build performance diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-build-performance
+          path: |
+            artifact/build-performance/
+            build/reports/profile/
+            build/reports/kotlin-build/
+          if-no-files-found: warn
+
 
   verify-release:
     name: Verify signed release in Android sandbox
