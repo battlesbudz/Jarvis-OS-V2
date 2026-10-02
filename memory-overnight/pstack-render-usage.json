@@ -1,0 +1,29 @@
+{
+  "actor_id": "/root/pstack_render_rollout",
+  "completed_at": 1790978213.1555412,
+  "completed_hash": "a45a2ae7be875d975f76a39b63197cef36f418d8b5146a2cbeed3b476295e5c3",
+  "created_at": 1790977956.9584365,
+  "id": "e6968b411a684c92a861c9e4d90e067c",
+  "manifest": {
+    "fork_turns": "none",
+    "model": "gpt-6-astra",
+    "reason": "planning policy",
+    "reasoning_effort": "high"
+  },
+  "observed_effort": "high",
+  "observed_model": "gpt-6-astra",
+  "operation": "plan:render-rollout",
+  "outcome": "success",
+  "receipt_id": "c594cfeeb633a52cf17bb6ba5a8dce5697fc94250d3403d3d41a2d88e38017c0",
+  "request_hash": "b2b7ea01410f8d2538877224f5888cd121eeb632831c912e4dfa4e9f5641a60a",
+  "request_key": "render-capabilities",
+  "reserved_tokens": 5000,
+  "scope_id": "c5b3c4e4cb164a78923a74c55a09fb62",
+  "state": "completed",
+  "task": {
+    "allowed_paths": [],
+    "complexity": "routine",
+    "task_kind": "planning"
+  },
+  "usage": null
+}

@@ -1,0 +1,21 @@
+Privacy coder command log (operation summaries; full individual script bodies remain in the tool transcript).
+2026-10-02 UTC. No SDK/Gradle/kotlinc toolchain was installed or executed. No GitHub writes, PR creation, pushes or merges.
+- Read AGENTS.md, .agents/skills/jarvis-verify/SKILL.md, docs/verification/README.md and docs/verification/features.md with cat.
+- Read architecture-report.json next_unit with Python json; searched coordination control/spec paths with rg.
+- Ran git status --short and rg file/symbol searches to locate history, call store, diagnostics, runtime summary and delivery boundaries.
+- Read scoped production files and existing frozen tests with cat/sed.
+- Created SourceTextPersistencePolicy.kt and four new JVM privacy test files with shell heredoc/Python writes.
+- Edited the other four allowed production paths with bounded Python string replacements.
+- Migrated only the authorized ConversationHistoryTest timestamp fixture; assertion lines unchanged.
+- Appended Android test36 and its scenarios registration together.
+- Appended status/acceptance notes to both allowed documentation paths.
+- Manual source review identified diagnostic epoch timestamp false-positive risk; readSafe now scans payload after parsing trusted recorder headers; added real epoch test fixture.
+- Added source lineage handling for summary writes and Runtime reconstruction of first compaction from timestamped sanitized history.
+- Ran git diff --check repeatedly: all exit 0.
+- Ran Python structural comparison against git show HEAD: exact 14 allowed paths, original 36 Android methods/body file preservation, 37 unique named registrations, frozen history assertion preservation, append-only documents; exit 0. These are source integrity checks, not Kotlin or app test execution.
+- Ran git add with exactly the 14 allowed paths.
+- Ran git commit -m "Fence persisted source copies by secret policy and original expiry": exit 0.
+- Ran git rev-parse HEAD, HEAD^{tree}, HEAD^ and git status --short for the final report; clean worktree.
+Final source head: 048ae9eb65e27b9e70d141634c42bedae5aa9edb
+Final source tree: 50074ee571c7a85a2b6db721e35501a8bce7d235
+Base: cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de

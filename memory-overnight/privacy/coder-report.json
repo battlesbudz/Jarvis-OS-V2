@@ -1,0 +1,67 @@
+{
+  "status": "implemented_committed_pending_independent_review_and_full_exact_head_CI",
+  "unit": "source-privacy",
+  "worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/95d900f74f6446e08d1ee7e8015ba76d/unit-privacy",
+  "base_commit": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "source_head_commit": "048ae9eb65e27b9e70d141634c42bedae5aa9edb",
+  "source_tree": "50074ee571c7a85a2b6db721e35501a8bce7d235",
+  "ticket": "60ca21bea1294c90bfcfaa2912008860",
+  "changed_paths": [
+    "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+    "docs/memory-os-native.md",
+    "docs/verification/features.md",
+    "scripts/verification/scenarios.json"
+  ],
+  "checks_performed": [
+    "git diff --check: exit 0",
+    "Structural exact-scope comparison: exactly 14 allowed paths",
+    "All 36 original Android journey bodies and entire original file preserved after removing the test36 addition",
+    "37 unique scenarios registered; all original scenario names/order preserved",
+    "All ConversationHistoryTest assertion lines unchanged",
+    "Both documentation changes append-only",
+    "Working tree clean after commit"
+  ],
+  "checks_not_performed": [
+    "Kotlin compilation",
+    "release JVM tests",
+    "native/helper release checks",
+    "API 30 normal Android sandbox",
+    "API 35 compact Android sandbox",
+    "separate-process restart",
+    "consolidated CI receipt",
+    "real-model, physical audio, sensitive-lock/TTS race, target-device qualification"
+  ],
+  "implementation": [
+    "Complete bounded source scan before truncation and whole affected-payload exclusion for passwords/cards/access codes",
+    "Injected default-production clocks; exact original-source 90-day retention on history/call/diagnostic reads and writes",
+    "Unknown/future/overflow legacy timestamps fail closed to generic placeholders",
+    "Sticky message/call exclusions and minimum prior timestamps prevent late snapshots renewing old source clocks",
+    "Voice action receipts retain identity, count and executor success; delivery-span text and latency labels are sanitized with timings retained",
+    "Diagnostic timestamp headers parsed separately from source payloads; exact benign prompts remain full within eligible retention",
+    "Fingerprint-only diagnostic provenance prevents identical retries renewing expiry, with fail-closed ledger capacity",
+    "Shared summary preference boundary covers chained Activity/runtime writes; oldest saved lineage retained; Runtime clears unreconstructable legacy capsules and checks context/save access"
+  ],
+  "fixture_migrations": [
+    {
+      "file": "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+      "method": "memoryCutoffExcludesLateGrowthOfAnEarlierCallSegment",
+      "change": "Injected deterministic advancing clock 1000 -> 2000 -> 3000; old epoch-2 segment now 1500; Long.MAX_VALUE final input now 3000; appended new input after preserving the old 1500 segment to avoid reusing a source identity. All assertions unchanged."
+    }
+  ],
+  "review_notes": [
+    "Summary lineage uses eligible timestamped prompt sources plus separately retained prior summary timestamp. A first summary is accepted only when exactly reconstructable from sanitized current history or history before current input; other unknown capsules are cleared. This conservative reconstruction can reduce compaction availability and requires independent review.",
+    "No automatic ordinary/sensitive fact acceptance was added. Existing current-request authorization and memory cutoff code were retained.",
+    "This report does not establish completed privacy acceptance or device qualification. Exact full hosted release verification must follow independent review."
+  ],
+  "created_at_utc": "2026-10-02T21:56:49.229684+00:00"
+}

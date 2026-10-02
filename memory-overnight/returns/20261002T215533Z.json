@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "observed_request_local": "2026-10-02T17:55:33-04:00",
+  "actual_state_head_before": "8216f4d69036d68b49bed6e2a81b13f96c9e9ec0",
+  "owner": "work-host-20261002-jarvis-initial",
+  "generation": 1,
+  "actual_existing_actor": "/root/jarvis_privacy_coder",
+  "observation": "Scheduled request reached same live working thread; initial owner and coder were present. Continued existing work without takeover, duplicate dispatch or counter reset.",
+  "fresh_separate_scheduled_host_qualified": false
+}

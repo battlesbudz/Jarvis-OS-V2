@@ -1,0 +1,93 @@
+{
+  "schema": 1,
+  "status": "success",
+  "ticket_id": "e6968b411a684c92a861c9e4d90e067c",
+  "scope_id": "c5b3c4e4cb164a78923a74c55a09fb62",
+  "repository": "battlesbudz/pstack-work-port",
+  "branch": "main",
+  "tested_commit": "e62a0f7a5e7314b7221fbbfe21b8b5d3e6fb9d49",
+  "reviewed_tree": "969c44ac05d317745ba6509e58555f7df46b234d",
+  "ci": {
+    "run_id": 37067728594,
+    "event": "push",
+    "status": "completed",
+    "conclusion": "success",
+    "job_id": 111039587608,
+    "tests_run": 285,
+    "test_result": "OK",
+    "url": "https://github.com/battlesbudz/pstack-work-port/actions/runs/37067728594"
+  },
+  "render": {
+    "workspace_id": "tea-d2lno4v5r7bs73dui9og",
+    "service_id": "srv-dao9um3m8hqs73dru73g",
+    "service_name": "pstack-work-port",
+    "service_url": "https://pstack-work-port.onrender.com",
+    "plan": "free",
+    "auto_deploy": "off",
+    "deployment": {
+      "commit": {
+        "createdAt": "2026-10-02T21:35:17Z",
+        "id": "e62a0f7a5e7314b7221fbbfe21b8b5d3e6fb9d49",
+        "message": "Merge pull request #1 from battlesbudz/work/branch-receipts-review-pending\n\nFinish overnight recovery and add native Work supervision"
+      },
+      "createdAt": "2026-10-02T21:53:41.641858Z",
+      "finishedAt": "2026-10-02T21:54:37.857491Z",
+      "id": "dep-db02fpfavr4c73dsuh3g",
+      "startedAt": "2026-10-02T21:53:41.623572Z",
+      "status": "live",
+      "trigger": "api",
+      "updatedAt": "2026-10-02T21:54:37.857754Z"
+    },
+    "exact_commit_verified": true
+  },
+  "source_selection": {
+    "method": "Immediately refreshed GitHub main, triggered existing branch service, then verified actual deployment commit",
+    "commit_parameter_supported": false
+  },
+  "health": {
+    "source": "Render application logs",
+    "observations": [
+      {
+        "timestamp": "2026-10-02T21:54:33.663563553Z",
+        "message": "INFO:     Application startup complete."
+      },
+      {
+        "timestamp": "2026-10-02T21:54:37.420777556Z",
+        "message": "INFO:     10.228.24.211:56752 - \"GET /healthz HTTP/1.1\" 200 OK"
+      },
+      {
+        "timestamp": "2026-10-02T21:54:37.42288807Z",
+        "message": "INFO:     10.228.24.211:56756 - \"GET /healthz HTTP/1.1\" 200 OK"
+      },
+      {
+        "timestamp": "2026-10-02T21:54:38.169147623Z",
+        "message": "\u001b[0;32m\u001b[1m==> \u001b[0m\u001b[1mYour service is live 🎉\u001b[0m"
+      },
+      {
+        "timestamp": "2026-10-02T21:54:42.423762471Z",
+        "message": "INFO:     10.228.24.211:51804 - \"GET /healthz HTTP/1.1\" 200 OK"
+      }
+    ]
+  },
+  "native_probe": {
+    "tool": "pstack_overview",
+    "version": "0.6.1",
+    "contract_version": "1.2",
+    "routing_policy": "usage-conscious-v2",
+    "native_supervisor_companion_version": "0.12.0",
+    "native_supervisor_status": "branch_candidate_native_qualification_pending",
+    "schedule_enabled": false
+  },
+  "changes": {
+    "deployment_only": true,
+    "source_edits": false,
+    "configuration_changes": false,
+    "environment_or_secret_changes": false,
+    "plan_changes": false,
+    "jarvis_changes": false
+  },
+  "limitations": [
+    "Native overview still reports native qualification pending and schedule disabled; deployment alone does not activate overnight supervision.",
+    "Provider model identity and usage were not independently measured."
+  ]
+}
