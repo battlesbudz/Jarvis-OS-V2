@@ -247,3 +247,9 @@
 # owners; all other voice/UI code remains eligible for release optimization.
 -keep class com.battlesbudz.jarvis.v2.voice.VoiceInputMode** { *; }
 -keep class com.battlesbudz.jarvis.v2.ui.VoiceInputSettingsKt { *; }
+
+// Build 880: test47's controlled settings fixture calls these lazy-layout
+// entry points from the independently shrunk test DEX. R8 otherwise reshapes
+// LazyColumn's static ABI and the LazyListScope item default wrapper.
+-keep class androidx.compose.foundation.lazy.LazyDslKt { *; }
+-keep interface androidx.compose.foundation.lazy.LazyListScope { *; }
