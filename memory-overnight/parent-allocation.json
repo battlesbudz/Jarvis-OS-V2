@@ -1,6 +1,6 @@
 {
   "actual_usage": null,
-  "note": "Second review12000 charged; all earlier estimates retained. Native289000 remains original300000 suballocation.",
+  "note": "Finalthirdprivacycoder14000reserved. Originalfeature60minwindow unchanged; all prior failed estimates retained; native289000 remains suballocation",
   "original_deadline": 1791010800.0,
   "original_scope": "7c0594eb67cc49e39dad6d80d726e395",
   "status": {
@@ -9,22 +9,22 @@
     "billing_note": "Local estimates and admission limits; actual native billing is unavailable.",
     "cost": null,
     "deadline_exhausted": false,
-    "dispatches": 6,
+    "dispatches": 7,
     "measured_ticket_count": 0,
     "measured_tokens": 0,
     "model_effort_counts": {
       "gpt-6-astra/high": 4,
-      "gpt-6.1-sol/high": 2
+      "gpt-6.1-sol/high": 3
     },
     "outcomes": {
-      "failed": 1,
+      "failed": 2,
       "success": 4
     },
     "overrun": false,
     "pro_remaining_allowance": null,
-    "remaining_admission_tokens": 229000,
-    "reserved_tokens": 12000,
-    "retained_unknown_reservation_tokens": 59000,
+    "remaining_admission_tokens": 215000,
+    "reserved_tokens": 14000,
+    "retained_unknown_reservation_tokens": 71000,
     "schema": 1,
     "scope_hash": "f6ac0b3f7ce87afbef7d4ba045ce5a2b2e3a073631c7850c11c7234c70d4e4d0",
     "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
@@ -215,8 +215,8 @@
       },
       {
         "actor_id": "/root/jarvis_privacy_review",
-        "completed_at": null,
-        "completed_hash": null,
+        "completed_at": 1790979971.851262,
+        "completed_hash": "53202787a3769290faa9e29d6eb268b6bd77df3b30cfd8caf05912de6df1e474",
         "created_at": 1790979623.4235888,
         "id": "670d971f4e2948699d7751deafa3f204",
         "manifest": {
@@ -228,23 +228,67 @@
         "observed_effort": "high",
         "observed_model": "gpt-6-astra",
         "operation": "review:f35cf4d78fbd44b59e9670bc749ba15b",
-        "outcome": null,
-        "receipt_id": null,
+        "outcome": "failed",
+        "receipt_id": "eef3de87d4a6d672a08ec1caec068cdf2e53c148eedf2a6e5f3289de57b93ae7",
         "request_hash": "17c9b4dbc9d86b6b0388695e05de2cff9e2415e3c49ea497985f091962139908",
         "request_key": "privacy-review-2",
         "reserved_tokens": 12000,
         "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
-        "state": "bound",
+        "state": "completed",
         "task": {
           "allowed_paths": [],
           "complexity": "routine",
           "task_kind": "review"
         },
         "usage": null
+      },
+      {
+        "actor_id": "/root/jarvis_privacy_coder",
+        "completed_at": null,
+        "completed_hash": null,
+        "created_at": 1790979971.866401,
+        "id": "7e70a09be7bd47689c5331abf76705a3",
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6.1-sol",
+          "reason": "complex implementation",
+          "reasoning_effort": "high"
+        },
+        "observed_effort": "high",
+        "observed_model": "gpt-6.1-sol",
+        "operation": "prepare:f97878388bb945dab3631856c13d52d8:privacy",
+        "outcome": null,
+        "receipt_id": null,
+        "request_hash": "6c64c8030c9aab510bbdd2df3885839ff29ecd6a9b9e3486afda938d5f4ad1a0",
+        "request_key": "privacy-coding-3",
+        "reserved_tokens": 14000,
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "state": "bound",
+        "task": {
+          "allowed_paths": [
+            "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+            "docs/memory-os-native.md",
+            "docs/verification/features.md",
+            "scripts/verification/scenarios.json"
+          ],
+          "complexity": "complex",
+          "task_kind": "implementation"
+        },
+        "usage": null
       }
     ],
     "token_budget_exhausted": false,
-    "total_commitment_tokens": 71000,
+    "total_commitment_tokens": 85000,
     "usage_complete": false
   }
 }
