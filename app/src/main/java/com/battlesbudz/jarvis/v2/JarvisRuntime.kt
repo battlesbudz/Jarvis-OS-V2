@@ -94,13 +94,33 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     // app-managed context capsule.
     internal var nativeConversationHasContext = false
     private var contextCallId: String? = null
-    internal val shortTermContext = ShortTermConversationContext()
+    private val sourceShortTermContext = ShortTermConversationContext()
+    internal val shortTermContext get() = sourceShortTermContext.also { enforceSourceSummaryBoundary() }
     internal val referenceGrounding = ReferenceGroundingClient { bytes ->
         com.battlesbudz.jarvis.v2.ai.ReferencePdfText.read(applicationContext, bytes)
     }
     internal val factualityVerifier = com.battlesbudz.jarvis.v2.ai.FactualityVerifier()
     internal val turnOrchestrator = com.battlesbudz.jarvis.v2.ai.TurnOrchestrator(referenceGrounding)
-    internal val promptBuilder = com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder(shortTermContext)
+    private val sourcePromptBuilder = com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder(sourceShortTermContext)
+    internal val promptBuilder get() = sourcePromptBuilder.also { enforceSourceSummaryBoundary() }
+    private fun proveSourceSummary(text: String, previous: com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy.BoundSummary?):
+        com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy.SummaryProof? {
+        val sources = conversationHistory.current.value.messages.filter { it.contextText.isNotBlank() }.map {
+            com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy.SummarySource(it.id, it.role, it.contextText, it.sourceTimestampMs)
+        }
+        return com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy.SummaryProof.fromHistory(text, sources, previous, System.currentTimeMillis())
+    }
+    private fun enforceSourceSummaryBoundary() {
+        val summary = sourceShortTermContext.summaryForDiagnostics() ?: return
+        if (!::sessionPreferences.isInitialized) { sourceShortTermContext.clear(); return }
+        // A Bundle string cannot inherit the clock of a different persisted capsule.
+        if (sessionPreferences.getString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, null) == summary) {
+            sourceShortTermContext.restoreSummary(summary); return
+        }
+        sessionPreferences.edit().putString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, summary).apply()
+        if (sessionPreferences.getString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, null) == summary) sourceShortTermContext.restoreSummary(summary)
+        else sourceShortTermContext.clear()
+    }
     private val memoryEpoch = java.util.concurrent.atomic.AtomicLong(0)
     private val memoryBoundaryPending = java.util.concurrent.atomic.AtomicBoolean(false)
     private val memoryCaptureReceipts = com.battlesbudz.jarvis.v2.memory.MemoryCaptureReceiptCache(
@@ -135,7 +155,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     @Volatile internal var activeVoiceOutput: PiperVoiceOutput? = null
     init {
         modelStore = ModelStore(applicationContext)
-        sessionPreferences = getSharedPreferences("chat_session", MODE_PRIVATE)
+        sessionPreferences = com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy.SummaryPreferences(
+            getSharedPreferences("chat_session", MODE_PRIVATE), proveSummary = ::proveSourceSummary,
+            onRejected = { sourceShortTermContext.clear() })
         nativeMemoryStateToken = sessionPreferences.getString("approved_memory_context_token", null)
         voiceCallStore = com.battlesbudz.jarvis.v2.voice.CoalescingVoiceCallStore(
             com.battlesbudz.jarvis.v2.chat.ConversationVoiceCallStore(
@@ -147,7 +169,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         ttsModels = com.battlesbudz.jarvis.v2.voice.TtsModelStore(applicationContext)
         val installedPackage = packageManager.getPackageInfo(packageName, 0)
         diagnosticRecorder = com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(sessionPreferences,
-            "${installedPackage.versionName} (${installedPackage.longVersionCode})")
+            "${installedPackage.versionName} (${installedPackage.longVersionCode})",
+            sourceTimestamp = { if (conversationHistory.current.value.messages.isEmpty()) System.currentTimeMillis() else conversationHistory.sourceTimestamp() })
         diagnosticRecorder.restore()
         diagnosticRecorder.recordPreviousProcessExit(applicationContext)
         shortTermContext.restoreSummary(sessionPreferences.getString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, null))
@@ -751,17 +774,15 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     contextCallId = expectedCallId
                     diagnosticRecorder.recordImportant("Voice context boundary: call=$expectedCallId summary=cleared subject=cleared nativeConversation=fresh")
                 }
-                val provenance = voiceSessionController.contextProvenance() +
-                    " sharedConversationId=${conversationHistory.current.value.id} sharedThreadEntries=${conversationHistory.current.value.messages.size}"
+                // Wall-clock provenance is structured state, not user prompt text. Do not mix
+                // epoch fields into the source scanner's exact-prompt payload.
+                var diagnosticSources: List<com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder.FullSource>? = null
                 var submissionIndex = 0
                 engine.onPromptSubmitted = { submitted, audioSize ->
                     comparison?.log("prompt audioBytes=$audioSize text=$submitted")
-                    diagnosticRecorder.recordInferencePrompt(
-                        "turn=$asrTurnId submission=${++submissionIndex} model=${engine.modelId} " +
-                            "mode=${if (audioSize > 0) "audio_text" else "text"} audioBytes=$audioSize " +
-                            "audioCorrectionCount=not_observable promptChars=${submitted.length}\n" +
-                            provenance + "\n${engine.inputContextDescription()}\nsummaryChars=${shortTermContext.summaryForDiagnostics()?.length ?: 0}\n" +
-                            "--- Exact submitted text begins ---\n$submitted\n--- Exact submitted text ends ---")
+                    val metadata = "turn=$asrTurnId submission=${++submissionIndex} model=${engine.modelId} " +
+                        "mode=${if (audioSize > 0) "audio_text" else "text"} audioBytes=$audioSize promptChars=${submitted.length}"
+                    diagnosticRecorder.recordSourceInferencePrompt(submitted, diagnosticSources.orEmpty(), metadata)
                 }
                 if (comparison != null) { shortTermContext.clear(); turnOrchestrator.reset() }
                 val voiceHistory = if (comparison != null) emptyList() else
@@ -1047,7 +1068,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                 comparison?.put("asr_attempt_${attempt}_duration_ms", heard.totalGenerationTimeMs)
                                 diagnosticRecorder.recordImportant("Voice audio fallback: attempt=$attempt chars=${heard.text.length} " +
                                     "streamEvents=${heard.streamEvents} toolCalls=${heard.toolCalls.size} durationMs=${heard.totalGenerationTimeMs} " +
-                                    "text=${heard.text.take(1000)}")
+                                    "sourceTextOmitted=true")
                                 // Recognition never dispatches tools or speaks model output.
                                 if (heard.toolCalls.isEmpty()) heard.text else ""
                             }
@@ -1080,6 +1101,11 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     return@launch
                 }
                 val transcript = com.battlesbudz.jarvis.v2.voice.TranscriptContent.speech(resolvedTranscript)
+                val diagnosticCapturedAt = correction?.capturedAtMs ?: System.currentTimeMillis()
+                diagnosticSources = listOf(
+                    com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder.FullSource(asrTranscript, diagnosticCapturedAt),
+                    com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder.FullSource(resolvedTranscript, diagnosticCapturedAt),
+                    com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder.FullSource(transcript, diagnosticCapturedAt))
                 if (recognitionIssue == null && comparison?.request?.path != com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.Path.GEMMA_DIRECT &&
                     com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver.hasTranscript(transcript)) comparison?.mark("transcript_final")
                 comparison?.put("resolved_transcript", transcript)
@@ -1967,10 +1993,11 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             // This callback is installed only by the serial queue worker. It prevents a queued
             // task from inheriting the initial voice turn's diagnostic attribution.
             conversationEngine?.onPromptSubmitted = { submitted, audioSize ->
-                diagnosticRecorder.recordInferencePrompt(
-                    "acceptedTask=${task.id} replyId=${accepted.replyId} utteranceId=${accepted.utteranceId} " +
-                        "callId=${accepted.callId} audioBytes=$audioSize\nsource=${accepted.prompt}\nsubmitted=$submitted"
-                )
+                val captured = voiceCallStore.list().firstOrNull { it.id == accepted.callId }?.transcript
+                    ?.firstOrNull { it.replyId == accepted.replyId }?.timestampMs ?: 0
+                diagnosticRecorder.recordSourceInferencePrompt(submitted,
+                    listOf(com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder.FullSource(accepted.prompt, captured)),
+                    "acceptedTask=${task.id} replyId=${accepted.replyId} utteranceId=${accepted.utteranceId} callId=${accepted.callId} audioBytes=$audioSize")
             }
             val completed = CompletableDeferred<String>()
             val job = runConversationInternal(
