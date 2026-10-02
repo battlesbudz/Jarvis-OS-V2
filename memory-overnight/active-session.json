@@ -1,0 +1,26 @@
+{
+  "absolute_deadline": 1791010800,
+  "accepted_head": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "active_actor": "/root/jarvis_privacy_coder",
+  "candidate_ci_observed_status": "in_progress",
+  "candidate_ci_run": 37070012200,
+  "capabilities": {
+    "actual_shell_git": true,
+    "github_read_write": true,
+    "local_android_sdk": false,
+    "model_override_requested": true,
+    "native_spawn_followup": true,
+    "provider_model_authenticated": false
+  },
+  "coordinator_run": "f35cf4d78fbd44b59e9670bc749ba15b",
+  "feature_deadline": 1790980871.5799441,
+  "generation": 1,
+  "native_dispatch": "privacy-coding-2",
+  "observed_at": 1790979182.2501502,
+  "owner": "work-host-20261002-jarvis-initial",
+  "phase": "privacy-repair-2",
+  "reentry": "Scheduled request observed inside existing live owner thread; no takeover or additional overlap dispatch",
+  "rejected_candidate": "7c4741644bcee78754b48692a76344755fc3e234",
+  "schema": 1,
+  "usage_ticket": "6e7101b166e042adbaccca27d6b6fbbd"
+}
