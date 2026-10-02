@@ -37,6 +37,7 @@
     "test33_sourceArchiveRetainsExplicitHistoryAndExpiresWithoutFactLoss",
     "test34_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure",
     "test35_referencePdfExtractionAndPendingAcknowledgmentUseReleaseCode",
+    "test36_sourceCopyPrivacySurvivesPersistenceAndExpiry",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

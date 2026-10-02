@@ -1495,6 +1495,60 @@ class ReleaseJourneyTest {
         } finally { root.deleteRecursively() }
     }
 
+    @Test fun test36_sourceCopyPrivacySurvivesPersistenceAndExpiry() {
+        val privacy = com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy
+        var now = 1_791_000_000_000L
+        val suffix = System.nanoTime().toString()
+        val historyPrefs = context.getSharedPreferences("privacy-history-$suffix", android.content.Context.MODE_PRIVATE)
+        val callPrefs = context.getSharedPreferences("privacy-calls-$suffix", android.content.Context.MODE_PRIVATE)
+        val diagnosticPrefs = context.getSharedPreferences("privacy-diagnostics-$suffix", android.content.Context.MODE_PRIVATE)
+        try {
+            val history = com.battlesbudz.jarvis.v2.chat.ConversationHistory(historyPrefs, clock = { now })
+            val calls = com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore(callPrefs, clock = { now })
+            val linked = com.battlesbudz.jarvis.v2.chat.ConversationVoiceCallStore(calls, history)
+            val diagnostics = com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(diagnosticPrefs, clock = { now })
+            val secret = "benign prefix ".repeat(200) + " password: tiny"
+            history.appendUser(secret)
+            diagnostics.recordInferencePrompt(secret)
+            diagnostics.recordSummary(secret)
+            val call = com.battlesbudz.jarvis.v2.voice.VoiceCallRecord("privacy-call", now,
+                title = secret, conversationId = history.current.value.id,
+                transcript = listOf(com.battlesbudz.jarvis.v2.voice.TranscriptEntry("You", secret, timestampMs = now)))
+            linked.save(call)
+            assertTrue(history.context().isEmpty())
+            assertEquals(privacy.EXCLUDED, calls.list().single().title)
+            listOf(historyPrefs, callPrefs, diagnosticPrefs).forEach { prefs ->
+                assertFalse(prefs.all.values.joinToString().contains("tiny"))
+            }
+            history.newConversation()
+            history.appendUser("We discussed amber notebooks")
+            val benign = call.copy(id = "benign-call", title = "Amber notebooks", conversationId = history.current.value.id,
+                transcript = listOf(com.battlesbudz.jarvis.v2.voice.TranscriptEntry("You", "Amber notebooks", timestampMs = now)))
+            linked.save(benign)
+            val prompt = "Exact benign prompt about amber notebooks"
+            diagnostics.recordInferencePrompt(prompt)
+            now += privacy.RETENTION_MS - 1
+            assertEquals(2, com.battlesbudz.jarvis.v2.chat.ConversationHistory(historyPrefs, clock = { now }).context().size)
+            assertEquals("Amber notebooks", com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore(callPrefs, clock = { now }).list().first { it.id == benign.id }.title)
+            assertTrue(com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(diagnosticPrefs, clock = { now }).apply { restore() }.snapshot().contains(prompt))
+            now++
+            assertTrue(history.context().isEmpty())
+            assertEquals(privacy.EXPIRED, calls.list().first { it.id == benign.id }.title)
+            assertFalse(diagnostics.snapshot().contains(prompt))
+            linked.save(benign)
+            diagnostics.recordInferencePrompt(prompt)
+            assertTrue(com.battlesbudz.jarvis.v2.chat.ConversationHistory(historyPrefs, clock = { now }).context().isEmpty())
+            assertEquals(privacy.EXPIRED, calls.list().first { it.id == benign.id }.transcript.single().text)
+            listOf(historyPrefs, callPrefs, diagnosticPrefs).forEach { prefs ->
+                assertFalse(prefs.all.values.joinToString().contains("amber", ignoreCase = true))
+            }
+        } finally {
+            historyPrefs.edit().clear().commit()
+            callPrefs.edit().clear().commit()
+            diagnosticPrefs.edit().clear().commit()
+        }
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()

@@ -87,15 +87,18 @@ class ConversationHistoryTest {
     }
 
     @Test fun memoryCutoffExcludesLateGrowthOfAnEarlierCallSegment() {
-        val history = ConversationHistory(preferences())
+        var now = 1_000L
+        val history = ConversationHistory(preferences(), clock = { now })
         val thread = history.current.value.id
-        val call = VoiceCallRecord("old-call", 1, conversationId = thread, transcript = listOf(TranscriptEntry("You", "Old fact")))
+        val call = VoiceCallRecord("old-call", 1, conversationId = thread, transcript = listOf(TranscriptEntry("You", "Old fact", timestampMs = now)))
         history.syncCall(call)
+        now = 2_000L
         history.markMemoryContextCutoff()
         history.appendUser("Fresh question")
-        history.syncCall(call.copy(transcript = call.transcript + TranscriptEntry("Jarvis", "Old fact repeated", timestampMs = 2)))
+        history.syncCall(call.copy(transcript = call.transcript + TranscriptEntry("Jarvis", "Old fact repeated", timestampMs = 1_500)))
         assertEquals(listOf("Fresh question"), history.contextAfterMemoryCutoff().map { it.text })
-        history.syncCall(call.copy(transcript = call.transcript + TranscriptEntry("You", "New call turn", timestampMs = Long.MAX_VALUE)))
+        now = 3_000L
+        history.syncCall(call.copy(transcript = call.transcript + TranscriptEntry("Jarvis", "Old fact repeated", timestampMs = 1_500) + TranscriptEntry("You", "New call turn", timestampMs = now)))
         assertEquals(setOf("Fresh question", "New call turn"), history.contextAfterMemoryCutoff().map { it.text }.toSet())
     }
 

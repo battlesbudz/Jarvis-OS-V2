@@ -257,3 +257,18 @@ The interview settles the user-facing rules. Implementation still requires evide
 - [Graphiti official repository](https://github.com/getzep/graphiti)
 
 Proactive scheduling clarification: a known relevant deadline may schedule a local reminder without another incoming message. New-information review remains event-driven; avoid periodic model polling. This scheduling behavior is planned, not part of the SQLite APK.
+
+
+## Source-copy privacy prerequisite (implementation pending exact-head verification)
+
+This bounded change applies complete-source secret detection before truncation to persisted conversation text/context/action receipts, voice transcript/delivery/title/task strings, diagnostic channels and saved short-term summaries. A detected secret excludes the affected source payload; generic placeholders preserve message/call/reply IDs, executor success flags and timing records. It does not enable automatic fact acceptance or sensitive-memory delivery.
+
+Eligible copies use original capture provenance and expire at exactly 90 days on reads, lists, context, snapshots and writes without waiting for background cleanup. Late call checkpoints retain prior timestamps and excluded/expired placeholders. Missing, zero, future or overflowing legacy capture times fail closed. Summary persistence uses the oldest contributing history timestamp and prior summary lineage; rewriting or restarting cannot renew it. Diagnostic provenance headers are parsed separately from scanned source payloads so trusted epoch metadata does not trip the card detector. Benign exact diagnostic prompts retain the existing within-window contract.
+
+New JVM coverage: `SourceTextPersistencePolicyTest`, `ConversationHistoryPrivacyTest`, `VoiceCallStorePrivacyTest`, and `DiagnosticRecorderPrivacyTest`. Appended Android journey `test36_sourceCopyPrivacySurvivesPersistenceAndExpiry` exercises actual SharedPreferences through release production stores and an injected clock. Its registration brings the named journeys to 37; all existing Android journey bodies/assertions remain unchanged.
+
+The one existing fixture migration is `ConversationHistoryTest.memoryCutoffExcludesLateGrowthOfAnEarlierCallSegment`: epoch 2 and Long.MAX_VALUE were replaced by a deterministic advancing injected clock (1000 → 2000 → 3000 ms), a pre-cutoff 1500-ms late segment, and an appended newer utterance preserving the old segment's identity. Every assertion is unchanged; no test-only retention bypass was added.
+
+No Kotlin compilation, JVM/native release execution, API 30/API 35 sandbox, consolidated CI receipt, real model, physical audio, sensitive-lock/TTS race or target-device qualification has been performed for this implementation. Independent review and the full exact-head hosted gate remain required before advancing to dependent policy work. Raw diagnostic audio cleanup, encryption, complete app-wide privacy and automatic ordinary/sensitive extraction remain outside this prerequisite.
+
+A new runtime summary with no stored lineage is retained only when it can be recreated exactly from sanitized, timestamped current history (or the history before the current input). It is then persisted with the oldest original history clock. An unrecognized capsule is cleared; this conservative reconstruction rule requires independent review and does not create fresh legacy retention.

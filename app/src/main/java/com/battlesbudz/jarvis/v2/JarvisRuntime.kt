@@ -94,13 +94,38 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     // app-managed context capsule.
     internal var nativeConversationHasContext = false
     private var contextCallId: String? = null
-    internal val shortTermContext = ShortTermConversationContext()
+    private val sourceShortTermContext = ShortTermConversationContext()
+    internal val shortTermContext get() = sourceShortTermContext.also { enforceSourceSummaryBoundary() }
     internal val referenceGrounding = ReferenceGroundingClient { bytes ->
         com.battlesbudz.jarvis.v2.ai.ReferencePdfText.read(applicationContext, bytes)
     }
     internal val factualityVerifier = com.battlesbudz.jarvis.v2.ai.FactualityVerifier()
     internal val turnOrchestrator = com.battlesbudz.jarvis.v2.ai.TurnOrchestrator(referenceGrounding)
-    internal val promptBuilder = com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder(shortTermContext)
+    private val sourcePromptBuilder = com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder(sourceShortTermContext)
+    internal val promptBuilder get() = sourcePromptBuilder.also { enforceSourceSummaryBoundary() }
+    private fun enforceSourceSummaryBoundary() {
+        val summary = sourceShortTermContext.summaryForDiagnostics() ?: return
+        if (!::sessionPreferences.isInitialized) { sourceShortTermContext.clear(); return }
+        val captured = sessionPreferences.getLong("${ConversationPolicy.SHORT_TERM_SUMMARY_KEY}_captured_at", 0)
+        if (captured == 0L) {
+            // A fresh compaction can be recreated exactly from timestamped history. An unknown
+            // legacy capsule is never trusted or assigned a new clock merely because it is read.
+            val history = conversationHistory.context().map { it.role to it.text }
+            val candidates = listOf(history, history.dropLast(1))
+            val reconstructed = candidates.any { ShortTermConversationContext().compactSnapshot(it) == summary }
+            val original = conversationHistory.sourceTimestamp()
+            if (reconstructed && com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy.placeholder(
+                    listOf(summary), original, System.currentTimeMillis()) == null) {
+                sessionPreferences.edit().putString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, summary).apply()
+                return
+            }
+        }
+        if (com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy.placeholder(
+                listOf(summary), captured, System.currentTimeMillis()) != null) {
+            sourceShortTermContext.clear()
+            sessionPreferences.edit().remove(ConversationPolicy.SHORT_TERM_SUMMARY_KEY).apply()
+        }
+    }
     private val memoryEpoch = java.util.concurrent.atomic.AtomicLong(0)
     private val memoryBoundaryPending = java.util.concurrent.atomic.AtomicBoolean(false)
     private val memoryCaptureReceipts = com.battlesbudz.jarvis.v2.memory.MemoryCaptureReceiptCache(
@@ -135,7 +160,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     @Volatile internal var activeVoiceOutput: PiperVoiceOutput? = null
     init {
         modelStore = ModelStore(applicationContext)
-        sessionPreferences = getSharedPreferences("chat_session", MODE_PRIVATE)
+        sessionPreferences = com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy.SummaryPreferences(
+            getSharedPreferences("chat_session", MODE_PRIVATE), sourceTimestamp = { conversationHistory.sourceTimestamp() },
+            onRejected = { sourceShortTermContext.clear() })
         nativeMemoryStateToken = sessionPreferences.getString("approved_memory_context_token", null)
         voiceCallStore = com.battlesbudz.jarvis.v2.voice.CoalescingVoiceCallStore(
             com.battlesbudz.jarvis.v2.chat.ConversationVoiceCallStore(
@@ -147,7 +174,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         ttsModels = com.battlesbudz.jarvis.v2.voice.TtsModelStore(applicationContext)
         val installedPackage = packageManager.getPackageInfo(packageName, 0)
         diagnosticRecorder = com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(sessionPreferences,
-            "${installedPackage.versionName} (${installedPackage.longVersionCode})")
+            "${installedPackage.versionName} (${installedPackage.longVersionCode})",
+            sourceTimestamp = { if (conversationHistory.current.value.messages.isEmpty()) System.currentTimeMillis() else conversationHistory.sourceTimestamp() })
         diagnosticRecorder.restore()
         diagnosticRecorder.recordPreviousProcessExit(applicationContext)
         shortTermContext.restoreSummary(sessionPreferences.getString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, null))
