@@ -1,0 +1,29 @@
+{
+  "actor_id": null,
+  "completed_at": null,
+  "completed_hash": null,
+  "created_at": 1790978392.9562085,
+  "id": "7e585da2a02047e48fdc969dd948aa8f",
+  "manifest": {
+    "fork_turns": "none",
+    "model": "gpt-6-astra",
+    "reason": "review policy",
+    "reasoning_effort": "high"
+  },
+  "observed_effort": null,
+  "observed_model": null,
+  "operation": "review:95d900f74f6446e08d1ee7e8015ba76d",
+  "outcome": null,
+  "receipt_id": null,
+  "request_hash": "bac3a3b4f6e96026be66c53d816e48f71066e3497fe37184b1c74817197578d6",
+  "request_key": "privacy-review-1",
+  "reserved_tokens": 12000,
+  "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+  "state": "reserved",
+  "task": {
+    "allowed_paths": [],
+    "complexity": "routine",
+    "task_kind": "review"
+  },
+  "usage": null
+}
