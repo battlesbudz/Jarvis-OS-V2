@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "repository": "battlesbudz/Jarvis-OS-V2",
+  "source_branch": "feature/memory-os-overnight-20261002",
+  "source_base": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "source_tree": "ecfa44e55567eb73e9a32198b03774c7e5b3f3cb",
+  "state_branch": "work/memory-os-overnight-state-20261002",
+  "deadline": 1791010800,
+  "deadline_local": "2026-10-03T03:00:00-04:00",
+  "goal": "Continue docs/memory-os-native.md in dependency order: capture/privacy and policy prerequisites, local EmbeddingGemma, rebuildable semantic/keyword/vector hybrid RAG, per-turn bounded evidence/context, temporal graph, authorized source integration.",
+  "plan_blob_sha": "81e03f99868705e83ffcee01e074a3f6c1e0d046",
+  "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+  "admission_budget": {
+    "schema": 1,
+    "routing_policy": "usage-conscious-v2",
+    "max_reserved_tokens": 300000,
+    "max_dispatches": 24,
+    "max_concurrent": 4,
+    "deadline": 1791010800
+  },
+  "provider_usage": null,
+  "authorization": "User authorized new branch writes and continuation until 3 a.m. October 3 America/New_York; Jarvis PR/main merges and public APK releases are not authorized.",
+  "companion_sha": "52f049503cdd551326d02759f2d2d9e99a9cd706",
+  "pstack_merge": "e62a0f7a5e7314b7221fbbfe21b8b5d3e6fb9d49",
+  "render_deployment": "Blocked: Render account connection not available"
+}

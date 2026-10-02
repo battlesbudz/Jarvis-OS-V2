@@ -1,9 +1,0 @@
-.gradle/
-**/build/
-**/__pycache__/
-*.pyc
-local.properties
-
-# Disposable verification evidence (CI retains it as artifacts).
-verification-evidence*/
-verification-runs/
