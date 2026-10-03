@@ -1,0 +1,294 @@
+{
+  "kind": "source-only disjoint constructor/callsite audit; no Kotlin execution",
+  "primary_required_arguments": 3,
+  "primary_callback_defaults": 0,
+  "legacy_secondary_required_arguments": 1,
+  "legacy_secondary_optional_clock": true,
+  "secondary_disclosure_false": true,
+  "File_wrapper_unchanged": true,
+  "production_clock_explicit": true,
+  "allowed_fixture_only_construction_change_assertions_identical": true,
+  "call_sites": [
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/AndroidMemoryOs.kt",
+      "line": 29,
+      "source": "Services(MemoryOs(sources, clock = { System.currentTimeMillis() },"
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryOs.kt",
+      "line": 8,
+      "source": "class MemoryOs(private val store: MemoryPersistence, private val clock: () -> Long,"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemorySuppressionTest.kt",
+      "line": 8,
+      "source": "assertEquals(MemoryOutcome.DELETED,MemoryOs(ledger,{2_000L}).delete(record.id).outcome)"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 13,
+      "source": "val os = MemoryOs(file) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 16,
+      "source": "assertEquals(1, MemoryOs(file) { now + 1 }.read().snapshot!!.memories.size)"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 17,
+      "source": "val broken = MemoryOs(MemoryStore(file) { _, _ -> throw IllegalStateException(\"disk full\") }) { now + 2 }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 19,
+      "source": "assertEquals(1, MemoryOs(file).read().snapshot!!.memories.size)"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 24,
+      "source": "assertEquals(MemoryOutcome.CREATED, MemoryOs(file) { now }.propose(proposal).outcome)"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 25,
+      "source": "val unavailableWriter = MemoryOs(MemoryStore(file) { _, _ -> throw IllegalStateException(\"disk full\") }) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 30,
+      "source": "val file = temporaryFile(); val os = MemoryOs(file) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 41,
+      "source": "val file = temporaryFile(); val normal = MemoryOs(file) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 44,
+      "source": "val failing = MemoryOs(MemoryStore(file, cleanupArtifacts = { throw IllegalStateException(\"locked orphan\") })) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 51,
+      "source": "val file = temporaryFile(); val os = MemoryOs(file) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 56,
+      "source": "assertNotNull(MemoryOs(file) { now }.read().error)"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 60,
+      "source": "val file = temporaryFile(); val os = MemoryOs(file) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 63,
+      "source": "assertNotNull(MemoryOs(file) { now + 2 }.read().snapshot)"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 67,
+      "source": "val bad = MemoryOs(file) { now + 2 }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 74,
+      "source": "val os = MemoryOs(file)"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 82,
+      "source": "val file = temporaryFile(); val os = MemoryOs(file) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "line": 89,
+      "source": "val reopened = MemoryOs(file) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/ConversationMemoryTest.kt",
+      "line": 11,
+      "source": "val os = MemoryOs(file) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt",
+      "line": 9,
+      "source": "private fun os(file: File = temp()) = MemoryOs(file) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt",
+      "line": 49,
+      "source": "val file = temp(); val store = MemoryStore(file); val os = MemoryOs(store) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt",
+      "line": 59,
+      "source": "val file = temp(); val first = MemoryOs(file) { now }; val second = MemoryOs(file) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt",
+      "line": 140,
+      "source": "assertEquals(\"Atlas\", MemoryOs(file) { now }.read().snapshot!!.memories.single().wikiAssignment!!.topic)"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt",
+      "line": 164,
+      "source": "val os = MemoryOs(file) { now + 1 }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt",
+      "line": 174,
+      "source": "val os = MemoryOs(file) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptanceTest.kt",
+      "line": 32,
+      "source": "val os=MemoryOs(ledger,{2_000L})"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptanceTest.kt",
+      "line": 45,
+      "source": "{ store -> MemoryOs(store) { now } },"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptanceTest.kt",
+      "line": 46,
+      "source": "{ store -> MemoryOs(store,{now}) },"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptanceTest.kt",
+      "line": 47,
+      "source": "{ store -> MemoryOs(store,clock={now}) }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptanceTest.kt",
+      "line": 56,
+      "source": "assertTrue(MemoryOs(ledger).read().snapshot!!.memories.isEmpty())"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptanceTest.kt",
+      "line": 58,
+      "source": "val explicit=MemoryOs(ledger,{now},{unlocked})"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptanceTest.kt",
+      "line": 59,
+      "source": "val named=MemoryOs(ledger,clock={now},canDiscloseSensitive={unlocked})"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptanceTest.kt",
+      "line": 60,
+      "source": "val defaultClock=MemoryOs(ledger,clock={System.currentTimeMillis()},canDiscloseSensitive={unlocked})"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptanceTest.kt",
+      "line": 67,
+      "source": "val os=MemoryOs(file) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryArchivePolicyTest.kt",
+      "line": 51,
+      "source": "val os = MemoryOs(file) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryRecallIntegrationTest.kt",
+      "line": 11,
+      "source": "val os = MemoryOs(file) { now }"
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemorySensitivityPolicyTest.kt",
+      "line": 30,
+      "source": "val os=MemoryOs(ExtractionLedger(MemorySnapshot(1,listOf(record),emptyList())),{1_000L},{unlocked})"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 775,
+      "source": "val memoryOs = MemoryOs(store)"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 1005,
+      "source": "val os = MemoryOs(file) { now }"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 1038,
+      "source": "val os = MemoryOs(file) { now }"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 1204,
+      "source": "memoryOs = MemoryOs(memoryFile),"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 1275,
+      "source": "val original = MemoryOs(legacy) { now }"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 1292,
+      "source": "val os = MemoryOs(storage) { now }"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 1301,
+      "source": "val os = MemoryOs(storage) { now }"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 1327,
+      "source": "val source = MemoryOs(legacy) { now }"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 1331,
+      "source": "val os = MemoryOs(storage) { now }"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 1344,
+      "source": "assertEquals(MemoryOutcome.DELETED, MemoryOs(storage) { now }.propose(proposal).outcome)"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 1359,
+      "source": "val seed = MemoryOs(storage) { now }.propose(MemoryProposal(\"Capacity seed\", MemorySource(\"capacity-seed\", \"manual\", now))).memory!!"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 1373,
+      "source": "SQLiteMemoryStore(database).use { storage -> MemoryOs(storage) { now }.propose(MemoryProposal(\"Concurrent writer $index\", MemorySource(\"writer-$index\", \"manual\", now))).outcome }"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 1394,
+      "source": "val os = MemoryOs(storage) { now }"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 1427,
+      "source": "assertTrue(MemoryOs(storage) { now }.contextPacket(\"mugs\", 900).packet!!.text.contains(\"jade mugs\"))"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 1439,
+      "source": "val os = MemoryOs(storage) { now }"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 1489,
+      "source": "val os = MemoryOs(File(root, \"memory.json\"))"
+    },
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "line": 1621,
+      "source": "val os = MemoryOs(store, { now }, { unlocked })"
+    }
+  ],
+  "compiler_discovery": "PATH kotlinc/kotlin absent; no compiler/stdlib jars in scoped /opt /usr/share /workspace/scratch /root/.gradle /root/.m2 search; no install/smoke"
+}
