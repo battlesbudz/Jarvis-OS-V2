@@ -117,7 +117,9 @@ class VoiceSessionController(
         if (call == null) return
         val index = call.transcript.indexOfFirst { it.replyId == replyId }
         if (index < 0) return
-        val entry = transform(call.transcript[index])
+        val transformed = transform(call.transcript[index])
+        val entry = if (transformed.role == "Jarvis") transformed.copy(metrics =
+            (transformed.metrics ?: com.battlesbudz.jarvis.v2.diagnostics.ReplyMetrics.unavailable).withOutputText(transformed.text)) else transformed
         if (entry == call.transcript[index]) return
         val entries = call.transcript.toMutableList().also { it[index] = entry }
         val updated = call.copy(transcript = entries)

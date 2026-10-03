@@ -46,7 +46,8 @@ internal fun PipelineBenchmarkCard(store: AndroidPipelineBenchmarkStore, enabled
 @Composable
 @OptIn(ExperimentalComposeUiApi::class)
 fun PipelineBenchmarkScreen(store: AndroidPipelineBenchmarkStore, onClose: () -> Unit, resetEnabled: Boolean = true,
-    conversationId: String? = null, callId: String? = null, initialTurnId: String? = null) {
+    conversationId: String? = null, callId: String? = null, initialTurnId: String? = null,
+    conversationReplies: com.battlesbudz.jarvis.v2.chat.ConversationThread? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val allSamples by store.samples.collectAsState()
@@ -88,7 +89,7 @@ fun PipelineBenchmarkScreen(store: AndroidPipelineBenchmarkStore, onClose: () ->
         scope.launch {
             exporting = true
             try {
-                val payload = withContext(Dispatchers.Default) { if (csv) report.toCsv() else report.toJson(includeText = false).toString(2) }
+                val payload = withContext(Dispatchers.Default) { if (csv) report.toCsv() else ConversationMetricsExport.json(report, conversationReplies.takeIf { scoped }).toString(2) }
                 val extension = if (csv) "csv" else "json"
                 when (action) {
                     "save" -> {

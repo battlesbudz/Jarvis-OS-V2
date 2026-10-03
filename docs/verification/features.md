@@ -354,3 +354,15 @@ Build 872 (run https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36826577
 
 
 Build 873 (run https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36835285342, PR head `08e054e02318e99441ad18d65d5d48fc9226d296`, tested merge `78725d4dc3b5afcc8e729bc96a8a9e8468db3f3a`) passed 894 JVM tests, native/helper/signing checks and both APK builds. API 30 passed all 46 journeys and restart; artifact `11150292570`, ZIP SHA-256 `8ab8e0ddb6e2bea6e708384431f0d3c52e3bc35eed9f15a5b85deb5b60290095`. API 35 attempt 1 was covered from its first test by a Pixel Launcher ANR; screenshot/hierarchy show the launcher dialog over the correctly rendered Jarvis setup. The permitted same-revision infrastructure retry passed test45 and 43 other journeys, but exposed two older test-driver races: test24 immediately called the scroll-capable confirmation helper before its reopened erase modal appeared, then those gestures dismissed it; test42 checked the effect counter less than 5 ms after a busy-device tap. Retained attempt-2 artifact `11151495770`, ZIP SHA-256 `3d9110e68b395f54bb7864091aad3c729a7996e6296f1abdaf1571ea463f647c`. All reports/raw instrumentation and relevant screenshots/logcat were read. Candidate 2 in the renewed cycle adds explicit modal closure/arrival boundaries to test24 and existing stable single taps plus completion-node disappearance to test42, with unchanged 15-second limits and all effect-count, persisted-state and no-retry assertions. No production behavior or acceptance criteria are removed. A fresh full signed gate is required; the requested APK handoff remains pending. CI waits dominate elapsed time; the specific newly evidenced harness correction continues within the authorized phone-test task.
+
+## Conversation metrics access and token totals — October 2, 2026
+
+| Acceptance | Evidence boundary | Failure case / preserved behavior |
+|---|---|---|
+| Copy metrics exports every retained attempt for the chosen conversation and redacted saved reply totals | JVM export tests; existing release test46 extended | Another thread leaks, absent timing becomes zero, transcript is copied |
+| Metrics opens export viewer after a voice call ends; reply footer still works | Release test46 | Hidden diagnostics-only entry or stopped call clears access |
+| Visible response token totals persist through text replacement and call receipts | JVM history/controller and codec tests | Old total survives a replacement or estimate is called exact |
+| Large copy reports stay complete | UI size guard; save/share existing journey | Silent clipboard truncation |
+| Screenshot baseline is attributable | Original files, hashes and seven-row CSV | Duplicate rows or claimed build/model provenance not shown |
+
+Exact-revision signed JVM/native/build and both emulator gates are required before claiming a verified APK. Phone performance and acoustic onset remain outside emulator coverage.

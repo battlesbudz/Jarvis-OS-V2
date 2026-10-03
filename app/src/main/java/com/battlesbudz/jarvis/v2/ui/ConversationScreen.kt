@@ -49,9 +49,10 @@ internal fun ConversationScreen(
     voiceContent: @Composable (visible: Boolean, settingsOpen: Boolean, dismissSettings: () -> Unit, startRequest: Long) -> Unit
 ) {
     val thread by history.current.collectAsState()
+    var showingBenchmarks by remember { mutableStateOf(false) }
     var benchmarkReply by remember { mutableStateOf<String?>(null) }
-    if (benchmarkReply != null && pipelineBenchmarkStore != null) Dialog(onDismissRequest = { benchmarkReply = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize()) { PipelineBenchmarkScreen(pipelineBenchmarkStore, onClose = { benchmarkReply = null }, resetEnabled = false, conversationId = thread.id, initialTurnId = benchmarkReply) }
+    if (showingBenchmarks && pipelineBenchmarkStore != null) Dialog(onDismissRequest = { showingBenchmarks = false; benchmarkReply = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize()) { PipelineBenchmarkScreen(pipelineBenchmarkStore, onClose = { showingBenchmarks = false; benchmarkReply = null }, resetEnabled = false, conversationId = thread.id, initialTurnId = benchmarkReply, conversationReplies = thread) }
     }
     val sending by busy.collectAsState()
     val liveTranscript by VoiceSessionUi.liveTranscript.collectAsState()
@@ -135,6 +136,10 @@ internal fun ConversationScreen(
             TextButton(onClick = { showHistory = true }, enabled = !sending && !armed && !inputBusy) { Text("Conversations") }
             TextButton(onClick = { error = onSelectConversation(null) }, enabled = !sending && !armed && !inputBusy) { Text("New") }
         }
+        if (pipelineBenchmarkStore != null) ConversationMetricsControls(thread, pipelineBenchmarkStore) {
+            benchmarkReply = null
+            showingBenchmarks = true
+        }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             Column(Modifier.fillMaxSize()) {
                 if (thread.messages.isEmpty()) Text("Type a message or start a voice call. It's all one conversation.",
@@ -157,10 +162,10 @@ internal fun ConversationScreen(
                                         modifier = Modifier.padding(top = 6.dp))
                                 }
                                 if (message.role == "Jarvis")
-                                    Text((message.metrics ?: com.battlesbudz.jarvis.v2.diagnostics.ReplyMetrics.unavailable).summary(),
+                                    Text((message.metrics ?: com.battlesbudz.jarvis.v2.diagnostics.ReplyMetrics.unavailable).withOutputText(message.text).summary(),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).clickable(enabled = pipelineBenchmarkStore != null) { benchmarkReply = message.sourceReplyId ?: message.id }.testTag("reply_metrics_${message.id}"))
+                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).clickable(enabled = pipelineBenchmarkStore != null) { benchmarkReply = message.sourceReplyId ?: message.id; showingBenchmarks = true }.testTag("reply_metrics_${message.id}"))
                                 if (!message.complete && message.role == "Jarvis" && message.text.isNotBlank() && !sending)
                                     Text("Reply interrupted or not fully spoken", style = MaterialTheme.typography.labelSmall)
                             }

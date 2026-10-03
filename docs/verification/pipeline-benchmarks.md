@@ -91,3 +91,11 @@ Resource observations are bounded snapshots at turn start and finish: process CP
 For mode comparisons, hold device/model/backend/capture route and utterance corpus fixed, then compare Moonshine text, Whisper text, Gemma audio with Whisper captions, and Gemma audio without captions. Keep caption work and the post-answer final transcription separately visible; compare speech-end to first answer playback alongside native TTFT. Whisper's overlapping live windows are bounded incremental display updates, not a reason to wait 30 seconds before answering.
 
 Captions-off direct-audio trials skip recognizer preparation and all natural/keyword transcription verification probes as well as caption decoding. Keyword/VAD controls remain; their work is not falsely labeled ASR. The setting and interruption scope are recorded on each attempt.
+
+## Visible conversation export and output totals
+
+The conversation screen provides **Copy metrics** for one-tap copying of the current conversation's full redacted JSON report, even after a call ends, and **Metrics** for viewing/saving/sharing JSON or CSV. Reply footers retain the reply-focused entry. Copy snapshots the selected conversation; it never exports another thread's samples or silently truncates a report. Reports above the clipboard size limit direct the user to save/share instead.
+
+JSON includes `replyMetrics` with per-saved-response TTFT, speech-end-to-playback proxy, estimated throughput and total estimated visible output tokens. Missing timings remain null, including older replies. Output totals use ceil(visible response UTF-16 character count / 4), including saved executor receipt text; they are labeled `~N tokens total`. They are not exact model token counts. Native input/output token counts remain separately attributable to each recorded SDK submission in JSON/CSV; caption, repair and tool submissions are not silently combined into a message count. Interrupted replies retain their visible-output estimate and incomplete status.
+
+The [October 2 phone screenshot baseline](../benchmarks/2026-10-02/README.md) retains seven observed replies and original evidence for future comparisons. Build/model/input-route provenance is unknown for those screenshots, so this is descriptive history, not a controlled comparison.

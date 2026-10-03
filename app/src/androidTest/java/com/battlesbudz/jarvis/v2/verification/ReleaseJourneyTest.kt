@@ -2434,6 +2434,20 @@ class ReleaseJourneyTest {
                         pipelineBenchmarkStore = restored, voiceContent = { _, _, _, _ -> })
                 } }
             } }
+            find(By.res("conversation_metrics_copy")).click()
+            find(By.text("Conversation metrics copied."))
+            val copiedConversation = AtomicReference<String>()
+            activity.onActivity { host -> copiedConversation.set(host.getSystemService(android.content.ClipboardManager::class.java)
+                .primaryClip?.getItemAt(0)?.coerceToText(host)?.toString().orEmpty()) }
+            val directReport = org.json.JSONObject(copiedConversation.get())
+            assertEquals(1, directReport.getJSONArray("turns").length())
+            assertEquals(thread, directReport.getJSONArray("turns").getJSONObject(0).getString("conversationId"))
+            assertEquals(4, directReport.getJSONArray("replyMetrics").getJSONObject(0).getInt("estimatedOutputTokens"))
+            assertFalse(copiedConversation.get().contains("other-conversation"))
+            assertFalse(copiedConversation.get().contains("Measured reply"))
+            find(By.res("conversation_metrics_open")).click()
+            find(By.res("pipeline_benchmark_screen"))
+            benchmarkClickEnabled(By.res("pipeline_benchmark_close"), towardTop = true)
             find(By.res("reply_metrics_${row.id}")).click()
             find(By.res("pipeline_benchmark_screen"))
             benchmarkClickEnabled(By.res("pipeline_benchmark_copy_json"), towardTop = true)

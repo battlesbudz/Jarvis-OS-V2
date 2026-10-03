@@ -87,7 +87,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
             else listOf(text, receiptText).filter { it.isNotBlank() }.joinToString("\n")
         val message = ConversationMessage(id, "Jarvis", visible, complete = complete,
             contextText = if (complete) visible else receiptText, actions = savedActions,
-            sourceTimestampMs = prior?.sourceTimestampMs ?: System.currentTimeMillis(), metrics = prior?.metrics)
+            sourceTimestampMs = prior?.sourceTimestampMs ?: System.currentTimeMillis(), metrics = (prior?.metrics ?: ReplyMetrics.unavailable).withOutputText(visible))
         val index = thread.messages.indexOfFirst { it.id == id }
         val entries = thread.messages.toMutableList()
         if (index < 0) entries += message else entries[index] = message
@@ -110,7 +110,8 @@ class ConversationHistory(private val preferences: SharedPreferences) {
         val prior = entries[index]
         val actions = prior.actions + receipt // the runner, not receipt values, decides replay deduplication.
         val visible = listOf(prior.text, receipt.message).filter { it.isNotBlank() }.joinToString("\n")
-        entries[index] = prior.copy(text = visible, contextText = actions.joinToString(" ") { it.message }, actions = actions)
+        entries[index] = prior.copy(text = visible, contextText = actions.joinToString(" ") { it.message }, actions = actions,
+            metrics = (prior.metrics ?: ReplyMetrics.unavailable).withOutputText(visible))
         replace(thread.copy(messages = entries))
     }
 
