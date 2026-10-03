@@ -1,0 +1,14 @@
+{
+  "actual_base_marked_shallow": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "all_raw_git_object_hashes_verified": true,
+  "fsck_log_sha256": "0c336371a0e24d5379aa140bf5ff55c1428e625ba9603446f4054ef4184a20ef",
+  "heads": [
+    "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+    "7173b4818114624fb72da6aa72903319778c3049"
+  ],
+  "no_model_generated_commit_metadata": true,
+  "objects_verified": 636,
+  "scope": "Exact accepted source and exact candidate only; unrelated historical objects are outside this reconstructed checkout. Earlier broad fsck of a local copied repository found missing historical blobs and is not a failure of these verified source trees.",
+  "scoped_fsck_exit_code": 0,
+  "tree_objects_verified": 100
+}

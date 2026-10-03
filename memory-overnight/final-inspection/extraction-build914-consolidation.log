@@ -1,0 +1,215 @@
+﻿2026-10-03T06:26:54.5941706Z Current runner version: '2.337.0'
+2026-10-03T06:26:54.5966303Z ##[group]Runner Image Provisioner
+2026-10-03T06:26:54.5967315Z Hosted Compute Agent
+2026-10-03T06:26:54.5967939Z Version: 20260901.588
+2026-10-03T06:26:54.5968623Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-03T06:26:54.5969494Z Build Date: 2026-09-01T19:56:44Z
+2026-10-03T06:26:54.5970212Z Worker ID: {85cb745d-c48a-4d0d-adc4-0ca9e5f07d17}
+2026-10-03T06:26:54.5970992Z Azure Region: westus
+2026-10-03T06:26:54.5971610Z ##[endgroup]
+2026-10-03T06:26:54.5973408Z ##[group]Operating System
+2026-10-03T06:26:54.5974188Z Ubuntu
+2026-10-03T06:26:54.5974742Z 24.04.5
+2026-10-03T06:26:54.5975617Z LTS
+2026-10-03T06:26:54.5976222Z ##[endgroup]
+2026-10-03T06:26:54.5976802Z ##[group]Runner Image
+2026-10-03T06:26:54.5977536Z Image: ubuntu-24.04
+2026-10-03T06:26:54.5978133Z Version: 20260927.320.1
+2026-10-03T06:26:54.5979496Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-03T06:26:54.5981099Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-03T06:26:54.5982168Z ##[endgroup]
+2026-10-03T06:26:54.5983593Z ##[group]GITHUB_TOKEN Permissions
+2026-10-03T06:26:54.5985839Z Actions: read
+2026-10-03T06:26:54.5986485Z Contents: read
+2026-10-03T06:26:54.5987140Z Metadata: read
+2026-10-03T06:26:54.5987739Z ##[endgroup]
+2026-10-03T06:26:54.5989781Z Secret source: Actions
+2026-10-03T06:26:54.5990902Z Cache mode: write
+2026-10-03T06:26:54.5991607Z Prepare workflow directory
+2026-10-03T06:26:54.6334114Z Prepare all required actions
+2026-10-03T06:26:54.6385133Z Getting action download info
+2026-10-03T06:26:55.0341450Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-10-03T06:26:55.1426977Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-10-03T06:26:55.3484275Z Complete job name: Consolidate exact-build verification evidence
+2026-10-03T06:26:55.4254671Z ##[group]Run actions/checkout@v4
+2026-10-03T06:26:55.4255598Z with:
+2026-10-03T06:26:55.4256098Z   repository: battlesbudz/Jarvis-OS-V2
+2026-10-03T06:26:55.4260191Z   token: ***
+2026-10-03T06:26:55.4260658Z   ssh-strict: true
+2026-10-03T06:26:55.4261131Z   ssh-user: git
+2026-10-03T06:26:55.4261609Z   persist-credentials: true
+2026-10-03T06:26:55.4262139Z   clean: true
+2026-10-03T06:26:55.4262614Z   sparse-checkout-cone-mode: true
+2026-10-03T06:26:55.4263361Z   fetch-depth: 1
+2026-10-03T06:26:55.4263840Z   fetch-tags: false
+2026-10-03T06:26:55.4264314Z   show-progress: true
+2026-10-03T06:26:55.4264794Z   lfs: false
+2026-10-03T06:26:55.4265238Z   submodules: false
+2026-10-03T06:26:55.4265718Z   set-safe-directory: true
+2026-10-03T06:26:55.4266258Z   allow-unsafe-pr-checkout: false
+2026-10-03T06:26:55.4267070Z ##[endgroup]
+2026-10-03T06:26:55.5287142Z Syncing repository: battlesbudz/Jarvis-OS-V2
+2026-10-03T06:26:55.5289809Z ##[group]Getting Git version info
+2026-10-03T06:26:55.5291098Z Working directory is '/home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2'
+2026-10-03T06:26:55.5292801Z [command]/usr/bin/git version
+2026-10-03T06:26:55.5352445Z git version 2.55.0
+2026-10-03T06:26:55.5375016Z ##[endgroup]
+2026-10-03T06:26:55.5390058Z Temporarily overriding HOME='/home/runner/work/_temp/3d1c7407-5045-468c-9b11-5178b739ece6' before making global git config changes
+2026-10-03T06:26:55.5392873Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-03T06:26:55.5395772Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2
+2026-10-03T06:26:55.5450330Z Deleting the contents of '/home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2'
+2026-10-03T06:26:55.5456447Z ##[group]Initializing the repository
+2026-10-03T06:26:55.5460021Z [command]/usr/bin/git init /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2
+2026-10-03T06:26:55.5559819Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-03T06:26:55.5561564Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-03T06:26:55.5564227Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-03T06:26:55.5565452Z hint: call:
+2026-10-03T06:26:55.5566136Z hint:
+2026-10-03T06:26:55.5566966Z hint: 	git config --global init.defaultBranch <name>
+2026-10-03T06:26:55.5574445Z hint:
+2026-10-03T06:26:55.5576250Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-03T06:26:55.5578329Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-03T06:26:55.5579942Z hint:
+2026-10-03T06:26:55.5580923Z hint: 	git branch -m <name>
+2026-10-03T06:26:55.5581748Z hint:
+2026-10-03T06:26:55.5583009Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-03T06:26:55.5585062Z Initialized empty Git repository in /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/.git/
+2026-10-03T06:26:55.5587886Z [command]/usr/bin/git remote add origin https://github.com/battlesbudz/Jarvis-OS-V2
+2026-10-03T06:26:55.5625665Z ##[endgroup]
+2026-10-03T06:26:55.5626880Z ##[group]Disabling automatic garbage collection
+2026-10-03T06:26:55.5630021Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-03T06:26:55.5666423Z ##[endgroup]
+2026-10-03T06:26:55.5668104Z ##[group]Setting up auth
+2026-10-03T06:26:55.5674246Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-03T06:26:55.5710823Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-03T06:26:55.6081058Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-03T06:26:55.6121551Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-03T06:26:55.6366240Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-03T06:26:55.6404636Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-03T06:26:55.6641027Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-03T06:26:55.6685242Z ##[endgroup]
+2026-10-03T06:26:55.6686748Z ##[group]Fetching the repository
+2026-10-03T06:26:55.6697830Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +7173b4818114624fb72da6aa72903319778c3049:refs/remotes/origin/feature/memory-os-overnight-candidate-extraction-20261002-7
+2026-10-03T06:26:56.2283626Z From https://github.com/battlesbudz/Jarvis-OS-V2
+2026-10-03T06:26:56.2296470Z  * [new ref]         7173b4818114624fb72da6aa72903319778c3049 -> origin/feature/memory-os-overnight-candidate-extraction-20261002-7
+2026-10-03T06:26:56.2301869Z ##[endgroup]
+2026-10-03T06:26:56.2303655Z ##[group]Determining the checkout info
+2026-10-03T06:26:56.2305319Z ##[endgroup]
+2026-10-03T06:26:56.2306295Z [command]/usr/bin/git sparse-checkout disable
+2026-10-03T06:26:56.2359263Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-03T06:26:56.2397811Z ##[group]Checking out the ref
+2026-10-03T06:26:56.2404097Z [command]/usr/bin/git checkout --progress --force -B feature/memory-os-overnight-candidate-extraction-20261002-7 refs/remotes/origin/feature/memory-os-overnight-candidate-extraction-20261002-7
+2026-10-03T06:26:56.2826901Z Switched to a new branch 'feature/memory-os-overnight-candidate-extraction-20261002-7'
+2026-10-03T06:26:56.2831842Z branch 'feature/memory-os-overnight-candidate-extraction-20261002-7' set up to track 'origin/feature/memory-os-overnight-candidate-extraction-20261002-7'.
+2026-10-03T06:26:56.2837993Z ##[endgroup]
+2026-10-03T06:26:56.2883094Z [command]/usr/bin/git log -1 --format=%H
+2026-10-03T06:26:56.2910547Z 7173b4818114624fb72da6aa72903319778c3049
+2026-10-03T06:26:56.3178980Z ##[group]Run python3 scripts/verification/artifacts.py fetch --out artifact-manifest.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"
+2026-10-03T06:26:56.3183438Z [36;1mpython3 scripts/verification/artifacts.py fetch --out artifact-manifest.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"[0m
+2026-10-03T06:26:56.3194976Z [36;1mpython3 scripts/verification/artifacts.py select --manifest artifact-manifest.json --run-id "$GITHUB_RUN_ID" --head-sha "$EXPECTED_HEAD" --require 'jarvis-release-unit-tests=Build signed release APK' --require 'jarvis-verification-test-apk=Build signed release APK' --require 'jarvis-os-v2-release-apk=Build signed release APK' --require 'jarvis-verification-api-30-app-release=Verify signed release in Android sandbox / Release journeys / API 30 / app-release' --require 'jarvis-verification-api-35-app-compact=Verify signed release in Android sandbox / Release journeys / API 35 / app-compact' --github-output "$GITHUB_OUTPUT"[0m
+2026-10-03T06:26:56.3460724Z shell: /usr/bin/bash -e {0}
+2026-10-03T06:26:56.3461469Z env:
+2026-10-03T06:26:56.3472463Z   GITHUB_TOKEN: ***
+2026-10-03T06:26:56.3473451Z   EXPECTED_HEAD: 7173b4818114624fb72da6aa72903319778c3049
+2026-10-03T06:26:56.3474449Z ##[endgroup]
+2026-10-03T06:26:57.5029258Z 11266284164,11266758173,11265968726,11266619120,11266758801
+2026-10-03T06:26:57.5208069Z ##[group]Run python3 scripts/verification/artifacts.py download --manifest artifact-manifest.json --artifact-ids "11266284164,11266758173,11265968726,11266619120,11266758801" --out verification-inputs --layout named
+2026-10-03T06:26:57.5210096Z [36;1mpython3 scripts/verification/artifacts.py download --manifest artifact-manifest.json --artifact-ids "11266284164,11266758173,11265968726,11266619120,11266758801" --out verification-inputs --layout named[0m
+2026-10-03T06:26:57.5278974Z shell: /usr/bin/bash -e {0}
+2026-10-03T06:26:57.5279478Z env:
+2026-10-03T06:26:57.5282697Z   GITHUB_TOKEN: ***
+2026-10-03T06:26:57.5283473Z ##[endgroup]
+2026-10-03T06:27:09.5014747Z Downloaded verified artifact IDs: 11266284164,11266758173,11265968726,11266619120,11266758801
+2026-10-03T06:27:09.5289166Z ##[group]Run python3 scripts/verification/receipt.py --inputs verification-inputs --out verification-receipt
+2026-10-03T06:27:09.5290020Z [36;1mpython3 scripts/verification/receipt.py --inputs verification-inputs --out verification-receipt[0m
+2026-10-03T06:27:09.5353889Z shell: /usr/bin/bash -e {0}
+2026-10-03T06:27:09.5354150Z env:
+2026-10-03T06:27:09.5354360Z   PR_HEAD: 
+2026-10-03T06:27:09.5354920Z   VERIFICATION_NEEDS: {
+  "build-release": {
+    "result": "success",
+    "outputs": {}
+  },
+  "verify-release": {
+    "result": "failure",
+    "outputs": {}
+  }
+}
+2026-10-03T06:27:09.5355557Z ##[endgroup]
+2026-10-03T06:27:09.7463634Z {
+2026-10-03T06:27:09.7464524Z   "schema": 1,
+2026-10-03T06:27:09.7464986Z   "passed": false,
+2026-10-03T06:27:09.7465564Z   "source_commit": "7173b4818114624fb72da6aa72903319778c3049",
+2026-10-03T06:27:09.7466207Z   "pr_head": "",
+2026-10-03T06:27:09.7467012Z   "run_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37101689875",
+2026-10-03T06:27:09.7467960Z   "errors": [
+2026-10-03T06:27:09.7468482Z     "Required job did not succeed: verify-release",
+2026-10-03T06:27:09.7469183Z     "API 35 app-compact: Mismatched passed"
+2026-10-03T06:27:09.7469667Z   ],
+2026-10-03T06:27:09.7469972Z   "variants": [
+2026-10-03T06:27:09.7470329Z     {
+2026-10-03T06:27:09.7470668Z       "api": 30,
+2026-10-03T06:27:09.7471034Z       "apk": "app-release.apk",
+2026-10-03T06:27:09.7471662Z       "apk_sha256": "260986121bf9fa75a814a1df55b4695a46eb377168868139c460bfd696977430",
+2026-10-03T06:27:09.7472270Z       "test_apk_sha256": "94b1520581d78757d0be661289d4f71d6a673f04ac55a0f8aefd414c87e70c6b",
+2026-10-03T06:27:09.7472720Z       "tests": 39,
+2026-10-03T06:27:09.7472944Z       "passed": true
+2026-10-03T06:27:09.7473501Z     }
+2026-10-03T06:27:09.7473718Z   ],
+2026-10-03T06:27:09.7473941Z   "release_approved": false,
+2026-10-03T06:27:09.7474617Z   "coverage": "release JVM + UI + Android actions; no model inference",
+2026-10-03T06:27:09.7475034Z   "not_covered": [
+2026-10-03T06:27:09.7475383Z     "Real-model inference and model-generated tool selection",
+2026-10-03T06:27:09.7475852Z     "Microphone, speaker, Bluetooth and acoustic interruption behavior",
+2026-10-03T06:27:09.7476366Z     "Physical-device GPU/NPU compatibility, thermal behavior and latency",
+2026-10-03T06:27:09.7476817Z     "Successful multi-gigabyte model download/import",
+2026-10-03T06:27:09.7477180Z     "Real-model use of approved memory recall"
+2026-10-03T06:27:09.7477472Z   ],
+2026-10-03T06:27:09.7477928Z   "provenance": "Same-run GitHub Actions artifacts; APK bytes rehashed. Not an external attestation.",
+2026-10-03T06:27:09.7478422Z   "jvm": {
+2026-10-03T06:27:09.7478633Z     "passed": true,
+2026-10-03T06:27:09.7478854Z     "tests": 783,
+2026-10-03T06:27:09.7479069Z     "suites": 150
+2026-10-03T06:27:09.7479270Z   }
+2026-10-03T06:27:09.7479461Z }
+2026-10-03T06:27:09.7555570Z ##[error]Process completed with exit code 1.
+2026-10-03T06:27:09.7640355Z ##[group]Run actions/upload-artifact@v4
+2026-10-03T06:27:09.7640668Z with:
+2026-10-03T06:27:09.7640891Z   name: jarvis-verification-receipt
+2026-10-03T06:27:09.7641179Z   path: verification-receipt/
+2026-10-03T06:27:09.7641434Z   retention-days: 14
+2026-10-03T06:27:09.7641667Z   if-no-files-found: error
+2026-10-03T06:27:09.7641912Z   compression-level: 6
+2026-10-03T06:27:09.7642143Z   overwrite: false
+2026-10-03T06:27:09.7642367Z   include-hidden-files: false
+2026-10-03T06:27:09.7642612Z ##[endgroup]
+2026-10-03T06:27:09.9302583Z (node:2397) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-03T06:27:09.9304211Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-03T06:27:09.9435084Z With the provided path, there will be 2 files uploaded
+2026-10-03T06:27:09.9436293Z Artifact name is valid!
+2026-10-03T06:27:09.9436764Z Root directory input is valid!
+2026-10-03T06:27:10.3355496Z Beginning upload of artifact content to blob storage
+2026-10-03T06:27:10.3563534Z (node:2397) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-03T06:27:10.6323584Z Uploaded bytes 1395
+2026-10-03T06:27:10.7107457Z Finished uploading artifact content to blob storage!
+2026-10-03T06:27:10.7108545Z SHA256 digest of uploaded artifact zip is 036d4d59bf60927ffe6e0bc349127b6616be50547fec3c0f047ca85fa4a2cec9
+2026-10-03T06:27:10.7110223Z Finalizing artifact upload
+2026-10-03T06:27:10.9624126Z Artifact jarvis-verification-receipt.zip successfully finalized. Artifact ID 11266524244
+2026-10-03T06:27:10.9625525Z Artifact jarvis-verification-receipt has been successfully uploaded! Final size is 1395 bytes. Artifact ID is 11266524244
+2026-10-03T06:27:10.9632166Z Artifact download URL: https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37101689875/artifacts/11266524244
+2026-10-03T06:27:10.9840263Z Post job cleanup.
+2026-10-03T06:27:11.0705924Z [command]/usr/bin/git version
+2026-10-03T06:27:11.0752226Z git version 2.55.0
+2026-10-03T06:27:11.0798080Z Temporarily overriding HOME='/home/runner/work/_temp/04cc437b-5791-4653-9829-5e84a5224d1e' before making global git config changes
+2026-10-03T06:27:11.0799736Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-03T06:27:11.0803756Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2
+2026-10-03T06:27:11.0844103Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-03T06:27:11.0880106Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-03T06:27:11.1153909Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-03T06:27:11.1164425Z http.https://github.com/.extraheader
+2026-10-03T06:27:11.1198080Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-10-03T06:27:11.1271500Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-03T06:27:11.1570295Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-03T06:27:11.1619894Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-03T06:27:11.2097771Z Cleaning up orphan processes
+2026-10-03T06:27:11.2396406Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

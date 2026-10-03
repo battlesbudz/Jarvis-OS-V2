@@ -1,0 +1,190 @@
+{
+  "actual_artifact_metadata": [
+    {
+      "digest": "sha256:16aba4be1d142d3017fcde922a1918a7f6272f0a2c5a759932bce56c071238f8",
+      "id": 11266758801,
+      "name": "jarvis-verification-api-35-app-compact",
+      "size": 6680676
+    },
+    {
+      "digest": "sha256:b335e7ba87b50500d06d4fde0c6610f8800e737e67540e3ada1f64dd70f1dc5d",
+      "id": 11266758173,
+      "name": "jarvis-verification-test-apk",
+      "size": 439954
+    },
+    {
+      "digest": "sha256:a1d192e34781c48e244fea0cb0c23b17bed1e23bd12dd6a9284e5307a0f23c2b",
+      "id": 11266668366,
+      "name": "jarvis-os-v2-release-r8-reports",
+      "size": 3817317
+    },
+    {
+      "digest": "sha256:52d0bbde66411b8db4c72dab1af76ff8cf4c2b1c52ded894565e83fadf141d41",
+      "id": 11266619120,
+      "name": "jarvis-verification-api-30-app-release",
+      "size": 6450378
+    },
+    {
+      "digest": "sha256:036d4d59bf60927ffe6e0bc349127b6616be50547fec3c0f047ca85fa4a2cec9",
+      "id": 11266524244,
+      "name": "jarvis-verification-receipt",
+      "size": 1395
+    },
+    {
+      "digest": "sha256:6c8b7328e10c1078834a9cbd9793db3806fd9fa1c0869ba1982a97f7f1fced1d",
+      "id": 11266513480,
+      "name": "jarvis-os-v2-apk-size",
+      "size": 6723
+    },
+    {
+      "digest": "sha256:3acdca50fede1455d1fc2e0b5bbea2370f37653b7371e2f7945b22b773147ef9",
+      "id": 11266284164,
+      "name": "jarvis-release-unit-tests",
+      "size": 342383
+    },
+    {
+      "digest": "sha256:13c652ee8a4ea771d5f3b22452ce75813e6189e7cdfdbf4c1c5ed232776693b5",
+      "id": 11265968726,
+      "name": "jarvis-os-v2-release-apk",
+      "size": 77064735
+    },
+    {
+      "digest": "sha256:3f20236933b79a0e4a529c14fd83995d7859785c46a7aed33eaedaa83a8e730a",
+      "id": 11265833857,
+      "name": "jarvis-os-v2-compact-apk-size",
+      "size": 6768
+    }
+  ],
+  "actual_candidate": "7173b4818114624fb72da6aa72903319778c3049",
+  "allowed_only_and_frozen_identity_verified": true,
+  "api30": {
+    "artifact_zip_sha256": "52d0bbde66411b8db4c72dab1af76ff8cf4c2b1c52ded894565e83fadf141d41",
+    "failed": 0,
+    "passed": 39,
+    "restart": "passed",
+    "tests": 39
+  },
+  "api35": {
+    "artifact_zip_sha256": "16aba4be1d142d3017fcde922a1918a7f6272f0a2c5a759932bce56c071238f8",
+    "assertion": "Missing UI element: Rejected private note for verification.",
+    "failed": 1,
+    "failed_test": "test24_memoryManagerReviewsCorrectsSearchesAndErases",
+    "passed": 38,
+    "restart": "not run after failed instrumentation",
+    "stack_location": "ReleaseJourneyTest.kt:947 via scrollTo:123/find:109",
+    "tests": 39
+  },
+  "budget": {
+    "actual_provider_usage": null,
+    "admission_estimates_consumed": 241000,
+    "admission_estimates_limit": 289000,
+    "coding_consumed": 12,
+    "coding_limit": 12,
+    "dispatch_consumed": 22,
+    "dispatch_limit": 22,
+    "refunds_claimed": false
+  },
+  "classification": "actual UI journey regression; no evidence supporting infrastructure retry",
+  "completed_goal": "source-privacy (retained exact53dac completion revalidated)",
+  "consolidated_receipt_passed": false,
+  "coordinator_report_unchanged": true,
+  "cutoff_epoch": 1791010800,
+  "dispatches_unfinished": 0,
+  "evidence_sha256": {
+    "build914-api35-test24_memoryManagerReviewsCorrectsSearchesAndErases.png": "b96cec2c22c4d43198a63afb6c69b59dba4977416fde7820460344334ac38286",
+    "build914-api35-test24_memoryManagerReviewsCorrectsSearchesAndErases.xml": "6ead519d8d5804f55747bd2d43f3ecd646a07a63ada8429bb2580f709b551bc0",
+    "extraction-build914-api30-instrumentation.txt": "27181246786041d2edc0c94ef0dd95ad35827662e0482218b794b5aa12699702",
+    "extraction-build914-api30-proof.json": "1772e6b1b8920e8b0296b0c978e4c96af588a2591d0aeda2ae0ce995aa4563a3",
+    "extraction-build914-api30-report.json": "3d62edf8702180ee94de94c764927fe7f344263707935243f41fbb752dcc9c41",
+    "extraction-build914-api30.log": "fb7bd4781576a8380dfa3d06f75601e4c73fa7a15c18ecfb9c2b53897e210a37",
+    "extraction-build914-api35-instrumentation.txt": "61de4d313411f9a0a65f2b514cfcbe29c0356bb23d5f3e50b27387cde2fba61b",
+    "extraction-build914-api35-report.json": "6bd48fb79a0a4fd781dc37ff72fe5735ec26d47d5c813f34cb8d8436733cafc9",
+    "extraction-build914-api35.log": "ae8629b8688a88fe1115c4e0d0d930907b5e23e2e41743f02e747c3257b3a873",
+    "extraction-build914-build.log": "ffa6a87102945341e98696d0b3b343673cdc1d2bc85980f17a1705f6a612ca46",
+    "extraction-build914-consolidated-receipt.json": "3e52a71007c2a09e888049a32b7ca6b286cc6f26503b9aaa1797ee53508ebb8f",
+    "extraction-build914-consolidation.log": "bfa943d1621d0bc9a54ba9dd8d92a61eadfe30a2967c7d2e6fe881bd9c9d6055",
+    "extraction-build914-jvm-all-source-classes.json": "11d1910f424d3030476e99662bd9634529d8cb8917713e6947678a5e64e8857d",
+    "extraction-build914-jvm-receipt.json": "3d59629d42adf56a859c0cc227a2a9599504a5f162e1c3a7589b2b7a5aa4ece5",
+    "extraction-coder-7-report.json": "fbff0ad114d187de882701f2c75d340c60e04ccc436db039b4e6d78576837558",
+    "extraction-coordinator-7-report.json": "b3165aee7cb57e9f5e97db961747584a572c489a31ae6b53f604e74ff2b70257"
+  },
+  "frozen_local_harness_after_review": "not run; mandatory distinct review unavailable",
+  "goal_completion": false,
+  "independent_review": {
+    "approved": false,
+    "reason": "No original aggregate review dispatch remains. Earlier review6 approves only3319, not this changed7173 tree."
+  },
+  "jobs": [
+    {
+      "conclusion": "success",
+      "id": 111142311123,
+      "name": "Build signed release APK"
+    },
+    {
+      "conclusion": "failure",
+      "id": 111145276807,
+      "name": "Verify signed release in Android sandbox / Release journeys / API 35 / app-compact"
+    },
+    {
+      "conclusion": "success",
+      "id": 111145276815,
+      "name": "Verify signed release in Android sandbox / Release journeys / API 30 / app-release"
+    },
+    {
+      "conclusion": "failure",
+      "id": 111146285050,
+      "name": "Consolidate exact-build verification evidence"
+    },
+    {
+      "conclusion": "skipped",
+      "id": 111146341976,
+      "name": "Publish permanent PR test APK"
+    },
+    {
+      "conclusion": "skipped",
+      "id": 111146342109,
+      "name": "Publish signed release APK"
+    },
+    {
+      "conclusion": "skipped",
+      "id": 111146342140,
+      "name": "Publish Memory OS test APK"
+    }
+  ],
+  "jvm": {
+    "actual_xml_zip_sha256": "3acdca50fede1455d1fc2e0b5bbea2370f37653b7371e2f7945b22b773147ef9",
+    "current_source_classes": 150,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "tests": 783
+  },
+  "local_coder_commit": "6c817a789fd03cdf9c1bca47a77ed2b937803f0b",
+  "local_coordinator_commit": "d2d0211d5b9bad84e96e318f92bb24f609ac85a9",
+  "migration_test34": "passed on both exact-candidate API30normal/API35compact",
+  "new_actors_launched_this_return": 0,
+  "next_action": "A future repair/review continuation needs an independently authorized additional allocation and time window. Do not reset the original counters/spec/cutoff, weaken originaltest24, promote7173, reuse review6 as current approval or treat code/UI failure as infrastructure. Preserve every previous candidate/report.",
+  "observed_at_utc": "2026-10-03T06:29:53.445683+00:00",
+  "remaining_goals": [
+    "local-extraction: repair API35History row visibility, fresh independent review and all exact candidate gates",
+    "hybrid-rag: local EmbeddingGemma, keyword/semantic/vector retrieval, current-turn budget and evidence badge",
+    "temporal-graph: CHANGE/CORRECTION, stable entities and projections",
+    "source-adapters: authorized new events, cursors/revocation and autonomy boundaries"
+  ],
+  "run_conclusion": "failure",
+  "run_id": 37101689875,
+  "run_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37101689875",
+  "schema": 1,
+  "sole_parent_and_accepted_source": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "source_promoted": false,
+  "spec_sha256": "9577265a9475306cfe2f753808a638b8be071ecdb18107b728ff3c721b6e7b56",
+  "tree": "ab3db585157c54cf6c3825aead23d4a6b9570ce2",
+  "tree_binding_verified": true,
+  "ui_observation": "Failure screenshot and XML show History selected, rejected-note text absent from current hierarchy and a partially clipped first card. Underlying ledger loss is not established by this evidence. API35 did not reach the later bulk-erase confirmation assertion.",
+  "unverified": [
+    "real Gemma extraction/inference quality",
+    "EmbeddingGemma runtime/model quality",
+    "physical Fold6 audio/latency/thermal/encryption/source coverage",
+    "continuous native overnight reliability; CLI route remains blocked"
+  ]
+}
