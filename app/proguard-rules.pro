@@ -150,6 +150,9 @@
 -keep class com.battlesbudz.jarvis.v2.memory.MemoryPersistence { *; }
 -keep class com.battlesbudz.jarvis.v2.memory.SQLiteMemoryStore { *; }
 -keep class com.battlesbudz.jarvis.v2.memory.MemorySnapshot { *; }
+# The previous-APK upgrade journey reads persisted tombstones through this
+# shared DTO. Retain its ABI before R8 inlines getters used by the test DEX.
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryTombstone { *; }
 -keep class androidx.compose.runtime.Composer$Companion { *; }
 # The release-test inline Box composition also links these companion getters
 # from the independently shrunk instrumentation DEX.

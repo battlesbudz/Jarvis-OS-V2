@@ -26,6 +26,13 @@ class ProfileContractTest(unittest.TestCase):
         self.assertTrue(any(p['api'] == 36 for p in profiles))
         self.assertTrue(any(p['screen_profile'] == 'foldable' for p in profiles))
         self.assertTrue(any(p['page_size'] == 16384 for p in profiles))
+        oldest = next(profile for profile in profiles if profile['api'] == 29)
+        self.assertEqual(('macos-15', 'arm64-v8a', 'software', 900, 60),
+                         tuple(oldest[key] for key in ('runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout')))
+        for profile in profiles:
+            if profile['api'] != 29:
+                self.assertEqual(('ubuntu-latest', 'x86_64', 'kvm', 300, 40),
+                                 tuple(profile[key] for key in ('runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout')))
 
     def test_duplicate_id_or_identical_profile_rejected(self):
         for change_id in (False, True):
@@ -57,6 +64,34 @@ class ProfileContractTest(unittest.TestCase):
         self.path.write_text(json.dumps({'schema': 1, 'profiles': []}))
         with self.assertRaises(ValueError):
             load_profiles(self.path)
+
+    def test_invalid_provisioning_values_and_timeout_types_rejected(self):
+        for key, value in [('runner', 'self-hosted'), ('arch', 'armeabi-v7a'), ('acceleration', 'automatic'),
+                           ('boot_timeout', True), ('boot_timeout', '900'), ('boot_timeout', 900.0),
+                           ('boot_timeout', 299), ('boot_timeout', 901), ('job_timeout', False),
+                           ('job_timeout', '60'), ('job_timeout', 60.0), ('job_timeout', 39), ('job_timeout', 61)]:
+            contract = copy.deepcopy(self.original)
+            contract['profiles'][0][key] = value
+            self.path.write_text(json.dumps(contract))
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                load_profiles(self.path)
+
+    def test_unsafe_or_mismatched_host_guest_acceleration_rejected(self):
+        for changes in ({'runner': 'ubuntu-latest'}, {'arch': 'x86_64'}, {'acceleration': 'kvm'},
+                        {'runner': 'ubuntu-latest', 'arch': 'x86_64', 'acceleration': 'kvm'}):
+            contract = copy.deepcopy(self.original)
+            contract['profiles'][0].update(changes)
+            self.path.write_text(json.dumps(contract))
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                load_profiles(self.path)
+
+    def test_provisioning_fields_are_required_and_cannot_be_silently_defaulted(self):
+        for key in ('runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout'):
+            contract = copy.deepcopy(self.original)
+            del contract['profiles'][0][key]
+            self.path.write_text(json.dumps(contract))
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'fields'):
+                load_profiles(self.path)
 
 
 if __name__ == '__main__':

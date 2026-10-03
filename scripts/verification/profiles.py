@@ -12,7 +12,8 @@ except ImportError:
     from artifacts import ArtifactError, parse_requirement, select
 
 PROFILES = Path(__file__).with_name('profiles.json')
-FIELDS = {'id', 'api', 'apk', 'device_profile', 'screen_profile', 'page_size', 'target'}
+FIELDS = {'id', 'api', 'apk', 'device_profile', 'screen_profile', 'page_size', 'target',
+          'runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout'}
 
 
 def load_profiles(path=PROFILES):
@@ -42,6 +43,20 @@ def load_profiles(path=PROFILES):
             raise ValueError('Invalid system image target')
         if (profile['target'] == 'google_apis_ps16k') != (profile['page_size'] == 16384):
             raise ValueError('Page size disagrees with system image target')
+        if profile['runner'] not in ('ubuntu-latest', 'macos-15'):
+            raise ValueError('Invalid emulator runner')
+        if profile['arch'] not in ('x86_64', 'arm64-v8a'):
+            raise ValueError('Invalid emulator architecture')
+        if profile['acceleration'] not in ('kvm', 'software'):
+            raise ValueError('Invalid emulator acceleration')
+        expected_host = {'kvm': ('ubuntu-latest', 'x86_64'), 'software': ('macos-15', 'arm64-v8a')}
+        if (profile['runner'], profile['arch']) != expected_host[profile['acceleration']]:
+            raise ValueError('Runner and guest architecture do not match acceleration policy')
+        if profile['api'] == 29 and profile['acceleration'] != 'software':
+            raise ValueError('API 29 requires the native ARM64 software-emulation profile')
+        for key, lower, upper in (('boot_timeout', 300, 900), ('job_timeout', 40, 60)):
+            if isinstance(profile[key], bool) or not isinstance(profile[key], int) or not lower <= profile[key] <= upper:
+                raise ValueError(f'Invalid or out-of-bounds emulator {key}')
         configuration = tuple(profile[key] for key in sorted(FIELDS - {'id'}))
         if profile['id'] in ids or configuration in configurations:
             raise ValueError('Duplicate required emulator profile')

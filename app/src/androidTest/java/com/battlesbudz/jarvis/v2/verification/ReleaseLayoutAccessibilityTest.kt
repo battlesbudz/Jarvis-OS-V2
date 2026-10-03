@@ -56,6 +56,7 @@ import org.json.JSONObject
  * This audits named controls/semantics/touch sizes, not TalkBack speech or contrast pixels.
  */
 @RunWith(AndroidJUnit4::class)
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 class ReleaseLayoutAccessibilityTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext

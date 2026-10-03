@@ -63,10 +63,10 @@ class UpgradeFixtureTest {
                         .put("createdAtMs", now).put("sensitivity", "NORMAL").put("provenance", JSONArray()))
                 db.execSQL("INSERT INTO memory_meta VALUES(1, 2, 1)")
                 db.execSQL("INSERT INTO memories VALUES(?, ?, 'APPROVED', NULL, ?)", arrayOf("12345678-1234-4123-8123-123456789012", "a".repeat(32), payload.toString()))
-                db.execSQL("INSERT INTO tombstones VALUES(?, ?, ?)", arrayOf("b".repeat(32), "c".repeat(64), now))
+                db.execSQL("INSERT INTO tombstones VALUES(?, ?, ?)", arrayOf<Any>("b".repeat(32), "c".repeat(64), now))
                 val text = "Upgrade fixture source text"
                 db.execSQL("INSERT INTO source_events VALUES(?, ?, NULL, 'TEXT', ?, ?, ?, ?, ?)",
-                    arrayOf("d".repeat(32), "f".repeat(32), now, now + 86_400_000L, text, text.toByteArray().size, "e".repeat(64)))
+                    arrayOf<Any>("d".repeat(32), "f".repeat(32), now, now + 86_400_000L, text, text.toByteArray().size, "e".repeat(64)))
                 db.version = 2
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }

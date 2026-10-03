@@ -18,10 +18,17 @@ commits. Do not create or merge another PR without Justin's permission.
 2. Build the compact APK; verify native/DEX/asset equivalence, speech packaging,
    Piper callback ABI and signatures. Both variants have increasing build codes
    and use the existing signing identity.
-3. Run `.github/workflows/android-sandbox.yml` on disposable accelerated Android
+3. Run `.github/workflows/android-sandbox.yml` on disposable Android
    emulators from `scripts/verification/profiles.json`: API 29/30/35/36,
-   an API 36 foldable and a true 16 KB system image. ARM translation must support
-   the shipping ARM64 payload; missing compatibility fails rather than skips.
+   an API 36 foldable and a true 16 KB system image. API 30 and newer use
+   accelerated x86-64 images with ARM64 translation. The current API 29 x86
+   Google APIs and Play images contain no ARM64 bridge, so that profile uses
+   the actual ARM64 image on a standard `macos-15` ARM64 runner with explicit
+   software emulation (`-accel off`). GitHub's M1 VMs do not support nested
+   hardware virtualization. This source-supported software path is bounded by
+   a 15-minute boot timeout and a 60-minute job timeout; its first hosted boot
+   and release journeys must pass before it supplies verification evidence.
+   Missing ABI/page-size compatibility or a boot timeout fails rather than skips.
 4. Run every named method in `scripts/verification/scenarios.json`, retain a
    screenshot and UI hierarchy per scenario, then run the separately retained
    external process-loss, upgrade, platform and layout phases. The previous

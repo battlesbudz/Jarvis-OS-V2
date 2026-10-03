@@ -21,13 +21,33 @@ jobs:
   verify:
     name: Release journeys / ${{ matrix.id }} / ${{ matrix.apk }}
     needs: profiles
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.job_timeout }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.profiles.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
+      - name: Verify native ARM64 software-emulation host
+        if: matrix.acceleration == 'software'
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
+      - name: Set up Java for the ARM64 Android SDK
+        if: matrix.acceleration == 'software'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          architecture: aarch64
+      - name: Set up Python for the ARM64 verification controller
+        if: matrix.acceleration == 'software'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Set up the ARM64 Android SDK
+        if: matrix.acceleration == 'software'
+        uses: android-actions/setup-android@v3
       - name: Resolve exact build artifact IDs
         id: artifacts
         env:
@@ -41,6 +61,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/verification/artifacts.py download --manifest artifact-manifest.json --artifact-ids "${{ steps.artifacts.outputs.artifact_ids }}" --out inputs --layout named
       - name: Enable emulator acceleration
+        if: matrix.acceleration == 'kvm'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-jarvis-kvm.rules
           sudo udevadm control --reload-rules
@@ -50,14 +71,14 @@ jobs:
         with:
           api-level: ${{ matrix.api }}
           target: ${{ matrix.target }}
-          arch: x86_64
+          arch: ${{ matrix.arch }}
           profile: ${{ matrix.device_profile }}
           ram-size: 4096M
           heap-size: 512M
           disk-size: 4096M
           disable-animations: true
-          emulator-boot-timeout: 300
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          emulator-boot-timeout: ${{ matrix.boot_timeout }}
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot ${{ matrix.acceleration == 'software' && '-accel off' || '' }}
           script: python3 scripts/verification/android.py run --profile "${{ matrix.id }}" --apk inputs/jarvis-os-v2-release-apk/${{ matrix.apk }}.apk --test-apk inputs/jarvis-verification-test-apk/app-release-androidTest.apk --previous-apk inputs/jarvis-previous-release/app-release.apk --previous-metadata inputs/jarvis-previous-release/previous-release.json --out verification-evidence --source-commit "${{ github.sha }}" --pr-head "${{ github.event.pull_request.head.sha }}" --allow-emulator-reset
       - name: Retain evidence even on failure
         if: always()

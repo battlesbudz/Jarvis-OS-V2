@@ -39,6 +39,47 @@ the local measurement JSON explicitly identifies an uncommitted calibration
 harness, rather than claiming release verification. Exact hosted results will
 replace the provisional status above when the final revision completes.
 
+## Expanded gate first hosted run and harness repair
+
+[Build 915](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37104292961)
+tested PR head `55094bc1d51b74aac8c9d0e8d3a03cd60082bbe4`, merge
+`e7d3a516c165655fcab01472812d1a0dbba7a93b`. The four real Whisper/Moonshine
+recognition cases passed with the same 2/28 and 1/28 word-error counts as local
+calibration. Recorded-audio artifact `11268035264` has ZIP SHA-256
+`835cf4d247c4466723dcdd3ea8725d1a8e3bf9d5edcc8c2ae4f2edcc1dd4f755`.
+The previous-release job verified published Build 907's normal APK, SHA-256
+`b399a97387e541822ede61b56e7282fafcd27b2782e6a790cf746f84450fcac0`.
+
+All 1,003 release JVM tests across 184 suites passed with no failures, errors or
+skips, including the three newly required recorded-capture/Gemma-content cases.
+JVM artifact `11268080636`, ZIP SHA-256
+`93fdeafb9993af800b70d9553c9e1413f20457532e7c5212b9ccf46ad8ac9c9a`,
+retains their raw XML.
+
+Release instrumentation compilation then failed at layout line 85's missing
+Compose experimental opt-in and upgrade fixture lines 66/69's heterogeneous
+SQL bind-array inference. The harness correction adds the explicit opt-in and
+`Array<Any>` bind types, retaining every scenario and assertion. The new upgrade
+test also makes `MemoryTombstone` an explicit shared release/test ABI boundary;
+a narrow keep rule preserves its getter for the independently shrunk test DEX. Android/native
+compatibility jobs did not run and publication was blocked. Failed receipt
+artifact `11267926618`, ZIP SHA-256
+`a81604e10c3d0a7121e577a827cf845f6eb604ab5a2a1c2ef10fbd69e2e8bc30`,
+retains the missing-upstream result. A fresh exact-revision full gate is required.
+
+API 29 provisioning was also corrected before device verification. Google's
+current API 29 Google APIs and Google Play x86_64 images declare only x86_64/x86,
+so they cannot install the shipping ARM64-only APK. The API 29 profile instead
+uses a standard Mac ARM runner, the genuine ARM64 API 29 image and explicit
+software emulation (`-accel off`), with a 900-second boot and 60-minute job ceiling.
+Official [TCG configuration](https://android.googlesource.com/platform/external/qemu/+/f0c183f1cc7456ecd6f3607f2f47893768ae4334/android-qemu2-glue/config/darwin-aarch64/config-host.h)
+and [acceleration selection](https://android.googlesource.com/platform/external/qemu/+/f0c183f1cc7456ecd6f3607f2f47893768ae4334/android/android-emu/android/main-common.c)
+include this software path; successful boot and release
+journeys remain unverified until the next hosted run. The actual device API,
+ARM64 ABI, page size and original signed-APK checks remain mandatory. The other
+five profiles retain accelerated Linux provisioning; the actual 16 KB image
+advertises ARM64 translation.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,
