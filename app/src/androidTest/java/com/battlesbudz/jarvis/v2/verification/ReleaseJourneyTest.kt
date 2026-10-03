@@ -1495,6 +1495,98 @@ class ReleaseJourneyTest {
         } finally { root.deleteRecursively() }
     }
 
+    @Test fun test36_sourceCopyPrivacySurvivesPersistenceAndExpiry() {
+        val privacy = com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy
+        var now = 1_791_000_000_000L
+        val suffix = System.nanoTime().toString()
+        val historyPrefs = context.getSharedPreferences("privacy-history-$suffix", android.content.Context.MODE_PRIVATE)
+        val callPrefs = context.getSharedPreferences("privacy-calls-$suffix", android.content.Context.MODE_PRIVATE)
+        val diagnosticPrefs = context.getSharedPreferences("privacy-diagnostics-$suffix", android.content.Context.MODE_PRIVATE)
+        val summaryPrefs = context.getSharedPreferences("privacy-summary-$suffix", android.content.Context.MODE_PRIVATE)
+        try {
+            val history = com.battlesbudz.jarvis.v2.chat.ConversationHistory(historyPrefs, clock = { now })
+            val calls = com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore(callPrefs, clock = { now })
+            val linked = com.battlesbudz.jarvis.v2.chat.ConversationVoiceCallStore(calls, history)
+            val diagnostics = com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(diagnosticPrefs, clock = { now })
+            listOf(0L, now + 1, Long.MAX_VALUE, now - privacy.RETENTION_MS).forEachIndexed { index, invalid ->
+                val invalidText = "Invalid full-source capture case $index"
+                diagnostics.recordSourceInferencePrompt(invalidText, listOf(
+                    com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder.FullSource("Valid source", now),
+                    com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder.FullSource(invalidText, invalid)))
+                assertFalse(diagnostics.snapshot().contains(invalidText))
+                assertFalse(diagnosticPrefs.all.values.joinToString().contains(invalidText))
+            }
+            val taskCall = com.battlesbudz.jarvis.v2.voice.VoiceCallRecord("task-call", now,
+                taskStatus = com.battlesbudz.jarvis.v2.voice.VoiceTaskStatus(
+                    com.battlesbudz.jarvis.v2.voice.VoiceTaskState.FAILED,
+                    completedSteps = listOf("Opened Amber Notebook", "open_app"), pendingSteps = listOf("read_battery")))
+            val secret = "benign prefix ".repeat(200) + " password: tiny"
+            history.appendUser(secret)
+            diagnostics.recordInferencePrompt(secret)
+            diagnostics.recordSummary(secret)
+            val call = com.battlesbudz.jarvis.v2.voice.VoiceCallRecord("privacy-call", now,
+                title = secret, conversationId = history.current.value.id,
+                transcript = listOf(com.battlesbudz.jarvis.v2.voice.TranscriptEntry("You", secret, timestampMs = now)))
+            linked.save(call)
+            assertTrue(history.context().isEmpty())
+            assertEquals(privacy.EXCLUDED, calls.list().single().title)
+            listOf(historyPrefs, callPrefs, diagnosticPrefs, summaryPrefs).forEach { prefs ->
+                assertFalse(prefs.all.values.joinToString().contains("tiny"))
+            }
+            history.newConversation()
+            history.appendUser("We discussed amber notebooks")
+            val benign = call.copy(id = "benign-call", title = "Amber notebooks", conversationId = history.current.value.id,
+                transcript = listOf(com.battlesbudz.jarvis.v2.voice.TranscriptEntry("You", "Amber notebooks", timestampMs = now)))
+            linked.save(benign)
+            calls.save(taskCall)
+            assertEquals(listOf(privacy.EXCLUDED, "open_app"), calls.list().first { it.id == taskCall.id }.taskStatus!!.completedSteps)
+            val prompt = "Exact benign prompt about amber notebooks"
+            diagnostics.recordInferencePrompt(prompt)
+            val summary = com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy.SummaryPreferences(summaryPrefs, { value, prior ->
+                val sources = history.current.value.messages.filter { it.contextText.isNotBlank() }.map {
+                    com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy.SummarySource(it.id, it.role, it.contextText, it.sourceTimestampMs)
+                }
+                com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy.SummaryProof.fromHistory(value, sources, prior, now)
+            }, { now })
+            val capsule = com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext().compactSnapshot(history.context().map { it.role to it.text })
+            summary.edit().putBoolean("sending", false).putString("short_term_summary", capsule).apply()
+            assertEquals(capsule, summary.getString("short_term_summary", null))
+            now += privacy.RETENTION_MS - 1
+            // Resume/link-shaped checkpoint: a new session clock and an empty transcript
+            // cannot authorize copied or reworded task prose.
+            calls.save(taskCall.copy(id = "resumed-task", startedAtMs = now, transcript = emptyList()))
+            assertEquals(listOf(privacy.EXCLUDED, "open_app"), calls.list().first { it.id == "resumed-task" }.taskStatus!!.completedSteps)
+            assertEquals(2, com.battlesbudz.jarvis.v2.chat.ConversationHistory(historyPrefs, clock = { now }).context().size)
+            assertEquals("Amber notebooks", com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore(callPrefs, clock = { now }).list().first { it.id == benign.id }.title)
+            assertTrue(com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(diagnosticPrefs, clock = { now }).apply { restore() }.snapshot().contains(prompt))
+            now++
+            val reopenedTasks = com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore(callPrefs, clock = { now })
+            assertEquals(listOf(privacy.EXCLUDED, "open_app"), reopenedTasks.list().first { it.id == "resumed-task" }.taskStatus!!.completedSteps)
+            reopenedTasks.delete("resumed-task")
+            reopenedTasks.save(taskCall.copy(id = "resumed-task", startedAtMs = now,
+                taskStatus = taskCall.taskStatus!!.copy(completedSteps = listOf("Reopened Amber Notebook", "open_app"))))
+            assertEquals(listOf(privacy.EXCLUDED, "open_app"), reopenedTasks.list().first { it.id == "resumed-task" }.taskStatus!!.completedSteps)
+            assertTrue(history.context().isEmpty())
+            assertNull(summary.getString("short_term_summary", null))
+            summary.edit().putString("short_term_summary", "Reworded stale amber capsule").apply()
+            assertNull(summary.getString("short_term_summary", null))
+            assertEquals(privacy.EXPIRED, calls.list().first { it.id == benign.id }.title)
+            assertFalse(diagnostics.snapshot().contains(prompt))
+            linked.save(benign)
+            diagnostics.recordInferencePrompt(prompt)
+            assertTrue(com.battlesbudz.jarvis.v2.chat.ConversationHistory(historyPrefs, clock = { now }).context().isEmpty())
+            assertEquals(privacy.EXPIRED, calls.list().first { it.id == benign.id }.transcript.single().text)
+            listOf(historyPrefs, callPrefs, diagnosticPrefs, summaryPrefs).forEach { prefs ->
+                assertFalse(prefs.all.values.joinToString().contains("amber", ignoreCase = true))
+            }
+        } finally {
+            historyPrefs.edit().clear().commit()
+            callPrefs.edit().clear().commit()
+            diagnosticPrefs.edit().clear().commit()
+            summaryPrefs.edit().clear().commit()
+        }
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()

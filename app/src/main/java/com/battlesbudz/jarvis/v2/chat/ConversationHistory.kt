@@ -1,6 +1,8 @@
 package com.battlesbudz.jarvis.v2.chat
 
 import android.content.SharedPreferences
+import androidx.annotation.Keep
+import com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy as Privacy
 import com.battlesbudz.jarvis.v2.ChatEntry
 import com.battlesbudz.jarvis.v2.diagnostics.ReplyMetrics
 import com.battlesbudz.jarvis.v2.voice.*
@@ -31,10 +33,10 @@ data class ConversationThread(val id: String, val messages: List<ConversationMes
 }
 
 /** One app-owned thread across text, calls, model switches and process recreation. */
-class ConversationHistory(private val preferences: SharedPreferences) {
+class ConversationHistory(private val preferences: SharedPreferences, private val clock: () -> Long = System::currentTimeMillis) {
     private val threads = linkedMapOf<String, ConversationThread>()
     private val _current = MutableStateFlow(ConversationThread(UUID.randomUUID().toString()))
-    val current = _current.asStateFlow()
+    val current get() = synchronized(this) { scrub(); _current.asStateFlow() }
     private var lastProgressSave = 0L
     init {
         runCatching {
@@ -51,7 +53,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
                             ChatAttachment(a.getString("uri"), AttachmentKind.valueOf(a.getString("kind")))
                         }.getOrNull() }, m.optJSONArray("actions")?.let { actions -> (0 until actions.length()).map { i ->
                             actions.getJSONObject(i).let { a -> ActionReceipt(a.getString("name"), a.getString("message"), a.getBoolean("succeeded")) }
-                        } }.orEmpty(), m.optLong("sourceTimestampMs", System.currentTimeMillis()),
+                        } }.orEmpty(), m.optLong("sourceTimestampMs", 0),
                         ReplyMetrics.read(m.optJSONObject("metrics")))
                 }
                 threads[t.getString("id")] = ConversationThread(t.getString("id"), messages)
@@ -59,8 +61,9 @@ class ConversationHistory(private val preferences: SharedPreferences) {
         }
         _current.value = threads[preferences.getString("active", null)] ?: threads.values.lastOrNull() ?: _current.value
         threads[_current.value.id] = _current.value
+        persist()
     }
-    @Synchronized fun list(): List<ConversationThread> = threads.values.toList().asReversed()
+    @Synchronized fun list(): List<ConversationThread> = synchronized(this) { scrub(); threads.values.toList().asReversed() }
     @Synchronized fun newConversation() {
         _current.value = ConversationThread(UUID.randomUUID().toString())
         threads[_current.value.id] = _current.value
@@ -70,7 +73,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
     @Synchronized fun appendUser(text: String, attachment: ChatAttachment? = null): String {
         val id = UUID.randomUUID().toString()
         replace(_current.value.copy(messages = _current.value.messages + ConversationMessage(id, "You", text,
-            contextText = text + (attachment?.let { "\n[${it.kind.name.lowercase()} attached to this message]" } ?: ""), attachment = attachment)))
+            contextText = text + (attachment?.let { "\n[${it.kind.name.lowercase()} attached to this message]" } ?: ""), attachment = attachment, sourceTimestampMs = clock())))
         return id
     }
     @Synchronized fun updateReply(threadId: String, id: String, text: String, complete: Boolean,
@@ -83,7 +86,8 @@ class ConversationHistory(private val preferences: SharedPreferences) {
             else listOf(text, receiptText).filter { it.isNotBlank() }.joinToString("\n")
         val message = ConversationMessage(id, "Jarvis", visible, complete = complete,
             contextText = if (complete) visible else receiptText, actions = savedActions,
-            sourceTimestampMs = prior?.sourceTimestampMs ?: System.currentTimeMillis(), metrics = prior?.metrics)
+            sourceTimestampMs = prior?.sourceTimestampMs ?: clock(), metrics = prior?.metrics)
+            .let { if (prior?.text == Privacy.EXCLUDED || prior?.text == Privacy.EXPIRED) it.copy(text = prior!!.text, contextText = "") else it }
         val index = thread.messages.indexOfFirst { it.id == id }
         val entries = thread.messages.toMutableList()
         if (index < 0) entries += message else entries[index] = message
@@ -114,9 +118,14 @@ class ConversationHistory(private val preferences: SharedPreferences) {
     @Synchronized fun syncCall(call: VoiceCallRecord) {
         val threadId = call.conversationId ?: return
         val thread = threads[threadId] ?: return
+        val previous = thread.messages.associateBy { it.id }
         val messages = call.transcript.mapIndexed { index, entry ->
             ConversationMessage("${call.id}:$index", entry.role, entry.text, entry.role == "You" && entry.origin == TranscriptOrigin.SPOKEN, call.id,
-                entry.forConversation()?.text.orEmpty(), entry.complete, sourceTimestampMs = entry.timestampMs, metrics = entry.metrics)
+                entry.forConversation()?.text.orEmpty(), entry.complete, sourceTimestampMs = Privacy.originalTimestamp(entry.timestampMs, previous["${call.id}:$index"]?.sourceTimestampMs), metrics = entry.metrics,
+                actions = entry.actions.map { ActionReceipt(it.name, it.message, it.succeeded) })
+                .let { incoming -> previous[incoming.id]?.let { prior ->
+                    if (prior.text == Privacy.EXCLUDED || prior.text == Privacy.EXPIRED) incoming.copy(text = prior.text, contextText = "") else incoming
+                } ?: incoming }
         }
         val first = thread.messages.indexOfFirst { it.callId == call.id }
         val entries = thread.messages.filterNot { it.callId == call.id }.toMutableList()
@@ -140,9 +149,11 @@ class ConversationHistory(private val preferences: SharedPreferences) {
                 replace(thread.copy(messages = thread.messages.filterNot { it.callId == callId }))
         }
     }
-    @Synchronized fun context(excludingCall: String? = null): List<ChatEntry> =
-        _current.value.messages.filter { (excludingCall == null || it.callId != excludingCall) && it.contextText.isNotBlank() }
+    @Synchronized fun context(excludingCall: String? = null): List<ChatEntry> {
+        scrub()
+        return _current.value.messages.filter { (excludingCall == null || it.callId != excludingCall) && it.contextText.isNotBlank() }
             .takeLast(128).map { ChatEntry(it.role, it.contextText) }
+    }
 
     /**
      * Keeps visible history but fences pre-mutation prompt context by stable text IDs and original
@@ -150,8 +161,9 @@ class ConversationHistory(private val preferences: SharedPreferences) {
      * utterance in that still-active call remains available.
      */
     @Synchronized fun markMemoryContextCutoff(durable: Boolean = false): Boolean {
+        scrub()
         var succeeded = true
-        val now = System.currentTimeMillis()
+        val now = clock()
         threads.values.forEach { thread ->
             val directIds = thread.messages.filter { it.callId == null }.map { it.id }
             val calls = thread.messages.mapNotNull { it.callId }.distinct().associateWith { now }
@@ -164,6 +176,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
     }
 
     @Synchronized fun contextAfterMemoryCutoff(excludingCall: String? = null): List<ChatEntry> {
+        scrub()
         val thread = _current.value
         val cutoff = runCatching { org.json.JSONObject(preferences.getString("memory_cutoff:${thread.id}", "{}")) }
             .getOrDefault(org.json.JSONObject())
@@ -180,12 +193,31 @@ class ConversationHistory(private val preferences: SharedPreferences) {
     }
 
     private fun replace(thread: ConversationThread, durable: Boolean = true) {
-        threads[thread.id] = thread
-        if (_current.value.id == thread.id) _current.value = thread
-        val now = System.currentTimeMillis()
+        val safe = sanitize(thread)
+        threads[thread.id] = safe
+        if (_current.value.id == thread.id) _current.value = safe
+        val now = clock()
         if (durable || now - lastProgressSave >= 500) { persist(); lastProgressSave = now }
     }
+    /** Oldest eligible prompt source; saved summary lineage independently retains its prior clock. */
+    @Synchronized fun sourceTimestamp(): Long {
+        scrub()
+        return _current.value.messages.filter { it.contextText.isNotBlank() }.minOfOrNull { it.sourceTimestampMs } ?: 0
+    }
+    private fun sanitize(thread: ConversationThread): ConversationThread = thread.copy(messages = thread.messages.map { m ->
+        val payload = listOf(m.text, m.contextText, m.role, m.attachment?.uri.orEmpty()) + m.actions.flatMap { listOf(it.name, it.message) }
+        val placeholder = Privacy.placeholder(payload, m.sourceTimestampMs, clock())
+        if (placeholder == null) m else m.copy(text = placeholder, contextText = "", attachment = null,
+            role = if (m.role == "You") "You" else "Jarvis",
+            actions = m.actions.map { it.copy(name = if (Privacy.excluded(it.name)) "action" else it.name, message = placeholder) })
+    })
+    private fun scrub() {
+        val changed = threads.values.any { sanitize(it) != it }
+        if (changed) persist()
+    }
     private fun persist() {
+        threads.values.toList().forEach { thread -> threads[thread.id] = sanitize(thread) }
+        threads[_current.value.id]?.let { _current.value = it }
         val array = JSONArray()
         threads.values.forEach { thread ->
             val messages = JSONArray()
@@ -202,8 +234,9 @@ class ConversationHistory(private val preferences: SharedPreferences) {
 }
 
 /** Observe persisted/coalesced snapshots, never activity callbacks or provisional ASR hypotheses. */
+@Keep
 class ConversationVoiceCallStore(private val delegate: VoiceCallStore, private val history: ConversationHistory) : VoiceCallStore {
     override fun list() = delegate.list()
-    override fun save(call: VoiceCallRecord) { delegate.save(call); history.syncCall(call) }
+    override fun save(call: VoiceCallRecord) { delegate.save(call); delegate.list().firstOrNull { it.id == call.id }?.let(history::syncCall) }
     override fun delete(callId: String) { delegate.delete(callId); history.removeCall(callId) }
 }
