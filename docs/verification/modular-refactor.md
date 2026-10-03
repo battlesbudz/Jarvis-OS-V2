@@ -90,6 +90,43 @@ and [build-performance artifact 11259818814](https://github.com/battlesbudz/Jarv
 The receipt contains no completed JVM XML or Android results because compilation
 blocked their production. Preserve this failure when recording the repaired run.
 
+## Builds 893–894: coroutine exception-identity assertion
+
+[Build 893](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37085585128)
+tested PR head `60d8d6d48e28c5a131b8c1acd290ccea99b27e07` as merge commit
+`a4a6077581bab3e3a650e69fa224aed081209808`. Compilation reached the release JVM
+suite: 998 tests ran, 997 passed and one failed. The new
+`AcceptedReportPlaybackTest.releaseFailurePropagatesAfterJoiningButCannotSkipDetachOrRepeatCleanup`
+failed at line 102's `assertSame(failure, caught)` despite the expected
+`IllegalStateException` type/message. Retained [JVM XML artifact 11260279745](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37085585128/artifacts/11260279745)
+records the failure. The [failed receipt artifact 11260845221](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37085585128/artifacts/11260845221)
+retains the blocked gate; signed normal/compact assembly, emulator verification
+and publication did not complete.
+
+[Build 894](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37085688952)
+reproduced the same 998/997/one-failure result at PR head
+`def48bcdf0c4d5cc94971bf6d4a620c1ba3179d9`, tested merge
+`5249bcecca851490c2e263f62941195a25d7837e`. Its
+[failed receipt 11260895316](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37085688952/artifacts/11260895316)
+confirms `passed=false`; retained [JVM XML 11260990144](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37085688952/artifacts/11260990144)
+and [build-performance artifact 11260354733](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37085688952/artifacts/11260354733)
+preserve its failure. Neither run is a verified APK.
+
+The test-only repair landed concurrently in
+`e977b5726e6400f8e39fbc6cd73128257435fe63` and was retained through a fast-forward.
+It catches `IllegalStateException`, checks the matching message, and requires the
+exact original exception anywhere in the cause chain with
+`generateSequence(caught as Throwable?) { it.cause }.any { it === failure }`.
+This accommodates coroutine stack-trace recovery's copied exception while retaining
+original-cause identity. The pinned [kotlinx-coroutines 1.9.0 implementation](https://github.com/Kotlin/kotlinx.coroutines/blob/1.9.0/kotlinx-coroutines-core/jvm/src/internal/StackTraceRecovery.kt)
+uses `tryCopyException(cause)` and unwraps same-type causes. Every writer-join,
+release, detach, cleanup-order and idempotence assertion remains. Production code,
+debug flags, all other tests, named scenarios and gate requirements are unchanged.
+
+A fresh exact combined-revision full gate must validate this assertion repair and
+complete all JVM/native/helper, signed normal/compact, Android, same-run receipt
+and publication requirements. Preserve both failed runs as evidence.
+
 ## Physical-device acceptance
 
 Real model inference, actual large model transfers, microphone/speaker/Bluetooth
