@@ -1,0 +1,27 @@
+Bounded attempt4 operation log (summaries; full tool call/script bodies retained in conversation).
+Scope/deadlines/budgets retained. No tests, toolchain installation, GitHub writes, Coordinator submit/integrate/verify or actor dispatches.
+1. Read privacy-repair-control-4.json, retained Build890 API30 instrumentation and repository AGENTS/verification skill/README/features.
+2. New partial clone git log initially could not resolve local-only retained b1db commit (lazy read-only remote lookup failed). Verified retained old worktree head/tree and fetched that exact commit from the local worktree without GitHub mutation.
+3. Genuine git cherry-pick 5a43d6d736a09867f97027459068fd066d8201e4 e055830a66dc0711e214a3d8b160c16e4cba4205 b1db24a70f86812fba68e2152af750dd2a0604a8: succeeded as distinct adoption commits; final adoption tree exact-match to retained tree.
+4. Read test36 direct types, frozen proguard full-class rules and retained policy @Keep declarations. Found ConversationVoiceCallStore actual failure and DiagnosticRecorder next directly invoked unkept owner.
+5. apply_patch added androidx.annotation.Keep import/class annotation to those two allowed production files. No semantic policy/store/test changes.
+6. apply_patch appended factual Build890 failure/repair notes to both allowed documentation files.
+7. Static Python comparison: exact14 base paths; source keep coverage; all Android/JVM/scenario files unchanged relative adoption; original36 Android bodies/order/assertions and37 unique registrations retained; history assertions unchanged; docs append-only. Exit0.
+8. git diff --check exit0; git add exactly4 repair files; git commit -m "Keep release privacy adapter and recorder API reachable": exit0.
+9. Read actual final git head/tree/parents and clean status; computed retained instrumentation SHA256.
+10. Wrote report outside checkout. Completed UsageLedger ticket with success meaning coding handoff, usage=None and receipt_id=exact report SHA256; result saved separately. No measured token billing is asserted.
+Base: cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de
+Adoption head: e8a2f9fbc8caf7571cba24eca5c951f7a4a0752e
+Adoption tree: c5eaa67b6d4529bb9456ceaf1586e9178f0e8d6a
+Source head: 3e86bda2b62d39142b7e66dda5439b50fa5e7888
+Source tree: 826e3bf976dae0c23e5e70bb9b853f22e669bacd
+Report SHA256: be7ffe5975fa16a1b677f15daf3872020b8834a7ed4df0f535d33e8ec41681df
+Usage ticket: ed605875437245509cd8a5c5e8432a3a
+Usage receipt_id: be7ffe5975fa16a1b677f15daf3872020b8834a7ed4df0f535d33e8ec41681df
+Usage completed_hash: f77add3bcac345e3c21563d44ed0be93932e23afdbd370f9208527e8fe3edfdc
+Usage state: completed
+Actual ancestry newest first:
+3e86bda2b62d39142b7e66dda5439b50fa5e7888 parents=e8a2f9fbc8caf7571cba24eca5c951f7a4a0752e
+e8a2f9fbc8caf7571cba24eca5c951f7a4a0752e parents=df9c417722b0550f2d0008070f6112b4c28dfc08
+df9c417722b0550f2d0008070f6112b4c28dfc08 parents=fd1fccb2c4883bf5c0b232e71a1ffa20af585b4d
+fd1fccb2c4883bf5c0b232e71a1ffa20af585b4d parents=cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de

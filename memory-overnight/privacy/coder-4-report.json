@@ -1,0 +1,152 @@
+{
+  "attempt": 4,
+  "dispatch": "privacy-coding-4",
+  "actor": "/root/jarvis_privacy_coder",
+  "ticket_id": "ed605875437245509cd8a5c5e8432a3a",
+  "requested_route": "gpt-6.1-sol/high",
+  "provider_usage": null,
+  "coordinator_run": "7bfab527f2894d08a773ce79ba68b286",
+  "status": "coding_completed_committed_quiescent_pending_root_integration_review_and_exact_head_CI",
+  "base_commit": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "retained_original_head": "b1db24a70f86812fba68e2152af750dd2a0604a8",
+  "retained_remote_equivalent_head": "bdec0bb9951e98ea9f54b0dafb297274f9f4e2aa",
+  "retained_tree": "c5eaa67b6d4529bb9456ceaf1586e9178f0e8d6a",
+  "adoption_head": "e8a2f9fbc8caf7571cba24eca5c951f7a4a0752e",
+  "adoption_tree": "c5eaa67b6d4529bb9456ceaf1586e9178f0e8d6a",
+  "source_head_commit": "3e86bda2b62d39142b7e66dda5439b50fa5e7888",
+  "source_tree": "826e3bf976dae0c23e5e70bb9b853f22e669bacd",
+  "actual_ancestry": [
+    {
+      "commit": "3e86bda2b62d39142b7e66dda5439b50fa5e7888",
+      "parents": [
+        "e8a2f9fbc8caf7571cba24eca5c951f7a4a0752e"
+      ]
+    },
+    {
+      "commit": "e8a2f9fbc8caf7571cba24eca5c951f7a4a0752e",
+      "parents": [
+        "df9c417722b0550f2d0008070f6112b4c28dfc08"
+      ]
+    },
+    {
+      "commit": "df9c417722b0550f2d0008070f6112b4c28dfc08",
+      "parents": [
+        "fd1fccb2c4883bf5c0b232e71a1ffa20af585b4d"
+      ]
+    },
+    {
+      "commit": "fd1fccb2c4883bf5c0b232e71a1ffa20af585b4d",
+      "parents": [
+        "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de"
+      ]
+    }
+  ],
+  "worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/7bfab527f2894d08a773ce79ba68b286/unit-privacy",
+  "worktree_clean": true,
+  "changed_paths_from_base": [
+    "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+    "docs/memory-os-native.md",
+    "docs/verification/features.md",
+    "scripts/verification/scenarios.json"
+  ],
+  "repair_changed_paths": [
+    "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+    "docs/memory-os-native.md",
+    "docs/verification/features.md"
+  ],
+  "deadline": 1790995184.7261705,
+  "global_cutoff": 1791010800,
+  "failure_diagnosis": {
+    "kind": "release_type_reachability_shared_instrumentation_ABI",
+    "build": "Build890",
+    "source_tree": "c5eaa67b6d4529bb9456ceaf1586e9178f0e8d6a",
+    "evidence_path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/privacy-build890-api30-instrumentation.txt",
+    "instrumentation_sha256": "1e5c22dc94dd54e9f301646dc3bdc72467cd830b45c450a5812432e991559c03",
+    "failure": "NoClassDefFoundError / ClassNotFoundException com.battlesbudz.jarvis.v2.chat.ConversationVoiceCallStore",
+    "journey": "test36_sourceCopyPrivacySurvivesPersistenceAndExpiry",
+    "reported_line": 1509,
+    "reported_test_counts": {
+      "run": 37,
+      "failures": 1
+    },
+    "interpretation": "Adapter has no prior keep declaration, while separately compiled instrumentation references its original binary name. Failure occurs before the DiagnosticRecorder constructor, which was also directly referenced without a keep declaration. No speculative privacy-behavior defect is repaired."
+  },
+  "repair": "Added androidx.annotation.Keep to ConversationVoiceCallStore in allowed ConversationHistory.kt and DiagnosticRecorder in allowed DiagnosticRecorder.kt. Both class/member ABIs become explicit retained production boundaries without changing frozen shrinker rules, tests, assertions or scenario counts. Appended truthful failed-evidence/repair notes to the two allowed documentation files.",
+  "test36_direct_reference_source_audit": {
+    "existing_frozen_full_class_rules": [
+      "com.battlesbudz.jarvis.v2.chat.ConversationHistory",
+      "com.battlesbudz.jarvis.v2.chat.ConversationThread",
+      "com.battlesbudz.jarvis.v2.chat.ConversationMessage",
+      "com.battlesbudz.jarvis.v2.ChatEntry",
+      "com.battlesbudz.jarvis.v2.voice.VoiceCallStore",
+      "com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore",
+      "com.battlesbudz.jarvis.v2.voice.VoiceCallRecord",
+      "com.battlesbudz.jarvis.v2.voice.TranscriptEntry",
+      "com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext"
+    ],
+    "retained_policy_annotations": [
+      "com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy",
+      "com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy.SummarySource",
+      "com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy.BoundSummary",
+      "com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy.SummaryProof",
+      "com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy.SummaryProof.Companion",
+      "com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicy.SummaryPreferences"
+    ],
+    "new_keep_annotations": [
+      "com.battlesbudz.jarvis.v2.chat.ConversationVoiceCallStore",
+      "com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder"
+    ],
+    "shared_types": "Android SharedPreferences/Context and standard Java/Kotlin collection/function types use framework/shared runtime ABIs already retained by frozen rules. This is a source-declaration audit, not a compiled DEX proof."
+  },
+  "actual_checks": [
+    "Read control/AGENTS/jarvis-verify skill and verification README/features",
+    "Read retained actual API30 instrumentation failure, computed its SHA256 matching retained evidence",
+    "Verified old worktree actual head/tree/three-commit ancestry",
+    "The new partial clone initially lacked the local-only commit; local read-only git fetch from retained worktree made the exact genuine three-commit adoption possible",
+    "Adoption tree equals exact retained c5eaa67b6d4529bb9456ceaf1586e9178f0e8d6a",
+    "Used apply_patch for all repair source/document edits",
+    "Static keep coverage audit of direct test36 production types and returned DTOs",
+    "All Android/JVM test and scenarios files byte-identical to adoption",
+    "Original36 Android methods/file recovered byte-for-byte after removing only new test36; original names/order/assertions preserved",
+    "37 unique scenarios, only additive test36 relative to base",
+    "Existing ConversationHistoryTest assertion lines unchanged",
+    "Both documentation changes append-only relative to base and adoption",
+    "Full base..candidate diff exactly14 authorized paths; repair only4 allowed paths",
+    "git diff --check exit0; clean committed worktree; actual final ancestry read from git"
+  ],
+  "not_executed": [
+    "Kotlin compilation",
+    "Release JVM/native/helper tests",
+    "Android instrumentation/API30/API35 rerun",
+    "Signed normal/compact release qualification",
+    "Consolidated exact-head CI receipt",
+    "Compiled target/test DEX name/reachability audit",
+    "Real model/physical audio/sensitive-lock-TTS-race/target-device qualification"
+  ],
+  "limitations": [
+    "Annotations have not yet been validated by an exact-head release shrinking/instrumentation run.",
+    "The earlier Build890 is failed evidence for the retained source, not a success receipt for this repair.",
+    "No Coordinator submit/integrate/verify, GitHub write, PR, merge, release or new actor/dispatch was performed. Root owns subsequent integration/review/publication.",
+    "All previous attempt budgets and failed reports remain retained. No privacy/dependent-goal completion is claimed."
+  ],
+  "usage_completion": {
+    "completion_key": "privacy-coding-4-done",
+    "outcome": "success",
+    "outcome_meaning": "Committed coding handoff only; review/CI/product acceptance still pending",
+    "usage": null,
+    "receipt_id_kind": "SHA256 of exact privacy-coder-4-report.json bytes",
+    "completion_record_path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/privacy-coder-4-usage.json"
+  },
+  "created_at_utc": "2026-10-03T01:43:51.374031+00:00"
+}
