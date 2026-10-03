@@ -1,0 +1,74 @@
+{
+  "scope": "Python SQLite execution of exact production CREATE/validation SQL with Python control flow matching ensureExtractionJobs. SQL-only probes; not Kotlin, Android snapshot codec, UI or full CI execution. No production source rewritten/stubbed.",
+  "source_sql_sha256": "6f8c610853207ccc606c28f9231800069be5edbab9a1e6f5047d1042f2105908",
+  "archive_sql": [
+    "CREATE TABLE source_events (event_key TEXT PRIMARY KEY NOT NULL, conversation_key TEXT NOT NULL, call_key TEXT, source TEXT NOT NULL CHECK(source IN ('TEXT','VOICE')), captured_at_ms INTEGER NOT NULL CHECK(captured_at_ms>0), expires_at_ms INTEGER NOT NULL CHECK(expires_at_ms>captured_at_ms), text TEXT, text_bytes INTEGER NOT NULL CHECK(text_bytes>=0), fingerprint TEXT NOT NULL)",
+    "CREATE INDEX source_events_expiry ON source_events(expires_at_ms)"
+  ],
+  "extension_sql": [
+    "CREATE TABLE memory_extraction_meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1),version INTEGER NOT NULL)",
+    "INSERT INTO memory_extraction_meta VALUES(1,1)",
+    "CREATE TABLE extraction_jobs(event_key TEXT PRIMARY KEY NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL,lease TEXT,lease_until_ms INTEGER NOT NULL)",
+    "CREATE TABLE extraction_source_clocks(text_key TEXT PRIMARY KEY NOT NULL,captured_at_ms INTEGER NOT NULL)",
+    "CREATE TABLE memory_index_jobs(generation INTEGER PRIMARY KEY NOT NULL,state TEXT NOT NULL)"
+  ],
+  "validation_sql": [
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='memory_extraction_meta'",
+    "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('extraction_jobs','extraction_source_clocks','memory_index_jobs')",
+    "SELECT version FROM memory_extraction_meta WHERE singleton=1",
+    "SELECT event_key,state,attempts,lease,lease_until_ms FROM extraction_jobs LIMIT 0",
+    "SELECT text_key,captured_at_ms FROM extraction_source_clocks LIMIT 0",
+    "SELECT generation,state FROM memory_index_jobs LIMIT 0"
+  ],
+  "results": [
+    {
+      "case": "existing_valid_extension",
+      "expected_upgrade": true,
+      "actual_upgrade": true,
+      "ledger_unchanged": true,
+      "archive_rollback_or_commit_correct": true,
+      "extension_clocks_jobs_unchanged": true
+    },
+    {
+      "case": "extension_absent",
+      "expected_upgrade": true,
+      "actual_upgrade": true,
+      "ledger_unchanged": true,
+      "archive_rollback_or_commit_correct": true,
+      "extension_clocks_jobs_unchanged": null
+    },
+    {
+      "case": "future_extension",
+      "expected_upgrade": false,
+      "actual_upgrade": false,
+      "ledger_unchanged": true,
+      "archive_rollback_or_commit_correct": true,
+      "extension_clocks_jobs_unchanged": null
+    },
+    {
+      "case": "missing_metadata_row",
+      "expected_upgrade": false,
+      "actual_upgrade": false,
+      "ledger_unchanged": true,
+      "archive_rollback_or_commit_correct": true,
+      "extension_clocks_jobs_unchanged": null
+    },
+    {
+      "case": "stray_extension",
+      "expected_upgrade": false,
+      "actual_upgrade": false,
+      "ledger_unchanged": true,
+      "archive_rollback_or_commit_correct": true,
+      "extension_clocks_jobs_unchanged": null
+    },
+    {
+      "case": "missing_required_column",
+      "expected_upgrade": false,
+      "actual_upgrade": false,
+      "ledger_unchanged": true,
+      "archive_rollback_or_commit_correct": true,
+      "extension_clocks_jobs_unchanged": null
+    }
+  ],
+  "passed": true
+}

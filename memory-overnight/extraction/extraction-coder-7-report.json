@@ -1,0 +1,231 @@
+{
+  "dispatch": "extraction-coding-7",
+  "actor": "/root/jarvis_privacy_coder",
+  "quiescent": true,
+  "coding_handoff": "complete; UNREVIEWED candidate, no source promotion or goal qualification",
+  "source_head_commit": "6c817a789fd03cdf9c1bca47a77ed2b937803f0b",
+  "source_tree": "ab3db585157c54cf6c3825aead23d4a6b9570ce2",
+  "base_commit": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "sole_parent": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/4503d83c1d794e81b8bcb01ece20d9c7/unit-extraction",
+  "adoption": {
+    "source_commit": "3319c32d487ab87829bee9d7b8187281c73eeb23",
+    "actual_adoption_commit": "c88c80a5d87b36f12fdd34a48ecdd0fe897c61be",
+    "parent": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+    "tree": "53d2a8987bb218930b62afcf765d28507d171c63",
+    "exact_source_tree_match": true,
+    "final_commit_method": "Genuine exact-source cherry-pick, scoped repair staging, actual soft reset and final commit with sole accepted53dac parent; prior adoption retained as provenance."
+  },
+  "sourceproof": {
+    "base_commit": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+    "adopted_source_commit": "3319c32d487ab87829bee9d7b8187281c73eeb23",
+    "adoption_commit": "c88c80a5d87b36f12fdd34a48ecdd0fe897c61be",
+    "adoption_tree": "53d2a8987bb218930b62afcf765d28507d171c63",
+    "adoption_parent": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+    "candidate_changed_paths": [
+      "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/ai/LiteRtLmEngine.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/conversation/ConversationRuntime.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/AndroidMemoryOs.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/ConversationMemory.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptance.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryCaptureAcknowledgment.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryDeliveryFence.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryEligibility.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryExtraction.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryExtractionJobs.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryExtractionWorker.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryModels.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryOs.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryPolicy.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryRetrieval.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemorySensitivityPolicy.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemorySnapshotCodec.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemorySourceSupport.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemorySuppression.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryTurnContext.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SQLiteMemoryStore.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/ui/ConversationScreen.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/ui/MemoryScreen.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/ui/MemoryWikiComponents.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptanceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryEligibilityTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryExtractionJobsTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryExtractionTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemorySensitivityPolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemorySuppressionTest.kt",
+      "docs/memory-os-native.md",
+      "docs/verification/features.md",
+      "scripts/verification/scenarios.json"
+    ],
+    "repair_paths": [
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SQLiteMemoryStore.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/ui/MemoryWikiComponents.kt",
+      "docs/memory-os-native.md",
+      "docs/verification/features.md"
+    ],
+    "allowed_count": 77,
+    "frozen_count": 180,
+    "frozen_byte_identical_to_base": true,
+    "original_144_jvm_byte_identical": true,
+    "all_150_adopted_jvm_byte_identical": true,
+    "current_39_android_whole_file_and_scenarios_byte_identical": true,
+    "docs_append_only": true,
+    "bulk_control_precedes_scroll_list": true,
+    "v1_uses_existing_extension_validator_before_version_commit": true,
+    "diff_check_exit_code": 0,
+    "source_head_commit": "6c817a789fd03cdf9c1bca47a77ed2b937803f0b",
+    "source_tree": "ab3db585157c54cf6c3825aead23d4a6b9570ce2",
+    "sole_parent": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+    "final_clean": true,
+    "post_commit_diff_check_exit_code": 0
+  },
+  "changes": [
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SQLiteMemoryStore.kt",
+      "diagnosis": "v1 archive upgrade called createExtractionJobs even when independent extension tables survived. Frozen originaltest34 dropped only source_events and set user_version1; CREATE failed and read returned null.",
+      "repair": "Call existing ensureExtractionJobs after archive creation within same upgrade transaction. Valid version1 extension and original clocks/jobs survive; unsupported/incomplete schemas retain existing failure/rollback behavior. user_version remains2; no cleanup/backfill/clock reset."
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/ui/MemoryWikiComponents.kt",
+      "diagnosis": "Original API35 test24 reached pending/rejected-only History then missed the erase confirmation. History bulk action was a LazyColumn header above tall origin/attribution cards. Failure screenshot/XML shows Wiki selected/no dialog, not the preceding History viewport; exact physical mis-tap is not proved.",
+      "repair": "Keep bulk action outside scrolling rows in Column, above weighted LazyColumn. Same tag, busy guard, callback, generation-bound confirmation/erase, empty text and Review card actions. This structural fix removes row-scroll/header positioning from the bulk control. UI efficacy awaits actual exact-candidate Android gates."
+    },
+    {
+      "paths": [
+        "docs/memory-os-native.md",
+        "docs/verification/features.md"
+      ],
+      "repair": "Append-only failed Build913 facts, SQL/static evidence limits and explicit missing new independent review. Historical notes and qualification remain intact."
+    }
+  ],
+  "actual_prior_ci": {
+    "observed_epoch": 1791006804.9797745,
+    "candidate": "3319c32d487ab87829bee9d7b8187281c73eeb23",
+    "run": 37099349277,
+    "conclusion": "failure",
+    "signed_release": "success",
+    "jvm": {
+      "classes": 150,
+      "tests": 783,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "proof_sha256": "b732d3261cc4fe6ba1914fbdadb30eae0e86d25a7709b22472d5eebdab826bfc"
+    },
+    "android": [
+      {
+        "api": 30,
+        "artifact": 11266805389,
+        "zip_sha256": "9438ecff86614e0e198eb2fea76054f309f02fce0e1357adc0872177c2f4d39f",
+        "report_sha256": "b82195a365c3425fcb29c8f81cce642aa1d3547b3690aba188b44f7a8c09b879",
+        "failures": {
+          "test34_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure": -2
+        }
+      },
+      {
+        "api": 35,
+        "artifact": 11266560842,
+        "zip_sha256": "106e7f065feaa8e899d1e56f3f63ae4cdebc44403df61f833e582096038fe258",
+        "report_sha256": "4dd1009d43cd5451c88ab003cd9db8b2ab859c909e2ecbed16495a120b7ed9ac",
+        "failures": {
+          "test24_memoryManagerReviewsCorrectsSearchesAndErases": -2,
+          "test34_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure": -2
+        }
+      }
+    ],
+    "classification": "actual code/UI regression, not infrastructure",
+    "failed_original_tests_frozen": true,
+    "next_repair": "Migration must reuse/validate an existing extraction extension during v1 source-archive upgrade; inspect compact History bulk-erase accessibility without changing frozen test24/34",
+    "no_goal_completion": true,
+    "no_source_promotion": true,
+    "provider_usage": null
+  },
+  "actual_prior_ci_evidence_sha256": "4358cf5a4ffacc553a7ed4e77f2526996ca7db1fc876834d311efd4d647ec4d4",
+  "actual_checks": {
+    "diff_check_exit_code": 0,
+    "static_checks_path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-coder-7-static-checks.json",
+    "static_checks_sha256": "acecbffcca7c5fea91d0b4b21b01b68b5a2687b78f51a10b164439b74ce7f6bc",
+    "sql_only": {
+      "script_path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-coder-7-sql-probes.py",
+      "script_sha256": "f06411e72944406b6f929e93777fc303a5655e681f0f9ef70ccba8e885865906",
+      "report_path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-coder-7-sql-probes.json",
+      "report_sha256": "89a281ec6d0cffbf3bb2eab61eb45a781fdab59a1de9bdb48c271a17d5fdedc7",
+      "cases": [
+        {
+          "case": "existing_valid_extension",
+          "expected_upgrade": true,
+          "actual_upgrade": true,
+          "ledger_unchanged": true,
+          "archive_rollback_or_commit_correct": true,
+          "extension_clocks_jobs_unchanged": true
+        },
+        {
+          "case": "extension_absent",
+          "expected_upgrade": true,
+          "actual_upgrade": true,
+          "ledger_unchanged": true,
+          "archive_rollback_or_commit_correct": true,
+          "extension_clocks_jobs_unchanged": null
+        },
+        {
+          "case": "future_extension",
+          "expected_upgrade": false,
+          "actual_upgrade": false,
+          "ledger_unchanged": true,
+          "archive_rollback_or_commit_correct": true,
+          "extension_clocks_jobs_unchanged": null
+        },
+        {
+          "case": "missing_metadata_row",
+          "expected_upgrade": false,
+          "actual_upgrade": false,
+          "ledger_unchanged": true,
+          "archive_rollback_or_commit_correct": true,
+          "extension_clocks_jobs_unchanged": null
+        },
+        {
+          "case": "stray_extension",
+          "expected_upgrade": false,
+          "actual_upgrade": false,
+          "ledger_unchanged": true,
+          "archive_rollback_or_commit_correct": true,
+          "extension_clocks_jobs_unchanged": null
+        },
+        {
+          "case": "missing_required_column",
+          "expected_upgrade": false,
+          "actual_upgrade": false,
+          "ledger_unchanged": true,
+          "archive_rollback_or_commit_correct": true,
+          "extension_clocks_jobs_unchanged": null
+        }
+      ],
+      "scope": "Python SQLite execution of exact production CREATE/validation SQL with Python control flow matching ensureExtractionJobs. SQL-only probes; not Kotlin, Android snapshot codec, UI or full CI execution. No production source rewritten/stubbed."
+    },
+    "real_image_inspected": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/build913-api35-test24_memoryManagerReviewsCorrectsSearchesAndErases.png",
+    "image_sha256": "50aa386c890340aa1989bde5b694ecb9107ab12d747985c53a202875178f5d0d",
+    "xml_sha256": "a78724bfb36e8f382b4c823f3427824b0bffdb9a7482e88ec1e17aa9c6e398a1",
+    "current_kotlin_jvm_android_tests": "NOT RUN",
+    "frozen_android_tests_or_harness_changed": false,
+    "existing_jvm_tests_or_assertions_changed": false
+  },
+  "missing_independent_review": true,
+  "qualification": false,
+  "no_source_promotion": true,
+  "limitations": [
+    "No distinct reviewer admission remains in the original aggregate; this actual candidate remains unreviewed even if subsequent full CI passes.",
+    "Six executed Python SQLite probes use exact source SQL and matching Python validation branches, not Kotlin/Android APIs, snapshot codec or UI execution.",
+    "UI layout fix is source/evidence based; screenshot does not prove the original physical tap path. Full exact-candidate API30/API35 and restart/consolidation remain pending.",
+    "The previous783JVM/signed builds and new Android37/38 passes belong only to failed3319 Build913 and are not transferred as qualification here.",
+    "Actual selected Gemma extraction/model quality, physical audio/device behavior and broader raw-user semantic sensitivity coverage remain unqualified."
+  ],
+  "no_github_native_publisher_coordinator_or_actor_actions": true,
+  "usage": null,
+  "deadline_epoch": 1791010489.8885438,
+  "global_cutoff_epoch": 1791010800,
+  "reported_at_utc": "2026-10-03T05:59:56.426592+00:00"
+}

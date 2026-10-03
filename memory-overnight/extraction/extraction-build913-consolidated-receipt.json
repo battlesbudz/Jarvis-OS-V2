@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "passed": false,
+  "source_commit": "3319c32d487ab87829bee9d7b8187281c73eeb23",
+  "pr_head": "",
+  "run_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37099349277",
+  "errors": [
+    "Required job did not succeed: verify-release",
+    "API 30 app-release: Mismatched passed",
+    "API 35 app-compact: Mismatched passed"
+  ],
+  "variants": [],
+  "release_approved": false,
+  "coverage": "release JVM + UI + Android actions; no model inference",
+  "not_covered": [
+    "Real-model inference and model-generated tool selection",
+    "Microphone, speaker, Bluetooth and acoustic interruption behavior",
+    "Physical-device GPU/NPU compatibility, thermal behavior and latency",
+    "Successful multi-gigabyte model download/import",
+    "Real-model use of approved memory recall"
+  ],
+  "provenance": "Same-run GitHub Actions artifacts; APK bytes rehashed. Not an external attestation.",
+  "jvm": {
+    "passed": true,
+    "tests": 783,
+    "suites": 150
+  }
+}
