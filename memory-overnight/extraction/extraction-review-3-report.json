@@ -1,0 +1,72 @@
+{
+  "actor": "/root/jarvis_privacy_review",
+  "dispatch_id": "extraction-review-3",
+  "ticket_id": "fcafada8c33c414b938546bb0e260fb0",
+  "coordinator_run": "c62a31c777a04cfeb2570af8baafee63",
+  "requested_model": "gpt-6-astra",
+  "requested_effort": "high",
+  "actual_usage": null,
+  "base_sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "coder_sha": "681f806549196e3b8d193b52be51fb560fe0e2f5",
+  "local_sha": "2974baa41188c2e44ac0953a428542f74fa1529b",
+  "remote_sha": "936d112cab978adab3571a5986d85e4c9d0c9df6",
+  "local_tree": "c8205f08ceb360c4de5a274ef926372b94781118",
+  "remote_tree": "c8205f08ceb360c4de5a274ef926372b94781118",
+  "local_parents": [
+    "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b"
+  ],
+  "remote_parents": [
+    "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b"
+  ],
+  "tree_binding_verified": true,
+  "scope_verified": true,
+  "frozen_verified": true,
+  "approved": true,
+  "summary": "Approved for the source-review stage only: exact durable candidate936d112cab978adab3571a5986d85e4c9d0c9df6 and local integration2974baa41188c2e44ac0953a428542f74fa1529b independently bind to treec8205f08ceb360c4de5a274ef926372b94781118 and sole accepted base53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b. Both raw commit hashes and clean checkouts verified. All37 changed paths are allowed;180 frozen/all nonallowed paths and144 original JVM files remain unchanged. Removing only additive test38 recovers the complete previous38-journey file;39 unique methods pair with preserved-order scenarios. R3 and the stale-lease advisory are resolved: defer derives state/count from the same post-refund count, requires exact RUNNING/unexpired lease, returns actual affected-row success and closes its statement. Independent exact-SQL probes cover attempts1-5 cancellation/failure, six guarded no-op cases and file reopen; fifth cancellation persists PENDING4 while genuine fifth failure stays FAILED5. Earlier whole-source attribution, comparison-copy privacy and typed SQL fixes remain intact in identical reviewed blobs. Full cumulative lifecycle/source/privacy/model-ownership boundaries remain within the documented conservative scope; no additional blocking defect found. This approves independent source review, not feature/CI/device qualification. Frozen harness, current exact-SHA signed release/JVM/native/helper gates, API30normal/API35compact39 journeys plus restart/consolidation and real model/device limits remain separate. Prior rejected trees/results remain retained and cannot substitute for this candidate.",
+  "findings": [],
+  "checks_performed": [
+    "Read extraction-review-control-3 bound ticket, extraction-control-3 exact goal, coder3 report/log/probes/static checks and remote identity receipt. Applied previously read repository AGENTS/jarvis-verify/verification guidance; read appended design/features evidence.",
+    "Independently recomputed both raw Git commit SHA1s and checked HEAD/tree/sole accepted-base parent, clean status, complete581-entry tree binding and full base-to-head changed-path scope.",
+    "Verified37 changed paths within77 allowed;180 frozen and all nonallowed files unchanged;144 original JVM files unchanged and only the six allowed additive JVM paths differ. Both base..HEAD diff --check exit0.",
+    "Verified removal of only newtest38 exactly recovers previous38-journey file bytes; removal of test37 additionally recovers accepted-base37 file. All39 methods/scenarios unique and paired with old scenario order/metadata preserved.",
+    "Read complete six-path repair; old Android bodies/assertions and existing JVM test bodies remain; new worker fixture preserves previous counters/assertions and adds distinct fifth cancellation/failure intent checks. Docs append-only.",
+    "Reviewed new actual SQLite instrumentation journey: four failures, fifth refund, reopen/reclaim5, stale previous owner, completed no-op, actual fifth failure and expired fifth cap/reopen. Direct production owners already kept; new statement API is inside existing kept SQLiteMemoryStore. No R8 execution claimed.",
+    "Revisited current claim/finish/defer transactions, source identity/eligibility checks, suppression, acceptance and worker finalization; bound parameter order/types, exact lease expiry boundary, transactional affected rows and statement closure inspected.",
+    "Executed exact current compileStatement SQL with Python sqlite3 for attempts1-5 crossed with cancellation/failure, six stale/foreign/state/expiry no-op cases, plus committed-file close/reopen after fifth cancellation. All expected rowcounts/state/counts matched. This is SQL evidence, not Android/Kotlin execution.",
+    "Checked prior R1/R2 implementation files byte-identical to previously reviewed repaired blobs, preserving complete trimmed-source attribution/uncertainty, whole-payload comparison sanitization/monotonic bound sensitivity, live output fencing and actual local Gemma ownership. Current cumulative privacy/retention/no-backfill/schema/index-intent design reviewed without reopening frozen scope.",
+    "Confirmed prior Build908 heterogeneous SQL sites remain explicitly typed; no current compiler success inferred. No source/GitHub/Coordinator mutation, full frozen harness, new agent or toolchain installation."
+  ],
+  "resolved_prior_findings": [
+    "R1: full trimmed source must be retained; outer qualifiers cannot be discarded; complete-source uncertainty labels preserved. Repaired blobs unchanged.",
+    "R2: source-bearing comparison callbacks sanitize before retention; sensitive binding monotonic; numeric metrics typed. Repaired blobs unchanged.",
+    "R3: fifth explicit cancellation now persists PENDING4 and may reclaim5; genuine fifth failure stays FAILED5. Exact SQL matrix and reopen probe passed.",
+    "Advisory: stale/foreign/expired/already-finished defer returns false from actual executeUpdateDelete row count; no lease refund on no-op.",
+    "Build908 five mixed binding inference sites remain explicitly typed; source repair only, current compilation unverified here."
+  ],
+  "unverified_gates_and_qualified_limits": [
+    "This source approval does not qualify the feature or APK. Current exact936d candidate full signed release, JVM/native/helper suites, API30normal/API35compact39 named journeys, restart/consolidated receipt and frozen local+remote harness remain mandatory parent-owned gates.",
+    "No Kotlin/Gradle/JVM/Android/R8 execution by reviewer. SQL probes ran under Python sqlite3 3.53.1; they do not establish Android runtime behavior.",
+    "No actual Gemma weights extraction, source-attribution/sensitivity model precision, maximal-context quality/capacity, physical Fold6/audio/TTS-lock-race/responsiveness/RAM/thermal qualification.",
+    "One complete bounded supported statement only; conservative grammar rejects many complex/multisentence/indirect/quoted/counterfactual inputs. Whole-source uncertainty/negation is preserved; this is not general natural-language entailment.",
+    "Save eligibility is independent of disclosure. Rich sensitive derived history/comparison copies remain generic even unlocked; live guarded TTS/direct memory views provide limited disclosure. Raw-user sensitive semantics beyond current model/detector classification remain unproved.",
+    "Original90day source/copy clocks and a broad erasure-time barrier are retained. Unrelated older source jobs may also be suppressed; fresh post-barrier statements may establish new evidence except exact older text cannot renew. No semantic-vector suppression claim.",
+    "Warm selected-model-only bounded batches await eligible foreground boundaries; unknown expired claims consume the bounded attempt budget, while explicit valid cancellation refunds it. No forced load/perpetual drain. Index jobs remain durable intentions pending goal3.",
+    "Old rejected review1/review2 reports and Build908/909 evidence remain distinct; no result is borrowed as current exactcandidate qualification."
+  ],
+  "scope_checks": {
+    "allowed": 77,
+    "frozen": 180,
+    "changed": 37,
+    "repair_paths": 6,
+    "original_jvm_files": 144,
+    "additive_jvm_files": 6,
+    "previous_android": 38,
+    "current_android": 39
+  },
+  "probe_evidence": [
+    "extraction-review-3-probes.json",
+    "extraction-review-3-integrity.json"
+  ],
+  "completed_at": "2026-10-03T03:54:04.604177+00:00",
+  "quiescent_after_report": true
+}

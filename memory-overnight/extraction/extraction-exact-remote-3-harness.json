@@ -1,0 +1,20 @@
+{
+  "sha": "936d112cab978adab3571a5986d85e4c9d0c9df6",
+  "argv": [
+    "python3",
+    "-B",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "scripts",
+    "-p",
+    "test_*.py"
+  ],
+  "exit_code": 0,
+  "log_sha256": "371bb5c61eac7f6495faba206a4751ab7bdd2f28e7e973364fd6187b95f50b09",
+  "log_bytes": 186,
+  "observed_start": 1790999699.8865535,
+  "observed_end": 1790999701.1686544,
+  "clean": true
+}
