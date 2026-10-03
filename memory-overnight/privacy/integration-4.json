@@ -1,0 +1,21 @@
+{
+  "integration_head": "a348d86ddd32ba7e5f99bc9687e9fad07e918caf",
+  "integration_tree": "826e3bf976dae0c23e5e70bb9b853f22e669bacd",
+  "integration_worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/7bfab527f2894d08a773ce79ba68b286/integration",
+  "precheck": {
+    "head": "a348d86ddd32ba7e5f99bc9687e9fad07e918caf",
+    "tree": "826e3bf976dae0c23e5e70bb9b853f22e669bacd",
+    "argv": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit_code": 0,
+    "log_path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/logs/7bfab527f2894d08a773ce79ba68b286/precheck.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "log_bytes": 0,
+    "complete": true,
+    "reason": null
+  },
+  "state": "prechecked"
+}
