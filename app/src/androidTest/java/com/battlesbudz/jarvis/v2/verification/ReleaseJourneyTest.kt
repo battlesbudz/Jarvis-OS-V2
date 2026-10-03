@@ -209,18 +209,21 @@ class ReleaseJourneyTest {
     /** Category chips live in horizontal LazyRows, so vertical page seeking cannot reveal all of them. */
     private fun clickHorizontalChip(strip: BySelector, target: BySelector) {
         repeat(8) {
+            val row = find(strip).visibleBounds
             device.findObject(target)?.let { chip ->
-                if (chip.isEnabled && hasSafeTapBounds(chip)) {
+                if (chip.isChecked) return
+                // API 30 can expose a chip's unclipped bounds beyond its LazyRow.
+                // Reveal the whole chip, then observe selection before continuing.
+                if (chip.isEnabled && hasSafeTapBounds(chip) && row.contains(chip.visibleBounds)) {
                     chip.click()
                     device.waitForIdle()
-                    return
+                    if (device.wait(Until.hasObject(target.checked(true)), 2_000)) return
                 }
             }
-            val row = find(strip).visibleBounds
             device.swipe(row.right - 12, row.centerY(), row.left + 12, row.centerY(), 180)
             device.waitForIdle()
         }
-        clickEnabled(target)
+        throw AssertionError("Category chip did not become selected: $target")
     }
 
     private fun enterText(selector: BySelector, value: String) {
