@@ -77,6 +77,41 @@ jobs:
             jarvis_avdmanager="${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager"
           fi
           "$jarvis_avdmanager" list device
+      - name: Start an owned X display for the foldable emulator
+        if: matrix.screen_profile == 'foldable'
+        timeout-minutes: 5
+        run: |
+          jarvis_display_dir="$RUNNER_TEMP/jarvis-fold-display"
+          mkdir -p "$jarvis_display_dir"
+          sudo timeout --kill-after=5s 120s apt-get update > "$jarvis_display_dir/apt-update.log" 2>&1
+          sudo timeout --kill-after=5s 120s apt-get install -y --no-install-recommends x11-utils > "$jarvis_display_dir/apt-install.log" 2>&1
+          command -v Xvfb > "$jarvis_display_dir/tools.txt"
+          command -v xdpyinfo >> "$jarvis_display_dir/tools.txt"
+          Xvfb -displayfd 3 -screen 0 1920x2400x24 -nolisten tcp \
+            3> "$jarvis_display_dir/display-number" > "$jarvis_display_dir/Xvfb.log" 2>&1 &
+          jarvis_display_pid=$!
+          printf '%s\n' "$jarvis_display_pid" > "$jarvis_display_dir/pid"
+          awk '{print $22}' "/proc/$jarvis_display_pid/stat" > "$jarvis_display_dir/start-ticks"
+          if timeout 15s bash -c '
+            while kill -0 "$2" 2>/dev/null; do
+              if [ -s "$1/display-number" ]; then
+                jarvis_display_number="$(cat "$1/display-number")"
+                [[ "$jarvis_display_number" =~ ^[0-9]+$ ]] || exit 1
+                if DISPLAY=":$jarvis_display_number" xdpyinfo > "$1/xdpyinfo.txt" 2> "$1/xdpyinfo-errors.txt"; then
+                  printf "DISPLAY=:%s\nQT_QPA_PLATFORM=xcb\n" "$jarvis_display_number" >> "$GITHUB_ENV"
+                  exit 0
+                fi
+              fi
+              sleep .2
+            done
+            exit 1
+          ' -- "$jarvis_display_dir" "$jarvis_display_pid"; then
+            printf 'ready\n' > "$jarvis_display_dir/status"
+          else
+            printf 'readiness failed\n' > "$jarvis_display_dir/status"
+            cat "$jarvis_display_dir/Xvfb.log"
+            exit 1
+          fi
       - name: Verify release on a disposable Android device
         if: matrix.acceleration == 'kvm'
         uses: reactivecircus/android-emulator-runner@v2
@@ -90,7 +125,8 @@ jobs:
           disk-size: 4096M
           disable-animations: true
           emulator-boot-timeout: ${{ matrix.boot_timeout }}
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          # Only the foldable needs the Qt backend's configured folded-region path.
+          emulator-options: ${{ matrix.screen_profile == 'foldable' && '-gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot' || '-no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot' }}
           script: python3 scripts/verification/android.py run --profile "${{ matrix.id }}" --apk inputs/jarvis-os-v2-release-apk/${{ matrix.apk }}.apk --test-apk inputs/jarvis-verification-test-apk/app-release-androidTest.apk --previous-apk inputs/jarvis-previous-release/app-release.apk --previous-metadata inputs/jarvis-previous-release/previous-release.json --out verification-evidence --source-commit "${{ github.sha }}" --pr-head "${{ github.event.pull_request.head.sha }}" --allow-emulator-reset
       - name: Verify release on a software-emulated ARM64 API 29 device
         if: matrix.acceleration == 'software'
@@ -99,6 +135,49 @@ jobs:
         run: >-
           python3 scripts/verification/software_emulator.py --profile "${{ matrix.id }}" --out verification-evidence --
           python3 scripts/verification/android.py run --profile "${{ matrix.id }}" --apk inputs/jarvis-os-v2-release-apk/${{ matrix.apk }}.apk --test-apk inputs/jarvis-verification-test-apk/app-release-androidTest.apk --previous-apk inputs/jarvis-previous-release/app-release.apk --previous-metadata inputs/jarvis-previous-release/previous-release.json --out verification-evidence --source-commit "${{ github.sha }}" --pr-head "${{ github.event.pull_request.head.sha }}" --allow-emulator-reset
+      - name: Stop the owned foldable X display and retain diagnostics
+        if: always() && matrix.screen_profile == 'foldable'
+        run: |
+          jarvis_display_dir="$RUNNER_TEMP/jarvis-fold-display"
+          jarvis_cleanup_failed=0
+          if [ -s "$jarvis_display_dir/pid" ] && [ -s "$jarvis_display_dir/start-ticks" ]; then
+            jarvis_display_pid="$(cat "$jarvis_display_dir/pid")"
+            jarvis_display_start="$(cat "$jarvis_display_dir/start-ticks")"
+            jarvis_owned_display_alive() {
+              [ -r "/proc/$jarvis_display_pid/stat" ] || return 1
+              read -r jarvis_actual_start jarvis_actual_state < <(awk '{print $22, $3}' "/proc/$jarvis_display_pid/stat" 2>/dev/null) || return 1
+              [ "$jarvis_actual_start" = "$jarvis_display_start" ] && [ "$jarvis_actual_state" != Z ]
+            }
+            if [[ "$jarvis_display_pid" =~ ^[0-9]+$ ]] && jarvis_owned_display_alive; then
+              kill "$jarvis_display_pid" 2>/dev/null || true
+              for jarvis_stop_attempt in {1..30}; do
+                jarvis_owned_display_alive || break
+                sleep .1
+              done
+              if jarvis_owned_display_alive; then
+                kill -KILL "$jarvis_display_pid" 2>/dev/null || true
+              fi
+              for jarvis_stop_attempt in {1..30}; do
+                jarvis_owned_display_alive || break
+                sleep .1
+              done
+              if jarvis_owned_display_alive; then
+                printf 'cleanup failed: owned X display remains alive\n' > "$jarvis_display_dir/cleanup-status"
+                jarvis_cleanup_failed=1
+              else
+                printf 'owned X display gone, zombie, or PID ownership changed\n' > "$jarvis_display_dir/cleanup-status"
+              fi
+            else
+              printf 'already stopped or PID ownership changed; no signal sent\n' > "$jarvis_display_dir/cleanup-status"
+            fi
+          fi
+          # android.py requires a nonexistent output directory when it starts.
+          # Attach display diagnostics only after the emulator/controller action.
+          if [ -d "$jarvis_display_dir" ]; then
+            mkdir -p verification-evidence/fold-display
+            cp -a "$jarvis_display_dir/." verification-evidence/fold-display/
+          fi
+          exit "$jarvis_cleanup_failed"
       - name: Retain evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4

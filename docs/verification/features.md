@@ -354,6 +354,56 @@ failed with exit 1 after 10.61 seconds. No app instrumentation started, and the
 retained screenshot is black. Artifact `11271395102` retains that separate
 platform failure; it supplies no app/controller pass.
 
+## Expanded gate Build 926 and foldable display backend
+
+[Build 926](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37115654938)
+tested head `d708138c32f1cd389fd50d43e5e09e90eac5d880`, merge
+`2e43bc690f953f9cf5518ab42ebdce548158f73e`. The dialog-window repair passed
+all 49 main cases on the generic foldable, including durable selection and
+restoration. Its last Choose target now exposes `[1433,1873][1684,1999]`, the
+full 126-pixel/48 dp height above navigation, within the unchanged full-width
+list. Actual PNG/XML confirm the crop is fixed. The fold profile also passed
+its previous-APK upgrade, all lifecycle phases, the other three layout cases
+and all nine native loads. API 30/35/36 phones and the true 16 KB profile passed
+their full required phases; actual 16,384-byte native loading was retained.
+Current 200% font screenshots were inspected for all five Linux profiles.
+
+The actual fold/unfold case still failed. Console fold returned success and
+Android logged device-state transition 3→1, but LogicalDisplayMapper applied
+an identical display layout. Both baseline and failed app content remained
+`[0,0][1768,2208]`; the strict 45-second dimension-change assertion failed.
+Artifact `11271976850` retains that failure. Console acknowledgement and a
+closed posture alone do not establish resizing or continuity across a fold.
+
+Public emulator source at `ae9d18d2b6261179fbd57fffec720a04f7bfb053`
+(35.6.3 Canary, March 27, 2025) has empty headless display-region/posture UI
+callbacks, while its Qt backend propagates the configured folded area and
+lid event. An older source revision has the same distinction. These sources
+are not the exact 37.2.12 release used in Build 926; together with the observed
+unchanged window they support an infrastructure repair to verify. Only the
+fold profile now starts an owned Xvfb display and uses the windowed Qt emulator.
+Only `x11-utils` is installed for the missing `xdpyinfo` probe, with bounded
+package update/install commands; SDK 37.2.12 bundles the inspected XCB/cursor/xkb
+helper libraries, and its other required system libraries are already present.
+Readiness is bounded to 15 seconds, cleanup checks PID ownership, and logs are
+attached after the controller. Other emulator options/profiles, all physical
+dimension/continuity assertions, insets, padding and deadlines remain intact;
+the controller does not substitute a direct window-size override. A new
+exact-revision runtime must prove real folded/unfolded geometry and all tests.
+That result is pending, and publication remains blocked.
+
+API 29 reached core-service readiness, then cold input took 56.979 seconds and
+an unlocked keyguard was observed. Installation of the prior Build 907 APK
+exhausted its 180-second timeout; no successful install was observed and the
+Jarvis package remained unavailable. Earlier boot logs contain
+a fatal `PermissionPolicyService` exception and `system_server` PID 296 ending
+with signal 9; SystemUI and phone/dialer ANRs followed during installation.
+No later watchdog kill was found in this run. No instrumentation or current
+APK installation started. Screenshot and logcat collection also timed out
+(60 and 30 seconds); no PNG exists. Artifact `11271673105` retains this
+platform failure. Readiness and unlock do not supply a controller pass, and
+the strict API 29 requirement remains unchanged.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,
