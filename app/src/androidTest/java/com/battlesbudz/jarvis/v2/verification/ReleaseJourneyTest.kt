@@ -1587,6 +1587,162 @@ class ReleaseJourneyTest {
         }
     }
 
+    @Test fun test37_localExtractionJobsAcceptSupportedFactsAndFenceSensitiveRecall() {
+        val root = File(context.cacheDir, "extraction-${System.nanoTime()}").apply { mkdirs() }
+        val database = File(root, "memory.db")
+        var now = 1_791_000_000_000L
+        var unlocked = true
+        var store = SQLiteMemoryStore(database, canReadSourceText = { unlocked }, archiveClock = { now })
+        val copies = context.getSharedPreferences("sensitive-copies-${System.nanoTime()}", android.content.Context.MODE_PRIVATE)
+        fun input(id: String, text: String) = FinalMemoryInput(id, "conversation", source = ConversationMemorySource.TEXT, text = text, capturedAtMs = now)
+        // Controlled model output exercises the production structured decoder and SQLite path;
+        // this emulator fixture is not evidence that actual Gemma weights extracted these facts.
+        fun facts(job: com.battlesbudz.jarvis.v2.memory.MemoryExtractionJob): List<com.battlesbudz.jarvis.v2.memory.ExtractedMemory> {
+            val text = job.source.text
+            val output = org.json.JSONArray().put(org.json.JSONObject().put("content", text).put("quote", text)
+                .put("start", 0).put("end", text.length).put("category", "FACT").put("sensitivity", "NORMAL")
+                .put("statementKind", "EXPLICIT_STATEMENT")).toString()
+            return com.battlesbudz.jarvis.v2.memory.GemmaMemoryExtractor.decode(output, job.source)
+        }
+        try {
+            assertEquals(SourceArchiveOutcome.STORED, store.captureSource(input("ordinary", "I live in Portland")).outcome)
+            val crashed = store.claimExtraction()!!
+            store.close()
+            store = SQLiteMemoryStore(database, canReadSourceText = { unlocked }, archiveClock = { now })
+            assertNull(store.claimExtraction())
+            now += 120_001
+            val recovered = store.claimExtraction()!!
+            assertNotEquals(crashed.lease, recovered.lease)
+            assertEquals(2, recovered.attempt)
+            assertFalse(store.finishExtraction(recovered.copy(source = recovered.source.copy(text = "I own a yacht")), facts(recovered)))
+            assertTrue(store.finishExtraction(recovered, facts(recovered)))
+            assertFalse(store.finishExtraction(crashed, facts(crashed)))
+            assertTrue(store.indexJobStates().values.contains("PENDING"))
+            val os = MemoryOs(store, { now }, { unlocked })
+            val ordinary = os.read().snapshot!!.memories.single()
+            assertEquals(com.battlesbudz.jarvis.v2.memory.MemoryAcceptanceOrigin.AUTOMATIC, ordinary.acceptanceOrigin)
+            assertEquals(MemoryReviewStatus.APPROVED, ordinary.reviewStatus)
+            assertEquals(recovered.source.capturedAtMs, ordinary.source.createdAtMs)
+            now++
+            assertEquals(SourceArchiveOutcome.STORED, store.captureSource(input("sensitive", "My diagnosis is asthma")).outcome)
+            val sensitiveJob = store.claimExtraction()!!
+            assertTrue(store.finishExtraction(sensitiveJob, facts(sensitiveJob)))
+            val sensitive = os.read().snapshot!!.memories.first { it.content.contains("asthma") }
+            assertEquals(com.battlesbudz.jarvis.v2.memory.MemorySensitivity.RESTRICTED, sensitive.source.sensitivity)
+            val visible = os.contextPacket("diagnosis", 2_000)
+            assertTrue(visible.packet!!.text.contains("asthma"))
+            val turn = com.battlesbudz.jarvis.v2.memory.MemoryTurnContext(visible.packet!!.text, visible.stateToken,
+                "diagnosis", null, 0, containsSensitive = true, canDiscloseSensitive = { unlocked }) { 0 }
+            val fence = com.battlesbudz.jarvis.v2.memory.MemoryDeliveryFence()
+            val ticket = fence.ticket()
+            unlocked = false
+            assertFalse(os.read().snapshot!!.memories.any { it.content.contains("asthma") })
+            assertNotEquals(visible.stateToken, os.contextPacket("diagnosis", 2_000).stateToken)
+            assertFalse(fence.publish(ticket, { turn.isCurrent() }) { fail("Locked delivery must not run") })
+            assertEquals("", turn.promptSection())
+            val copy = com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.durableCopy("You have asthma", true)
+            assertEquals(com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.PRIVATE_COPY, copy)
+            val history = com.battlesbudz.jarvis.v2.chat.ConversationHistory(copies, clock = { now })
+            val calls = com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore(copies, key = "private-calls", clock = { now })
+            val controller = com.battlesbudz.jarvis.v2.voice.VoiceSessionController(calls, nowMs = { now })
+            val call = controller.beginCall()
+            controller.beginReply(call.id, "sensitive-reply")
+            listOf("You have", "You have asthma").forEach { text ->
+                val safeCopy = com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.durableCopy(text, true)
+                history.updateReply(history.current.value.id, "sensitive-reply", safeCopy, false)
+                controller.updateReplyText(call.id, "sensitive-reply", safeCopy)
+            }
+            controller.updateReplyText(call.id, "sensitive-reply", copy, finished = true)
+            assertEquals(copy, com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.publishSensitiveDelivery(
+                controller, call.id, "sensitive-reply", "You have asthma"))
+            assertEquals(copy, controller.currentTranscript().single().text)
+            assertEquals(copy, calls.list().single().transcript.single().text)
+            val diagnostics = com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder(copies, clock = { now })
+            diagnostics.recordInferencePrompt(sensitive.content)
+            assertFalse(diagnostics.snapshot().contains("asthma"))
+            assertFalse(copies.all.values.joinToString().contains("asthma"))
+            unlocked = true
+            now++
+            assertEquals(SourceArchiveOutcome.STORED, store.captureSource(input("older-pending", "I enjoy life in Portland")).outcome)
+            val oldJob = store.claimExtraction()!!
+            now++
+            assertEquals(MemoryOutcome.DELETED, os.delete(ordinary.id).outcome)
+            assertTrue(store.finishExtraction(oldJob, facts(oldJob)))
+            assertEquals("SUPPRESSED", store.extractionJobStates()[oldJob.eventKey])
+            now++
+            assertEquals(SourceArchiveOutcome.STORED, store.captureSource(input("copy-id", recovered.source.text)).outcome)
+            assertNull(store.claimExtraction())
+            assertTrue(store.searchExplicitHistory("Portland").episodes.isNotEmpty())
+            store.close()
+            store = SQLiteMemoryStore(database, canReadSourceText = { unlocked }, archiveClock = { now })
+            assertFalse(store.read().snapshot!!.memories.any { it.content.contains("Portland") })
+            assertEquals(MemoryReviewStatus.APPROVED, store.read().snapshot!!.memories.single().reviewStatus)
+            // A version-2 archive predating this extension establishes a baseline without backfill.
+            val legacyDatabase = File(root, "extension-upgrade.db")
+            SQLiteMemoryStore(legacyDatabase, archiveClock = { now }).use {
+                assertEquals(SourceArchiveOutcome.STORED, it.captureSource(input("legacy-source", "I like apricots")).outcome)
+            }
+            val legacyRaw = android.database.sqlite.SQLiteDatabase.openDatabase(legacyDatabase.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE)
+            listOf("memory_extraction_meta", "extraction_jobs", "extraction_source_clocks", "memory_index_jobs").forEach { legacyRaw.execSQL("DROP TABLE $it") }
+            assertEquals(2, legacyRaw.version)
+            legacyRaw.close()
+            SQLiteMemoryStore(legacyDatabase, canReadSourceText = { true }, archiveClock = { now }).use {
+                assertNotNull(it.read().snapshot)
+                assertTrue(it.extractionJobStates().isEmpty())
+                assertEquals(1, it.searchExplicitHistory("apricots").episodes.size)
+            }
+            store.close()
+            val raw = android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE)
+            assertEquals(2, raw.version)
+            raw.execSQL("UPDATE memory_extraction_meta SET version=99")
+            raw.close()
+            assertNull(SQLiteMemoryStore(database).use { it.read().snapshot })
+            val repair = android.database.sqlite.SQLiteDatabase.openDatabase(database.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE)
+            repair.execSQL("UPDATE memory_extraction_meta SET version=1")
+            repair.execSQL("DROP TABLE memory_index_jobs")
+            repair.close()
+            assertNull(SQLiteMemoryStore(database).use { it.read().snapshot })
+        } finally { store.close(); copies.edit().clear().commit(); root.deleteRecursively() }
+    }
+
+    @Test fun test38_extractionFifthCancellationRefundSurvivesReopenAndStaleLease() {
+        val root=File(context.cacheDir,"extraction-retry-${System.nanoTime()}").apply { mkdirs() }
+        val database=File(root,"memory.db")
+        var now=1_791_000_000_000L
+        var store=SQLiteMemoryStore(database,archiveClock={now})
+        fun capture(id:String,text:String) { assertEquals(SourceArchiveOutcome.STORED,store.captureSource(
+            FinalMemoryInput(id,"retry-conversation",source=ConversationMemorySource.TEXT,text=text,capturedAtMs=now)).outcome) }
+        fun fourFailures() {
+            repeat(4) { index ->
+                val job=store.claimExtraction()!!;assertEquals(index+1,job.attempt)
+                assertTrue(store.deferExtraction(job,true));assertFalse(store.deferExtraction(job,false))
+                assertEquals("PENDING",store.extractionJobStates()[job.eventKey])
+            }
+        }
+        try {
+            capture("cancel","I like apricots");fourFailures()
+            val cancelled=store.claimExtraction()!!;assertEquals(5,cancelled.attempt)
+            assertTrue(store.deferExtraction(cancelled,false))
+            assertEquals("PENDING",store.extractionJobStates()[cancelled.eventKey])
+            assertFalse(store.deferExtraction(cancelled,true))
+            store.close();store=SQLiteMemoryStore(database,archiveClock={now})
+            val retry=store.claimExtraction()!!;assertEquals(5,retry.attempt);assertNotEquals(cancelled.lease,retry.lease)
+            assertFalse(store.deferExtraction(cancelled,false))
+            assertTrue(store.finishExtraction(retry,emptyList()));assertFalse(store.deferExtraction(retry,false))
+            capture("failure","I like peaches");fourFailures()
+            val failed=store.claimExtraction()!!;assertEquals(5,failed.attempt)
+            assertTrue(store.deferExtraction(failed,true));assertEquals("FAILED",store.extractionJobStates()[failed.eventKey])
+            assertFalse(store.deferExtraction(failed,false));assertNull(store.claimExtraction())
+            capture("expired","I like plums");fourFailures()
+            val expired=store.claimExtraction()!!;assertEquals(5,expired.attempt)
+            now+=120_001
+            assertFalse(store.deferExtraction(expired,false));assertNull(store.claimExtraction())
+            assertEquals("FAILED",store.extractionJobStates()[expired.eventKey])
+            store.close();store=SQLiteMemoryStore(database,archiveClock={now})
+            assertNull(store.claimExtraction());assertFalse(store.deferExtraction(expired,false))
+        } finally { store.close();root.deleteRecursively() }
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()

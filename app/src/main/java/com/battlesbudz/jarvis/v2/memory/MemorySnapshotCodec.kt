@@ -33,6 +33,8 @@ internal object MemorySnapshotCodec {
             expiresAtMs = j.optLongOrNull("expiresAtMs"), correctsMemoryId = j.optString("correctsMemoryId").takeIf { it.isNotBlank() },
             wikiAssignment = j.optJSONObject("wikiAssignment")?.let { a -> MemoryWikiAssignment(enumValue(a.requiredString("category", 32)), a.requiredString("topic", 120)) },
             payloadFingerprint = j.optString("payloadFingerprint").takeIf { it.isNotBlank() },
+            acceptanceOrigin = enumValue(j.optString("acceptanceOrigin", MemoryAcceptanceOrigin.MANUAL_REVIEW.name)),
+            statementKind = enumValue(j.optString("statementKind", MemoryStatementKind.EXPLICIT_STATEMENT.name)),
         )
     }
 
@@ -44,6 +46,8 @@ internal object MemorySnapshotCodec {
     fun encodeMemory(m: MemoryRecord): JSONObject = JSONObject().apply {
         put("id", m.id); put("content", m.content); put("category", m.category.name); put("tier", m.tier.name); put("type", m.type.name); put("confidence", m.confidence); put("reviewStatus", m.reviewStatus.name)
         put("createdAtMs", m.createdAtMs); put("updatedAtMs", m.updatedAtMs); put("revision", m.revision); put("expiresAtMs", m.expiresAtMs); put("correctsMemoryId", m.correctsMemoryId); put("wikiAssignment", m.wikiAssignment?.let { a -> JSONObject().put("category", a.category.name).put("topic", a.topic) }); put("payloadFingerprint", m.payloadFingerprint)
+        if (m.acceptanceOrigin != MemoryAcceptanceOrigin.MANUAL_REVIEW) put("acceptanceOrigin", m.acceptanceOrigin.name)
+        if (m.statementKind != MemoryStatementKind.EXPLICIT_STATEMENT) put("statementKind", m.statementKind.name)
         put("source", JSONObject().put("eventId", m.source.eventId).put("eventSource", m.source.eventSource).put("createdAtMs", m.source.createdAtMs).put("sensitivity", m.source.sensitivity.name).put("provenance", JSONArray(m.source.provenance.map { p -> JSONObject().put("kind", p.kind).put("id", p.id).put("label", p.label).put("restricted", p.restricted) })))
     }
 
