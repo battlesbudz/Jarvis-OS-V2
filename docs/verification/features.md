@@ -14,7 +14,7 @@ native-worker ownership; wake capture resumes after that worker drains.
 | Layer | Acceptance and failure case | Coverage |
 | --- | --- | --- |
 | JVM | A verified farewell interruption ends the call even with no PCM; failed recognition, quoted phrases, ordinary requests and stop-speaking keep the call. | `ReplyInterruptionTest`, `VoiceCallPolicyTest`, `CallLifetimePolicyTest` |
-| Android lifecycle | Farewell saves the ended call, drains old queued input, keeps the current turn and real foreground service alive, and permits a fresh call ID. A stale old-call farewell cannot end the new call. Explicit End disarms from an active or passive session. | Release `test48`; exact hosted revision pending |
+| Android lifecycle | Farewell saves the ended call, drains old queued input, keeps the current turn and real foreground service alive, and permits a fresh call ID. A stale old-call farewell cannot end the new call. Explicit End disarms from an active or passive session. | Release `test48` passed Build 922 on API 30, API 35 compact/16 KB and API 36 phone; the full run was blocked by layout/infrastructure failures |
 | Physical audio/model | After saying “Stop listening”, wait for wake readiness, then say “Hey Jarvis” to start another call, including from a locked/background phone. | Device signoff pending; controlled lifecycle tests do not prove acoustic detection or model inference |
 
 During verification, the pre-fix API 29 job in
@@ -24,7 +24,7 @@ failed before emulator launch: `setup-android@v3` requested its default retired
 runner still installs the unchanged required image and executes the complete
 release gate. This is an infrastructure correction, not a passing API 29 result.
 
-## Expanded required release checks — hosted verification pending
+## Expanded required release checks — verification for every build
 
 Every opted-in candidate must pass the recorded-audio, native-page-size and
 expanded Android profile jobs before the exact-run receipt permits publication.
@@ -60,8 +60,8 @@ independently verified OpenSLR recording 1089-134686-0000: Whisper 2/28 word
 errors and Moonshine 1/28, with correct first/last words before and after added
 trailing silence. Baseline thresholds permit one additional interior word error;
 the local measurement JSON explicitly identifies an uncommitted calibration
-harness, rather than claiming release verification. Exact hosted results will
-replace the provisional status above when the final revision completes.
+harness, rather than claiming release verification. The existing PR validation section and exact-run receipt record hosted outcomes
+for each candidate, including failures and the source revision actually tested.
 
 ## Expanded gate first hosted run and harness repair
 
@@ -161,6 +161,54 @@ Disabling that feature makes the ARM launcher use the declared TCG path. See the
 and [ARM launcher](https://android.googlesource.com/platform/external/qemu/+/f0c183f1cc7456ecd6f3607f2f47893768ae4334/android-qemu2-glue/main.cpp).
 Successful boot and journeys remain required. This run is not a complete release
 pass; publication remains blocked until a fresh exact revision passes every profile.
+
+## Expanded gate Build 922 and readiness repair
+
+[Build 922](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37107489331)
+tested head `4a4d9396064e9860b0433bf40a3d31399fcb1968`, merge
+`7909b916dc2b0b0b3fd4f6c97b3f8d893d0fb148`. Both signed APK builds,
+all 1,005 JVM tests (184 suites, no failures/errors/skips), the four recorded
+speech cases and both static native audits passed. API 30, API 35 compact,
+API 36 phone and API 35 with 16 KB pages passed all 48 existing journeys,
+fresh-process selection, the real 907-to-922 update and every lifecycle phase.
+Independent raw-evidence review confirmed the external unrecorded-effect kill,
+no-repeat recovery, live microphone revoke/service death, denial/regrant and
+notification controls. All nine current shipping ARM64 libraries loaded at an
+actual 16,384-byte page size.
+
+The supplemental layout failures are observed test-driver races and semantic
+extraction defects. A control's explicit description child already says
+`Pause microphone`; the helper incorrectly appended the decorative `Ⅱ` text.
+The 200% font screenshot still shows the placeholder, while the following XML
+shows the exact entered draft and enabled Send control. The correction prioritizes
+explicit descriptions within the same action subtree, waits for the exact draft
+and enabled Send, and observes completed callbacks/overlay dismissal before
+asserting exact counts. Every expected label, 48 dp target, visible bound,
+200% font, saved draft, conversation/call identity and dimension-change assertion
+remains mandatory.
+
+The generic foldable image booted with the expected API, ARM64 bridge and page
+size, and passed the real upgrade. Two existing selection journeys stopped on
+the family chooser after an unsettled search/tap (`test12` and fresh-process
+`test90`); their retained PNG/XML show no model-list transition. They now reuse
+the existing settled text and enabled-tap helpers and require the model-list
+boundary before scrolling to the same exact model. Actual fold/unfold and its
+state-retention checks did not run in this failed candidate.
+
+API 29's explicit HVF disable overcame the previous launcher error: its genuine
+ARM64 image reached the boot-completed flag under TCG in 535 seconds. The action
+then failed before our controller at unlock with `ServiceNotFoundException: No
+service published for: input`. A boot property alone is not usable Android
+verification. A software-specific launcher must retain emulator/guest logs and
+require bounded input/activity/package/window readiness plus successful unlock
+before invoking the unchanged full controller; the 900-second boot and 60-minute
+job limits remain. Missing services or a failed controller remain failures.
+
+The consolidated receipt correctly rejected this run and all publication jobs
+were skipped. Failed receipt artifact `11268648681`, ZIP SHA-256
+`c58a1b525b01b9be4d36ef8d5c90b3e247f33adc7962efd0e984739e9e86ea77`,
+retains the failed upstream/missing API 29 evidence result. The next revision
+requires a fresh complete release gate; no partial pass authorizes publication.
 
 ## Build 900 Gemma audio submission review
 

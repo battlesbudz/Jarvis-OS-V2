@@ -88,7 +88,7 @@ class ReleaseLayoutAccessibilityTest {
                         Box(if (narrow) Modifier.widthIn(max = 320.dp).fillMaxHeight() else Modifier.fillMaxSize()) {
                             ConversationScreen(
                                 history = history, busy = MutableStateFlow(false), callState = callState,
-                                onSend = { text, _ -> sends.incrementAndGet(); history.appendUser(text); null },
+                                onSend = { text, _ -> history.appendUser(text); sends.incrementAndGet(); null },
                                 selectedModel = LocalModelSpec("layout-fixture", "fixture.bin", recommendedGpu = false),
                                 onSelectConversation = { null },
                                 onEndVoice = { done -> endCall(); done("Voice Call ended.") },
@@ -153,9 +153,9 @@ class ReleaseLayoutAccessibilityTest {
     }
 
     private fun endCall() {
-        ends.incrementAndGet()
         VoiceSessionUi.armed.value = false
         callState.value = VoiceSessionState.PASSIVE_LISTENING
+        ends.incrementAndGet()
     }
 
     private fun find(selector: BySelector): UiObject2 = device.wait(Until.findObject(selector), 15_000)
@@ -167,6 +167,21 @@ class ReleaseLayoutAccessibilityTest {
                 .hideSoftInputFromWindow(host.window.decorView.windowToken, 0)
         }
         device.waitForIdle()
+    }
+
+    private fun enterDraft(text: String) {
+        find(By.res("chat_composer")).text = text
+        assertTrue("Accessibility text entry must reach the composer", device.wait(
+            Until.hasObject(By.res("chat_composer").text(text)), 5_000))
+        assertTrue("A nonempty draft must enable Send", device.wait(
+            Until.hasObject(By.res("chat_send").enabled(true)), 5_000))
+        hideKeyboard()
+    }
+
+    private fun assertCallbackCount(label: String, counter: AtomicInteger, expected: Int) {
+        val deadline = SystemClock.uptimeMillis() + 5_000
+        while (counter.get() < expected && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(25)
+        assertEquals("$label callback count", expected, counter.get())
     }
 
     private fun assertAction(tag: String, description: String? = null): UiObject2 {
@@ -189,12 +204,15 @@ class ReleaseLayoutAccessibilityTest {
     // mistaking an empty container label for an unnamed control. Never borrow a
     // label from a separate clickable action or a sibling elsewhere on screen.
     private fun accessibleName(control: UiObject2): String {
-        val direct = listOf(control.contentDescription, control.text)
-            .filterNotNull().filter { it.isNotBlank() }.distinct().joinToString(" ")
-        if (direct.isNotBlank()) return direct
-        return control.children.filter { !it.isClickable }.map { accessibleName(it) }
-            .filter { it.isNotBlank() }.distinct().joinToString(" ")
+        val nodes = actionLabelNodes(control)
+        val descriptions = nodes.mapNotNull { it.contentDescription }.filter { it.isNotBlank() }
+            .distinct().joinToString(" ")
+        if (descriptions.isNotBlank()) return descriptions
+        return nodes.mapNotNull { it.text }.filter { it.isNotBlank() }.distinct().joinToString(" ")
     }
+
+    private fun actionLabelNodes(control: UiObject2): List<UiObject2> = listOf(control) +
+        control.children.filter { !it.isClickable }.flatMap { actionLabelNodes(it) }
 
     private fun assertCallActions() {
         assertAction("voice_call_pause", if (paused.value) "Resume microphone" else "Pause microphone")
@@ -206,12 +224,11 @@ class ReleaseLayoutAccessibilityTest {
     @Test fun test01_accessibleChatAndCallControls() {
         launch()
         assertAction("memory_open").click()
-        assertEquals(1, opensMemory.get())
+        assertCallbackCount("Open Memory", opensMemory, 1)
         assertAction("chat_voice_input", "Record voice message")
-        find(By.res("chat_composer")).text = "Accessibility action reached the real send callback"
-        hideKeyboard()
+        enterDraft("Accessibility action reached the real send callback")
         assertAction("chat_send", "Send message").click()
-        assertEquals(1, sends.get())
+        assertCallbackCount("Send", sends, 1)
         assertTrue(history.current.value.messages.any { it.text == "Accessibility action reached the real send callback" })
         assertAction("voice_call_open", "Start voice call").click()
         assertCallActions()
@@ -220,8 +237,8 @@ class ReleaseLayoutAccessibilityTest {
         assertAction("voice_call_pause", "Resume microphone").click()
         assertTrue(device.wait(Until.hasObject(By.desc("Pause microphone")), 5_000))
         assertAction("voice_call_end", "End call").click()
-        assertEquals(1, ends.get())
         assertTrue(device.wait(Until.gone(By.res("voice_call_end")), 5_000))
+        assertCallbackCount("End call", ends, 1)
     }
 
     @Test fun test02_largeFontSmallScreenKeepsComposerAndCallActions() {
@@ -230,15 +247,15 @@ class ReleaseLayoutAccessibilityTest {
         launch()
         activity!!.onActivity { host -> assertTrue("The system must apply 200% font scaling", host.resources.configuration.fontScale >= 1.95f) }
         assertAction("memory_open").click()
-        assertEquals(1, opensMemory.get())
-        find(By.res("chat_composer")).text = "Large font input remains usable"
-        hideKeyboard()
+        assertCallbackCount("Open Memory", opensMemory, 1)
+        enterDraft("Large font input remains usable")
         assertAction("chat_send", "Send message").click()
-        assertEquals(1, sends.get())
+        assertCallbackCount("Send", sends, 1)
         assertAction("voice_call_open", "Start voice call").click()
         assertCallActions()
         assertAction("voice_call_end", "End call").click()
-        assertEquals(1, ends.get())
+        assertTrue(device.wait(Until.gone(By.res("voice_call_end")), 5_000))
+        assertCallbackCount("End call", ends, 1)
     }
 
     /** The host sends actual emulator fold/unfold console commands on the fold profile.
@@ -250,8 +267,7 @@ class ReleaseLayoutAccessibilityTest {
         assertAction("voice_call_open", "Start voice call").click()
         assertCallActions()
         val draft = "Draft retained across Android configuration changes"
-        find(By.res("chat_composer")).text = draft
-        hideKeyboard()
+        enterDraft(draft)
         val initial = device.displayWidth to device.displayHeight
         val foldable = InstrumentationRegistry.getArguments().getString("jarvisFoldable") == "true"
         if (foldable) {
@@ -275,7 +291,8 @@ class ReleaseLayoutAccessibilityTest {
             assertContinuity(threadId, draft)
         }
         assertAction("voice_call_end", "End call").click()
-        assertEquals(1, ends.get())
+        assertTrue(device.wait(Until.gone(By.res("voice_call_end")), 5_000))
+        assertCallbackCount("End call", ends, 1)
     }
 
     private fun assertContinuity(threadId: String, draft: String) {

@@ -78,6 +78,7 @@ jobs:
           fi
           "$jarvis_avdmanager" list device
       - name: Verify release on a disposable Android device
+        if: matrix.acceleration == 'kvm'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api }}
@@ -89,10 +90,15 @@ jobs:
           disk-size: 4096M
           disable-animations: true
           emulator-boot-timeout: ${{ matrix.boot_timeout }}
-          # ARM launcher can request HVF even with -accel off; disable its feature
-          # probe as well to force the declared software mode on hosted Mac VMs.
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot ${{ matrix.acceleration == 'software' && '-accel off -feature -HVF' || '' }}
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
           script: python3 scripts/verification/android.py run --profile "${{ matrix.id }}" --apk inputs/jarvis-os-v2-release-apk/${{ matrix.apk }}.apk --test-apk inputs/jarvis-verification-test-apk/app-release-androidTest.apk --previous-apk inputs/jarvis-previous-release/app-release.apk --previous-metadata inputs/jarvis-previous-release/previous-release.json --out verification-evidence --source-commit "${{ github.sha }}" --pr-head "${{ github.event.pull_request.head.sha }}" --allow-emulator-reset
+      - name: Verify release on a software-emulated ARM64 API 29 device
+        if: matrix.acceleration == 'software'
+        # Same required controller; startup additionally requires actual Android
+        # services and successful input within the profile's existing boot budget.
+        run: >-
+          python3 scripts/verification/software_emulator.py --profile "${{ matrix.id }}" --out verification-evidence --
+          python3 scripts/verification/android.py run --profile "${{ matrix.id }}" --apk inputs/jarvis-os-v2-release-apk/${{ matrix.apk }}.apk --test-apk inputs/jarvis-verification-test-apk/app-release-androidTest.apk --previous-apk inputs/jarvis-previous-release/app-release.apk --previous-metadata inputs/jarvis-previous-release/previous-release.json --out verification-evidence --source-commit "${{ github.sha }}" --pr-head "${{ github.event.pull_request.head.sha }}" --allow-emulator-reset
       - name: Retain evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4

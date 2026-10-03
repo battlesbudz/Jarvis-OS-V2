@@ -374,8 +374,9 @@ class ReleaseJourneyTest {
 
     @Test fun test12_lastFamilyModelCanBeSelectedAboveNavigationBar() {
         openBrowser()
-        find(By.res("model_search")).text = "Gemma"
-        find(By.res("model_family_Gemma")).click()
+        enterText(By.res("model_search"), "Gemma")
+        clickEnabled(By.res("model_family_Gemma"))
+        assertNotNull(find(By.res("model_list")))
         val target = By.res("model_choose_codegemma-7b-it-int4-litertlm")
         scrollTo(target)
         // Reach the actual end of the list, not just the first partly visible button.
@@ -398,8 +399,9 @@ class ReleaseJourneyTest {
         assertNotNull(find(By.text("codegemma-7b-it-int4-litertlm")))
         // Restore the starting model without touching files or bypassing the UI.
         openBrowser()
-        find(By.res("model_search")).text = "Gemma-4-E2B-it"
-        find(By.res("model_family_Gemma")).click()
+        enterText(By.res("model_search"), "Gemma-4-E2B-it")
+        clickEnabled(By.res("model_family_Gemma"))
+        assertNotNull(find(By.res("model_list")))
         scrollTo(By.res("model_choose_Gemma-4-E2B-it")).click()
         assertNotNull(find(By.text("Gemma-4-E2B-it")))
     }
@@ -2628,8 +2630,9 @@ class ReleaseJourneyTest {
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()
-        find(By.res("model_search")).text = "Gemma-4-E4B-it"
-        find(By.res("model_family_Gemma")).click()
+        enterText(By.res("model_search"), "Gemma-4-E4B-it")
+        clickEnabled(By.res("model_family_Gemma"))
+        assertNotNull(find(By.res("model_list")))
         scrollTo(By.res("model_choose_Gemma-4-E4B-it")).click()
         assertNotNull(find(By.text("Gemma-4-E4B-it")))
         activity.recreate()
