@@ -1,0 +1,49 @@
+{
+  "parent_scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+  "parent_spec": {
+    "deadline": 1791010800.0,
+    "max_concurrent": 4,
+    "max_dispatches": 24,
+    "max_reserved_tokens": 300000,
+    "routing_policy": "usage-conscious-v2",
+    "schema": 1
+  },
+  "total_commitment_tokens": 211000,
+  "retained_unknown_reservation_tokens": 207000,
+  "pending_reservation_tokens": 4000,
+  "actual_provider_usage": null,
+  "admission_estimates_only": true,
+  "bound_ticket": {
+    "id": "04758f8d307c42e09ca354d92a6407da",
+    "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+    "request_key": "extraction-coding-4",
+    "request_hash": "63ce34ca7cea93383f61ddf2100f5b17130084b69568a20695c5ac580f96112b",
+    "operation": "prepare:c3b276ad0a644c87bcb1d074a8541168:extraction",
+    "reserved_tokens": 4000,
+    "manifest": {
+      "fork_turns": "none",
+      "model": "gpt-6.1-sol",
+      "reason": "complex implementation",
+      "reasoning_effort": "high"
+    },
+    "state": "bound",
+    "actor_id": "/root/jarvis_privacy_coder",
+    "observed_model": "gpt-6.1-sol",
+    "observed_effort": "high",
+    "outcome": null,
+    "usage": null,
+    "receipt_id": null,
+    "completed_hash": null,
+    "created_at": 1791000119.7241848,
+    "completed_at": null
+  },
+  "native_dispatch": "extraction-coding-4",
+  "coordinator": "c3b276ad0a644c87bcb1d074a8541168",
+  "portable_checkpoint_totals": {
+    "attempts": 9,
+    "charged_tokens": 200000,
+    "dispatches": 16,
+    "reserved_tokens": 200000
+  },
+  "deadline_unchanged": 1791010800
+}
