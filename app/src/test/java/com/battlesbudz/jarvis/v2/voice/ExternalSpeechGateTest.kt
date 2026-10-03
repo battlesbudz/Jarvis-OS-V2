@@ -77,8 +77,8 @@ class ExternalSpeechGateTest {
         } finally { whisper.close() }
     }
 
-    @Test fun whisperPhrasePreservesInternalPauseAndQuietBoundarySoundsInOrder() {
-        val gate = ExternalSpeechGate.whisperPhrase()
+    @Test fun sharedCallPhrasePreservesInternalPauseAndQuietBoundarySoundsInOrder() {
+        val gate = ExternalSpeechGate.completePhrase()
         gate.observe(false)
         assertTrue(gate.accept(pcm(1, 3000)).isEmpty())
         gate.observe(true)

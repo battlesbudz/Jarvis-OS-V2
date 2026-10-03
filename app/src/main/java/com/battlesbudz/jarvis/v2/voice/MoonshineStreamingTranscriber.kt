@@ -12,7 +12,7 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
     private val lines = linkedMapOf<Long, String>()
     // Avoid applying a second native speech gate to audio qualified by Jarvis VAD.
     // It could return an empty stream without ever invoking the speech decoder.
-    private val speechGate = ExternalSpeechGate()
+    private val speechGate = ExternalSpeechGate.completePhrase()
     private val work = AsrRecognitionWorkAccumulator("moonshine_native_api_wall")
     override val recognitionWorkMetrics get() = work.snapshot()
     override fun observeSpeech(speech: Boolean) = speechGate.observe(speech)
@@ -122,7 +122,7 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
                 native { transcriber.stopStream(streamHandle) }
             } // Forced final update includes the last, incomplete native line.
             finished = true
-            log("moonshine_input_policy version=bounded_acoustic_v2 nativeGate=${inputMode.diagnosticName} freshCommand=$reserveReplyProbes inputMs=${speechGate.receivedBytes / 32} decoderMs=${speechGate.acceptedBytes / 32}")
+            log("moonshine_input_policy version=complete_phrase_v1 nativeGate=${inputMode.diagnosticName} freshCommand=$reserveReplyProbes inputMs=${speechGate.receivedBytes / 32} decoderMs=${speechGate.acceptedBytes / 32}")
         }
         return text()
     }

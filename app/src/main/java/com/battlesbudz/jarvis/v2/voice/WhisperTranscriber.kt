@@ -9,7 +9,7 @@ class WhisperTranscriber(private val directory: File, live: Boolean = true, log:
     private val audio = RollingAudioBuffer(AudioFormat(16_000), maxDurationMs = 25_000)
     // Bound idle room audio, then retain the contiguous phrase through endpoint.
     // Final-only probes without observeSpeech() still receive their complete PCM.
-    private val speechGate = ExternalSpeechGate.whisperPhrase()
+    private val speechGate = ExternalSpeechGate.completePhrase()
     private fun createRecognizer() = OfflineRecognizer(config = OfflineRecognizerConfig(
         modelConfig = OfflineModelConfig(whisper = OfflineWhisperModelConfig(
             encoder = File(directory, "base.en-encoder.int8.onnx").path,

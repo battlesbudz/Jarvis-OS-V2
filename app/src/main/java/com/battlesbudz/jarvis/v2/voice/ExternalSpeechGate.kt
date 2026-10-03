@@ -3,7 +3,7 @@ package com.battlesbudz.jarvis.v2.voice
 /** External VAD owns the decoder's acoustic window, not only its first onset.
  * Preserve 240 ms before confirmed speech and 320 ms after it. Long quiet spans
  * stay out of the ungated native decoder; original call audio is retained separately.
- * Whisper's phrase mode instead keeps 1200 ms before onset and contiguous PCM
+ * Call phrase mode instead keeps 1200 ms before onset and contiguous PCM
  * through finalization; its caller bounds segment duration. Short final-only
  * probes without observations retain their original samples.
  */
@@ -30,7 +30,7 @@ class ExternalSpeechGate(
                 tailBytes = 320 * 32
                 (preRoll.snapshot() + pcm).also { preRoll.clear() }
             }
-            // Whisper finalization needs contiguous phonetic context, including
+            // Final transcription needs contiguous phonetic context, including
             // pauses and quiet endings that external VAD may call non-speech.
             preservePhrase && phraseStarted -> pcm
             else -> {
@@ -46,6 +46,6 @@ class ExternalSpeechGate(
     fun clear() { preRoll.clear(); observed = false; speech = false; tailBytes = 0; phraseStarted = false }
 
     companion object {
-        fun whisperPhrase() = ExternalSpeechGate(preRollMs = 1200, preservePhrase = true)
+        fun completePhrase() = ExternalSpeechGate(preRollMs = 1200, preservePhrase = true)
     }
 }

@@ -1,6 +1,34 @@
+## Build 900 Gemma audio submission review
+
+The latest benchmark export contains counts and timing but excludes transcript,
+reply, prompt and PCM text/data. The supplied Voice Call diagnostics for
+`21c42f96-44e0-4197-91b2-a87e547b85ba` show Whisper recognized
+“Tell me about our solar system.” Gemma received 102444 retained WAV bytes in
+both answer and isolated caption submissions, but its answer denied audio
+capability. Native encoder timing is unavailable; these logs prove submission,
+not successful acoustic understanding. A prior caption refusal was also present
+as a user statement in history, so historical context can reinforce the failure.
+
+`audioMessageContents` now sends text followed by original audio in one message,
+matching Gemma 4's model-specific modality order:
+https://ai.google.dev/gemma/docs/core/model_card_4#4-modality-order.
+The JVM acceptance test checks the order and byte-exact WAV retention and rejects
+empty audio. Both answer and isolated caption paths use this helper. No sampling,
+personal vocabulary or decoding settings are changed. Actual E2B audio encoding,
+recognition and absence of refusals remain physical-device/real-model checks;
+this change is not proof of the root cause or an accuracy gain.
+
+Moonshine CALL_FILTERED now uses the same 1200 ms onset and contiguous phrase
+policy as Whisper, retaining internal pauses and all PCM until turn finalization.
+RAW_DIAGNOSTIC continues to bypass the external filter and uses native VAD.
+The shared gate's byte-order/reset/final-only tests cover input preservation;
+native Moonshine word accuracy and added decoder work need device measurement.
+The reviewed microphone profiles retain their general-purpose PCM16 mono 16 kHz,
+AEC and explicit noise-suppression policy; no user-specific tuning is introduced.
+
 # Feature and acceptance map
 
-## Whisper complete-phrase capture
+## Whisper and Moonshine complete-phrase capture
 
 Whisper base.en keeps 1200 ms of idle pre-roll, then every PCM sample from
 confirmed onset through endpoint/finalization. This replaces Whisper's 240 ms

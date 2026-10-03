@@ -15,7 +15,7 @@ internal class AsyncWhisperSession(
     override val recognitionWorkMetrics get() = work.snapshot()
     private val worker = Executors.newSingleThreadExecutor { task -> Thread(task, "jarvis-whisper").apply { isDaemon = true } }
     private var audio = RollingAudioBuffer(AudioFormat(16000), maxDurationMs = 25000)
-    private val speechGate = ExternalSpeechGate.whisperPhrase()
+    private val speechGate = ExternalSpeechGate.completePhrase()
     private var active = false
     private var total = 0L
     private var scheduled = 0L
