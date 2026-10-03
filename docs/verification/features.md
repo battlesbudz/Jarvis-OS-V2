@@ -1,5 +1,44 @@
 # Feature and acceptance map
 
+## Expanded required release checks — hosted verification pending
+
+Every opted-in candidate must pass the recorded-audio, native-page-size and
+expanded Android profile jobs before the exact-run receipt permits publication.
+The authoritative device list is `scripts/verification/profiles.json`: minimum
+API 29, retained API 30/35, API 36 phone and foldable, and API 35 with 16 KB
+pages. Provisioning or ARM64 translation failures are failures, not skipped
+compatibility checks. All profiles reuse the signed release APKs.
+
+Observable acceptance:
+
+| Layer | Required behavior and failure case | Preserved behavior |
+| --- | --- | --- |
+| JVM/audio contracts | Actual recorded PCM retains opening, internal pauses and ending samples; original WAV reaches the native Gemma content DTO after its text instruction. Lost/reordered bytes fail. | Existing capture limits, decoding defaults and complete named regression suite. |
+| Real speech models | Pinned Whisper and Moonshine runtimes recognize a checked recording with baseline-scored first/last words and a quiet trailing ending. Missing model/runtime or wrong checksum fails; existing production no-speech policy regressions remain required. | Production model inputs and explicit host-versus-Android limits. |
+| Android upgrade | Install the previous published signed user candidate, seed device-local formats, install candidate with replacement, verify conversations, memory, settings, model bytes and durable receipts. Clearing data or losing any record fails. | Signing identity, device-local storage and no real user data. |
+| Android recovery/platform | External process death, permission denial/regrant/revocation, and foreground-service controls produce durable, honest, recoverable results; unknown action outcomes cannot become success or duplicate effects. | All existing release journeys and microphone/task ownership. |
+| Android UI | Large text retains usable labelled controls; actual fold/unfold changes display configuration and retains state. Missing labels, clipped controls or lost state fail. | Unified chat/call behavior. |
+| Native compatibility | Both APK forms have valid ELF load alignment, safe RELRO page protection, and correct direct-load ZIP alignment; a genuine 16 KB device must load shipping native libraries. | Distinct Sherpa/Moonshine native ABIs and compact payload equivalence. |
+| Evidence | Required profiles/phase outcomes, baseline/candidate hashes and raw test results agree with the same source/run. Missing, duplicate, failed or skipped checks block publication. | Existing provenance and failed-run evidence retention. |
+
+The upgrade baseline comes from the numbered `audio-pr2-pr6-build.` user
+distribution stream, selected below the current workflow build number and
+verified against its published asset digest. This is an actual APK update with
+inert fixtures; it is not inference from an installed multi-gigabyte model or a
+claim that the previous APK's UI created every fixture.
+
+The small recorded corpus establishes a reproducible regression baseline, not
+general-public recognition quality. Direct Gemma waveform delivery is checked;
+successful Gemma acoustic understanding with the exact model bundle, room echo,
+microphone effects, OEM firmware, Bluetooth and physical GPU/thermal performance
+remain separately unverified. All four exact-weight host recognition checks passed local calibration against
+independently verified OpenSLR recording 1089-134686-0000: Whisper 2/28 word
+errors and Moonshine 1/28, with correct first/last words before and after added
+trailing silence. Baseline thresholds permit one additional interior word error;
+the local measurement JSON explicitly identifies an uncommitted calibration
+harness, rather than claiming release verification. Exact hosted results will
+replace the provisional status above when the final revision completes.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,

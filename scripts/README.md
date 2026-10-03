@@ -84,7 +84,11 @@ release contract. These helpers each validate a specific boundary:
 | `apk_size_report.py` | Produce APK component-size evidence and baseline comparisons. |
 | `verification/android.py` | Execute named release journeys on a disposable emulator; retain commands, screenshots, UI XML, logs and results. |
 | `verification/artifacts.py` | Select/download exact-run artifacts using producer-attempt timestamps, revision binding and archive checks. |
-| `verification/receipt.py` | Consolidate APK hashes, JVM results and both emulator evidence sets before publication. |
+| `verification/receipt.py` | Consolidate APK hashes, JVM/model/native results and every required emulator profile and phase before publication. |
+| `verification/profiles.json`, `profiles.py` | One device provisioning, artifact-selection and receipt contract for the required matrix. |
+| `verification/previous_release.py` | Fetch and checksum an actual earlier published APK for replacement-install upgrade tests. |
+| `check_recorded_audio.py` | Execute pinned host Whisper/Moonshine weights on recorded phrase boundaries and quiet endings with scored evidence. |
+| `check_page_sizes.py` | Audit every native ELF and direct-load APK alignment, including RELRO writable-page conflicts. |
 | `verification/local_gate.py` | Build the signed release/test APKs and run the emulator gate in an already configured repair environment. |
 | `verification/repair.py` | Bound local repair/retest attempts and retain failures; stop changes to protected acceptance infrastructure. |
 

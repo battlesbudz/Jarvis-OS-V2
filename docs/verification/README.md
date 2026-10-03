@@ -19,13 +19,19 @@ commits. Do not create or merge another PR without Justin's permission.
    Piper callback ABI and signatures. Both variants have increasing build codes
    and use the existing signing identity.
 3. Run `.github/workflows/android-sandbox.yml` on disposable accelerated Android
-   emulators: API 30 uses `app-release.apk`, API 35 uses `app-compact.apk`. ARM
-   translation must support the shipping ARM64 payload.
+   emulators from `scripts/verification/profiles.json`: API 29/30/35/36,
+   an API 36 foldable and a true 16 KB system image. ARM translation must support
+   the shipping ARM64 payload; missing compatibility fails rather than skips.
 4. Run every named method in `scripts/verification/scenarios.json`, retain a
-   screenshot and UI hierarchy per scenario, then kill/relaunch the app to
-   verify persisted model selection. That JSON is the current test contract;
+   screenshot and UI hierarchy per scenario, then run the separately retained
+   external process-loss, upgrade, platform and layout phases. The previous
+   numbered user APK is installed and populated before replacement without
+   clearing its data; ordinary isolated journeys still use disposable resets. That JSON is the current test contract;
    historical test counts in old reports are not current requirements.
-5. Consolidate exact same-run JVM, APK and emulator evidence, rehash artifact
+5. Run real recorded-speech inference with pinned Whisper/Moonshine host runtimes,
+   audit both APKs for native 16 KB compatibility, and exercise actual prior-APK
+   upgrades and platform/lifecycle/layout phases on every required profile.
+6. Consolidate exact same-run JVM, APK and emulator evidence, rehash artifact
    bytes, reject failed/skipped/missing/duplicate outcomes, then publish both
    APKs in a numbered GitHub Release. Publication depends on all prior gates.
 
@@ -85,11 +91,18 @@ Run the full local device gate using new output directories:
 python3 scripts/verification/android.py --serial emulator-5554 run \
   --apk app/build/outputs/apk/release/app-release.apk \
   --test-apk app/build/outputs/apk/androidTest/release/app-release-androidTest.apk \
+  --previous-apk verification-inputs/jarvis-previous-release/app-release.apk \
+  --previous-metadata verification-inputs/jarvis-previous-release/previous-release.json \
+  --profile 30-phone-normal \
   --out verification-runs/manual/device \
   --source-commit "$(git rev-parse HEAD)" --allow-emulator-reset
 ```
 
-The full gate clears app data and refuses non-emulators. Never target a personal
+The full gate performs a previous-APK upgrade before clearing disposable fixture
+data for its isolated regression suite, and refuses non-emulators. Its previous
+APK and metadata must come from the checksum-verified release helper.
+`local_gate.py` requires `JARVIS_PREVIOUS_APK`, `JARVIS_PREVIOUS_METADATA` and
+`JARVIS_EMULATOR_PROFILE` in addition to its existing signing/device environment. Never target a personal
 phone with stored conversations/models. Interactive control does not clear data.
 Preserve evidence before resetting or stopping the device.
 

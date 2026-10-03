@@ -199,15 +199,92 @@ jobs:
           if-no-files-found: warn
 
 
+  prepare-upgrade-baseline:
+    name: Prepare upgrade baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch last published user candidate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        # Audio PR2 is the current user distribution stream, including feature candidates.
+        # Package update independently verifies this baseline has the candidate signing identity.
+        run: python3 scripts/verification/previous_release.py --repository "$GITHUB_REPOSITORY" --tag-prefix 'audio-pr2-pr6-build.' --before-build "$GITHUB_RUN_NUMBER" --out previous-release
+      - name: Retain exact upgrade input
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-previous-release
+          path: previous-release/
+          retention-days: 14
+          if-no-files-found: error
+
+  verify-native-pages:
+    name: Verify native 16 KB compatibility
+    needs: build-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve exact APK artifact ID
+        id: artifacts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/verification/artifacts.py fetch --out artifact-manifest.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"
+          python3 scripts/verification/artifacts.py select --manifest artifact-manifest.json --run-id "$GITHUB_RUN_ID" --head-sha "$EXPECTED_HEAD" --require 'jarvis-os-v2-release-apk=Build signed release APK' --require-success --github-output "$GITHUB_OUTPUT"
+      - name: Download exact APKs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/verification/artifacts.py download --manifest artifact-manifest.json --artifact-ids "${{ steps.artifacts.outputs.artifact_ids }}" --out inputs --layout flat
+      - name: Audit every packaged native library and APK alignment
+        run: python3 scripts/check_page_sizes.py inputs/app-release.apk inputs/app-compact.apk --out native-page-sizes --source-commit "$GITHUB_SHA"
+      - name: Retain native page-size evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-native-page-sizes
+          path: native-page-sizes/
+          retention-days: 14
+          if-no-files-found: warn
+
+  verify-recorded-audio:
+    name: Recorded speech recognition
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned real-model speech runtimes
+        run: python3 -m pip install 'numpy==2.2.6' 'moonshine-voice==0.1.5' 'sherpa-onnx==1.13.7' 'onnxruntime==1.23.2'
+      - name: Cache checksum-verified acoustic model inputs
+        uses: actions/cache@v4
+        with:
+          path: acoustic-models/
+          key: recorded-audio-models-v1-${{ hashFiles('scripts/check_recorded_audio.py') }}
+      - name: Recognize recorded phrase boundaries and quiet endings
+        run: python3 scripts/check_recorded_audio.py --models acoustic-models --out recorded-audio --source-commit "$GITHUB_SHA" --download-models
+      - name: Retain recorded-audio results including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-recorded-audio
+          path: recorded-audio/
+          retention-days: 14
+          if-no-files-found: warn
+
   verify-release:
     name: Verify signed release in Android sandbox
-    needs: build-release
+    needs: [build-release, prepare-upgrade-baseline]
     uses: ./.github/workflows/android-sandbox.yml
 
   verification-receipt:
     name: Consolidate exact-build verification evidence
     if: always() && needs.build-release.result != 'skipped'
-    needs: [build-release, verify-release]
+    needs: [build-release, prepare-upgrade-baseline, verify-release, verify-native-pages, verify-recorded-audio]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -223,7 +300,7 @@ jobs:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           python3 scripts/verification/artifacts.py fetch --out artifact-manifest.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"
-          python3 scripts/verification/artifacts.py select --manifest artifact-manifest.json --run-id "$GITHUB_RUN_ID" --head-sha "$EXPECTED_HEAD" --require 'jarvis-release-unit-tests=Build signed release APK' --require 'jarvis-verification-test-apk=Build signed release APK' --require 'jarvis-os-v2-release-apk=Build signed release APK' --require 'jarvis-verification-api-30-app-release=Verify signed release in Android sandbox / Release journeys / API 30 / app-release' --require 'jarvis-verification-api-35-app-compact=Verify signed release in Android sandbox / Release journeys / API 35 / app-compact' --github-output "$GITHUB_OUTPUT"
+          python3 scripts/verification/profiles.py select --manifest artifact-manifest.json --run-id "$GITHUB_RUN_ID" --head-sha "$EXPECTED_HEAD" --require 'jarvis-release-unit-tests=Build signed release APK' --require 'jarvis-verification-test-apk=Build signed release APK' --require 'jarvis-os-v2-release-apk=Build signed release APK' --require 'jarvis-native-page-sizes=Verify native 16 KB compatibility' --require 'jarvis-recorded-audio=Recorded speech recognition' --require 'jarvis-previous-release=Prepare upgrade baseline' --github-output "$GITHUB_OUTPUT"
       - name: Download exact same-run evidence
         if: steps.evidence.outcome == 'success'
         env:
@@ -249,7 +326,7 @@ jobs:
       github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository)
-    needs: [build-release, verify-release, verification-receipt]
+    needs: [build-release, verify-release, verify-native-pages, verify-recorded-audio, verification-receipt]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -281,7 +358,7 @@ jobs:
   publish-memory-test:
     name: Publish Memory OS test APK
     if: github.event_name == 'push' && github.ref == 'refs/heads/feature/memory-os-v2'
-    needs: [build-release, verify-release, verification-receipt]
+    needs: [build-release, verify-release, verify-native-pages, verify-recorded-audio, verification-receipt]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -323,7 +400,7 @@ jobs:
   publish-pr-test:
     name: Publish permanent PR test APK
     if: github.event_name == 'push' && github.ref == 'refs/heads/PR1'
-    needs: [build-release, verify-release, verification-receipt]
+    needs: [build-release, verify-release, verify-native-pages, verify-recorded-audio, verification-receipt]
     runs-on: ubuntu-latest
     permissions:
       contents: write
