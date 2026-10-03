@@ -217,7 +217,7 @@ class ReleaseJourneyTest {
                 if (chip.isEnabled && hasSafeTapBounds(chip) && row.contains(chip.visibleBounds)) {
                     chip.click()
                     device.waitForIdle()
-                    if (device.wait(Until.hasObject(target.checked(true)), 2_000)) return
+                    if (device.wait(Until.hasObject(By.copy(target).checked(true)), 2_000)) return
                 }
             }
             device.swipe(row.right - 12, row.centerY(), row.left + 12, row.centerY(), 180)
