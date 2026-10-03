@@ -1,0 +1,78 @@
+{
+  "run": "7cb29286a1a64e5dacf7cb9fd0676cae",
+  "prepared": {
+    "state": "allocated",
+    "actor": "/root/jarvis_privacy_coder",
+    "worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/7cb29286a1a64e5dacf7cb9fd0676cae/unit-privacy",
+    "base_head": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+    "allowed_paths": [
+      "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+      "docs/memory-os-native.md",
+      "docs/verification/features.md",
+      "scripts/verification/scenarios.json"
+    ],
+    "usage_ticket_id": "9b0e0533220047d593c3b09bed51f6a9",
+    "usage_model": "gpt-6.1-sol",
+    "usage_effort": "high"
+  },
+  "ticket": {
+    "id": "9b0e0533220047d593c3b09bed51f6a9",
+    "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+    "request_key": "privacy-coding-5",
+    "request_hash": "709b13b59bf13e56f307f9ef5b83126181571fe07744e8e1dec320e54cce08c2",
+    "operation": "prepare:7cb29286a1a64e5dacf7cb9fd0676cae:privacy",
+    "task": {
+      "allowed_paths": [
+        "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+        "docs/memory-os-native.md",
+        "docs/verification/features.md",
+        "scripts/verification/scenarios.json"
+      ],
+      "complexity": "complex",
+      "task_kind": "implementation"
+    },
+    "reserved_tokens": 14000,
+    "manifest": {
+      "fork_turns": "none",
+      "model": "gpt-6.1-sol",
+      "reason": "complex implementation",
+      "reasoning_effort": "high"
+    },
+    "state": "reserved",
+    "actor_id": null,
+    "observed_model": null,
+    "observed_effort": null,
+    "outcome": null,
+    "usage": null,
+    "receipt_id": null,
+    "completed_hash": null,
+    "created_at": 1790992284.5189452,
+    "completed_at": null
+  },
+  "deadline": 1790995884.5182388,
+  "scope_sha256": "c85d49c0c6ce015b45dc85ce269866c409f912b85a5eb34cf0cbc00297282aa8",
+  "retained_candidate": "1957255c1c1b9738d17f6dbf932824557aea7ae4",
+  "old_coder_head": "3e86bda2b62d39142b7e66dda5439b50fa5e7888",
+  "old_worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/7bfab527f2894d08a773ce79ba68b286/unit-privacy",
+  "new_native_dispatch": "privacy-coding-5"
+}
