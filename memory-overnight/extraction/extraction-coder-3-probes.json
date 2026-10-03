@@ -1,0 +1,62 @@
+{
+  "kind": "Actual candidate compiled-update SQL run with Python sqlite3, not Android SQLiteDatabase/Kotlin execution",
+  "checked_at": "2026-10-03T03:46:10.676152+00:00",
+  "sql": "UPDATE extraction_jobs SET state=CASE WHEN (CASE WHEN ?=0 THEN max(attempts-1,0) ELSE attempts END)>=5 THEN 'FAILED' ELSE 'PENDING' END,lease=NULL,lease_until_ms=0,attempts=CASE WHEN ?=0 THEN max(attempts-1,0) ELSE attempts END WHERE event_key=? AND state='RUNNING' AND lease=? AND lease_until_ms>?",
+  "cases": [
+    {
+      "claim_attempt": 1,
+      "failed": false,
+      "matching_lease": true,
+      "unexpired": true,
+      "affected_rows": 1,
+      "state": "PENDING",
+      "attempts": 0
+    },
+    {
+      "claim_attempt": 4,
+      "failed": false,
+      "matching_lease": true,
+      "unexpired": true,
+      "affected_rows": 1,
+      "state": "PENDING",
+      "attempts": 3
+    },
+    {
+      "claim_attempt": 5,
+      "failed": false,
+      "matching_lease": true,
+      "unexpired": true,
+      "affected_rows": 1,
+      "state": "PENDING",
+      "attempts": 4
+    },
+    {
+      "claim_attempt": 5,
+      "failed": true,
+      "matching_lease": true,
+      "unexpired": true,
+      "affected_rows": 1,
+      "state": "FAILED",
+      "attempts": 5
+    },
+    {
+      "claim_attempt": 5,
+      "failed": false,
+      "matching_lease": false,
+      "unexpired": true,
+      "affected_rows": 0,
+      "state": "RUNNING",
+      "attempts": 5
+    },
+    {
+      "claim_attempt": 5,
+      "failed": false,
+      "matching_lease": true,
+      "unexpired": false,
+      "affected_rows": 0,
+      "state": "RUNNING",
+      "attempts": 5
+    }
+  ],
+  "repeat_noop_affected_zero": true
+}
