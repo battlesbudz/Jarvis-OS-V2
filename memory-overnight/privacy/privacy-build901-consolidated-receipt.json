@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "passed": true,
+  "source_commit": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "pr_head": "",
+  "run_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621",
+  "errors": [],
+  "variants": [
+    {
+      "api": 30,
+      "apk": "app-release.apk",
+      "apk_sha256": "899a7f321ee8aaeff07d2c069d79cb8539ac42ba0517957ab6fdebc165125914",
+      "test_apk_sha256": "e5b4055d8e721da069f86732e48f7f935405f5fdc6a2ce2fce64d03596ff23ef",
+      "tests": 37,
+      "passed": true
+    },
+    {
+      "api": 35,
+      "apk": "app-compact.apk",
+      "apk_sha256": "f7cf9c5e6348162d0746cc51250dff98f9e6f83dc5322d2f6f3c12f6c63a7b40",
+      "test_apk_sha256": "e5b4055d8e721da069f86732e48f7f935405f5fdc6a2ce2fce64d03596ff23ef",
+      "tests": 37,
+      "passed": true
+    }
+  ],
+  "release_approved": false,
+  "coverage": "release JVM + UI + Android actions; no model inference",
+  "not_covered": [
+    "Real-model inference and model-generated tool selection",
+    "Microphone, speaker, Bluetooth and acoustic interruption behavior",
+    "Physical-device GPU/NPU compatibility, thermal behavior and latency",
+    "Successful multi-gigabyte model download/import",
+    "Real-model use of approved memory recall"
+  ],
+  "provenance": "Same-run GitHub Actions artifacts; APK bytes rehashed. Not an external attestation.",
+  "jvm": {
+    "passed": true,
+    "tests": 767,
+    "suites": 144
+  }
+}

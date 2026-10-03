@@ -1,0 +1,496 @@
+﻿2026-10-03T02:21:38.3809062Z Current runner version: '2.337.0'
+2026-10-03T02:21:38.3833294Z ##[group]Runner Image Provisioner
+2026-10-03T02:21:38.3834134Z Hosted Compute Agent
+2026-10-03T02:21:38.3834752Z Version: 20260901.588
+2026-10-03T02:21:38.3835364Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-03T02:21:38.3836068Z Build Date: 2026-09-01T19:56:44Z
+2026-10-03T02:21:38.3836717Z Worker ID: {98065cd9-7a07-489e-992a-b931da4fbfb4}
+2026-10-03T02:21:38.3837378Z Azure Region: westus3
+2026-10-03T02:21:38.3838262Z ##[endgroup]
+2026-10-03T02:21:38.3839730Z ##[group]Operating System
+2026-10-03T02:21:38.3840291Z Ubuntu
+2026-10-03T02:21:38.3840827Z 24.04.5
+2026-10-03T02:21:38.3841299Z LTS
+2026-10-03T02:21:38.3842064Z ##[endgroup]
+2026-10-03T02:21:38.3842635Z ##[group]Runner Image
+2026-10-03T02:21:38.3843179Z Image: ubuntu-24.04
+2026-10-03T02:21:38.3843743Z Version: 20260927.320.1
+2026-10-03T02:21:38.3844910Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-03T02:21:38.3846332Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-03T02:21:38.3847204Z ##[endgroup]
+2026-10-03T02:21:38.3848306Z ##[group]GITHUB_TOKEN Permissions
+2026-10-03T02:21:38.3850467Z Actions: read
+2026-10-03T02:21:38.3851078Z Contents: read
+2026-10-03T02:21:38.3851592Z Metadata: read
+2026-10-03T02:21:38.3852241Z ##[endgroup]
+2026-10-03T02:21:38.3854291Z Secret source: Actions
+2026-10-03T02:21:38.3855225Z Cache mode: write
+2026-10-03T02:21:38.3855854Z Prepare workflow directory
+2026-10-03T02:21:38.4183569Z Prepare all required actions
+2026-10-03T02:21:38.4232445Z Getting action download info
+2026-10-03T02:21:38.7425291Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-10-03T02:21:38.8431222Z Download action repository 'reactivecircus/android-emulator-runner@v2' (SHA:a421e43855164a8197daf9d8d40fe71c6996bb0d)
+2026-10-03T02:21:39.4463206Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-10-03T02:21:39.6401252Z Uses: battlesbudz/Jarvis-OS-V2/.github/workflows/android-sandbox.yml@refs/heads/feature/memory-os-overnight-candidate-privacy-20261002-5 (53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b)
+2026-10-03T02:21:39.6407561Z Complete job name: Verify signed release in Android sandbox / Release journeys / API 35 / app-compact
+2026-10-03T02:21:39.7321016Z ##[group]Run actions/checkout@v4
+2026-10-03T02:21:39.7322194Z with:
+2026-10-03T02:21:39.7322756Z   repository: battlesbudz/Jarvis-OS-V2
+2026-10-03T02:21:39.7326968Z   token: ***
+2026-10-03T02:21:39.7327464Z   ssh-strict: true
+2026-10-03T02:21:39.7327967Z   ssh-user: git
+2026-10-03T02:21:39.7328485Z   persist-credentials: true
+2026-10-03T02:21:39.7329049Z   clean: true
+2026-10-03T02:21:39.7329571Z   sparse-checkout-cone-mode: true
+2026-10-03T02:21:39.7330171Z   fetch-depth: 1
+2026-10-03T02:21:39.7330659Z   fetch-tags: false
+2026-10-03T02:21:39.7331173Z   show-progress: true
+2026-10-03T02:21:39.7331800Z   lfs: false
+2026-10-03T02:21:39.7332330Z   submodules: false
+2026-10-03T02:21:39.7332843Z   set-safe-directory: true
+2026-10-03T02:21:39.7333432Z   allow-unsafe-pr-checkout: false
+2026-10-03T02:21:39.7334303Z ##[endgroup]
+2026-10-03T02:21:39.8368184Z Syncing repository: battlesbudz/Jarvis-OS-V2
+2026-10-03T02:21:39.8371916Z ##[group]Getting Git version info
+2026-10-03T02:21:39.8373663Z Working directory is '/home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2'
+2026-10-03T02:21:39.8375859Z [command]/usr/bin/git version
+2026-10-03T02:21:39.8384783Z git version 2.55.0
+2026-10-03T02:21:39.8407710Z ##[endgroup]
+2026-10-03T02:21:39.8422736Z Temporarily overriding HOME='/home/runner/work/_temp/b54a772d-a19c-48e2-9d3a-f7a2b59ffbe7' before making global git config changes
+2026-10-03T02:21:39.8426057Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-03T02:21:39.8428646Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2
+2026-10-03T02:21:39.8478914Z Deleting the contents of '/home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2'
+2026-10-03T02:21:39.8482501Z ##[group]Initializing the repository
+2026-10-03T02:21:39.8486961Z [command]/usr/bin/git init /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2
+2026-10-03T02:21:39.8582976Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-03T02:21:39.8585727Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-03T02:21:39.8588188Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-03T02:21:39.8590187Z hint: call:
+2026-10-03T02:21:39.8591808Z hint:
+2026-10-03T02:21:39.8593088Z hint: 	git config --global init.defaultBranch <name>
+2026-10-03T02:21:39.8594579Z hint:
+2026-10-03T02:21:39.8596047Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-03T02:21:39.8598003Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-03T02:21:39.8598997Z hint:
+2026-10-03T02:21:39.8600056Z hint: 	git branch -m <name>
+2026-10-03T02:21:39.8601460Z hint:
+2026-10-03T02:21:39.8603251Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-03T02:21:39.8605926Z Initialized empty Git repository in /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/.git/
+2026-10-03T02:21:39.8610596Z [command]/usr/bin/git remote add origin https://github.com/battlesbudz/Jarvis-OS-V2
+2026-10-03T02:21:39.8675285Z ##[endgroup]
+2026-10-03T02:21:39.8676902Z ##[group]Disabling automatic garbage collection
+2026-10-03T02:21:39.8679105Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-03T02:21:39.8712196Z ##[endgroup]
+2026-10-03T02:21:39.8714260Z ##[group]Setting up auth
+2026-10-03T02:21:39.8720037Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-03T02:21:39.8767710Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-03T02:21:39.9123641Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-03T02:21:39.9145001Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-03T02:21:39.9362970Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-03T02:21:39.9394320Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-03T02:21:39.9583488Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-03T02:21:39.9619317Z ##[endgroup]
+2026-10-03T02:21:39.9621013Z ##[group]Fetching the repository
+2026-10-03T02:21:39.9631216Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b:refs/remotes/origin/feature/memory-os-overnight-candidate-privacy-20261002-5
+2026-10-03T02:21:40.8877567Z From https://github.com/battlesbudz/Jarvis-OS-V2
+2026-10-03T02:21:40.8881012Z  * [new ref]         53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b -> origin/feature/memory-os-overnight-candidate-privacy-20261002-5
+2026-10-03T02:21:40.8885842Z ##[endgroup]
+2026-10-03T02:21:40.8887377Z ##[group]Determining the checkout info
+2026-10-03T02:21:40.8889343Z ##[endgroup]
+2026-10-03T02:21:40.8890875Z [command]/usr/bin/git sparse-checkout disable
+2026-10-03T02:21:40.8937038Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-03T02:21:40.8965216Z ##[group]Checking out the ref
+2026-10-03T02:21:40.8973130Z [command]/usr/bin/git checkout --progress --force -B feature/memory-os-overnight-candidate-privacy-20261002-5 refs/remotes/origin/feature/memory-os-overnight-candidate-privacy-20261002-5
+2026-10-03T02:21:40.9296071Z Switched to a new branch 'feature/memory-os-overnight-candidate-privacy-20261002-5'
+2026-10-03T02:21:40.9300614Z branch 'feature/memory-os-overnight-candidate-privacy-20261002-5' set up to track 'origin/feature/memory-os-overnight-candidate-privacy-20261002-5'.
+2026-10-03T02:21:40.9306757Z ##[endgroup]
+2026-10-03T02:21:40.9344680Z [command]/usr/bin/git log -1 --format=%H
+2026-10-03T02:21:40.9369851Z 53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b
+2026-10-03T02:21:40.9633964Z ##[group]Run python3 scripts/verification/artifacts.py fetch --out artifact-manifest.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"
+2026-10-03T02:21:40.9638412Z [36;1mpython3 scripts/verification/artifacts.py fetch --out artifact-manifest.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"[0m
+2026-10-03T02:21:40.9645100Z [36;1mpython3 scripts/verification/artifacts.py select --manifest artifact-manifest.json --run-id "$GITHUB_RUN_ID" --head-sha "$EXPECTED_HEAD" --require 'jarvis-os-v2-release-apk=Build signed release APK' --require 'jarvis-verification-test-apk=Build signed release APK' --require-success --github-output "$GITHUB_OUTPUT"[0m
+2026-10-03T02:21:40.9829333Z shell: /usr/bin/bash -e {0}
+2026-10-03T02:21:40.9830564Z env:
+2026-10-03T02:21:40.9840550Z   GITHUB_TOKEN: ***
+2026-10-03T02:21:40.9841903Z   EXPECTED_HEAD: 53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b
+2026-10-03T02:21:40.9843334Z ##[endgroup]
+2026-10-03T02:21:42.1621172Z 11262200910,11261786999
+2026-10-03T02:21:42.1797980Z ##[group]Run python3 scripts/verification/artifacts.py download --manifest artifact-manifest.json --artifact-ids "11262200910,11261786999" --out inputs --layout flat
+2026-10-03T02:21:42.1799532Z [36;1mpython3 scripts/verification/artifacts.py download --manifest artifact-manifest.json --artifact-ids "11262200910,11261786999" --out inputs --layout flat[0m
+2026-10-03T02:21:42.1844554Z shell: /usr/bin/bash -e {0}
+2026-10-03T02:21:42.1844890Z env:
+2026-10-03T02:21:42.1847663Z   GITHUB_TOKEN: ***
+2026-10-03T02:21:42.1847944Z ##[endgroup]
+2026-10-03T02:21:46.6051072Z Downloaded verified artifact IDs: 11262200910,11261786999
+2026-10-03T02:21:46.6191511Z ##[group]Run echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-jarvis-kvm.rules
+2026-10-03T02:21:46.6192659Z [36;1mecho 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-jarvis-kvm.rules[0m
+2026-10-03T02:21:46.6193236Z [36;1msudo udevadm control --reload-rules[0m
+2026-10-03T02:21:46.6193551Z [36;1msudo udevadm trigger --name-match=kvm[0m
+2026-10-03T02:21:46.6229841Z shell: /usr/bin/bash -e {0}
+2026-10-03T02:21:46.6230141Z ##[endgroup]
+2026-10-03T02:21:46.6352585Z KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"
+2026-10-03T02:21:46.6697054Z ##[group]Run reactivecircus/android-emulator-runner@v2
+2026-10-03T02:21:46.6697426Z with:
+2026-10-03T02:21:46.6697634Z   api-level: 35
+2026-10-03T02:21:46.6697857Z   target: google_apis
+2026-10-03T02:21:46.6698073Z   arch: x86_64
+2026-10-03T02:21:46.6698302Z   profile: pixel_2
+2026-10-03T02:21:46.6698523Z   ram-size: 4096M
+2026-10-03T02:21:46.6698743Z   heap-size: 512M
+2026-10-03T02:21:46.6698946Z   disk-size: 4096M
+2026-10-03T02:21:46.6699156Z   disable-animations: true
+2026-10-03T02:21:46.6699406Z   emulator-boot-timeout: 300
+2026-10-03T02:21:46.6699840Z   emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+2026-10-03T02:21:46.6700985Z   script: python3 scripts/verification/android.py run --apk inputs/app-compact.apk --test-apk inputs/app-release-androidTest.apk --out verification-evidence --source-commit "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b" --pr-head "" --allow-emulator-reset
+2026-10-03T02:21:46.6702160Z   cores: 2
+2026-10-03T02:21:46.6702464Z   avd-name: test
+2026-10-03T02:21:46.6702807Z   force-avd-creation: true
+2026-10-03T02:21:46.6703187Z   emulator-port: 5554
+2026-10-03T02:21:46.6703496Z   disable-spellchecker: false
+2026-10-03T02:21:46.6703749Z   disable-linux-hw-accel: auto
+2026-10-03T02:21:46.6703992Z   enable-hw-keyboard: false
+2026-10-03T02:21:46.6704378Z   channel: stable
+2026-10-03T02:21:46.6704585Z ##[endgroup]
+2026-10-03T02:21:46.7234802Z ##[group]Configure emulator
+2026-10-03T02:21:46.7236043Z API level: 35
+2026-10-03T02:21:46.7236576Z System image API level: 35
+2026-10-03T02:21:46.7237184Z target: google_apis
+2026-10-03T02:21:46.7237690Z CPU architecture: x86_64
+2026-10-03T02:21:46.7238238Z Hardware profile: pixel_2
+2026-10-03T02:21:46.7239190Z Cores: 2
+2026-10-03T02:21:46.7239896Z RAM size: 4096M
+2026-10-03T02:21:46.7240433Z Heap size: 512M
+2026-10-03T02:21:46.7240784Z SD card path or size: 
+2026-10-03T02:21:46.7241177Z Disk size: 4096M
+2026-10-03T02:21:46.7241509Z AVD name: test
+2026-10-03T02:21:46.7242089Z force avd creation: true
+2026-10-03T02:21:46.7242502Z Emulator boot timeout: 300
+2026-10-03T02:21:46.7242912Z emulator port: 5554
+2026-10-03T02:21:46.7243375Z emulator options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+2026-10-03T02:21:46.7243824Z disable animations: true
+2026-10-03T02:21:46.7244106Z disable spellchecker: false
+2026-10-03T02:21:46.7244387Z disable Linux hardware acceleration: false
+2026-10-03T02:21:46.7244695Z enable hardware keyboard: false
+2026-10-03T02:21:46.7245117Z Channel: 0 (stable)
+2026-10-03T02:21:46.7250411Z Script:
+2026-10-03T02:21:46.7251482Z python3 scripts/verification/android.py run --apk inputs/app-compact.apk --test-apk inputs/app-release-androidTest.apk --out verification-evidence --source-commit "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b" --pr-head "" --allow-emulator-reset
+2026-10-03T02:21:46.7252769Z Pre emulator launch script:
+2026-10-03T02:21:46.7253313Z ##[endgroup]
+2026-10-03T02:21:46.7253701Z ##[group]Install Android SDK
+2026-10-03T02:21:46.7752165Z [command]/usr/bin/sh -c \yes | sdkmanager --licenses > /dev/null
+2026-10-03T02:21:53.7176210Z Installing latest build tools, platform tools, and platform.
+2026-10-03T02:21:53.7191197Z [command]/usr/bin/sh -c \sdkmanager --install 'build-tools;37.0.0' platform-tools 'platforms;android-35'> /dev/null
+2026-10-03T02:21:55.2832677Z Installing latest emulator.
+2026-10-03T02:21:55.2846125Z [command]/usr/bin/sh -c \sdkmanager --install emulator --channel=0 > /dev/null
+2026-10-03T02:22:06.4077149Z Installing system images.
+2026-10-03T02:22:06.4091178Z [command]/usr/bin/sh -c \sdkmanager --install 'system-images;android-35;google_apis;x86_64' --channel=0 > /dev/null
+2026-10-03T02:22:46.2407555Z ##[endgroup]
+2026-10-03T02:22:46.2408696Z ##[group]Create AVD
+2026-10-03T02:22:46.2409311Z Creating AVD.
+2026-10-03T02:22:46.2429243Z [command]/usr/bin/sh -c \echo no | avdmanager create avd --force -n test --package 'system-images;android-35;google_apis;x86_64' --device 'pixel_2'
+2026-10-03T02:22:47.0539941Z Loading local repository...                                                     
+2026-10-03T02:22:47.0553199Z [=========                              ] 25% Loading local repository...       
+2026-10-03T02:22:47.0553917Z [=========                              ] 25% Fetch remote repository...        
+2026-10-03T02:22:47.0554550Z [=======================================] 100% Fetch remote repository...       
+2026-10-03T02:22:47.2445308Z Auto-selecting single ABI x86_64
+2026-10-03T02:22:47.6638174Z [command]/usr/bin/sh -c \printf 'hw.cpu.ncore=2\nhw.ramSize=4096M\nhw.heapSize=512M\ndisk.dataPartition.size=4096M\n' >> /home/runner/.android/avd/test.avd/config.ini
+2026-10-03T02:22:47.6659543Z ##[endgroup]
+2026-10-03T02:22:47.6661258Z ##[group]Launch Emulator
+2026-10-03T02:22:47.6661836Z Starting emulator.
+2026-10-03T02:22:47.6676466Z [command]/usr/bin/sh -c \/usr/local/lib/android/sdk/emulator/emulator -port 5554 -avd test -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot &
+2026-10-03T02:22:47.6783663Z INFO         | Android emulator version 37.2.12.0 (build_id 16428233) (CL:N/A)
+2026-10-03T02:22:47.6784403Z INFO         | Graphics backend: gfxstream
+2026-10-03T02:22:47.6785320Z INFO         | Found systemPath /usr/local/lib/android/sdk/system-images/android-35/google_apis/x86_64/
+2026-10-03T02:22:47.7253290Z INFO         | Saving last run QEMU version for the AVD to 2
+2026-10-03T02:22:47.7253938Z ##############################################################################
+2026-10-03T02:22:47.7254576Z ##                        WARNING - ACTION REQUIRED                         ##
+2026-10-03T02:22:47.7255011Z ##  Consider using the '-metrics-collection' flag to help improve the       ##
+2026-10-03T02:22:47.7255483Z ##  emulator by sending anonymized usage data. Or use the '-no-metrics'     ##
+2026-10-03T02:22:47.7255938Z ##  flag to bypass this warning and turn off the metrics collection.        ##
+2026-10-03T02:22:47.7256391Z ##  In a future release this warning will turn into a one-time blocking     ##
+2026-10-03T02:22:47.7256870Z ##  prompt to ask for explicit user input regarding metrics collection.     ##
+2026-10-03T02:22:47.7257281Z ##                                                                          ##
+2026-10-03T02:22:47.7257695Z ##  Please see '-help-metrics-collection' for more details. You can use     ##
+2026-10-03T02:22:47.7258190Z ##  '-metrics-to-file' or '-metrics-to-console' flags to see what type of   ##
+2026-10-03T02:22:47.7258660Z ##  data is being collected by emulator as part of usage statistics.        ##
+2026-10-03T02:22:47.7259048Z ##############################################################################
+2026-10-03T02:22:47.7259385Z INFO         | Guest GLES Driver: Auto (ext controls)
+2026-10-03T02:22:47.7259836Z INFO         | emuglConfig_init: vulkan_mode_selected:swiftshader gles_mode_selected:swiftshader
+2026-10-03T02:22:47.7260294Z INFO         | Checking system compatibility:
+2026-10-03T02:22:47.7260605Z INFO         |   Checking: hasSufficientDiskSpace
+2026-10-03T02:22:47.7260991Z INFO         |      Ok: Disk space requirements to run avd: `test` are met
+2026-10-03T02:22:47.7261343Z INFO         |   Checking: hasSufficientHwGpu
+2026-10-03T02:22:47.7261937Z INFO         |      Ok: Hardware GPU compatibility checks are not required
+2026-10-03T02:22:47.7262336Z INFO         |   Checking: hasSufficientSystem
+2026-10-03T02:22:47.7262733Z INFO         |      Ok: System requirements to run avd: `test` are met
+2026-10-03T02:22:47.7263592Z WARNING      | Feature QuickbootFileBacked is disabled due to stability issues, if you really want that, the environment variable ANDROID_EMU_FORCE_QUICKBOOT_FILE_BACKED need to set to 1
+2026-10-03T02:22:48.2678815Z ERROR        | Unable to connect to adb daemon on port: 5037
+2026-10-03T02:22:48.2686846Z INFO         | Storing crashdata in: /tmp/android-runner/emu-crash-37.2.12.db, detection is enabled for process: 2555
+2026-10-03T02:22:48.2687604Z INFO         | Initializing gfxstream backend
+2026-10-03T02:22:48.2699019Z INFO         | startOpenglesRendererImpl: gpu info
+2026-10-03T02:22:48.2699739Z INFO         | 
+2026-10-03T02:22:48.2701887Z INFO         | initIcdPaths: ICD set to 'swiftshader', using Swiftshader ICD
+2026-10-03T02:22:48.2703316Z INFO         | Setting ICD filenames for the loader = /usr/local/lib/android/sdk/emulator/lib64/vulkan/vk_swiftshader_icd.json
+2026-10-03T02:22:48.2708633Z INFO         | SharedLibrary::open for [/usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/lib64/vulkan/libvulkan.so]
+2026-10-03T02:22:48.2709795Z INFO         | SharedLibrary::open for [/usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/lib64/vulkan/libvulkan.so.1]
+2026-10-03T02:22:48.2710554Z INFO         | SharedLibrary::open for [/usr/local/lib/android/sdk/emulator/lib64/vulkan/libvulkan.so]
+2026-10-03T02:22:48.2711216Z INFO         | Added library: /usr/local/lib/android/sdk/emulator/lib64/vulkan/libvulkan.so
+2026-10-03T02:22:48.2754903Z INFO         | Selecting Vulkan device: SwiftShader Device (Subzero), Version: 1.3.0
+2026-10-03T02:22:48.2755781Z INFO         | Using Vulkan externalMemoryMode: OpaqueFd for VkEmulation
+2026-10-03T02:22:48.2931202Z INFO         | Format VK_FORMAT_G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16 does not support YCbCr sampler conversion
+2026-10-03T02:22:48.2961139Z INFO         | SharedLibrary::open for [libX11]
+2026-10-03T02:22:48.2964411Z WARNING      | Could not open libX11.so, try libX11.so.6
+2026-10-03T02:22:48.2964824Z INFO         | SharedLibrary::open for [libX11.so.6]
+2026-10-03T02:22:48.2965154Z INFO         | SharedLibrary::open for [libX11-xcb]
+2026-10-03T02:22:48.2965622Z WARNING      | Could not open libX11-xcb.so, try libX11-xcb.so.1
+2026-10-03T02:22:48.2966262Z INFO         | SharedLibrary::open for [libX11-xcb.so.1]
+2026-10-03T02:22:48.3032181Z INFO         | Initializing VkEmulation features:
+2026-10-03T02:22:48.3032703Z INFO         |     glInteropSupported: false
+2026-10-03T02:22:48.3033029Z INFO         |     useDeferredCommands: true
+2026-10-03T02:22:48.3033384Z INFO         |     createResourceWithRequirements: true
+2026-10-03T02:22:48.3033733Z INFO         |     useVulkanComposition: false
+2026-10-03T02:22:48.3034043Z INFO         |     useVulkanNativeSwapchain: false
+2026-10-03T02:22:48.3034357Z INFO         |     enable guestRenderDoc: false
+2026-10-03T02:22:48.3034657Z INFO         |     ASTC LDR emulation mode: Gpu
+2026-10-03T02:22:48.3034975Z INFO         |     enable ETC2 emulation: true
+2026-10-03T02:22:48.3035266Z INFO         |     enable Ycbcr emulation: false
+2026-10-03T02:22:48.3035582Z INFO         |     guestVulkanOnly: false
+2026-10-03T02:22:48.3035878Z INFO         |     useDedicatedAllocations: false
+2026-10-03T02:22:48.3036190Z INFO         |     guestVulkanMaxApiVersion: 1.3.0
+2026-10-03T02:22:48.3036535Z INFO         |     enableProtectedMemoryEmulation: false
+2026-10-03T02:22:48.3083712Z INFO         | Graphics Adapter Vendor Google (Google Inc.)
+2026-10-03T02:22:48.3084323Z INFO         | Graphics Adapter Android Emulator OpenGL ES Translator (Google SwiftShader)
+2026-10-03T02:22:48.3084870Z INFO         | Graphics API Version OpenGL ES 3.0 (OpenGL ES 3.0 SwiftShader 4.0.0.1)
+2026-10-03T02:22:48.3086846Z INFO         | Graphics API Extensions GL_OES_EGL_sync GL_OES_EGL_image GL_OES_EGL_image_external GL_OES_depth24 GL_OES_depth32 GL_OES_element_index_uint GL_OES_texture_float GL_OES_texture_float_linear GL_OES_compressed_paletted_texture GL_OES_compressed_ETC1_RGB8_texture GL_OES_depth_texture GL_OES_texture_half_float GL_OES_texture_half_float_linear GL_OES_packed_depth_stencil GL_OES_vertex_half_float GL_OES_standard_derivatives GL_OES_texture_npot GL_OES_rgb8_rgba8 GL_EXT_color_buffer_float GL_EXT_color_buffer_half_float GL_EXT_texture_format_BGRA8888 GL_APPLE_texture_format_BGRA8888 
+2026-10-03T02:22:48.3088764Z INFO         | Graphics Device Extensions N/A
+2026-10-03T02:22:48.3089086Z INFO         | Disabling sparse binding feature support
+2026-10-03T02:22:48.3171931Z INFO         | Sending adb public key [QAAAANuJHQSttVbyk0LAylrc0lGkRKqHuo6fGySrn66vNpfAD4eosu+2+VXzVUahNu0++aaDopQHSpMNrDXKC6iVNmyDLld98IJMe+qdpiyhpXkydc458sl5Up3xO5vpTCXDkpYhUbfG920xsZt34XvrSFaZgNBat+V4EECRKl+7i8XCqFMr9Sjk00NofZ7/O+GpT1LSjmn9LiI5kChTAx/9A99d7o+rYsxdRW4JtMKBngx+QUtYnXlIEYMOaMjHmYmDSNjJsFRmCjJl/V9KyokDbI06pNdAJbr+4tMQLWAkBm3tYheQVyzVByOMbplE2/ooSvKN3UsYnkJH1JnuVU4Ns0imy0bKGZM1zbfrdIHF1SUUAAPfVYtIH6W1EzpLEDHmcRhqy9rN6UY/sgc05Op+psNZ95pZMCuL7Ka/LEbbfrOyKK/Gobg6fUyZCUikrKW1gmOvinNFnnMG0aS3MDMtiBiYewfurTx1iRyuAyr3tm1niFpGd0M2Qkri6cYNY2EfKI44W3KZkSvWHUSKNCjOcH7azpGsURT07Swea4W8zHSSfdD3pTnIoVUUHmql93vplzcLYErUfVeXbK70oVKWy0bsXFfUYBrDPHnPVANg9lgfbpzpMLtdLTApsK2HPjtp7DbXd9gFJZFvAcyXa0krQIPCarjjUkfl9VlIrclCLfh08HZ5ZwEAAQA= runner@unknown]
+2026-10-03T02:22:48.3176513Z INFO         | Userspace boot properties:
+2026-10-03T02:22:48.3176923Z INFO         |   androidboot.boot_devices=pci0000:00/0000:00:03.0 pci0000:00/0000:00:06.0
+2026-10-03T02:22:48.3177359Z INFO         |   androidboot.dalvik.vm.heapsize=576m
+2026-10-03T02:22:48.3177716Z INFO         |   androidboot.debug.hwui.renderer=skiagl
+2026-10-03T02:22:48.3178080Z INFO         |   androidboot.debug.sf.nobootanimation=1
+2026-10-03T02:22:48.3178409Z INFO         |   androidboot.hardware=ranchu
+2026-10-03T02:22:48.3178734Z INFO         |   androidboot.hardware.gltransport=pipe
+2026-10-03T02:22:48.3179066Z INFO         |   androidboot.hardware.vulkan=ranchu
+2026-10-03T02:22:48.3179489Z INFO         |   androidboot.logcat=*:V
+2026-10-03T02:22:48.3179794Z INFO         |   androidboot.opengles.version=196608
+2026-10-03T02:22:48.3180101Z INFO         |   androidboot.qemu=1
+2026-10-03T02:22:48.3183857Z INFO         |   androidboot.qemu.adb.pubkey=QAAAANuJHQSttVbyk0LAylrc0lGkRKqHuo6fGySrn66vNpfAD4eosu+2+VXzVUahNu0++aaDopQHSpMNrDXKC6iVNmyDLld98IJMe+qdpiyhpXkydc458sl5Up3xO5vpTCXDkpYhUbfG920xsZt34XvrSFaZgNBat+V4EECRKl+7i8XCqFMr9Sjk00NofZ7/O+GpT1LSjmn9LiI5kChTAx/9A99d7o+rYsxdRW4JtMKBngx+QUtYnXlIEYMOaMjHmYmDSNjJsFRmCjJl/V9KyokDbI06pNdAJbr+4tMQLWAkBm3tYheQVyzVByOMbplE2/ooSvKN3UsYnkJH1JnuVU4Ns0imy0bKGZM1zbfrdIHF1SUUAAPfVYtIH6W1EzpLEDHmcRhqy9rN6UY/sgc05Op+psNZ95pZMCuL7Ka/LEbbfrOyKK/Gobg6fUyZCUikrKW1gmOvinNFnnMG0aS3MDMtiBiYewfurTx1iRyuAyr3tm1niFpGd0M2Qkri6cYNY2EfKI44W3KZkSvWHUSKNCjOcH7azpGsURT07Swea4W8zHSSfdD3pTnIoVUUHmql93vplzcLYErUfVeXbK70oVKWy0bsXFfUYBrDPHnPVANg9lgfbpzpMLtdLTApsK2HPjtp7DbXd9gFJZFvAcyXa0krQIPCarjjUkfl9VlIrclCLfh08HZ5ZwEAAQA= runner@unknown
+2026-10-03T02:22:48.3187518Z INFO         |   androidboot.qemu.avd_name=test
+2026-10-03T02:22:48.3187865Z INFO         |   androidboot.qemu.camera_hq_edge_processing=0
+2026-10-03T02:22:48.3188228Z INFO         |   androidboot.qemu.camera_protocol_ver=1
+2026-10-03T02:22:48.3188578Z INFO         |   androidboot.qemu.cpuvulkan.version=4206592
+2026-10-03T02:22:48.3188979Z INFO         |   androidboot.qemu.gltransport.drawFlushInterval=800
+2026-10-03T02:22:48.3189366Z INFO         |   androidboot.qemu.gltransport.name=pipe
+2026-10-03T02:22:48.3189704Z INFO         |   androidboot.qemu.hwcodec.avcdec=2
+2026-10-03T02:22:48.3190037Z INFO         |   androidboot.qemu.hwcodec.hevcdec=2
+2026-10-03T02:22:48.3190369Z INFO         |   androidboot.qemu.hwcodec.vpxdec=2
+2026-10-03T02:22:48.3190783Z INFO         |   androidboot.qemu.settings.system.screen_off_timeout=2147483647
+2026-10-03T02:22:48.3191187Z INFO         |   androidboot.qemu.skin=1080x1920
+2026-10-03T02:22:48.3191499Z INFO         |   androidboot.qemu.virtiowifi=1
+2026-10-03T02:22:48.3192432Z INFO         |   androidboot.qemu.vsync=60
+2026-10-03T02:22:48.3192807Z INFO         |   androidboot.serialno=EMULATOR37X2X12X0
+2026-10-03T02:22:48.3193311Z INFO         |   androidboot.vbmeta.digest=b3271ba499104f4631ae3723913d5c12574e01715fce5b82d60beed097ead264
+2026-10-03T02:22:48.3193806Z INFO         |   androidboot.vbmeta.hash_alg=sha256
+2026-10-03T02:22:48.3194125Z INFO         |   androidboot.vbmeta.size=6720
+2026-10-03T02:22:48.3194427Z INFO         |   androidboot.veritymode=enforcing
+2026-10-03T02:22:48.3348370Z WARNING: cannnot unmap ptr 0x7fa39fe01000 as it is in the protected range from 0x7fa29fe00000 to 0x7fa3a0000000
+2026-10-03T02:22:48.3349402Z pc_memory_init: above 4g size: 40000000
+2026-10-03T02:22:48.3553251Z INFO         | Monitoring duration of emulator setup.
+2026-10-03T02:22:49.3437565Z INFO         | Activated packet streamer for bluetooth emulation
+2026-10-03T02:22:49.3441525Z INFO         | Successfully initialized netsim WiFi
+2026-10-03T02:22:49.3500508Z INFO         | Setting display: 0 configuration to: 1080x1920, dpi: 420x420 
+2026-10-03T02:22:49.3501361Z INFO         | setDisplayActiveConfig: id:0, 1080x1920
+2026-10-03T02:22:49.3502204Z INFO         | emulatorSetupEnvironment: Environment scene is not required
+2026-10-03T02:22:49.3577200Z USER_INFO    | Emulator is performing a full startup. This may take upto two minutes, or more.
+2026-10-03T02:22:49.3578334Z WARNING      | Failed to process .ini file /home/runner/.android/emu-update-last-check.ini for reading.
+2026-10-03T02:22:49.5614292Z WARNING      | Failed to process .ini file /home/runner/.android/emu-update-last-check.ini for reading.
+2026-10-03T02:22:57.6732436Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:22:57.6790954Z * daemon not running; starting now at tcp:5037
+2026-10-03T02:22:57.7739802Z * daemon started successfully
+2026-10-03T02:22:57.7745048Z adb: device offline
+2026-10-03T02:22:57.7759264Z The process '/usr/local/lib/android/sdk/platform-tools/adb' failed with exit code 1
+2026-10-03T02:22:59.7789696Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:22:59.7809382Z adb: device offline
+2026-10-03T02:22:59.7815578Z The process '/usr/local/lib/android/sdk/platform-tools/adb' failed with exit code 1
+2026-10-03T02:23:01.7855084Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:23:01.7884169Z adb: device offline
+2026-10-03T02:23:01.7888588Z The process '/usr/local/lib/android/sdk/platform-tools/adb' failed with exit code 1
+2026-10-03T02:23:03.7932678Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:23:03.7988122Z adb: device offline
+2026-10-03T02:23:03.7997045Z The process '/usr/local/lib/android/sdk/platform-tools/adb' failed with exit code 1
+2026-10-03T02:23:05.8056007Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:23:05.8405636Z 
+2026-10-03T02:23:07.8477849Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:23:07.8735426Z 
+2026-10-03T02:23:09.8798775Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:23:09.9086308Z 
+2026-10-03T02:23:11.9143112Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:23:11.9317378Z 
+2026-10-03T02:23:13.9357351Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:23:13.9596159Z 
+2026-10-03T02:23:15.9660900Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:23:16.0000917Z 
+2026-10-03T02:23:18.0053721Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:23:18.0557568Z 
+2026-10-03T02:23:20.0617634Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:23:20.1032273Z 
+2026-10-03T02:23:22.1087805Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:23:22.1605882Z 
+2026-10-03T02:23:24.1743802Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:23:24.2095165Z 
+2026-10-03T02:23:26.2156357Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:23:26.2326732Z 
+2026-10-03T02:23:28.2384810Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:23:28.2627631Z 
+2026-10-03T02:23:30.2680242Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:23:30.2849418Z 
+2026-10-03T02:23:31.1430175Z INFO         | Boot completed in 43436 ms
+2026-10-03T02:23:31.1435989Z INFO         | Increasing screen off timeout, logcat buffer size to 2M.
+2026-10-03T02:23:32.2878095Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed
+2026-10-03T02:23:32.3432351Z 1
+2026-10-03T02:23:32.3445200Z Emulator booted.
+2026-10-03T02:23:32.3467292Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell input keyevent 82
+2026-10-03T02:23:39.1060237Z Disabling animations.
+2026-10-03T02:23:39.1127839Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell settings put global window_animation_scale 0.0
+2026-10-03T02:23:39.2023486Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell settings put global transition_animation_scale 0.0
+2026-10-03T02:23:39.2757144Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 shell settings put global animator_duration_scale 0.0
+2026-10-03T02:23:39.3190964Z ##[endgroup]
+2026-10-03T02:23:39.3204075Z [command]/usr/bin/sh -c python3 scripts/verification/android.py run --apk inputs/app-compact.apk --test-apk inputs/app-release-androidTest.apk --out verification-evidence --source-commit "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b" --pr-head "" --allow-emulator-reset
+2026-10-03T02:28:49.1183896Z {
+2026-10-03T02:28:49.1192872Z   "schema": 1,
+2026-10-03T02:28:49.1193536Z   "passed": true,
+2026-10-03T02:28:49.1194223Z   "source_commit": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+2026-10-03T02:28:49.1194969Z   "pr_head": "",
+2026-10-03T02:28:49.1197022Z   "run_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621",
+2026-10-03T02:28:49.1198398Z   "coverage": "release UI + Android actions; no model inference",
+2026-10-03T02:28:49.1199275Z   "not_covered": [
+2026-10-03T02:28:49.1200069Z     "Real-model inference and model-generated tool selection",
+2026-10-03T02:28:49.1201390Z     "Microphone, speaker, Bluetooth and acoustic interruption behavior",
+2026-10-03T02:28:49.1202505Z     "Physical-device GPU/NPU compatibility, thermal behavior and latency",
+2026-10-03T02:28:49.1203629Z     "Successful multi-gigabyte model download/import",
+2026-10-03T02:28:49.1204429Z     "Real-model use of approved memory recall"
+2026-10-03T02:28:49.1205053Z   ],
+2026-10-03T02:28:49.1205658Z   "device_evidence_folder": "jarvis-verification-1790994219383179442",
+2026-10-03T02:28:49.1206405Z   "errors": [],
+2026-10-03T02:28:49.1207101Z   "apk_sha256": "f7cf9c5e6348162d0746cc51250dff98f9e6f83dc5322d2f6f3c12f6c63a7b40",
+2026-10-03T02:28:49.1208181Z   "test_apk_sha256": "e5b4055d8e721da069f86732e48f7f935405f5fdc6a2ce2fce64d03596ff23ef",
+2026-10-03T02:28:49.1209085Z   "device": {
+2026-10-03T02:28:49.1209526Z     "abi": "x86_64,arm64-v8a",
+2026-10-03T02:28:49.1209993Z     "api": "35",
+2026-10-03T02:28:49.1210727Z     "fingerprint": "google/sdk_gphone64_x86_64/emu64xa:15/AE3A.240806.043/12960925:userdebug/dev-keys",
+2026-10-03T02:28:49.1211827Z     "native_bridge": "libndk_translation.so"
+2026-10-03T02:28:49.1212651Z   },
+2026-10-03T02:28:49.1213183Z   "instrumentation": {
+2026-10-03T02:28:49.1213820Z     "passed": true,
+2026-10-03T02:28:49.1214284Z     "tests": {
+2026-10-03T02:28:49.1214821Z       "test01_setupRequiresAnInstalledModel": 0,
+2026-10-03T02:28:49.1215591Z       "test02_searchHasAnHonestEmptyState": 0,
+2026-10-03T02:28:49.1216334Z       "test03_browsingDoesNotChangeTheSelectedModel": 0,
+2026-10-03T02:28:49.1217032Z       "test04_batteryToolReadsAndroid": 0,
+2026-10-03T02:28:49.1217756Z       "test05_volumeToolChangesAndroidAndRejectsBadInput": 0,
+2026-10-03T02:28:49.1218443Z       "test06_missingAppReturnsFailure": 0,
+2026-10-03T02:28:49.1219588Z       "test07_settingsToolOpensAndroidSettings": 0,
+2026-10-03T02:28:49.1220339Z       "test08_rejectedToolSequencePreservesAndroidVolume": 0,
+2026-10-03T02:28:49.1221075Z       "test09_repeatedVolumeRequestIsIdempotent": 0,
+2026-10-03T02:28:49.1222161Z       "test10_modelIssueWarningPrecedesSelectionAndCancelPreservesModel": 0,
+2026-10-03T02:28:49.1223144Z       "test11_modelDetailsAreOptionalAndDoNotChangeSelection": 0,
+2026-10-03T02:28:49.1224007Z       "test12_lastFamilyModelCanBeSelectedAboveNavigationBar": 0,
+2026-10-03T02:28:49.1224894Z       "test13_imageAttachmentIsResizedStoredAndInvalidInputRejected": 0,
+2026-10-03T02:28:49.1225743Z       "test14_threeActionTurnUsesRealAndroidState": 0,
+2026-10-03T02:28:49.1226517Z       "test15_invalidActionTurnPreservesAndroidState": 0,
+2026-10-03T02:28:49.1227294Z       "test16_partialFailureKeepsCompletedAndroidAction": 0,
+2026-10-03T02:28:49.1228122Z       "test17_cancelledAndDuplicateActionTurnsDoNotReplay": 0,
+2026-10-03T02:28:49.1228980Z       "test18_naturalActionRoutingOpensSettingsThenReadsBattery": 0,
+2026-10-03T02:28:49.1229837Z       "test19_retryLiteralUnknownAppStopsWithoutBattery": 0,
+2026-10-03T02:28:49.1230636Z       "test20_followupQueuesWhileAcceptedAndroidActionRuns": 0,
+2026-10-03T02:28:49.1231505Z       "test21_speechInterruptionPreservesAcceptedAndroidActions": 0,
+2026-10-03T02:28:49.1232896Z       "test22_explicitCancellationKeepsCompletedAndroidReceipts": 0,
+2026-10-03T02:28:49.1233869Z       "test23_actionResultsSurviveEndCallWithoutReplay": 0,
+2026-10-03T02:28:49.1234699Z       "test24_memoryManagerReviewsCorrectsSearchesAndErases": 0,
+2026-10-03T02:28:49.1235848Z       "test25_finalizedTextAndVoiceMemoryNeedsApprovalBeforePromptUse": 0,
+2026-10-03T02:28:49.1236857Z       "test26_memoryCorrectionAndEraseRefreshApprovedPacket": 0,
+2026-10-03T02:28:49.1237864Z       "test27_controlledConversationSurfaceKeepsCallUntilExplicitEnd": 0,
+2026-10-03T02:28:49.1238948Z       "test28_voiceNavigationRetainsCallIdUntilExplicitEnd": 0,
+2026-10-03T02:28:49.1239949Z       "test29_eachAssistantReplyKeepsPersistedMetricsAcrossReload": 0,
+2026-10-03T02:28:49.1240935Z       "test30_sqliteMigrationPreservesHistoryAndEraseAcrossReopen": 0,
+2026-10-03T02:28:49.1242078Z       "test31_sqliteCorruptMigrationAndFailedEraseDoNotLoseData": 0,
+2026-10-03T02:28:49.1243166Z       "test32_sqliteExceedsLegacyByteLimitAndSerializesSeparateWriters": 0,
+2026-10-03T02:28:49.1244389Z       "test33_sourceArchiveRetainsExplicitHistoryAndExpiresWithoutFactLoss": 0,
+2026-10-03T02:28:49.1245479Z       "test34_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure": 0,
+2026-10-03T02:28:49.1246570Z       "test35_referencePdfExtractionAndPendingAcknowledgmentUseReleaseCode": 0,
+2026-10-03T02:28:49.1247583Z       "test36_sourceCopyPrivacySurvivesPersistenceAndExpiry": 0,
+2026-10-03T02:28:49.1248396Z       "test90_modelSelectionPersistsAcrossRecreation": 0
+2026-10-03T02:28:49.1249033Z     },
+2026-10-03T02:28:49.1249457Z     "errors": []
+2026-10-03T02:28:49.1249882Z   },
+2026-10-03T02:28:49.1250523Z   "process_restart": "passed"
+2026-10-03T02:28:49.1251055Z }
+2026-10-03T02:28:49.1273268Z ##[group]Terminate Emulator
+2026-10-03T02:28:49.1295817Z [command]/usr/local/lib/android/sdk/platform-tools/adb -s emulator-5554 emu kill
+2026-10-03T02:28:49.1321955Z OK: killing emulator, bye bye
+2026-10-03T02:28:49.1322605Z OK
+2026-10-03T02:28:49.1324394Z INFO         | Wait for emulator (pid 2555) 20 seconds to shutdown gracefully before kill;you can set environment variable ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL(in seconds) to change the default value (20 seconds)
+2026-10-03T02:28:49.1325820Z 
+2026-10-03T02:28:49.1328107Z ##[endgroup]
+2026-10-03T02:28:49.1402469Z USER_INFO    | Snapshots have been disabled by the user, save request is ignored.
+2026-10-03T02:28:49.1403532Z INFO         | Saving snapshot 'default_boot' took 0 ms
+2026-10-03T02:28:49.5549415Z ERROR        | stop: Not implemented
+2026-10-03T02:28:49.5550550Z WARNING      | Emulator client has not yet been configured.. Call configure me first!
+2026-10-03T02:28:49.5679412Z INFO         | removeAll
+2026-10-03T02:28:49.6139505Z WARNING      | Netsim Wifi dns:///localhost:36419 is gone due to Stream removed (CANCELLED)
+2026-10-03T02:28:50.1467905Z ##[group]Run actions/upload-artifact@v4
+2026-10-03T02:28:50.1468195Z with:
+2026-10-03T02:28:50.1468453Z   name: jarvis-verification-api-35-app-compact
+2026-10-03T02:28:50.1468767Z   path: verification-evidence/
+2026-10-03T02:28:50.1469012Z   retention-days: 14
+2026-10-03T02:28:50.1469229Z   if-no-files-found: warn
+2026-10-03T02:28:50.1469456Z   compression-level: 6
+2026-10-03T02:28:50.1469675Z   overwrite: false
+2026-10-03T02:28:50.1469885Z   include-hidden-files: false
+2026-10-03T02:28:50.1470111Z env:
+2026-10-03T02:28:50.1470316Z   ANDROID_AVD_HOME: /home/runner/.android/avd
+2026-10-03T02:28:50.1470584Z ##[endgroup]
+2026-10-03T02:28:50.3114811Z (node:3443) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-03T02:28:50.3115999Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-03T02:28:50.3302325Z With the provided path, there will be 98 files uploaded
+2026-10-03T02:28:50.3307834Z Artifact name is valid!
+2026-10-03T02:28:50.3308283Z Root directory input is valid!
+2026-10-03T02:28:50.6859161Z Beginning upload of artifact content to blob storage
+2026-10-03T02:28:51.0624600Z (node:3443) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-03T02:28:51.8379907Z Uploaded bytes 6625979
+2026-10-03T02:28:51.9018550Z Finished uploading artifact content to blob storage!
+2026-10-03T02:28:51.9019598Z SHA256 digest of uploaded artifact zip is 6de7fc9b2397818aa4a9bee79bf452d32c66862a7caec650a5bd777bbec66f6a
+2026-10-03T02:28:51.9020706Z Finalizing artifact upload
+2026-10-03T02:28:52.1933365Z Artifact jarvis-verification-api-35-app-compact.zip successfully finalized. Artifact ID 11262031815
+2026-10-03T02:28:52.1934717Z Artifact jarvis-verification-api-35-app-compact has been successfully uploaded! Final size is 6625979 bytes. Artifact ID is 11262031815
+2026-10-03T02:28:52.1935958Z Artifact download URL: https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621/artifacts/11262031815
+2026-10-03T02:28:52.2040393Z ##[group]Run if [ -f verification-evidence/summary.md ]; then
+2026-10-03T02:28:52.2040847Z [36;1mif [ -f verification-evidence/summary.md ]; then[0m
+2026-10-03T02:28:52.2041286Z [36;1m  cat verification-evidence/summary.md >> "$GITHUB_STEP_SUMMARY"[0m
+2026-10-03T02:28:52.2041917Z [36;1melse[0m
+2026-10-03T02:28:52.2042387Z [36;1m  echo 'FAIL: emulator infrastructure did not produce a verification report.' >> "$GITHUB_STEP_SUMMARY"[0m
+2026-10-03T02:28:52.2042864Z [36;1mfi[0m
+2026-10-03T02:28:52.2078911Z shell: /usr/bin/bash -e {0}
+2026-10-03T02:28:52.2079175Z env:
+2026-10-03T02:28:52.2079419Z   ANDROID_AVD_HOME: /home/runner/.android/avd
+2026-10-03T02:28:52.2079705Z ##[endgroup]
+2026-10-03T02:28:52.2245419Z Post job cleanup.
+2026-10-03T02:28:52.3115628Z [command]/usr/bin/git version
+2026-10-03T02:28:52.3162119Z git version 2.55.0
+2026-10-03T02:28:52.3210060Z Temporarily overriding HOME='/home/runner/work/_temp/68e38277-9798-46bf-b754-b5378bc3c3d0' before making global git config changes
+2026-10-03T02:28:52.3211180Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-03T02:28:52.3214097Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2
+2026-10-03T02:28:52.3256523Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-03T02:28:52.3292493Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-03T02:28:52.3514698Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-03T02:28:52.3542188Z http.https://github.com/.extraheader
+2026-10-03T02:28:52.3553958Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-10-03T02:28:52.3585866Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-03T02:28:52.3810088Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-03T02:28:52.3847148Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-03T02:28:52.4236199Z Cleaning up orphan processes
+2026-10-03T02:28:52.4552711Z Terminate orphan process: pid (2655) (adb)
+2026-10-03T02:28:52.4579231Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+

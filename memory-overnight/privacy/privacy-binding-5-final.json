@@ -1,0 +1,2325 @@
+{
+  "schema": "memory-overnight-candidate-binding/1",
+  "status": "qualified_exact_remote_release_ci",
+  "completion_claimed": true,
+  "observed_epoch": 1790994605.530588,
+  "source_head": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "candidate_sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "candidate_tree": "ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4",
+  "candidate_parent": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "local_coder_sha": "38eb34316a5b942ed7ab55d584ada97295644f08",
+  "local_integration_sha": "ebc1391910a830a42fef882cbd14ababc18533ee",
+  "local_integration_tree": "ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4",
+  "same_tree_different_commit_identities": true,
+  "unchanged_original_coordinator_report_utf8": "{\n  \"schema\": 1,\n  \"id\": \"7cb29286a1a64e5dacf7cb9fd0676cae\",\n  \"run_id\": \"7cb29286a1a64e5dacf7cb9fd0676cae\",\n  \"state\": \"ready_for_signoff\",\n  \"repository\": \"/workspace/scratch/5ea62c991b3f/jarvis\",\n  \"base_head\": \"cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de\",\n  \"integration_head\": \"ebc1391910a830a42fef882cbd14ababc18533ee\",\n  \"integration_tree\": \"ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4\",\n  \"integration_worktree\": \"/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/7cb29286a1a64e5dacf7cb9fd0676cae/integration\",\n  \"verification\": {\n    \"argv\": [\n      \"python3\",\n      \"-B\",\n      \"-m\",\n      \"unittest\",\n      \"discover\",\n      \"-s\",\n      \"scripts\",\n      \"-p\",\n      \"test_*.py\"\n    ],\n    \"complete\": true,\n    \"exit_code\": 0,\n    \"head\": \"ebc1391910a830a42fef882cbd14ababc18533ee\",\n    \"log_bytes\": 186,\n    \"log_path\": \"/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/logs/7cb29286a1a64e5dacf7cb9fd0676cae/verification.log\",\n    \"log_sha256\": \"f06ca3e77003441ddcddc028757a30028133ba6dd917046cf2a6d41cd718bc44\",\n    \"reason\": null,\n    \"tree\": \"ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4\"\n  },\n  \"precheck\": {\n    \"argv\": [\n      \"git\",\n      \"diff\",\n      \"--check\"\n    ],\n    \"complete\": true,\n    \"exit_code\": 0,\n    \"head\": \"ebc1391910a830a42fef882cbd14ababc18533ee\",\n    \"log_bytes\": 0,\n    \"log_path\": \"/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/logs/7cb29286a1a64e5dacf7cb9fd0676cae/precheck.log\",\n    \"log_sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n    \"reason\": null,\n    \"tree\": \"ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4\"\n  },\n  \"review\": {\n    \"actor\": \"/root/jarvis_privacy_review\",\n    \"findings\": [\n      {\n        \"detail\": \"The conservative R5 repair intentionally removes all fresh or legacy freeform task descriptions, not only expired ones, because the frozen task DTO has no independent source provenance. Only exact read_battery/set_volume/open_app IDs, list positions/counts and task state survive. Existing source-bearing task placeholders may also make a benign title generic on a later scrub. This availability tradeoff is explicitly documented and consistent with the authorized fail-closed repair; it is not a blocker. Any later restoration of prose task descriptions needs independently bound original provenance.\",\n        \"path\": \"app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt\",\n        \"severity\": \"advisory\"\n      }\n    ],\n    \"head\": \"ebc1391910a830a42fef882cbd14ababc18533ee\",\n    \"summary\": \"Approved at the independent source-review stage to proceed to exact-candidate verification; no blocking defect found in this review. R5 now fails closed for all unprovenanced freeform task strings on reads/writes/resume-shaped checkpoints/reopen/delete/reword, retaining only exact supported tool IDs and task state. R6 validates every original source clock and the history clock before selecting the oldest; missing/future/overflow/expired/empty provenance cannot be masked by an earlier clock. Prior diagnostic full-input/default-deny repairs, summary proof/tombstones and release Keep boundaries remain intact. Actual remote/local full-tree binding, 14-path scope, frozen179, all old36 Android bodies and prior test36 assertions were independently verified. This is source approval only: frozen harness, exact Build901 signed release JVM/native/API30/API35/receipt gates and device qualification remain outstanding. Conservative loss of task prose/generic narrative diagnostics and summary availability remains documented.\",\n    \"usage_effort\": \"high\",\n    \"usage_model\": \"gpt-6-astra\",\n    \"usage_ticket_id\": \"25bcb503ca9743678584c585d2fe0ec0\"\n  },\n  \"units\": {\n    \"privacy\": {\n      \"actor\": \"/root/jarvis_privacy_coder\",\n      \"allowed_paths\": [\n        \"app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt\",\n        \"app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt\",\n        \"app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt\",\n        \"app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt\",\n        \"app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt\",\n        \"app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt\",\n        \"app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt\",\n        \"app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt\",\n        \"app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt\",\n        \"app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt\",\n        \"app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt\",\n        \"docs/memory-os-native.md\",\n        \"docs/verification/features.md\",\n        \"scripts/verification/scenarios.json\"\n      ],\n      \"base_head\": \"cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de\",\n      \"changed_paths\": [\n        \"app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt\",\n        \"app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt\",\n        \"app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt\",\n        \"app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt\",\n        \"app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt\",\n        \"app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt\",\n        \"app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt\",\n        \"app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt\",\n        \"app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt\",\n        \"app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt\",\n        \"app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt\",\n        \"docs/memory-os-native.md\",\n        \"docs/verification/features.md\",\n        \"scripts/verification/scenarios.json\"\n      ],\n      \"commits\": [\n        \"0a20341ec131e897e28523f618a08bf0859707d0\",\n        \"9aa65719ded45618679f8691502cda3cc63be92b\",\n        \"f5a483505f9ccd84e54ac886ec5e88736394482b\",\n        \"ef463f640872934e504067d8ffe2cd0b6f7ebdfa\",\n        \"38eb34316a5b942ed7ab55d584ada97295644f08\"\n      ],\n      \"head\": \"38eb34316a5b942ed7ab55d584ada97295644f08\",\n      \"state\": \"submitted\",\n      \"usage_effort\": \"high\",\n      \"usage_model\": \"gpt-6.1-sol\",\n      \"usage_ticket_id\": \"9b0e0533220047d593c3b09bed51f6a9\",\n      \"worktree\": \"/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/7cb29286a1a64e5dacf7cb9fd0676cae/unit-privacy\"\n    }\n  },\n  \"issues\": [],\n  \"ready_for_user_review\": true,\n  \"release_approved\": false,\n  \"actor_identity_assurance\": \"operator-supplied native-session provenance; not authentication\",\n  \"workspace_isolation\": \"detached Git worktrees; not a process or credential sandbox\",\n  \"unattended_execution\": false,\n  \"verification_process\": {\n    \"automatic_crash_cleanup\": false,\n    \"normal_cleanup_completed\": true,\n    \"pid\": 20,\n    \"process_group\": 20,\n    \"started_at\": 1790992939.8669622\n  },\n  \"usage\": {\n    \"schema\": 1,\n    \"scope_id\": \"7c0594eb67cc49e39dad6d80d726e395\",\n    \"scope_hash\": \"f6ac0b3f7ce87afbef7d4ba045ce5a2b2e3a073631c7850c11c7234c70d4e4d0\",\n    \"spec\": {\n      \"deadline\": 1791010800.0,\n      \"max_concurrent\": 4,\n      \"max_dispatches\": 24,\n      \"max_reserved_tokens\": 300000,\n      \"routing_policy\": \"usage-conscious-v2\",\n      \"schema\": 1\n    },\n    \"deadline_exhausted\": false,\n    \"dispatches\": 11,\n    \"active_reservations\": 0,\n    \"stored_deadline\": 1791010800.0,\n    \"measured_tokens\": 0,\n    \"measured_ticket_count\": 0,\n    \"retained_unknown_reservation_tokens\": 137000,\n    \"reserved_tokens\": 0,\n    \"total_commitment_tokens\": 137000,\n    \"actual_total_tokens\": null,\n    \"usage_complete\": false,\n    \"remaining_admission_tokens\": 163000,\n    \"token_budget_exhausted\": false,\n    \"overrun\": false,\n    \"model_effort_counts\": {\n      \"gpt-6-astra/high\": 6,\n      \"gpt-6.1-sol/high\": 5\n    },\n    \"outcomes\": {\n      \"success\": 8,\n      \"failed\": 3\n    },\n    \"cost\": null,\n    \"pro_remaining_allowance\": null,\n    \"billing_note\": \"Local estimates and admission limits; actual native billing is unavailable.\",\n    \"tickets\": [\n      {\n        \"id\": \"5c8f4851f4c9413f825c6f1b80801e4d\",\n        \"scope_id\": \"7c0594eb67cc49e39dad6d80d726e395\",\n        \"request_key\": \"architecture\",\n        \"request_hash\": \"3bd6ad8437ab9cca4d155dcbcd9b898d5743cf4894e12ff0b62125a829493265\",\n        \"operation\": \"plan:architecture\",\n        \"task\": {\n          \"allowed_paths\": [],\n          \"complexity\": \"routine\",\n          \"task_kind\": \"planning\"\n        },\n        \"reserved_tokens\": 6500,\n        \"manifest\": {\n          \"fork_turns\": \"none\",\n          \"model\": \"gpt-6-astra\",\n          \"reason\": \"planning policy\",\n          \"reasoning_effort\": \"high\"\n        },\n        \"state\": \"completed\",\n        \"actor_id\": \"/root/jarvis_memory_architecture\",\n        \"observed_model\": \"gpt-6-astra\",\n        \"observed_effort\": \"high\",\n        \"outcome\": \"success\",\n        \"usage\": null,\n        \"receipt_id\": null,\n        \"completed_hash\": \"ca814229caf3113f4c27806a005dca25c0950b51ef24c0d83d864d6b63601db3\",\n        \"created_at\": 1790976973.5790482,\n        \"completed_at\": 1790977271.563279\n      },\n      {\n        \"id\": \"3dd46d4d341f4a2e9c051973e36902d2\",\n        \"scope_id\": \"7c0594eb67cc49e39dad6d80d726e395\",\n        \"request_key\": \"embedding-research\",\n        \"request_hash\": \"debe64dd9a74705407c502f0c1e7ccde46a390e0ef5a4b7df7f3d93de3f00d1e\",\n        \"operation\": \"plan:embedding-research\",\n        \"task\": {\n          \"allowed_paths\": [],\n          \"complexity\": \"routine\",\n          \"task_kind\": \"planning\"\n        },\n        \"reserved_tokens\": 4500,\n        \"manifest\": {\n          \"fork_turns\": \"none\",\n          \"model\": \"gpt-6-astra\",\n          \"reason\": \"planning policy\",\n          \"reasoning_effort\": \"high\"\n        },\n        \"state\": \"completed\",\n        \"actor_id\": \"/root/jarvis_embedding_research\",\n        \"observed_model\": \"gpt-6-astra\",\n        \"observed_effort\": \"high\",\n        \"outcome\": \"success\",\n        \"usage\": null,\n        \"receipt_id\": null,\n        \"completed_hash\": \"77cb501c8166617d24169e2b94b80620dd1598b1fa314ee5911b83ca7de4e781\",\n        \"created_at\": 1790976973.5795786,\n        \"completed_at\": 1790977341.0840213\n      },\n      {\n        \"id\": \"60ca21bea1294c90bfcfaa2912008860\",\n        \"scope_id\": \"7c0594eb67cc49e39dad6d80d726e395\",\n        \"request_key\": \"privacy-1\",\n        \"request_hash\": \"c91af82de6ea50faebdeac8bb9a87fe876a96c03561a9974f33e3b1f569d2599\",\n        \"operation\": \"prepare:95d900f74f6446e08d1ee7e8015ba76d:privacy\",\n        \"task\": {\n          \"allowed_paths\": [\n            \"app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt\",\n            \"docs/memory-os-native.md\",\n            \"docs/verification/features.md\",\n            \"scripts/verification/scenarios.json\"\n          ],\n          \"complexity\": \"complex\",\n          \"task_kind\": \"implementation\"\n        },\n        \"reserved_tokens\": 18000,\n        \"manifest\": {\n          \"fork_turns\": \"none\",\n          \"model\": \"gpt-6.1-sol\",\n          \"reason\": \"complex implementation\",\n          \"reasoning_effort\": \"high\"\n        },\n        \"state\": \"completed\",\n        \"actor_id\": \"/root/jarvis_privacy_coder\",\n        \"observed_model\": \"gpt-6.1-sol\",\n        \"observed_effort\": \"high\",\n        \"outcome\": \"success\",\n        \"usage\": null,\n        \"receipt_id\": \"5528c1a91a6ab2ee6275ece4d705d466df76ade1ed6d1c1c3aa034e872b3cfa0\",\n        \"completed_hash\": \"b7c3a90a0d87d410bc78577326c3dbbde91120e4b60bcdad5bbd3736c22fcf98\",\n        \"created_at\": 1790977271.5806286,\n        \"completed_at\": 1790978233.6969485\n      },\n      {\n        \"id\": \"7e585da2a02047e48fdc969dd948aa8f\",\n        \"scope_id\": \"7c0594eb67cc49e39dad6d80d726e395\",\n        \"request_key\": \"privacy-review-1\",\n        \"request_hash\": \"bac3a3b4f6e96026be66c53d816e48f71066e3497fe37184b1c74817197578d6\",\n        \"operation\": \"review:95d900f74f6446e08d1ee7e8015ba76d\",\n        \"task\": {\n          \"allowed_paths\": [],\n          \"complexity\": \"routine\",\n          \"task_kind\": \"review\"\n        },\n        \"reserved_tokens\": 12000,\n        \"manifest\": {\n          \"fork_turns\": \"none\",\n          \"model\": \"gpt-6-astra\",\n          \"reason\": \"review policy\",\n          \"reasoning_effort\": \"high\"\n        },\n        \"state\": \"completed\",\n        \"actor_id\": \"/root/jarvis_privacy_review\",\n        \"observed_model\": \"gpt-6-astra\",\n        \"observed_effort\": \"high\",\n        \"outcome\": \"failed\",\n        \"usage\": null,\n        \"receipt_id\": \"e4454b99daf4522769d41c0450decee6590b9036bfd5d66d7440b82d7e6a5b5c\",\n        \"completed_hash\": \"c13bc7f4f744587bcb854ab4beb989f3c0eb94090f76890b1762ad09d7a54fa0\",\n        \"created_at\": 1790978392.9562085,\n        \"completed_at\": 1790978773.6469178\n      },\n      {\n        \"id\": \"6e7101b166e042adbaccca27d6b6fbbd\",\n        \"scope_id\": \"7c0594eb67cc49e39dad6d80d726e395\",\n        \"request_key\": \"privacy-coding-2\",\n        \"request_hash\": \"bf7a6d3b0f5327f2d2a275d501ca8ca89f3fb28a04955862d3ec339a5d01bf1c\",\n        \"operation\": \"prepare:f35cf4d78fbd44b59e9670bc749ba15b:privacy\",\n        \"task\": {\n          \"allowed_paths\": [\n            \"app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt\",\n            \"docs/memory-os-native.md\",\n            \"docs/verification/features.md\",\n            \"scripts/verification/scenarios.json\"\n          ],\n          \"complexity\": \"complex\",\n          \"task_kind\": \"implementation\"\n        },\n        \"reserved_tokens\": 18000,\n        \"manifest\": {\n          \"fork_turns\": \"none\",\n          \"model\": \"gpt-6.1-sol\",\n          \"reason\": \"complex implementation\",\n          \"reasoning_effort\": \"high\"\n        },\n        \"state\": \"completed\",\n        \"actor_id\": \"/root/jarvis_privacy_coder\",\n        \"observed_model\": \"gpt-6.1-sol\",\n        \"observed_effort\": \"high\",\n        \"outcome\": \"success\",\n        \"usage\": null,\n        \"receipt_id\": \"6a92cada37ed4780cc366ca7ace695ad8951febe03a85aa24c1665f78888cfb1\",\n        \"completed_hash\": \"5a97ec8ae13c5533a33109f4a5660164bcee66652c64fabb7027ac5943044580\",\n        \"created_at\": 1790978839.5873473,\n        \"completed_at\": 1790979473.5931292\n      },\n      {\n        \"id\": \"670d971f4e2948699d7751deafa3f204\",\n        \"scope_id\": \"7c0594eb67cc49e39dad6d80d726e395\",\n        \"request_key\": \"privacy-review-2\",\n        \"request_hash\": \"17c9b4dbc9d86b6b0388695e05de2cff9e2415e3c49ea497985f091962139908\",\n        \"operation\": \"review:f35cf4d78fbd44b59e9670bc749ba15b\",\n        \"task\": {\n          \"allowed_paths\": [],\n          \"complexity\": \"routine\",\n          \"task_kind\": \"review\"\n        },\n        \"reserved_tokens\": 12000,\n        \"manifest\": {\n          \"fork_turns\": \"none\",\n          \"model\": \"gpt-6-astra\",\n          \"reason\": \"review policy\",\n          \"reasoning_effort\": \"high\"\n        },\n        \"state\": \"completed\",\n        \"actor_id\": \"/root/jarvis_privacy_review\",\n        \"observed_model\": \"gpt-6-astra\",\n        \"observed_effort\": \"high\",\n        \"outcome\": \"failed\",\n        \"usage\": null,\n        \"receipt_id\": \"eef3de87d4a6d672a08ec1caec068cdf2e53c148eedf2a6e5f3289de57b93ae7\",\n        \"completed_hash\": \"53202787a3769290faa9e29d6eb268b6bd77df3b30cfd8caf05912de6df1e474\",\n        \"created_at\": 1790979623.4235888,\n        \"completed_at\": 1790979971.851262\n      },\n      {\n        \"id\": \"7e70a09be7bd47689c5331abf76705a3\",\n        \"scope_id\": \"7c0594eb67cc49e39dad6d80d726e395\",\n        \"request_key\": \"privacy-coding-3\",\n        \"request_hash\": \"6c64c8030c9aab510bbdd2df3885839ff29ecd6a9b9e3486afda938d5f4ad1a0\",\n        \"operation\": \"prepare:f97878388bb945dab3631856c13d52d8:privacy\",\n        \"task\": {\n          \"allowed_paths\": [\n            \"app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt\",\n            \"docs/memory-os-native.md\",\n            \"docs/verification/features.md\",\n            \"scripts/verification/scenarios.json\"\n          ],\n          \"complexity\": \"complex\",\n          \"task_kind\": \"implementation\"\n        },\n        \"reserved_tokens\": 14000,\n        \"manifest\": {\n          \"fork_turns\": \"none\",\n          \"model\": \"gpt-6.1-sol\",\n          \"reason\": \"complex implementation\",\n          \"reasoning_effort\": \"high\"\n        },\n        \"state\": \"completed\",\n        \"actor_id\": \"/root/jarvis_privacy_coder\",\n        \"observed_model\": \"gpt-6.1-sol\",\n        \"observed_effort\": \"high\",\n        \"outcome\": \"success\",\n        \"usage\": null,\n        \"receipt_id\": \"a941aee36a89a5376feec7d56d567dc47c79250992459721f470e5a364f0068e\",\n        \"completed_hash\": \"2d900bd3171ed3d44058a5b79904785568bf568e13a416a87ddc407898219e26\",\n        \"created_at\": 1790979971.866401,\n        \"completed_at\": 1790982370.042197\n      },\n      {\n        \"id\": \"ed605875437245509cd8a5c5e8432a3a\",\n        \"scope_id\": \"7c0594eb67cc49e39dad6d80d726e395\",\n        \"request_key\": \"privacy-coding-4\",\n        \"request_hash\": \"94fd119581a73a253d97d354d05e2447fb35009d73c74b0505bd5e56b69cf095\",\n        \"operation\": \"prepare:7bfab527f2894d08a773ce79ba68b286:privacy\",\n        \"task\": {\n          \"allowed_paths\": [\n            \"app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt\",\n            \"docs/memory-os-native.md\",\n            \"docs/verification/features.md\",\n            \"scripts/verification/scenarios.json\"\n          ],\n          \"complexity\": \"complex\",\n          \"task_kind\": \"implementation\"\n        },\n        \"reserved_tokens\": 14000,\n        \"manifest\": {\n          \"fork_turns\": \"none\",\n          \"model\": \"gpt-6.1-sol\",\n          \"reason\": \"complex implementation\",\n          \"reasoning_effort\": \"high\"\n        },\n        \"state\": \"completed\",\n        \"actor_id\": \"/root/jarvis_privacy_coder\",\n        \"observed_model\": \"gpt-6.1-sol\",\n        \"observed_effort\": \"high\",\n        \"outcome\": \"success\",\n        \"usage\": null,\n        \"receipt_id\": \"be7ffe5975fa16a1b677f15daf3872020b8834a7ed4df0f535d33e8ec41681df\",\n        \"completed_hash\": \"f77add3bcac345e3c21563d44ed0be93932e23afdbd370f9208527e8fe3edfdc\",\n        \"created_at\": 1790991584.72667,\n        \"completed_at\": 1790991831.3970146\n      },\n      {\n        \"id\": \"4c31b63f52184f81b7150b0211022e07\",\n        \"scope_id\": \"7c0594eb67cc49e39dad6d80d726e395\",\n        \"request_key\": \"privacy-review-4\",\n        \"request_hash\": \"86dd78961cd18161663283fa5031777c5f45cd1c2b43799b3b4651f4b0f22c02\",\n        \"operation\": \"review:7bfab527f2894d08a773ce79ba68b286\",\n        \"task\": {\n          \"allowed_paths\": [],\n          \"complexity\": \"routine\",\n          \"task_kind\": \"review\"\n        },\n        \"reserved_tokens\": 12000,\n        \"manifest\": {\n          \"fork_turns\": \"none\",\n          \"model\": \"gpt-6-astra\",\n          \"reason\": \"review policy\",\n          \"reasoning_effort\": \"high\"\n        },\n        \"state\": \"completed\",\n        \"actor_id\": \"/root/jarvis_privacy_review\",\n        \"observed_model\": \"gpt-6-astra\",\n        \"observed_effort\": \"high\",\n        \"outcome\": \"failed\",\n        \"usage\": null,\n        \"receipt_id\": \"55dfc2b16b84cd31b0e7337a935c240459d0c36b6243bba7e73df34d1de513ae\",\n        \"completed_hash\": \"393bad124a17390f3c621ee894eb74631a50c84fe8522f7330d81aeca0649ff7\",\n        \"created_at\": 1790991956.2865956,\n        \"completed_at\": 1790992226.4188352\n      },\n      {\n        \"id\": \"9b0e0533220047d593c3b09bed51f6a9\",\n        \"scope_id\": \"7c0594eb67cc49e39dad6d80d726e395\",\n        \"request_key\": \"privacy-coding-5\",\n        \"request_hash\": \"709b13b59bf13e56f307f9ef5b83126181571fe07744e8e1dec320e54cce08c2\",\n        \"operation\": \"prepare:7cb29286a1a64e5dacf7cb9fd0676cae:privacy\",\n        \"task\": {\n          \"allowed_paths\": [\n            \"app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt\",\n            \"app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt\",\n            \"app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt\",\n            \"docs/memory-os-native.md\",\n            \"docs/verification/features.md\",\n            \"scripts/verification/scenarios.json\"\n          ],\n          \"complexity\": \"complex\",\n          \"task_kind\": \"implementation\"\n        },\n        \"reserved_tokens\": 14000,\n        \"manifest\": {\n          \"fork_turns\": \"none\",\n          \"model\": \"gpt-6.1-sol\",\n          \"reason\": \"complex implementation\",\n          \"reasoning_effort\": \"high\"\n        },\n        \"state\": \"completed\",\n        \"actor_id\": \"/root/jarvis_privacy_coder\",\n        \"observed_model\": \"gpt-6.1-sol\",\n        \"observed_effort\": \"high\",\n        \"outcome\": \"success\",\n        \"usage\": null,\n        \"receipt_id\": \"0af0a9b238385175de57e32a47db27d0e48a0466d75d621aa5ddbcff12c1c3c9\",\n        \"completed_hash\": \"ef862f2fff76bf92a21acefca6c051964bbd0ddd533fa9b76758b785550a030c\",\n        \"created_at\": 1790992284.5189452,\n        \"completed_at\": 1790992616.3420398\n      },\n      {\n        \"id\": \"25bcb503ca9743678584c585d2fe0ec0\",\n        \"scope_id\": \"7c0594eb67cc49e39dad6d80d726e395\",\n        \"request_key\": \"privacy-review-5\",\n        \"request_hash\": \"ab2ce1a2251f4cd545faa5596cae96b6614d2e13858c8bff7fbc8c4bac09438a\",\n        \"operation\": \"review:7cb29286a1a64e5dacf7cb9fd0676cae\",\n        \"task\": {\n          \"allowed_paths\": [],\n          \"complexity\": \"routine\",\n          \"task_kind\": \"review\"\n        },\n        \"reserved_tokens\": 12000,\n        \"manifest\": {\n          \"fork_turns\": \"none\",\n          \"model\": \"gpt-6-astra\",\n          \"reason\": \"review policy\",\n          \"reasoning_effort\": \"high\"\n        },\n        \"state\": \"completed\",\n        \"actor_id\": \"/root/jarvis_privacy_review\",\n        \"observed_model\": \"gpt-6-astra\",\n        \"observed_effort\": \"high\",\n        \"outcome\": \"success\",\n        \"usage\": null,\n        \"receipt_id\": \"ff1b5a2944642ef41ff0af7cc21301541ba554f4ee628176ed3ec887be177dcc\",\n        \"completed_hash\": \"361025d30eca98e574d8318d17473aafe85836832da4261a2c8aff08da508ee4\",\n        \"created_at\": 1790992743.447391,\n        \"completed_at\": 1790992939.846413\n      }\n    ]\n  },\n  \"recovery_limitation\": \"A force-killed coordinator may leave child processes running; inspect and stop them manually before a new run\"\n}\n",
+  "unchanged_original_coordinator_report_sha256": "e0640714e69c8a9c39f4a63d383c657416750b20f2f54796433f57d90ceb55bb",
+  "scope_proof": {
+    "actual_remote_sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+    "actual_remote_tree": "ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4",
+    "actual_remote_parent": [
+      "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de"
+    ],
+    "local_coordinator_sha": "ebc1391910a830a42fef882cbd14ababc18533ee",
+    "local_coordinator_tree": "ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4",
+    "local_coder_sha": "38eb34316a5b942ed7ab55d584ada97295644f08",
+    "tree_equivalence": true,
+    "allowed_only": true,
+    "changed_paths": [
+      "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+      "docs/memory-os-native.md",
+      "docs/verification/features.md",
+      "scripts/verification/scenarios.json"
+    ],
+    "frozen_paths_count": 179,
+    "frozen_identity": true,
+    "clean_remote": true,
+    "clean_local_integration": true,
+    "actual_raw_commit_git_hash_verified": true,
+    "ci_run": 37088094621,
+    "ci_state": "in_progress",
+    "ci_pass_claimed": false,
+    "review_pending": true,
+    "completion_claimed": false
+  },
+  "independent_review": {
+    "actor": "/root/jarvis_privacy_review",
+    "dispatch": "privacy-review-5",
+    "approved": true,
+    "report_sha256": "ff1b5a2944642ef41ff0af7cc21301541ba554f4ee628176ed3ec887be177dcc",
+    "log_sha256": "48ec2ad4def935d084054556448d47de2fc02de66863f5ee520eb5bcba19269c"
+  },
+  "exact_remote_harness": {
+    "sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+    "argv": [
+      "python3",
+      "-B",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "scripts",
+      "-p",
+      "test_*.py"
+    ],
+    "exit_code": 0,
+    "log_sha256": "4070c14b1586ae5dd6cc42206c9ede8eaa3148a7def3f9bbd20670a5e7403544",
+    "log_bytes": 186,
+    "clean": true,
+    "kind": "harness only, not Kotlin/Android qualification"
+  },
+  "local_harness": {
+    "argv": [
+      "python3",
+      "-B",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "scripts",
+      "-p",
+      "test_*.py"
+    ],
+    "complete": true,
+    "exit_code": 0,
+    "head": "ebc1391910a830a42fef882cbd14ababc18533ee",
+    "log_bytes": 186,
+    "log_path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/logs/7cb29286a1a64e5dacf7cb9fd0676cae/verification.log",
+    "log_sha256": "f06ca3e77003441ddcddc028757a30028133ba6dd917046cf2a6d41cd718bc44",
+    "reason": null,
+    "tree": "ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4"
+  },
+  "ci": {
+    "run": 37088094621,
+    "head": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "id": 111102424653,
+        "run_id": 37088094621,
+        "workflow_name": "Android APK",
+        "head_branch": "feature/memory-os-overnight-candidate-privacy-20261002-5",
+        "run_url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOUMXdPM8AAAAZ3jh2TQ",
+        "head_sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+        "url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/actions/jobs/111102424653",
+        "html_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621/job/111102424653",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-03T01:58:11Z",
+        "started_at": "2026-10-03T01:58:13Z",
+        "completed_at": "2026-10-03T02:21:34Z",
+        "name": "Build signed release APK",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-03T01:58:14Z",
+            "completed_at": "2026-10-03T01:58:17Z"
+          },
+          {
+            "name": "Check out source",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-03T01:58:17Z",
+            "completed_at": "2026-10-03T01:58:19Z"
+          },
+          {
+            "name": "Set up Java",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-03T01:58:19Z",
+            "completed_at": "2026-10-03T01:58:19Z"
+          },
+          {
+            "name": "Install speech runtime NDK",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-03T01:58:19Z",
+            "completed_at": "2026-10-03T01:58:37Z"
+          },
+          {
+            "name": "Cache shared speech runtime",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-03T01:58:37Z",
+            "completed_at": "2026-10-03T01:58:38Z"
+          },
+          {
+            "name": "Set up Gradle",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-03T01:58:38Z",
+            "completed_at": "2026-10-03T01:58:46Z"
+          },
+          {
+            "name": "Verify interruption keyword models in native engine",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-10-03T01:58:46Z",
+            "completed_at": "2026-10-03T02:00:09Z"
+          },
+          {
+            "name": "Verify native dependency helpers",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-10-03T02:00:09Z",
+            "completed_at": "2026-10-03T02:00:11Z"
+          },
+          {
+            "name": "Prepare release signing key",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-03T02:00:11Z",
+            "completed_at": "2026-10-03T02:00:11Z"
+          },
+          {
+            "name": "Run release tests and assemble APK",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-03T02:00:11Z",
+            "completed_at": "2026-10-03T02:20:26Z"
+          },
+          {
+            "name": "Upload release instrumentation APK",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-03T02:20:26Z",
+            "completed_at": "2026-10-03T02:20:27Z"
+          },
+          {
+            "name": "Retain JVM test results",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12,
+            "started_at": "2026-10-03T02:20:27Z",
+            "completed_at": "2026-10-03T02:20:28Z"
+          },
+          {
+            "name": "Report APK size against build 705",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-10-03T02:20:28Z",
+            "completed_at": "2026-10-03T02:20:29Z"
+          },
+          {
+            "name": "Upload APK size report",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14,
+            "started_at": "2026-10-03T02:20:29Z",
+            "completed_at": "2026-10-03T02:20:30Z"
+          },
+          {
+            "name": "Verify ASR native packaging",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15,
+            "started_at": "2026-10-03T02:20:30Z",
+            "completed_at": "2026-10-03T02:20:30Z"
+          },
+          {
+            "name": "Verify Piper callback ABI and retired assets in APK",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16,
+            "started_at": "2026-10-03T02:20:30Z",
+            "completed_at": "2026-10-03T02:20:30Z"
+          },
+          {
+            "name": "Verify signed release APK",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17,
+            "started_at": "2026-10-03T02:20:30Z",
+            "completed_at": "2026-10-03T02:20:30Z"
+          },
+          {
+            "name": "Upload release shrinker reports",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 18,
+            "started_at": "2026-10-03T02:20:30Z",
+            "completed_at": "2026-10-03T02:20:33Z"
+          },
+          {
+            "name": "Stage release APK",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 19,
+            "started_at": "2026-10-03T02:20:33Z",
+            "completed_at": "2026-10-03T02:20:33Z"
+          },
+          {
+            "name": "Build and verify compact APK",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 20,
+            "started_at": "2026-10-03T02:20:33Z",
+            "completed_at": "2026-10-03T02:21:21Z"
+          },
+          {
+            "name": "Upload compact APK size report",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 21,
+            "started_at": "2026-10-03T02:21:21Z",
+            "completed_at": "2026-10-03T02:21:22Z"
+          },
+          {
+            "name": "Upload release APK artifact",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 22,
+            "started_at": "2026-10-03T02:21:22Z",
+            "completed_at": "2026-10-03T02:21:27Z"
+          },
+          {
+            "name": "Post Set up Gradle",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 41,
+            "started_at": "2026-10-03T02:21:27Z",
+            "completed_at": "2026-10-03T02:21:27Z"
+          },
+          {
+            "name": "Post Cache shared speech runtime",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 42,
+            "started_at": "2026-10-03T02:21:27Z",
+            "completed_at": "2026-10-03T02:21:32Z"
+          },
+          {
+            "name": "Post Set up Java",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 43,
+            "started_at": "2026-10-03T02:21:32Z",
+            "completed_at": "2026-10-03T02:21:32Z"
+          },
+          {
+            "name": "Post Check out source",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 44,
+            "started_at": "2026-10-03T02:21:32Z",
+            "completed_at": "2026-10-03T02:21:33Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 45,
+            "started_at": "2026-10-03T02:21:33Z",
+            "completed_at": "2026-10-03T02:21:33Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/check-runs/111102424653",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000008908,
+        "runner_name": "GitHub Actions 1000008908",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 111106693248,
+        "run_id": 37088094621,
+        "workflow_name": "Android APK",
+        "head_branch": "feature/memory-os-overnight-candidate-privacy-20261002-5",
+        "run_url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOUMXdPM8AAAAZ3nmYgA",
+        "head_sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+        "url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/actions/jobs/111106693248",
+        "html_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621/job/111106693248",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-03T02:21:35Z",
+        "started_at": "2026-10-03T02:21:37Z",
+        "completed_at": "2026-10-03T02:26:44Z",
+        "name": "Verify signed release in Android sandbox / Release journeys / API 30 / app-release",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-03T02:21:37Z",
+            "completed_at": "2026-10-03T02:21:38Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-03T02:21:38Z",
+            "completed_at": "2026-10-03T02:21:39Z"
+          },
+          {
+            "name": "Resolve exact build artifact IDs",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-03T02:21:39Z",
+            "completed_at": "2026-10-03T02:21:40Z"
+          },
+          {
+            "name": "Download exact build inputs",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-03T02:21:40Z",
+            "completed_at": "2026-10-03T02:21:42Z"
+          },
+          {
+            "name": "Enable emulator acceleration",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-03T02:21:42Z",
+            "completed_at": "2026-10-03T02:21:42Z"
+          },
+          {
+            "name": "Verify release on a disposable Android device",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-03T02:21:42Z",
+            "completed_at": "2026-10-03T02:26:40Z"
+          },
+          {
+            "name": "Retain evidence even on failure",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-10-03T02:26:40Z",
+            "completed_at": "2026-10-03T02:26:42Z"
+          },
+          {
+            "name": "Add verification summary",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-10-03T02:26:42Z",
+            "completed_at": "2026-10-03T02:26:42Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16,
+            "started_at": "2026-10-03T02:26:42Z",
+            "completed_at": "2026-10-03T02:26:42Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17,
+            "started_at": "2026-10-03T02:26:42Z",
+            "completed_at": "2026-10-03T02:26:42Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/check-runs/111106693248",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000008922,
+        "runner_name": "GitHub Actions 1000008922",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 111106693267,
+        "run_id": 37088094621,
+        "workflow_name": "Android APK",
+        "head_branch": "feature/memory-os-overnight-candidate-privacy-20261002-5",
+        "run_url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOUMXdPM8AAAAZ3nmYkw",
+        "head_sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+        "url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/actions/jobs/111106693267",
+        "html_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621/job/111106693267",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-03T02:21:35Z",
+        "started_at": "2026-10-03T02:21:37Z",
+        "completed_at": "2026-10-03T02:28:54Z",
+        "name": "Verify signed release in Android sandbox / Release journeys / API 35 / app-compact",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-03T02:21:38Z",
+            "completed_at": "2026-10-03T02:21:39Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-03T02:21:39Z",
+            "completed_at": "2026-10-03T02:21:40Z"
+          },
+          {
+            "name": "Resolve exact build artifact IDs",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-03T02:21:40Z",
+            "completed_at": "2026-10-03T02:21:42Z"
+          },
+          {
+            "name": "Download exact build inputs",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-03T02:21:42Z",
+            "completed_at": "2026-10-03T02:21:46Z"
+          },
+          {
+            "name": "Enable emulator acceleration",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-03T02:21:46Z",
+            "completed_at": "2026-10-03T02:21:46Z"
+          },
+          {
+            "name": "Verify release on a disposable Android device",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-03T02:21:46Z",
+            "completed_at": "2026-10-03T02:28:50Z"
+          },
+          {
+            "name": "Retain evidence even on failure",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-10-03T02:28:50Z",
+            "completed_at": "2026-10-03T02:28:52Z"
+          },
+          {
+            "name": "Add verification summary",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-10-03T02:28:52Z",
+            "completed_at": "2026-10-03T02:28:52Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16,
+            "started_at": "2026-10-03T02:28:52Z",
+            "completed_at": "2026-10-03T02:28:52Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17,
+            "started_at": "2026-10-03T02:28:52Z",
+            "completed_at": "2026-10-03T02:28:52Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/check-runs/111106693267",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000008923,
+        "runner_name": "GitHub Actions 1000008923",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 111107970655,
+        "run_id": 37088094621,
+        "workflow_name": "Android APK",
+        "head_branch": "feature/memory-os-overnight-candidate-privacy-20261002-5",
+        "run_url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOUMXdPM8AAAAZ3o0WXw",
+        "head_sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+        "url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/actions/jobs/111107970655",
+        "html_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621/job/111107970655",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-03T02:28:55Z",
+        "started_at": "2026-10-03T02:28:57Z",
+        "completed_at": "2026-10-03T02:29:08Z",
+        "name": "Consolidate exact-build verification evidence",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-03T02:28:57Z",
+            "completed_at": "2026-10-03T02:28:58Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-03T02:28:58Z",
+            "completed_at": "2026-10-03T02:28:59Z"
+          },
+          {
+            "name": "Resolve exact same-run evidence IDs",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-03T02:28:59Z",
+            "completed_at": "2026-10-03T02:29:00Z"
+          },
+          {
+            "name": "Download exact same-run evidence",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-03T02:29:00Z",
+            "completed_at": "2026-10-03T02:29:06Z"
+          },
+          {
+            "name": "Verify artifact bytes and test evidence",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-03T02:29:06Z",
+            "completed_at": "2026-10-03T02:29:06Z"
+          },
+          {
+            "name": "Retain verification receipt even on failure",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-03T02:29:06Z",
+            "completed_at": "2026-10-03T02:29:07Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12,
+            "started_at": "2026-10-03T02:29:07Z",
+            "completed_at": "2026-10-03T02:29:07Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-10-03T02:29:07Z",
+            "completed_at": "2026-10-03T02:29:07Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/check-runs/111107970655",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000008925,
+        "runner_name": "GitHub Actions 1000008925",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 111108010331,
+        "run_id": 37088094621,
+        "workflow_name": "Android APK",
+        "head_branch": "feature/memory-os-overnight-candidate-privacy-20261002-5",
+        "run_url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOUMXdPM8AAAAZ3o2xWw",
+        "head_sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+        "url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/actions/jobs/111108010331",
+        "html_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621/job/111108010331",
+        "status": "completed",
+        "conclusion": "skipped",
+        "created_at": "2026-10-03T02:29:09Z",
+        "started_at": "2026-10-03T02:29:09Z",
+        "completed_at": "2026-10-03T02:29:08Z",
+        "name": "Publish permanent PR test APK",
+        "steps": [],
+        "check_run_url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/check-runs/111108010331",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": null,
+        "runner_name": null,
+        "runner_group_id": null,
+        "runner_group_name": null
+      },
+      {
+        "id": 111108010368,
+        "run_id": 37088094621,
+        "workflow_name": "Android APK",
+        "head_branch": "feature/memory-os-overnight-candidate-privacy-20261002-5",
+        "run_url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOUMXdPM8AAAAZ3o2xgA",
+        "head_sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+        "url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/actions/jobs/111108010368",
+        "html_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621/job/111108010368",
+        "status": "completed",
+        "conclusion": "skipped",
+        "created_at": "2026-10-03T02:29:09Z",
+        "started_at": "2026-10-03T02:29:09Z",
+        "completed_at": "2026-10-03T02:29:08Z",
+        "name": "Publish Memory OS test APK",
+        "steps": [],
+        "check_run_url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/check-runs/111108010368",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": null,
+        "runner_name": null,
+        "runner_group_id": null,
+        "runner_group_name": null
+      },
+      {
+        "id": 111108010502,
+        "run_id": 37088094621,
+        "workflow_name": "Android APK",
+        "head_branch": "feature/memory-os-overnight-candidate-privacy-20261002-5",
+        "run_url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOUMXdPM8AAAAZ3o2yBg",
+        "head_sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+        "url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/actions/jobs/111108010502",
+        "html_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621/job/111108010502",
+        "status": "completed",
+        "conclusion": "skipped",
+        "created_at": "2026-10-03T02:29:09Z",
+        "started_at": "2026-10-03T02:29:09Z",
+        "completed_at": "2026-10-03T02:29:08Z",
+        "name": "Publish signed release APK",
+        "steps": [],
+        "check_run_url": "https://api.github.com/repos/battlesbudz/Jarvis-OS-V2/check-runs/111108010502",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": null,
+        "runner_name": null,
+        "runner_group_id": null,
+        "runner_group_name": null
+      }
+    ],
+    "jvm": {
+      "run": 37088094621,
+      "candidate": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+      "job": 111102424653,
+      "artifact": 11261762044,
+      "artifact_zip_sha256": "498bf1d75073bb7d1100b7a573de275bf4354ccea2c9780d85ecfab97d4d3478",
+      "suites": 144,
+      "tests": 767,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suite_reports": [
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-ai.moonshine.voice.MoonshineUpdateCadenceTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "607217ec4fdf13fd1ecf78303fcbfda79180b1d41ad57702f13cc5a91f725c24"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.actions.AcceptedActionQueueTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "0834b85fbc65954b641b93f4997c1c81e68ef956578835ccc983644e51e58abf"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.actions.ActionIntentRouterTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "f2586b9a74da7dd0ad66d32737a5fc2ed0e682c6645074521d999da44bb2f35f"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.actions.ActionTurnRunnerTest.xml",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "4be855bc40926b4c1fb185e2552dc7aa484d2764138e4f070dc7aa75dfcdedf3"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.actions.DirectAppCommandTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "2493b21b38801397a1eb8aa2a1086baf0a53dce0dd4f01b326f6b31087527daf"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.actions.MobileActionPipelineTest.xml",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "2a5e4302d70fb9c915f01708cd316a641df4eb204d6363de2b33df03b9d57952"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.actions.MobileActionValidatorTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "d7dac7690e4b9cf144f104322b34783f93685cf2d8d3d047dd49492386520b53"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.actions.NativeToolJourneyTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "54fd2cd523da68f94089c16baa45fc04a9878fce4a21c0aeb08822b9adf3ad28"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.CompactChatPromptTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "d41e0b182d5b96308417a9f4d812530e22a238d76ec0b008044d6e3512172fbc"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilderTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "56023238023183351f0a7fe81ae8610c667d8fd54bced0105ec7ebbb7223ff58"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.DialogueContextPolicyTest.xml",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "f43c1716ef51431ba8ba583e4202f72eddfa0fa4d028a6a4159325259c8d2d75"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.GemmaSessionTextTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "0ff2ad1f2d6b450ae20d4b84e8360a2ec8420b46a0f15f8dc07bef6056cd9110"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.InferenceProgressTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "361c00c48dbd9cd30a41430d7701e89830f8d867f6406a7e8239d051d81afdf7"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.LastReplyRecallTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "76416cee184a69258aeeaa7b862a5a26e0f7a10604943f203fd52048727727cb"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.LiteRtVoicePrefillSessionTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "d8aa97bb000c21ada18e221e57df8033e272c6900299fc43b105960a98d037ac"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.ModelCatalogTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "2a57d5ba3c2a51a6ff90ecf5c6f4d30e22e8f360f747189ee5d035f863d81a1c"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.ModelCompatibilityTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "33e631ad789dde283a367bcb38b726f60dbd89cd3d50487cc06f5cf9a47825c0"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.ModelConversationConfigTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "d6c4664457f3ab0a36127a05f00af408af54616455596b4266829f944a35a70b"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.ReferenceEvidencePolicyTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "0874b0be8631ec1df73e84187ce4604c61048e007df421494284faff809021d8"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.ModelGuidanceTest.xml",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "0b535aa1e41e3bf4ddd12bf1a5854653ec56f14083f6f9062f2625321454d3e4"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.SuppliedReferenceTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "e4ded888d27b6edaed34af40ee6de0cc7b055034e6e8b2e29ddd866a6bde2f05"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.TemplateVoiceSessionTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "96f5243989711a56aaecdedf67ebe6742eb1f99aec2095f88524e3f85cb30d1b"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.TurnOrchestratorTest.xml",
+          "tests": 18,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "b2ece913bb443ec70019ae42f6723e09db546dd36213b6edfbf1d79911a12dec"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.VoicePromptTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "127787e985f54dddb442f36313aa0625cc75b92c481c0f0640f05d1bb5ac1f7f"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.VoiceInputPromptTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "f1d896a5e49050b61e45b4c855d464910ce966abed500987c87edcd022ac8653"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.storage.ModelRemovalTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "d55313ce87cd28c31af930f097eaf2f9f2af98608fa816e57e176138f88cae32"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.storage.ModelStorageTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "f2f7b8aa330a52dd593c20ad83ee664b1556a249bbf1dde05cbe0d490666e0b4"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.chat.AnswerQualityPolicyTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "489233d6e50a0aea4962e63ad6402be55508e724ebb004a649c9367b2d0ab045"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.chat.AttachmentPolicyTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "06007bb823ac937894ad32999a5b2e43d9b31668deddc3dbe396148fb876fa7b"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.chat.CompactVoiceContextTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "21db71002aad100b02e1c8c6d2bdd1bcc17c525ef30e77a889015ef4d3fff195"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.chat.ConversationHistoryPrivacyTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "3bd781d89b0e6fb9094cdb81683a37866f2bc422d50990fd7c33b517353eda32"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.chat.ConversationHistoryTest.xml",
+          "tests": 14,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "c18b0153f31a46124a4b6221e18f9afccb8fc13de91eee1c34cfef44d0dbf596"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.chat.TurnContinuityTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "9750000233ff30b1c4106a4b1334a9fea40ba390e514d4c54c509b716c194096"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorderPrivacyTest.xml",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "6fd5e4039cc0d09502f7deb087645b7b1905b2cf349a920c9c6c3a7438993acc"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorderTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "07ec199a43e663ca5a1a69aadd76701983ad0d4a509950f4a18b3053f8ec3cfa"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.ConversationMemoryTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "3ff41751f1247a0ca1ec0c3d527c6915b0ca8eb26776f780547b1ce9497afa79"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.diagnostics.TurnLatencyTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "97a3524907036544537b9e3face0d7b5321084ad9e390a41a06ed1430fe77d9a"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryArchivePolicyTest.xml",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "f5f082f5d607982c12283080e4ad0b1d9eaab1f231f0f1719708ebc5e22653f0"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryCaptureAcknowledgmentTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "d36267b99bb374100e8196f043899d7762ee64c065d20b60fa66a7e4836e645a"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryCaptureReceiptCacheTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "28b21952e79e2df3c29ec7ff11da22240139be220191838d19d2767f97d3c3f3"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryDeliveryFenceTest.xml",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "f01a90d4f211e26ad07dec49a8798064a190b10196cefd396141331ac2ec9ffc"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryOsTest.xml",
+          "tests": 13,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "bab7fbe44c67a73a7df48448c4a3a9fe83c98d8549d59f5d1db3c13abcc167a7"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryPolicyTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "98aa0dc0a6ee494785f455af98e0e89160a9276070b355038defcc37899a8765"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryRecallIntegrationTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "3e4bcce07e30a863f59b7757ea73e096f3aa6743e7f5f860a4c7dd25b21a3eb0"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryRetrievalTest.xml",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "14fa90ec38fc5fc3706fc64f8761add811537b6f35e3b937778e2878cc8690fa"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryStoreTest.xml",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "c487186adac6282ae47b830535f6b98da3dedd3085b8ec941fec28efef1532b9"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryTurnContextTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "e14f0a0a0f82498b107236f2990612ebd848315ff4b09031d3f79ce4deb7b6d4"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryWikiTest.xml",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "fea2d832e873bab96e0a836a67e0685d0389f35af3d930597fff7388ae23eeb0"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicyTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "300ba457ef8a9deabf3e7e506637733d65271c1d260379b40405f5c97eea1ac2"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.AdaptiveTurnEndTest.xml",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "5a9b93a86d4f08db1d4352be7fd9405e87d84c32daac99aa32f2f12bc979edba"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.AsrComparisonStoreTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "908fbbd48358a07964b77ac8cd49ede84d4b382f567990cd47343a8da23fbb8a"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.AsyncWhisperSessionTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "767a61bc83168381ef4105ab88ebaa4a32cdf0ec9b063ee3b38282e311f3f9df"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.AudioTurnCaptureTest.xml",
+          "tests": 46,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "0c1583405981c0620d9d5d503d5cabdf26675420cfe8454835b9a3f7624be185"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.BargeInAudioInputTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "05fbdcf988016cd517222794d38dd80a94722ec94ebe8f94c7390e3b34322402"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.BargeInDiagnosticEvidenceTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "8d249f8f8ce16372cf583424916021e54887ccab9074e431d5f84eacca3a650f"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.BargeInGateTest.xml",
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "7e219ebb371222368dbda261e66fdd59e5af801febb1da0d7ab7d9d7197279f0"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.BoundedInterruptionRecognizerTest.xml",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "a20971c7a008b9e4633bf902f1705f6bea475c40dfc1df019380a7c0a5d90c9d"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CallAdapterClipRecognitionTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "7e85575a6c4a6c4511e30e2afe231d2b26711f2b6422a98197319ded54a9bfc2"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CallInputQueueTest.xml",
+          "tests": 15,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "2afaed2f96a3165bffc311cd79f861335d39e218a4f212ee85c6865fe842283d"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CallLifetimePolicyTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "2a07e6d0dbf323c6e5ab6c39fd2aa33b3b7383bb1a167a3c54066977de14205e"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CallModelSlotTest.xml",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "afbe05e406afab95691dac06586318e788008d81fde7961bc0ce50e54664a4d3"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CallTurnOwnerTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "ebd09ff26f3d1524dc2349d3020a8ffdcc1fcebde97f9b68a5bf311fa53a5be2"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CandidateConfirmationTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "02b40e654cd34468822b6cad76bb4b4bf1f62cc211e8bcbf55e26b750055d571"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CaptureRecognitionBudgetTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "ad3921a42691cd8f5de1a2209cc1aacbeebcc4f46498a276cd0487d267135dcd"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CaptureSpeechGateTest.xml",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "abbee330f2bc64bde249f6c03becfc7fc60598df7ad35a0df74672e56254727d"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CaptureSpeechQueueTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "25acc08ac29cdc8f8962b0ddfcd4b97c33f14c50f656568562900d5b8bde5acd"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CoalescingVoiceCallStoreTest.xml",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "467c69426066852f5f39e91be6fe02430f000a9c8af452d0559b14bcf71de81c"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.ContinuousActionSessionTest.xml",
+          "tests": 20,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "de2e945cfe66e5e6006aa6bcd44dc609363ada0c626faeb64e3307fd06cee79c"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.DelayedAcknowledgementTest.xml",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "4f2d4f8dfbe38d13335ecb7e0f255a100d0509ef0997c1f0d963062934b0831b"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.DiagnosticClipRecognitionTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "dd92ec81de97e075fd24e7bd2f6ef779ea8cd37d4ff3a036c682128d8afaea34"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.DuplexAudioEvidenceTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "e7aa40ef1742c12b8ba244d06b9b84bbe23e4b12a0c93554a4a765adfc8cc455"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.DuplexRouteLeaseTest.xml",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "1eb15864625d4cf11b79f3230d2eb3925ee973469ac175ace5f3ff91a4e5d1ee"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.DuplexPlaybackBudgetTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "8d62a6ad80556274145017029d4a98b32c6c2c2c8ab45ecb165ec0cf9fd1aa6f"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.EchoArchiveReaderTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "6b616d64c5db6f15d3e00af652145167c410a1ce7bbfa010aa21f9442f5f4928"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.ExternalSpeechGateTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "3c469d7c248baea6f7011881729dc073e1c5713a9997664866288bde7266224c"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.FillerAudioCacheTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "1d0b57055cadd89501984454a7176146c085072a0c33d00d079900fbaec4f855"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.FillerPcmTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "8ee8e1c7fa5b385a28dab80dbcaa500d0e23834f5764abbab3585f432eb90934"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuardTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "6952f1b76c0efca3bccafd00f0af3f87ee8327b2ccf4d80053df8dd8d357f6ab"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.FollowupSpeechEvidenceTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "f6ffa1493d34ec7b6f77d65f6d691b2f211256bcd6554878c85ea396db5b2275"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.FrameSpeechDetectorTest.xml",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "e39b6f244caf7f946c301ac14e2df694c240d18b6dfe9fd57aeab3ec5e46afe7"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.GroundedVoiceSentenceTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "22636eaf584b44854387e34f7d5d84f13d39b53a06a1177add093125979d6d5b"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.IncrementalVoiceInputTest.xml",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "38b523329f068af551c4db1d0a7d62717573e90a329b1df541dfa133970b96f9"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.InterruptionProbeBudgetTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "13515730a129d426bd9de25ce33860d304875e061958df155e6036af95aec67d"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.KeyboardMicrophoneRequestTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "31aec056bb974190d15a430a8f526e000605616b57305fe395cb2dae73692072"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.KeywordBargeInAudioInputTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "25af3ec70c55958321b510718ea203b50116eb81c688ff2e3ef6ab2053c4ec85"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.KeywordPrimingTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "2f63ecddfee4bf137b0d5db48477515830527094c76d99dc5b31fc2529a35c5f"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.LiveCallAudioEvidenceTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "abc61d32d84453bf72d131112257728929ee37b410f1570898590f3f74c4bfa0"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.LiveReplyMetricsTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "07e667a41c5619e9734675d34b3e076562dbb7df5eb152164155e1e467ec75fd"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.LongUtteranceTest.xml",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "cde2f57e889f2217458baa67f79c3854a7040fad7b09f7ded18153e91d455c03"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.MicrophoneHandoffTest.xml",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "1ce984b286f0c5669f7ce6556a8e0c34b4968c492f9f4ee6e9ffd6dc2ce93ee9"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.MicrophoneInterruptionPolicyTest.xml",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "e7a1f3ef20a0ccfa7163fb677450c0ccf6cd6e3d3f73cf8953d1e81f598ea5cb"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.MicrophonePolicyTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "b5953bb8e0f1dbc56640f6522a377606509e59664b07e1bb67fb99ae72427b0e"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.MicrophonePreferenceTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "ad40415df9b38c658ab3ed004bd2a0a051052fbd9b81e084c005f28f053cad69"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.NativeAudioQueueTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "bfcc86e2f74ca9f92084d05632ec159b67819e76ee2a97c283e7decf23e48754"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.NaturalBargeInAudioInputTest.xml",
+          "tests": 31,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "5266eb57422bda8f1d8afa460e8cc975ae729a401f9bee1ec5b48a59f75b635a"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.NaturalCorrectionTextTest.xml",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "8a4c3a0bb1bbeda0397215a44de10c3bbce5ecca8d505829dd3a2954d98fb168"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.PacedStreamingTranscriberTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "ea1a69870e604eb9b3a2d6612e5f7e70f7c801fe50762dbe4cb1f6142e5ab38f"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.Pcm16SignalTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "d12a4b2ab44e2210da9a5e0189e4136262de26a779db88a399dc156b42ac62fe"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.PcmChunkAssemblerTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "ac949e072196051bd0e5098411840fd66441a627df01368a6ebb5480260a90f0"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.PiperTextStreamTest.xml",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "a4d830d2ced3e787dbcc8e6ec3a954eaadcb8fd4653e0e579dd55167c3e9ec86"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.PlaybackBufferPolicyTest.xml",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "a313e85905a582bc3072f14b35fd354f61b3df3f17e7bdfe5c3dc4b121530727"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.PlaybackClockTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "e72f828c3795719c15d50896764763b75746752cf8fc8fcfeb222563f0900caf"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.PlaybackDrainTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "8da98bdf717ce41dc36797923bc898c77f83dafb0ac3098f8b3ae91b4be8a4c4"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.PlaybackHistoryTest.xml",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "f82f78e6752bc4828929e79efd14ed16e22ce0f4515d1655b9b8d4d00db51d3d"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.PreparedSpeechOpeningTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "d019b7c2ff637cd42a17dfb0d0866d8d595891fb29eb2d51df333cd1aa863713"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.QuietSpeechEvidenceTest.xml",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "b1f5a604893dc0e3454e8e5030b39caef3f2e5eee7092a4d879c0f4f2c2ff296"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.QuietSpeechGainTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "4f736394e5189c000a621f0f6931f563e5a07e63b22236c82aac6f4b8380364a"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.RecognitionAudioEvidenceTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "b73191449b738edf5c627c68dd27c38d26dcc5b1102044978df4dee0bcd4b0b3"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.RecognizedInterruptionWordsTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "5ca94c7ec1909640e064a5749b72256cd66ae34507c896c0ec555f01680b9758"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.ReplyInterruptionTest.xml",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "79bff1e3319610a7a029861f901bf9bbe28bd8c917e53db723594e6b33480271"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.ReplyListenerRecoveryTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "08978d25386219f5fcbd899fb8e8d6a3f4512ba66fd84cd97dc232530c01d105"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.RetiredVoiceFilesTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "2509afb9dd9e70c3af199b0e416dd6261374f455236f6e6154155c57b4f10436"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.RollingAudioBufferTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "a727732c0eb5540afffa963a8bbe015f3fed7c7c6bc3aa3eac46b8cd8f5b8c06"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.RoutedAudioInputTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "6b144f0d16b8effb14cb5e334317cdcaf1473ef307b25b673b712bccfcafba28"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.SentenceGapWaiterTest.xml",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "1f066cb76d16a31557731b8eac035207a871907944630e02df021508b90db5eb"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.SherpaPcmCallbackTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "36b71fa8401684807bef2bdfe126e7219b0e24018460eff757f92494bf661e50"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.SherpaTtsConfigTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "23ef0f342c343d9701b5e74d4d285b7e52b0850ea4bbe6737d61b0a0819144d5"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.SpeechAudioTraceTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "06b608a592ce38e6b16e98c6d57ac42f7c36b427d7225382bb9906b707fd32bd"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.SpeechChunkerTest.xml",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "db80ff27498e915d7e11c22cebff7cc8f0b6b1982f6bd6a314decfbc72d1b4f4"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.SpeechDeliveryLedgerTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "76ab40382a337e297c5bf1666d761ee83196af65aa8f970fbb9aa9bb070cd709"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.SpokenCaptionTimelineTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "fa563510c2a86c0deec082e4b707d1c38f21384fbd090da5707d61fd34820e44"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.SpokenVolumeLevelTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "cfa36ea92b5e41b93bee992d3bed90f1cd5758ab9dc063c93c87ae9f3ac74521"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.TranscriptContentTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "8a5f5ffeeb7effc0e96b130aa126cfddb31d7821590ad29cb2b42f4e3c4b6ebc"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.TtsComparisonStoreTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "be4247bfbb0127a57c569d09cec9e16d7d890b3c967204ab063500f8a6fd1b3b"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceActionControlTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "d9d24da470f98649e5f14ee087a8bf417b71ee9a43fbeba1b810b2a098bbeb1e"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceAudioSessionTest.xml",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "9dc3f32ddf9306601a02d2d2425e17c1820af55141fad4f0ec609ffbc9f9d43e"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceCallPolicyTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "665f5950e3e08f3c2da442c616ebd7fedf5ede5f40a42188dccf80948a234b7a"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceCallResumerTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "ec001d378e3c6b5f742f67caabb7b53994bde5cd210c258cbdd87665fdb5a36e"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceCallStoreTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "05aa16bddf756f68eca8bbdc4fac277e214380c0c69276713b4f8ecb901dc624"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceCallStorePrivacyTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "66343ca285b34c7c93a398c369e8a299a5d5a7585f5cf60612ea2e8066364c70"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceInterruptionTestTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "8d0c808f4fc0b0b02e3af9bd8ae14fc90fc4fb0a9463857bf6ee71dc1fa9e5e0"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicyTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "c1f676651d37f715f567e991dc5a3706a5d6707b3b6360284385f4cc23a2027a"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuardTest.xml",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "57584849535c014567cc1e23a7bd6847e80a23e5a94257b797cd5cf22af9454b"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceRepetitionRepairTest.xml",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "c8fdb78e3a6baadd5128d22a5ecd811bf009d3e9a8e3f3b758a51fe055676fea"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceSessionControllerTest.xml",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "03b8b79038133157588c73e87f319aa770a3f2d5716741c7473e4e7968e38bf4"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceSessionUiTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "c6d3192b6edac75ffb29421d43dd4d0b2afb1f372e9b6166f59ce7eae41d85cb"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceStopRequestTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "e3664f23ef897b98ca7a211cc515ecc2cce8364d0366853faf6dd76228d9c5d2"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolverTest.xml",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "184115cba5d808f45b39d948667adfb6abba3d94a9e6293d3cf4f5b877552ec9"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceTurnCoordinatorTest.xml",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "5ee6dcf2e1dae0f27170b3d1cc2f17f5bb13d9fd667448d280dabc352cd45ff9"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceTurnTraceTest.xml",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "8cf1037b9e070b02b6e56625737f28637f78942c0b304c4800bc83b28c82b025"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceWorkSchedulerTest.xml",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "f81ff9e4d172b8afcd320475eec90967de89b9db926434222977ce22cd53cc36"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.WakeWordGateTest.xml",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "499193cd4eda1b7781b4f5f9c9041fbbfd7d9e064c9c653e6f92ecf3b5c4df85"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.WordErrorRateTest.xml",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "8e8942187a4b1d942ebc50534e701b59bca5179f59d5fb0128a6b65b88fd11a8"
+        },
+        {
+          "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.comparison.LiveComparisonTest.xml",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "xml_sha256": "ba54173d15cc528312e31e063d45d2d5b1ba0050ae7efac950c36f41fbbf8332"
+        }
+      ]
+    },
+    "android": [
+      {
+        "artifact_id": 11261747592,
+        "zip_sha256": "63d3a8d1ad1f062cd127a078df6043e5203bb66cbf732ab529ca3c6288c97d1e",
+        "source_commit": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+        "api": 30,
+        "tests": 37,
+        "passed": true,
+        "process_restart": "passed",
+        "report": {
+          "schema": 1,
+          "passed": true,
+          "source_commit": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+          "pr_head": "",
+          "run_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621",
+          "coverage": "release UI + Android actions; no model inference",
+          "not_covered": [
+            "Real-model inference and model-generated tool selection",
+            "Microphone, speaker, Bluetooth and acoustic interruption behavior",
+            "Physical-device GPU/NPU compatibility, thermal behavior and latency",
+            "Successful multi-gigabyte model download/import",
+            "Real-model use of approved memory recall"
+          ],
+          "device_evidence_folder": "jarvis-verification-1790994178929888058",
+          "errors": [],
+          "apk_sha256": "899a7f321ee8aaeff07d2c069d79cb8539ac42ba0517957ab6fdebc165125914",
+          "test_apk_sha256": "e5b4055d8e721da069f86732e48f7f935405f5fdc6a2ce2fce64d03596ff23ef",
+          "device": {
+            "abi": "x86_64,x86,arm64-v8a,armeabi-v7a,armeabi",
+            "api": "30",
+            "fingerprint": "google/sdk_gphone_x86_64/generic_x86_64_arm64:11/RSR1.240422.006/12134477:userdebug/dev-keys",
+            "native_bridge": "libndk_translation.so"
+          },
+          "instrumentation": {
+            "passed": true,
+            "tests": {
+              "test01_setupRequiresAnInstalledModel": 0,
+              "test02_searchHasAnHonestEmptyState": 0,
+              "test03_browsingDoesNotChangeTheSelectedModel": 0,
+              "test04_batteryToolReadsAndroid": 0,
+              "test05_volumeToolChangesAndroidAndRejectsBadInput": 0,
+              "test06_missingAppReturnsFailure": 0,
+              "test07_settingsToolOpensAndroidSettings": 0,
+              "test08_rejectedToolSequencePreservesAndroidVolume": 0,
+              "test09_repeatedVolumeRequestIsIdempotent": 0,
+              "test10_modelIssueWarningPrecedesSelectionAndCancelPreservesModel": 0,
+              "test11_modelDetailsAreOptionalAndDoNotChangeSelection": 0,
+              "test12_lastFamilyModelCanBeSelectedAboveNavigationBar": 0,
+              "test13_imageAttachmentIsResizedStoredAndInvalidInputRejected": 0,
+              "test14_threeActionTurnUsesRealAndroidState": 0,
+              "test15_invalidActionTurnPreservesAndroidState": 0,
+              "test16_partialFailureKeepsCompletedAndroidAction": 0,
+              "test17_cancelledAndDuplicateActionTurnsDoNotReplay": 0,
+              "test18_naturalActionRoutingOpensSettingsThenReadsBattery": 0,
+              "test19_retryLiteralUnknownAppStopsWithoutBattery": 0,
+              "test20_followupQueuesWhileAcceptedAndroidActionRuns": 0,
+              "test21_speechInterruptionPreservesAcceptedAndroidActions": 0,
+              "test22_explicitCancellationKeepsCompletedAndroidReceipts": 0,
+              "test23_actionResultsSurviveEndCallWithoutReplay": 0,
+              "test24_memoryManagerReviewsCorrectsSearchesAndErases": 0,
+              "test25_finalizedTextAndVoiceMemoryNeedsApprovalBeforePromptUse": 0,
+              "test26_memoryCorrectionAndEraseRefreshApprovedPacket": 0,
+              "test27_controlledConversationSurfaceKeepsCallUntilExplicitEnd": 0,
+              "test28_voiceNavigationRetainsCallIdUntilExplicitEnd": 0,
+              "test29_eachAssistantReplyKeepsPersistedMetricsAcrossReload": 0,
+              "test30_sqliteMigrationPreservesHistoryAndEraseAcrossReopen": 0,
+              "test31_sqliteCorruptMigrationAndFailedEraseDoNotLoseData": 0,
+              "test32_sqliteExceedsLegacyByteLimitAndSerializesSeparateWriters": 0,
+              "test33_sourceArchiveRetainsExplicitHistoryAndExpiresWithoutFactLoss": 0,
+              "test34_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure": 0,
+              "test35_referencePdfExtractionAndPendingAcknowledgmentUseReleaseCode": 0,
+              "test36_sourceCopyPrivacySurvivesPersistenceAndExpiry": 0,
+              "test90_modelSelectionPersistsAcrossRecreation": 0
+            },
+            "errors": []
+          },
+          "process_restart": "passed"
+        },
+        "entries": {
+          "after-process-restart.xml": "f183ab25cadc93b79dadfb417b21c1ecddd23fbc29af3b962de9fd3c4922759d",
+          "commands.jsonl": "d4da998fe08a5593c47ef04f7cb907d5e8cac97c6e15a8124d166f91f498aa60",
+          "final.png": "dded98a32a935a4158c57bbd698ff0033799fc841e91afae9c334a4a23df8ab4",
+          "after-process-restart.png": "dded98a32a935a4158c57bbd698ff0033799fc841e91afae9c334a4a23df8ab4",
+          "final.xml": "f183ab25cadc93b79dadfb417b21c1ecddd23fbc29af3b962de9fd3c4922759d",
+          "first-launch.png": "9035b992c514d5494942c2c0924b95c1da4c1145197f81215bcbe5a809641d3e",
+          "first-launch.xml": "c1da6e2c04505aa8fd09abd1ca50db5f7d7aa5d03297a07a08021523ff0b1934",
+          "instrumentation.txt": "cfce2933343997ff346f93fbda82a5352c2d538445b3a6ee943b1f49fe598c0d",
+          "logcat.txt": "a60c8a484c774d6bca8c16d55a674c5104be778a39312bcc085bafb38231cd83",
+          "package.txt": "75e2e253c2c3e853279c7161c25967b51f3e6b6340b49d49de1867fc5e98f8fb",
+          "report.json": "81979f2593ad0f554a2f40777d1630d9cf6cd0e9222d6c7177d42302832a80eb",
+          "summary.md": "06f49e014e049768216ded3a9951e47ec431c68774195c8f4ad08a7a51855b5f",
+          "tests/last_model_button.png": "edef2ca208232cc7d736ba15e6785e56ea84ae6f7a46a8b9d9755e40f3a30ed6",
+          "tests/last_model_button.xml": "fd5ba141224400352c4e7a44789d0a5d29371f91626f11d7ea35e389d75f9a85",
+          "tests/memory_wiki_linked_article.png": "98214efb457101c6afe6e1e14c5ffb36b1107f15e76cf6bf78bba806a4d0f28b",
+          "tests/memory_wiki_linked_article.xml": "da389ecfa86274c7b4a1592d3fe52ab63b006d767bd6593fc1278aec500b6c82",
+          "tests/memory_wiki_organize_dialog.png": "9e20544ca304a50e7e1f5913397d80a6b053f1b41896ac190039d8cb12edd1a6",
+          "tests/memory_wiki_organize_dialog.xml": "de7d8e7496c229d3b8fb9ad57378c50055b16c1cd0463311b856b3fc35457020",
+          "tests/memory_wiki_reloaded_search.png": "c7b9fdab0f782d0c1c19c888654008ff0500e827749e49e2c492b06a5a03cb3c",
+          "tests/memory_wiki_reloaded_search.xml": "cbab2f70b0bb999c9d234a6b21a08c92211f4b0a560951b82827d7cab851022a",
+          "tests/memory_wiki_review_pending.png": "ed6f172029073d3394b5938606414671b8026fa8bf9b7c7d0fd4adb949d19a7d",
+          "tests/memory_wiki_review_pending.xml": "1b370598f13c1f4bc5adfd9a6063b611578780038e050b0f498eb89914567f79",
+          "tests/model_details_open.png": "2a71888fc41868a988d177474db777040035ed4c74f205274bbcd038d48c947c",
+          "tests/model_details_open.xml": "b5ee58f8593a3dcc4fb7c95c8d9b302d24e8f032e7fffd7e2acc6c80c0f9aa95",
+          "tests/test01_setupRequiresAnInstalledModel.png": "ad48804b5737ce325652a32dd566f9d35035ba4a419ff1b8288cce8bcd65f56b",
+          "tests/test01_setupRequiresAnInstalledModel.xml": "47d1ae0526a89c273a91eaf7a54e19e2d650fc53292b2c40715721bb25af7b2f",
+          "tests/test02_searchHasAnHonestEmptyState.png": "277dd7193f2e2394c81d783c856d350a5dc62130b53ac57b51d6bb3afc651668",
+          "tests/test02_searchHasAnHonestEmptyState.xml": "6bb00c7eed3fc07ae482d8ee8720502816c7cf7069df08dec47685f9989b77c4",
+          "tests/test03_browsingDoesNotChangeTheSelectedModel.png": "2f67b2acd44c59ce35f18791ce39775c2011a13d4352592f2dc115e27132450a",
+          "tests/test03_browsingDoesNotChangeTheSelectedModel.xml": "6bb00c7eed3fc07ae482d8ee8720502816c7cf7069df08dec47685f9989b77c4",
+          "tests/test04_batteryToolReadsAndroid.png": "2f67b2acd44c59ce35f18791ce39775c2011a13d4352592f2dc115e27132450a",
+          "tests/test04_batteryToolReadsAndroid.xml": "6bb00c7eed3fc07ae482d8ee8720502816c7cf7069df08dec47685f9989b77c4",
+          "tests/test05_volumeToolChangesAndroidAndRejectsBadInput.png": "2f67b2acd44c59ce35f18791ce39775c2011a13d4352592f2dc115e27132450a",
+          "tests/test05_volumeToolChangesAndroidAndRejectsBadInput.xml": "99d51c2df5c784d36113888dda13766406908d2c1932875f293460cf2a43d95d",
+          "tests/test06_missingAppReturnsFailure.png": "2f67b2acd44c59ce35f18791ce39775c2011a13d4352592f2dc115e27132450a",
+          "tests/test07_settingsToolOpensAndroidSettings.png": "36039aad5d3bc7ff7f63566b113175dcb3459c1c3861012091dba7386cfce932",
+          "tests/test06_missingAppReturnsFailure.xml": "6bb00c7eed3fc07ae482d8ee8720502816c7cf7069df08dec47685f9989b77c4",
+          "tests/test07_settingsToolOpensAndroidSettings.xml": "dd1464b4f26caa7508613d0762235f0379b34d5b2a87473a8d1f7fdda4c3774b",
+          "tests/test08_rejectedToolSequencePreservesAndroidVolume.png": "8aa7b4bbbcecebd700a87e86a3a5cf0e6d3056de71480aa2146b37f21df61d52",
+          "tests/test08_rejectedToolSequencePreservesAndroidVolume.xml": "ada7b8281d5d89315cfa144bbbd1c979619d73194019e5b254088557d89f0d36",
+          "tests/test09_repeatedVolumeRequestIsIdempotent.png": "8aa7b4bbbcecebd700a87e86a3a5cf0e6d3056de71480aa2146b37f21df61d52",
+          "tests/test09_repeatedVolumeRequestIsIdempotent.xml": "5f5b7cab2b3d3ac8eb7896f701ea792cfb8fc59b20fd656512381bc8c74dfff3",
+          "tests/test10_modelIssueWarningPrecedesSelectionAndCancelPreservesModel.png": "8aa7b4bbbcecebd700a87e86a3a5cf0e6d3056de71480aa2146b37f21df61d52",
+          "tests/test10_modelIssueWarningPrecedesSelectionAndCancelPreservesModel.xml": "5f5b7cab2b3d3ac8eb7896f701ea792cfb8fc59b20fd656512381bc8c74dfff3",
+          "tests/test11_modelDetailsAreOptionalAndDoNotChangeSelection.png": "80a7f5b8679da4da5347b5e6a77c7707bb8f379646086d255aa56e57452f5c96",
+          "tests/test11_modelDetailsAreOptionalAndDoNotChangeSelection.xml": "9b6c051e363d43a2e9ef1adf1e643688a082cba2dcc97fe8a6d892e571c8dca7",
+          "tests/test12_lastFamilyModelCanBeSelectedAboveNavigationBar.png": "fe404f764db89f6cab06938b006f8aa50736b020d23b5f86ff01e433c50208e3",
+          "tests/test12_lastFamilyModelCanBeSelectedAboveNavigationBar.xml": "440395a3ccd3d089153d440e2f3c81e15cae0b948d9735d6129e199d34d764f9",
+          "tests/test13_imageAttachmentIsResizedStoredAndInvalidInputRejected.png": "b9d1dd534eab551207983f0e0c388c9cf2230f6747eda8556f6f12286675d221",
+          "tests/test13_imageAttachmentIsResizedStoredAndInvalidInputRejected.xml": "4ac19f17dbdabc929e417c00d00a148f2525bd135d01e838bc6b29cb0e493f6b",
+          "tests/test14_threeActionTurnUsesRealAndroidState.png": "51b4b7daae577ff74ac1d8bc207de12263f161607eda3fed4ad55e1597e11bd6",
+          "tests/test14_threeActionTurnUsesRealAndroidState.xml": "227c359bce96d668f2d48b7d29d94a41d59bf010b8d5cb12413efb1ba80c070c",
+          "tests/test15_invalidActionTurnPreservesAndroidState.png": "b9d1dd534eab551207983f0e0c388c9cf2230f6747eda8556f6f12286675d221",
+          "tests/test15_invalidActionTurnPreservesAndroidState.xml": "4ac19f17dbdabc929e417c00d00a148f2525bd135d01e838bc6b29cb0e493f6b",
+          "tests/test16_partialFailureKeepsCompletedAndroidAction.png": "b9d1dd534eab551207983f0e0c388c9cf2230f6747eda8556f6f12286675d221",
+          "tests/test16_partialFailureKeepsCompletedAndroidAction.xml": "4ac19f17dbdabc929e417c00d00a148f2525bd135d01e838bc6b29cb0e493f6b",
+          "tests/test17_cancelledAndDuplicateActionTurnsDoNotReplay.png": "b9d1dd534eab551207983f0e0c388c9cf2230f6747eda8556f6f12286675d221",
+          "tests/test18_naturalActionRoutingOpensSettingsThenReadsBattery.png": "51b4b7daae577ff74ac1d8bc207de12263f161607eda3fed4ad55e1597e11bd6",
+          "tests/test17_cancelledAndDuplicateActionTurnsDoNotReplay.xml": "4ac19f17dbdabc929e417c00d00a148f2525bd135d01e838bc6b29cb0e493f6b",
+          "tests/test18_naturalActionRoutingOpensSettingsThenReadsBattery.xml": "227c359bce96d668f2d48b7d29d94a41d59bf010b8d5cb12413efb1ba80c070c",
+          "tests/test19_retryLiteralUnknownAppStopsWithoutBattery.png": "b9d1dd534eab551207983f0e0c388c9cf2230f6747eda8556f6f12286675d221",
+          "tests/test19_retryLiteralUnknownAppStopsWithoutBattery.xml": "4ac19f17dbdabc929e417c00d00a148f2525bd135d01e838bc6b29cb0e493f6b",
+          "tests/test20_followupQueuesWhileAcceptedAndroidActionRuns.png": "51b4b7daae577ff74ac1d8bc207de12263f161607eda3fed4ad55e1597e11bd6",
+          "tests/test20_followupQueuesWhileAcceptedAndroidActionRuns.xml": "227c359bce96d668f2d48b7d29d94a41d59bf010b8d5cb12413efb1ba80c070c",
+          "tests/test21_speechInterruptionPreservesAcceptedAndroidActions.png": "9b4cfad3d4fae1a229eb164ad049e0099f7e7382dce318d4a1e3b2f73e132f09",
+          "tests/test21_speechInterruptionPreservesAcceptedAndroidActions.xml": "227c359bce96d668f2d48b7d29d94a41d59bf010b8d5cb12413efb1ba80c070c",
+          "tests/test22_explicitCancellationKeepsCompletedAndroidReceipts.png": "b9d1dd534eab551207983f0e0c388c9cf2230f6747eda8556f6f12286675d221",
+          "tests/test22_explicitCancellationKeepsCompletedAndroidReceipts.xml": "4ac19f17dbdabc929e417c00d00a148f2525bd135d01e838bc6b29cb0e493f6b",
+          "tests/test23_actionResultsSurviveEndCallWithoutReplay.png": "b9d1dd534eab551207983f0e0c388c9cf2230f6747eda8556f6f12286675d221",
+          "tests/test23_actionResultsSurviveEndCallWithoutReplay.xml": "4ac19f17dbdabc929e417c00d00a148f2525bd135d01e838bc6b29cb0e493f6b",
+          "tests/test24_memoryManagerReviewsCorrectsSearchesAndErases.png": "cf125989e8a0ab92f5aed734790c127bd05b414a9b154f5860e6f98236e26533",
+          "tests/test24_memoryManagerReviewsCorrectsSearchesAndErases.xml": "cb5d7bfb3bbe7494918a6e272ee6040402513782b5064fe0d00a96541badc030",
+          "tests/test25_finalizedTextAndVoiceMemoryNeedsApprovalBeforePromptUse.png": "7f282e30cbb0ce9d6ba97d79adc5d863326c88cd4a58575f9d24046c5f5c12e1",
+          "tests/test26_memoryCorrectionAndEraseRefreshApprovedPacket.png": "7f282e30cbb0ce9d6ba97d79adc5d863326c88cd4a58575f9d24046c5f5c12e1",
+          "tests/test25_finalizedTextAndVoiceMemoryNeedsApprovalBeforePromptUse.xml": "872efd480e5a35012abe6edfa2973762b174c252343559f44ed008992fd3d787",
+          "tests/test26_memoryCorrectionAndEraseRefreshApprovedPacket.xml": "e2277356425bbb4d484f8d33a67762972fb2496dc384e12b4b7db00a0190db8e",
+          "tests/test27_controlledConversationSurfaceKeepsCallUntilExplicitEnd.png": "ea938cb0843cd2aa2fa7fe8634fffe219dacc74adbc90bf91a5811346ed41e6e",
+          "tests/test27_controlledConversationSurfaceKeepsCallUntilExplicitEnd.xml": "313a1d35a6bd843e809d1f955a83e48b60a9866e4738ebd5e52392f24bc753e3",
+          "tests/test28_voiceNavigationRetainsCallIdUntilExplicitEnd.png": "5b70f242388d6ef6d9c6a6276c39950a48f2006886a9e97de93a8fa209394920",
+          "tests/test28_voiceNavigationRetainsCallIdUntilExplicitEnd.xml": "e2277356425bbb4d484f8d33a67762972fb2496dc384e12b4b7db00a0190db8e",
+          "tests/test29_eachAssistantReplyKeepsPersistedMetricsAcrossReload.png": "9688e02538009df881676cc6db91923a92ff6d4aef5565d40e9d637cc8422ee2",
+          "tests/test29_eachAssistantReplyKeepsPersistedMetricsAcrossReload.xml": "079197329e0ffa81820ffc8c49b8dc726d5cb82bf1023f6b20fc4c2e9e48646b",
+          "tests/test30_sqliteMigrationPreservesHistoryAndEraseAcrossReopen.png": "5b70f242388d6ef6d9c6a6276c39950a48f2006886a9e97de93a8fa209394920",
+          "tests/test30_sqliteMigrationPreservesHistoryAndEraseAcrossReopen.xml": "e2277356425bbb4d484f8d33a67762972fb2496dc384e12b4b7db00a0190db8e",
+          "tests/test31_sqliteCorruptMigrationAndFailedEraseDoNotLoseData.png": "5b70f242388d6ef6d9c6a6276c39950a48f2006886a9e97de93a8fa209394920",
+          "tests/test31_sqliteCorruptMigrationAndFailedEraseDoNotLoseData.xml": "adacee41a71f64353e4ba09cab98f24ecfaee1d1ca512a70480a58a4edc29d4e",
+          "tests/test32_sqliteExceedsLegacyByteLimitAndSerializesSeparateWriters.xml": "e2277356425bbb4d484f8d33a67762972fb2496dc384e12b4b7db00a0190db8e",
+          "tests/test33_sourceArchiveRetainsExplicitHistoryAndExpiresWithoutFactLoss.png": "5b70f242388d6ef6d9c6a6276c39950a48f2006886a9e97de93a8fa209394920",
+          "tests/test33_sourceArchiveRetainsExplicitHistoryAndExpiresWithoutFactLoss.xml": "e2277356425bbb4d484f8d33a67762972fb2496dc384e12b4b7db00a0190db8e",
+          "tests/test32_sqliteExceedsLegacyByteLimitAndSerializesSeparateWriters.png": "5b70f242388d6ef6d9c6a6276c39950a48f2006886a9e97de93a8fa209394920",
+          "tests/test34_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure.png": "5b70f242388d6ef6d9c6a6276c39950a48f2006886a9e97de93a8fa209394920",
+          "tests/test34_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure.xml": "e2277356425bbb4d484f8d33a67762972fb2496dc384e12b4b7db00a0190db8e",
+          "tests/test35_referencePdfExtractionAndPendingAcknowledgmentUseReleaseCode.png": "5b70f242388d6ef6d9c6a6276c39950a48f2006886a9e97de93a8fa209394920",
+          "tests/test35_referencePdfExtractionAndPendingAcknowledgmentUseReleaseCode.xml": "adacee41a71f64353e4ba09cab98f24ecfaee1d1ca512a70480a58a4edc29d4e",
+          "tests/test36_sourceCopyPrivacySurvivesPersistenceAndExpiry.png": "5b70f242388d6ef6d9c6a6276c39950a48f2006886a9e97de93a8fa209394920",
+          "tests/test36_sourceCopyPrivacySurvivesPersistenceAndExpiry.xml": "e2277356425bbb4d484f8d33a67762972fb2496dc384e12b4b7db00a0190db8e",
+          "tests/test90_modelSelectionPersistsAcrossRecreation.png": "f5da422514cdf6988c31d06fd9f0fe91d1a0a35febaa168f0d9ec8882049f9af",
+          "tests/test90_modelSelectionPersistsAcrossRecreation.xml": "48a697c2567cdf68d0525b2556c2a3296f1c6322c37b14fbb9d5d48d311fc853"
+        }
+      },
+      {
+        "artifact_id": 11262031815,
+        "zip_sha256": "6de7fc9b2397818aa4a9bee79bf452d32c66862a7caec650a5bd777bbec66f6a",
+        "source_commit": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+        "api": 35,
+        "tests": 37,
+        "passed": true,
+        "process_restart": "passed",
+        "report": {
+          "schema": 1,
+          "passed": true,
+          "source_commit": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+          "pr_head": "",
+          "run_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621",
+          "coverage": "release UI + Android actions; no model inference",
+          "not_covered": [
+            "Real-model inference and model-generated tool selection",
+            "Microphone, speaker, Bluetooth and acoustic interruption behavior",
+            "Physical-device GPU/NPU compatibility, thermal behavior and latency",
+            "Successful multi-gigabyte model download/import",
+            "Real-model use of approved memory recall"
+          ],
+          "device_evidence_folder": "jarvis-verification-1790994219383179442",
+          "errors": [],
+          "apk_sha256": "f7cf9c5e6348162d0746cc51250dff98f9e6f83dc5322d2f6f3c12f6c63a7b40",
+          "test_apk_sha256": "e5b4055d8e721da069f86732e48f7f935405f5fdc6a2ce2fce64d03596ff23ef",
+          "device": {
+            "abi": "x86_64,arm64-v8a",
+            "api": "35",
+            "fingerprint": "google/sdk_gphone64_x86_64/emu64xa:15/AE3A.240806.043/12960925:userdebug/dev-keys",
+            "native_bridge": "libndk_translation.so"
+          },
+          "instrumentation": {
+            "passed": true,
+            "tests": {
+              "test01_setupRequiresAnInstalledModel": 0,
+              "test02_searchHasAnHonestEmptyState": 0,
+              "test03_browsingDoesNotChangeTheSelectedModel": 0,
+              "test04_batteryToolReadsAndroid": 0,
+              "test05_volumeToolChangesAndroidAndRejectsBadInput": 0,
+              "test06_missingAppReturnsFailure": 0,
+              "test07_settingsToolOpensAndroidSettings": 0,
+              "test08_rejectedToolSequencePreservesAndroidVolume": 0,
+              "test09_repeatedVolumeRequestIsIdempotent": 0,
+              "test10_modelIssueWarningPrecedesSelectionAndCancelPreservesModel": 0,
+              "test11_modelDetailsAreOptionalAndDoNotChangeSelection": 0,
+              "test12_lastFamilyModelCanBeSelectedAboveNavigationBar": 0,
+              "test13_imageAttachmentIsResizedStoredAndInvalidInputRejected": 0,
+              "test14_threeActionTurnUsesRealAndroidState": 0,
+              "test15_invalidActionTurnPreservesAndroidState": 0,
+              "test16_partialFailureKeepsCompletedAndroidAction": 0,
+              "test17_cancelledAndDuplicateActionTurnsDoNotReplay": 0,
+              "test18_naturalActionRoutingOpensSettingsThenReadsBattery": 0,
+              "test19_retryLiteralUnknownAppStopsWithoutBattery": 0,
+              "test20_followupQueuesWhileAcceptedAndroidActionRuns": 0,
+              "test21_speechInterruptionPreservesAcceptedAndroidActions": 0,
+              "test22_explicitCancellationKeepsCompletedAndroidReceipts": 0,
+              "test23_actionResultsSurviveEndCallWithoutReplay": 0,
+              "test24_memoryManagerReviewsCorrectsSearchesAndErases": 0,
+              "test25_finalizedTextAndVoiceMemoryNeedsApprovalBeforePromptUse": 0,
+              "test26_memoryCorrectionAndEraseRefreshApprovedPacket": 0,
+              "test27_controlledConversationSurfaceKeepsCallUntilExplicitEnd": 0,
+              "test28_voiceNavigationRetainsCallIdUntilExplicitEnd": 0,
+              "test29_eachAssistantReplyKeepsPersistedMetricsAcrossReload": 0,
+              "test30_sqliteMigrationPreservesHistoryAndEraseAcrossReopen": 0,
+              "test31_sqliteCorruptMigrationAndFailedEraseDoNotLoseData": 0,
+              "test32_sqliteExceedsLegacyByteLimitAndSerializesSeparateWriters": 0,
+              "test33_sourceArchiveRetainsExplicitHistoryAndExpiresWithoutFactLoss": 0,
+              "test34_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure": 0,
+              "test35_referencePdfExtractionAndPendingAcknowledgmentUseReleaseCode": 0,
+              "test36_sourceCopyPrivacySurvivesPersistenceAndExpiry": 0,
+              "test90_modelSelectionPersistsAcrossRecreation": 0
+            },
+            "errors": []
+          },
+          "process_restart": "passed"
+        },
+        "entries": {
+          "after-process-restart.png": "5b471d76624ef2f9ed9b14053fa98626a163b518e9ad4afd548abda3113a8fcf",
+          "after-process-restart.xml": "739b079039230bd10574f05cb992f437ef3c85239718f20343eb5c4f4883c5e4",
+          "final.png": "5b471d76624ef2f9ed9b14053fa98626a163b518e9ad4afd548abda3113a8fcf",
+          "commands.jsonl": "b81191a9459574eab50307d60762bf19644bafa9ffced7e5398d3c2f52801274",
+          "final.xml": "739b079039230bd10574f05cb992f437ef3c85239718f20343eb5c4f4883c5e4",
+          "first-launch.png": "a86201e9a5479de07ce72e42f774502c2510d450fae4b6faa4ba4c66910e8d38",
+          "first-launch.xml": "486a4d1646ea2349bf051a7aed4dcbc944e389d3b214ed0e5ae28adc72982456",
+          "instrumentation.txt": "cc44394438f3d77debe1853f7b0edbe059a098cf2ecf2a8027fde993bded9936",
+          "logcat.txt": "8d39ffa9a8a94ddd088b9be6da6c3d4df487a8dbb915debbcd902d4971f9f00e",
+          "package.txt": "6a48ff33ca30860415257cb92e1286d3d2aa2a31c19047e5d17bbd4254b4c562",
+          "report.json": "23a10c7d4d9d723b22dd546d7830c9941435ad1e0bfc06f408e66530fa580f1c",
+          "summary.md": "06f49e014e049768216ded3a9951e47ec431c68774195c8f4ad08a7a51855b5f",
+          "tests/last_model_button.png": "e502fd40cf917c6f7f7d55c7026bf4877c5316b712c7ea146ab3a0144710c160",
+          "tests/last_model_button.xml": "38d6355d65c7d2b8c7308726a5db09134bd65b6c357c58926c4306d00b942818",
+          "tests/memory_wiki_linked_article.png": "3784f8f25b0500564c9af214f2eaab1a87a409980a17b5a186c1c194dbd751b5",
+          "tests/memory_wiki_linked_article.xml": "92c577570a339ec0f9dcfcd932e2018c417a341c9dde4c7f93787870ef34fd19",
+          "tests/memory_wiki_organize_dialog.png": "cbcf761b4917d3dff56acebb83678f78f0759482bd7845b19479aeccb2ea5b25",
+          "tests/memory_wiki_organize_dialog.xml": "56cdf313333458e17a7a6e110d2d7e759f9e3666ea9bc87061adab643092fa91",
+          "tests/memory_wiki_reloaded_search.png": "a89effdc49cdb36f0d17cc36e5f5af2715a0bdca7b1aa8a103459800a770ac6f",
+          "tests/memory_wiki_reloaded_search.xml": "f7f15551322ff8af0f6f410a0b364e975b0cc4f7c987a26463ac7b2b9f9e747c",
+          "tests/memory_wiki_review_pending.png": "d8e544a67a4c4b8d221186a883219c983ce07089343e25f3d6d7764724c9e1d7",
+          "tests/memory_wiki_review_pending.xml": "66717acb365954b9efc56dde5fa517c2dfcb8c0a4ef5f27709002a9020b3a4e8",
+          "tests/model_details_open.png": "12c8ded17323f66f761b60d0ef6e29ba0d0bec250d7b9e410cd17ba8d47b0ac5",
+          "tests/model_details_open.xml": "4150a80eb4e430d363d11de0f16edf4271b00cd9deaa030efc742b50d5db44cf",
+          "tests/test01_setupRequiresAnInstalledModel.png": "577a6fa91e0cb3617d98b032873ffce3062f8a999b6401713f5a5b7667a9aa11",
+          "tests/test01_setupRequiresAnInstalledModel.xml": "e307815df2a831ea276e7b9823528de0280b455371e85ea7472a222273f245ec",
+          "tests/test02_searchHasAnHonestEmptyState.png": "c2e0b6d91192e2913d578565d606b0193fc490587988d7ecd13aa51b8f4a9114",
+          "tests/test02_searchHasAnHonestEmptyState.xml": "6ae08370ae09d6cea45626f1cc2789eb4459db4e8618628733e40643f17e0808",
+          "tests/test03_browsingDoesNotChangeTheSelectedModel.png": "577a6fa91e0cb3617d98b032873ffce3062f8a999b6401713f5a5b7667a9aa11",
+          "tests/test03_browsingDoesNotChangeTheSelectedModel.xml": "6ae08370ae09d6cea45626f1cc2789eb4459db4e8618628733e40643f17e0808",
+          "tests/test04_batteryToolReadsAndroid.png": "577a6fa91e0cb3617d98b032873ffce3062f8a999b6401713f5a5b7667a9aa11",
+          "tests/test04_batteryToolReadsAndroid.xml": "e307815df2a831ea276e7b9823528de0280b455371e85ea7472a222273f245ec",
+          "tests/test05_volumeToolChangesAndroidAndRejectsBadInput.png": "70f635541e79df20b136b6c83876ce52a32393637ef121a3c540a5b8cd7ed1a1",
+          "tests/test05_volumeToolChangesAndroidAndRejectsBadInput.xml": "ee9357ba27f26bc033fed01219d9660e125f85c3eb99bc7573a45f73b796ba17",
+          "tests/test06_missingAppReturnsFailure.png": "70f635541e79df20b136b6c83876ce52a32393637ef121a3c540a5b8cd7ed1a1",
+          "tests/test06_missingAppReturnsFailure.xml": "da5c5e881bfca9fd067a80e6f09659face07bf4e64927377236ff75964eebf6c",
+          "tests/test07_settingsToolOpensAndroidSettings.png": "1617ef224d5fe7f4d1648cb7977fb4ab3994258b97ed009fc3efb67c74d3645b",
+          "tests/test07_settingsToolOpensAndroidSettings.xml": "eba092678e123db74252565ddeeefa5ac4e09ec400c9c84a79c6a509db734643",
+          "tests/test08_rejectedToolSequencePreservesAndroidVolume.png": "70f635541e79df20b136b6c83876ce52a32393637ef121a3c540a5b8cd7ed1a1",
+          "tests/test08_rejectedToolSequencePreservesAndroidVolume.xml": "ee9357ba27f26bc033fed01219d9660e125f85c3eb99bc7573a45f73b796ba17",
+          "tests/test09_repeatedVolumeRequestIsIdempotent.png": "70f635541e79df20b136b6c83876ce52a32393637ef121a3c540a5b8cd7ed1a1",
+          "tests/test09_repeatedVolumeRequestIsIdempotent.xml": "ee9357ba27f26bc033fed01219d9660e125f85c3eb99bc7573a45f73b796ba17",
+          "tests/test10_modelIssueWarningPrecedesSelectionAndCancelPreservesModel.png": "70f635541e79df20b136b6c83876ce52a32393637ef121a3c540a5b8cd7ed1a1",
+          "tests/test10_modelIssueWarningPrecedesSelectionAndCancelPreservesModel.xml": "da5c5e881bfca9fd067a80e6f09659face07bf4e64927377236ff75964eebf6c",
+          "tests/test11_modelDetailsAreOptionalAndDoNotChangeSelection.png": "2ee1a98a983fefe37fea62f0e89cfd5a27f0126f3a6cb261c6ca30e2ec4b82cc",
+          "tests/test11_modelDetailsAreOptionalAndDoNotChangeSelection.xml": "388520962e748278992eb167c84094723dc46b3351f7d609af7b2df8a393d625",
+          "tests/test12_lastFamilyModelCanBeSelectedAboveNavigationBar.png": "faaedf42e597c308781c86454da807b0a02f9b82219b0ea88cb45939b04b1e03",
+          "tests/test12_lastFamilyModelCanBeSelectedAboveNavigationBar.xml": "d15c0a43bf41fd952d06f90a93bf964f33c84011059918f1046fbe27d5eee248",
+          "tests/test13_imageAttachmentIsResizedStoredAndInvalidInputRejected.png": "14b92bdacb896bcc600b7739efbdf203540a9fc5f512ee287515a87330c7ceb4",
+          "tests/test13_imageAttachmentIsResizedStoredAndInvalidInputRejected.xml": "a9a57657ccfe9b104d3a459f0feab492fc1eb50c530b8138d39250de07ffa491",
+          "tests/test14_threeActionTurnUsesRealAndroidState.png": "4847c551cc455ad4ae22e2d0091d13586afd778295c44af2ab7c07721e27bd30",
+          "tests/test14_threeActionTurnUsesRealAndroidState.xml": "80c72a52f39b85481a4884323a5f3f5537eb118a619296c8e52515c5aba459d8",
+          "tests/test15_invalidActionTurnPreservesAndroidState.png": "14b92bdacb896bcc600b7739efbdf203540a9fc5f512ee287515a87330c7ceb4",
+          "tests/test15_invalidActionTurnPreservesAndroidState.xml": "b51e68ad66b021bcf0ba2d489c67a04de4762514c000747edc605098796354b3",
+          "tests/test16_partialFailureKeepsCompletedAndroidAction.png": "14b92bdacb896bcc600b7739efbdf203540a9fc5f512ee287515a87330c7ceb4",
+          "tests/test16_partialFailureKeepsCompletedAndroidAction.xml": "a9a57657ccfe9b104d3a459f0feab492fc1eb50c530b8138d39250de07ffa491",
+          "tests/test17_cancelledAndDuplicateActionTurnsDoNotReplay.png": "14b92bdacb896bcc600b7739efbdf203540a9fc5f512ee287515a87330c7ceb4",
+          "tests/test17_cancelledAndDuplicateActionTurnsDoNotReplay.xml": "a9a57657ccfe9b104d3a459f0feab492fc1eb50c530b8138d39250de07ffa491",
+          "tests/test18_naturalActionRoutingOpensSettingsThenReadsBattery.png": "4847c551cc455ad4ae22e2d0091d13586afd778295c44af2ab7c07721e27bd30",
+          "tests/test18_naturalActionRoutingOpensSettingsThenReadsBattery.xml": "80c72a52f39b85481a4884323a5f3f5537eb118a619296c8e52515c5aba459d8",
+          "tests/test19_retryLiteralUnknownAppStopsWithoutBattery.png": "14b92bdacb896bcc600b7739efbdf203540a9fc5f512ee287515a87330c7ceb4",
+          "tests/test19_retryLiteralUnknownAppStopsWithoutBattery.xml": "b51e68ad66b021bcf0ba2d489c67a04de4762514c000747edc605098796354b3",
+          "tests/test20_followupQueuesWhileAcceptedAndroidActionRuns.png": "4847c551cc455ad4ae22e2d0091d13586afd778295c44af2ab7c07721e27bd30",
+          "tests/test20_followupQueuesWhileAcceptedAndroidActionRuns.xml": "80c72a52f39b85481a4884323a5f3f5537eb118a619296c8e52515c5aba459d8",
+          "tests/test21_speechInterruptionPreservesAcceptedAndroidActions.png": "14b92bdacb896bcc600b7739efbdf203540a9fc5f512ee287515a87330c7ceb4",
+          "tests/test21_speechInterruptionPreservesAcceptedAndroidActions.xml": "80c72a52f39b85481a4884323a5f3f5537eb118a619296c8e52515c5aba459d8",
+          "tests/test22_explicitCancellationKeepsCompletedAndroidReceipts.png": "14b92bdacb896bcc600b7739efbdf203540a9fc5f512ee287515a87330c7ceb4",
+          "tests/test22_explicitCancellationKeepsCompletedAndroidReceipts.xml": "b51e68ad66b021bcf0ba2d489c67a04de4762514c000747edc605098796354b3",
+          "tests/test23_actionResultsSurviveEndCallWithoutReplay.png": "14b92bdacb896bcc600b7739efbdf203540a9fc5f512ee287515a87330c7ceb4",
+          "tests/test23_actionResultsSurviveEndCallWithoutReplay.xml": "b51e68ad66b021bcf0ba2d489c67a04de4762514c000747edc605098796354b3",
+          "tests/test24_memoryManagerReviewsCorrectsSearchesAndErases.png": "a88c0a11226504abc065ec5226859aa70b78c7ef31ec20162c38dfa76f0c4347",
+          "tests/test24_memoryManagerReviewsCorrectsSearchesAndErases.xml": "e43ad0992f9097c1af24f1827b2bff9c80b17bda40ba9ce3bdfe2ba1c8ce9fca",
+          "tests/test25_finalizedTextAndVoiceMemoryNeedsApprovalBeforePromptUse.png": "ef1ab90e17e4d327e5403e345a2d7d3e33d7a7090b0e73b1d0650e4c74cb4eff",
+          "tests/test25_finalizedTextAndVoiceMemoryNeedsApprovalBeforePromptUse.xml": "f202e943f59146a8c8391d2a7c804231a2ea33c5d3eddf81b65958138f55f9e7",
+          "tests/test26_memoryCorrectionAndEraseRefreshApprovedPacket.png": "ef1ab90e17e4d327e5403e345a2d7d3e33d7a7090b0e73b1d0650e4c74cb4eff",
+          "tests/test26_memoryCorrectionAndEraseRefreshApprovedPacket.xml": "f202e943f59146a8c8391d2a7c804231a2ea33c5d3eddf81b65958138f55f9e7",
+          "tests/test27_controlledConversationSurfaceKeepsCallUntilExplicitEnd.png": "49319087c162191720708b59dedf66c533d65293deb92ef95c9793f9e6af3759",
+          "tests/test27_controlledConversationSurfaceKeepsCallUntilExplicitEnd.xml": "281b0ea223c860bd40791b5403ab90fa070ef451083316bad0cb93d1ec842cf0",
+          "tests/test28_voiceNavigationRetainsCallIdUntilExplicitEnd.png": "0b0204d5fe36b34b5688085d4e2df15851cc6afb18d045158cef719f76d79b4d",
+          "tests/test28_voiceNavigationRetainsCallIdUntilExplicitEnd.xml": "ece3bcfa52ac97920a70904b4ced2ee6b1a0b1446cebd711d7d44cc1f3b2ef15",
+          "tests/test29_eachAssistantReplyKeepsPersistedMetricsAcrossReload.png": "2e87b16966a4892d675ef71b10e4ef2fc88eb7ff1856a92a1eeaacc359bfddd9",
+          "tests/test29_eachAssistantReplyKeepsPersistedMetricsAcrossReload.xml": "e66d8e5991d41614510d3032b4cea2f6abaaf5eecef6dd6a6ac5963049f1ff88",
+          "tests/test30_sqliteMigrationPreservesHistoryAndEraseAcrossReopen.png": "0b0204d5fe36b34b5688085d4e2df15851cc6afb18d045158cef719f76d79b4d",
+          "tests/test30_sqliteMigrationPreservesHistoryAndEraseAcrossReopen.xml": "2621872268d11eabbcc1d13c8b1ae371433ff1e234246485b92997ef9462df6a",
+          "tests/test31_sqliteCorruptMigrationAndFailedEraseDoNotLoseData.png": "0b0204d5fe36b34b5688085d4e2df15851cc6afb18d045158cef719f76d79b4d",
+          "tests/test31_sqliteCorruptMigrationAndFailedEraseDoNotLoseData.xml": "ece3bcfa52ac97920a70904b4ced2ee6b1a0b1446cebd711d7d44cc1f3b2ef15",
+          "tests/test32_sqliteExceedsLegacyByteLimitAndSerializesSeparateWriters.png": "0b0204d5fe36b34b5688085d4e2df15851cc6afb18d045158cef719f76d79b4d",
+          "tests/test32_sqliteExceedsLegacyByteLimitAndSerializesSeparateWriters.xml": "2621872268d11eabbcc1d13c8b1ae371433ff1e234246485b92997ef9462df6a",
+          "tests/test33_sourceArchiveRetainsExplicitHistoryAndExpiresWithoutFactLoss.png": "0b0204d5fe36b34b5688085d4e2df15851cc6afb18d045158cef719f76d79b4d",
+          "tests/test33_sourceArchiveRetainsExplicitHistoryAndExpiresWithoutFactLoss.xml": "2621872268d11eabbcc1d13c8b1ae371433ff1e234246485b92997ef9462df6a",
+          "tests/test34_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure.png": "0b0204d5fe36b34b5688085d4e2df15851cc6afb18d045158cef719f76d79b4d",
+          "tests/test34_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure.xml": "2621872268d11eabbcc1d13c8b1ae371433ff1e234246485b92997ef9462df6a",
+          "tests/test35_referencePdfExtractionAndPendingAcknowledgmentUseReleaseCode.png": "0b0204d5fe36b34b5688085d4e2df15851cc6afb18d045158cef719f76d79b4d",
+          "tests/test35_referencePdfExtractionAndPendingAcknowledgmentUseReleaseCode.xml": "ece3bcfa52ac97920a70904b4ced2ee6b1a0b1446cebd711d7d44cc1f3b2ef15",
+          "tests/test36_sourceCopyPrivacySurvivesPersistenceAndExpiry.png": "0b0204d5fe36b34b5688085d4e2df15851cc6afb18d045158cef719f76d79b4d",
+          "tests/test36_sourceCopyPrivacySurvivesPersistenceAndExpiry.xml": "2621872268d11eabbcc1d13c8b1ae371433ff1e234246485b92997ef9462df6a",
+          "tests/test90_modelSelectionPersistsAcrossRecreation.png": "8345d8cc874cdb55a66e64f0654ca5782fc70812be6687dd44e13c11bcfc88ab",
+          "tests/test90_modelSelectionPersistsAcrossRecreation.xml": "957fd77b73bcc26f42ef2b1650d2fed112fc50989ba42b76d9bc08fb9d0f5e68"
+        }
+      }
+    ],
+    "consolidated_receipt": {
+      "schema": 1,
+      "passed": true,
+      "source_commit": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+      "pr_head": "",
+      "run_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37088094621",
+      "errors": [],
+      "variants": [
+        {
+          "api": 30,
+          "apk": "app-release.apk",
+          "apk_sha256": "899a7f321ee8aaeff07d2c069d79cb8539ac42ba0517957ab6fdebc165125914",
+          "test_apk_sha256": "e5b4055d8e721da069f86732e48f7f935405f5fdc6a2ce2fce64d03596ff23ef",
+          "tests": 37,
+          "passed": true
+        },
+        {
+          "api": 35,
+          "apk": "app-compact.apk",
+          "apk_sha256": "f7cf9c5e6348162d0746cc51250dff98f9e6f83dc5322d2f6f3c12f6c63a7b40",
+          "test_apk_sha256": "e5b4055d8e721da069f86732e48f7f935405f5fdc6a2ce2fce64d03596ff23ef",
+          "tests": 37,
+          "passed": true
+        }
+      ],
+      "release_approved": false,
+      "coverage": "release JVM + UI + Android actions; no model inference",
+      "not_covered": [
+        "Real-model inference and model-generated tool selection",
+        "Microphone, speaker, Bluetooth and acoustic interruption behavior",
+        "Physical-device GPU/NPU compatibility, thermal behavior and latency",
+        "Successful multi-gigabyte model download/import",
+        "Real-model use of approved memory recall"
+      ],
+      "provenance": "Same-run GitHub Actions artifacts; APK bytes rehashed. Not an external attestation.",
+      "jvm": {
+        "passed": true,
+        "tests": 767,
+        "suites": 144
+      }
+    },
+    "consolidated_receipt_sha256": "fc9b704888e8e8acbb73f4abf4d66d484e7516e2ba39463a095f47c9fa630650",
+    "consolidated_zip_sha256": "c7719e5568189cdc74e1eb621a0963fac91bb3b342234465ba8c252162ff81c1",
+    "log_hashes": {
+      "privacy-build901-build.log": "c9b2d5eeb2099b2d2371a861f1a57dfdaeb5bdd32d3fb798f8adcb0401af235f",
+      "privacy-build901-api30.log": "9a62443b1624c878444dc70654f743bed8ed40b95dabc07dc37d74760a702c30",
+      "privacy-build901-api35.log": "f3c8b592bda73c75f3d834f1829785aed1cbcb17db34361c6670ee77f02fbaba",
+      "privacy-build901-consolidation.log": "f62c000015204b3793f1b726d33668b5658402f7949309d03c7dafa8b50704a7"
+    }
+  },
+  "deadline": 1791010800,
+  "provider_actual_usage": null,
+  "unverified": [
+    "Real-model inference and model-generated tool selection",
+    "Microphone, speaker, Bluetooth and acoustic interruption behavior",
+    "Physical-device GPU/NPU compatibility, thermal behavior and latency",
+    "Successful multi-gigabyte model download/import",
+    "Real-model use of approved memory recall",
+    "Sensitive extraction pipeline and later Memory OS goals",
+    "Real Fold6 model quality, voice, thermal, encryption and source-access coverage"
+  ]
+}
