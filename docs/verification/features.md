@@ -384,7 +384,9 @@ unchanged window they support an infrastructure repair to verify. Only the
 fold profile now starts an owned Xvfb display and uses the windowed Qt emulator.
 Only `x11-utils` is installed for the missing `xdpyinfo` probe, with bounded
 package update/install commands; SDK 37.2.12 bundles the inspected XCB/cursor/xkb
-helper libraries, and its other required system libraries are already present.
+helper libraries, and that plugin's inspected system libraries are already
+present. This dependency audit did not cover the separate GUI emulator executable;
+Build 927 below records that gap.
 Readiness is bounded to 15 seconds, cleanup checks PID ownership, and logs are
 attached after the controller. Other emulator options/profiles, all physical
 dimension/continuity assertions, insets, padding and deadlines remain intact;
@@ -403,6 +405,57 @@ APK installation started. Screenshot and logcat collection also timed out
 (60 and 30 seconds); no PNG exists. Artifact `11271673105` retains this
 platform failure. Readiness and unlock do not supply a controller pass, and
 the strict API 29 requirement remains unchanged.
+
+## Expanded gate Build 927 and GUI emulator dependency failure
+
+[Build 927](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37118011588)
+tested head `5b318fa060b19ce33b0549e71715bede5868fe1d`, merge
+`f6e243cce9a859703542f6a7acc1e2260f251d78`. The signed producer and static
+native gate passed. All four phone profiles completed all 49 main cases, four
+layout cases, the actual 907→927 upgrade, process restart and all eight lifecycle
+phases. Their source/APK hashes and raw instrumentation agree. All nine shipped
+libraries loaded in each profile, including actual 16,384-byte pages in the
+true 16 KB profile. The four current 200% font PNGs were inspected; artifact
+`11273280050` retains the passing 16 KB profile.
+
+The fold profile's bounded
+`x11-utils` installation, owned Xvfb startup and `xdpyinfo` readiness passed.
+Its retained display is 1920×2400, and cleanup confirmed the owned server was
+gone, a zombie, or no longer the recorded PID owner. These are host setup
+outcomes, not app or fold-test passes.
+
+At 11:09:03 the actual SDK 37.2.12 GUI `qemu-system-x86_64` loader failed:
+`libpulse.so.0` was unavailable. No guest boot, controller, current-APK
+installation or app instrumentation followed; the unchanged 300-second boot
+limit expired. Artifact `11272701104` (ZIP SHA-256
+`93d8572ae63c88e94d69a831c268537a435c2f4fc480a69f876b273763d3c800`)
+retains apt, Xvfb, display and cleanup diagnostics. There is no app report or
+folded/unfolded PNG/XML. The failure remains required evidence and blocks
+publication. The Qt plugin audit had missed the GUI executable's separate
+dependency chain. A complete recursive audit of 53 actual SDK 37.2.12 ELF files
+and 29 external SONAMEs against the runner inventory identified `libpulse0` as
+the only missing runtime package. The next fold-only repair installs it beside
+`x11-utils`; apt resolves its required dependencies. A fold-only pre-launch hook
+also retains the installed emulator version and GUI executable/XCB plugin `ldd`
+receipts using the SDK's bundled library paths. It runs after the action updates
+the emulator, has a 15-second timeout plus a two-second kill grace, and fails
+on missing files, unsuccessful commands or unresolved libraries. The action
+marks a failed hook red but still attempts boot; this is a loader receipt, not
+an early boot abort. All controller
+assertions, other profiles, emulator options and time limits remain unchanged.
+Actual fold resizing and continuity still require a fresh full run.
+
+API 29 never handed control to the app verifier. Four core-service binders
+were observed, cold input succeeded in 102.726 seconds, and the three scoped
+keyguard flags were false. The third animation-setting command then exhausted
+its existing 30-second command cap (30.012 seconds, exit 124); the shared
+900-second startup budget was not exhausted. Earlier boot logs contain a fatal
+`PermissionPolicyService` exception, `system_server` PID 235 ending with signal
+9, and a SystemUI `KeyguardService` ANR. No later watchdog kill was found.
+There was no prior-907 installation, current-APK installation, controller
+report or instrumentation. The required API 29 gate remains failed, and its
+configuration and thresholds are unchanged. The final receipt is false;
+publication was skipped.
 
 ## Build 900 Gemma audio submission review
 

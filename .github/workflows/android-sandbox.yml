@@ -83,8 +83,43 @@ jobs:
         run: |
           jarvis_display_dir="$RUNNER_TEMP/jarvis-fold-display"
           mkdir -p "$jarvis_display_dir"
+          cat > "$jarvis_display_dir/gui-preflight.sh" <<'JARVIS_GUI_PREFLIGHT'
+          #!/usr/bin/env bash
+          set -u
+          jarvis_preflight_dir="$RUNNER_TEMP/jarvis-fold-display"
+          jarvis_emulator_dir="${ANDROID_HOME:?}/emulator"
+          jarvis_preflight_failed=0
+          printf 'running\n' > "$jarvis_preflight_dir/gui-preflight-status"
+          trap 'jarvis_preflight_exit=$?; if [ "$jarvis_preflight_exit" -eq 0 ]; then printf "passed\n"; else printf "failed: exit %s\n" "$jarvis_preflight_exit"; fi > "$jarvis_preflight_dir/gui-preflight-status"' EXIT
+          trap 'exit 124' TERM
+          export LD_LIBRARY_PATH="$jarvis_emulator_dir/lib64/qt/lib:$jarvis_emulator_dir/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          if [ -x "$jarvis_emulator_dir/emulator" ]; then
+            "$jarvis_emulator_dir/emulator" -version > "$jarvis_preflight_dir/emulator-version.txt" 2>&1 || jarvis_preflight_failed=1
+          else
+            printf 'missing emulator executable: %s\n' "$jarvis_emulator_dir/emulator" > "$jarvis_preflight_dir/emulator-version.txt"
+            jarvis_preflight_failed=1
+          fi
+          for jarvis_gui_target in qemu xcb; do
+            if [ "$jarvis_gui_target" = qemu ]; then
+              jarvis_gui_file="$jarvis_emulator_dir/qemu/linux-x86_64/qemu-system-x86_64"
+            else
+              jarvis_gui_file="$jarvis_emulator_dir/lib64/qt/plugins/platforms/libqxcbAndroidEmu.so"
+            fi
+            jarvis_gui_receipt="$jarvis_preflight_dir/$jarvis_gui_target-ldd.txt"
+            if [ -f "$jarvis_gui_file" ]; then
+              ldd "$jarvis_gui_file" > "$jarvis_gui_receipt" 2>&1 || jarvis_preflight_failed=1
+              if grep -Fq '=> not found' "$jarvis_gui_receipt"; then
+                jarvis_preflight_failed=1
+              fi
+            else
+              printf 'missing GUI loader target: %s\n' "$jarvis_gui_file" > "$jarvis_gui_receipt"
+              jarvis_preflight_failed=1
+            fi
+          done
+          exit "$jarvis_preflight_failed"
+          JARVIS_GUI_PREFLIGHT
           sudo timeout --kill-after=5s 120s apt-get update > "$jarvis_display_dir/apt-update.log" 2>&1
-          sudo timeout --kill-after=5s 120s apt-get install -y --no-install-recommends x11-utils > "$jarvis_display_dir/apt-install.log" 2>&1
+          sudo timeout --kill-after=5s 120s apt-get install -y --no-install-recommends x11-utils libpulse0 > "$jarvis_display_dir/apt-install.log" 2>&1
           command -v Xvfb > "$jarvis_display_dir/tools.txt"
           command -v xdpyinfo >> "$jarvis_display_dir/tools.txt"
           Xvfb -displayfd 3 -screen 0 1920x2400x24 -nolisten tcp \
@@ -125,6 +160,9 @@ jobs:
           disk-size: 4096M
           disable-animations: true
           emulator-boot-timeout: ${{ matrix.boot_timeout }}
+          # This hook runs after the action installs the actual SDK emulator.
+          # A failed loader receipt marks the action failed; it still tries boot.
+          pre-emulator-launch-script: ${{ matrix.screen_profile == 'foldable' && 'timeout --kill-after=2s 15s bash "$RUNNER_TEMP/jarvis-fold-display/gui-preflight.sh"' || '' }}
           # Only the foldable needs the Qt backend's configured folded-region path.
           emulator-options: ${{ matrix.screen_profile == 'foldable' && '-gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot' || '-no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot' }}
           script: python3 scripts/verification/android.py run --profile "${{ matrix.id }}" --apk inputs/jarvis-os-v2-release-apk/${{ matrix.apk }}.apk --test-apk inputs/jarvis-verification-test-apk/app-release-androidTest.apk --previous-apk inputs/jarvis-previous-release/app-release.apk --previous-metadata inputs/jarvis-previous-release/previous-release.json --out verification-evidence --source-commit "${{ github.sha }}" --pr-head "${{ github.event.pull_request.head.sha }}" --allow-emulator-reset
