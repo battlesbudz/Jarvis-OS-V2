@@ -1,6 +1,7 @@
 package com.battlesbudz.jarvis.v2.memory
 
 /** Immutable approved-memory snapshot attached only to one ordinary answer. */
+@androidx.annotation.Keep
 class MemoryTurnContext(
     private val packetText: String,
     val stateToken: String?,
@@ -8,10 +9,12 @@ class MemoryTurnContext(
     val expiresAtMs: Long?,
     val observedEpoch: Long,
     val hasApprovedMemories: Boolean = false,
+    val containsSensitive: Boolean = false,
+    private val canDiscloseSensitive: () -> Boolean = { false },
     private val currentEpoch: () -> Long,
 ) {
-    fun promptSection(): String = packetText
-    fun isCurrent(): Boolean = observedEpoch == currentEpoch() && (expiresAtMs == null || System.currentTimeMillis() < expiresAtMs)
+    fun promptSection(): String = if (isCurrent()) packetText else ""
+    fun isCurrent(): Boolean = observedEpoch == currentEpoch() && (!containsSensitive || canDiscloseSensitive()) && (expiresAtMs == null || System.currentTimeMillis() < expiresAtMs)
 
     companion object {
         /** Explicit lookup and confirmation always retain their requested reference route.

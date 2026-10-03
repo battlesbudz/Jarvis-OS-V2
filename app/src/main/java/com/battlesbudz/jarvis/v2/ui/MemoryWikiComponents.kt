@@ -96,10 +96,12 @@ internal fun MemoryArticle(
 @Composable
 internal fun MemoryDetail(record: MemoryRecord, allRecords: List<MemoryRecord>, onBack: () -> Unit, onCorrect: (MemoryRecord) -> Unit, onOrganize: (MemoryRecord) -> Unit, onDelete: (MemoryRecord) -> Unit, onApprove: (MemoryRecord) -> Unit = {}, onReject: (MemoryRecord) -> Unit = {}) {
     val placement = record.placement()
+    val attribution = "${record.acceptanceOrigin.name} · ${record.statementKind.name} · USER source attribution"
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { TextButton(onClick = onBack, modifier = Modifier.testTag("memory_detail_back")) { Text("Back to memory") } }
         item { Text("Memory detail", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag("memory_detail_${record.id}")) }
         item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(record.content, style = MaterialTheme.typography.bodyLarge); Text("${record.reviewStatus.name.lowercase().replaceFirstChar { it.titlecase() }}, ${placement.first.title} · ${placement.second}", style = MaterialTheme.typography.labelSmall) } } }
+        item { Text(attribution, style = MaterialTheme.typography.labelSmall) }
         item { Text("Source", style = MaterialTheme.typography.titleMedium) }
         item { Text("Captured from ${record.source.sourceLabel()} on ${dateLabel(record.source.createdAtMs)}") }
         if (record.source.provenance.isNotEmpty()) item { record.source.provenance.forEach { source -> Text("${source.label ?: source.kind} · ${source.id}", style = MaterialTheme.typography.bodySmall) } }
@@ -123,34 +125,39 @@ private fun LedgerList(
     onCorrect: (MemoryRecord) -> Unit, onOrganize: (MemoryRecord) -> Unit,
     onDelete: (MemoryRecord) -> Unit, onOpen: (MemoryRecord) -> Unit,
     review: Boolean, onEraseAll: () -> Unit = {},
-) = LazyColumn(
-    modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
-    verticalArrangement = Arrangement.spacedBy(10.dp),
-) {
-    if (rows.isEmpty()) item { Text(empty) }
-    else if (!review) item {
-        TextButton(onClick = onEraseAll, enabled = !busy, modifier = Modifier.testTag("memory_erase_all")) {
+) = Column(Modifier.fillMaxSize()) {
+    // A bulk action belongs to the whole history, independently of row height/scroll position.
+    if (rows.isNotEmpty() && !review) {
+        TextButton(onClick = onEraseAll, enabled = !busy,
+            modifier = Modifier.padding(horizontal = 16.dp).testTag("memory_erase_all")) {
             Text("Erase all memories")
         }
     }
-    items(rows, key = { it.id }) { record ->
-        Card(Modifier.fillMaxWidth().clickable { onOpen(record) }) {
-            Column(Modifier.padding(14.dp)) {
-                Text(record.content)
-                val placement = record.placement()
-                Text("${record.reviewStatus.name.lowercase().replaceFirstChar { it.titlecase() }} · ${placement.first.title} · ${placement.second}", style = MaterialTheme.typography.labelSmall)
-                Text("Captured from ${record.source.sourceLabel()} · ${dateLabel(record.source.createdAtMs)}", style = MaterialTheme.typography.labelSmall)
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    if (review) {
-                        TextButton(onClick = { onApprove(record) }, enabled = !busy, modifier = Modifier.testTag("memory_approve")) { Text("Approve") }
-                        TextButton(onClick = { onReject(record) }, enabled = !busy, modifier = Modifier.testTag("memory_reject")) { Text("Reject") }
+    LazyColumn(
+        modifier = Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (rows.isEmpty()) item { Text(empty) }
+        items(rows, key = { it.id }) { record ->
+            Card(Modifier.fillMaxWidth().clickable { onOpen(record) }) {
+                Column(Modifier.padding(14.dp)) {
+                    Text(record.content)
+                    Text("${record.acceptanceOrigin.name} · ${record.statementKind.name} · USER source attribution", style = MaterialTheme.typography.labelSmall)
+                    val placement = record.placement()
+                    Text("${record.reviewStatus.name.lowercase().replaceFirstChar { it.titlecase() }} · ${placement.first.title} · ${placement.second}", style = MaterialTheme.typography.labelSmall)
+                    Text("Captured from ${record.source.sourceLabel()} · ${dateLabel(record.source.createdAtMs)}", style = MaterialTheme.typography.labelSmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        if (review) {
+                            TextButton(onClick = { onApprove(record) }, enabled = !busy, modifier = Modifier.testTag("memory_approve")) { Text("Approve") }
+                            TextButton(onClick = { onReject(record) }, enabled = !busy, modifier = Modifier.testTag("memory_reject")) { Text("Reject") }
+                        }
                     }
+                    if (record.reviewStatus == MemoryReviewStatus.APPROVED)
+                        TextButton(onClick = { onCorrect(record) }, enabled = !busy, modifier = Modifier.testTag("memory_correct")) { Text("Correct") }
+                    if (record.reviewStatus in setOf(MemoryReviewStatus.PENDING, MemoryReviewStatus.APPROVED))
+                        TextButton(onClick = { onOrganize(record) }, enabled = !busy, modifier = Modifier.testTag("memory_organize")) { Text("Organize") }
+                    TextButton(onClick = { onDelete(record) }, enabled = !busy, modifier = Modifier.testTag("memory_delete")) { Text("Erase") }
                 }
-                if (record.reviewStatus == MemoryReviewStatus.APPROVED)
-                    TextButton(onClick = { onCorrect(record) }, enabled = !busy, modifier = Modifier.testTag("memory_correct")) { Text("Correct") }
-                if (record.reviewStatus in setOf(MemoryReviewStatus.PENDING, MemoryReviewStatus.APPROVED))
-                    TextButton(onClick = { onOrganize(record) }, enabled = !busy, modifier = Modifier.testTag("memory_organize")) { Text("Organize") }
-                TextButton(onClick = { onDelete(record) }, enabled = !busy, modifier = Modifier.testTag("memory_delete")) { Text("Erase") }
             }
         }
     }

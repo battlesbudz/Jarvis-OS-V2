@@ -1,7 +1,9 @@
 package com.battlesbudz.jarvis.v2.memory
 
 /** Serialized publication gate: a mutation cannot race a queued ordinary-answer callback. */
+@androidx.annotation.Keep
 class MemoryDeliveryFence {
+    @androidx.annotation.Keep
     class Ticket internal constructor(internal val generation: Long, internal val expiresAtMs: Long?)
     private val lock = Any()
     private var generation = 0L

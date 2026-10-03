@@ -48,10 +48,14 @@ class SharedPreferencesVoiceCallStore(
             val payload = listOf(entry.text, entry.role) + entry.actions.flatMap { listOf(it.name, it.message) } +
                 entry.delivery?.spans.orEmpty().map { it.text } + entry.latency?.let { latency ->
                     listOf(latency.voice.orEmpty()) + latency.passes.map { it.stage } }.orEmpty() + listOfNotNull(previous?.text?.takeIf { it == Privacy.EXCLUDED || it == Privacy.EXPIRED })
-            val placeholder = Privacy.placeholder(payload, captured, clock())
+            val placeholder = Privacy.placeholder(payload, captured, clock()) ?: if (payload.any {
+                com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.classify(it, com.battlesbudz.jarvis.v2.memory.MemorySensitivity.NORMAL) ==
+                    com.battlesbudz.jarvis.v2.memory.MemorySensitivity.RESTRICTED
+            }) com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.PRIVATE_COPY else null
             if (placeholder == null) entry.copy(timestampMs = captured) else entry.copy(text = placeholder,
                 role = if (entry.role == "You") "You" else "Jarvis", timestampMs = captured,
-                actions = entry.actions.map { it.copy(name = if (Privacy.excluded(it.name)) "action" else it.name, message = placeholder) },
+                actions = entry.actions.map { it.copy(name = if (Privacy.excluded(it.name) ||
+                    (placeholder == com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.PRIVATE_COPY && it.name !in setOf("read_battery","set_volume","open_app"))) "action" else it.name, message = placeholder) },
                 delivery = entry.delivery?.let { delivery -> delivery.copy(spans = delivery.spans.map { it.copy(text = placeholder) }) },
                 latency = entry.latency?.let { latency -> latency.copy(voice = latency.voice?.let { placeholder },
                     passes = latency.passes.map { it.copy(stage = "inference") }) })
@@ -69,7 +73,10 @@ class SharedPreferencesVoiceCallStore(
         val derived = listOf(call.title.orEmpty()) + call.taskStatus?.let { it.completedSteps + it.pendingSteps }.orEmpty() +
             transcript.map { it.text }.filter { it == Privacy.EXCLUDED || it == Privacy.EXPIRED } +
             listOfNotNull(prior?.title?.takeIf { it == Privacy.EXCLUDED || it == Privacy.EXPIRED })
-        val placeholder = Privacy.placeholder(derived, started, clock())
+        val placeholder = Privacy.placeholder(derived, started, clock()) ?: if (
+            com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.classify(call.title.orEmpty(), com.battlesbudz.jarvis.v2.memory.MemorySensitivity.NORMAL) ==
+                com.battlesbudz.jarvis.v2.memory.MemorySensitivity.RESTRICTED
+        ) com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.PRIVATE_COPY else null
         return call.copy(startedAtMs = started, transcript = transcript,
             title = if (placeholder == null) call.title else placeholder,
             taskStatus = call.taskStatus?.let { task -> task.copy(
