@@ -1,0 +1,12 @@
+Actual operations for extraction-coding-6; recorded after execution, no inferred successes.
+Fresh control/worktree read: /workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/57cc04af6314447b959026a6d44422a5/unit-extraction
+Base clean before adoption: 53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b
+git cherry-pick 4080172ecb87bf4953ef3a6f4a2b5bad87c927b7: actual adoption f89380894f1961d3bad3c40731b0d9e09b24509f, exact tree 02430133243703948054e7a798ad7a56afde3b72, sole base parent.
+Read actual Build912 failure XMLs: delivery empty spans at MemorySensitivityPolicy.kt44; complete-source support requirement at MemoryAcceptance.kt10.
+Source inspection: beginReply initial revision0 and updateDelivery rejects <=previous revision; bridge reused by frozen Android test37.
+apply_patch: bridge initial checkpoint revision1 only; suppression fresh fixture text I like plums at unchanged2001; additional new sensitivity JVM assertions; two append-only documentation updates.
+Actual Kotlin2.3 compiled unchanged SpeechDeliveryLedger.kt and original SpeechDeliveryLedgerTest.kt without stubs; JUnit OK(5 tests). This does not execute either repaired failing test.
+Static checks passed: exact adoption tree, allowed scope, 180 frozen paths, original JVM files, current39 Android wholefile+scenarios, prior assertions, append-only docs and git diff --check.
+git add five repair paths; git reset --soft 53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b; real git commit 11f33f67dab3f6b638e1243029e55ebb37ccb85d tree 53d2a8987bb218930b62afcf765d28507d171c63. Clean final37paths, sole base parent, diffcheck0 verified.
+Report finalized sha256 b9a6e2d07a61f49f76a1dcb9d455a6d1c3733cdbc45f382b86eb9a58af8d8cde; quiescent source (no further writes).
+Bound parent UsageLedger ticket completed as coding handoff success with usage:null and exact report receipt; no test qualification implied.

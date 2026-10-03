@@ -1,0 +1,153 @@
+{
+  "dispatch": "extraction-coding-6",
+  "actor": "/root/jarvis_privacy_coder",
+  "quiescent": true,
+  "coding_handoff": "complete; independent review/full gates pending",
+  "worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/57cc04af6314447b959026a6d44422a5/unit-extraction",
+  "source_head_commit": "11f33f67dab3f6b638e1243029e55ebb37ccb85d",
+  "source_tree": "53d2a8987bb218930b62afcf765d28507d171c63",
+  "base_commit": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "sole_parent": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "adoption": {
+    "retained_remote_commit": "4080172ecb87bf4953ef3a6f4a2b5bad87c927b7",
+    "actual_adoption_commit": "f89380894f1961d3bad3c40731b0d9e09b24509f",
+    "actual_adoption_tree": "02430133243703948054e7a798ad7a56afde3b72",
+    "exact_candidate_tree_match": true,
+    "final_squash": "Actual staged adoption plus repair committed with sole accepted53dac parent; old/adoption identities retained, not represented as preserved final SHA."
+  },
+  "scope": {
+    "base_commit": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+    "adopted_source_commit": "4080172ecb87bf4953ef3a6f4a2b5bad87c927b7",
+    "adoption_commit": "f89380894f1961d3bad3c40731b0d9e09b24509f",
+    "adoption_tree": "02430133243703948054e7a798ad7a56afde3b72",
+    "candidate_changed_paths": [
+      "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/ai/LiteRtLmEngine.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/conversation/ConversationRuntime.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/AndroidMemoryOs.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/ConversationMemory.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptance.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryCaptureAcknowledgment.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryDeliveryFence.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryEligibility.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryExtraction.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryExtractionJobs.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryExtractionWorker.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryModels.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryOs.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryPolicy.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryRetrieval.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemorySensitivityPolicy.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemorySnapshotCodec.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemorySourceSupport.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemorySuppression.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryTurnContext.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SQLiteMemoryStore.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/ui/ConversationScreen.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/ui/MemoryScreen.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/ui/MemoryWikiComponents.kt",
+      "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptanceTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryEligibilityTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryExtractionJobsTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryExtractionTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemorySensitivityPolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemorySuppressionTest.kt",
+      "docs/memory-os-native.md",
+      "docs/verification/features.md",
+      "scripts/verification/scenarios.json"
+    ],
+    "repair_paths": [
+      "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemorySensitivityPolicy.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemorySensitivityPolicyTest.kt",
+      "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemorySuppressionTest.kt",
+      "docs/memory-os-native.md",
+      "docs/verification/features.md"
+    ],
+    "allowed_count": 77,
+    "frozen_count": 180,
+    "frozen_unchanged": true,
+    "original_jvm_files_count": 144,
+    "original_jvm_byte_identical": true,
+    "current_39_android_whole_file_and_scenarios_byte_identical_to_adoption": true,
+    "existing_assertion_lines_preserved": true,
+    "docs_append_only": true,
+    "diff_check_exit_code": 0,
+    "source_head_commit": "11f33f67dab3f6b638e1243029e55ebb37ccb85d",
+    "source_tree": "53d2a8987bb218930b62afcf765d28507d171c63",
+    "sole_parent": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+    "final_clean": true,
+    "post_commit_diff_check_exit_code": 0
+  },
+  "changes": [
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemorySensitivityPolicy.kt",
+      "reason": "The kept first-checkpoint delivery bridge incorrectly sent revision0 after beginReply established0. Controller correctly ignored <=prior revisions, leaving spans empty. Bridge now sends1, stays PENDING/zero played frames, and retains monotonic/terminal controller guards. Frozen Android37 uses same bridge and is unchanged."
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemorySensitivityPolicyTest.kt",
+      "reason": "Existing assertions retained. New assertions check initial0/accepted1, PENDING,zero played frames,empty deliveredText,generic history text."
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemorySuppressionTest.kt",
+      "reason": "Fresh fixture I now like plums did not match closed first-person predicate grammar, so acceptance correctly rejected it. Use supported I like plums at unchanged2001 after unchanged erasure2000; all assertions/intent retained; production grammar and eligibility unchanged."
+    },
+    {
+      "paths": [
+        "docs/memory-os-native.md",
+        "docs/verification/features.md"
+      ],
+      "reason": "Append-only actual Build912 failure and repair status; qualification limits retained."
+    }
+  ],
+  "actual_prior_ci": {
+    "build": 912,
+    "run": 37097210485,
+    "source_commit": "4080172ecb87bf4953ef3a6f4a2b5bad87c927b7",
+    "release_production_and_jvm_compilation": "passed",
+    "jvm_tests": 783,
+    "suites": 150,
+    "failures": 2,
+    "errors": 0,
+    "skipped": 0,
+    "android": "not run; unqualified",
+    "failure_proof_sha256": "c02f8faf4e78112eb764be5424f904056d3d0824c5cea7a54af204561ad3bc20",
+    "failure_xml_sha256": {
+      "build912-TEST-com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicyTest.xml": "d48f436fb10f3726939f0556a6c6c00bb68e7a6ef3b2687e1b789b60deb577ba",
+      "build912-TEST-com.battlesbudz.jarvis.v2.memory.MemorySuppressionTest.xml": "9ff7c5eaa5aa7caf80628981876f3fc206df563ec3213cfa1c6024081e8bd39d"
+    }
+  },
+  "actual_current_checks": {
+    "static_checks_sha256": "396e816a35ef816edd84501aa9143596b87f348d66dc22ab634c0337df6b0279",
+    "targeted_checks": {
+      "compiler_version": "2.3.0",
+      "source_files_sha256": {
+        "app/src/main/java/com/battlesbudz/jarvis/v2/voice/SpeechDeliveryLedger.kt": "9e8da1aa3b34e7abd0979671d122abdb4086efec0abdbdf18470a3619f9e7b85",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpeechDeliveryLedgerTest.kt": "724fc1c807ba7d7d52275e373172244ec876d293ef1da87da42d625139b61b88"
+      },
+      "compile_exit_code": 0,
+      "scope": "Actual unchanged SpeechDeliveryLedger and its original five JUnit tests; excludes repaired bridge, sensitive controller/history closure, suppression, Android/full CI/model qualification.",
+      "junit_exit_code": 0,
+      "source_head_commit": "11f33f67dab3f6b638e1243029e55ebb37ccb85d",
+      "source_tree": "53d2a8987bb218930b62afcf765d28507d171c63",
+      "compile_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "junit_log_sha256": "9e6c34ca5650918fb9476c5e6ef488e7b55795caab9c7a9ab4436ec0591dbc1d"
+    },
+    "targeted_checks_sha256": "c4b8cdf8d9fc41a7ee5fcd55f3bcff6017aa016ea65a0e214fb6a038bd5396c8",
+    "no_source_stubs_or_rewritten_test_bodies": true
+  },
+  "limitations": [
+    "The actual five-test Kotlin2.3 execution covers unchanged SpeechDeliveryLedger only; neither repaired failing test was locally executed.",
+    "Full exact-candidate release JVM/native/Android API30/API35/restart/consolidation and independent review remain pending.",
+    "Local matching compiler exists, but the repaired source closure additionally needs Android/Compose/ContextCompat dependencies not provisioned for this narrow pure check.",
+    "Real selected Gemma extraction/model quality, physical audio/device behavior, and broader raw-user semantic sensitivity coverage remain unqualified.",
+    "Delivery bridge is explicitly for the first checkpoint of a newly begun reply, not a general publisher of playback evidence."
+  ],
+  "no_github_or_coordinator_actions": true,
+  "usage": null,
+  "deadline_epoch": 1791007774.451072,
+  "global_cutoff_epoch": 1791010800,
+  "reported_at_utc": "2026-10-03T05:15:16.239337+00:00"
+}

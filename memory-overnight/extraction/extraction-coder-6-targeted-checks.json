@@ -1,0 +1,14 @@
+{
+  "compiler_version": "2.3.0",
+  "source_files_sha256": {
+    "app/src/main/java/com/battlesbudz/jarvis/v2/voice/SpeechDeliveryLedger.kt": "9e8da1aa3b34e7abd0979671d122abdb4086efec0abdbdf18470a3619f9e7b85",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpeechDeliveryLedgerTest.kt": "724fc1c807ba7d7d52275e373172244ec876d293ef1da87da42d625139b61b88"
+  },
+  "compile_exit_code": 0,
+  "scope": "Actual unchanged SpeechDeliveryLedger and its original five JUnit tests; excludes repaired bridge, sensitive controller/history closure, suppression, Android/full CI/model qualification.",
+  "junit_exit_code": 0,
+  "source_head_commit": "11f33f67dab3f6b638e1243029e55ebb37ccb85d",
+  "source_tree": "53d2a8987bb218930b62afcf765d28507d171c63",
+  "compile_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "junit_log_sha256": "9e6c34ca5650918fb9476c5e6ef488e7b55795caab9c7a9ab4436ec0591dbc1d"
+}
