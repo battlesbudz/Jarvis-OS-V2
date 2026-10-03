@@ -258,7 +258,7 @@
 -keep interface androidx.compose.foundation.lazy.LazyListScope { *; }
 # Release instrumentation exercises the production farewell/service lifecycle.
 # Preserve only the runtime entry/member ABI it calls across the target class loader.
--keep,allowoptimization class com.battlesbudz.jarvis.v2.JarvisRuntime {
+-keep,allowoptimization,includedescriptorclasses class com.battlesbudz.jarvis.v2.JarvisRuntime {
     public static ** Companion;
     public void arm();
     public java.lang.String sendChat(...);
@@ -278,4 +278,11 @@
 }
 -keep,allowoptimization class com.battlesbudz.jarvis.v2.JarvisRuntime$Companion {
     public com.battlesbudz.jarvis.v2.JarvisRuntime get(android.content.Context);
+}
+# The same lifecycle journey observes the service's completed-stop signal.
+-keepclassmembers class com.battlesbudz.jarvis.v2.voice.VoiceCallService {
+    public static ** Companion;
+}
+-keep,allowoptimization class com.battlesbudz.jarvis.v2.voice.VoiceCallService$Companion {
+    public *** getStopRequested();
 }
