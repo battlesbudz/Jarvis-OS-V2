@@ -1,0 +1,1551 @@
+﻿2026-10-03T03:34:59.7106962Z Current runner version: '2.337.0'
+2026-10-03T03:34:59.7142546Z ##[group]Runner Image Provisioner
+2026-10-03T03:34:59.7144029Z Hosted Compute Agent
+2026-10-03T03:34:59.7145125Z Version: 20260901.588
+2026-10-03T03:34:59.7146199Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-03T03:34:59.7147670Z Build Date: 2026-09-01T19:56:44Z
+2026-10-03T03:34:59.7148885Z Worker ID: {3b922140-6321-40f3-8997-a6aaf2e4e0ce}
+2026-10-03T03:34:59.7150520Z Azure Region: eastus
+2026-10-03T03:34:59.7151699Z ##[endgroup]
+2026-10-03T03:34:59.7154440Z ##[group]Operating System
+2026-10-03T03:34:59.7155591Z Ubuntu
+2026-10-03T03:34:59.7156484Z 24.04.5
+2026-10-03T03:34:59.7157473Z LTS
+2026-10-03T03:34:59.7158385Z ##[endgroup]
+2026-10-03T03:34:59.7159494Z ##[group]Runner Image
+2026-10-03T03:34:59.7160825Z Image: ubuntu-24.04
+2026-10-03T03:34:59.7161915Z Version: 20260927.320.1
+2026-10-03T03:34:59.7164415Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-03T03:34:59.7167318Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-03T03:34:59.7169084Z ##[endgroup]
+2026-10-03T03:34:59.7171405Z ##[group]GITHUB_TOKEN Permissions
+2026-10-03T03:34:59.7174442Z Contents: read
+2026-10-03T03:34:59.7175607Z Metadata: read
+2026-10-03T03:34:59.7176502Z ##[endgroup]
+2026-10-03T03:34:59.7179641Z Secret source: Actions
+2026-10-03T03:34:59.7181528Z Cache mode: write
+2026-10-03T03:34:59.7183335Z Prepare workflow directory
+2026-10-03T03:34:59.7667247Z Prepare all required actions
+2026-10-03T03:34:59.7740728Z Getting action download info
+2026-10-03T03:34:59.9858469Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-10-03T03:35:00.0936474Z Download action repository 'actions/setup-java@v4' (SHA:cf277c60eb25467037889841efdb72551f06f6c3)
+2026-10-03T03:35:00.3515008Z Download action repository 'actions/cache@v4' (SHA:0057852bfaa89a56745cba8c7296529d2fc39830)
+2026-10-03T03:35:00.4919702Z Download action repository 'gradle/actions@v4' (SHA:ed408507eac070d1f99cc633dbcf757c94c7933a)
+2026-10-03T03:35:01.0718194Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-10-03T03:35:01.4048974Z Complete job name: Build signed release APK
+2026-10-03T03:35:01.5227494Z ##[group]Run actions/checkout@v4
+2026-10-03T03:35:01.5228880Z with:
+2026-10-03T03:35:01.5229764Z   repository: battlesbudz/Jarvis-OS-V2
+2026-10-03T03:35:01.5238304Z   token: ***
+2026-10-03T03:35:01.5239115Z   ssh-strict: true
+2026-10-03T03:35:01.5239943Z   ssh-user: git
+2026-10-03T03:35:01.5240934Z   persist-credentials: true
+2026-10-03T03:35:01.5241876Z   clean: true
+2026-10-03T03:35:01.5242742Z   sparse-checkout-cone-mode: true
+2026-10-03T03:35:01.5243743Z   fetch-depth: 1
+2026-10-03T03:35:01.5244600Z   fetch-tags: false
+2026-10-03T03:35:01.5245443Z   show-progress: true
+2026-10-03T03:35:01.5246303Z   lfs: false
+2026-10-03T03:35:01.5247089Z   submodules: false
+2026-10-03T03:35:01.5247986Z   set-safe-directory: true
+2026-10-03T03:35:01.5248966Z   allow-unsafe-pr-checkout: false
+2026-10-03T03:35:01.5250407Z ##[endgroup]
+2026-10-03T03:35:01.6336219Z Syncing repository: battlesbudz/Jarvis-OS-V2
+2026-10-03T03:35:01.6339125Z ##[group]Getting Git version info
+2026-10-03T03:35:01.6341108Z Working directory is '/home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2'
+2026-10-03T03:35:01.6343305Z [command]/usr/bin/git version
+2026-10-03T03:35:01.6419943Z git version 2.55.0
+2026-10-03T03:35:01.6448008Z ##[endgroup]
+2026-10-03T03:35:01.6472941Z Temporarily overriding HOME='/home/runner/work/_temp/29d4595b-4ce3-4384-b439-779b7d35edab' before making global git config changes
+2026-10-03T03:35:01.6477394Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-03T03:35:01.6481293Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2
+2026-10-03T03:35:01.6528503Z Deleting the contents of '/home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2'
+2026-10-03T03:35:01.6534395Z ##[group]Initializing the repository
+2026-10-03T03:35:01.6538081Z [command]/usr/bin/git init /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2
+2026-10-03T03:35:01.6647391Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-03T03:35:01.6651496Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-03T03:35:01.6655199Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-03T03:35:01.6658147Z hint: call:
+2026-10-03T03:35:01.6659999Z hint:
+2026-10-03T03:35:01.6662288Z hint: 	git config --global init.defaultBranch <name>
+2026-10-03T03:35:01.6664623Z hint:
+2026-10-03T03:35:01.6666962Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-03T03:35:01.6690015Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-03T03:35:01.6692974Z hint:
+2026-10-03T03:35:01.6694424Z hint: 	git branch -m <name>
+2026-10-03T03:35:01.6696031Z hint:
+2026-10-03T03:35:01.6697987Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-03T03:35:01.6701895Z Initialized empty Git repository in /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/.git/
+2026-10-03T03:35:01.6707078Z [command]/usr/bin/git remote add origin https://github.com/battlesbudz/Jarvis-OS-V2
+2026-10-03T03:35:01.6779699Z ##[endgroup]
+2026-10-03T03:35:01.6782398Z ##[group]Disabling automatic garbage collection
+2026-10-03T03:35:01.6783906Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-03T03:35:01.6832269Z ##[endgroup]
+2026-10-03T03:35:01.6841626Z ##[group]Setting up auth
+2026-10-03T03:35:01.6866814Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-03T03:35:01.6876005Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-03T03:35:01.7348622Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-03T03:35:01.7411349Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-03T03:35:01.7667364Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-03T03:35:01.7709130Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-03T03:35:01.7935715Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-03T03:35:01.7977155Z ##[endgroup]
+2026-10-03T03:35:01.7978835Z ##[group]Fetching the repository
+2026-10-03T03:35:01.7988533Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +31c2b087d20c7dc518de1e8cd486c83830fe32d4:refs/remotes/origin/feature/memory-os-overnight-candidate-extraction-20261002-2
+2026-10-03T03:35:02.0860983Z From https://github.com/battlesbudz/Jarvis-OS-V2
+2026-10-03T03:35:02.0864844Z  * [new ref]         31c2b087d20c7dc518de1e8cd486c83830fe32d4 -> origin/feature/memory-os-overnight-candidate-extraction-20261002-2
+2026-10-03T03:35:02.0871774Z ##[endgroup]
+2026-10-03T03:35:02.0874170Z ##[group]Determining the checkout info
+2026-10-03T03:35:02.0876759Z ##[endgroup]
+2026-10-03T03:35:02.0878652Z [command]/usr/bin/git sparse-checkout disable
+2026-10-03T03:35:02.0934275Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-03T03:35:02.0971501Z ##[group]Checking out the ref
+2026-10-03T03:35:02.0977099Z [command]/usr/bin/git checkout --progress --force -B feature/memory-os-overnight-candidate-extraction-20261002-2 refs/remotes/origin/feature/memory-os-overnight-candidate-extraction-20261002-2
+2026-10-03T03:35:02.1403001Z Switched to a new branch 'feature/memory-os-overnight-candidate-extraction-20261002-2'
+2026-10-03T03:35:02.1409746Z branch 'feature/memory-os-overnight-candidate-extraction-20261002-2' set up to track 'origin/feature/memory-os-overnight-candidate-extraction-20261002-2'.
+2026-10-03T03:35:02.1416599Z ##[endgroup]
+2026-10-03T03:35:02.1464385Z [command]/usr/bin/git log -1 --format=%H
+2026-10-03T03:35:02.1492281Z 31c2b087d20c7dc518de1e8cd486c83830fe32d4
+2026-10-03T03:35:02.1893235Z ##[group]Run actions/setup-java@v4
+2026-10-03T03:35:02.1894212Z with:
+2026-10-03T03:35:02.1894944Z   distribution: temurin
+2026-10-03T03:35:02.1895740Z   java-version: 21
+2026-10-03T03:35:02.1896515Z   java-package: jdk
+2026-10-03T03:35:02.1897290Z   check-latest: false
+2026-10-03T03:35:02.1898077Z   server-id: github
+2026-10-03T03:35:02.1898934Z   server-username: GITHUB_ACTOR
+2026-10-03T03:35:02.1899856Z   server-password: GITHUB_TOKEN
+2026-10-03T03:35:02.1900963Z   overwrite-settings: true
+2026-10-03T03:35:02.1901805Z   job-status: success
+2026-10-03T03:35:02.1908812Z   token: ***
+2026-10-03T03:35:02.1909536Z ##[endgroup]
+2026-10-03T03:35:02.3596757Z ##[warning]setup-java v4 is deprecated and will no longer receive updates. Please migrate to actions/setup-java@v5.
+2026-10-03T03:35:02.3604364Z ##[group]Installed distributions
+2026-10-03T03:35:02.3724443Z Resolved Java 21.0.12+1 from tool-cache
+2026-10-03T03:35:02.3725041Z Setting Java 21.0.12+1 as the default
+2026-10-03T03:35:02.3736676Z (node:2364) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-03T03:35:02.3738154Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-03T03:35:02.3740982Z Creating toolchains.xml for JDK version 21 from temurin
+2026-10-03T03:35:02.3818570Z Writing to /home/runner/.m2/toolchains.xml
+2026-10-03T03:35:02.3819184Z 
+2026-10-03T03:35:02.3819454Z Java configuration:
+2026-10-03T03:35:02.3820281Z   Distribution: temurin
+2026-10-03T03:35:02.3820896Z   Version: 21.0.12+1
+2026-10-03T03:35:02.3821698Z   Path: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:35:02.3822227Z 
+2026-10-03T03:35:02.3822726Z ##[endgroup]
+2026-10-03T03:35:02.3838855Z Creating settings.xml with server-id: github
+2026-10-03T03:35:02.3868091Z Writing to /home/runner/.m2/settings.xml
+2026-10-03T03:35:02.4065962Z ##[group]Run "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018"
+2026-10-03T03:35:02.4067143Z [36;1m"${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018"[0m
+2026-10-03T03:35:02.4394300Z shell: /usr/bin/bash -e {0}
+2026-10-03T03:35:02.4394706Z env:
+2026-10-03T03:35:02.4395100Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:35:02.4395684Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:35:02.4396144Z ##[endgroup]
+2026-10-03T03:35:07.0986387Z Loading package information...                                                  
+2026-10-03T03:35:07.1892043Z Loading local repository...                                                     
+2026-10-03T03:35:07.1911332Z [                                       ] 3% Loading local repository...        
+2026-10-03T03:35:08.4523522Z [                                       ] 3% Fetch remote repository...         
+2026-10-03T03:35:09.0396648Z [=                                      ] 3% Fetch remote repository...         
+2026-10-03T03:35:09.1625143Z [=                                      ] 4% Fetch remote repository...         
+2026-10-03T03:35:09.2097570Z [=                                      ] 5% Fetch remote repository...         
+2026-10-03T03:35:09.2618223Z [==                                     ] 5% Fetch remote repository...         
+2026-10-03T03:35:09.3374797Z [==                                     ] 6% Fetch remote repository...         
+2026-10-03T03:35:09.5651600Z [==                                     ] 7% Fetch remote repository...         
+2026-10-03T03:35:09.5652994Z [==                                     ] 7% Computing updates...               
+2026-10-03T03:35:09.5771446Z [===                                    ] 8% Computing updates...               
+2026-10-03T03:35:09.6058653Z [===                                    ] 10% Computing updates...              
+2026-10-03T03:35:09.6581910Z [===                                    ] 10% Installing NDK (Side by side) 27.2
+2026-10-03T03:35:09.8084675Z [===                                    ] 10% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:09.8941828Z [====                                   ] 10% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:10.0213953Z [====                                   ] 11% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:10.1836193Z [====                                   ] 12% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:10.3277457Z [=====                                  ] 13% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:10.4715542Z [=====                                  ] 14% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:10.5864350Z [=====                                  ] 15% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:10.6502376Z [======                                 ] 15% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:10.7868032Z [======                                 ] 16% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:10.9604086Z [======                                 ] 17% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:11.1035414Z [=======                                ] 18% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:11.2463790Z [=======                                ] 19% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:11.3121444Z [=======                                ] 20% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:11.3820347Z [========                               ] 20% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:11.5312817Z [========                               ] 21% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:11.6652102Z [========                               ] 22% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:11.8080673Z [=========                              ] 23% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:11.9840786Z [=========                              ] 24% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:12.0483611Z [=========                              ] 25% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:12.1126839Z [==========                             ] 25% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:12.3190730Z [==========                             ] 26% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:12.4511291Z [==========                             ] 27% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:12.6377787Z [===========                            ] 28% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:12.7805557Z [===========                            ] 29% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:12.8529933Z [===========                            ] 30% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:12.9821014Z [============                           ] 30% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:13.0960895Z [============                           ] 31% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:13.2658511Z [============                           ] 32% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:13.2662555Z [============                           ] 33% Downloading android-ndk-r27c-linux
+2026-10-03T03:35:13.7212287Z [============                           ] 33% Unzipping...                      
+2026-10-03T03:35:13.7213384Z [============                           ] 33% Unzipping... android-ndk-r27c/    
+2026-10-03T03:35:13.7221767Z [============                           ] 33% Unzipping... android-ndk-r27c/READ
+2026-10-03T03:35:13.7226366Z [=============                          ] 33% Unzipping... android-ndk-r27c/READ
+2026-10-03T03:35:13.7261064Z [=============                          ] 33% Unzipping... android-ndk-r27c/meta
+2026-10-03T03:35:13.8876168Z [=============                          ] 33% Unzipping... android-ndk-r27c/shad
+2026-10-03T03:35:13.8901797Z [=============                          ] 33% Unzipping... android-ndk-r27c/ndk-
+2026-10-03T03:35:13.8931488Z [=============                          ] 33% Unzipping... android-ndk-r27c/wrap
+2026-10-03T03:35:13.8951180Z [=============                          ] 33% Unzipping... android-ndk-r27c/ndk-
+2026-10-03T03:35:14.2421367Z [=============                          ] 33% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:14.6948043Z [=============                          ] 34% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:14.9348247Z [=============                          ] 35% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:15.0695779Z [==============                         ] 35% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:15.4588624Z [==============                         ] 36% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:15.8759464Z [==============                         ] 37% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:16.2842165Z [===============                        ] 38% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:16.7404566Z [===============                        ] 39% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:16.9251522Z [===============                        ] 40% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:17.1280231Z [================                       ] 40% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:17.5974358Z [================                       ] 41% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:18.0521424Z [================                       ] 42% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:18.8286457Z [=================                      ] 43% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:19.3662152Z [=================                      ] 44% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:19.9230472Z [=================                      ] 45% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:20.1122788Z [==================                     ] 45% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:20.4761549Z [==================                     ] 46% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:20.8660033Z [==================                     ] 47% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:21.2635261Z [===================                    ] 48% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:21.6197838Z [===================                    ] 49% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:21.8109158Z [===================                    ] 50% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:22.0126378Z [====================                   ] 50% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:22.3785178Z [====================                   ] 51% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:22.7706694Z [====================                   ] 52% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:23.1750852Z [=====================                  ] 53% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:23.3997551Z [=====================                  ] 54% Unzipping... android-ndk-r27c/tool
+2026-10-03T03:35:23.4166195Z [=====================                  ] 54% Unzipping... android-ndk-r27c/buil
+2026-10-03T03:35:23.6574147Z [=====================                  ] 54% Unzipping... android-ndk-r27c/sour
+2026-10-03T03:35:23.6595664Z [=====================                  ] 54% Unzipping... android-ndk-r27c/NOTI
+2026-10-03T03:35:23.6597211Z [=====================                  ] 54% Unzipping... android-ndk-r27c/ndk-
+2026-10-03T03:35:23.6610823Z [=====================                  ] 54% Unzipping... android-ndk-r27c/NOTI
+2026-10-03T03:35:23.6646776Z [=====================                  ] 54% Unzipping... android-ndk-r27c/pyth
+2026-10-03T03:35:23.7056040Z [=====================                  ] 54% Unzipping... android-ndk-r27c/preb
+2026-10-03T03:35:23.7059418Z [=====================                  ] 54% Unzipping... android-ndk-r27c/ndk-
+2026-10-03T03:35:23.7061170Z [=====================                  ] 54% Unzipping... android-ndk-r27c/sour
+2026-10-03T03:35:23.7583087Z [=====================                  ] 54% Unzipping... android-ndk-r27c/simp
+2026-10-03T03:35:23.8987074Z [=====================                  ] 55% Unzipping... android-ndk-r27c/simp
+2026-10-03T03:35:24.0199864Z [=====================                  ] 55% Unzipping... android-ndk-r27c/CHAN
+2026-10-03T03:35:24.0200741Z [=======================================] 100% Unzipping... android-ndk-r27c/CHA
+2026-10-03T03:35:24.4399454Z 
+2026-10-03T03:35:24.5374622Z ##[group]Run actions/cache@v4
+2026-10-03T03:35:24.5374924Z with:
+2026-10-03T03:35:24.5375143Z   path: app/build/sherpa-native
+2026-10-03T03:35:24.5375632Z   key: sherpa-arm64-137-Linux-78f25eb476df0e866c0747850a0401239fded60921575ed32431811002e601c0
+2026-10-03T03:35:24.5376136Z   enableCrossOsArchive: false
+2026-10-03T03:35:24.5376397Z   fail-on-cache-miss: false
+2026-10-03T03:35:24.5376638Z   lookup-only: false
+2026-10-03T03:35:24.5376878Z   save-always: false
+2026-10-03T03:35:24.5377081Z env:
+2026-10-03T03:35:24.5377378Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:35:24.5377879Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:35:24.5378255Z ##[endgroup]
+2026-10-03T03:35:24.6477161Z (node:2472) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-03T03:35:24.6478513Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-03T03:35:24.7053296Z Cache not found for input keys: sherpa-arm64-137-Linux-78f25eb476df0e866c0747850a0401239fded60921575ed32431811002e601c0
+2026-10-03T03:35:24.7283586Z ##[group]Run gradle/actions/setup-gradle@v4
+2026-10-03T03:35:24.7283924Z with:
+2026-10-03T03:35:24.7284147Z   gradle-version: 8.10.2
+2026-10-03T03:35:24.7284395Z   cache-disabled: false
+2026-10-03T03:35:24.7284630Z   cache-read-only: true
+2026-10-03T03:35:24.7284878Z   cache-write-only: false
+2026-10-03T03:35:24.7285135Z   cache-overwrite-existing: false
+2026-10-03T03:35:24.7285405Z   cache-cleanup: on-success
+2026-10-03T03:35:24.7285696Z   gradle-home-cache-includes: caches
+notifications
+
+2026-10-03T03:35:24.7286027Z   add-job-summary: always
+2026-10-03T03:35:24.7286284Z   add-job-summary-as-pr-comment: never
+2026-10-03T03:35:24.7286567Z   dependency-graph: disabled
+2026-10-03T03:35:24.7286885Z   dependency-graph-report-dir: dependency-graph-reports
+2026-10-03T03:35:24.7287249Z   dependency-graph-continue-on-failure: true
+2026-10-03T03:35:24.7287552Z   build-scan-publish: false
+2026-10-03T03:35:24.7287797Z   validate-wrappers: true
+2026-10-03T03:35:24.7288082Z   allow-snapshot-wrappers: false
+2026-10-03T03:35:24.7288359Z   gradle-home-cache-strict-match: false
+2026-10-03T03:35:24.7288642Z   workflow-job-context: null
+2026-10-03T03:35:24.7291445Z   github-token: ***
+2026-10-03T03:35:24.7291669Z env:
+2026-10-03T03:35:24.7291981Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:35:24.7292499Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:35:24.7292874Z ##[endgroup]
+2026-10-03T03:35:25.1075498Z Merged default JDK locations into /home/runner/.m2/toolchains.xml
+2026-10-03T03:35:25.1099081Z ##[group]Restore Gradle state from cache
+2026-10-03T03:35:25.1728974Z Cache hit for restore-key: gradle-home-v1|Linux-X64|build-release[950eaec8589fb4acbb839cd2eb2eeef7]-780c40c4d70ac3171a673b22491dc3a703f16d55
+2026-10-03T03:35:25.2345164Z Received 8975 of 8975 (100.0%), 0.3 MBs/sec
+2026-10-03T03:35:25.2347752Z Cache Size: ~0 MB (8975 B)
+2026-10-03T03:35:25.2387758Z [command]/usr/bin/tar -xf /home/runner/work/_temp/5bedb820-1800-4e48-86c6-b1212ffb3192/cache.tzst -P -C /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2 --use-compress-program unzstd
+2026-10-03T03:35:25.2474406Z Cache restored successfully
+2026-10-03T03:35:25.2479991Z Restored cache entry with key gradle-home-v1|Linux-X64|build-release[950eaec8589fb4acbb839cd2eb2eeef7]-31c2b087d20c7dc518de1e8cd486c83830fe32d4 to /home/runner/.gradle/caches,/home/runner/.gradle/notifications,/home/runner/.gradle/.setup-gradle in 138ms
+2026-10-03T03:35:25.2960550Z Cache hit for: gradle-groovy-dsl-v1-61a76c5b6d5e4b5c4e7b8de115d50879
+2026-10-03T03:35:25.3027001Z Cache hit for: gradle-instrumented-jars-v1-3a8bc95e5f3fc33f7559043af89006e9
+2026-10-03T03:35:25.3227069Z Received 70743 of 70743 (100.0%), 5.6 MBs/sec
+2026-10-03T03:35:25.3227703Z Cache Size: ~0 MB (70743 B)
+2026-10-03T03:35:25.3268019Z [command]/usr/bin/tar -xf /home/runner/work/_temp/1694041d-cd1c-4970-8384-d71cb45ab8a4/cache.tzst -P -C /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2 --use-compress-program unzstd
+2026-10-03T03:35:25.3363564Z Cache restored successfully
+2026-10-03T03:35:25.3366064Z Restored cache entry with key gradle-instrumented-jars-v1-3a8bc95e5f3fc33f7559043af89006e9 to /home/runner/.gradle/caches/jars-*/*/ in 88ms
+2026-10-03T03:35:25.3499649Z Received 109261 of 109261 (100.0%), 3.5 MBs/sec
+2026-10-03T03:35:25.3500960Z Cache Size: ~0 MB (109261 B)
+2026-10-03T03:35:25.3522068Z [command]/usr/bin/tar -xf /home/runner/work/_temp/c85b8ec6-c376-45a9-ab98-11e4c3d26d6d/cache.tzst -P -C /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2 --use-compress-program unzstd
+2026-10-03T03:35:25.3669315Z Cache restored successfully
+2026-10-03T03:35:25.3671522Z Restored cache entry with key gradle-groovy-dsl-v1-61a76c5b6d5e4b5c4e7b8de115d50879 to /home/runner/.gradle/caches/*/groovy-dsl/*/ in 119ms
+2026-10-03T03:35:25.3740187Z ##[endgroup]
+2026-10-03T03:35:25.3865945Z ##[group]All Gradle Wrapper jars are valid
+2026-10-03T03:35:25.3866717Z 
+2026-10-03T03:35:25.3867174Z ##[endgroup]
+2026-10-03T03:35:25.4338348Z ##[group]Provision Gradle 8.10.2
+2026-10-03T03:35:28.3732203Z Cache hit for: gradle-8.10.2
+2026-10-03T03:35:29.1492813Z Received 136494016 of 136494016 (100.0%), 176.9 MBs/sec
+2026-10-03T03:35:29.1495120Z Cache Size: ~130 MB (136494016 B)
+2026-10-03T03:35:29.1523984Z [command]/usr/bin/tar -xf /home/runner/work/_temp/6cdadb21-e666-4190-b9b5-559bc0e68256/cache.tzst -P -C /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2 --use-compress-program unzstd
+2026-10-03T03:35:29.3379672Z Cache restored successfully
+2026-10-03T03:35:29.3439492Z Restored Gradle distribution gradle-8.10.2 from cache to /home/runner/work/_temp/.gradle-actions/gradle-installations/downloads/gradle-8.10.2-bin.zip
+2026-10-03T03:35:29.3458444Z [command]/usr/bin/unzip -o -q /home/runner/work/_temp/.gradle-actions/gradle-installations/downloads/gradle-8.10.2-bin.zip
+2026-10-03T03:35:30.3268217Z Extracted Gradle 8.10.2 to /home/runner/work/_temp/.gradle-actions/gradle-installations/installs/gradle-8.10.2
+2026-10-03T03:35:30.3270640Z Provisioned Gradle executable /home/runner/work/_temp/.gradle-actions/gradle-installations/installs/gradle-8.10.2/bin/gradle
+2026-10-03T03:35:30.3272430Z ##[endgroup]
+2026-10-03T03:35:30.3423520Z ##[group]Run cmake -S app/src/main/cpp/microwakeword -B /tmp/keyword-native -DCMAKE_BUILD_TYPE=Release
+2026-10-03T03:35:30.3424366Z [36;1mcmake -S app/src/main/cpp/microwakeword -B /tmp/keyword-native -DCMAKE_BUILD_TYPE=Release[0m
+2026-10-03T03:35:30.3424947Z [36;1mcmake --build /tmp/keyword-native --parallel 2[0m
+2026-10-03T03:35:30.3425457Z [36;1mpython3 scripts/check_keyword_models.py /tmp/keyword-native/microwakeword_test[0m
+2026-10-03T03:35:30.3491186Z shell: /usr/bin/bash -e {0}
+2026-10-03T03:35:30.3491478Z env:
+2026-10-03T03:35:30.3491827Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:35:30.3492387Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:35:30.3492857Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-10-03T03:35:30.3493204Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-10-03T03:35:30.3493530Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-10-03T03:35:30.3493893Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-10-03T03:35:30.3494361Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-10-03T03:35:30.3495061Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-10-03T03:35:30.3495419Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-10-03T03:35:30.3495720Z ##[endgroup]
+2026-10-03T03:35:31.1264638Z -- The C compiler identification is GNU 13.3.0
+2026-10-03T03:35:31.2906021Z -- The CXX compiler identification is GNU 13.3.0
+2026-10-03T03:35:31.3782394Z -- Detecting C compiler ABI info
+2026-10-03T03:35:31.5996573Z -- Detecting C compiler ABI info - done
+2026-10-03T03:35:31.6170349Z -- Check for working C compiler: /usr/bin/cc - skipped
+2026-10-03T03:35:31.6212988Z -- Detecting C compile features
+2026-10-03T03:35:31.6259501Z -- Detecting C compile features - done
+2026-10-03T03:35:31.6495276Z -- Detecting CXX compiler ABI info
+2026-10-03T03:35:31.7289677Z -- Detecting CXX compiler ABI info - done
+2026-10-03T03:35:31.7473241Z -- Check for working CXX compiler: /usr/bin/c++ - skipped
+2026-10-03T03:35:31.7477402Z -- Detecting CXX compile features
+2026-10-03T03:35:31.7484587Z -- Detecting CXX compile features - done
+2026-10-03T03:35:31.7787360Z CMake Warning (dev) at /usr/local/share/cmake-3.31/Modules/FetchContent.cmake:1373 (message):
+2026-10-03T03:35:31.7788496Z   The DOWNLOAD_EXTRACT_TIMESTAMP option was not given and policy CMP0135 is
+2026-10-03T03:35:31.7789208Z   not set.  The policy's OLD behavior will be used.  When using a URL
+2026-10-03T03:35:31.7789875Z   download, the timestamps of extracted files should preferably be that of
+2026-10-03T03:35:31.7790779Z   the time of extraction, otherwise code that depends on the extracted
+2026-10-03T03:35:31.7791499Z   contents might not be rebuilt if the URL changes.  The OLD behavior
+2026-10-03T03:35:31.7792591Z   preserves the timestamps from the archive instead, but this is usually not
+2026-10-03T03:35:31.7793675Z   what you want.  Update your project to the NEW behavior or specify the
+2026-10-03T03:35:31.7794725Z   DOWNLOAD_EXTRACT_TIMESTAMP option with a value of true to avoid this
+2026-10-03T03:35:31.7795537Z   robustness issue.
+2026-10-03T03:35:31.7796113Z Call Stack (most recent call first):
+2026-10-03T03:35:31.7796798Z   CMakeLists.txt:14 (FetchContent_Declare)
+2026-10-03T03:35:31.7797481Z This warning is for project developers.  Use -Wno-dev to suppress it.
+2026-10-03T03:35:31.7798190Z 
+2026-10-03T03:35:31.7798880Z CMake Warning (dev) at /usr/local/share/cmake-3.31/Modules/FetchContent.cmake:1373 (message):
+2026-10-03T03:35:31.7799735Z   The DOWNLOAD_EXTRACT_TIMESTAMP option was not given and policy CMP0135 is
+2026-10-03T03:35:31.7800447Z   not set.  The policy's OLD behavior will be used.  When using a URL
+2026-10-03T03:35:31.7800961Z   download, the timestamps of extracted files should preferably be that of
+2026-10-03T03:35:31.7801476Z   the time of extraction, otherwise code that depends on the extracted
+2026-10-03T03:35:31.7802292Z   contents might not be rebuilt if the URL changes.  The OLD behavior
+2026-10-03T03:35:31.7802842Z   preserves the timestamps from the archive instead, but this is usually not
+2026-10-03T03:35:31.7803677Z   what you want.  Update your project to the NEW behavior or specify the
+2026-10-03T03:35:31.7804556Z   DOWNLOAD_EXTRACT_TIMESTAMP option with a value of true to avoid this
+2026-10-03T03:35:31.7805234Z   robustness issue.
+2026-10-03T03:35:31.7805667Z Call Stack (most recent call first):
+2026-10-03T03:35:31.7806197Z   CMakeLists.txt:28 (FetchContent_Declare)
+2026-10-03T03:35:31.7806888Z This warning is for project developers.  Use -Wno-dev to suppress it.
+2026-10-03T03:35:31.7807374Z 
+2026-10-03T03:35:31.7807659Z CMake Warning (dev) at /usr/local/share/cmake-3.31/Modules/FetchContent.cmake:1373 (message):
+2026-10-03T03:35:31.7808693Z   The DOWNLOAD_EXTRACT_TIMESTAMP option was not given and policy CMP0135 is
+2026-10-03T03:35:31.7809350Z   not set.  The policy's OLD behavior will be used.  When using a URL
+2026-10-03T03:35:31.7809848Z   download, the timestamps of extracted files should preferably be that of
+2026-10-03T03:35:31.7810491Z   the time of extraction, otherwise code that depends on the extracted
+2026-10-03T03:35:31.7811164Z   contents might not be rebuilt if the URL changes.  The OLD behavior
+2026-10-03T03:35:31.7811666Z   preserves the timestamps from the archive instead, but this is usually not
+2026-10-03T03:35:31.7812174Z   what you want.  Update your project to the NEW behavior or specify the
+2026-10-03T03:35:31.7812675Z   DOWNLOAD_EXTRACT_TIMESTAMP option with a value of true to avoid this
+2026-10-03T03:35:31.7813390Z   robustness issue.
+2026-10-03T03:35:31.7813808Z Call Stack (most recent call first):
+2026-10-03T03:35:31.7814190Z   CMakeLists.txt:35 (FetchContent_Declare)
+2026-10-03T03:35:31.7814590Z This warning is for project developers.  Use -Wno-dev to suppress it.
+2026-10-03T03:35:31.7814879Z 
+2026-10-03T03:35:31.7815173Z CMake Warning (dev) at /usr/local/share/cmake-3.31/Modules/FetchContent.cmake:1373 (message):
+2026-10-03T03:35:31.7815762Z   The DOWNLOAD_EXTRACT_TIMESTAMP option was not given and policy CMP0135 is
+2026-10-03T03:35:31.7816252Z   not set.  The policy's OLD behavior will be used.  When using a URL
+2026-10-03T03:35:31.7816736Z   download, the timestamps of extracted files should preferably be that of
+2026-10-03T03:35:31.7817233Z   the time of extraction, otherwise code that depends on the extracted
+2026-10-03T03:35:31.7817702Z   contents might not be rebuilt if the URL changes.  The OLD behavior
+2026-10-03T03:35:31.7818197Z   preserves the timestamps from the archive instead, but this is usually not
+2026-10-03T03:35:31.7818699Z   what you want.  Update your project to the NEW behavior or specify the
+2026-10-03T03:35:31.7819178Z   DOWNLOAD_EXTRACT_TIMESTAMP option with a value of true to avoid this
+2026-10-03T03:35:31.7819563Z   robustness issue.
+2026-10-03T03:35:31.7819818Z Call Stack (most recent call first):
+2026-10-03T03:35:31.7820266Z   CMakeLists.txt:46 (FetchContent_Declare)
+2026-10-03T03:35:31.7820677Z This warning is for project developers.  Use -Wno-dev to suppress it.
+2026-10-03T03:35:31.7820963Z 
+2026-10-03T03:35:31.7821230Z CMake Warning (dev) at /usr/local/share/cmake-3.31/Modules/FetchContent.cmake:1373 (message):
+2026-10-03T03:35:31.7821811Z   The DOWNLOAD_EXTRACT_TIMESTAMP option was not given and policy CMP0135 is
+2026-10-03T03:35:31.7822295Z   not set.  The policy's OLD behavior will be used.  When using a URL
+2026-10-03T03:35:31.7822766Z   download, the timestamps of extracted files should preferably be that of
+2026-10-03T03:35:31.7823253Z   the time of extraction, otherwise code that depends on the extracted
+2026-10-03T03:35:31.7823711Z   contents might not be rebuilt if the URL changes.  The OLD behavior
+2026-10-03T03:35:31.7824197Z   preserves the timestamps from the archive instead, but this is usually not
+2026-10-03T03:35:31.7824696Z   what you want.  Update your project to the NEW behavior or specify the
+2026-10-03T03:35:31.7825168Z   DOWNLOAD_EXTRACT_TIMESTAMP option with a value of true to avoid this
+2026-10-03T03:35:31.7825708Z   robustness issue.
+2026-10-03T03:35:31.7826085Z Call Stack (most recent call first):
+2026-10-03T03:35:31.7826431Z   CMakeLists.txt:53 (FetchContent_Declare)
+2026-10-03T03:35:31.7826836Z This warning is for project developers.  Use -Wno-dev to suppress it.
+2026-10-03T03:35:31.7827126Z 
+2026-10-03T03:35:31.7827394Z CMake Warning (dev) at /usr/local/share/cmake-3.31/Modules/FetchContent.cmake:1953 (message):
+2026-10-03T03:35:31.7827933Z   Calling FetchContent_Populate(kissfft) is deprecated, call
+2026-10-03T03:35:31.7828434Z   FetchContent_MakeAvailable(kissfft) instead.  Policy CMP0169 can be set to
+2026-10-03T03:35:31.7828962Z   OLD to allow FetchContent_Populate(kissfft) to be called directly for now,
+2026-10-03T03:35:31.7829475Z   but the ability to call it with declared details will be removed completely
+2026-10-03T03:35:31.7829881Z   in a future version.
+2026-10-03T03:35:31.7830280Z Call Stack (most recent call first):
+2026-10-03T03:35:31.7830602Z   CMakeLists.txt:64 (FetchContent_Populate)
+2026-10-03T03:35:31.7831017Z This warning is for project developers.  Use -Wno-dev to suppress it.
+2026-10-03T03:35:31.7831308Z 
+2026-10-03T03:35:32.3361743Z CMake Warning (dev) at /usr/local/share/cmake-3.31/Modules/FetchContent.cmake:1953 (message):
+2026-10-03T03:35:32.3363174Z   Calling FetchContent_Populate(tflite_micro) is deprecated, call
+2026-10-03T03:35:32.3364096Z   FetchContent_MakeAvailable(tflite_micro) instead.  Policy CMP0169 can be
+2026-10-03T03:35:32.3365027Z   set to OLD to allow FetchContent_Populate(tflite_micro) to be called
+2026-10-03T03:35:32.3366011Z   directly for now, but the ability to call it with declared details will be
+2026-10-03T03:35:32.3366773Z   removed completely in a future version.
+2026-10-03T03:35:32.3367329Z Call Stack (most recent call first):
+2026-10-03T03:35:32.3367888Z   CMakeLists.txt:64 (FetchContent_Populate)
+2026-10-03T03:35:32.3368638Z This warning is for project developers.  Use -Wno-dev to suppress it.
+2026-10-03T03:35:32.3369189Z 
+2026-10-03T03:35:33.8439765Z CMake Warning (dev) at /usr/local/share/cmake-3.31/Modules/FetchContent.cmake:1953 (message):
+2026-10-03T03:35:33.8441308Z   Calling FetchContent_Populate(flatbuffers) is deprecated, call
+2026-10-03T03:35:33.8442401Z   FetchContent_MakeAvailable(flatbuffers) instead.  Policy CMP0169 can be set
+2026-10-03T03:35:33.8443507Z   to OLD to allow FetchContent_Populate(flatbuffers) to be called directly
+2026-10-03T03:35:33.8444573Z   for now, but the ability to call it with declared details will be removed
+2026-10-03T03:35:33.8445401Z   completely in a future version.
+2026-10-03T03:35:33.8445962Z Call Stack (most recent call first):
+2026-10-03T03:35:33.8446536Z   CMakeLists.txt:64 (FetchContent_Populate)
+2026-10-03T03:35:33.8447337Z This warning is for project developers.  Use -Wno-dev to suppress it.
+2026-10-03T03:35:33.8447893Z 
+2026-10-03T03:35:34.5027917Z CMake Warning (dev) at /usr/local/share/cmake-3.31/Modules/FetchContent.cmake:1953 (message):
+2026-10-03T03:35:34.5029138Z   Calling FetchContent_Populate(gemmlowp) is deprecated, call
+2026-10-03T03:35:34.5030450Z   FetchContent_MakeAvailable(gemmlowp) instead.  Policy CMP0169 can be set to
+2026-10-03T03:35:34.5031639Z   OLD to allow FetchContent_Populate(gemmlowp) to be called directly for now,
+2026-10-03T03:35:34.5032734Z   but the ability to call it with declared details will be removed completely
+2026-10-03T03:35:34.5033540Z   in a future version.
+2026-10-03T03:35:34.5034043Z Call Stack (most recent call first):
+2026-10-03T03:35:34.5034622Z   CMakeLists.txt:64 (FetchContent_Populate)
+2026-10-03T03:35:34.5035374Z This warning is for project developers.  Use -Wno-dev to suppress it.
+2026-10-03T03:35:34.5035963Z 
+2026-10-03T03:35:34.9830935Z CMake Warning (dev) at /usr/local/share/cmake-3.31/Modules/FetchContent.cmake:1953 (message):
+2026-10-03T03:35:34.9831650Z   Calling FetchContent_Populate(ruy) is deprecated, call
+2026-10-03T03:35:34.9832148Z   FetchContent_MakeAvailable(ruy) instead.  Policy CMP0169 can be set to OLD
+2026-10-03T03:35:34.9833157Z   to allow FetchContent_Populate(ruy) to be called directly for now, but the
+2026-10-03T03:35:34.9834005Z   ability to call it with declared details will be removed completely in a
+2026-10-03T03:35:34.9834667Z   future version.
+2026-10-03T03:35:34.9835078Z Call Stack (most recent call first):
+2026-10-03T03:35:34.9835580Z   CMakeLists.txt:64 (FetchContent_Populate)
+2026-10-03T03:35:34.9836246Z This warning is for project developers.  Use -Wno-dev to suppress it.
+2026-10-03T03:35:34.9836560Z 
+2026-10-03T03:35:35.3078687Z -- Configuring done (4.6s)
+2026-10-03T03:35:35.3319884Z -- Generating done (0.0s)
+2026-10-03T03:35:35.3323115Z -- Build files have been written to: /tmp/keyword-native
+2026-10-03T03:35:35.3555871Z [  1%] Building CXX object CMakeFiles/tflite_micro_frontend.dir/_deps/tflite_micro-src/tensorflow/lite/experimental/microfrontend/lib/fft.cc.o
+2026-10-03T03:35:35.3595418Z [  2%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/micro_interpreter.cc.o
+2026-10-03T03:35:35.7381260Z [  3%] Building CXX object CMakeFiles/tflite_micro_frontend.dir/_deps/tflite_micro-src/tensorflow/lite/experimental/microfrontend/lib/fft_util.cc.o
+2026-10-03T03:35:35.8938213Z [  4%] Building CXX object CMakeFiles/tflite_micro_frontend.dir/_deps/tflite_micro-src/tensorflow/lite/experimental/microfrontend/lib/kiss_fft_int16.cc.o
+2026-10-03T03:35:36.5650846Z [  5%] Building C object CMakeFiles/tflite_micro_frontend.dir/_deps/tflite_micro-src/tensorflow/lite/experimental/microfrontend/lib/filterbank.c.o
+2026-10-03T03:35:36.7212230Z [  6%] Building C object CMakeFiles/tflite_micro_frontend.dir/_deps/tflite_micro-src/tensorflow/lite/experimental/microfrontend/lib/filterbank_util.c.o
+2026-10-03T03:35:36.8577268Z [  7%] Building C object CMakeFiles/tflite_micro_frontend.dir/_deps/tflite_micro-src/tensorflow/lite/experimental/microfrontend/lib/frontend.c.o
+2026-10-03T03:35:36.8865196Z [  8%] Building C object CMakeFiles/tflite_micro_frontend.dir/_deps/tflite_micro-src/tensorflow/lite/experimental/microfrontend/lib/frontend_util.c.o
+2026-10-03T03:35:36.9253055Z [  9%] Building C object CMakeFiles/tflite_micro_frontend.dir/_deps/tflite_micro-src/tensorflow/lite/experimental/microfrontend/lib/log_lut.c.o
+2026-10-03T03:35:36.9377151Z [ 10%] Building C object CMakeFiles/tflite_micro_frontend.dir/_deps/tflite_micro-src/tensorflow/lite/experimental/microfrontend/lib/log_scale.c.o
+2026-10-03T03:35:36.9867145Z [ 11%] Building C object CMakeFiles/tflite_micro_frontend.dir/_deps/tflite_micro-src/tensorflow/lite/experimental/microfrontend/lib/log_scale_util.c.o
+2026-10-03T03:35:37.0104139Z [ 12%] Building C object CMakeFiles/tflite_micro_frontend.dir/_deps/tflite_micro-src/tensorflow/lite/experimental/microfrontend/lib/noise_reduction.c.o
+2026-10-03T03:35:37.0428564Z [ 13%] Building C object CMakeFiles/tflite_micro_frontend.dir/_deps/tflite_micro-src/tensorflow/lite/experimental/microfrontend/lib/noise_reduction_util.c.o
+2026-10-03T03:35:37.0743968Z [ 14%] Building C object CMakeFiles/tflite_micro_frontend.dir/_deps/tflite_micro-src/tensorflow/lite/experimental/microfrontend/lib/pcan_gain_control.c.o
+2026-10-03T03:35:37.1075788Z [ 15%] Building C object CMakeFiles/tflite_micro_frontend.dir/_deps/tflite_micro-src/tensorflow/lite/experimental/microfrontend/lib/pcan_gain_control_util.c.o
+2026-10-03T03:35:37.1548706Z [ 16%] Building C object CMakeFiles/tflite_micro_frontend.dir/_deps/tflite_micro-src/tensorflow/lite/experimental/microfrontend/lib/window.c.o
+2026-10-03T03:35:37.2133683Z [ 17%] Building C object CMakeFiles/tflite_micro_frontend.dir/_deps/tflite_micro-src/tensorflow/lite/experimental/microfrontend/lib/window_util.c.o
+2026-10-03T03:35:37.2584229Z [ 18%] Linking CXX static library libtflite_micro_frontend.a
+2026-10-03T03:35:38.0768297Z [ 19%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/micro_allocator.cc.o
+2026-10-03T03:35:38.5121118Z [ 19%] Built target tflite_micro_frontend
+2026-10-03T03:35:38.5145051Z [ 20%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/micro_context.cc.o
+2026-10-03T03:35:40.7418580Z [ 21%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/micro_op_resolver.cc.o
+2026-10-03T03:35:40.9601972Z [ 22%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/micro_utils.cc.o
+2026-10-03T03:35:42.9118593Z [ 23%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/micro_log.cc.o
+2026-10-03T03:35:42.9398279Z [ 24%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/flatbuffer_utils.cc.o
+2026-10-03T03:35:43.2322785Z [ 25%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/memory_helpers.cc.o
+2026-10-03T03:35:45.4156438Z [ 26%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/micro_allocation_info.cc.o
+2026-10-03T03:35:45.4326653Z [ 27%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/micro_interpreter_context.cc.o
+2026-10-03T03:35:47.8615520Z [ 28%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/micro_interpreter_graph.cc.o
+2026-10-03T03:35:47.9553796Z [ 29%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/micro_resource_variable.cc.o
+2026-10-03T03:35:50.3834791Z [ 30%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/micro_profiler.cc.o
+2026-10-03T03:35:50.4047220Z [ 31%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/micro_time.cc.o
+2026-10-03T03:35:50.4247496Z [ 32%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/system_setup.cc.o
+2026-10-03T03:35:50.4403304Z [ 33%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/fake_micro_context.cc.o
+2026-10-03T03:35:50.6340768Z [ 34%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/debug_log.cc.o
+2026-10-03T03:35:50.6614205Z [ 35%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/arena_allocator/single_arena_buffer_allocator.cc.o
+2026-10-03T03:35:52.8580019Z [ 36%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/arena_allocator/non_persistent_arena_buffer_allocator.cc.o
+2026-10-03T03:35:52.8865242Z [ 37%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/arena_allocator/persistent_arena_buffer_allocator.cc.o
+2026-10-03T03:35:55.0314429Z [ 38%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/memory_planner/greedy_memory_planner.cc.o
+2026-10-03T03:35:55.0503074Z [ 39%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/memory_planner/linear_memory_planner.cc.o
+2026-10-03T03:35:55.0990696Z [ 40%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/memory_planner/non_persistent_buffer_planner_shim.cc.o
+2026-10-03T03:35:55.1917816Z [ 41%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/tflite_bridge/micro_error_reporter.cc.o
+2026-10-03T03:35:55.2176305Z [ 42%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/tflite_bridge/flatbuffer_conversions_bridge.cc.o
+2026-10-03T03:35:55.2638831Z [ 43%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/compiler/mlir/lite/core/api/error_reporter.cc.o
+2026-10-03T03:35:55.2866402Z [ 44%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/core/c/common.cc.o
+2026-10-03T03:35:55.3480618Z [ 45%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/core/api/flatbuffer_conversions.cc.o
+2026-10-03T03:35:57.3783155Z [ 46%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/core/api/tensor_utils.cc.o
+2026-10-03T03:35:57.4186184Z [ 47%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/kernels/kernel_util.cc.o
+2026-10-03T03:35:57.9153466Z [ 48%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/kernels/internal/common.cc.o
+2026-10-03T03:35:58.2067399Z [ 49%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/kernels/internal/quantization_util.cc.o
+2026-10-03T03:35:58.4256337Z [ 50%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/kernels/internal/portable_tensor_utils.cc.o
+2026-10-03T03:35:58.7043226Z [ 51%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/kernels/internal/tensor_ctypes.cc.o
+2026-10-03T03:35:58.8416233Z [ 52%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/kernels/internal/runtime_shape.cc.o
+2026-10-03T03:35:58.8703620Z [ 53%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/kernels/internal/reference/portable_tensor_utils.cc.o
+2026-10-03T03:35:59.0357397Z [ 54%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/compiler/mlir/lite/schema/schema_utils.cc.o
+2026-10-03T03:36:00.0773709Z [ 55%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/conv.cc.o
+2026-10-03T03:36:01.3443250Z [ 56%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/conv_common.cc.o
+2026-10-03T03:36:02.9007879Z [ 57%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/depthwise_conv.cc.o
+2026-10-03T03:36:03.9063240Z [ 58%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/depthwise_conv_common.cc.o
+2026-10-03T03:36:05.4834596Z [ 59%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/fully_connected.cc.o
+2026-10-03T03:36:06.6351994Z [ 60%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/fully_connected_common.cc.o
+2026-10-03T03:36:08.4123977Z [ 61%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/pooling.cc.o
+2026-10-03T03:36:09.2255960Z [ 62%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/pooling_common.cc.o
+2026-10-03T03:36:10.9888174Z [ 63%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/reshape.cc.o
+2026-10-03T03:36:11.7624522Z [ 64%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/reshape_common.cc.o
+2026-10-03T03:36:13.4283421Z [ 65%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/softmax.cc.o
+2026-10-03T03:36:14.1949387Z [ 66%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/softmax_common.cc.o
+2026-10-03T03:36:16.1412913Z [ 67%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/logistic.cc.o
+2026-10-03T03:36:16.7020681Z [ 68%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/logistic_common.cc.o
+2026-10-03T03:36:18.7668867Z [ 69%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/add.cc.o
+2026-10-03T03:36:19.2065991Z [ 70%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/add_common.cc.o
+2026-10-03T03:36:21.6755675Z [ 71%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/mul.cc.o
+2026-10-03T03:36:21.8771114Z [ 72%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/mul_common.cc.o
+2026-10-03T03:36:24.1435615Z [ 73%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/quantize.cc.o
+2026-10-03T03:36:24.7530497Z [ 74%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/quantize_common.cc.o
+2026-10-03T03:36:26.5601189Z [ 75%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/dequantize.cc.o
+2026-10-03T03:36:27.2992854Z [ 76%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/dequantize_common.cc.o
+2026-10-03T03:36:29.0719143Z [ 77%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/activations.cc.o
+2026-10-03T03:36:29.7453559Z [ 78%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/activations_common.cc.o
+2026-10-03T03:36:31.5990795Z [ 79%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/pad.cc.o
+2026-10-03T03:36:32.2595048Z [ 80%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/pad_common.cc.o
+2026-10-03T03:36:34.3499817Z [ 81%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/concatenation.cc.o
+2026-10-03T03:36:34.7281875Z [ 82%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/strided_slice.cc.o
+2026-10-03T03:36:37.0004529Z [ 83%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/strided_slice_common.cc.o
+2026-10-03T03:36:37.8675769Z [ 84%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/pack.cc.o
+2026-10-03T03:36:39.4971194Z [ 85%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/unpack.cc.o
+2026-10-03T03:36:40.4283783Z [ 86%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/kernel_util.cc.o
+2026-10-03T03:36:42.0430716Z [ 87%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/micro_tensor_utils.cc.o
+2026-10-03T03:36:42.3463715Z [ 88%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/call_once.cc.o
+2026-10-03T03:36:42.9270903Z [ 89%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/var_handle.cc.o
+2026-10-03T03:36:44.7540881Z [ 90%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/read_variable.cc.o
+2026-10-03T03:36:45.3259861Z [ 91%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/assign_variable.cc.o
+2026-10-03T03:36:47.1634257Z [ 92%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/split_v.cc.o
+2026-10-03T03:36:47.7549347Z [ 93%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/reduce.cc.o
+2026-10-03T03:36:49.6608657Z [ 94%] Building CXX object CMakeFiles/tflite_micro_interpreter.dir/_deps/tflite_micro-src/tensorflow/lite/micro/kernels/reduce_common.cc.o
+2026-10-03T03:36:52.4172462Z [ 95%] Linking CXX static library libtflite_micro_interpreter.a
+2026-10-03T03:36:52.5633603Z [ 95%] Built target tflite_micro_interpreter
+2026-10-03T03:36:52.5705066Z [ 96%] Building CXX object CMakeFiles/microwakeword_test.dir/home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/scripts/microwakeword_test.cpp.o
+2026-10-03T03:36:52.5706635Z [ 97%] Building CXX object CMakeFiles/microwakeword_test.dir/MicroWakeWordEngine.cpp.o
+2026-10-03T03:36:55.1915670Z [ 98%] Building CXX object CMakeFiles/microwakeword_test.dir/MicroFrontendWrapper.cpp.o
+2026-10-03T03:36:56.6598238Z [100%] Linking CXX executable microwakeword_test
+2026-10-03T03:36:56.7285674Z [100%] Built target microwakeword_test
+2026-10-03T03:36:56.7885297Z hey_jarvis: native model initialized, 5 seconds processed, no silence trigger
+2026-10-03T03:36:56.7886514Z stop: native model initialized, 5 seconds processed, no silence trigger
+2026-10-03T03:36:56.7972405Z ##[group]Run python3 -m unittest discover -s scripts -p 'test_*.py'
+2026-10-03T03:36:56.7972974Z [36;1mpython3 -m unittest discover -s scripts -p 'test_*.py'[0m
+2026-10-03T03:36:56.8035716Z shell: /usr/bin/bash -e {0}
+2026-10-03T03:36:56.8036008Z env:
+2026-10-03T03:36:56.8036360Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:36:56.8036917Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:36:56.8037402Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-10-03T03:36:56.8037765Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-10-03T03:36:56.8038098Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-10-03T03:36:56.8038433Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-10-03T03:36:56.8038917Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-10-03T03:36:56.8039448Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-10-03T03:36:56.8039853Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-10-03T03:36:56.8040419Z ##[endgroup]
+2026-10-03T03:36:58.1195564Z .......................
+2026-10-03T03:36:58.1196462Z ----------------------------------------------------------------------
+2026-10-03T03:36:58.1197239Z Ran 23 tests in 1.213s
+2026-10-03T03:36:58.1197497Z 
+2026-10-03T03:36:58.1197643Z OK
+2026-10-03T03:36:58.1198142Z Compact APK preserves identical native, DEX and asset payloads.
+2026-10-03T03:36:58.1355283Z ##[group]Run test -n "$ANDROID_KEYSTORE_BASE64"
+2026-10-03T03:36:58.1355717Z [36;1mtest -n "$ANDROID_KEYSTORE_BASE64"[0m
+2026-10-03T03:36:58.1356070Z [36;1mtest -n "$ANDROID_KEYSTORE_PASSWORD"[0m
+2026-10-03T03:36:58.1356393Z [36;1mtest -n "$ANDROID_KEY_ALIAS"[0m
+2026-10-03T03:36:58.1356701Z [36;1mtest -n "$ANDROID_KEY_PASSWORD"[0m
+2026-10-03T03:36:58.1357594Z [36;1mecho "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/***.keystore"[0m
+2026-10-03T03:36:58.1420566Z shell: /usr/bin/bash -e {0}
+2026-10-03T03:36:58.1420865Z env:
+2026-10-03T03:36:58.1421211Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:36:58.1421756Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:36:58.1422206Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-10-03T03:36:58.1422545Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-10-03T03:36:58.1422865Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-10-03T03:36:58.1423219Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-10-03T03:36:58.1423687Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-10-03T03:36:58.1424199Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-10-03T03:36:58.1424546Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-10-03T03:36:58.1443991Z   ANDROID_KEYSTORE_BASE64: ***
+2026-10-03T03:36:58.1444422Z   ANDROID_KEYSTORE_PASSWORD: ***
+2026-10-03T03:36:58.1444727Z   ANDROID_KEY_ALIAS: ***
+2026-10-03T03:36:58.1445102Z   ANDROID_KEY_PASSWORD: ***
+2026-10-03T03:36:58.1445370Z ##[endgroup]
+2026-10-03T03:36:58.1574679Z ##[group]Run gradle --no-daemon testReleaseUnitTest assembleRelease assembleReleaseAndroidTest
+2026-10-03T03:36:58.1575397Z [36;1mgradle --no-daemon testReleaseUnitTest assembleRelease assembleReleaseAndroidTest[0m
+2026-10-03T03:36:58.1631961Z shell: /usr/bin/bash -e {0}
+2026-10-03T03:36:58.1632248Z env:
+2026-10-03T03:36:58.1632585Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:36:58.1633133Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:36:58.1633587Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-10-03T03:36:58.1633920Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-10-03T03:36:58.1634236Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-10-03T03:36:58.1634557Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-10-03T03:36:58.1635022Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-10-03T03:36:58.1635757Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-10-03T03:36:58.1636108Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-10-03T03:36:58.1636570Z   ANDROID_KEYSTORE_PATH: /home/runner/work/_temp/***.keystore
+2026-10-03T03:36:58.1637071Z   ANDROID_KEYSTORE_PASSWORD: ***
+2026-10-03T03:36:58.1637368Z   ANDROID_KEY_ALIAS: ***
+2026-10-03T03:36:58.1637780Z   ANDROID_KEY_PASSWORD: ***
+2026-10-03T03:36:58.1638040Z   ANDROID_VERSION_CODE: 909
+2026-10-03T03:36:58.1638306Z   ANDROID_VERSION_NAME: 0.1.0-build.909
+2026-10-03T03:36:58.1638591Z ##[endgroup]
+2026-10-03T03:36:58.9312914Z To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.10.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+2026-10-03T03:37:00.2273058Z Daemon will be stopped at the end of the build 
+2026-10-03T03:37:53.1286938Z > Task :app:buildKotlinToolingMetadata
+2026-10-03T03:37:53.1302213Z > Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+2026-10-03T03:37:53.5272005Z > Task :app:extractMoonshine
+2026-10-03T03:37:54.4268884Z > Task :app:extractSherpa
+2026-10-03T03:37:58.2273225Z 
+2026-10-03T03:37:58.2275437Z > Task :app:buildSherpa
+2026-10-03T03:37:58.2277211Z CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+2026-10-03T03:37:58.2279419Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-10-03T03:37:58.2281117Z -- CMake version: 3.31.6
+2026-10-03T03:37:58.2282407Z   CMake.
+2026-10-03T03:37:58.2283018Z 
+2026-10-03T03:37:58.2283658Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-10-03T03:37:58.2284899Z   to tell CMake that the project requires at least <min> but has been updated
+2026-10-03T03:37:58.2285994Z   to work with policies introduced by <max> or earlier.
+2026-10-03T03:37:58.2286900Z Call Stack (most recent call first):
+2026-10-03T03:37:58.2288019Z   /usr/local/share/cmake-3.31/Modules/CMakeDetermineSystem.cmake:146 (include)
+2026-10-03T03:37:58.2289153Z   CMakeLists.txt:26 (project)
+2026-10-03T03:37:58.2289726Z 
+2026-10-03T03:37:58.2289737Z 
+2026-10-03T03:37:58.2290861Z CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/android-legacy.toolchain.cmake:35 (cmake_minimum_required):
+2026-10-03T03:37:58.2292357Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-10-03T03:37:58.2293130Z   CMake.
+2026-10-03T03:37:58.2293344Z 
+2026-10-03T03:37:58.2293762Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-10-03T03:37:58.2294725Z   to tell CMake that the project requires at least <min> but has been updated
+2026-10-03T03:37:58.2295569Z   to work with policies introduced by <max> or earlier.
+2026-10-03T03:37:58.2296207Z Call Stack (most recent call first):
+2026-10-03T03:37:58.2297056Z   /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/android.toolchain.cmake:55 (include)
+2026-10-03T03:37:58.2298373Z   /usr/local/share/cmake-3.31/Modules/CMakeDetermineSystem.cmake:146 (include)
+2026-10-03T03:37:58.2298853Z   CMakeLists.txt:26 (project)
+2026-10-03T03:37:58.2299038Z 
+2026-10-03T03:37:58.2299043Z 
+2026-10-03T03:37:58.2299490Z CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+2026-10-03T03:37:58.2303052Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-10-03T03:37:58.2303795Z   CMake.
+2026-10-03T03:37:58.2304006Z 
+2026-10-03T03:37:58.2304388Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-10-03T03:37:58.2305301Z   to tell CMake that the project requires at least <min> but has been updated
+2026-10-03T03:37:58.2306110Z   to work with policies introduced by <max> or earlier.
+2026-10-03T03:37:58.2306729Z Call Stack (most recent call first):
+2026-10-03T03:37:58.2307765Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/3.31.6/CMakeSystem.cmake:6 (include)
+2026-10-03T03:37:58.2309102Z   CMakeLists.txt:26 (project)
+2026-10-03T03:37:58.2309447Z 
+2026-10-03T03:37:58.2309456Z 
+2026-10-03T03:37:58.3269514Z -- The C compiler identification is Clang 18.0.3
+2026-10-03T03:37:58.5268154Z -- The CXX compiler identification is Clang 18.0.3
+2026-10-03T03:37:58.5269391Z CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/flags.cmake:18 (cmake_minimum_required):
+2026-10-03T03:37:58.5281037Z -- Detecting C compiler ABI info
+2026-10-03T03:37:58.5282760Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-10-03T03:37:58.5283582Z   CMake.
+2026-10-03T03:37:58.5283798Z 
+2026-10-03T03:37:58.5284189Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-10-03T03:37:58.5285190Z   to tell CMake that the project requires at least <min> but has been updated
+2026-10-03T03:37:58.5286055Z   to work with policies introduced by <max> or earlier.
+2026-10-03T03:37:58.5286723Z Call Stack (most recent call first):
+2026-10-03T03:37:58.5287475Z   /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang.cmake:23 (include)
+2026-10-03T03:37:58.5288538Z   /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang-C.cmake:1 (include)
+2026-10-03T03:37:58.5289514Z   /usr/local/share/cmake-3.31/Modules/CMakeCInformation.cmake:48 (include)
+2026-10-03T03:37:58.5290506Z   CMakeLists.txt:26 (project)
+2026-10-03T03:37:58.5290845Z 
+2026-10-03T03:37:58.5290854Z 
+2026-10-03T03:37:58.5291681Z CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+2026-10-03T03:37:58.5293087Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-10-03T03:37:58.5293797Z   CMake.
+2026-10-03T03:37:58.5293997Z 
+2026-10-03T03:37:58.5294361Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-10-03T03:37:58.5295299Z   to tell CMake that the project requires at least <min> but has been updated
+2026-10-03T03:37:58.5296100Z   to work with policies introduced by <max> or earlier.
+2026-10-03T03:37:58.5296697Z Call Stack (most recent call first):
+2026-10-03T03:37:58.5297473Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/3.31.6/CMakeSystem.cmake:6 (include)
+2026-10-03T03:37:58.5298420Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/CMakeScratch/TryCompile-KFeVWt/CMakeLists.txt:4 (project)
+2026-10-03T03:37:58.5298971Z 
+2026-10-03T03:37:58.5298976Z 
+2026-10-03T03:37:58.5299430Z CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/android-legacy.toolchain.cmake:35 (cmake_minimum_required):
+2026-10-03T03:37:58.5300542Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-10-03T03:37:58.5301096Z   CMake.
+2026-10-03T03:37:58.5301218Z 
+2026-10-03T03:37:58.5301430Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-10-03T03:37:58.5302204Z   to tell CMake that the project requires at least <min> but has been updated
+2026-10-03T03:37:58.5302661Z   to work with policies introduced by <max> or earlier.
+2026-10-03T03:37:58.5302997Z Call Stack (most recent call first):
+2026-10-03T03:37:58.5303458Z   /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/android.toolchain.cmake:55 (include)
+2026-10-03T03:37:58.5304240Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/3.31.6/CMakeSystem.cmake:6 (include)
+2026-10-03T03:37:58.5305173Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/CMakeScratch/TryCompile-KFeVWt/CMakeLists.txt:4 (project)
+2026-10-03T03:37:58.5305723Z 
+2026-10-03T03:37:58.5305728Z 
+2026-10-03T03:37:58.5306108Z CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/flags.cmake:18 (cmake_minimum_required):
+2026-10-03T03:37:58.5306781Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-10-03T03:37:58.5307317Z   CMake.
+2026-10-03T03:37:58.5307433Z 
+2026-10-03T03:37:58.5307639Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-10-03T03:37:58.5308143Z   to tell CMake that the project requires at least <min> but has been updated
+2026-10-03T03:37:58.5308583Z   to work with policies introduced by <max> or earlier.
+2026-10-03T03:37:58.5308924Z Call Stack (most recent call first):
+2026-10-03T03:37:58.5309353Z   /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang.cmake:23 (include)
+2026-10-03T03:37:58.5309892Z   /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang-C.cmake:1 (include)
+2026-10-03T03:37:58.5310604Z   /usr/local/share/cmake-3.31/Modules/CMakeCInformation.cmake:48 (include)
+2026-10-03T03:37:58.5311368Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/CMakeScratch/TryCompile-KFeVWt/CMakeLists.txt:4 (project)
+2026-10-03T03:37:58.5311914Z 
+2026-10-03T03:37:58.5311919Z 
+2026-10-03T03:37:58.6275558Z -- Detecting C compiler ABI info - done
+2026-10-03T03:37:58.6276434Z -- Check for working C compiler: /usr/local/lib/android/sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/clang - skipped
+2026-10-03T03:37:58.6277223Z -- Detecting C compile features
+2026-10-03T03:37:58.6277590Z -- Detecting C compile features - done
+2026-10-03T03:37:58.7268533Z -- Detecting CXX compiler ABI info
+2026-10-03T03:37:58.7273174Z CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+2026-10-03T03:37:58.7274967Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-10-03T03:37:58.7276079Z   CMake.
+2026-10-03T03:37:58.7276528Z 
+2026-10-03T03:37:58.7277186Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-10-03T03:37:58.7278634Z   to tell CMake that the project requires at least <min> but has been updated
+2026-10-03T03:37:58.7279996Z   to work with policies introduced by <max> or earlier.
+2026-10-03T03:37:58.7281191Z Call Stack (most recent call first):
+2026-10-03T03:37:58.7282638Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/3.31.6/CMakeSystem.cmake:6 (include)
+2026-10-03T03:37:58.7283782Z -- Detecting CXX compiler ABI info - done
+2026-10-03T03:37:58.7285356Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/CMakeScratch/TryCompile-T6cx2a/CMakeLists.txt:4 (project)
+2026-10-03T03:37:58.7286924Z 
+2026-10-03T03:37:58.7287098Z 
+2026-10-03T03:37:58.7287941Z CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/android-legacy.toolchain.cmake:35 (cmake_minimum_required):
+2026-10-03T03:37:58.7288885Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-10-03T03:37:58.7289404Z   CMake.
+2026-10-03T03:37:58.7289639Z 
+2026-10-03T03:37:58.7289977Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-10-03T03:37:58.7291503Z   to tell CMake that the project requires at least <min> but has been updated
+2026-10-03T03:37:58.7292159Z   to work with policies introduced by <max> or earlier.
+2026-10-03T03:37:58.7292636Z Call Stack (most recent call first):
+2026-10-03T03:37:58.7293230Z   /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/android.toolchain.cmake:55 (include)
+2026-10-03T03:37:58.7294117Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/3.31.6/CMakeSystem.cmake:6 (include)
+2026-10-03T03:37:58.7295164Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/CMakeScratch/TryCompile-T6cx2a/CMakeLists.txt:4 (project)
+2026-10-03T03:37:58.7295848Z 
+2026-10-03T03:37:58.7295962Z 
+2026-10-03T03:37:58.7296582Z CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/flags.cmake:18 (cmake_minimum_required):
+2026-10-03T03:37:58.7297992Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-10-03T03:37:58.7298949Z   CMake.
+2026-10-03T03:37:58.7299194Z 
+2026-10-03T03:37:58.7299524Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-10-03T03:37:58.7300520Z   to tell CMake that the project requires at least <min> but has been updated
+2026-10-03T03:37:58.7301492Z   to work with policies introduced by <max> or earlier.
+2026-10-03T03:37:58.7302275Z Call Stack (most recent call first):
+2026-10-03T03:37:58.7302918Z   /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang.cmake:23 (include)
+2026-10-03T03:37:58.7303471Z   /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang-CXX.cmake:1 (include)
+2026-10-03T03:37:58.7304005Z   /usr/local/share/cmake-3.31/Modules/CMakeCXXInformation.cmake:48 (include)
+2026-10-03T03:37:58.7304773Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/CMakeScratch/TryCompile-T6cx2a/CMakeLists.txt:4 (project)
+2026-10-03T03:37:58.7305327Z 
+2026-10-03T03:37:58.7305332Z 
+2026-10-03T03:37:58.8268920Z -- Check for working CXX compiler: /usr/local/lib/android/sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ - skipped
+2026-10-03T03:37:58.8270499Z -- Detecting CXX compile features
+2026-10-03T03:37:58.8271093Z -- Detecting CXX compile features - done
+2026-10-03T03:37:58.8271676Z -- CMAKE_BUILD_TYPE: Release
+2026-10-03T03:37:58.8272185Z -- CMAKE_INSTALL_PREFIX: /usr/local
+2026-10-03T03:37:58.8272710Z -- BUILD_SHARED_LIBS OFF
+2026-10-03T03:37:58.8273192Z -- SHERPA_ONNX_ENABLE_PYTHON OFF
+2026-10-03T03:37:58.8273717Z -- SHERPA_ONNX_ENABLE_TESTS OFF
+2026-10-03T03:37:58.8274241Z -- SHERPA_ONNX_ENABLE_CHECK OFF
+2026-10-03T03:37:58.8274760Z -- SHERPA_ONNX_ENABLE_PORTAUDIO OFF
+2026-10-03T03:37:58.8275295Z -- SHERPA_ONNX_ENABLE_JNI ON
+2026-10-03T03:37:58.8275785Z -- SHERPA_ONNX_ENABLE_C_API OFF
+2026-10-03T03:37:58.8276302Z -- SHERPA_ONNX_ENABLE_WEBSOCKET OFF
+2026-10-03T03:37:58.8276840Z -- SHERPA_ONNX_ENABLE_GPU OFF
+2026-10-03T03:37:58.8277350Z -- SHERPA_ONNX_ENABLE_WASM OFF
+2026-10-03T03:37:58.8277779Z -- SHERPA_ONNX_ENABLE_WASM_SPEAKER_DIARIZATION OFF
+2026-10-03T03:37:58.8278376Z -- SHERPA_ONNX_ENABLE_WASM_TTS OFF
+2026-10-03T03:37:58.8278865Z -- SHERPA_ONNX_ENABLE_WASM_ASR OFF
+2026-10-03T03:37:58.8279331Z -- SHERPA_ONNX_ENABLE_WASM_KWS OFF
+2026-10-03T03:37:58.8279799Z -- SHERPA_ONNX_ENABLE_WASM_VAD OFF
+2026-10-03T03:37:58.8280530Z -- SHERPA_ONNX_ENABLE_WASM_VAD_ASR OFF
+2026-10-03T03:37:58.8281056Z -- SHERPA_ONNX_ENABLE_WASM_NODEJS OFF
+2026-10-03T03:37:58.8286516Z -- SHERPA_ONNX_ENABLE_WASM_WEB OFF
+2026-10-03T03:37:58.8287192Z -- SHERPA_ONNX_ENABLE_WASM_SPEECH_ENHANCEMENT OFF
+2026-10-03T03:37:58.8287836Z -- SHERPA_ONNX_ENABLE_BINARY OFF
+2026-10-03T03:37:58.8288335Z -- SHERPA_ONNX_ENABLE_TTS ON
+2026-10-03T03:37:58.8288794Z -- SHERPA_ONNX_ENABLE_SPEAKER_DIARIZATION OFF
+2026-10-03T03:37:58.8289455Z -- SHERPA_ONNX_LINK_LIBSTDCPP_STATICALLY ON
+2026-10-03T03:37:58.8290797Z -- SHERPA_ONNX_USE_PRE_INSTALLED_ONNXRUNTIME_IF_AVAILABLE ON
+2026-10-03T03:37:58.8291334Z -- SHERPA_ONNX_ENABLE_SANITIZER: OFF
+2026-10-03T03:37:58.8292057Z -- SHERPA_ONNX_BUILD_C_API_EXAMPLES: ON
+2026-10-03T03:37:58.8292897Z -- SHERPA_ONNX_ENABLE_RKNN: OFF
+2026-10-03T03:37:58.8293390Z -- SHERPA_ONNX_ENABLE_AXERA: OFF
+2026-10-03T03:37:58.8293876Z -- SHERPA_ONNX_ENABLE_AXCL: OFF
+2026-10-03T03:37:58.8303185Z CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+2026-10-03T03:37:58.8304363Z -- SHERPA_ONNX_ENABLE_ASCEND_NPU: OFF
+2026-10-03T03:37:58.8304926Z -- SHERPA_ONNX_ENABLE_QNN: OFF
+2026-10-03T03:37:58.8305452Z -- SHERPA_ONNX_ENABLE_SPACEMIT: OFF
+2026-10-03T03:37:58.8305990Z -- SHERPA_ONNX_LINK_D3D: OFF
+2026-10-03T03:37:58.8306506Z -- SHERPA_ONNX_USE_STATIC_CRT: ON
+2026-10-03T03:37:58.8307025Z -- TTS is enabled
+2026-10-03T03:37:58.8307475Z -- speaker diarization is disabled
+2026-10-03T03:37:58.8308006Z -- DirectML is disabled
+2026-10-03T03:37:58.8308464Z -- C++ Standard version: 17
+2026-10-03T03:37:58.8308969Z -- Looking for C++ include cxxabi.h
+2026-10-03T03:37:58.8311417Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-10-03T03:37:58.8312430Z   CMake.
+2026-10-03T03:37:58.8312560Z 
+2026-10-03T03:37:58.8312799Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-10-03T03:37:58.8313330Z   to tell CMake that the project requires at least <min> but has been updated
+2026-10-03T03:37:58.8314082Z   to work with policies introduced by <max> or earlier.
+2026-10-03T03:37:58.8314754Z Call Stack (most recent call first):
+2026-10-03T03:37:58.8315791Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/3.31.6/CMakeSystem.cmake:6 (include)
+2026-10-03T03:37:58.8316793Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/CMakeScratch/TryCompile-Zi8SYE/CMakeLists.txt:4 (project)
+2026-10-03T03:37:58.8317877Z 
+2026-10-03T03:37:58.8317885Z 
+2026-10-03T03:37:58.8318639Z CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/android-legacy.toolchain.cmake:35 (cmake_minimum_required):
+2026-10-03T03:37:58.8319922Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-10-03T03:37:58.8320840Z   CMake.
+2026-10-03T03:37:58.8321047Z 
+2026-10-03T03:37:58.8321410Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-10-03T03:37:58.8321975Z   to tell CMake that the project requires at least <min> but has been updated
+2026-10-03T03:37:58.8322446Z   to work with policies introduced by <max> or earlier.
+2026-10-03T03:37:58.8322795Z Call Stack (most recent call first):
+2026-10-03T03:37:58.8323269Z   /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/android.toolchain.cmake:55 (include)
+2026-10-03T03:37:58.8324025Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/3.31.6/CMakeSystem.cmake:6 (include)
+2026-10-03T03:37:58.8324951Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/CMakeScratch/TryCompile-Zi8SYE/CMakeLists.txt:4 (project)
+2026-10-03T03:37:58.8325510Z 
+2026-10-03T03:37:58.8325520Z 
+2026-10-03T03:37:58.8325901Z CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/flags.cmake:18 (cmake_minimum_required):
+2026-10-03T03:37:58.8326626Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-10-03T03:37:58.8327013Z   CMake.
+2026-10-03T03:37:58.8327128Z 
+2026-10-03T03:37:58.8327336Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-10-03T03:37:58.8327843Z   to tell CMake that the project requires at least <min> but has been updated
+2026-10-03T03:37:58.8328289Z   to work with policies introduced by <max> or earlier.
+2026-10-03T03:37:58.8328632Z Call Stack (most recent call first):
+2026-10-03T03:37:58.8329045Z   /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang.cmake:23 (include)
+2026-10-03T03:37:58.8329590Z   /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang-CXX.cmake:1 (include)
+2026-10-03T03:37:58.8330650Z   /usr/local/share/cmake-3.31/Modules/CMakeCXXInformation.cmake:48 (include)
+2026-10-03T03:37:58.8331471Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/CMakeScratch/TryCompile-Zi8SYE/CMakeLists.txt:4 (project)
+2026-10-03T03:37:58.8332030Z 
+2026-10-03T03:37:58.8332035Z 
+2026-10-03T03:37:58.9268390Z -- Looking for C++ include cxxabi.h - found
+2026-10-03T03:37:58.9269944Z CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+2026-10-03T03:37:58.9271980Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-10-03T03:37:58.9272806Z   CMake.
+2026-10-03T03:37:58.9273060Z 
+2026-10-03T03:37:58.9273604Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-10-03T03:37:58.9274272Z -- Looking for C++ include execinfo.h
+2026-10-03T03:37:58.9275107Z   to tell CMake that the project requires at least <min> but has been updated
+2026-10-03T03:37:58.9275909Z   to work with policies introduced by <max> or earlier.
+2026-10-03T03:37:58.9278401Z Call Stack (most recent call first):
+2026-10-03T03:37:58.9279181Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/3.31.6/CMakeSystem.cmake:6 (include)
+2026-10-03T03:37:58.9280400Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/CMakeScratch/TryCompile-EGLJez/CMakeLists.txt:4 (project)
+2026-10-03T03:37:58.9280968Z 
+2026-10-03T03:37:58.9280999Z 
+2026-10-03T03:37:58.9281467Z CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/android-legacy.toolchain.cmake:35 (cmake_minimum_required):
+2026-10-03T03:37:58.9282481Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-10-03T03:37:58.9294940Z   CMake.
+2026-10-03T03:37:58.9295165Z 
+2026-10-03T03:37:58.9295563Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-10-03T03:37:58.9296707Z   to tell CMake that the project requires at least <min> but has been updated
+2026-10-03T03:37:58.9297577Z   to work with policies introduced by <max> or earlier.
+2026-10-03T03:37:58.9298196Z Call Stack (most recent call first):
+2026-10-03T03:37:58.9299041Z   /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/android.toolchain.cmake:55 (include)
+2026-10-03T03:37:58.9301054Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/3.31.6/CMakeSystem.cmake:6 (include)
+2026-10-03T03:37:58.9302804Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/CMakeScratch/TryCompile-EGLJez/CMakeLists.txt:4 (project)
+2026-10-03T03:37:58.9303843Z 
+2026-10-03T03:37:58.9303850Z 
+2026-10-03T03:37:58.9304556Z CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.2.12479018/build/cmake/flags.cmake:18 (cmake_minimum_required):
+2026-10-03T03:37:58.9305790Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-10-03T03:37:58.9306467Z   CMake.
+2026-10-03T03:37:58.9306656Z 
+2026-10-03T03:37:58.9307031Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-10-03T03:37:58.9307907Z   to tell CMake that the project requires at least <min> but has been updated
+2026-10-03T03:37:58.9308722Z   to work with policies introduced by <max> or earlier.
+2026-10-03T03:37:58.9309365Z Call Stack (most recent call first):
+2026-10-03T03:37:58.9310356Z   /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang.cmake:23 (include)
+2026-10-03T03:37:58.9311434Z   /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang-CXX.cmake:1 (include)
+2026-10-03T03:37:58.9312497Z   /usr/local/share/cmake-3.31/Modules/CMakeCXXInformation.cmake:48 (include)
+2026-10-03T03:37:58.9314006Z   /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/CMakeFiles/CMakeScratch/TryCompile-EGLJez/CMakeLists.txt:4 (project)
+2026-10-03T03:37:58.9315094Z 
+2026-10-03T03:37:58.9315100Z 
+2026-10-03T03:37:58.9315361Z -- Looking for C++ include execinfo.h - found
+2026-10-03T03:37:58.9316694Z -- CMAKE_SOURCE_DIR: /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/source
+2026-10-03T03:37:58.9318326Z -- CMAKE_BINARY_DIR: /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake
+2026-10-03T03:37:58.9319836Z -- PROJECT_SOURCE_DIR: /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/source
+2026-10-03T03:37:58.9321611Z -- PROJECT_BINARY_DIR: /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake
+2026-10-03T03:37:58.9322781Z -- CMake version: 3.31.6
+2026-10-03T03:37:58.9323485Z -- CMAKE_SYSTEM: Android-1
+2026-10-03T03:37:58.9324343Z -- CMAKE_SYSTEM_NAME: Android
+2026-10-03T03:37:58.9325075Z -- CMAKE_SYSTEM_VERSION: 1
+2026-10-03T03:37:58.9325811Z -- CMAKE_SYSTEM_PROCESSOR: aarch64
+2026-10-03T03:37:58.9326722Z -- sherpa-onnx git sha1: 31c2b087d20c7dc518de1e8cd486c83830fe32d4
+2026-10-03T03:37:58.9327833Z -- sherpa-onnx git date: Sat Oct 3 03:34:53 2026
+2026-10-03T03:37:58.9328759Z -- OS used to build sherpa-onnx: Ubuntu 24.04.5 LTS
+2026-10-03T03:37:58.9330671Z -- C++ compiler: /usr/local/lib/android/sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++
+2026-10-03T03:37:58.9331892Z -- C++ compiler ID: Clang
+2026-10-03T03:37:58.9332512Z -- C++ compiler version: 18.0.3
+2026-10-03T03:37:58.9333574Z -- C compiler: /usr/local/lib/android/sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/clang
+2026-10-03T03:37:58.9334633Z -- C compiler ID: Clang
+2026-10-03T03:37:58.9335228Z -- C compiler version: 18.0.3
+2026-10-03T03:37:59.0269620Z -- Downloading kaldi-native-fbank from https://github.com/csukuangfj/kaldi-native-fbank/archive/refs/tags/v1.22.3.tar.gz
+2026-10-03T03:37:59.2268673Z -- kaldi-native-fbank is downloaded to /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/kaldi_native_fbank-src
+2026-10-03T03:37:59.2270886Z -- kaldi-native-fbank's binary dir is /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/kaldi_native_fbank-build
+2026-10-03T03:37:59.2272119Z -- CMAKE_BUILD_TYPE: Release
+2026-10-03T03:37:59.2272590Z -- CMAKE_EXPORT_COMPILE_COMMANDS: 
+2026-10-03T03:37:59.2273060Z -- BUILD_SHARED_LIBS: OFF
+2026-10-03T03:37:59.2273517Z -- KALDI_NATIVE_FBANK_BUILD_TESTS: OFF
+2026-10-03T03:37:59.2274010Z -- KALDI_NATIVE_FBANK_BUILD_PYTHON: OFF
+2026-10-03T03:37:59.2274479Z -- KALDI_NATIVE_FBANK_ENABLE_CHECK: OFF
+2026-10-03T03:37:59.2274803Z -- KALDI_NATIVE_FBANK_ENABLE_CHECK: OFF
+2026-10-03T03:37:59.2275983Z -- CMAKE_CXX_FLAGS: -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D__BIONIC_NO_PAGE_SIZE_MACRO -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -ffunction-sections -fdata-sections
+2026-10-03T03:37:59.2277154Z -- CMAKE_INSTALL_PREFIX: /usr/local
+2026-10-03T03:37:59.2277468Z -- Looking for C++ include cxxabi.h
+2026-10-03T03:37:59.3269062Z -- Looking for C++ include cxxabi.h - found
+2026-10-03T03:37:59.3269885Z -- Looking for C++ include execinfo.h
+2026-10-03T03:37:59.3270821Z -- Looking for C++ include execinfo.h - found
+2026-10-03T03:37:59.3272075Z -- Downloading kissfft from https://github.com/mborgerding/kissfft/archive/febd4caeed32e33ad8b2e0bb5ea77542c40f18ec.zip
+2026-10-03T03:37:59.6268488Z -- kissfft is downloaded to /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/kissfft-src
+2026-10-03T03:37:59.6270416Z -- kissfft's binary dir is /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/kissfft-build
+2026-10-03T03:37:59.6271485Z -- Building KissFFT with datatype: float
+2026-10-03T03:37:59.6272049Z -- Building static library
+2026-10-03T03:37:59.6272546Z -- PKGINCLUDEDIR is /kissfft
+2026-10-03T03:37:59.6273035Z -- Disable building Python
+2026-10-03T03:37:59.6273933Z -- Downloading kaldi-decoder from https://github.com/k2-fsa/kaldi-decoder/archive/refs/tags/v0.3.0.tar.gz
+2026-10-03T03:37:59.9268453Z -- kaldi-decoder is downloaded to /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/kaldi_decoder-src
+2026-10-03T03:37:59.9270766Z -- kaldi-decoder's binary dir is /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/kaldi_decoder-build
+2026-10-03T03:37:59.9271904Z -- CMAKE_BUILD_TYPE: Release
+2026-10-03T03:37:59.9272741Z -- Downloading kaldifst from https://github.com/k2-fsa/kaldifst/archive/refs/tags/v1.8.0.tar.gz
+2026-10-03T03:38:00.2268043Z -- kaldifst is downloaded to /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/kaldifst-src
+2026-10-03T03:38:00.2269721Z -- kaldifst's binary dir is /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/kaldifst-build
+2026-10-03T03:38:00.2271022Z -- CMAKE_BUILD_TYPE: Release
+2026-10-03T03:38:00.2271536Z -- CMAKE_BUILD_TYPE: Release
+2026-10-03T03:38:00.2272020Z -- CMAKE_INSTALL_PREFIX: /usr/local
+2026-10-03T03:38:00.2272534Z -- C++ Standard version: 17
+2026-10-03T03:38:00.2274437Z -- CMAKE_CXX_FLAGS: -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D__BIONIC_NO_PAGE_SIZE_MACRO -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -ffunction-sections -fdata-sections
+2026-10-03T03:38:00.2276635Z -- Downloading openfst from https://github.com/csukuangfj/openfst/archive/refs/tags/v1.8.5-2026-07-09.tar.gz
+2026-10-03T03:38:00.7268388Z -- openfst is downloaded to /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/openfst-src
+2026-10-03T03:38:00.8268014Z -- BUILD_SHARED_LIBS: OFF
+2026-10-03T03:38:00.8281446Z -- BUILD_TESTING: OFF
+2026-10-03T03:38:00.8281969Z -- HAVE_BIN: OFF
+2026-10-03T03:38:00.8282398Z -- HAVE_SCRIPT: OFF
+2026-10-03T03:38:00.8282749Z -- HAVE_COMPACT: OFF
+2026-10-03T03:38:00.8283054Z -- HAVE_COMPRESS: OFF
+2026-10-03T03:38:00.8283348Z -- HAVE_CONST: OFF
+2026-10-03T03:38:00.8283617Z -- HAVE_FAR: ON
+2026-10-03T03:38:00.8283884Z -- HAVE_FSTS: OFF
+2026-10-03T03:38:00.8284150Z -- HAVE_GRM: OFF
+2026-10-03T03:38:00.8284416Z -- HAVE_LINEAR: OFF
+2026-10-03T03:38:00.8284695Z -- HAVE_LOOKAHEAD: OFF
+2026-10-03T03:38:00.8285008Z -- HAVE_MPDT: OFF
+2026-10-03T03:38:00.8285285Z -- HAVE_NGRAM: OFF
+2026-10-03T03:38:00.8285552Z -- HAVE_PDT: OFF
+2026-10-03T03:38:00.8285821Z -- HAVE_SPECIAL: OFF
+2026-10-03T03:38:00.8286114Z -- OPENFST_USE_ABSL: OFF
+2026-10-03T03:38:00.8286704Z -- Downloading eigen from https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.gz
+2026-10-03T03:38:01.1269326Z -- eigen is downloaded to /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/eigen-src
+2026-10-03T03:38:01.1271067Z -- eigen's binary dir is /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/eigen-build
+2026-10-03T03:38:01.1272072Z -- 
+2026-10-03T03:38:01.1272458Z -- Configured Eigen 5.0.1-dev
+2026-10-03T03:38:01.1272925Z -- 
+2026-10-03T03:38:01.1273478Z -- CMAKE_SYSTEM_NAME: Android
+2026-10-03T03:38:01.1273970Z -- CMAKE_SYSTEM_PROCESSOR: aarch64
+2026-10-03T03:38:01.1275016Z -- location_onnxruntime_header_dir: /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/ort-android/headers
+2026-10-03T03:38:01.1276757Z -- location_onnxruntime_lib: /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/ort-android/jni/arm64-v8a/libonnxruntime.so
+2026-10-03T03:38:01.1278430Z -- onnxruntime lib files: /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/ort-android/jni/arm64-v8a/libonnxruntime.so
+2026-10-03T03:38:01.1280007Z -- Downloading simple-sentencepiece https://github.com/pkufool/simple-sentencepiece/archive/refs/tags/v0.7.tar.gz
+2026-10-03T03:38:01.3267891Z -- simple-sentencepiece is downloaded to /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/simple-sentencepiece-src
+2026-10-03T03:38:01.4267901Z -- Performing Test SBPE_COMPILER_SUPPORTS_CXX14
+2026-10-03T03:38:01.4269253Z -- Performing Test SBPE_COMPILER_SUPPORTS_CXX14 - Success
+2026-10-03T03:38:01.4270469Z -- C++ Standard version: 17
+2026-10-03T03:38:01.4270997Z -- ONNXRUNTIME_DIR: 
+2026-10-03T03:38:01.4271659Z -- Downloading json from https://github.com/nlohmann/json/archive/refs/tags/v3.12.0.tar.gz
+2026-10-03T03:38:02.0268169Z -- json is downloaded to /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/json-src
+2026-10-03T03:38:02.0269201Z -- json's binary dir is /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/json-build
+2026-10-03T03:38:02.0270479Z -- Using the multi-header code from /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/json-src/include/
+2026-10-03T03:38:02.0271590Z -- Downloading espeak-ng from https://github.com/csukuangfj/espeak-ng/archive/ed530aa113046142eb5115cf2fc9157854d0ffe1.zip
+2026-10-03T03:38:04.5267559Z -- espeak-ng is downloaded to /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/espeak_ng-src
+2026-10-03T03:38:04.5268641Z -- espeak-ng binary dir is /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/espeak_ng-build
+2026-10-03T03:38:04.5269320Z -- Looking for mkstemp
+2026-10-03T03:38:04.5269878Z -- Looking for mkstemp - found
+2026-10-03T03:38:04.6267540Z -- Configuration:
+2026-10-03T03:38:04.6268046Z --   shared: OFF
+2026-10-03T03:38:04.6268451Z --   mbrola: OFF (MBROLA_BIN-NOTFOUND)
+2026-10-03T03:38:04.6269308Z --   libsonic: OFF (SONIC_LIB-NOTFOUND SONIC_INC-NOTFOUND)
+2026-10-03T03:38:04.6270513Z --   libpcaudio: OFF (PCAUDIO_LIB-NOTFOUND PCAUDIO_INC-NOTFOUND)
+2026-10-03T03:38:04.6271351Z --   klatt: OFF
+2026-10-03T03:38:04.6271880Z --   speech-player: OFF
+2026-10-03T03:38:04.6272395Z --   async: OFF
+2026-10-03T03:38:04.6273306Z -- ESPEAK_NG_DIR: /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/espeak_ng-src
+2026-10-03T03:38:04.6275037Z -- Downloading piper-phonemize from https://github.com/csukuangfj/piper-phonemize/archive/f3ff95afc03640bc1399e113e83361192a2fafb4.zip
+2026-10-03T03:38:05.6268528Z -- piper-phonemize is downloaded to /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/piper_phonemize-src
+2026-10-03T03:38:05.6271649Z -- piper-phonemize binary dir is /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake/_deps/piper_phonemize-build
+2026-10-03T03:38:05.6283126Z -- CMAKE_CXX_FLAGS: -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D__BIONIC_NO_PAGE_SIZE_MACRO -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -ffunction-sections -fdata-sections
+2026-10-03T03:38:05.6286617Z -- CMAKE_CXX_FLAGS: -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D__BIONIC_NO_PAGE_SIZE_MACRO -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -ffunction-sections -fdata-sections
+2026-10-03T03:38:05.6287995Z -- Configuring done (7.4s)
+2026-10-03T03:38:05.7269439Z -- Generating done (0.1s)
+2026-10-03T03:38:05.7270771Z -- Build files have been written to: /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native/cmake
+2026-10-03T03:38:05.7272233Z [  1%] Building C object _deps/espeak_ng-build/src/ucd-tools/CMakeFiles/ucd.dir/src/case.c.o
+2026-10-03T03:38:05.7273380Z [  1%] Building C object _deps/kissfft-build/CMakeFiles/kissfft.dir/kiss_fft.c.o
+2026-10-03T03:38:05.8271887Z [  1%] Building C object _deps/espeak_ng-build/src/ucd-tools/CMakeFiles/ucd.dir/src/categories.c.o
+2026-10-03T03:38:05.8273224Z [  1%] Building C object _deps/espeak_ng-build/src/ucd-tools/CMakeFiles/ucd.dir/src/ctype.c.o
+2026-10-03T03:38:05.9271577Z [  2%] Building C object _deps/espeak_ng-build/src/ucd-tools/CMakeFiles/ucd.dir/src/proplist.c.o
+2026-10-03T03:38:05.9272703Z [  2%] Building C object _deps/kissfft-build/CMakeFiles/kissfft.dir/kfc.c.o
+2026-10-03T03:38:05.9273665Z [  2%] Building C object _deps/kissfft-build/CMakeFiles/kissfft.dir/kiss_fftnd.c.o
+2026-10-03T03:38:06.0267874Z [  3%] Building C object _deps/kissfft-build/CMakeFiles/kissfft.dir/kiss_fftndr.c.o
+2026-10-03T03:38:06.0269287Z [  3%] Building C object _deps/kissfft-build/CMakeFiles/kissfft.dir/kiss_fftr.c.o
+2026-10-03T03:38:06.1268385Z [  3%] Linking C static library ../../lib/libkissfft-float.a
+2026-10-03T03:38:06.1269589Z [  3%] Built target kissfft
+2026-10-03T03:38:06.1270684Z [  3%] Building CXX object _deps/openfst-build/CMakeFiles/fst.dir/src/lib/compat.cc.o
+2026-10-03T03:38:06.3268373Z [  3%] Building C object _deps/espeak_ng-build/src/ucd-tools/CMakeFiles/ucd.dir/src/scripts.c.o
+2026-10-03T03:38:06.3270128Z [  3%] Building C object _deps/espeak_ng-build/src/ucd-tools/CMakeFiles/ucd.dir/src/tostring.c.o
+2026-10-03T03:38:06.4268377Z [  4%] Linking C static library ../../../../lib/libucd.a
+2026-10-03T03:38:06.4269119Z [  4%] Built target ucd
+2026-10-03T03:38:06.4270564Z [  4%] Building CXX object _deps/simple-sentencepiece-build/ssentencepiece/csrc/CMakeFiles/ssentencepiece_core.dir/ssentencepiece.cc.o
+2026-10-03T03:38:06.8268304Z [  5%] Building CXX object _deps/openfst-build/CMakeFiles/fst.dir/src/lib/encode.cc.o
+2026-10-03T03:38:07.8268557Z [  5%] Building CXX object _deps/openfst-build/CMakeFiles/fst.dir/src/lib/flags.cc.o
+2026-10-03T03:38:09.1268326Z [  5%] Building CXX object _deps/openfst-build/CMakeFiles/fst.dir/src/lib/fst.cc.o
+2026-10-03T03:38:09.3268567Z [  5%] Linking CXX static library ../../../../lib/libssentencepiece_core.a
+2026-10-03T03:38:09.3269892Z [  5%] Built target ssentencepiece_core
+2026-10-03T03:38:09.3271664Z [  6%] Building CXX object _deps/openfst-build/CMakeFiles/fst.dir/src/lib/fst-types.cc.o
+2026-10-03T03:38:10.3271247Z [  6%] Building CXX object _deps/openfst-build/CMakeFiles/fst.dir/src/lib/mapped-file.cc.o
+2026-10-03T03:38:11.0268068Z [  6%] Building CXX object _deps/openfst-build/CMakeFiles/fst.dir/src/lib/properties.cc.o
+2026-10-03T03:38:11.7268397Z [  7%] Building CXX object _deps/openfst-build/CMakeFiles/fst.dir/src/lib/symbol-table.cc.o
+2026-10-03T03:38:13.4268175Z [  7%] Building CXX object _deps/openfst-build/CMakeFiles/fst.dir/src/lib/symbol-table-ops.cc.o
+2026-10-03T03:38:14.7268188Z [  7%] Building CXX object _deps/openfst-build/CMakeFiles/fst.dir/src/lib/util.cc.o
+2026-10-03T03:38:15.6268269Z [  7%] Building CXX object _deps/openfst-build/CMakeFiles/fst.dir/src/lib/weight.cc.o
+2026-10-03T03:38:16.5268196Z [  7%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/common.c.o
+2026-10-03T03:38:16.6268186Z [  7%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/mnemonics.c.o
+2026-10-03T03:38:16.6269344Z [  7%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/error.c.o
+2026-10-03T03:38:16.6270806Z [  8%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/ieee80.c.o
+2026-10-03T03:38:16.7268166Z [  8%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/compiledata.c.o
+2026-10-03T03:38:17.1268390Z [  8%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/compiledict.c.o
+2026-10-03T03:38:17.4282056Z [  9%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/dictionary.c.o
+2026-10-03T03:38:18.1268122Z [  9%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/encoding.c.o
+2026-10-03T03:38:18.2268420Z [  9%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/intonation.c.o
+2026-10-03T03:38:18.5269217Z [ 10%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/langopts.c.o
+2026-10-03T03:38:18.5291702Z [ 10%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/numbers.c.o
+2026-10-03T03:38:18.8273572Z [ 10%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/phoneme.c.o
+2026-10-03T03:38:18.9268115Z [ 10%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/phonemelist.c.o
+2026-10-03T03:38:19.0268093Z [ 11%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/readclause.c.o
+2026-10-03T03:38:19.3273503Z [ 11%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/setlengths.c.o
+2026-10-03T03:38:19.5268427Z [ 11%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/soundicon.c.o
+2026-10-03T03:38:19.5281720Z [ 12%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/spect.c.o
+2026-10-03T03:38:19.7267892Z [ 12%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/ssml.c.o
+2026-10-03T03:38:19.9268299Z [ 12%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/synthdata.c.o
+2026-10-03T03:38:20.1281803Z [ 13%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/synthesize.c.o
+2026-10-03T03:38:20.4268050Z [ 13%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/tr_languages.c.o
+2026-10-03T03:38:20.6268128Z [ 13%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/translate.c.o
+2026-10-03T03:38:21.0268231Z [ 14%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/translateword.c.o
+2026-10-03T03:38:21.2268012Z [ 14%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/voices.c.o
+2026-10-03T03:38:21.4268309Z [ 14%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/wavegen.c.o
+2026-10-03T03:38:21.8268167Z [ 14%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/speech.c.o
+2026-10-03T03:38:21.9267778Z [ 15%] Building C object _deps/espeak_ng-build/src/libespeak-ng/CMakeFiles/espeak-ng.dir/espeak_api.c.o
+2026-10-03T03:38:21.9269879Z [ 15%] Linking C static library ../../../../lib/libespeak-ng.a
+2026-10-03T03:38:21.9270904Z [ 15%] Built target espeak-ng
+2026-10-03T03:38:22.0271829Z [ 15%] Building CXX object _deps/kaldi_native_fbank-build/kaldi-native-fbank/csrc/CMakeFiles/kaldi-native-fbank-core.dir/feature-fbank.cc.o
+2026-10-03T03:38:23.1268804Z [ 16%] Building CXX object _deps/kaldi_native_fbank-build/kaldi-native-fbank/csrc/CMakeFiles/kaldi-native-fbank-core.dir/feature-functions.cc.o
+2026-10-03T03:38:23.5268050Z [ 16%] Building CXX object _deps/kaldi_native_fbank-build/kaldi-native-fbank/csrc/CMakeFiles/kaldi-native-fbank-core.dir/feature-mfcc.cc.o
+2026-10-03T03:38:24.4268764Z [ 16%] Building CXX object _deps/kaldi_native_fbank-build/kaldi-native-fbank/csrc/CMakeFiles/kaldi-native-fbank-core.dir/feature-raw-audio-samples.cc.o
+2026-10-03T03:38:25.0268388Z [ 17%] Building CXX object _deps/kaldi_native_fbank-build/kaldi-native-fbank/csrc/CMakeFiles/kaldi-native-fbank-core.dir/feature-window.cc.o
+2026-10-03T03:38:25.7268567Z [ 17%] Building CXX object _deps/kaldi_native_fbank-build/kaldi-native-fbank/csrc/CMakeFiles/kaldi-native-fbank-core.dir/istft.cc.o
+2026-10-03T03:38:26.3268045Z [ 17%] Building CXX object _deps/kaldi_native_fbank-build/kaldi-native-fbank/csrc/CMakeFiles/kaldi-native-fbank-core.dir/kaldi-math.cc.o
+2026-10-03T03:38:26.7268556Z [ 18%] Building CXX object _deps/kaldi_native_fbank-build/kaldi-native-fbank/csrc/CMakeFiles/kaldi-native-fbank-core.dir/mel-computations.cc.o
+2026-10-03T03:38:27.6302266Z [ 18%] Building CXX object _deps/kaldi_native_fbank-build/kaldi-native-fbank/csrc/CMakeFiles/kaldi-native-fbank-core.dir/online-feature.cc.o
+2026-10-03T03:38:28.6267834Z [ 19%] Linking CXX static library ../../lib/libsherpa-onnx-fst.a
+2026-10-03T03:38:28.7268035Z [ 19%] Built target fst
+2026-10-03T03:38:28.7269758Z [ 19%] Building CXX object _deps/kaldi_native_fbank-build/kaldi-native-fbank/csrc/CMakeFiles/kaldi-native-fbank-core.dir/rfft.cc.o
+2026-10-03T03:38:28.7272370Z [ 20%] Building CXX object _deps/kaldi_native_fbank-build/kaldi-native-fbank/csrc/CMakeFiles/kaldi-native-fbank-core.dir/stft.cc.o
+2026-10-03T03:38:29.3268787Z [ 20%] Building CXX object _deps/kaldi_native_fbank-build/kaldi-native-fbank/csrc/CMakeFiles/kaldi-native-fbank-core.dir/whisper-feature.cc.o
+2026-10-03T03:38:29.5268463Z [ 21%] Building CXX object _deps/piper_phonemize-build/CMakeFiles/piper_phonemize.dir/src/phonemize.cpp.o
+2026-10-03T03:38:30.1267924Z [ 21%] Linking CXX static library ../../../../lib/libkaldi-native-fbank-core.a
+2026-10-03T03:38:30.1269529Z [ 21%] Built target kaldi-native-fbank-core
+2026-10-03T03:38:30.1270872Z [ 21%] Building CXX object _deps/openfst-build/CMakeFiles/fstfar.dir/src/extensions/far/far.cc.o
+2026-10-03T03:38:31.2268171Z [ 21%] Building CXX object _deps/openfst-build/CMakeFiles/fstfar.dir/src/extensions/far/stlist.cc.o
+2026-10-03T03:38:31.8268515Z [ 21%] Building CXX object _deps/piper_phonemize-build/CMakeFiles/piper_phonemize.dir/src/phoneme_ids.cpp.o
+2026-10-03T03:38:32.0268181Z [ 22%] Building CXX object _deps/openfst-build/CMakeFiles/fstfar.dir/src/extensions/far/sttable.cc.o
+2026-10-03T03:38:32.8268596Z [ 22%] Linking CXX static library ../../lib/libsherpa-onnx-fstfar.a
+2026-10-03T03:38:32.8269549Z [ 22%] Built target fstfar
+2026-10-03T03:38:32.8270941Z [ 22%] Building CXX object _deps/kaldifst-build/kaldifst/csrc/CMakeFiles/kaldifst_core.dir/context-fst.cc.o
+2026-10-03T03:38:33.7268533Z [ 22%] Building CXX object _deps/piper_phonemize-build/CMakeFiles/piper_phonemize.dir/src/shared.cpp.o
+2026-10-03T03:38:33.7270968Z [ 23%] Linking CXX static library ../../lib/libpiper_phonemize.a
+2026-10-03T03:38:33.7277332Z [ 23%] Built target piper_phonemize
+2026-10-03T03:38:33.7278675Z [ 24%] Building CXX object _deps/kaldifst-build/kaldifst/csrc/CMakeFiles/kaldifst_core.dir/kaldi-fst-io.cc.o
+2026-10-03T03:38:36.0268999Z [ 24%] Building CXX object _deps/kaldifst-build/kaldifst/csrc/CMakeFiles/kaldifst_core.dir/kaldi-holder.cc.o
+2026-10-03T03:38:36.5268032Z [ 24%] Building CXX object _deps/kaldifst-build/kaldifst/csrc/CMakeFiles/kaldifst_core.dir/kaldi-io.cc.o
+2026-10-03T03:38:37.5268193Z [ 25%] Building CXX object _deps/kaldifst-build/kaldifst/csrc/CMakeFiles/kaldifst_core.dir/kaldi-math.cc.o
+2026-10-03T03:38:37.7268477Z [ 25%] Building CXX object _deps/kaldifst-build/kaldifst/csrc/CMakeFiles/kaldifst_core.dir/kaldi-semaphore.cc.o
+2026-10-03T03:38:38.0268841Z [ 25%] Building CXX object _deps/kaldifst-build/kaldifst/csrc/CMakeFiles/kaldifst_core.dir/kaldi-table.cc.o
+2026-10-03T03:38:38.2268204Z [ 26%] Building CXX object _deps/kaldifst-build/kaldifst/csrc/CMakeFiles/kaldifst_core.dir/parse-options.cc.o
+2026-10-03T03:38:38.8268544Z [ 26%] Building CXX object _deps/kaldifst-build/kaldifst/csrc/CMakeFiles/kaldifst_core.dir/text-normalizer.cc.o
+2026-10-03T03:38:38.9268037Z [ 26%] Building CXX object _deps/kaldifst-build/kaldifst/csrc/CMakeFiles/kaldifst_core.dir/text-utils.cc.o
+2026-10-03T03:38:49.9267013Z [ 27%] Linking CXX static library ../../../../lib/libsherpa-onnx-kaldifst-core.a
+2026-10-03T03:38:50.0267632Z [ 27%] Built target kaldifst_core
+2026-10-03T03:38:50.0269319Z [ 27%] Building CXX object _deps/kaldi_decoder-build/kaldi-decoder/csrc/CMakeFiles/kaldi-decoder-core.dir/decodable-ctc.cc.o
+2026-10-03T03:38:50.0271569Z [ 28%] Building CXX object _deps/kaldi_decoder-build/kaldi-decoder/csrc/CMakeFiles/kaldi-decoder-core.dir/eigen.cc.o
+2026-10-03T03:38:51.2268389Z [ 28%] Building CXX object _deps/kaldi_decoder-build/kaldi-decoder/csrc/CMakeFiles/kaldi-decoder-core.dir/faster-decoder.cc.o
+2026-10-03T03:38:51.6268599Z [ 28%] Building CXX object _deps/kaldi_decoder-build/kaldi-decoder/csrc/CMakeFiles/kaldi-decoder-core.dir/lattice-faster-decoder.cc.o
+2026-10-03T03:38:52.8268266Z [ 29%] Building CXX object _deps/kaldi_decoder-build/kaldi-decoder/csrc/CMakeFiles/kaldi-decoder-core.dir/lattice-simple-decoder.cc.o
+2026-10-03T03:38:53.9267977Z [ 29%] Building CXX object _deps/kaldi_decoder-build/kaldi-decoder/csrc/CMakeFiles/kaldi-decoder-core.dir/simple-decoder.cc.o
+2026-10-03T03:39:01.2267542Z [ 29%] Linking CXX static library ../../../../lib/libkaldi-decoder-core.a
+2026-10-03T03:39:01.2268339Z [ 29%] Built target kaldi-decoder-core
+2026-10-03T03:39:01.3268260Z [ 29%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/base64-decode.cc.o
+2026-10-03T03:39:01.3270055Z [ 29%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/bbpe.cc.o
+2026-10-03T03:39:01.7268357Z [ 29%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/cat.cc.o
+2026-10-03T03:39:02.3268860Z [ 30%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/circular-buffer.cc.o
+2026-10-03T03:39:03.0268091Z [ 30%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/context-graph.cc.o
+2026-10-03T03:39:03.2268399Z [ 30%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/endpoint.cc.o
+2026-10-03T03:39:03.9267718Z [ 31%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/features.cc.o
+2026-10-03T03:39:04.0268372Z [ 31%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/file-utils.cc.o
+2026-10-03T03:39:04.7268183Z [ 31%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/fst-utils.cc.o
+2026-10-03T03:39:05.0268292Z [ 32%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/homophone-replacer.cc.o
+2026-10-03T03:39:07.2268387Z [ 32%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/hypothesis.cc.o
+2026-10-03T03:39:08.3268126Z [ 32%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/keyword-spotter-impl.cc.o
+2026-10-03T03:39:10.1268637Z [ 33%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/keyword-spotter.cc.o
+2026-10-03T03:39:12.9267911Z [ 33%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/lfr.cc.o
+2026-10-03T03:39:13.5268268Z [ 33%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/lodr-fst.cc.o
+2026-10-03T03:39:14.3268177Z [ 33%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/math.cc.o
+2026-10-03T03:39:17.3268526Z [ 34%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/normal-data-generator.cc.o
+2026-10-03T03:39:18.0268123Z [ 34%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-canary-model-config.cc.o
+2026-10-03T03:39:18.0269777Z [ 34%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-canary-model.cc.o
+2026-10-03T03:39:18.8268909Z [ 35%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-cohere-transcribe-greedy-search-decoder.cc.o
+2026-10-03T03:39:19.8268634Z [ 35%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-cohere-transcribe-model-config.cc.o
+2026-10-03T03:39:20.8268345Z [ 35%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-cohere-transcribe-model.cc.o
+2026-10-03T03:39:20.8269998Z [ 36%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-ctc-fst-decoder-config.cc.o
+2026-10-03T03:39:21.7268537Z [ 36%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-ctc-fst-decoder.cc.o
+2026-10-03T03:39:23.3273042Z [ 36%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-ctc-greedy-search-decoder.cc.o
+2026-10-03T03:39:24.5267822Z [ 37%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-ctc-model.cc.o
+2026-10-03T03:39:25.9268336Z [ 37%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-dolphin-model-config.cc.o
+2026-10-03T03:39:25.9270729Z [ 37%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-dolphin-model.cc.o
+2026-10-03T03:39:26.7269010Z [ 37%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-fire-red-asr-ctc-model-config.cc.o
+2026-10-03T03:39:27.5268360Z [ 38%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-fire-red-asr-ctc-model.cc.o
+2026-10-03T03:39:28.4268468Z [ 38%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-fire-red-asr-greedy-search-decoder.cc.o
+2026-10-03T03:39:29.7268052Z [ 38%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-fire-red-asr-model-config.cc.o
+2026-10-03T03:39:30.0268285Z [ 39%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-fire-red-asr-model.cc.o
+2026-10-03T03:39:30.5268108Z [ 39%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-lm-config.cc.o
+2026-10-03T03:39:31.3268580Z [ 39%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-lm.cc.o
+2026-10-03T03:39:31.9268511Z [ 40%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-medasr-ctc-model-config.cc.o
+2026-10-03T03:39:32.7268335Z [ 40%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-medasr-ctc-model.cc.o
+2026-10-03T03:39:33.9268251Z [ 40%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-model-config.cc.o
+2026-10-03T03:39:34.4268828Z [ 41%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-moonshine-greedy-search-decoder.cc.o
+2026-10-03T03:39:34.8268673Z [ 41%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-moonshine-model-config.cc.o
+2026-10-03T03:39:35.8268426Z [ 41%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-moonshine-model-v2.cc.o
+2026-10-03T03:39:35.8270035Z [ 41%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-moonshine-model.cc.o
+2026-10-03T03:39:37.5268050Z [ 42%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-moonshine-v2-greedy-search-decoder.cc.o
+2026-10-03T03:39:37.6268600Z [ 42%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-nemo-enc-dec-ctc-model-config.cc.o
+2026-10-03T03:39:38.5268479Z [ 42%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-nemo-enc-dec-ctc-model.cc.o
+2026-10-03T03:39:38.9268597Z [ 43%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-omnilingual-asr-ctc-model-config.cc.o
+2026-10-03T03:39:39.6268136Z [ 43%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-omnilingual-asr-ctc-model.cc.o
+2026-10-03T03:39:40.1267851Z [ 43%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-paraformer-greedy-search-decoder.cc.o
+2026-10-03T03:39:41.3268270Z [ 44%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-paraformer-model-config.cc.o
+2026-10-03T03:39:42.2268125Z [ 44%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-paraformer-model.cc.o
+2026-10-03T03:39:42.3268462Z [ 44%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-recognizer-impl.cc.o
+2026-10-03T03:39:43.8268390Z [ 45%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-recognizer.cc.o
+2026-10-03T03:39:45.6268293Z [ 45%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-rnn-lm.cc.o
+2026-10-03T03:39:48.3268461Z [ 45%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-sense-voice-model-config.cc.o
+2026-10-03T03:39:49.2268320Z [ 45%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-sense-voice-model.cc.o
+2026-10-03T03:39:51.2268165Z [ 46%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-source-separation-impl.cc.o
+2026-10-03T03:39:53.0268380Z [ 46%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-source-separation-model-config.cc.o
+2026-10-03T03:39:53.7268266Z [ 46%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-source-separation-spleeter-model-config.cc.o
+2026-10-03T03:39:54.4268668Z [ 47%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-source-separation-spleeter-model.cc.o
+2026-10-03T03:39:54.6268613Z [ 47%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-source-separation-uvr-model-config.cc.o
+2026-10-03T03:39:55.3268123Z [ 47%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-source-separation-uvr-model.cc.o
+2026-10-03T03:39:55.9268349Z [ 48%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-source-separation.cc.o
+2026-10-03T03:39:56.6268203Z [ 48%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-stream.cc.o
+2026-10-03T03:39:56.9268754Z [ 48%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tdnn-ctc-model.cc.o
+2026-10-03T03:39:58.6268296Z [ 49%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tdnn-model-config.cc.o
+2026-10-03T03:39:59.0268656Z [ 49%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-telespeech-ctc-model.cc.o
+2026-10-03T03:39:59.4268801Z [ 49%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-transducer-greedy-search-decoder.cc.o
+2026-10-03T03:40:00.6268161Z [ 49%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-transducer-greedy-search-nemo-decoder.cc.o
+2026-10-03T03:40:02.1268647Z [ 50%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-transducer-model-config.cc.o
+2026-10-03T03:40:03.1268478Z [ 50%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-transducer-model.cc.o
+2026-10-03T03:40:03.1270504Z [ 50%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-transducer-modified-beam-search-decoder.cc.o
+2026-10-03T03:40:06.0268756Z [ 51%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-transducer-modified-beam-search-nemo-decoder.cc.o
+2026-10-03T03:40:06.7268042Z [ 51%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-transducer-nemo-model.cc.o
+2026-10-03T03:40:08.6268346Z [ 51%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-wenet-ctc-model-config.cc.o
+2026-10-03T03:40:09.4268196Z [ 52%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-wenet-ctc-model.cc.o
+2026-10-03T03:40:09.8268479Z [ 52%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-whisper-dtw.cc.o
+2026-10-03T03:40:10.8268325Z [ 52%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-whisper-greedy-search-decoder.cc.o
+2026-10-03T03:40:10.9268195Z [ 53%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-whisper-model-config.cc.o
+2026-10-03T03:40:12.5268094Z [ 53%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-whisper-model.cc.o
+2026-10-03T03:40:13.3268101Z [ 53%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-whisper-timestamp-rules.cc.o
+2026-10-03T03:40:14.6268526Z [ 53%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-zipformer-ctc-model-config.cc.o
+2026-10-03T03:40:15.5267746Z [ 54%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-zipformer-ctc-model.cc.o
+2026-10-03T03:40:15.6268213Z [ 54%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-conformer-transducer-model.cc.o
+2026-10-03T03:40:17.2268690Z [ 54%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-ctc-fst-decoder-config.cc.o
+2026-10-03T03:40:18.0268583Z [ 55%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-ctc-fst-decoder.cc.o
+2026-10-03T03:40:18.5268143Z [ 55%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-ctc-greedy-search-decoder.cc.o
+2026-10-03T03:40:20.3268063Z [ 55%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-ctc-model.cc.o
+2026-10-03T03:40:21.4268533Z [ 56%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-ebranchformer-transducer-model.cc.o
+2026-10-03T03:40:22.9268403Z [ 56%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-lm-config.cc.o
+2026-10-03T03:40:23.7268015Z [ 56%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-lm.cc.o
+2026-10-03T03:40:24.5268077Z [ 56%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-lstm-transducer-model.cc.o
+2026-10-03T03:40:26.0268348Z [ 57%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-model-config.cc.o
+2026-10-03T03:40:27.4269145Z [ 57%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-nemo-ctc-model-config.cc.o
+2026-10-03T03:40:27.4271253Z [ 57%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-nemo-ctc-model.cc.o
+2026-10-03T03:40:28.1268043Z [ 58%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-paraformer-model-config.cc.o
+2026-10-03T03:40:28.9268109Z [ 58%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-paraformer-model.cc.o
+2026-10-03T03:40:29.2268474Z [ 58%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-recognizer-impl.cc.o
+2026-10-03T03:40:30.5267885Z [ 59%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-recognizer.cc.o
+2026-10-03T03:40:33.5267603Z [ 59%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-rnn-lm.cc.o
+2026-10-03T03:40:36.7268432Z [ 59%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-stream.cc.o
+2026-10-03T03:40:38.8268023Z [ 60%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-t-one-ctc-model-config.cc.o
+2026-10-03T03:40:39.6268375Z [ 60%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-t-one-ctc-model.cc.o
+2026-10-03T03:40:40.1268248Z [ 60%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-transducer-decoder.cc.o
+2026-10-03T03:40:41.4268709Z [ 60%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-transducer-greedy-search-decoder.cc.o
+2026-10-03T03:40:42.7268611Z [ 61%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-transducer-greedy-search-nemo-parakeet-unified-decoder.cc.o
+2026-10-03T03:40:44.1268449Z [ 61%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-transducer-greedy-search-nemo-decoder.cc.o
+2026-10-03T03:40:45.7268342Z [ 61%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-transducer-model-config.cc.o
+2026-10-03T03:40:46.7268426Z [ 62%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-transducer-model.cc.o
+2026-10-03T03:40:47.1268317Z [ 62%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-transducer-modified-beam-search-decoder.cc.o
+2026-10-03T03:40:49.3268677Z [ 62%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-transducer-nemo-parakeet-unified-model.cc.o
+2026-10-03T03:40:50.8268535Z [ 63%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-transducer-nemo-model.cc.o
+2026-10-03T03:40:51.2268423Z [ 63%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-wenet-ctc-model-config.cc.o
+2026-10-03T03:40:51.9268126Z [ 63%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-wenet-ctc-model.cc.o
+2026-10-03T03:40:53.6268380Z [ 64%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-zipformer-transducer-model.cc.o
+2026-10-03T03:40:56.5268022Z [ 64%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-zipformer2-ctc-model-config.cc.o
+2026-10-03T03:40:56.9268423Z [ 64%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-zipformer2-ctc-model.cc.o
+2026-10-03T03:40:57.3268666Z [ 64%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-zipformer2-transducer-model.cc.o
+2026-10-03T03:40:59.1268486Z [ 65%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/onnx-utils.cc.o
+2026-10-03T03:41:00.8268281Z [ 65%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/packed-sequence.cc.o
+2026-10-03T03:41:01.0267784Z [ 65%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/pad-sequence.cc.o
+2026-10-03T03:41:02.1268340Z [ 66%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/parse-options.cc.o
+2026-10-03T03:41:02.1269996Z [ 66%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/phrase-matcher.cc.o
+2026-10-03T03:41:02.9269084Z [ 66%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/provider-config.cc.o
+2026-10-03T03:41:04.3268322Z [ 67%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/provider.cc.o
+2026-10-03T03:41:04.6268198Z [ 67%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/resample.cc.o
+2026-10-03T03:41:05.3268376Z [ 67%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/session.cc.o
+2026-10-03T03:41:05.4268509Z [ 68%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/silero-vad-model-config.cc.o
+2026-10-03T03:41:06.2268236Z [ 68%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/silero-vad-model.cc.o
+2026-10-03T03:41:07.3268184Z [ 68%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/slice.cc.o
+2026-10-03T03:41:07.9268493Z [ 68%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/spoken-language-identification-impl.cc.o
+2026-10-03T03:41:08.4268572Z [ 69%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/spoken-language-identification.cc.o
+2026-10-03T03:41:09.2267667Z [ 69%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/stack.cc.o
+2026-10-03T03:41:09.4268254Z [ 69%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/symbol-table.cc.o
+2026-10-03T03:41:10.5267991Z [ 70%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/ten-vad-model-config.cc.o
+2026-10-03T03:41:10.8268261Z [ 70%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/ten-vad-model.cc.o
+2026-10-03T03:41:11.4268385Z [ 70%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/text-utils.cc.o
+2026-10-03T03:41:13.6268050Z [ 71%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/timer.cc.o
+2026-10-03T03:41:13.6269432Z [ 71%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/transducer-keyword-decoder.cc.o
+2026-10-03T03:41:14.2268234Z [ 71%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/transpose.cc.o
+2026-10-03T03:41:15.2268331Z [ 72%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/unbind.cc.o
+2026-10-03T03:41:16.5267970Z [ 72%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/utils.cc.o
+2026-10-03T03:41:17.3268413Z [ 72%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/vad-model-config.cc.o
+2026-10-03T03:41:17.8268212Z [ 72%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/vad-model.cc.o
+2026-10-03T03:41:18.0267694Z [ 73%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/version.cc.o
+2026-10-03T03:41:18.1268577Z [ 73%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/voice-activity-detector.cc.o
+2026-10-03T03:41:18.5267774Z [ 73%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/wave-reader.cc.o
+2026-10-03T03:41:19.1267882Z [ 74%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/wave-writer.cc.o
+2026-10-03T03:41:19.3268590Z [ 74%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/speaker-embedding-extractor-impl.cc.o
+2026-10-03T03:41:19.9268372Z [ 74%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/speaker-embedding-extractor-model.cc.o
+2026-10-03T03:41:22.8268235Z [ 75%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/speaker-embedding-extractor-nemo-model.cc.o
+2026-10-03T03:41:23.0267625Z [ 75%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/speaker-embedding-extractor.cc.o
+2026-10-03T03:41:25.7268419Z [ 75%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/speaker-embedding-manager.cc.o
+2026-10-03T03:41:25.8268303Z [ 76%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/audio-tagging-impl.cc.o
+2026-10-03T03:41:27.9268446Z [ 76%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/audio-tagging-label-file.cc.o
+2026-10-03T03:41:28.7268900Z [ 76%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/audio-tagging-model-config.cc.o
+2026-10-03T03:41:29.0267618Z [ 76%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/audio-tagging.cc.o
+2026-10-03T03:41:29.5267809Z [ 77%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-ced-model.cc.o
+2026-10-03T03:41:29.9268573Z [ 77%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-zipformer-audio-tagging-model-config.cc.o
+2026-10-03T03:41:30.6268122Z [ 77%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-zipformer-audio-tagging-model.cc.o
+2026-10-03T03:41:31.0267683Z [ 78%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/qnn-config.cc.o
+2026-10-03T03:41:31.8268351Z [ 78%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-ct-transformer-model.cc.o
+2026-10-03T03:41:32.1268350Z [ 78%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-punctuation-impl.cc.o
+2026-10-03T03:41:33.5268083Z [ 79%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-punctuation-model-config.cc.o
+2026-10-03T03:41:34.4268278Z [ 79%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-punctuation.cc.o
+2026-10-03T03:41:34.4269808Z [ 79%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-cnn-bilstm-model.cc.o
+2026-10-03T03:41:35.1268201Z [ 79%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-punctuation-impl.cc.o
+2026-10-03T03:41:35.9268285Z [ 80%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-punctuation-model-config.cc.o
+2026-10-03T03:41:36.7268479Z [ 80%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-punctuation.cc.o
+2026-10-03T03:41:37.4268215Z [ 80%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/tashkeel-tokenizer.cc.o
+2026-10-03T03:41:37.8268448Z [ 81%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-catt-model.cc.o
+2026-10-03T03:41:39.3268461Z [ 81%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-diacritization-model-config.cc.o
+2026-10-03T03:41:39.4268357Z [ 81%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-diacritization.cc.o
+2026-10-03T03:41:40.1268195Z [ 82%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-diacritization-impl.cc.o
+2026-10-03T03:41:40.1270527Z [ 82%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-funasr-nano-model-config.cc.o
+2026-10-03T03:41:41.0268465Z [ 82%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-funasr-nano-model.cc.o
+2026-10-03T03:41:41.5268437Z [ 83%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-recognizer-funasr-nano-impl.cc.o
+2026-10-03T03:41:43.6268018Z [ 83%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/funasr-nano-tokenizer.cc.o
+2026-10-03T03:41:45.0268794Z [ 83%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-qwen3-asr-model-config.cc.o
+2026-10-03T03:41:45.8268264Z [ 83%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-qwen3-asr-model.cc.o
+2026-10-03T03:41:46.8268544Z [ 84%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-recognizer-qwen3-asr-impl.cc.o
+2026-10-03T03:41:48.1268052Z [ 84%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/qwen-asr-tokenizer.cc.o
+2026-10-03T03:41:50.9268717Z [ 84%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/character-lexicon.cc.o
+2026-10-03T03:41:52.9268307Z [ 85%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/hifigan-vocoder.cc.o
+2026-10-03T03:41:54.4268207Z [ 85%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/kokoro-multi-lang-lexicon.cc.o
+2026-10-03T03:41:55.3268814Z [ 85%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/lexicon.cc.o
+2026-10-03T03:41:57.2268186Z [ 86%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/matcha-tts-lexicon.cc.o
+2026-10-03T03:42:02.7267984Z [ 86%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/melo-tts-lexicon.cc.o
+2026-10-03T03:42:03.0268560Z [ 86%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-character-frontend.cc.o
+2026-10-03T03:42:04.2267930Z [ 87%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-frontend.cc.o
+2026-10-03T03:42:04.8268330Z [ 87%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-impl.cc.o
+2026-10-03T03:42:07.1268038Z [ 87%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-kitten-model-config.cc.o
+2026-10-03T03:42:07.9268442Z [ 87%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-kitten-model.cc.o
+2026-10-03T03:42:09.8268355Z [ 88%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-kokoro-model-config.cc.o
+2026-10-03T03:42:10.7268092Z [ 88%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-kokoro-model.cc.o
+2026-10-03T03:42:12.4268081Z [ 88%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-matcha-model-config.cc.o
+2026-10-03T03:42:12.5268225Z [ 89%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-matcha-model.cc.o
+2026-10-03T03:42:13.3268415Z [ 89%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-model-config.cc.o
+2026-10-03T03:42:14.1267802Z [ 89%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-pocket-model-config.cc.o
+2026-10-03T03:42:14.2268277Z [ 90%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-pocket-model.cc.o
+2026-10-03T03:42:14.9268061Z [ 90%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-supertonic-impl.cc.o
+2026-10-03T03:42:15.9267973Z [ 90%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-supertonic-model-config.cc.o
+2026-10-03T03:42:16.8268400Z [ 91%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-supertonic-model.cc.o
+2026-10-03T03:42:17.1267810Z [ 91%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-supertonic-unicode-processor.cc.o
+2026-10-03T03:42:18.1267917Z [ 91%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-vits-model-config.cc.o
+2026-10-03T03:42:19.0268387Z [ 91%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-vits-model.cc.o
+2026-10-03T03:42:20.8267914Z [ 92%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-zipvoice-model-config.cc.o
+2026-10-03T03:42:20.9268671Z [ 92%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts-zipvoice-model.cc.o
+2026-10-03T03:42:21.8268296Z [ 92%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-tts.cc.o
+2026-10-03T03:42:22.8268369Z [ 93%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/piper-phonemize-lexicon.cc.o
+2026-10-03T03:42:23.2268552Z [ 93%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/sentence-piece-tokenizer.cc.o
+2026-10-03T03:42:26.1267920Z [ 93%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/vocoder.cc.o
+2026-10-03T03:42:27.5291953Z [ 94%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/vocos-vocoder.cc.o
+2026-10-03T03:42:27.5294019Z [ 94%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-speech-denoiser-dpdfnet-model-config.cc.o
+2026-10-03T03:42:28.3269286Z [ 94%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-speech-denoiser-dpdfnet-model.cc.o
+2026-10-03T03:42:29.2269016Z [ 95%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-speech-denoiser-gtcrn-model-config.cc.o
+2026-10-03T03:42:30.0268163Z [ 95%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-speech-denoiser-gtcrn-model.cc.o
+2026-10-03T03:42:30.1268027Z [ 95%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-speech-denoiser-impl.cc.o
+2026-10-03T03:42:31.7268508Z [ 95%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-speech-denoiser-model-config.cc.o
+2026-10-03T03:42:32.3268342Z [ 96%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/offline-speech-denoiser.cc.o
+2026-10-03T03:42:32.4268493Z [ 96%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-speech-denoiser-impl.cc.o
+2026-10-03T03:42:33.0268494Z [ 96%] Building CXX object sherpa-onnx/csrc/CMakeFiles/sherpa-onnx-core.dir/online-speech-denoiser.cc.o
+2026-10-03T03:42:34.8267719Z [ 97%] Linking CXX static library ../../lib/libsherpa-onnx-core.a
+2026-10-03T03:42:35.0267706Z [ 97%] Built target sherpa-onnx-core
+2026-10-03T03:42:35.0271800Z [ 97%] Building CXX object sherpa-onnx/jni/CMakeFiles/sherpa-onnx-jni.dir/common.cc.o
+2026-10-03T03:42:35.0273283Z [ 97%] Building CXX object sherpa-onnx/jni/CMakeFiles/sherpa-onnx-jni.dir/jni.cc.o
+2026-10-03T03:42:35.6267896Z [ 98%] Building CXX object sherpa-onnx/jni/CMakeFiles/sherpa-onnx-jni.dir/offline-recognizer.cc.o
+2026-10-03T03:42:36.1267878Z [ 98%] Building CXX object sherpa-onnx/jni/CMakeFiles/sherpa-onnx-jni.dir/offline-stream.cc.o
+2026-10-03T03:42:36.8267902Z [ 98%] Building CXX object sherpa-onnx/jni/CMakeFiles/sherpa-onnx-jni.dir/online-stream.cc.o
+2026-10-03T03:42:37.2268482Z [ 99%] Building CXX object sherpa-onnx/jni/CMakeFiles/sherpa-onnx-jni.dir/speaker-embedding-extractor.cc.o
+2026-10-03T03:42:39.5268316Z [ 99%] Building CXX object sherpa-onnx/jni/CMakeFiles/sherpa-onnx-jni.dir/version.cc.o
+2026-10-03T03:42:39.9267975Z [ 99%] Building CXX object sherpa-onnx/jni/CMakeFiles/sherpa-onnx-jni.dir/voice-activity-detector.cc.o
+2026-10-03T03:42:40.0268454Z [ 99%] Building CXX object sherpa-onnx/jni/CMakeFiles/sherpa-onnx-jni.dir/offline-tts.cc.o
+2026-10-03T03:42:41.6267007Z [100%] Linking CXX shared library ../../lib/libsherpa-onnx-jni.so
+2026-10-03T03:42:41.8267194Z [100%] Built target sherpa-onnx-jni
+2026-10-03T03:42:41.9267547Z Upstream Sherpa ready: /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build/sherpa-native
+2026-10-03T03:42:42.0268252Z 
+2026-10-03T03:42:42.0269332Z > Task :app:preBuild
+2026-10-03T03:42:42.0270416Z > Task :app:preReleaseBuild
+2026-10-03T03:42:42.1272880Z > Task :app:generateReleaseBuildConfig
+2026-10-03T03:42:48.5271291Z > Task :app:generateReleaseResValues
+2026-10-03T03:42:48.5281330Z > Task :app:checkReleaseAarMetadata
+2026-10-03T03:42:48.6291818Z > Task :app:mapReleaseSourceSetPaths
+2026-10-03T03:42:48.6292831Z > Task :app:generateReleaseResources
+2026-10-03T03:42:50.0291285Z > Task :app:packageReleaseResources
+2026-10-03T03:42:50.5268065Z > Task :app:mergeReleaseResources
+2026-10-03T03:42:50.9316654Z > Task :app:createReleaseCompatibleScreenManifests
+2026-10-03T03:42:50.9357297Z > Task :app:extractDeepLinksRelease
+2026-10-03T03:42:51.0268528Z > Task :app:parseReleaseLocalResources
+2026-10-03T03:42:51.2268352Z > Task :app:processReleaseMainManifest
+2026-10-03T03:42:51.3267406Z > Task :app:processReleaseManifest
+2026-10-03T03:42:51.4270312Z > Task :app:processReleaseManifestForPackage
+2026-10-03T03:42:51.4271299Z > Task :app:javaPreCompileRelease
+2026-10-03T03:42:51.5273572Z > Task :app:preReleaseUnitTestBuild
+2026-10-03T03:42:51.5274634Z > Task :app:javaPreCompileReleaseUnitTest
+2026-10-03T03:42:51.5275757Z > Task :app:extractProguardFiles
+2026-10-03T03:42:51.8267452Z > Task :app:processReleaseResources
+2026-10-03T03:42:53.5267568Z 
+2026-10-03T03:42:53.5268643Z > Task :app:configureCMakeRelWithDebInfo[arm64-v8a]
+2026-10-03T03:42:53.5269414Z Checking the license for package CMake 3.22.1 in /usr/local/lib/android/sdk/licenses
+2026-10-03T03:42:53.5270273Z License for package CMake 3.22.1 accepted.
+2026-10-03T03:42:53.5270951Z Preparing "Install CMake 3.22.1 v.3.22.1".
+2026-10-03T03:42:53.8267682Z "Install CMake 3.22.1 v.3.22.1" ready.
+2026-10-03T03:42:53.8268903Z Installing CMake 3.22.1 in /usr/local/lib/android/sdk/cmake/3.22.1
+2026-10-03T03:42:53.8269882Z "Install CMake 3.22.1 v.3.22.1" complete.
+2026-10-03T03:42:54.0272727Z "Install CMake 3.22.1 v.3.22.1" finished.
+2026-10-03T03:43:27.7320685Z 
+2026-10-03T03:43:27.7321713Z > Task :app:compileReleaseKotlin
+2026-10-03T03:43:35.1291342Z > Task :app:buildCMakeRelWithDebInfo[arm64-v8a]
+2026-10-03T03:44:22.7269429Z > Task :app:mergeReleaseJniLibFolders
+2026-10-03T03:44:24.6288369Z > Task :app:mergeReleaseNativeLibs
+2026-10-03T03:44:24.8291530Z > Task :app:checkReleaseDuplicateClasses
+2026-10-03T03:44:24.9291519Z > Task :app:mergeReleaseStartupProfile
+2026-10-03T03:44:24.9304518Z > Task :app:mergeReleaseArtProfile
+2026-10-03T03:44:25.0281411Z > Task :app:mergeReleaseShaders
+2026-10-03T03:44:25.0300824Z > Task :app:compileReleaseShaders NO-SOURCE
+2026-10-03T03:44:25.0330773Z > Task :app:generateReleaseAssets UP-TO-DATE
+2026-10-03T03:44:25.2271593Z > Task :app:stripReleaseDebugSymbols
+2026-10-03T03:44:25.4281564Z > Task :app:mergeReleaseAssets
+2026-10-03T03:44:26.0271289Z > Task :app:compressReleaseAssets
+2026-10-03T03:44:26.1321488Z > Task :app:extractReleaseVersionControlInfo
+2026-10-03T03:44:26.2281226Z > Task :app:extractReleaseNativeSymbolTables
+2026-10-03T03:44:26.5271533Z > Task :app:collectReleaseDependencies
+2026-10-03T03:44:26.7311256Z > Task :app:sdkReleaseDependencyData
+2026-10-03T03:44:26.7340912Z > Task :app:validateSigningRelease
+2026-10-03T03:44:26.7370902Z > Task :app:convertLinkedResourcesToProtoRelease
+2026-10-03T03:44:26.7371885Z > Task :app:writeReleaseAppMetadata
+2026-10-03T03:44:26.7392255Z > Task :app:writeReleaseSigningConfigVersions
+2026-10-03T03:44:26.7393034Z > Task :app:preReleaseAndroidTestBuild SKIPPED
+2026-10-03T03:44:27.6267448Z > Task :app:processReleaseAndroidTestManifest
+2026-10-03T03:44:27.6300848Z > Task :app:generateReleaseAndroidTestBuildConfig
+2026-10-03T03:44:27.7281739Z > Task :app:checkReleaseAndroidTestAarMetadata
+2026-10-03T03:44:27.7331060Z > Task :app:generateReleaseAndroidTestResValues
+2026-10-03T03:44:27.7370943Z > Task :app:mapReleaseAndroidTestSourceSetPaths
+2026-10-03T03:44:27.7372975Z > Task :app:generateReleaseAndroidTestResources
+2026-10-03T03:44:27.8271299Z > Task :app:javaPreCompileReleaseAndroidTest
+2026-10-03T03:44:27.8301181Z > Task :app:mergeReleaseAndroidTestShaders
+2026-10-03T03:44:27.8330921Z > Task :app:mergeReleaseAndroidTestResources
+2026-10-03T03:44:27.8360919Z > Task :app:compileReleaseAndroidTestShaders NO-SOURCE
+2026-10-03T03:44:27.9301236Z > Task :app:generateReleaseAndroidTestAssets UP-TO-DATE
+2026-10-03T03:44:28.0268002Z > Task :app:mergeReleaseAndroidTestAssets
+2026-10-03T03:44:28.0310890Z > Task :app:compressReleaseAndroidTestAssets
+2026-10-03T03:44:28.2291503Z > Task :app:processReleaseAndroidTestResources
+2026-10-03T03:44:28.2292689Z > Task :app:checkReleaseAndroidTestDuplicateClasses
+2026-10-03T03:44:28.2341363Z > Task :app:mergeReleaseAndroidTestJniLibFolders
+2026-10-03T03:44:28.3271448Z > Task :app:mergeReleaseAndroidTestNativeLibs NO-SOURCE
+2026-10-03T03:44:28.3321156Z > Task :app:stripReleaseAndroidTestDebugSymbols NO-SOURCE
+2026-10-03T03:44:28.3350821Z > Task :app:validateSigningReleaseAndroidTest
+2026-10-03T03:44:28.3380988Z > Task :app:writeReleaseAndroidTestSigningConfigVersions
+2026-10-03T03:44:31.6269049Z > Task :app:mergeReleaseNativeDebugMetadata
+2026-10-03T03:55:10.4276453Z 
+2026-10-03T03:55:10.4277069Z > Task :app:compileReleaseKotlin
+2026-10-03T03:55:10.4277997Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt:88:14 'lateinit' is unnecessary: definitely initialized in constructors.
+2026-10-03T03:55:10.4279297Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt:177:14 'lateinit' is unnecessary: definitely initialized in constructors.
+2026-10-03T03:55:10.4281395Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt:178:14 'lateinit' is unnecessary: definitely initialized in constructors.
+2026-10-03T03:55:10.4283513Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt:182:14 'lateinit' is unnecessary: definitely initialized in constructors.
+2026-10-03T03:55:10.4286539Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt:183:14 'lateinit' is unnecessary: definitely initialized in constructors.
+2026-10-03T03:55:10.4288864Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt:184:14 'lateinit' is unnecessary: definitely initialized in constructors.
+2026-10-03T03:55:10.4290948Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt:185:14 'lateinit' is unnecessary: definitely initialized in constructors.
+2026-10-03T03:55:10.4294212Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt:187:14 'lateinit' is unnecessary: definitely initialized in constructors.
+2026-10-03T03:55:10.4296091Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt:784:62 Unnecessary safe call on a non-null receiver of type 'LiveComparison.Trial'.
+2026-10-03T03:55:10.4297904Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt:1398:91 Unnecessary safe call on a non-null receiver of type 'Job'.
+2026-10-03T03:55:10.4299599Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt:1834:34 Unnecessary safe call on a non-null receiver of type 'Job'.
+2026-10-03T03:55:10.4302451Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt:1864:34 Unnecessary safe call on a non-null receiver of type 'Job'.
+2026-10-03T03:55:10.4304882Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/actions/InstalledAppResolver.kt:83:51 Unnecessary safe call on a non-null receiver of type 'CharSequence'.
+2026-10-03T03:55:10.4307589Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt:90:111 Unnecessary non-null assertion (!!) on a non-null receiver of type 'ConversationMessage'.
+2026-10-03T03:55:10.4310673Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt:181:56 Java type mismatch: inferred type is 'String?', but 'String' was expected.
+2026-10-03T03:55:10.4313522Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/conversation/ConversationRuntime.kt:207:55 Unnecessary non-null assertion (!!) on a non-null receiver of type 'MemoryDeliveryFence.Ticket'.
+2026-10-03T03:55:10.4316376Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt:116:49 Java type mismatch: inferred type is 'String?', but 'String' was expected.
+2026-10-03T03:55:10.4319062Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt:135:55 Java type mismatch: inferred type is 'String?', but 'String' was expected.
+2026-10-03T03:55:10.4321715Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt:158:29 Java type mismatch: inferred type is 'String?', but 'String' was expected.
+2026-10-03T03:55:10.4323211Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:64:68 Java type mismatch: inferred type is 'String?', but 'String' was expected.
+2026-10-03T03:55:10.4324929Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:67:61 Java type mismatch: inferred type is 'String?', but 'String' was expected.
+2026-10-03T03:55:10.4326551Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:112:43 Unnecessary non-null assertion (!!) on a non-null receiver of type 'SourceTextPersistencePolicy.SummaryProof'.
+2026-10-03T03:55:10.4328495Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/ui/MemoryScreen.kt:49:21 'val LocalLifecycleOwner: ProvidableCompositionLocal<LifecycleOwner>' is deprecated. Moved to lifecycle-runtime-compose library in androidx.lifecycle.compose package.
+2026-10-03T03:55:10.4330606Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/ui/MemoryScreen.kt:186:44 Unnecessary safe call on a non-null receiver of type 'MemoryWikiIndex'.
+2026-10-03T03:55:10.4332537Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/voice/AudioTurnCapture.kt:368:78 Unnecessary non-null assertion (!!) on a non-null receiver of type 'Boolean'.
+2026-10-03T03:55:10.4333974Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/voice/PiperVoiceOutput.kt:362:53 Unnecessary safe call on a non-null receiver of type 'CallModelSlot.Lease<OfflineTts>'.
+2026-10-03T03:55:10.4335413Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/voice/RecognitionModelStore.kt:32:41 'val nextTarEntry: TarArchiveEntry!' is deprecated. Deprecated in Java.
+2026-10-03T03:55:10.4336788Z w: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/main/java/com/battlesbudz/jarvis/v2/voice/TtsModelStore.kt:77:37 'val nextTarEntry: TarArchiveEntry!' is deprecated. Deprecated in Java.
+2026-10-03T03:55:19.6266658Z 
+2026-10-03T03:55:19.6291285Z > Task :app:compileReleaseJavaWithJavac
+2026-10-03T03:55:19.7301232Z > Task :app:processReleaseJavaRes
+2026-10-03T03:55:19.8272903Z > Task :app:bundleReleaseClassesToCompileJar
+2026-10-03T03:55:19.8273631Z > Task :app:bundleReleaseClassesToRuntimeJar
+2026-10-03T03:55:22.1271656Z > Task :app:generateReleaseLintVitalReportModel
+2026-10-03T03:55:30.1286302Z > Task :app:mergeReleaseGeneratedProguardFiles
+2026-10-03T03:55:32.2285614Z > Task :app:expandReleaseArtProfileWildcards
+2026-10-03T03:55:36.3291354Z > Task :app:mergeReleaseJavaResource
+2026-10-03T03:55:37.9280628Z 
+2026-10-03T03:55:37.9312006Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt:49:86 Return type mismatch: expected 'Boolean', actual 'Long'.
+2026-10-03T03:55:37.9350511Z > Task :app:compileReleaseUnitTestKotlin FAILED
+2026-10-03T03:55:37.9353539Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt:17:105 Return type mismatch: expected 'Boolean', actual 'Long'.
+2026-10-03T03:55:37.9356102Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt:25:116 Return type mismatch: expected 'Boolean', actual 'Long'.
+2026-10-03T03:55:37.9381709Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt:44:122 Return type mismatch: expected 'Boolean', actual 'Long'.
+2026-10-03T03:55:40.2267335Z 
+2026-10-03T03:55:40.2291206Z > Task :app:produceReleaseComposeMapping
+2026-10-03T03:55:40.2363749Z > Task :app:reportReleaseComposeMappingErrors
+2026-10-03T03:55:52.9281265Z > Task :app:lintVitalAnalyzeRelease
+2026-10-03T03:56:06.3291250Z > Task :app:minifyReleaseWithR8
+2026-10-03T03:58:32.9268095Z 
+2026-10-03T03:58:32.9269334Z gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1790998624377.json
+2026-10-03T03:58:32.9281637Z 71 actionable tasks: 71 executed
+2026-10-03T03:58:32.9285085Z FAILURE: Build failed with an exception.
+2026-10-03T03:58:32.9285810Z 
+2026-10-03T03:58:32.9286328Z * What went wrong:
+2026-10-03T03:58:32.9287145Z Execution failed for task ':app:compileReleaseUnitTestKotlin'.
+2026-10-03T03:58:32.9288813Z > A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+2026-10-03T03:58:32.9290723Z    > Compilation error. See log for more details
+2026-10-03T03:58:32.9291344Z 
+2026-10-03T03:58:32.9291678Z * Try:
+2026-10-03T03:58:32.9292361Z > Run with --stacktrace option to get the stack trace.
+2026-10-03T03:58:32.9293313Z > Run with --info or --debug option to get more log output.
+2026-10-03T03:58:32.9294190Z > Run with --scan to get full insights.
+2026-10-03T03:58:32.9295014Z > Get more help at https://help.gradle.org.
+2026-10-03T03:58:32.9295604Z 
+2026-10-03T03:58:32.9295969Z BUILD FAILED in 21m 34s
+2026-10-03T03:58:33.4330433Z ##[error]Process completed with exit code 1.
+2026-10-03T03:58:33.4388373Z ##[group]Run actions/upload-artifact@v4
+2026-10-03T03:58:33.4388724Z with:
+2026-10-03T03:58:33.4389099Z   name: ***-unit-tests
+2026-10-03T03:58:33.4389598Z   path: app/build/test-results/testReleaseUnitTest/
+app/build/reports/tests/testReleaseUnitTest/
+
+2026-10-03T03:58:33.4390397Z   if-no-files-found: warn
+2026-10-03T03:58:33.4390755Z   compression-level: 6
+2026-10-03T03:58:33.4391003Z   overwrite: false
+2026-10-03T03:58:33.4391247Z   include-hidden-files: false
+2026-10-03T03:58:33.4391508Z env:
+2026-10-03T03:58:33.4391833Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:58:33.4392352Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-1/x64
+2026-10-03T03:58:33.4392802Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-10-03T03:58:33.4393137Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-10-03T03:58:33.4393454Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-10-03T03:58:33.4393821Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-10-03T03:58:33.4394291Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-10-03T03:58:33.4394801Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-10-03T03:58:33.4395149Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-10-03T03:58:33.4395442Z ##[endgroup]
+2026-10-03T03:58:33.6254210Z (node:7027) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-03T03:58:33.6255483Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-03T03:58:33.6308215Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-10-03T03:58:33.6311604Z The least common ancestor is /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/build. This will be the root directory of the artifact
+2026-10-03T03:58:33.6322999Z ##[warning]No files were found with the provided path: app/build/test-results/testReleaseUnitTest/
+app/build/reports/tests/testReleaseUnitTest/. No artifacts will be uploaded.
+2026-10-03T03:58:33.6741721Z Post job cleanup.
+2026-10-03T03:58:33.9297022Z In post-action step
+2026-10-03T03:58:33.9324036Z Cache is read-only: will not save state for use in subsequent builds.
+2026-10-03T03:58:33.9325059Z Generating Job Summary
+2026-10-03T03:58:33.9358129Z Completed post-action step
+2026-10-03T03:58:33.9655308Z Post job cleanup.
+2026-10-03T03:58:34.1125209Z (node:7052) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-03T03:58:34.1126588Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-03T03:58:34.1369649Z Post job cleanup.
+2026-10-03T03:58:34.2320696Z [command]/usr/bin/git version
+2026-10-03T03:58:34.2368187Z git version 2.55.0
+2026-10-03T03:58:34.2414917Z Temporarily overriding HOME='/home/runner/work/_temp/19634f7d-91a9-49dd-9ed2-ebcf3082ab0b' before making global git config changes
+2026-10-03T03:58:34.2415801Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-03T03:58:34.2421881Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2
+2026-10-03T03:58:34.2495837Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-03T03:58:34.2538936Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-03T03:58:34.2854739Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-03T03:58:34.2886035Z http.https://github.com/.extraheader
+2026-10-03T03:58:34.2901292Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-10-03T03:58:34.2952008Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-03T03:58:34.3293295Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-03T03:58:34.3350075Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-03T03:58:34.3818930Z Cleaning up orphan processes
+2026-10-03T03:58:34.4115198Z Terminate orphan process: pid (6496) (java)
+2026-10-03T03:58:34.4185455Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/cache@v4, actions/checkout@v4, actions/setup-java@v4, actions/upload-artifact@v4, gradle/actions/setup-gradle@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+
