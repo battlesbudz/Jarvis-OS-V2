@@ -45,6 +45,10 @@ internal fun ConversationScreen(
     onForceChatConsumed: () -> Unit = {},
     voiceContent: @Composable (visible: Boolean, settingsOpen: Boolean, dismissSettings: () -> Unit, returnToChat: () -> Unit) -> Unit
 ) {
+    if (!com.battlesbudz.jarvis.v2.memory.memoryDisclosureUnlocked()) {
+        Text("Unlock your device to view this conversation.")
+        return
+    }
     val thread by history.current.collectAsState()
     val sending by busy.collectAsState()
     val armed by VoiceSessionUi.armed.collectAsState()

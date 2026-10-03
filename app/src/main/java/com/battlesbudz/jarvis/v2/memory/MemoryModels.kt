@@ -1,11 +1,15 @@
 package com.battlesbudz.jarvis.v2.memory
 
+import androidx.annotation.Keep
+
 /** Native, local-only memory contract. All timestamps are UTC epoch milliseconds. */
 enum class MemoryCategory { FACT, PREFERENCE, PERSON, GOAL, TASK_GUIDANCE, OTHER }
 enum class MemoryTier { WORKING, RECENT, LONG_TERM }
 enum class MemoryType { SEMANTIC, EPISODIC, PROCEDURAL }
 enum class MemoryReviewStatus { PENDING, APPROVED, REJECTED, SUPERSEDED }
 enum class MemorySensitivity { NORMAL, RESTRICTED }
+@Keep enum class MemoryAcceptanceOrigin { MANUAL_REVIEW, AUTOMATIC }
+@Keep enum class MemoryStatementKind { EXPLICIT_STATEMENT, TENTATIVE_INFERENCE }
 enum class MemoryOutcome { CREATED, APPROVED, REJECTED, DELETED, ALREADY_RECORDED, INVALID, CONFLICT, EXCLUDED, NOT_FOUND, STORAGE_FAILURE }
 
 /** User-visible wiki classification; it is metadata only and never changes a memory’s content authority. */
@@ -48,6 +52,8 @@ data class MemoryRecord(
     val wikiAssignment: MemoryWikiAssignment? = null,
     /** Immutable proposal fingerprint for idempotency after mutable metadata edits. */
     val payloadFingerprint: String? = null,
+    val acceptanceOrigin: MemoryAcceptanceOrigin = MemoryAcceptanceOrigin.MANUAL_REVIEW,
+    val statementKind: MemoryStatementKind = MemoryStatementKind.EXPLICIT_STATEMENT,
 )
 
 data class MemoryProposal(

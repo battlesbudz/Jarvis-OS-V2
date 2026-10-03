@@ -60,7 +60,13 @@ object MemoryPolicy {
         if (assessWikiAssignment(record.wikiAssignment) != null || record.wikiAssignment?.topic?.let { isRestrictedMetadata(it) || containsRawRestrictedContent(it) } == true) return false
         if (record.content.isEmpty() || record.content.length > MAX_CONTENT_CHARS || record.confidence !in 0..100 || record.source.createdAtMs <= 0 || record.createdAtMs <= 0 || record.updatedAtMs < record.createdAtMs || record.revision < 1 || (record.expiresAtMs != null && record.expiresAtMs <= 0)) return false
         if (!isOpaqueEventKey(record.source.eventId) || record.source.eventSource.isEmpty() || record.source.eventSource.length > MAX_EVENT_SOURCE_CHARS) return false
-        if (record.source.provenance.size > MAX_PROVENANCE || record.source.sensitivity == MemorySensitivity.RESTRICTED) return false
+        if (record.source.provenance.size > MAX_PROVENANCE) return false
+        if (record.acceptanceOrigin == MemoryAcceptanceOrigin.AUTOMATIC) {
+            return record.source.eventSource == "local_user_extraction" && MemoryEligibility.eligibleFact(record.content) &&
+                record.source.provenance.any { it.kind == "source_episode" && isOpaqueEventKey(it.id) } &&
+                record.source.provenance.all { it.kind in setOf("source_episode", "conversation", "call") && isOpaqueEventKey(it.id) && it.label == null && !it.restricted }
+        }
+        if (record.source.sensitivity == MemorySensitivity.RESTRICTED || record.statementKind != MemoryStatementKind.EXPLICIT_STATEMENT) return false
         val metadata = listOf(record.source.eventSource) + record.source.provenance.flatMap { listOf(it.kind, it.id, it.label.orEmpty()) }
         return record.source.provenance.all { it.kind.isNotEmpty() && it.id.isNotEmpty() && it.kind.length <= MAX_PROVENANCE_KIND_CHARS && it.id.length <= MAX_PROVENANCE_ID_CHARS && (it.label?.length ?: 0) <= MAX_PROVENANCE_LABEL_CHARS && !it.restricted } &&
             metadata.none(::isRestrictedMetadata) && metadata.none(::containsRawRestrictedContent) && !containsRawRestrictedContent(record.content)
