@@ -1,0 +1,4 @@
+<resources>
+    <string name="keyboard_microphone_label">Jarvis keyboard microphone handoff</string>
+    <string name="keyboard_microphone_description">Gives a keyboard microphone-button tap priority over Jarvis listening. Checks only the tapped control’s label or ID in your selected keyboard. Does not read typed text or pause for keyboard visibility. Jarvis resumes automatically after recording ends.</string>
+</resources>

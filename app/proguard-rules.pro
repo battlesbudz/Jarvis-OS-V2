@@ -1,1 +1,291 @@
-# Jarvis OS V2 release rules will be added with the inference runtime.
+# These SDKs use native string lookups for Kotlin classes, fields and callbacks.
+# Preserve their Java/Kotlin ABI while R8 shrinks unused application/AndroidX code.
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+# Only JNI entry points and native-created DTOs need stable names. Keeping the
+# entire SDK would retain unused download/TTS/UI helpers and their dependencies.
+-keep class ai.moonshine.voice.JNI { *; }
+-keep class ai.moonshine.voice.Transcript { *; }
+-keep class ai.moonshine.voice.TranscriptLine { *; }
+-keep class ai.moonshine.voice.TranscriberOption { *; }
+-keep class ai.moonshine.voice.WordTiming { *; }
+-keep class ai.moonshine.voice.SpeakerSpan { *; }
+-keep class ai.moonshine.voice.TtsSynthesisResult { *; }
+-keep class ai.moonshine.voice.SpeechClip { *; }
+-keep class ai.moonshine.voice.TtsChunk { *; }
+-keep class com.google.ai.edge.litertlm.** { *; }
+-keepattributes Signature,InnerClasses,EnclosingMethod,*Annotation*
+
+-keep class com.battlesbudz.jarvis.v2.voice.MicroWakeWord { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.MicroWakeWord$Companion { *; }
+
+# Concrete callback signature used by Sherpa Piper JNI. Kotlin lambdas are not ABI-stable.
+-keep class com.battlesbudz.jarvis.v2.voice.SherpaPcmCallback { *; }
+
+# The separately shrunk release instrumentation APK shares the target's class
+# loader. Preserve this shared ABI: otherwise R8 can remove/reshape a Kotlin
+# method used only by AndroidJUnitRunner (e.g. Intrinsics.checkNotNullParameter),
+# producing NoSuchMethodError before any test starts. The rest of the app and
+# AndroidX remain optimized; these rules also apply to the APK we actually ship.
+-keep class kotlin.** { *; }
+-keep class kotlinx.coroutines.** { *; }
+-keep class androidx.lifecycle.Lifecycle** { *; }
+# AndroidX Test core/runner also calls these shared dependencies directly.
+# Audited against the release test DEX's external method and field owners.
+-keep class androidx.tracing.** { *; }
+-keep class androidx.concurrent.futures.** { *; }
+-keep class androidx.annotation.** { *; }
+-keep class com.google.common.util.concurrent.ListenableFuture { *; }
+
+# Explicit application boundary exercised by the release integration tests.
+-keep class com.battlesbudz.jarvis.v2.actions.MobileAction** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ActionRequest { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ActionValidation** { *; }
+# Release test DEX references the typed outcome enum as well as the existing constructor.
+-keep class com.battlesbudz.jarvis.v2.actions.ExecutionResult** { *; }
+# Release instrumentation reaches the multi-action contract through the shared test DEX.
+-keep class com.battlesbudz.jarvis.v2.actions.ActionTurnPlan** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.BatteryCondition** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ActionTurnRunner** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ToolTask** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.FileToolTaskStore** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.InMemoryToolTaskStore** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ToolAuthority { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ToolActionGrant { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ActionApproval** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ApprovalDecision { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ActionDispatchGate { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AuthorizedDispatch { *; }
+-keep class com.battlesbudz.jarvis.v2.ui.PhoneTaskPanelKt { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.NativeActionDecoder { *; }
+-keep class com.battlesbudz.jarvis.v2.ai.ToolCall { *; }
+# Release instrumentation reads durable multi-action receipts after cancellation/recreation.
+-keep class com.battlesbudz.jarvis.v2.chat.ConversationHistory { *; }
+-keep class com.battlesbudz.jarvis.v2.chat.ConversationMessage { *; }
+-keep class com.battlesbudz.jarvis.v2.chat.ActionReceipt { *; }
+# Return values traversed by the release test DEX while checking persisted receipts.
+-keep class com.battlesbudz.jarvis.v2.chat.ConversationThread { *; }
+-keep class com.battlesbudz.jarvis.v2.ChatEntry { *; }
+
+# Release instrumentation exercises the local finalized-input to approved-packet
+# boundary and the production prompt builder without model weights.
+-keep class com.battlesbudz.jarvis.v2.memory.ConversationMemory { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.FinalMemoryInput { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.ConversationMemoryResult { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.ConversationMemoryOutcome { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.ConversationMemorySource { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryOs { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryProposal { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemorySource { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryRecord { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryResult { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryPacketResult { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryContextPacket { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryReviewStatus { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryOutcome { *; }
+-keep class com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder { *; }
+-keep class com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext { *; }
+
+# A controlled Android-test fixture renders the actual conversation surface.
+-keep class com.battlesbudz.jarvis.v2.ui.ConversationScreenKt { *; }
+-keep class com.battlesbudz.jarvis.v2.ui.MemoryScreenKt { *; }
+-keep class com.battlesbudz.jarvis.v2.ai.LocalModelSpec { *; }
+# Release instrumentation seeds the shipping parent through ModelCatalog; retain its Kotlin object INSTANCE ABI.
+-keep class com.battlesbudz.jarvis.v2.ai.ModelCatalog { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceSessionUi { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceSessionState { *; }
+
+# The controlled Compose fixture in release instrumentation directly calls these
+# shared top-level composables after replacing the activity content.
+-keep class androidx.activity.compose.ComponentActivityKt { *; }
+-keep class androidx.compose.ui.Modifier { *; }
+-keep class androidx.compose.ui.Modifier$Companion { *; }
+-keep class androidx.compose.runtime.Composer { *; }
+-keep class androidx.compose.runtime.ComposerKt { *; }
+-keep class androidx.compose.runtime.ScopeUpdateScope { *; }
+-keep class androidx.compose.runtime.internal.ComposableLambdaKt { *; }
+-keep class androidx.compose.material3.MaterialThemeKt { *; }
+-keep class androidx.compose.material3.SurfaceKt { *; }
+-keep class androidx.compose.material3.TextKt { *; }
+-keep class androidx.compose.foundation.layout.SizeKt { *; }
+# Build 916's layout test calls Dp.constructor-impl through its separate DEX.
+# Preserve this inline value-class ABI used by the 320 dp width fixture.
+-keep class androidx.compose.ui.unit.Dp { *; }
+-keep class androidx.compose.foundation.layout.BoxKt { *; }
+-keep class androidx.compose.ui.semantics.SemanticsModifierKt { *; }
+-keep class androidx.compose.ui.semantics.SemanticsProperties_androidKt { *; }
+
+# Natural route release journeys invoke the authoritative routing contract.
+-keep class com.battlesbudz.jarvis.v2.ai.TurnOrchestrator { *; }
+-keep class com.battlesbudz.jarvis.v2.ai.TurnPlan { *; }
+-keep class com.battlesbudz.jarvis.v2.ai.TurnKind { *; }
+-keep class com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient { *; }
+
+# Continuous accepted-action release journeys cross this production boundary from
+# the separately shrunk instrumentation DEX. Keep only the durable queue/session
+# contracts and saved-call DTO/controller API they invoke.
+-keep class com.battlesbudz.jarvis.v2.actions.AcceptedActionQueue { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AcceptedActionTask { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AcceptedActionEvent { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AcceptedActionState { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.ContinuousActionSession { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.SessionCapture { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.CapturedKind** { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.CaptureOutcome** { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.PendingReport { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.ReportDelivery { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceActionControl** { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceSessionController { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceCallStore { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.SharedPreferencesVoiceCallStore { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceCallRecord { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.TranscriptEntry { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceActionOutcome { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceTaskStatus { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceTaskState { *; }
+# The separately shrunk AndroidJUnitRunner DEX reads the atomic store snapshot
+# and Compose companion through the target APK's class loader. These are narrow
+# shared ABI owners observed in the release test DEX, not broad Compose keeps.
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryStore$Read { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryStore { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryStore$Update { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryPersistence { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.SQLiteMemoryStore { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemorySnapshot { *; }
+# The previous-APK upgrade journey reads persisted tombstones through this
+# shared DTO. Retain its ABI before R8 inlines getters used by the test DEX.
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryTombstone { *; }
+-keep class androidx.compose.runtime.Composer$Companion { *; }
+# The release-test inline Box composition also links these companion getters
+# from the independently shrunk instrumentation DEX.
+-keep class androidx.compose.ui.Alignment$Companion { *; }
+-keep class androidx.compose.ui.node.ComposeUiNode$Companion { *; }
+# Keep the exact interface field through which the test DEX reaches Alignment's
+# companion; the companion getter keep above does not retain this static field.
+-keepclassmembers interface androidx.compose.ui.Alignment {
+    public static androidx.compose.ui.Alignment$Companion Companion;
+}
+# Inline Compose code in the separately shrunk release-test DEX invokes these
+# runtime helper owners through the target APK's class loader.
+-keep class androidx.compose.runtime.ComposablesKt { *; }
+-keep class androidx.compose.runtime.SnapshotStateKt** { *; }
+-keep interface androidx.compose.runtime.State { *; }
+-keep class androidx.compose.runtime.Updater { *; }
+
+# Preserve the destination branch navigation policy shared with release instrumentation.
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicy** { *; }
+
+# Controlled release dictation fixture implements this production boundary.
+-keep interface com.battlesbudz.jarvis.v2.voice.ChatDictation { *; }
+# The raw-audio release journey validates the stored WAV through this shared API.
+-keep class com.battlesbudz.jarvis.v2.chat.AttachmentPolicy { *; }
+
+# Release storage recovery journey exercises the installed-file/preferences boundary.
+-keep class com.battlesbudz.jarvis.v2.ai.ModelStore { *; }
+# The overlay journey observes the real armed StateFlow across its UI changes.
+-keep class androidx.compose.runtime.SnapshotStateKt { *; }
+# The separate Download/Choose journey renders the shipping model browser.
+-keep class com.battlesbudz.jarvis.v2.ui.ModelBrowserKt { *; }
+-keep class com.battlesbudz.jarvis.v2.ai.PhoneProfile { *; }
+# Dark-palette screenshot fixtures call this factory through the target class loader.
+-keep class androidx.compose.material3.ColorSchemeKt { *; }
+-keep class androidx.compose.material3.ColorScheme { *; }
+
+# Build 775: the release-test DEX invokes mutableStateOf$default through the
+# SnapshotStateKt facade, which production R8 otherwise removes/inlines. Keep
+# that facade and its inherited factory ABI, not the entire Compose runtime.
+-keep,includedescriptorclasses class androidx.compose.runtime.SnapshotStateKt** {
+    public static *** mutableStateOf*(...);
+}
+
+# The controlled shipping-parent fixture crosses these precise release ABI boundaries.
+# Build 842 removed ModelStore default wrappers and reshaped JarvisApp/VoicePlaybackFrame.
+-keep class com.battlesbudz.jarvis.v2.ai.ModelStore {
+    public static int $stable;
+    public <init>(...);
+    public java.io.File fileFor(...);
+    public boolean isUsable(...);
+    public static boolean isUsable$default(...);
+    public boolean smokeTestPassed(...);
+    public static boolean smokeTestPassed$default(...);
+}
+-keep class com.battlesbudz.jarvis.v2.ui.JarvisAppKt {
+    public static void JarvisApp(...);
+}
+-keep class com.battlesbudz.jarvis.v2.voice.TtsModelStore {
+    public static int $stable;
+    public <init>(...);
+}
+-keep class com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame { *; }
+
+# The archive checkpoint is exercised through these exact release-test boundaries.
+-keep class com.battlesbudz.jarvis.v2.memory.MemorySourceArchive { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.SourceArchiveOutcome { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.SourceArchiveCapture { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.SourceArchiveSearch { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.SourceEpisode { *; }
+# WorkManager restores the persisted worker by class name after process death.
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryArchiveMaintenanceWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}
+
+# The reference journey invokes these narrow shipping API owners from its separate DEX.
+-keep class com.battlesbudz.jarvis.v2.ai.ReferencePdfText { *; }
+-keep class com.battlesbudz.jarvis.v2.memory.MemoryCaptureAcknowledgment { *; }
+
+# PDFBox's optional JPX image decoder is deliberately absent. ReferencePdfText
+# extracts embedded text only; it does not render images or perform OCR.
+# PDFBox supports this configuration and ignores JPX images without the decoder.
+-dontwarn com.gemalto.jp2.JP2Decoder
+
+# Shared assistant readiness API used by the separately shrunk release journey.
+-keep class com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService** { *; }
+
+# Controlled release benchmark journey crosses the independently shrunk test
+# DEX into the shipping DTOs, persisted store, and dashboard composable.
+-keep class com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmark** { *; }
+-keep class com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore { *; }
+-keep class com.battlesbudz.jarvis.v2.ui.PipelineBenchmarkScreenKt { *; }
+
+# Build 878: the separate release-test DEX reads the input-mode companion and
+# renders the shipping settings composable. Preserve these precise shared ABI
+# owners; all other voice/UI code remains eligible for release optimization.
+-keep class com.battlesbudz.jarvis.v2.voice.VoiceInputMode** { *; }
+-keep class com.battlesbudz.jarvis.v2.ui.VoiceInputSettingsKt { *; }
+
+# Build 880: test47's controlled settings fixture calls these lazy-layout
+# entry points from the independently shrunk test DEX. R8 otherwise reshapes
+# LazyColumn's static ABI and the LazyListScope item default wrapper.
+-keep class androidx.compose.foundation.lazy.LazyDslKt { *; }
+-keep interface androidx.compose.foundation.lazy.LazyListScope { *; }
+# Release instrumentation exercises the production farewell/service lifecycle.
+# Preserve only the runtime entry/member ABI it calls across the target class loader.
+-keep,allowoptimization,includedescriptorclasses class com.battlesbudz.jarvis.v2.JarvisRuntime {
+    public static ** Companion;
+    public void arm();
+    public java.lang.String sendChat(...);
+    public static java.lang.String sendChat$default(...);
+    public void endVoiceCall(...);
+    public void returnToWakeListening*(java.lang.String);
+    public *** getVoiceSessionController*();
+    public *** getVoiceCallStore*();
+    public *** getVoiceTurnJob*();
+    public void setVoiceTurnJob*(...);
+    public boolean getVoiceSessionArmed*();
+    public int getAudioRecoveryAttempts*();
+    public void setAudioRecoveryAttempts*(int);
+    public *** getReturnToWakeCuePending*();
+    public *** getSessionReport*();
+    public void setSessionReport*(...);
+}
+-keep,allowoptimization class com.battlesbudz.jarvis.v2.JarvisRuntime$Companion {
+    public com.battlesbudz.jarvis.v2.JarvisRuntime get(android.content.Context);
+}
+# The same lifecycle journey observes the service's completed-stop signal.
+-keepclassmembers class com.battlesbudz.jarvis.v2.voice.VoiceCallService {
+    public static ** Companion;
+}
+-keep,allowoptimization class com.battlesbudz.jarvis.v2.voice.VoiceCallService$Companion {
+    public *** getStopRequested();
+}

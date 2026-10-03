@@ -1,0 +1,234 @@
+name: Android sandbox
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  profiles:
+    name: Resolve required device profiles
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: matrix
+        run: python3 scripts/verification/profiles.py matrix --github-output "$GITHUB_OUTPUT"
+
+  verify:
+    name: Release journeys / ${{ matrix.id }} / ${{ matrix.apk }}
+    needs: profiles
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.job_timeout }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.profiles.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify native ARM64 software-emulation host
+        if: matrix.acceleration == 'software'
+        run: |
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
+      - name: Set up Java for the ARM64 Android SDK
+        if: matrix.acceleration == 'software'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          architecture: aarch64
+      - name: Set up Python for the ARM64 verification controller
+        if: matrix.acceleration == 'software'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Set up the ARM64 Android SDK
+        if: matrix.acceleration == 'software'
+        uses: android-actions/setup-android@v3
+        with:
+          # setup-android v3 defaults to the retired "tools" package. Native ARM64
+          # hosts need current adb only here; the profile step installs emulator/images.
+          packages: platform-tools
+      - name: Resolve exact build artifact IDs
+        id: artifacts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/verification/artifacts.py fetch --out artifact-manifest.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"
+          python3 scripts/verification/artifacts.py select --manifest artifact-manifest.json --run-id "$GITHUB_RUN_ID" --head-sha "$EXPECTED_HEAD" --require 'jarvis-os-v2-release-apk=Build signed release APK' --require 'jarvis-verification-test-apk=Build signed release APK' --require 'jarvis-previous-release=Prepare upgrade baseline' --require-success --github-output "$GITHUB_OUTPUT"
+      - name: Download exact build inputs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/verification/artifacts.py download --manifest artifact-manifest.json --artifact-ids "${{ steps.artifacts.outputs.artifact_ids }}" --out inputs --layout named
+      - name: Enable emulator acceleration
+        if: matrix.acceleration == 'kvm'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-jarvis-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Record available Android hardware profiles
+        run: |
+          jarvis_avdmanager="$(command -v avdmanager || true)"
+          if [ -z "$jarvis_avdmanager" ]; then
+            jarvis_avdmanager="${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager"
+          fi
+          "$jarvis_avdmanager" list device
+      - name: Start an owned X display for the foldable emulator
+        if: matrix.screen_profile == 'foldable'
+        timeout-minutes: 5
+        run: |
+          jarvis_display_dir="$RUNNER_TEMP/jarvis-fold-display"
+          mkdir -p "$jarvis_display_dir"
+          cat > "$jarvis_display_dir/gui-preflight.sh" <<'JARVIS_GUI_PREFLIGHT'
+          #!/usr/bin/env bash
+          set -u
+          jarvis_preflight_dir="$RUNNER_TEMP/jarvis-fold-display"
+          jarvis_emulator_dir="${ANDROID_HOME:?}/emulator"
+          jarvis_preflight_failed=0
+          printf 'running\n' > "$jarvis_preflight_dir/gui-preflight-status"
+          trap 'jarvis_preflight_exit=$?; if [ "$jarvis_preflight_exit" -eq 0 ]; then printf "passed\n"; else printf "failed: exit %s\n" "$jarvis_preflight_exit"; fi > "$jarvis_preflight_dir/gui-preflight-status"' EXIT
+          trap 'exit 124' TERM
+          export LD_LIBRARY_PATH="$jarvis_emulator_dir/lib64/qt/lib:$jarvis_emulator_dir/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          if [ -x "$jarvis_emulator_dir/emulator" ]; then
+            "$jarvis_emulator_dir/emulator" -version > "$jarvis_preflight_dir/emulator-version.txt" 2>&1 || jarvis_preflight_failed=1
+          else
+            printf 'missing emulator executable: %s\n' "$jarvis_emulator_dir/emulator" > "$jarvis_preflight_dir/emulator-version.txt"
+            jarvis_preflight_failed=1
+          fi
+          for jarvis_gui_target in qemu xcb; do
+            if [ "$jarvis_gui_target" = qemu ]; then
+              jarvis_gui_file="$jarvis_emulator_dir/qemu/linux-x86_64/qemu-system-x86_64"
+            else
+              jarvis_gui_file="$jarvis_emulator_dir/lib64/qt/plugins/platforms/libqxcbAndroidEmu.so"
+            fi
+            jarvis_gui_receipt="$jarvis_preflight_dir/$jarvis_gui_target-ldd.txt"
+            if [ -f "$jarvis_gui_file" ]; then
+              ldd "$jarvis_gui_file" > "$jarvis_gui_receipt" 2>&1 || jarvis_preflight_failed=1
+              if grep -Fq '=> not found' "$jarvis_gui_receipt"; then
+                jarvis_preflight_failed=1
+              fi
+            else
+              printf 'missing GUI loader target: %s\n' "$jarvis_gui_file" > "$jarvis_gui_receipt"
+              jarvis_preflight_failed=1
+            fi
+          done
+          exit "$jarvis_preflight_failed"
+          JARVIS_GUI_PREFLIGHT
+          sudo timeout --kill-after=5s 120s apt-get update > "$jarvis_display_dir/apt-update.log" 2>&1
+          sudo timeout --kill-after=5s 120s apt-get install -y --no-install-recommends x11-utils libpulse0 > "$jarvis_display_dir/apt-install.log" 2>&1
+          command -v Xvfb > "$jarvis_display_dir/tools.txt"
+          command -v xdpyinfo >> "$jarvis_display_dir/tools.txt"
+          Xvfb -displayfd 3 -screen 0 1920x2400x24 -nolisten tcp \
+            3> "$jarvis_display_dir/display-number" > "$jarvis_display_dir/Xvfb.log" 2>&1 &
+          jarvis_display_pid=$!
+          printf '%s\n' "$jarvis_display_pid" > "$jarvis_display_dir/pid"
+          awk '{print $22}' "/proc/$jarvis_display_pid/stat" > "$jarvis_display_dir/start-ticks"
+          if timeout 15s bash -c '
+            while kill -0 "$2" 2>/dev/null; do
+              if [ -s "$1/display-number" ]; then
+                jarvis_display_number="$(cat "$1/display-number")"
+                [[ "$jarvis_display_number" =~ ^[0-9]+$ ]] || exit 1
+                if DISPLAY=":$jarvis_display_number" xdpyinfo > "$1/xdpyinfo.txt" 2> "$1/xdpyinfo-errors.txt"; then
+                  printf "DISPLAY=:%s\nQT_QPA_PLATFORM=xcb\n" "$jarvis_display_number" >> "$GITHUB_ENV"
+                  exit 0
+                fi
+              fi
+              sleep .2
+            done
+            exit 1
+          ' -- "$jarvis_display_dir" "$jarvis_display_pid"; then
+            printf 'ready\n' > "$jarvis_display_dir/status"
+          else
+            printf 'readiness failed\n' > "$jarvis_display_dir/status"
+            cat "$jarvis_display_dir/Xvfb.log"
+            exit 1
+          fi
+      - name: Verify release on a disposable Android device
+        if: matrix.acceleration == 'kvm'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: ${{ matrix.target }}
+          arch: ${{ matrix.arch }}
+          profile: ${{ matrix.device_profile }}
+          ram-size: 4096M
+          heap-size: 512M
+          disk-size: 4096M
+          disable-animations: true
+          emulator-boot-timeout: ${{ matrix.boot_timeout }}
+          # This hook runs after the action installs the actual SDK emulator.
+          # A failed loader receipt marks the action failed; it still tries boot.
+          pre-emulator-launch-script: ${{ matrix.screen_profile == 'foldable' && 'timeout --kill-after=2s 15s bash "$RUNNER_TEMP/jarvis-fold-display/gui-preflight.sh"' || '' }}
+          # Only the foldable needs the Qt backend's configured folded-region path.
+          emulator-options: ${{ matrix.screen_profile == 'foldable' && '-gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot' || '-no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot' }}
+          script: python3 scripts/verification/android.py run --profile "${{ matrix.id }}" --apk inputs/jarvis-os-v2-release-apk/${{ matrix.apk }}.apk --test-apk inputs/jarvis-verification-test-apk/app-release-androidTest.apk --previous-apk inputs/jarvis-previous-release/app-release.apk --previous-metadata inputs/jarvis-previous-release/previous-release.json --out verification-evidence --source-commit "${{ github.sha }}" --pr-head "${{ github.event.pull_request.head.sha }}" --allow-emulator-reset
+      - name: Verify release on a software-emulated ARM64 API 29 device
+        if: matrix.acceleration == 'software'
+        # Same required controller; startup additionally requires actual Android
+        # services and successful input within the profile's existing boot budget.
+        run: >-
+          python3 scripts/verification/software_emulator.py --profile "${{ matrix.id }}" --out verification-evidence --
+          python3 scripts/verification/android.py run --profile "${{ matrix.id }}" --apk inputs/jarvis-os-v2-release-apk/${{ matrix.apk }}.apk --test-apk inputs/jarvis-verification-test-apk/app-release-androidTest.apk --previous-apk inputs/jarvis-previous-release/app-release.apk --previous-metadata inputs/jarvis-previous-release/previous-release.json --out verification-evidence --source-commit "${{ github.sha }}" --pr-head "${{ github.event.pull_request.head.sha }}" --allow-emulator-reset
+      - name: Stop the owned foldable X display and retain diagnostics
+        if: always() && matrix.screen_profile == 'foldable'
+        run: |
+          jarvis_display_dir="$RUNNER_TEMP/jarvis-fold-display"
+          jarvis_cleanup_failed=0
+          if [ -s "$jarvis_display_dir/pid" ] && [ -s "$jarvis_display_dir/start-ticks" ]; then
+            jarvis_display_pid="$(cat "$jarvis_display_dir/pid")"
+            jarvis_display_start="$(cat "$jarvis_display_dir/start-ticks")"
+            jarvis_owned_display_alive() {
+              [ -r "/proc/$jarvis_display_pid/stat" ] || return 1
+              read -r jarvis_actual_start jarvis_actual_state < <(awk '{print $22, $3}' "/proc/$jarvis_display_pid/stat" 2>/dev/null) || return 1
+              [ "$jarvis_actual_start" = "$jarvis_display_start" ] && [ "$jarvis_actual_state" != Z ]
+            }
+            if [[ "$jarvis_display_pid" =~ ^[0-9]+$ ]] && jarvis_owned_display_alive; then
+              kill "$jarvis_display_pid" 2>/dev/null || true
+              for jarvis_stop_attempt in {1..30}; do
+                jarvis_owned_display_alive || break
+                sleep .1
+              done
+              if jarvis_owned_display_alive; then
+                kill -KILL "$jarvis_display_pid" 2>/dev/null || true
+              fi
+              for jarvis_stop_attempt in {1..30}; do
+                jarvis_owned_display_alive || break
+                sleep .1
+              done
+              if jarvis_owned_display_alive; then
+                printf 'cleanup failed: owned X display remains alive\n' > "$jarvis_display_dir/cleanup-status"
+                jarvis_cleanup_failed=1
+              else
+                printf 'owned X display gone, zombie, or PID ownership changed\n' > "$jarvis_display_dir/cleanup-status"
+              fi
+            else
+              printf 'already stopped or PID ownership changed; no signal sent\n' > "$jarvis_display_dir/cleanup-status"
+            fi
+          fi
+          # android.py requires a nonexistent output directory when it starts.
+          # Attach display diagnostics only after the emulator/controller action.
+          if [ -d "$jarvis_display_dir" ]; then
+            mkdir -p verification-evidence/fold-display
+            cp -a "$jarvis_display_dir/." verification-evidence/fold-display/
+          fi
+          exit "$jarvis_cleanup_failed"
+      - name: Retain evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-verification-${{ matrix.id }}-${{ matrix.apk }}
+          path: verification-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Add verification summary
+        if: always()
+        run: |
+          if [ -f verification-evidence/summary.md ]; then
+            cat verification-evidence/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'FAIL: emulator infrastructure did not produce a verification report.' >> "$GITHUB_STEP_SUMMARY"
+          fi
