@@ -99,7 +99,10 @@ class AcceptedReportPlaybackTest {
             playback.close()
             fail("expected release failure")
         } catch (caught: IllegalStateException) {
-            assertSame(failure, caught)
+            // Coroutine stacktrace recovery may copy the exception across withContext.
+            // Require the original failure in its cause chain, not an unrelated lookalike.
+            assertEquals(failure.message, caught.message)
+            assertTrue(generateSequence(caught as Throwable?) { it.cause }.any { it === failure })
         }
         playback.close()
 
