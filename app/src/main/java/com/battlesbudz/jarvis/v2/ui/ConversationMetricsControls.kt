@@ -39,7 +39,7 @@ internal fun ConversationMetricsControls(thread: ConversationThread, store: Andr
                     copying = true
                     try {
                         val payload = withContext(Dispatchers.Default) {
-                            ConversationMetricsExport.json(store.report(conversationId = snapshot.id), snapshot).toString(2)
+                            ConversationMetricsExport.json(store.report(conversationId = snapshot.id), snapshot).toString()
                         }
                         if (payload.toByteArray(Charsets.UTF_8).size > 400_000) {
                             status = "Report too large to copy. Open Metrics to save or share the full report."

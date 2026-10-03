@@ -89,7 +89,9 @@ fun PipelineBenchmarkScreen(store: AndroidPipelineBenchmarkStore, onClose: () ->
         scope.launch {
             exporting = true
             try {
-                val payload = withContext(Dispatchers.Default) { if (csv) report.toCsv() else ConversationMetricsExport.json(report, conversationReplies.takeIf { scoped }).toString(2) }
+                val payload = withContext(Dispatchers.Default) { if (csv) report.toCsv() else ConversationMetricsExport.json(report, conversationReplies.takeIf { scoped }).let {
+                    if (action == "copy") it.toString() else it.toString(2)
+                } }
                 val extension = if (csv) "csv" else "json"
                 when (action) {
                     "save" -> {
