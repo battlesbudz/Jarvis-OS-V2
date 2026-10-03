@@ -68,7 +68,9 @@ object MemoryRetrieval {
         val output = StringBuilder(header)
         for (item in items) {
             val quoted = jsonQuote(item.memory.content)
-            val entry = "<memory id=\"${xmlAttribute(item.memory.id)}\">$quoted</memory>\n"
+            val attribution = if (item.memory.acceptanceOrigin == MemoryAcceptanceOrigin.AUTOMATIC)
+                " origin=\"AUTOMATIC\" attribution=\"USER\" statement=\"${item.memory.statementKind.name}\"" else ""
+            val entry = "<memory id=\"${xmlAttribute(item.memory.id)}\"$attribution>$quoted</memory>\n"
             if (output.length + entry.length > maxChars) continue
             output.append(entry); selected += item
         }

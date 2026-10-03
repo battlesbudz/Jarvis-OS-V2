@@ -96,10 +96,12 @@ internal fun MemoryArticle(
 @Composable
 internal fun MemoryDetail(record: MemoryRecord, allRecords: List<MemoryRecord>, onBack: () -> Unit, onCorrect: (MemoryRecord) -> Unit, onOrganize: (MemoryRecord) -> Unit, onDelete: (MemoryRecord) -> Unit, onApprove: (MemoryRecord) -> Unit = {}, onReject: (MemoryRecord) -> Unit = {}) {
     val placement = record.placement()
+    val attribution = "${record.acceptanceOrigin.name} · ${record.statementKind.name} · USER source attribution"
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { TextButton(onClick = onBack, modifier = Modifier.testTag("memory_detail_back")) { Text("Back to memory") } }
         item { Text("Memory detail", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag("memory_detail_${record.id}")) }
         item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(record.content, style = MaterialTheme.typography.bodyLarge); Text("${record.reviewStatus.name.lowercase().replaceFirstChar { it.titlecase() }}, ${placement.first.title} · ${placement.second}", style = MaterialTheme.typography.labelSmall) } } }
+        item { Text(attribution, style = MaterialTheme.typography.labelSmall) }
         item { Text("Source", style = MaterialTheme.typography.titleMedium) }
         item { Text("Captured from ${record.source.sourceLabel()} on ${dateLabel(record.source.createdAtMs)}") }
         if (record.source.provenance.isNotEmpty()) item { record.source.provenance.forEach { source -> Text("${source.label ?: source.kind} · ${source.id}", style = MaterialTheme.typography.bodySmall) } }
@@ -137,6 +139,7 @@ private fun LedgerList(
         Card(Modifier.fillMaxWidth().clickable { onOpen(record) }) {
             Column(Modifier.padding(14.dp)) {
                 Text(record.content)
+                Text("${record.acceptanceOrigin.name} · ${record.statementKind.name} · USER source attribution", style = MaterialTheme.typography.labelSmall)
                 val placement = record.placement()
                 Text("${record.reviewStatus.name.lowercase().replaceFirstChar { it.titlecase() }} · ${placement.first.title} · ${placement.second}", style = MaterialTheme.typography.labelSmall)
                 Text("Captured from ${record.source.sourceLabel()} · ${dateLabel(record.source.createdAtMs)}", style = MaterialTheme.typography.labelSmall)

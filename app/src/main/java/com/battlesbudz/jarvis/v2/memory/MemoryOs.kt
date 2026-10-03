@@ -5,7 +5,8 @@ import java.util.UUID
 import java.util.concurrent.CopyOnWriteArraySet
 
 /** Explicit-review memory lifecycle. It never observes chat/voice itself: callers must propose an event. */
-class MemoryOs(private val store: MemoryPersistence, private val clock: () -> Long = { System.currentTimeMillis() }) {
+class MemoryOs(private val store: MemoryPersistence, private val clock: () -> Long,
+    private val canDiscloseSensitive: () -> Boolean) {
     private val approvedStateObservers = CopyOnWriteArraySet<(String) -> Unit>()
 
     /** In-process fence notification after a durable approved-history mutation. Pending proposals never notify. */
@@ -19,6 +20,10 @@ class MemoryOs(private val store: MemoryPersistence, private val clock: () -> Lo
         val token = MemoryRetrieval.approvedStateToken(snapshot.memories, clock())
         approvedStateObservers.forEach { observer -> runCatching { observer(token) } }
     }
+    /** Storage commit and live lock transitions both invalidate already bound deliveries. */
+    fun invalidateDisclosure() = notifyApprovedStateChanged()
+    /** Preserve the legacy two-argument/trailing-lambda clock API without granting disclosure. */
+    constructor(store: MemoryPersistence, clock: () -> Long = { System.currentTimeMillis() }) : this(store, clock, { false })
     constructor(file: File, clock: () -> Long = { System.currentTimeMillis() }) : this(MemoryStore(file), clock)
 
     fun propose(proposal: MemoryProposal): MemoryResult {
@@ -125,7 +130,14 @@ class MemoryOs(private val store: MemoryPersistence, private val clock: () -> Lo
     }
 
     /** UI callers should use this to distinguish empty history from a corrupt/unavailable store. */
-    fun read(): MemoryStore.Read = store.read()
+    fun read(): MemoryStore.Read {
+        val result = store.read()
+        val snapshot = result.snapshot ?: return result
+        val allowed = canDiscloseSensitive()
+        val filtered = snapshot.copy(memories = snapshot.memories.filter { MemorySensitivityPolicy.mayDisclose(it, allowed) })
+        // Recheck live state after the read rather than publishing a stale unlock decision.
+        return MemoryStore.Read(if (canDiscloseSensitive()) filtered else filtered.copy(memories = filtered.memories.filter { it.source.sensitivity == MemorySensitivity.NORMAL }), result.error)
+    }
     @Deprecated("Use read() so storage failures are not represented as an empty history.")
     fun list(includeReviewed: Boolean = true): List<MemoryRecord> = read().snapshot?.memories
         ?.filter { includeReviewed || it.reviewStatus == MemoryReviewStatus.PENDING }?.sortedWith(compareByDescending<MemoryRecord> { it.updatedAtMs }.thenBy { it.id }) ?: emptyList()
@@ -134,7 +146,8 @@ class MemoryOs(private val store: MemoryPersistence, private val clock: () -> Lo
         val read = read()
         val snapshot = read.snapshot ?: return MemorySearchResult(MemoryOutcome.STORAGE_FAILURE, read.error ?: "Memory store failed.")
         if (query.isBlank() || limit !in 1..50) return MemorySearchResult(MemoryOutcome.INVALID, "A query and limit 1-50 are required.")
-        return MemorySearchResult(null, "ok", MemoryRetrieval.retrieve(snapshot.memories, query, limit, nowMs))
+        val visible = snapshot.memories.filter { MemorySensitivityPolicy.mayDisclose(it, canDiscloseSensitive()) }
+        return MemorySearchResult(null, "ok", MemoryRetrieval.retrieve(visible, query, limit, nowMs))
     }
     @Deprecated("Use retrieveResult() so storage failures are not represented as no matches.")
     fun retrieve(query: String, limit: Int = 8, nowMs: Long = clock()): List<RetrievedMemory> = retrieveResult(query, limit, nowMs).memories
@@ -142,13 +155,18 @@ class MemoryOs(private val store: MemoryPersistence, private val clock: () -> Lo
         val read = read()
         val snapshot = read.snapshot ?: return MemoryPacketResult(MemoryOutcome.STORAGE_FAILURE, read.error ?: "Memory store failed.")
         if (query.isBlank() || limit !in 1..50 || maxChars < 0) return MemoryPacketResult(MemoryOutcome.INVALID, "A query, limit 1-50, and non-negative budget are required.")
-        val candidates = MemoryRetrieval.retrieve(snapshot.memories, query, limit, nowMs)
+        val visible = snapshot.memories.filter { MemorySensitivityPolicy.mayDisclose(it, canDiscloseSensitive()) }
+        val candidates = MemoryRetrieval.retrieve(visible, query, limit, nowMs)
         val nextApprovedExpiryMs = snapshot.memories.asSequence()
             .filter { it.reviewStatus == MemoryReviewStatus.APPROVED }
             .mapNotNull { it.expiresAtMs }
             .filter { it > nowMs }
             .minOrNull()
-        return MemoryPacketResult(null, "ok", MemoryRetrieval.packetFromRetrieved(candidates, maxChars), MemoryRetrieval.approvedStateToken(snapshot.memories, nowMs), nextApprovedExpiryMs)
+        if (candidates.any { it.memory.source.sensitivity == MemorySensitivity.RESTRICTED } && !canDiscloseSensitive()) {
+            val normal = visible.filter { it.source.sensitivity == MemorySensitivity.NORMAL }
+            return MemoryPacketResult(null, "locked", MemoryRetrieval.packetFromRetrieved(emptyList(), maxChars), MemoryRetrieval.approvedStateToken(normal, nowMs), nextApprovedExpiryMs)
+        }
+        return MemoryPacketResult(null, "ok", MemoryRetrieval.packetFromRetrieved(candidates, maxChars), MemoryRetrieval.approvedStateToken(visible, nowMs), nextApprovedExpiryMs)
     }
 
     private fun lineage(memories: List<MemoryRecord>, id: String): Set<String> {

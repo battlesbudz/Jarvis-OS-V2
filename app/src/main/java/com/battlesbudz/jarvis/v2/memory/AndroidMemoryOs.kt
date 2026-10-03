@@ -15,6 +15,8 @@ object AndroidMemoryOs {
 
     fun get(context: Context): MemoryOs = services(context).memory
     fun sources(context: Context): MemorySourceArchive = services(context).sources
+    fun extraction(context: Context): MemoryExtractionJobs = services(context).sources
+    fun extractionCommitted(context: Context) = services(context).memory.invalidateDisclosure()
 
     private fun services(context: Context): Services = instance ?: synchronized(this) {
         instance ?: run {
@@ -24,11 +26,20 @@ object AndroidMemoryOs {
                 // Current lock state, never merely "unlocked since boot". Missing service fails closed.
                 app.getSystemService(KeyguardManager::class.java)?.let { !it.isDeviceLocked && !it.isKeyguardLocked } == true
             })
-            Services(MemoryOs(sources), sources).also {
+            Services(MemoryOs(sources, clock = { System.currentTimeMillis() },
+                canDiscloseSensitive = { MemorySensitivityPolicy.unlocked(app) }), sources).also { services ->
+                // Live lock changes fence model/UI/TTS packets; no unlock-since-boot cache.
+                val receiver = object : android.content.BroadcastReceiver() {
+                    override fun onReceive(context: Context?, intent: android.content.Intent?) { services.memory.invalidateDisclosure() }
+                }
+                val filter = android.content.IntentFilter().apply {
+                    addAction(android.content.Intent.ACTION_SCREEN_OFF); addAction(android.content.Intent.ACTION_USER_PRESENT)
+                }
+                androidx.core.content.ContextCompat.registerReceiver(app, receiver, filter, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
                 // Android may delay background work; read/write paths also purge and filter expiry.
                 WorkManager.getInstance(app).enqueueUniquePeriodicWork("memory-source-expiry", ExistingPeriodicWorkPolicy.KEEP,
                     PeriodicWorkRequestBuilder<MemoryArchiveMaintenanceWorker>(24, TimeUnit.HOURS).build())
-                instance = it
+                instance = services
             }
         }
     }

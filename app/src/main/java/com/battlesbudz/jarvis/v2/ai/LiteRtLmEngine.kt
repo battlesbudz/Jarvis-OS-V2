@@ -42,6 +42,7 @@ class LiteRtLmEngine(
     )
     private var conversation: com.google.ai.edge.litertlm.Conversation? = null
     private val closed = AtomicBoolean(false)
+    fun isAvailableForExtraction(): Boolean = !closed.get()
 
     /** Reports actual submissions, including incremental input, retries and recognition fallback. */
     var onPromptSubmitted: (String, Int) -> Unit = { _, _ -> }
