@@ -1,0 +1,27 @@
+{
+  "run": 37095553655,
+  "source_sha": "73abb16b085e411f4cb50e3f059706a14930f86a",
+  "job": 111124620529,
+  "classification": "code failure: constructor overload ambiguity from primary defaults and secondary clock",
+  "failed_task": "compileReleaseUnitTestKotlin",
+  "errors": [
+    "2026-10-03T04:30:14.9076130Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptanceTest.kt:45:24 Overload resolution ambiguity between candidates:",
+    "2026-10-03T04:30:14.9175536Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt:49:68 Overload resolution ambiguity between candidates:",
+    "2026-10-03T04:30:14.9277522Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt:52:26 Unresolved reference 'propose'.",
+    "2026-10-03T04:30:14.9319905Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt:53:48 Unresolved reference 'delete'.",
+    "2026-10-03T04:30:14.9338913Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt:53:63 Unresolved reference 'id'.",
+    "2026-10-03T04:30:14.9365728Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt:54:54 Unresolved reference 'read'.",
+    "2026-10-03T04:30:14.9415436Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt:54:72 Unresolved reference 'tombstones'.",
+    "2026-10-03T04:30:14.9417553Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt:55:48 Unresolved reference 'propose'.",
+    "2026-10-03T04:30:14.9475784Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt:17:22 Overload resolution ambiguity between candidates:",
+    "2026-10-03T04:30:14.9615528Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt:18:60 Unresolved reference 'propose'.",
+    "2026-10-03T04:30:14.9647081Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt:25:33 Overload resolution ambiguity between candidates:",
+    "2026-10-03T04:30:14.9749477Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt:26:72 Unresolved reference 'propose'.",
+    "2026-10-03T04:30:14.9777246Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt:44:23 Overload resolution ambiguity between candidates:",
+    "2026-10-03T04:30:14.9905634Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt:45:61 Unresolved reference 'delete'."
+  ],
+  "retained_decoded_log_sha256": "f2cb068f2318d41f52c5cb81d636520bc51f8fbc148e5b0c7e997ea2784c82da",
+  "source_review_unchanged": true,
+  "full_qualification": false,
+  "infrastructure_retry": false
+}

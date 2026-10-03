@@ -1,0 +1,33 @@
+{
+  "run": 37095553655,
+  "artifact_id": 11264801421,
+  "source_sha": "73abb16b085e411f4cb50e3f059706a14930f86a",
+  "zip_sha256": "9bd2c754eca40436cc8138b7df3916282cdb638c11e8479c1b2b6b799d9bcf7b",
+  "zip_bytes": 1396,
+  "receipt_sha256": "1d4c4a2b41e638698f7699e2013c7f488d6e84372133a6619475602f77c5609e",
+  "actual_receipt": {
+    "schema": 1,
+    "passed": false,
+    "source_commit": "73abb16b085e411f4cb50e3f059706a14930f86a",
+    "pr_head": "",
+    "run_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37095553655",
+    "errors": [
+      "Required job did not succeed: build-release",
+      "Required job did not succeed: verify-release",
+      "JVM evidence: Missing JVM test XML",
+      "API 30 app-release: [Errno 2] No such file or directory: 'verification-inputs/jarvis-verification-api-30-app-release/report.json'",
+      "API 35 app-compact: [Errno 2] No such file or directory: 'verification-inputs/jarvis-verification-api-35-app-compact/report.json'"
+    ],
+    "variants": [],
+    "release_approved": false,
+    "coverage": "release JVM + UI + Android actions; no model inference",
+    "not_covered": [
+      "Real-model inference and model-generated tool selection",
+      "Microphone, speaker, Bluetooth and acoustic interruption behavior",
+      "Physical-device GPU/NPU compatibility, thermal behavior and latency",
+      "Successful multi-gigabyte model download/import",
+      "Real-model use of approved memory recall"
+    ],
+    "provenance": "Same-run GitHub Actions artifacts; APK bytes rehashed. Not an external attestation."
+  }
+}
