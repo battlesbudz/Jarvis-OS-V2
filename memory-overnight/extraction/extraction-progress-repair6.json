@@ -1,0 +1,29 @@
+{
+  "observed_at": "2026-10-03T05:12:27.160286+00:00",
+  "current_head": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "sequence_before_note": 98,
+  "totals": {
+    "attempts": 11,
+    "charged_tokens": 223000,
+    "dispatches": 20,
+    "reserved_tokens": 223000
+  },
+  "hard_cutoff": 1791010800,
+  "accepted_goals": [
+    "source-privacy"
+  ],
+  "active_goal": "local-extraction",
+  "last_candidate": "4080172ecb87bf4953ef3a6f4a2b5bad87c927b7",
+  "build912": {
+    "run_id": 37097210485,
+    "compilation": "passed",
+    "jvm_tests": 783,
+    "jvm_failures": 2,
+    "android": "skipped/unqualified"
+  },
+  "live_actor": "/root/jarvis_privacy_coder",
+  "native_dispatch": "extraction-coding-6",
+  "later_goals_blocked_on_dependency": true,
+  "provider_usage": null,
+  "native_continuous_or_fresh_scheduled_qualification_claimed": false
+}
