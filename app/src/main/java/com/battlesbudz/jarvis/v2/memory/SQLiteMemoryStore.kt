@@ -16,7 +16,7 @@ class SQLiteMemoryStore(
     private val legacyFile: File? = null,
     private val canReadSourceText: () -> Boolean = { false },
     private val archiveClock: () -> Long = { System.currentTimeMillis() },
-) : MemoryPersistence, MemorySourceArchive, AutoCloseable {
+) : MemoryPersistence, MemorySourceArchive, MemoryExtractionJobs, AutoCloseable {
     private var connection: SQLiteDatabase? = null
     // Android configures journal mode while opening, before a transaction can serialize writers.
     // All instances for one canonical path therefore share the same in-process boundary.
@@ -53,10 +53,19 @@ class SQLiteMemoryStore(
         return databaseLock.withLock { try {
             val prepared = MemoryArchivePolicy.prepare(input, archiveClock())
             prepared.rejection?.let { return SourceArchiveCapture(it) }
-            val episode = checkNotNull(prepared.episode)
+            var episode = checkNotNull(prepared.episode)
             val db = database()
             transaction(db) {
                 purgeSourceText(db, archiveClock())
+                // Exact copied source text retains its oldest capture even under a new event ID.
+                // Migration intentionally does not enqueue or backfill existing source rows.
+                val textKey = MemoryPolicy.sourceKey(episode.text)
+                val oldest = db.rawQuery("SELECT captured_at_ms FROM extraction_source_clocks WHERE text_key=?", arrayOf(textKey)).use {
+                    if (it.moveToFirst()) it.getLong(0) else episode.capturedAtMs
+                }
+                if (episode.capturedAtMs < oldest) return@transaction SourceArchiveCapture(SourceArchiveOutcome.CONFLICT)
+                if (!SourceTextPersistencePolicy.eligible(oldest, archiveClock())) return@transaction SourceArchiveCapture(SourceArchiveOutcome.EXPIRED)
+                episode = episode.copy(capturedAtMs = minOf(oldest, episode.capturedAtMs), expiresAtMs = minOf(oldest, episode.capturedAtMs) + MemoryArchivePolicy.RETENTION_MS)
                 val previous = db.rawQuery("SELECT fingerprint, expires_at_ms FROM source_events WHERE event_key=?", arrayOf(episode.eventKey)).use {
                     if (it.moveToFirst()) it.getString(0) to it.getLong(1) else null
                 }
@@ -76,6 +85,8 @@ class SQLiteMemoryStore(
                     put("source", episode.source.name); put("captured_at_ms", episode.capturedAtMs); put("expires_at_ms", episode.expiresAtMs)
                     put("text", episode.text); put("text_bytes", bytes); put("fingerprint", episode.fingerprint)
                 })
+                db.execSQL("INSERT OR IGNORE INTO extraction_source_clocks(text_key,captured_at_ms) VALUES(?,?)", arrayOf<Any>(textKey, episode.capturedAtMs))
+                db.execSQL("INSERT INTO extraction_jobs(event_key,state,attempts,lease,lease_until_ms) VALUES(?,'PENDING',0,NULL,0)", arrayOf(episode.eventKey))
                 SourceArchiveCapture(SourceArchiveOutcome.STORED)
             }
         } catch (_: Exception) { SourceArchiveCapture(SourceArchiveOutcome.STORAGE_FAILURE) } }
@@ -123,6 +134,101 @@ class SQLiteMemoryStore(
         db.execSQL("CREATE INDEX source_events_expiry ON source_events(expires_at_ms)")
     }
 
+    private fun createExtractionJobs(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE memory_extraction_meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1),version INTEGER NOT NULL)")
+        db.execSQL("INSERT INTO memory_extraction_meta VALUES(1,1)")
+        db.execSQL("CREATE TABLE extraction_jobs(event_key TEXT PRIMARY KEY NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL,lease TEXT,lease_until_ms INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE extraction_source_clocks(text_key TEXT PRIMARY KEY NOT NULL,captured_at_ms INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE memory_index_jobs(generation INTEGER PRIMARY KEY NOT NULL,state TEXT NOT NULL)")
+        // Establish only privacy lineage metadata for retained legacy sources; never backfill jobs.
+        db.rawQuery("SELECT text,captured_at_ms FROM source_events WHERE text IS NOT NULL",null).use { cursor ->
+            while(cursor.moveToNext()) {
+                val textKey=MemoryPolicy.sourceKey(cursor.getString(0));val captured=cursor.getLong(1)
+                db.execSQL("INSERT OR IGNORE INTO extraction_source_clocks(text_key,captured_at_ms) VALUES(?,?)",arrayOf<Any>(textKey,captured))
+                db.execSQL("UPDATE extraction_source_clocks SET captured_at_ms=min(captured_at_ms,?) WHERE text_key=?",arrayOf<Any>(captured,textKey))
+            }
+        }
+    }
+    private fun ensureExtractionJobs(db: SQLiteDatabase) {
+        val hasMeta=db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='memory_extraction_meta'",null).use { it.moveToFirst() }
+        if(!hasMeta) {
+            val stray=db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('extraction_jobs','extraction_source_clocks','memory_index_jobs')",null).use { it.moveToFirst() }
+            require(!stray) { "Incomplete extraction extension" };createExtractionJobs(db)
+        } else {
+            db.rawQuery("SELECT version FROM memory_extraction_meta WHERE singleton=1",null).use { require(it.moveToFirst() && it.getInt(0)==1) { "Unsupported extraction extension" } }
+            db.rawQuery("SELECT event_key,state,attempts,lease,lease_until_ms FROM extraction_jobs LIMIT 0",null).use { }
+            db.rawQuery("SELECT text_key,captured_at_ms FROM extraction_source_clocks LIMIT 0",null).use { }
+            db.rawQuery("SELECT generation,state FROM memory_index_jobs LIMIT 0",null).use { }
+        }
+    }
+
+    override fun claimExtraction(): MemoryExtractionJob? = databaseLock.withLock {
+        try { transaction(database()) {
+            val db = database(); val now = archiveClock(); purgeSourceText(db, now)
+            db.execSQL("UPDATE extraction_jobs SET state='PENDING',lease=NULL WHERE state='RUNNING' AND lease_until_ms<=?", arrayOf(now))
+            db.execSQL("UPDATE extraction_jobs SET state='FAILED' WHERE attempts>=5 AND state='PENDING'")
+            val barrier = MemorySuppression.barrier(snapshot(db))
+            db.execSQL("UPDATE extraction_jobs SET state='SUPPRESSED',lease=NULL WHERE event_key IN (SELECT event_key FROM source_events WHERE captured_at_ms<=?) AND state IN ('PENDING','RUNNING')", arrayOf(barrier))
+            db.execSQL("UPDATE extraction_jobs SET state='EXPIRED',lease=NULL WHERE event_key IN (SELECT event_key FROM source_events WHERE text IS NULL OR expires_at_ms<=?) AND state IN ('PENDING','RUNNING')", arrayOf(now))
+            val source = db.rawQuery("SELECT s.event_key,s.conversation_key,s.call_key,s.source,s.captured_at_ms,s.expires_at_ms,s.text,s.fingerprint,j.attempts FROM extraction_jobs j JOIN source_events s ON s.event_key=j.event_key WHERE j.state='PENDING' ORDER BY s.captured_at_ms,s.event_key LIMIT 1", null).use { cursor ->
+                if (!cursor.moveToFirst()) null else SourceEpisode(cursor.getString(0),cursor.getString(1),if(cursor.isNull(2))null else cursor.getString(2),ConversationMemorySource.valueOf(cursor.getString(3)),cursor.getLong(4),cursor.getLong(5),cursor.getString(6),cursor.getString(7)) to cursor.getInt(8)
+            } ?: return@transaction null
+            if (!MemoryEligibility.eligibleSource(source.first, now)) return@transaction null
+            val lease = java.util.UUID.randomUUID().toString()
+            db.execSQL("UPDATE extraction_jobs SET state='RUNNING',attempts=attempts+1,lease=?,lease_until_ms=? WHERE event_key=?", arrayOf<Any>(lease,Math.addExact(now,120_000),source.first.eventKey))
+            MemoryExtractionJob(source.first.eventKey,lease,source.first,source.second+1)
+        } } catch (_: Exception) { null }
+    }
+
+    override fun finishExtraction(job: MemoryExtractionJob, facts: List<ExtractedMemory>): Boolean = databaseLock.withLock {
+        try { transaction(database()) {
+            val db=database();val now=archiveClock();purgeSourceText(db,now)
+            if (!validLease(db,job,now)) return@transaction false
+            val sourceMatches=db.rawQuery("SELECT text,captured_at_ms,expires_at_ms,fingerprint,conversation_key,call_key,source FROM source_events WHERE event_key=?",arrayOf(job.eventKey)).use {
+                it.moveToFirst() && !it.isNull(0) && job.eventKey==job.source.eventKey && it.getString(0)==job.source.text &&
+                    it.getLong(1)==job.source.capturedAtMs && it.getLong(2)==job.source.expiresAtMs && it.getString(3)==job.source.fingerprint &&
+                    it.getString(4)==job.source.conversationKey && (if(it.isNull(5))null else it.getString(5))==job.source.callKey && it.getString(6)==job.source.source.name
+            }
+            if(!sourceMatches) return@transaction false
+            val before=snapshot(db)
+            if (!MemoryEligibility.eligibleSource(job.source,now)) {
+                db.execSQL("UPDATE extraction_jobs SET state='EXPIRED',lease=NULL WHERE event_key=?",arrayOf(job.eventKey));return@transaction false
+            }
+            val suppressed=MemorySuppression.suppressed(job.source,before)
+            val added=if(suppressed) emptyList() else MemoryAcceptance.records(job.source,facts,before,now)
+            require(before.memories.size+added.size<=MemoryPolicy.MAX_MEMORIES && before.memories.size+before.tombstones.size+added.size<=MemoryPolicy.MAX_TOMBSTONES)
+            if(added.isNotEmpty()) {
+                val after=before.copy(generation=before.generation+1,memories=before.memories+added)
+                require(MemorySnapshotCodec.validate(after)==null);persist(db,before,after)
+            }
+            db.execSQL("UPDATE extraction_jobs SET state=?,lease=NULL WHERE event_key=?",arrayOf(if(suppressed)"SUPPRESSED" else "COMPLETE",job.eventKey))
+            true
+        } } catch (_: Exception) { false }
+    }
+
+    override fun deferExtraction(job: MemoryExtractionJob, failed: Boolean): Boolean = databaseLock.withLock {
+        try { val db=database(); transaction(db) {
+            db.execSQL("UPDATE extraction_jobs SET state=CASE WHEN attempts>=5 THEN 'FAILED' ELSE 'PENDING' END,lease=NULL,lease_until_ms=0,attempts=CASE WHEN ?=0 THEN max(attempts-1,0) ELSE attempts END WHERE event_key=? AND state='RUNNING' AND lease=?",arrayOf<Any>(if(failed)1 else 0,job.eventKey,job.lease));true
+        } } catch (_:Exception){false}
+    }
+
+    private fun validLease(db: SQLiteDatabase, job: MemoryExtractionJob, now: Long): Boolean =
+        db.rawQuery("SELECT lease,lease_until_ms,state FROM extraction_jobs WHERE event_key=?",arrayOf(job.eventKey)).use {
+            it.moveToFirst() && it.getString(0)==job.lease && it.getLong(1)>now && it.getString(2)=="RUNNING"
+        }
+
+    override fun extractionJobStates(): Map<String,String> = databaseLock.withLock {
+        try { database().rawQuery("SELECT event_key,state FROM extraction_jobs",null).use { cursor ->
+            buildMap { while(cursor.moveToNext())put(cursor.getString(0),cursor.getString(1)) }
+        } } catch (_:Exception){emptyMap()}
+    }
+    override fun indexJobStates(): Map<Long,String> = databaseLock.withLock {
+        try { database().rawQuery("SELECT generation,state FROM memory_index_jobs",null).use { cursor ->
+            buildMap { while(cursor.moveToNext())put(cursor.getLong(0),cursor.getString(1)) }
+        } } catch (_:Exception){emptyMap()}
+    }
+    override fun extractionGeneration(): Long = read().snapshot?.generation ?: -1
+
     private fun database(): SQLiteDatabase {
         connection?.let { return it }
         require(file.parentFile?.let { it.isDirectory || it.mkdirs() } == true) { "Memory directory unavailable" }
@@ -153,16 +259,19 @@ class SQLiteMemoryStore(
                         persist(db, MemorySnapshot(0, emptyList(), emptyList()), imported)
                         require(snapshot(db) == imported) { "Memory migration validation failed" }
                         createSourceArchive(db)
+                        createExtractionJobs(db)
                         db.version = DATABASE_VERSION
                     }
                     1 -> {
                         snapshot(db)
                         createSourceArchive(db)
+                        createExtractionJobs(db)
                         db.version = DATABASE_VERSION
                     }
                     DATABASE_VERSION -> {
                         snapshot(db) // Missing/malformed schema must fail closed.
                         db.rawQuery("SELECT event_key, conversation_key, call_key, source, captured_at_ms, expires_at_ms, text, text_bytes, fingerprint FROM source_events LIMIT 0", null).use { }
+                        ensureExtractionJobs(db)
                     }
                     else -> error("Unsupported memory database version")
                 }
@@ -222,6 +331,14 @@ class SQLiteMemoryStore(
             else db.insertOrThrow("tombstones", null, values)
         }
         db.execSQL("UPDATE memory_meta SET generation=? WHERE singleton=1", arrayOf(after.generation))
+        // Durable invalidation only: lexical recall reads canonical rows; no fake vector index.
+        // Initial migration creates this table after persist, so enqueue only when it exists.
+        val hasIndexJobs=db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='memory_index_jobs'",null).use { it.moveToFirst() }
+        if(hasIndexJobs) {
+            db.execSQL("UPDATE memory_index_jobs SET state='SUPERSEDED' WHERE state='PENDING'")
+            db.execSQL("INSERT OR IGNORE INTO memory_index_jobs(generation,state) VALUES(?,'PENDING')",arrayOf(after.generation))
+            db.execSQL("DELETE FROM memory_index_jobs WHERE state='SUPERSEDED' AND generation<?",arrayOf(maxOf(0L,after.generation-2_000)))
+        }
     }
 
     private fun <T> transaction(db: SQLiteDatabase, block: () -> T): T {
