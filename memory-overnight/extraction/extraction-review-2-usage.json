@@ -1,0 +1,29 @@
+{
+  "id": "a66737f9e03a4e9d86ec3ed457fc65a6",
+  "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+  "request_key": "extraction-review-2",
+  "request_hash": "d1e7d5d85043031fd81172a325a69703a359ba57c76690a80fa5958d82b3a2c5",
+  "operation": "review:503a08ef69414edea4a1cc6b71b1b31d",
+  "task": {
+    "allowed_paths": [],
+    "complexity": "routine",
+    "task_kind": "review"
+  },
+  "reserved_tokens": 12000,
+  "manifest": {
+    "fork_turns": "none",
+    "model": "gpt-6-astra",
+    "reason": "review policy",
+    "reasoning_effort": "high"
+  },
+  "state": "completed",
+  "actor_id": "/root/jarvis_privacy_review",
+  "observed_model": "gpt-6-astra",
+  "observed_effort": "high",
+  "outcome": "failed",
+  "usage": null,
+  "receipt_id": "ba5d5f6157d60a5b96cde6258cf1e2c1cc6bc3c1d74ba87680be301a3e8c3437",
+  "completed_hash": "6cab53f638b86753b840f1b33c727e266da3cc744a77af988f563a825fe4e7af",
+  "created_at": 1790998633.808375,
+  "completed_at": 1790998911.161118
+}

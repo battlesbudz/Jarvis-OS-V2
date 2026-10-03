@@ -1,0 +1,191 @@
+{
+  "kind": "Exact candidate SQL executed with Python sqlite3; not Android SQLiteDatabase/Kotlin execution",
+  "checked_at": "2026-10-03T03:39:20.904145+00:00",
+  "sqlite_version": "3.53.1",
+  "source_sha256": "ffe58ee276b7877434b974a7595ff2d8e6b6a144e80333e97e53caedaeb87f22",
+  "sql": "UPDATE extraction_jobs SET state=CASE WHEN attempts>=5 THEN 'FAILED' ELSE 'PENDING' END,lease=NULL,lease_until_ms=0,attempts=CASE WHEN ?=0 THEN max(attempts-1,0) ELSE attempts END WHERE event_key=? AND state='RUNNING' AND lease=?",
+  "cases": [
+    {
+      "claim_attempt": 1,
+      "failed": false,
+      "result": {
+        "state": "PENDING",
+        "attempts": 0,
+        "lease": null,
+        "lease_until_ms": 0
+      }
+    },
+    {
+      "claim_attempt": 4,
+      "failed": false,
+      "result": {
+        "state": "PENDING",
+        "attempts": 3,
+        "lease": null,
+        "lease_until_ms": 0
+      }
+    },
+    {
+      "claim_attempt": 5,
+      "failed": false,
+      "result": {
+        "state": "FAILED",
+        "attempts": 4,
+        "lease": null,
+        "lease_until_ms": 0
+      }
+    },
+    {
+      "claim_attempt": 5,
+      "failed": true,
+      "result": {
+        "state": "FAILED",
+        "attempts": 5,
+        "lease": null,
+        "lease_until_ms": 0
+      }
+    }
+  ],
+  "consequence": "fifth claim cancellation is permanently FAILED despite attempts dropping to4; claimExtraction only selects PENDING jobs",
+  "R1_repair_static_translation": {
+    "kind": "ASCII source predicate translation, not Kotlin execution",
+    "source_sha256": "1f79b5254be41f937a8ec08ca0341bfe85fa5795ea2cd69ddd7415378b38f96e",
+    "inner_spans": [
+      {
+        "source": "I think I like apricots",
+        "quote": "I like apricots",
+        "supported": false
+      },
+      {
+        "source": "I wish I lived in Paris",
+        "quote": "I lived in Paris",
+        "supported": false
+      },
+      {
+        "source": "My friend believes I live in Boston",
+        "quote": "I live in Boston",
+        "supported": false
+      },
+      {
+        "source": "I suspect that I have asthma",
+        "quote": "I have asthma",
+        "supported": false
+      },
+      {
+        "source": "I do not think I like apricots",
+        "quote": "I like apricots",
+        "supported": false
+      },
+      {
+        "source": "I do not live in Paris",
+        "quote": "live in Paris",
+        "supported": false
+      },
+      {
+        "source": "I like apricots, probably",
+        "quote": "I like apricots",
+        "supported": false
+      },
+      {
+        "source": "Please remember that I think I like apricots",
+        "quote": "I like apricots",
+        "supported": false
+      },
+      {
+        "source": "The claim is \"I live in Boston\"",
+        "quote": "I live in Boston",
+        "supported": false
+      },
+      {
+        "source": "If I lived there, I like apricots",
+        "quote": "I like apricots",
+        "supported": false
+      }
+    ],
+    "whole_sources": [
+      {
+        "source": "I like apricots",
+        "supported": true,
+        "label": "EXPLICIT_STATEMENT"
+      },
+      {
+        "source": "I think I like apricots",
+        "supported": true,
+        "label": "TENTATIVE_INFERENCE"
+      },
+      {
+        "source": "I believe that I have asthma",
+        "supported": true,
+        "label": "TENTATIVE_INFERENCE"
+      },
+      {
+        "source": "My diagnosis might be asthma",
+        "supported": true,
+        "label": "TENTATIVE_INFERENCE"
+      },
+      {
+        "source": "I am not sure I live in Paris",
+        "supported": true,
+        "label": "TENTATIVE_INFERENCE"
+      },
+      {
+        "source": "I do not live in Paris",
+        "supported": true,
+        "label": "EXPLICIT_STATEMENT"
+      },
+      {
+        "source": "I wish I lived in Paris",
+        "supported": false,
+        "label": "TENTATIVE_INFERENCE"
+      },
+      {
+        "source": "My friend believes I live in Boston",
+        "supported": false,
+        "label": "EXPLICIT_STATEMENT"
+      },
+      {
+        "source": "I would live in Paris",
+        "supported": false,
+        "label": "TENTATIVE_INFERENCE"
+      },
+      {
+        "source": "I like apricots. I live in Paris",
+        "supported": false,
+        "label": "EXPLICIT_STATEMENT"
+      }
+    ]
+  },
+  "R2_repair_source_audit": {
+    "all_six_comparison_log_sinks_guarded": true,
+    "log_lines": [
+      "comparison?.log(\"prompt audioBytes=$audioSize text=${comparisonCopy(submitted)}\")",
+      "comparison?.log(\"tts ${comparisonCopy(it)}\")",
+      "comparison?.log(\"incremental ${comparisonCopy(it)}\")",
+      "comparison?.log(\"capture ${comparisonCopy(it)}\")",
+      "comparison?.log(\"partial atMs=${System.nanoTime() / 1_000_000} text=${comparisonCopy(text)}\")",
+      "comparison?.log(\"barge ${comparisonCopy(it)}\")"
+    ],
+    "bound_sensitivity_monotonic": true,
+    "complete_source_scanned_before_sink_truncation": true,
+    "bound_context_always_masks": true,
+    "typed_numeric_asr_tts_metrics": true
+  },
+  "stale_lease_probe": {
+    "affected_rows": 0,
+    "row_after": [
+      "RUNNING",
+      4,
+      "current-lease"
+    ],
+    "Kotlin_method_returns_true_after_zero_row_execSQL": true,
+    "current_worker_ignores_boolean": true
+  },
+  "fifth_expired_lease_probe": {
+    "row_after_recovery_and_cap": [
+      "FAILED",
+      5,
+      null
+    ],
+    "assessment": "Five claimed attempts consumed, no explicit cancellation refund; consistent with bounded claimed-attempt policy, not a separate blocking finding."
+  }
+}

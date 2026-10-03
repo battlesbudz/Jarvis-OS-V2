@@ -1,0 +1,90 @@
+{
+  "actor": "/root/jarvis_privacy_review",
+  "dispatch_id": "extraction-review-2",
+  "ticket_id": "a66737f9e03a4e9d86ec3ed457fc65a6",
+  "coordinator_run": "503a08ef69414edea4a1cc6b71b1b31d",
+  "requested_model": "gpt-6-astra",
+  "requested_effort": "high",
+  "actual_usage": null,
+  "base_sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "coder_sha": "fe9174078855a324a369e34208583dcf6b820922",
+  "local_sha": "1fb733f5d49a0ba404ea8c62718459e50bf6a1d6",
+  "remote_sha": "31c2b087d20c7dc518de1e8cd486c83830fe32d4",
+  "local_tree": "c3e9a2d7be44dc362798c5a0b9baa8cfc38c4fb7",
+  "remote_tree": "c3e9a2d7be44dc362798c5a0b9baa8cfc38c4fb7",
+  "local_parents": [
+    "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b"
+  ],
+  "remote_parents": [
+    "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b"
+  ],
+  "tree_binding_verified": true,
+  "scope_verified": true,
+  "frozen_verified": true,
+  "approved": false,
+  "summary": "Rejected repaired extraction candidate31c2b087d20c7dc518de1e8cd486c83830fe32d4 and matching local integration1fb733f5d49a0ba404ea8c62718459e50bf6a1d6. Both actual raw commit hashes/sole accepted-base parents and exact treec3e9a2d7be44dc362798c5a0b9baa8cfc38c4fb7 independently verified; checkouts clean. All37 changes remain in77 allowed paths,180 frozen paths/all nonallowed files and144 existing JVM files unchanged. All38 current Android test-file/scenario bytes match attempt1, and the old37-file baseline is recovered exactly by removing only additive test37. Prior R1/R2 are closed in reviewed source: complete-statement attribution preserves qualifiers/uncertainty, and all comparison freeform callbacks sanitize before retention with a monotonic sensitive flag. The five Build908 mixed-array compiler sites now use explicit Any; this is not a current compile pass. A new blocking retry defect remains: cancelling the fifth claim writes FAILED with attempts4, preventing its refunded retry. Exact candidate SQL execution reproduced it. Stale-lease defer success reporting is advisory because current callers ignore it. Full cumulative source lifecycle, model ownership, retention/suppression, unlock/copy boundaries and new APIs were reviewed. No frozen harness, Kotlin/JVM/native/Android suite, current CI outcome or real model/device qualification is claimed. Green CI cannot qualify this rejected source tree.",
+  "findings": [
+    {
+      "severity": "blocking",
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SQLiteMemoryStore.kt",
+      "detail": "R3: Foreground cancellation on the fifth claimed extraction permanently fails a job despite refunding its attempt. claimExtraction increments attempts before handing out the lease; after four failed model attempts a fifth RUNNING job has attempts=5. MemoryExtractionWorker cancellation/finally calls deferExtraction(job,failed=false). At line211 the SQL chooses state from the old attempts>=5, then independently decrements attempts because failed=false. Executing the exact candidate statement yields state=FAILED,attempts=4,lease=NULL. claimExtraction only selects PENDING jobs, so a normal foreground interruption irreversibly suppresses the remaining allowed retry, including after restart. This contradicts foreground-yield semantics and the documented cancellation-without-consuming-model-failure-attempt contract. Derive state from the post-refund count (or always PENDING for a valid explicit nonfailed cancellation), preserve lease matching and actual fifth-failure terminalization, and add a persistence/reopen or exact SQL boundary regression for fourth/fifth attempts. Probe used Python sqlite3 with the exact SQL; no Android/Kotlin execution is claimed."
+    },
+    {
+      "severity": "advisory",
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SQLiteMemoryStore.kt",
+      "detail": "deferExtraction returns true unconditionally after execSQL, including a stale lease or an already-deferred job whose guarded UPDATE matches zero rows. The exact SQL stale-lease probe leaves RUNNING state/attempts/current lease untouched with affected_rows=0, while the method reports success. The current worker ignores this Boolean, so this does not create an additional present replay or data-loss defect; nevertheless the API should return whether the lease-owned row actually changed, with a stale-lease regression. The second finally-defer after failed=true is also a harmless zero-row operation with misleading true. This is advisory, not a separate blocker."
+    }
+  ],
+  "checks_performed": [
+    "Read durable extraction-review-control-2/ticket, extraction-control-2, coder2 report/log/static evidence, actual remote reconstruction receipt; retained previously read AGENTS/jarvis-verify/verification guidance and read current append-only design/feature updates.",
+    "Independent raw Git commit SHA1 recomputation, HEAD/tree/sole-parent identities, clean status and full base-to-head diff scope on BOTH exact checkouts. Tree has515 file blobs/581 recursive entries including directories.",
+    "Verified77 allowed/180 frozen paths plus every nonallowed path unchanged;144 existing JVM files unchanged, six additive JVM paths only. Both git diff --check exit0.",
+    "Verified complete current38 Android file and manifest bytes unchanged from rejected attempt1; removing only test37 exactly recovers accepted base37 file;38 unique paired methods/scenarios and old order preserved.",
+    "Reviewed complete repair diff and cumulative extraction lifecycle: genuine selected warm local Gemma adapter, source admission, structured decode/transactional acceptance, source clock ledger/no-backfill/versioned schema, erase suppression, durable index intents, model ownership/cancel-and-join, native cleanup and delivery locks.",
+    "Reviewed whole-source grammar/uncertainty and actual new regression assertions; executed static ASCII predicate translation confirming10 inner spans reject, positive complete sources preserve content/labels, unsupported whole frames reject. This was not Kotlin/model execution.",
+    "Traced all six Runtime comparison log calls, source-bearing detail/error/final/delivery fields, monotonic sensitive flag and typed metrics; inspected frozen LiveComparison downstream semantics and actual AsrCaptureMetrics/TtsSessionMetrics field types.",
+    "Reviewed UI/read/context live lock guards and upstream chat/voice/history/controller/delivery masking; source classifier/real TTS coverage remains separately unqualified.",
+    "Read actual retained Build908 compiler errors and verified log SHA256; inspected all five exact mixed-bind sites now explicitly arrayOf<Any>. No current Kotlin compile success inferred.",
+    "Executed exact candidate defer SQL using Python sqlite3 at attempts1,4,5 for cancellation/failure; fifth cancellation reproduced FAILED/4, fifth true failure FAILED/5. Executed stale-lease zero-row probe and fifth expired-lease recovery/cap probe.",
+    "No source/GitHub/Coordinator writes, full frozen harness, toolchain installation or other actor. Evidence only outside checkout."
+  ],
+  "resolved_prior_findings": [
+    "R1 inner-span attribution/uncertainty stripping resolved by complete-source contract in decoder and acceptance; verified statically",
+    "R2 sensitive comparison prompt retention resolved at all reviewed source-bearing callback boundaries; verified statically",
+    "Build908 five mixed SQL bind type inference errors addressed at source sites; current compilation not established"
+  ],
+  "historical_ci_evidence": {
+    "candidate": "deac28fb850b179f9ab5d65cc71b1e03b88b3bff",
+    "build": 908,
+    "run": 37092064140,
+    "job": 111114307582,
+    "conclusion": "compileReleaseKotlin FAILED",
+    "log": "extraction-build908-build.log",
+    "log_sha256": "72466502fa94da3e118feb0de43914b351d7a5335537de5e5d7c4c9c31839bcb",
+    "old_report_preserved": true
+  },
+  "unverified_gates_and_qualified_limits": [
+    "Current exact candidate Build909/run37093680336 was reported in progress; no outcome was independently verified by reviewer. Root must retain its actual result; this source rejection is independent.",
+    "No Kotlin/Gradle release JVM/native/helper suite, signed/minified APK/R8 execution, API30normal/API35compact38 journeys, restart or consolidated receipt verified here. Full frozen Python harness was intentionally not run before review.",
+    "No actual selected Gemma weights inference, maximal context, attribution/sensitivity semantic precision, physical Fold6/audio/TTS-lock-race/responsiveness/RAM/thermal validation.",
+    "One complete bounded supported statement only; complex/multisentence/indirect/quoted/counterfactual forms conservatively rejected. This reduces automatic acceptance and is not general entailment.",
+    "Original90day source retention and copy clocks remain; broad erase barrier suppresses all older retained sources, including unrelated material. Fresh post-barrier statements may establish new evidence except exact old text cannot renew. No semantic-vector suppression claim.",
+    "Warm selected-model-only batches await eligible foreground idle boundaries; no forced load or perpetual drain/retry. Index jobs remain durable invalidation intentions pending goal3.",
+    "Sensitive rich retained output is generic even unlocked; live guarded speech/direct memory views provide limited disclosure. Raw user sensitivity beyond conservative classifiers remains unproved."
+  ],
+  "scope_checks": {
+    "allowed": 77,
+    "frozen": 180,
+    "changed": 37,
+    "existing_jvm_files": 144,
+    "new_jvm_files": 6,
+    "current_android": 38,
+    "old_android": 37
+  },
+  "probe_evidence": [
+    "extraction-review-2-probes.json",
+    "extraction-review-2-integrity.json"
+  ],
+  "completed_at": "2026-10-03T03:41:28.935128+00:00",
+  "quiescent_after_report": true
+}
