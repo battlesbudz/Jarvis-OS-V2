@@ -165,7 +165,7 @@ internal class VoiceTurnRecognition(
             observation.benchmark.configuration("request_scope", "voice_control_goodbye")
             prepared.incremental.close()
             call.controller.appendTranscript("You", transcript)
-            call.events.endCall()
+            call.events.returnToWake(prepared.expectedCallId)
             if (!prepared.directAudioTurn && transcript != asrTranscript) call.events.post { call.events.transcript("You", transcript, true) }
             diagnosticRecorder.record("Voice call ended reason=spoken_goodbye")
             lifetime.finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " goodbye."

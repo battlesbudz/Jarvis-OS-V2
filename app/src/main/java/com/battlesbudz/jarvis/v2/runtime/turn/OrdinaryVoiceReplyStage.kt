@@ -185,7 +185,7 @@ internal class OrdinaryVoiceReplyStage(
                                         prepared.correction?.capturedAtMs ?: System.currentTimeMillis())
                                     if (com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.isGoodbye(finalCaption)) {
                                         diagnosticRecorder.recordImportant("Voice call ended reason=gemma_final_audio_goodbye")
-                                        call.events.endCall()
+                                        call.events.returnToWake(prepared.expectedCallId)
                                     }
                                 }
                             } else observation.benchmark.configuration("gemma_final_caption_result", "empty_or_invalid")
@@ -267,6 +267,12 @@ internal class OrdinaryVoiceReplyStage(
             observation.failure = "barge_in"
             request.comparison?.put("interrupted", true)
             conversation.job?.join()
+            if (outcome.endsCallSegment) {
+                call.controller.appendTranscript("You", outcome.correction.transcript)
+                call.events.returnToWake(prepared.expectedCallId)
+                lifetime.finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " goodbye."
+                return VoiceStageResult.Finished(lifetime.finalMessage)
+            }
             if (outcome.correction.wav.size > 44) call.state.pendingVoiceCorrection.set(outcome.correction)
             lifetime.finalMessage = "Voice reply interrupted; continuing the same call."
             return VoiceStageResult.Finished(lifetime.finalMessage)

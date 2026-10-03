@@ -256,3 +256,26 @@
 # LazyColumn's static ABI and the LazyListScope item default wrapper.
 -keep class androidx.compose.foundation.lazy.LazyDslKt { *; }
 -keep interface androidx.compose.foundation.lazy.LazyListScope { *; }
+# Release instrumentation exercises the production farewell/service lifecycle.
+# Preserve only the runtime entry/member ABI it calls across the target class loader.
+-keep,allowoptimization class com.battlesbudz.jarvis.v2.JarvisRuntime {
+    public static ** Companion;
+    public void arm();
+    public java.lang.String sendChat(...);
+    public static java.lang.String sendChat$default(...);
+    public void endVoiceCall(...);
+    public void returnToWakeListening*(java.lang.String);
+    public *** getVoiceSessionController*();
+    public *** getVoiceCallStore*();
+    public *** getVoiceTurnJob*();
+    public void setVoiceTurnJob*(...);
+    public boolean getVoiceSessionArmed*();
+    public int getAudioRecoveryAttempts*();
+    public void setAudioRecoveryAttempts*(int);
+    public *** getReturnToWakeCuePending*();
+    public *** getSessionReport*();
+    public void setSessionReport*(...);
+}
+-keep,allowoptimization class com.battlesbudz.jarvis.v2.JarvisRuntime$Companion {
+    public com.battlesbudz.jarvis.v2.JarvisRuntime get(android.content.Context);
+}

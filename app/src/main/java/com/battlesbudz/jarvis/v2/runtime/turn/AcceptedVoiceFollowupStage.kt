@@ -146,7 +146,7 @@ internal class AcceptedVoiceFollowupStage(
                             }) continue@actionPump
                         lifetime.activePumpTypedInput.compareAndSet(pausedControl, null)
                         if (stopListening) {
-                            call.events.endCall()
+                            call.events.returnToWake(prepared.expectedCallId)
                             break@actionPump
                         }
                         continue@actionPump
@@ -408,7 +408,7 @@ internal class AcceptedVoiceFollowupStage(
                     }
                     if (!promoted || !admittedGoodbye) continue@actionPump
                     typedOwned?.let { lifetime.activePumpTypedInput.compareAndSet(it, null) }
-                    call.events.endCall()
+                    call.events.returnToWake(prepared.expectedCallId)
                     diagnosticRecorder.recordImportant("Accepted action mode: spoken goodbye detached capture; work retained")
                     break@actionPump
                 }
@@ -514,7 +514,7 @@ internal class AcceptedVoiceFollowupStage(
                 if (leaveActionPump) {
                     if (control == com.battlesbudz.jarvis.v2.voice.VoiceActionControl.SpeechOnly &&
                         finalCaptured.transcript.trim().lowercase().trimEnd('.', '!', '?') == "stop listening") {
-                        call.events.endCall()
+                        call.events.returnToWake(prepared.expectedCallId)
                     }
                     break@actionPump
                 }

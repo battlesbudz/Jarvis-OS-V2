@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.ContentValues
+import android.app.ActivityManager
 import android.media.AudioManager
 import android.os.BatteryManager
 import android.os.SystemClock
@@ -30,6 +31,7 @@ import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.Until
 import com.battlesbudz.jarvis.v2.MainActivity
+import com.battlesbudz.jarvis.v2.JarvisRuntime
 import com.battlesbudz.jarvis.v2.actions.*
 import com.battlesbudz.jarvis.v2.ai.ToolCall
 import com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder
@@ -47,6 +49,7 @@ import com.battlesbudz.jarvis.v2.ui.PipelineBenchmarkScreen
 import com.battlesbudz.jarvis.v2.diagnostics.*
 import com.battlesbudz.jarvis.v2.voice.*
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -2500,6 +2503,125 @@ class ReleaseJourneyTest {
         } finally {
             VoiceInputMode.select(context, originalMode)
             VoiceInputMode.captions(context, originalCaptions)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    @Test fun test48_spokenCallEndRetainsWakeSessionAndExplicitStopDisarms() = runBlocking {
+        val runtime = JarvisRuntime.get(context)
+        val controller = runtime.voiceSessionController
+        val originalTurn = runtime.voiceTurnJob
+        val originalRecoveryAttempts = runtime.audioRecoveryAttempts
+        val originalWakeCue = runtime.returnToWakeCuePending.get()
+        val originalReport = runtime.sessionReport
+        val originalPhase = VoiceSessionUi.phase.value
+        val originalStatus = VoiceSessionUi.status.value
+        val originalTranscript = VoiceSessionUi.liveTranscript.value
+        val originalLevel = VoiceSessionUi.level.value
+        val originalUiArmed = VoiceSessionUi.armed.value
+        val originalPaused = VoiceSessionUi.paused.value
+        val originalServiceStop = VoiceCallService.stopRequested.value
+        val callIds = mutableListOf<String>()
+        val finishingTurn = Job()
+        val passiveTurn = Job()
+        fun callService() = context.getSystemService(ActivityManager::class.java).getRunningServices(100)
+            .singleOrNull { it.service.className == VoiceCallService::class.java.name }
+        fun awaitService(message: String, condition: () -> Boolean) {
+            val until = SystemClock.uptimeMillis() + 15_000
+            while (SystemClock.uptimeMillis() < until && !condition()) SystemClock.sleep(100)
+            assertTrue(message, condition())
+        }
+        assertFalse("The controlled runtime journey must start with an idle wake session", runtime.voiceSessionArmed)
+        assertNull("The controlled runtime journey must not replace another call", controller.currentCallId())
+        assertTrue("The previous runtime turn must already be complete", originalTurn?.isCompleted != false)
+        assertNull("The controlled runtime journey must own its foreground service", callService())
+        try {
+            runtime.sessionReport = {}
+            // An owned, incomplete turn keeps sendChat at its real queue boundary without
+            // loading ASR, wake-word, Gemma or Piper models in this lifecycle fixture.
+            runtime.voiceTurnJob = finishingTurn
+            runtime.arm()
+            activity.onActivity { host ->
+                host.startForegroundService(Intent(host, VoiceCallService::class.java).setAction("release-verification-hold"))
+            }
+            awaitService("The armed runtime must retain foreground microphone eligibility", { callService()?.foreground == true })
+            val oldCall = controller.beginCall().also { callIds += it.id }
+            controller.appendTranscript("You", "Stop listening")
+            assertNull(runtime.sendChat("This queued draft belongs only to the ending call."))
+
+            // Exercise the same runtime callback used by a final spoken farewell. Native
+            // turn cleanup owns rearm; returning to wake mode must not cancel that owner.
+            runtime.returnToWakeListening(oldCall.id)
+            assertTrue("A spoken farewell must keep the user-armed wake session", runtime.voiceSessionArmed)
+            assertTrue(VoiceSessionUi.armed.value)
+            assertFalse(VoiceSessionUi.paused.value)
+            assertEquals(VoiceSessionState.PASSIVE_LISTENING, controller.state.value)
+            assertNull(controller.currentCallId())
+            assertTrue("The exact turn must survive until its own cleanup finishes", finishingTurn.isActive)
+            assertFalse(finishingTurn.isCancelled)
+            assertTrue("Returning to wake mode must queue its ready cue after cleanup", runtime.returnToWakeCuePending.get())
+            assertTrue("A farewell must retain the actual foreground service", callService()?.foreground == true)
+            assertFalse("A farewell must not request service termination", VoiceCallService.stopRequested.value)
+            val saved = SharedPreferencesVoiceCallStore(context.getSharedPreferences("voice_calls", Context.MODE_PRIVATE))
+                .list().single { it.id == oldCall.id }
+            assertNotNull("The ending call must be durable before another call begins", saved.endedAtMs)
+            assertTrue(saved.transcript.any { it.role == "You" && it.text == "Stop listening" })
+            assertEquals("The ending call must terminalize its queued typed input once", 1,
+                saved.transcript.count { it.text == "Cancelled before processing typed message: This queued draft belongs only to the ending call." })
+            assertEquals("Voice Call is waiting for its wake word; keep this draft until the call is listening.",
+                runtime.sendChat("A passive-session draft must wait for the next wake word."))
+
+            finishingTurn.complete()
+            withTimeout(5_000) { finishingTurn.join() }
+            runtime.voiceTurnJob = passiveTurn
+            val newCall = controller.beginCall().also { callIds += it.id }
+            assertNotEquals("A new wake conversation must get a fresh call identity", oldCall.id, newCall.id)
+            assertTrue("Ended-call drafts must not leak into the new call", controller.currentTranscript().isEmpty())
+            runtime.returnToWakeListening(oldCall.id)
+            assertEquals("A stale farewell must not end a newer call", newCall.id, controller.currentCallId())
+            assertEquals(VoiceSessionState.ACTIVELY_LISTENING, controller.state.value)
+            assertTrue(passiveTurn.isActive)
+            runtime.returnToWakeListening(newCall.id)
+            assertNull(controller.currentCallId())
+            assertEquals(VoiceSessionState.PASSIVE_LISTENING, controller.state.value)
+            assertTrue(runtime.voiceSessionArmed)
+            assertTrue(callService()?.foreground == true)
+
+            runtime.endVoiceCall {}
+            assertFalse("Explicit End Call must stop the whole session even while passive", runtime.voiceSessionArmed)
+            assertFalse(VoiceSessionUi.armed.value)
+            assertFalse(runtime.returnToWakeCuePending.get())
+            assertTrue("Explicit End Call must cancel the passive turn", passiveTurn.isCancelled)
+            awaitService("Explicit End Call must release its foreground service", {
+                callService() == null && VoiceCallService.stopRequested.value
+            })
+            assertTrue(VoiceCallService.stopRequested.value)
+        } finally {
+            try {
+                runtime.endVoiceCall {}
+                context.stopService(Intent(context, VoiceCallService::class.java))
+                finishingTurn.cancel()
+                passiveTurn.cancel()
+                withTimeout(5_000) { finishingTurn.join(); passiveTurn.join() }
+                awaitService("The runtime fixture must release its service owner", {
+                    callService() == null && VoiceCallService.stopRequested.value
+                })
+                instrumentation.waitForIdleSync()
+            } finally {
+                controller.currentCallId()?.takeIf { it in callIds }?.let { controller.end() }
+                callIds.forEach(runtime.voiceCallStore::delete)
+                runtime.voiceTurnJob = originalTurn
+                runtime.audioRecoveryAttempts = originalRecoveryAttempts
+                runtime.returnToWakeCuePending.set(originalWakeCue)
+                runtime.sessionReport = originalReport
+                VoiceSessionUi.phase.value = originalPhase
+                VoiceSessionUi.status.value = originalStatus
+                VoiceSessionUi.liveTranscript.value = originalTranscript
+                VoiceSessionUi.level.value = originalLevel
+                VoiceSessionUi.armed.value = originalUiArmed
+                VoiceSessionUi.paused.value = originalPaused
+                VoiceCallService.stopRequested.value = originalServiceStop
+            }
         }
     }
 

@@ -518,7 +518,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 if (role == "You") com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.liveTranscript.value = if (complete) "" else text
                 transcriptListener(role, text, complete)
             }, finished = { finishedListener(it) }, startDiagnostics = ::startVoiceDiagnostics,
-            endCall = { endVoiceCall() }, stopService = ::stopVoiceService, restartTurn = ::runVoiceTurn))
+            endCall = { endVoiceCall() }, returnToWake = ::returnToWakeListening,
+            stopService = ::stopVoiceService, restartTurn = ::runVoiceTurn))
         val conversation = VoiceConversationAccess(VoiceConversationDispatch(::startConversation),
             currentJob = { conversationJob }, resetConversation = ::resetNativeConversation)
         val memory = VoiceMemoryAccess(memoryDeliveryFence, voiceMemoryDelivery, ::captureFinalMemory)
@@ -618,13 +619,25 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         }
     }
     fun endVoiceCall(report: (String) -> Unit = sessionReport) {
+        finishVoiceCall(stopSession = true, report = report)
+    }
+
+    /** A final farewell ends this call segment; the user-armed wake session stays alive. */
+    internal fun returnToWakeListening(expectedCallId: String) {
+        if (!voiceSessionArmed || voiceSessionController.currentCallId() != expectedCallId) return
+        finishVoiceCall(stopSession = false, report = sessionReport)
+    }
+
+    private fun finishVoiceCall(stopSession: Boolean, report: (String) -> Unit) {
         com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.cancelPending()
         if (!voiceSessionArmed && voiceTurnJob?.isActive != true) return
         // Ending a call must also release an armed microphone turn. Otherwise
         // the capture coroutine can survive the UI transition and the next
         // Voice Call cannot acquire the microphone.
-        diagnosticRecorder.recordImportant("Session stop requested by UI or foreground service.")
-        returnToWakeCuePending.set(false)
+        diagnosticRecorder.recordImportant(if (stopSession) "Session stop requested by UI or foreground service."
+            else "Voice call ended by farewell; wake session retained. Rearm follows turn cleanup.")
+        returnToWakeCuePending.set(!stopSession)
+        resumeCommandCue.set(false)
         val endedCallId = voiceSessionController.currentCallId()
         // Close the shared queue gate before inspecting deferred handoffs. A promotion either
         // completed its transfer before this drain, or sees End and cannot create a new handoff.
@@ -646,25 +659,32 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             runCatching { voiceSessionController.recordTerminalInputForCall(input.callId, input.id,
                 "Cancelled before processing typed message: ${input.text}") }
         }
-        voiceSessionArmed = false
+        if (stopSession) voiceSessionArmed = false
         com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
-        com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.report("Jarvis session stopped — microphone off.")
-        stopVoiceService()
-        runtimeScope.launch { callResources.closeMicrophone() }
+        com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.liveTranscript.value = ""
+        val status = if (stopSession) "Jarvis session stopped — microphone off."
+            else "Returning to Hey Jarvis — finishing call audio…"
+        com.battlesbudz.jarvis.v2.voice.VoiceCallService.updateStatus(status)
+        if (stopSession) {
+            stopVoiceService()
+            runtimeScope.launch { callResources.closeMicrophone() }
+        }
         activeVoiceOutput?.stopSpeaking()
         activeContinuousActionSession?.detach()
         activeContinuousActionSession = null // Detached call reports remain durable; never block a new call.
-        voiceTurnJob?.cancel()
+        // A spoken farewell returns through its stage and the exact turn finalizer. Keeping
+        // that job alive lets its completion callback rearm after all audio borrowers join.
+        if (stopSession) voiceTurnJob?.cancel()
         // End Call detaches microphone/TTS immediately but does not retract a bounded accepted
         // task. Its saved-ID callbacks continue to checkpoint evidence for this original call.
-        if (!acceptedVoiceActions.hasUnfinished()) conversationJob?.cancel()
-        activeVoiceCapture = null
+        if (stopSession && !acceptedVoiceActions.hasUnfinished()) conversationJob?.cancel()
+        if (stopSession) activeVoiceCapture = null
         runCatching {
-            if (voiceSessionController.state.value != VoiceSessionState.PASSIVE_LISTENING) {
+            if (voiceSessionController.currentCallId() != null) {
                 voiceSessionController.end()
             }
         }.onFailure { report("Voice Call could not be saved: ${it.message ?: "unknown error"}") }
-            .onSuccess { report("Jarvis session stopped — microphone off.") }
+            .onSuccess { report(status) }
     }
 
     internal fun startVoiceDiagnostics(label: String) {

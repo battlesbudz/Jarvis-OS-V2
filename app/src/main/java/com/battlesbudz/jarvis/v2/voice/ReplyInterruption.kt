@@ -14,7 +14,11 @@ data class CapturedVoiceTurn(val transcript: String, val wav: ByteArray,
     val speechEndedAtMs: Long? = null)
 sealed interface ReplyOutcome<out T> {
     data class Finished<T>(val value: T) : ReplyOutcome<T>
-    data class Interrupted(val correction: CapturedVoiceTurn) : ReplyOutcome<Nothing>
+    data class Interrupted(val correction: CapturedVoiceTurn) : ReplyOutcome<Nothing> {
+        /** Verified farewell controls can intentionally carry no PCM. */
+        val endsCallSegment: Boolean get() = CallLifetimePolicy.endsSession(
+            correction.transcript, correction.recognitionIssue == null)
+    }
 }
 
 suspend fun <T> runInterruptibleReply(

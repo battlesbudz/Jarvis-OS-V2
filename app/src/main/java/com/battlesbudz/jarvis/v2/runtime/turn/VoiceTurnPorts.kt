@@ -16,6 +16,7 @@ internal class VoiceCallEvents(
     val finished: (String) -> Unit,
     val startDiagnostics: (String) -> Unit,
     val endCall: () -> Unit,
+    val returnToWake: (callId: String) -> Unit,
     val stopService: () -> Unit,
     val restartTurn: () -> Unit
 )

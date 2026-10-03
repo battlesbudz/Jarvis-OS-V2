@@ -1,5 +1,22 @@
 # Feature and acceptance map
 
+## Spoken farewell returns to wake listening
+
+“Stop listening” and “Goodbye” end the current call segment while preserving the
+user-armed session and its foreground microphone service. Final transcript,
+playback interruption (including a verified control without PCM), accepted-action
+follow-up and final Gemma caption all use the call-ID-scoped return path. The exact
+turn finalizer closes old capture/speech children before the completion callback
+starts passive `Hey Jarvis` listening. Explicit End/Stop session still disarms
+and shuts down the service. Accepted phone work retains its existing bounded
+native-worker ownership; wake capture resumes after that worker drains.
+
+| Layer | Acceptance and failure case | Coverage |
+| --- | --- | --- |
+| JVM | A verified farewell interruption ends the call even with no PCM; failed recognition, quoted phrases, ordinary requests and stop-speaking keep the call. | `ReplyInterruptionTest`, `VoiceCallPolicyTest`, `CallLifetimePolicyTest` |
+| Android lifecycle | Farewell saves the ended call, drains old queued input, keeps the current turn and real foreground service alive, and permits a fresh call ID. A stale old-call farewell cannot end the new call. Explicit End disarms from an active or passive session. | Release `test48`; exact hosted revision pending |
+| Physical audio/model | After saying “Stop listening”, wait for wake readiness, then say “Hey Jarvis” to start another call, including from a locked/background phone. | Device signoff pending; controlled lifecycle tests do not prove acoustic detection or model inference |
+
 ## Expanded required release checks — hosted verification pending
 
 Every opted-in candidate must pass the recorded-audio, native-page-size and

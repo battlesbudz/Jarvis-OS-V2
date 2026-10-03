@@ -49,6 +49,7 @@
     "test45_pipelineBenchmarksScoreOriginalAsrPersistAndExportRedactedEvidence",
     "test46_replyMetricsExportOnlyTheirConversationAcrossReload",
     "test47_audioInputChoiceAndDisplayCaptionTogglePersistWithoutLoadingModels",
+    "test48_spokenCallEndRetainsWakeSessionAndExplicitStopDisarms",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",
