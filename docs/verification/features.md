@@ -314,6 +314,46 @@ evidenced production fix. API 29's AOSP startup/controller result is assessed
 independently by the same run. The fold failure already prevents publication.
 Live current-head status and its consolidated receipt remain authoritative.
 
+## Expanded gate Build 925 and dialog-window sizing
+
+[Build 925](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37113785620)
+tested head `204b222fbfafd4ac857b8444b0092df2e5bef2c6`, merge
+`060aecc3ac97c90702b77831cb31867cac764fff`. Signed builds and static native
+audits passed. API 30 normal, API 35 compact, API 36 phone and the true 16 KB
+profile completed their full required checks. The 16 KB guest reported actual
+16,384-byte pages and loaded all nine shipping native libraries. Both APKs'
+native audit was independently recomputed from the same-run signed bytes.
+
+The generic foldable again passed its real upgrade and 48 of 49 main cases;
+test12 retained its strict full 48 dp failure. Quarter-width gestures at x=442
+actually moved the model list, then two stationary observations left the last
+Choose target at `[1434,2020][1685,2124]`: 104 visible pixels instead of 126.
+The list and every dialog/content ancestor ended at y=2124. An adjacent Choose
+exposed the full 126-pixel target around its normal 105-pixel painted button.
+The final target therefore loses 22 pixels to the window boundary; its painted
+40 dp appearance does not establish a complete accessible touch target. The
+retained PNG/XML and bounded raw geometry distinguish this crop from the
+earlier center-hinge gesture ambiguity. Artifact `11271014252` retains the
+failure; actual fold/unfold, layout and lifecycle phases were not reached.
+
+The pinned Compose UI 1.7.6 `DialogLayout` ignores ViewRoot measure constraints
+when `usePlatformDefaultWidth=false`, substitutes configuration display width
+and height, then fixes the native window to the measured child. Its true branch
+honors the received window constraints. The narrow production repair enables
+that branch and explicitly sets the dialog window to `MATCH_PARENT` width and
+height through `DialogWindowProvider`, preserving the full browser width. An
+idempotent composition effect avoids redundant window resizing. Safe drawing
+and IME insets, list/card padding, all 48 dp/navigation/selection assertions and
+the bounded physical gestures remain unchanged. No extra padding or dependency
+upgrade is used. A fresh exact-revision full gate must establish that the final
+target is complete and that real folded/unfolded controls remain usable; these
+generic-foldable results are pending. Build 925's failed receipt continues to
+block publication. API 29's framework watchdog killed `system_server`; the
+package service then vanished and installation of the prior Build 907 APK
+failed with exit 1 after 10.61 seconds. No app instrumentation started, and the
+retained screenshot is black. Artifact `11271395102` retains that separate
+platform failure; it supplies no app/controller pass.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,
