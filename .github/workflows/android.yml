@@ -2,8 +2,9 @@ name: Android APK
 
 on:
   pull_request:
+    branches: [main]
   push:
-    branches: [main, PR1]
+    branches: [PR1]
 
 permissions:
   contents: read
@@ -11,7 +12,7 @@ permissions:
 jobs:
   build-pr:
     name: Build and test PR APK
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/PR1')
+    if: (github.event_name == 'pull_request' && github.event.action != 'closed') || (github.event_name == 'push' && github.ref == 'refs/heads/PR1')
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -45,7 +46,7 @@ jobs:
 
   build-release:
     name: Build signed release APK
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -93,7 +94,7 @@ jobs:
 
   publish:
     name: Publish signed release APK
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
     needs: build-release
     runs-on: ubuntu-latest
     permissions:
