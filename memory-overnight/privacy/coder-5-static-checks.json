@@ -1,0 +1,28 @@
+{
+  "kind": "source_integrity_only_not_Kotlin_execution",
+  "base": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "adoption_head": "ef463f640872934e504067d8ffe2cd0b6f7ebdfa",
+  "adoption_tree": "826e3bf976dae0c23e5e70bb9b853f22e669bacd",
+  "exact_14_paths": [
+    "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+    "docs/memory-os-native.md",
+    "docs/verification/features.md",
+    "scripts/verification/scenarios.json"
+  ],
+  "old36_android_bytes_preserved": true,
+  "existing_test36_assertions_preserved_in_order": true,
+  "37_unique_methods_and_unchanged_registrations": true,
+  "history_fixture_assertions_preserved_and_file_unchanged_since_adoption": true,
+  "docs_append_only": true,
+  "diff_check_exit_code": 0
+}

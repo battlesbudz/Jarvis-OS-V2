@@ -1,0 +1,132 @@
+{
+  "attempt": 5,
+  "dispatch": "privacy-coding-5",
+  "actor": "/root/jarvis_privacy_coder",
+  "ticket_id": "9b0e0533220047d593c3b09bed51f6a9",
+  "requested_route": "gpt-6.1-sol/high",
+  "provider_usage": null,
+  "coordinator_run": "7cb29286a1a64e5dacf7cb9fd0676cae",
+  "status": "committed_coding_handoff_pending_independent_review_and_exact_candidate_CI",
+  "base_commit": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "retained_original_head": "3e86bda2b62d39142b7e66dda5439b50fa5e7888",
+  "retained_remote_equivalent_head": "1957255c1c1b9738d17f6dbf932824557aea7ae4",
+  "retained_tree": "826e3bf976dae0c23e5e70bb9b853f22e669bacd",
+  "adoption_head": "ef463f640872934e504067d8ffe2cd0b6f7ebdfa",
+  "adoption_tree": "826e3bf976dae0c23e5e70bb9b853f22e669bacd",
+  "source_head_commit": "38eb34316a5b942ed7ab55d584ada97295644f08",
+  "source_tree": "ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4",
+  "actual_ancestry": [
+    {
+      "commit": "38eb34316a5b942ed7ab55d584ada97295644f08",
+      "parents": [
+        "ef463f640872934e504067d8ffe2cd0b6f7ebdfa"
+      ]
+    },
+    {
+      "commit": "ef463f640872934e504067d8ffe2cd0b6f7ebdfa",
+      "parents": [
+        "f5a483505f9ccd84e54ac886ec5e88736394482b"
+      ]
+    },
+    {
+      "commit": "f5a483505f9ccd84e54ac886ec5e88736394482b",
+      "parents": [
+        "9aa65719ded45618679f8691502cda3cc63be92b"
+      ]
+    },
+    {
+      "commit": "9aa65719ded45618679f8691502cda3cc63be92b",
+      "parents": [
+        "0a20341ec131e897e28523f618a08bf0859707d0"
+      ]
+    },
+    {
+      "commit": "0a20341ec131e897e28523f618a08bf0859707d0",
+      "parents": [
+        "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de"
+      ]
+    }
+  ],
+  "worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/7cb29286a1a64e5dacf7cb9fd0676cae/unit-privacy",
+  "worktree_clean": true,
+  "changed_paths_from_base": [
+    "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+    "docs/memory-os-native.md",
+    "docs/verification/features.md",
+    "scripts/verification/scenarios.json"
+  ],
+  "repair_changed_paths": [
+    "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+    "docs/memory-os-native.md",
+    "docs/verification/features.md"
+  ],
+  "deadline": 1790995884.5182388,
+  "global_cutoff": 1791010800,
+  "prior_rejection": {
+    "report": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/privacy-review-4-report.json",
+    "sha256": "55dfc2b16b84cd31b0e7337a935c240459d0c36b6243bba7e73df34d1de513ae",
+    "retention_probe": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/privacy-review-4-retention-probe.json",
+    "clock_probe": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/privacy-review-4-clock-probe.json",
+    "kind": "independent_source_review_and_source_arithmetic_models_not_Kotlin_runs"
+  },
+  "repairs": {
+    "R5": "Task DTO carries no source capture lineage; store list/save therefore always excludes freeform task strings. Exact supported read_battery/set_volume/open_app identifiers and task state are preserved as content-free schema. No new session, UUID, delete, clear, reopen or reworded text grants freeform provenance. Complete raw supplied task strings remain included in the derived-copy secret scan before replacement. No frozen controller/activity/DTO edits.",
+    "R6": "Validate each original FullSource timestamp plus history timestamp separately using Privacy.eligible at one current clock, before any minimum reduction. Invalid/empty sources produce capture0, generic placeholder and persistent nonrenewable source fingerprint. Valid sources retain minimum eligible capture.",
+    "release_ABI": "FullSource annotated Keep because strengthened existing release test36 directly constructs it; prior recorder/adapter/policy/nested keeps retained. VoiceTaskStatus/VoiceTaskState already covered by frozen full-class rules."
+  },
+  "new_regressions": {
+    "JVM": [
+      "VoiceCallStorePrivacyTest.realResumeAndLinkCannotRenewLegacyFreeformTaskSources uses real VoiceSessionController with encoded eligible legacy prose tasks, day89 resume/newUUID/link, original expiry/reopen/deletion/reword; keeps3 exact supported IDs/state.",
+      "VoiceCallStorePrivacyTest.freshAndRewordedUnprovenancedTasksFailClosedWhileActionIdentitySurvives covers suffix secret, delete/reword and preferences clear/reopen.",
+      "DiagnosticRecorderPrivacyTest.eachFullSourceClockMustBeEligibleBeforeSelectingOldestCapture isolates missing/negative/future/Long.MAX/expired original clocks with earlier eligible history/source, restore/retry, independently invalid history clocks, and valid exact prompt/minimum retention."
+    ],
+    "Android": "Existing test36 strengthened with unique per-invalid-clock capture strings and task prose exclusion through new-ID empty-transcript copy, original expiry/reopen/delete/reword. No new journey; all37 registrations unchanged."
+  },
+  "executed_checks": [
+    "Local fetch from retained repair4 checkout, four genuine cherry-picks and exact adoption tree equality.",
+    "Source read and review of actual resume/link callers and supported3-action contract.",
+    "apply_patch used for all source/test/documentation edits.",
+    "Source-only Python integrity assertions: exact14 cumulative paths, old36 Android bytes preserved, existing test36 assertions preserved in order,37 unique methods and unchanged scenario bytes, unchanged existing history test with base assertion preservation, both docs append-only.",
+    "git diff --check before/after commit exit0; git status --porcelain empty.",
+    "Reviewed direct newly referenced release production owners against actual Keep annotation/frozen class rules."
+  ],
+  "static_checks_path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/privacy-coder-5-static-checks.json",
+  "historical_CI": {
+    "Build888": "Retained prior candidate failure in newtest36 resolving SourceTextPersistencePolicy; not this candidate qualification.",
+    "Build890": "Retained actual API30 NoClassDefFoundError ConversationVoiceCallStore in test36 line1509. Prior committed Keep repair retained.",
+    "Build898": "Running/pending per root dispatch; no result inspected or overwritten by coder. Even a green earlier candidate would not resolve review4 R5/R6."
+  },
+  "limitations": [
+    "No Kotlin/compiler/Gradle/release JVM/native/full frozen harness/API30/API35/consolidated CI executed here; no tests claimed passing.",
+    "Conservative exclusion removes legacy/fresh freeform task-description availability, because source provenance is absent from frozen DTO. Benign titles associated with excluded task placeholders can also become generic on read; content-free supported IDs/state survive.",
+    "Clock/source proof validates caller-supplied original timestamps, without introducing source DTO changes or new automatic fact acceptance.",
+    "Compiled release target/test DEX reachability remains independently unverified.",
+    "Exact-candidate independent review and root-run full frozen harness/CI plus real-model/physical audio/device qualification remain outstanding."
+  ],
+  "usage_completion_path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/privacy-coder-5-usage.json",
+  "usage_completion_policy": "UsageLedger outcome success means committed coding handoff only; usage=None because actual provider token usage is unknown; receipt_id equals immutable report SHA256.",
+  "log_path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/privacy-coder-5.log",
+  "created_at_utc": "2026-10-03T01:56:56.326958+00:00",
+  "quiescent": true,
+  "no_actions": [
+    "No GitHub write/PR/merge/release",
+    "No Coordinator submit/integrate/verify",
+    "No new actor/dispatch",
+    "No frozen file/build/shrinker edit",
+    "No toolchain installation/full tests"
+  ]
+}

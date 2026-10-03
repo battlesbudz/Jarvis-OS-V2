@@ -1,0 +1,16 @@
+repair5 actual coding operations; source-only checks, no Kotlin/JVM/device execution
+control read privacy-repair-control-5.json; review4 report and retention/clock probes read
+base cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de
+git fetch local retained checkout exact head 3e86bda2b62d39142b7e66dda5439b50fa5e7888
+git cherry-pick fd1fccb2c4883bf5c0b232e71a1ffa20af585b4d df9c417722b0550f2d0008070f6112b4c28dfc08 e8a2f9fbc8caf7571cba24eca5c951f7a4a0752e 3e86bda2b62d39142b7e66dda5439b50fa5e7888
+adoption ef463f640872934e504067d8ffe2cd0b6f7ebdfa; tree826e3bf976dae0c23e5e70bb9b853f22e669bacd exactly matches retained candidate
+read AGENTS/verify SKILL/docs; inspected VoiceSessionController resumeCall/linkConversation, runtime exact3 tool IDs, store/diagnostic APIs and new privacy tests
+apply_patch source task-string default deny with exact supported tool ID schema, per-original diagnostic clock validation, FullSource Keep
+apply_patch meaningful JVM regression fixtures and strengthen existing Android test36 only; append truthful docs
+Python static integrity checks passed (not Kotlin tests); exact14 scope, original36 bytes, existing test36 assertions,37 scenarios, history assertions, append-only docs
+git diff --check passed; source diff reviewed; staged exactly7 allowed repair files
+git commit resulting head 38eb34316a5b942ed7ab55d584ada97295644f08; tree ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4; parent ef463f640872934e504067d8ffe2cd0b6f7ebdfa; 7 files 141 insertions4 deletions
+postcommit clean status, exact14 paths and diff check confirmed
+immutable report SHA256 0af0a9b238385175de57e32a47db27d0e48a0466d75d621aa5ddbcff12c1c3c9
+UsageLedger complete ticket 9b0e0533220047d593c3b09bed51f6a9; state completed; usage=None; receipt_id 0af0a9b238385175de57e32a47db27d0e48a0466d75d621aa5ddbcff12c1c3c9; completed_hash ef862f2fff76bf92a21acefca6c051964bbd0ddd533fa9b76758b785550a030c
+No GitHub/Coordinator actions; coding quiescent.
