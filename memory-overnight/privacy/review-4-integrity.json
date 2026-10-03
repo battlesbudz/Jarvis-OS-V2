@@ -1,0 +1,54 @@
+{
+  "identities": {
+    "remote": {
+      "head": "1957255c1c1b9738d17f6dbf932824557aea7ae4",
+      "tree": "826e3bf976dae0c23e5e70bb9b853f22e669bacd",
+      "parents": [
+        "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de"
+      ],
+      "status": "",
+      "ancestry": [
+        "1957255c1c1b9738d17f6dbf932824557aea7ae4 cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de"
+      ]
+    },
+    "integration": {
+      "head": "a348d86ddd32ba7e5f99bc9687e9fad07e918caf",
+      "tree": "826e3bf976dae0c23e5e70bb9b853f22e669bacd",
+      "parents": [
+        "8faa6cd1d0782e645d918831b690546a1a4ea441"
+      ],
+      "status": "",
+      "ancestry": [
+        "a348d86ddd32ba7e5f99bc9687e9fad07e918caf 8faa6cd1d0782e645d918831b690546a1a4ea441",
+        "8faa6cd1d0782e645d918831b690546a1a4ea441 8aee7dd7ce5526798554c11bc2d17bc656fdf79a",
+        "8aee7dd7ce5526798554c11bc2d17bc656fdf79a 53f89b702222e13b186630d4d13690b936b503fe",
+        "53f89b702222e13b186630d4d13690b936b503fe cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de"
+      ]
+    },
+    "coder": {
+      "head": "3e86bda2b62d39142b7e66dda5439b50fa5e7888",
+      "tree": "826e3bf976dae0c23e5e70bb9b853f22e669bacd",
+      "parents": [
+        "e8a2f9fbc8caf7571cba24eca5c951f7a4a0752e"
+      ],
+      "status": "",
+      "ancestry": [
+        "3e86bda2b62d39142b7e66dda5439b50fa5e7888 e8a2f9fbc8caf7571cba24eca5c951f7a4a0752e",
+        "e8a2f9fbc8caf7571cba24eca5c951f7a4a0752e df9c417722b0550f2d0008070f6112b4c28dfc08",
+        "df9c417722b0550f2d0008070f6112b4c28dfc08 fd1fccb2c4883bf5c0b232e71a1ffa20af585b4d",
+        "fd1fccb2c4883bf5c0b232e71a1ffa20af585b4d cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de"
+      ]
+    }
+  },
+  "spec_sha256": "9577265a9475306cfe2f753808a638b8be071ecdb18107b728ff3c721b6e7b56",
+  "exact_allowed_paths": 14,
+  "frozen_paths": 179,
+  "manifest_hashes_checked": 180,
+  "original_36_android_file_preserved": true,
+  "scenario_count": 37,
+  "original_scenario_names_order_fields_preserved": true,
+  "history_assertions_preserved": true,
+  "docs_append_only": true,
+  "diff_check_passed_both": true,
+  "build890_instrumentation_sha256": "1e5c22dc94dd54e9f301646dc3bdc72467cd830b45c450a5812432e991559c03"
+}

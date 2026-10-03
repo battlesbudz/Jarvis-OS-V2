@@ -1,0 +1,17 @@
+{
+  "probe_kind": "source-level lifecycle model; not Kotlin execution",
+  "original_capture_ms": 1791000000000,
+  "resume_at_day": 89,
+  "original_expiry_ms": 1798776000000,
+  "resumed_derived_capture_ms": 1798689600000,
+  "old_source_expired_at_probe": true,
+  "copied_task_source_still_eligible_at_probe": true,
+  "copied_task_text": "Opened Amber Notebook",
+  "new_expiry_day_from_original": 179,
+  "source_locations": [
+    "VoiceSessionController.kt:152-176",
+    "MainActivity.kt:173-175",
+    "VoiceCallStore.kt:31-35,43-67"
+  ],
+  "precondition": "An eligible persisted/legacy VoiceTaskStatus contains source-bearing prose; current accepted-action Runtime normally writes content-free tool names. The storage API/codec accepts both, and its stated privacy boundary covers task strings."
+}

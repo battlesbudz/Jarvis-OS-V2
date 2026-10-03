@@ -1,0 +1,66 @@
+{
+  "actor": "/root/jarvis_privacy_review",
+  "ticket_id": "4c31b63f52184f81b7150b0211022e07",
+  "dispatch_id": "privacy-review-4",
+  "coordinator_run": "7bfab527f2894d08a773ce79ba68b286",
+  "review_stage": "before_verification",
+  "requested_route": "gpt-6-astra/high",
+  "actual_usage": null,
+  "base_sha": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "local_sha": "a348d86ddd32ba7e5f99bc9687e9fad07e918caf",
+  "remote_sha": "1957255c1c1b9738d17f6dbf932824557aea7ae4",
+  "coder_sha": "3e86bda2b62d39142b7e66dda5439b50fa5e7888",
+  "local_tree": "826e3bf976dae0c23e5e70bb9b853f22e669bacd",
+  "remote_tree": "826e3bf976dae0c23e5e70bb9b853f22e669bacd",
+  "local_parents": [
+    "8faa6cd1d0782e645d918831b690546a1a4ea441"
+  ],
+  "remote_parents": [
+    "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de"
+  ],
+  "tree_binding_verified": true,
+  "scope_verified": true,
+  "frozen_verified": true,
+  "approved": false,
+  "summary": "Rejected on two remaining cumulative privacy defects: new-ID call resume/link renews accepted legacy source-bearing task text using the new session clock, and full-source diagnostic recording masks future/overflow capture timestamps with an earlier history clock before validation. Earlier exception-envelope and typed exact-prompt findings are addressed statically by API-contract full-input scanning/default-deny generic diagnostics; summary proof/tombstones and removal of voice epoch metadata remain intact. The retained Build890 class-resolution failure is genuine and the new Keep annotations are appropriate at source level, with direct test36 owners audited, but no compiled/device success is claimed. Exact remote/local tree binding, 14-path scope, frozen179 and original36 journeys all pass independent source-integrity checks. Preserve exact Build898 evidence without treating tests as resolving these defects.",
+  "findings": [
+    {
+      "severity": "blocking",
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+      "detail": "R5: Resuming an eligible saved call renews inherited source-bearing taskStatus strings. VoiceSessionController.resumeCall (152-169) copies latest.taskStatus into a new UUID with startedAtMs=now, then MainActivity (173-175) calls linkConversation, which clears the copied transcript while retaining taskStatus (VoiceSessionController 174-176). VoiceCallStore.save/sanitize (31-35,43-67) only finds prior by the new call ID and dates derived title/task text from that new startedAtMs; it does not preserve inherited source lineage. Given an accepted persisted/legacy task string \"Opened Amber Notebook\" captured at t0, resume at day89 and link the conversation; at t0+90 days the original call expires but the new call retains the copied task text until day179, including after reopen. Current accepted-action Runtime generally writes content-free tool names, so the source-bearing persisted/legacy task precondition is explicit; the public store/codec and privacy contract nevertheless accept and cover arbitrary task strings. Content-free identity/outcome preservation can remain allowed. Keep derived-source provenance separate from session start across new-ID resume and the later transcript-clearing checkpoint, or fail closed for unprovenanced inherited freeform tasks. Repair can live in allowed VoiceCallStore without editing frozen controller/activity. Add a boundary regression that saves eligible prose tasks, follows resume+link, advances to original expiry, and reopens. Evidence: privacy-review-4-retention-probe.json is an exact source-level lifecycle model, not a Kotlin run."
+    },
+    {
+      "severity": "blocking",
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+      "detail": "R6: recordSourceInferencePrompt (lines 33-37) computes sources.minOfOrNull { minOf(it.capturedAtMs, sourceTimestamp()) } before validation. It then passes only that derived clock and source text strings to wrap/Privacy.placeholder, losing each source\u2019s original clock. With clock/sourceTimestamp=1000 and a benign FullSource capturedAtMs=1001 (future) or Long.MAX_VALUE (overflowing expiry), the method produces captured=1000 and persists/binds the payload, even though Privacy.eligible rejects the original capture time. The supplied voice FullSource API must reject every missing/future/overflow/expired original clock before choosing the oldest eligible clock; an earlier history timestamp is not proof of that source\u2019s capture provenance. This violates the explicit fail-closed invalid-clock requirement. The reduced clock is conservative for age but still masks invalid source provenance. The current full-source test covers valid epoch timestamps and secret text, not invalid clocks. Evidence: privacy-review-4-clock-probe.json evaluates the exact source arithmetic; no Kotlin execution claimed."
+    }
+  ],
+  "executed_checks": [
+    "Read current ticket/coder4 report, prior coder3 repair report/log, repository AGENTS and jarvis-verify instructions; reviewed verification/MemoryOS acceptance updates.",
+    "Independently resolved exact remote 1957255c1c1b9738d17f6dbf932824557aea7ae4, integration a348d86ddd32ba7e5f99bc9687e9fad07e918caf and coder 3e86bda2b62d39142b7e66dda5439b50fa5e7888; full tree 826e3bf976dae0c23e5e70bb9b853f22e669bacd matches all three; clean trees and real multi-commit integration/coder ancestry recorded.",
+    "Verified original spec SHA256 9577265a9475306cfe2f753808a638b8be071ecdb18107b728ff3c721b6e7b56, base ancestry, exact 14 allowed changed paths, unchanged 179 frozen paths, and 180 unchanged frozen-manifest file hashes.",
+    "Verified original Android file byte-for-byte after removing only test36; all original 36 journey bodies/assertions/names/order preserved; exactly 37 unique registrations and other scenarios fields unchanged.",
+    "Verified existing ConversationHistoryTest assertion lines unchanged and only authorized fixture migration retained; both documentation files append-only.",
+    "git diff --check base..HEAD passed on both local integration and actual remote checkout.",
+    "Compared attempt4 to retained bdec0bb tree: only two production Keep annotation additions and append-only documentation (4 files/9 insertions).",
+    "Inspected retained actual Build890 API30 instrumentation, verified SHA256 1e5c22dc94dd54e9f301646dc3bdc72467cd830b45c450a5812432e991559c03, 37 run/1 failed, NoClassDefFoundError ConversationVoiceCallStore in test36 line1509. Did not reproduce on device.",
+    "Audited direct test36 owners/returned DTOs against frozen full-class keeps and policy nested Keep annotations; new ConversationVoiceCallStore and DiagnosticRecorder Keep declarations close the observed/source-identified gaps. Compiled target/test DEX reachability remains unverified.",
+    "Reviewed cumulative history/call/summary/diagnostic policies and actual Runtime/Activity/conversation callers: default-deny generic diagnostics, complete typed exact-prompt API, full voice source scans, hashed evidence keys, restore bindings, summary proof/tombstones and conservative rejection.",
+    "Executed source-level Python lifecycle/arithmetic probes for resumed inherited task lineage and invalid FullSource clocks, saved separate JSON evidence. These are not Kotlin/JVM/Android tests."
+  ],
+  "unverified_gates": [
+    "Frozen full Python harness after independent review (not run by reviewer).",
+    "Exact candidate Kotlin/release JVM/native/helper execution and signed normal/compact builds.",
+    "Exact candidate API30/API35 all37 journeys, process restart, compiled DEX ABI/reachability and consolidated receipt.",
+    "Build898/run37087269778 results remain independent CI evidence; no status/pass is inferred here and even green tests would not resolve the static findings.",
+    "Real-model/physical audio/sensitive-lock-TTS-race/target-device qualification."
+  ],
+  "prior_findings_status": {
+    "R1": "addressed statically by default-deny freeform diagnostics and restore proof",
+    "R2": "addressed demonstrated summary expiry/Bundle cases statically; conservative summary availability retained",
+    "R3": "addressed by removing runtime epoch metadata from scanned voice payload",
+    "R4": "addressed statically by complete recordInferencePrompt API input scan and binding"
+  },
+  "created_at_utc": "2026-10-03T01:49:55.922752+00:00",
+  "quiescent": true
+}

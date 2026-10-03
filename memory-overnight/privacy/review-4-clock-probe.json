@@ -1,0 +1,19 @@
+{
+  "kind": "exact source arithmetic model, not Kotlin execution",
+  "cases": [
+    {
+      "original_capture_ms": 1001,
+      "sourceTimestamp_and_now_ms": 1000,
+      "derived_capture_ms": 1000,
+      "original_eligible": false,
+      "derived_eligible": true
+    },
+    {
+      "original_capture_ms": 9223372036854775807,
+      "sourceTimestamp_and_now_ms": 1000,
+      "derived_capture_ms": 1000,
+      "original_eligible": false,
+      "derived_eligible": true
+    }
+  ]
+}
