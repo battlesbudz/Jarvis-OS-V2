@@ -1,0 +1,29 @@
+{
+  "actual_provider_usage": null,
+  "binding_sha256": "419d21e767787a77d5c67ec5691ed49c9c5a36b5646a7c9bc819ebf20d428836",
+  "consolidated_passed": true,
+  "coordinator_raw_report_and_harness_log_hashes_checked": true,
+  "coordinator_scope_sha256": "c85d49c0c6ce015b45dc85ce269866c409f912b85a5eb34cf0cbc00297282aa8",
+  "fetched_actual_ci_success": 37088094621,
+  "fetched_retained_gates_match_binding": true,
+  "historical_completion_sha256": "d795c94057e8763e28bdc3799d66af3daa9a099d98de89d74cbe09c8e85dd84a",
+  "no_new_actor_or_tests": true,
+  "not_proof": "Revalidates retained exact-source tests/review. Does not authorize public release, run new tests or qualify real-model/physical-device behavior.",
+  "observed_at_utc": "2026-10-03T06:26:12.801984+00:00",
+  "public_release_approved": false,
+  "retained_android_restart_passed": true,
+  "retained_android_tests_each": 37,
+  "retained_jvm_tests": 767,
+  "revalidated_existing_completion_only": true,
+  "review_report_hash_and_distinct_actors_checked": true,
+  "source": {
+    "branch": "feature/memory-os-overnight-20261002",
+    "clean": true,
+    "head": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+    "repository": {
+      "name": "Jarvis-OS-V2",
+      "owner": "battlesbudz"
+    }
+  },
+  "spec_sha256": "9577265a9475306cfe2f753808a638b8be071ecdb18107b728ff3c721b6e7b56"
+}
