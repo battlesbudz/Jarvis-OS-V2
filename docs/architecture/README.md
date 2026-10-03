@@ -27,10 +27,13 @@ for the decision to keep package/collaborator boundaries before adding build mod
 | --- | --- |
 | `MainActivity` | Permissions, activity results, exports and attaching Compose; delegates feature work |
 | `ui/JarvisApp` | UI state/callback wiring and selecting conversation/setup/history/diagnostic surfaces |
-| `JarvisRuntime.get(applicationContext)` | One process runtime: conversation/model owner, shared history, call coordination and feature collaborators |
+| `JarvisAppComposition` | Compatibility composition adapter supplying only benchmark-store and call-evidence dependencies to UI |
+| `JarvisRuntime.get(applicationContext)` | Process composition/lifecycle facade wiring typed owners/ports, shared history and compatibility entry adapters |
+| `runtime/turn/VoiceTurnRunner` | Admits and orders typed voice stages, with error/rearm policy; resource release belongs to finalizer |
 | `voice/VoiceCallService` | User-started foreground microphone/playback eligibility, notification controls and wake lock |
 | `voice/VoiceSessionController` | Call identity, transcript, delivered reply/action state and persisted call record |
-| `conversation/ConversationWork` | One conversation admission boundary shared by text and final voice requests |
+| `work/ProcessConversationAdmission` | One shared atomic admission owner for conversation and model-file operations; `ConversationWork` is its compatibility view |
+| `conversation/ConversationCoordinator` | Typed invocation admission, ordered stages and exact returned child-job cleanup; native resource release waits for this job |
 | `voice/JarvisModelSetupWorker` | Foreground WorkManager download/setup surviving activity recreation and backgrounding |
 | `memory/AndroidMemoryOs` | Process access to private SQLite memory/source storage and archive-expiry maintenance |
 
@@ -70,8 +73,10 @@ playback evidence; unplayed generated text must not become heard conversation co
 
 | Package | What it owns | Starting files |
 | --- | --- | --- |
-| `runtime/` | Process/call collaborators for journal, memory, accepted work and voice assembly/evidence | `PhoneTaskCoordinator`, `RuntimeMemoryCoordinator`, `AcceptedVoiceActionCoordinator`; [full map](../app-modularization.md) |
-| `conversation/` | Per-turn routing, input/model execution, action bridge, reply publication and budgets | `ConversationRuntime`, `ConversationPolicy`, `ConversationWork`; [phase owners](../app-modularization.md) |
+| `work/` | Shared process work admission without model storage depending on conversation implementation | `ProcessConversationAdmission` |
+| `runtime/` | Process collaborators for journal, memory, accepted work and voice assembly/evidence | `PhoneTaskCoordinator`, `RuntimeMemoryCoordinator`, `AcceptedVoiceActionCoordinator`; [full map](../app-modularization.md) |
+| `runtime/turn/` | Typed call stages, narrow dispatch/events/memory ports, explicit turn/model/input ownership and finalization | `VoiceTurnRunner`, `VoiceTurnStages`, `VoiceTurnLifetime`, `VoiceTurnFinalizer`; [lifetime map below](#voice-stage-and-lifetime-contracts) |
+| `conversation/` | Per-turn routing, input/model execution, action bridge, reply publication and budgets | `ConversationCoordinator` (`ConversationRuntime.kt`), `ConversationContracts`, `ConversationModelSession`; [phase owners](../app-modularization.md) |
 | `ai/` | Model catalog/compatibility, LiteRT adapters, prompt/context policies and supplied/network references | `ModelCatalog`, `ModelStore`, `LiteRtLmEngine`, `ConversationPromptBuilder`, `TurnOrchestrator` |
 | `ai/storage/` | Download transport, hash/integrity and Android Downloads lookup | `ModelDownloader`, `ModelFileHash`, `DownloadedModelLookup` |
 | `chat/` | Persistent threads, shared context and display/speech text formatting | `ConversationHistory`, `ShortTermConversationContext`, `AssistantText` |
@@ -79,10 +84,67 @@ playback evidence; unplayed generated text must not become heard conversation co
 | `voice/comparison/` | Explicit live comparison trial data; does not replace normal turn ownership | `LiveComparison` |
 | `actions/` | Strict action contracts, complete plans, authority/approval, Android effects and durable journals | `ActionTurnPlan`, `ActionTurnRunner`, `JournaledActionPipeline`, `AndroidMobileActionExecutor` |
 | `memory/` | Memory policy, reviewed facts, source archives, SQLite/migration, retrieval and delivery validity | `ConversationMemory`, `MemoryOs`, `SQLiteMemoryStore`, `MemoryDeliveryFence` |
-| `diagnostics/` | Per-reply latency, production benchmark capture/journals/exports and bounded diagnostic evidence | `PipelineBenchmarkCapture`, `AndroidPipelineBenchmarkStore`, `DiagnosticRecorder` |
+| `diagnostics/` | Per-reply latency, production benchmark capture/journals/exports and bounded diagnostic evidence | `PipelineBenchmarks`, `ReplyCaptureBenchmark`, `PipelineBenchmarkCapture`, `AndroidPipelineBenchmarkStore`, `DiagnosticRecorder` |
 | `presentation/` | Model setup operations through a narrow session port; durable download work identity | `ModelSetupOperations`, `ModelSetupContract` |
 | `ui/` | Compose screens, model presentation, call overlay, attachments, task/memory panels and evidence exports | `JarvisApp`, `ModelSetupState`, `ModelSelectionSection`, `ConversationScreen`, `VoiceCallScreen`, `MemoryScreen` |
 | `assistant/` | Android default-assistant integration entry points | `JarvisInteractionService`, `JarvisRecognitionService` |
+
+## Voice stage and lifetime contracts
+
+`JarvisRuntime.runVoiceTurn` delegates to `VoiceTurnRunner.start`. A frozen
+`VoiceTurnRequest` advances through `PreparedVoiceTurn` and `FinalizedVoiceTurn`;
+intentional quiet/echo/control exits are typed terminal results. Live captions or
+unfinished drafts do not authorize effects.
+
+| Stage | Owner and boundary |
+| --- | --- |
+| Admit/sequence | `VoiceTurnRunner`: one active turn, typed queue claim, ordered stages, bounded error/rearm policy |
+| Typed input | `TypedVoiceInputStage` and `VoiceTypedInputOwnership`: final queued message, exact native child and claim/terminal handoff |
+| Prepare | `VoiceTurnPreparation`: acquire/reuse selected native/model/microphone/output/prefill/capture resources |
+| Recognize | `VoiceTurnRecognition`: endpoint, echo, captions and controls become final recognition/audio/action evidence |
+| Accepted follow-up | `AcceptedVoiceFollowupStage`: bounded capture/report pump; process `AcceptedVoiceActionCoordinator` retains the accepted tasks |
+| Ordinary reply | `OrdinaryVoiceReplyStage`: frozen conversation dispatch, valid-memory token/TTS delivery and final direct-audio caption update |
+| Finalize | `VoiceTurnFinalizer`: NonCancellable stop/close/join sequence for exact capture/prefill/speech children, then release resources and lease |
+| Observe | `VoiceTurnObservation`/`VoiceTurnTelemetry`: benchmark/trace/actual playback evidence without request authority |
+
+| Lifetime/port | Ownership contract |
+| --- | --- |
+| `VoiceCallState`/`VoiceCallAccess`/`VoiceCallEvents` | Shared call identity/control state and platform/UI events; not a bag of process services |
+| `VoiceTurnLifetime` | Exact child/resource handles of one Default-dispatcher turn; no other turn's children may be released |
+| `AcceptedFollowupLifetime`/`AcceptedReportPlayback` | Exact accepted-pump listener, selector and report children; NonCancellable stop/join/release/identity-detach before outer microphone/model cleanup; excludes the process phone worker |
+| `VoiceTurnModelLease` | Transfer the same operation lease to accepted work and prevent double release |
+| `VoiceConversationAccess`/`VoiceConversationDispatch` | Typed conversation invocation, current child and reset operations; returned child must join before model release |
+| `ConversationSessionState` | Shared resident native engine/context accounting under the one model lease |
+| `VoiceMemoryAccess`/`VoiceMemoryDeliveryOwner` | Capture/fence authority and immutable answer bindings using turn-local references/CAS; mutation invalidates delivery |
+
+The call survives display navigation and speech interruption. Accepted task work
+survives its speech attempt; explicit end detaches call audio according to the
+existing cancellation contract. Cleanup joins native/speech borrowers before
+releasing the owner and before rearming another turn. See the [audit](repository-audit.md)
+for why acoustic capture and the follow-up/report state machine remain cohesive.
+
+## Conversation stage contracts
+
+`ConversationCoordinator.start` accepts `ConversationInvocation` and
+`ConversationCallbacks`. It owns shared admission and the exact returned child job;
+call-owned model release must wait for that job to finish. Stages receive explicit
+inputs and narrow collaborators, not the process runtime.
+
+| Stage | Owner and boundary |
+| --- | --- |
+| Route | `ConversationRouting`: complete literal actions, status and integrity before memory/lookup; returns `RoutedConversation` or a terminal reply |
+| Context | `ConversationContextPreparation`: approved memory snapshot, cutoff/capture/recall and reference context; returns `PreparedConversation` |
+| Session/prompt | `ConversationModelSession`: resident engine/context budget and bounded summary; `ConversationPrompt`: assembled prompt/compaction policy |
+| Generate | `ConversationGeneration`: selected multimodal input, safe stream/draft and strict native-tool receipt compatibility; returns `ConversationDraft` |
+| Recover | `ConversationRecovery`: bounded read-only factuality/reference/repetition work; cannot admit phone effects |
+| Finalize/publish | `ConversationFinalizer`: receipt-first visible text policy; `ConversationReply`: memory-valid token/completion, latency and benchmark finalization |
+| Observe | `ConversationInferenceTelemetry`: exact submissions/progress; `ConversationBackend`: the resident LiteRT inference adapter |
+
+`ConversationSessionState` shares only the resident engine, context-seeded flag and
+character accounting between owners. `ConversationMemoryAccess`,
+`ConversationReferences`, diagnostic callbacks and the backend expose their
+respective authority. Source review and focused prompt/reply/session/recovery/finalizer
+tests supplement the complete existing action/memory/voice suites.
 
 ## Persistence and compatibility
 
@@ -100,6 +162,11 @@ playback evidence; unplayed generated text must not become heard conversation co
 Keep schema, filenames, serialized identities and preference keys stable during
 refactors. The app disables Android backup; uninstall/clear-data removes device-local
 content. Tests should use disposable data and preserve migration/unknown-outcome behavior.
+
+The SDK-free `scripts/check_architecture.py` guard rejects process/runtime access
+outside explicit composition entry points and conversation implementation coupling
+in model code. Review still verifies port breadth, lifetime and typed data contracts;
+the guard is not a Kotlin parser or proof of an acyclic package graph.
 
 [Native/build details](development.md#native-and-release-boundaries),
 [change guide](change-guide.md), [verification](../verification/README.md).

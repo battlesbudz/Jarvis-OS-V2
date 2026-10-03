@@ -1,39 +1,75 @@
-# Modular refactor acceptance
+# Repository maintainability refactor acceptance
 
-The refactor starts from `audio-pr2` commit
+Original behavior baseline: `audio-pr2` commit
 `923a0e6bc2aab3f93371ed5c691afc3244e6bf17` (published Build 885).
-That build is a baseline, not verification of subsequent changes.
+`ed30650` is the first decomposition checkpoint, not architectural completion or
+proof that a later candidate passed verification. The final candidate must meet
+all structural, handoff and exact-revision gates below.
 
-## Observable requirements
+## Completion criteria
 
-| Requirement | Verification |
+| ID | Required result | Evidence |
+| --- | --- | --- |
+| A1 | `JarvisRuntime` is a composition/lifecycle facade. Voice and conversation stages have named owners rather than an integrated workflow hidden in the facade. | Source review of facade, call preparation/capture/reply/accepted-input stages and conversation coordinator |
+| A2 | Stage collaborators receive typed inputs/results and narrow operation ports. Domain/phase files do not reach arbitrary process fields through `JarvisRuntime` extensions or a renamed all-capability runtime wrapper. | Dependency/import/call-site audit plus `scripts/check_architecture.py`; compatibility entry adapters may only delegate to the appropriate owner |
+| A3 | Admission, model/microphone leases, call identity, dispatchers, cancellation/join ordering and memory publication fences have one explicit owner each. | Owner table and existing plus focused lifecycle/failure/cancellation regressions |
+| A4 | Every repository subsystem is audited for responsibility, dependencies, duplication, navigation and verification. Retained large components have a concrete cohesion/resource reason, named seams and tests. | [Whole-repository audit](../architecture/repository-audit.md) with justified exceptions; file size alone is not acceptance |
+| A5 | Current entry points, package/stage owners, dependency rules, persistence/ABI contracts, common change paths and tests are mapped accurately. | [Architecture](../architecture/README.md), [owner map](../app-modularization.md), [change guide](../architecture/change-guide.md), link/source review |
+| A6 | A new maintainer can restore the checkout/toolchain, understand native builds, run applicable checks, install an APK and hand off exact evidence. | README → CONTRIBUTING → architecture/setup/scripts navigation; fresh-checkout helper checks and reviewed build/install instructions |
+| A7 | Observable behavior and compatibility contracts remain intact; decomposition does not waive or weaken acceptance. | Behavioral matrix below, unchanged named journey assertions/selectors and native/release ABI checks |
+| A8 | The final combined revision passes every required existing release gate and produces the numbered installable APK release. | Exact branch-head/merge identity, full JVM/native/helper results, both signed variants, every API 30/API 35 journey, same-run receipt and publication |
+
+Completion requires all eight criteria. An extraction milestone, a focused JVM
+pass, fewer lines, or a passing previous build is insufficient. Single-module
+packaging remains the decision in [ADR 001](../architecture/adr-001-package-boundaries.md);
+new build modules are not a completion requirement.
+
+## Preserved behavioral contracts
+
+| Contract | Verification |
 | --- | --- |
-| Runtime responsibilities have named owners and explicit dependencies | Code review and [architecture map](../architecture/README.md) |
-| A newcomer can find entry points, feature owners and checks | README, CONTRIBUTING and developer-command review |
-| Model setup/import/download retains selection and operation ownership | Existing model JVM tests and journeys 01–03, 10–12, 32–33, 90 |
-| Chat and the floating voice overlay retain their controls and navigation | Existing journeys 25–31, 46–47 |
-| Corrected/erased memory cannot leak through an in-flight reply | Existing memory delivery, receipt and invalidation JVM tests; journeys 24–26, 34–39 |
-| Accepted phone actions remain journaled, ordered and cancellation-aware | Existing action queue/lease/ledger JVM tests; journeys 14–23, 40–44 |
-| Speech keeps PCM, queue, drain and interruption contracts | Existing voice JVM tests, focused extracted-component tests, native packaging/callback checks |
-| Invalid action requests and failed storage still stop effects | Existing rejection/failure JVM tests and journeys 05–06, 08, 15–17, 35, 38, 40–43 |
-| Helper checks work from a fresh checkout without another session's files | Python suites, including portable artifact replay and developer-command failure cases |
+| Model setup/import/download retains selection and operation ownership | Existing model JVM tests; journeys 01–03, 10–12, 32–33, 90 |
+| Chat and floating voice overlay retain controls, transcript and navigation | Existing journeys 25–31, 46–47 |
+| Corrected/erased/expired memory cannot leak through an in-flight reply | Existing memory delivery/receipt/invalidation JVM tests; journeys 24–26, 34–39 |
+| Accepted actions remain journaled, ordered, receipt-based and cancellation-aware | Existing action queue/lease/ledger JVM tests; journeys 14–23, 40–44 |
+| Speech preserves PCM, bounded queue, drain, interruption and borrower ordering | Existing voice JVM tests, focused component tests, native packaging/callback checks |
+| Invalid requests and failed storage stop effects before unauthorized dispatch | Existing rejection/failure JVM tests; journeys 05–06, 08, 15–17, 35, 38, 40–43 |
+| Benchmark/status definitions and export linkage remain stable | Existing benchmark JVM tests; journeys 45–46 |
+| Helper checks work from a fresh checkout without another session's files | Architecture guard, root/nested Python suites, portable artifact replay, developer-command failure cases |
 
-This is structural work. Preference keys, storage schemas, model identities,
-Android component names, native callbacks, release selectors and all named
-journey assertions remain compatibility constraints.
+Preference keys, storage schemas/serialized identities, model filenames and
+catalog identities, Android component names, native callback signatures, release
+UI selectors and every named journey remain compatibility constraints. No new
+model backend, voice tuning or persistence migration is implied by structural work.
 
-## Release gate
+## Evidence and status
 
-The exact changed revision must pass the existing `Android APK` workflow:
-release JVM/native/helper checks, signed normal and compact APKs, every named
-journey in `scripts/verification/scenarios.json` on API 30/API 35, the same-run
-receipt, and publication. Refactoring does not waive any step. Use the run's
-receipt to identify both the branch head and tested PR merge commit.
+| Layer | Status required for final handoff |
+| --- | --- |
+| Architecture | A1–A4 source review complete; justified exceptions named |
+| Maintainer handoff | A5–A6 links, source owners, setup/check/install path reviewed |
+| Behavioral verification | A7 existing and focused regressions pass without relaxed assertions |
+| Candidate release | A8 exact-revision full pipeline and publication pass |
 
-Review the new collaborator boundaries for lifetime, dispatcher, cancellation,
-memory fence and model lease ownership before pushing. Do not infer correctness
-from smaller file sizes alone.
+The final architecture/source map, whole-repository audit and newcomer links are
+reviewed in the [resolved boundary audit](../architecture/repository-audit.md).
+This closes structural findings; it does not supply compiled regression or release
+evidence. Until the final candidate's complete regressions and exact-revision
+receipt/publication pass, the work remains a refactor candidate. Record the tested source commit and branch head,
+run/release links, APK digests, results and outstanding gaps here or in the linked
+feature acceptance map. Retain failure evidence; a later pass must not overwrite
+or relabel an earlier failure.
 
-Real model inference, microphone/speaker behavior, successful large model
-transfers and Fold 6 performance remain physical-device checks. A structural
-refactor does not establish improved speech accuracy or lower latency.
+The release gate is the existing `Android APK` workflow: release JVM/native/helper
+checks, signed normal and compact APKs, all named journeys from
+`scripts/verification/scenarios.json` on API 30/API 35, consolidated same-run
+receipt, and publication. The receipt distinguishes the tested PR merge commit
+from the candidate branch head. Review the final combined tree before pushing.
+
+## Physical-device acceptance
+
+Real model inference, actual large model transfers, microphone/speaker/Bluetooth
+behavior and Fold 6 performance are separate device coverage. Their absence must
+be disclosed, but it does not by itself prevent completion of the architectural
+refactor after A1–A8 pass. Automated structural completion does not establish better
+speech accuracy, lower latency or integrated product acceptance on the phone.

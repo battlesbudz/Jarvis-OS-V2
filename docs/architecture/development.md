@@ -62,8 +62,11 @@ python3 scripts/dev.py check
 gradle testReleaseUnitTest
 ```
 
-`dev.py check` runs the Python helper/harness suites, including nested verification
-artifact tests. It does not run JVM, native or Android tests. A targeted JVM
+`dev.py check` runs the SDK-free architecture dependency guard and both Python
+helper/harness suites, including nested verification artifact tests. The guard
+checks concrete process/activity composition and storage-admission dependencies;
+it is not a complete Kotlin parser or package-graph proof. This command does not
+run JVM, native or Android tests. A targeted JVM
 regression can use `gradle testReleaseUnitTest --tests '<fully qualified test class>'`;
 the release gate still requires the complete JVM suite.
 

@@ -22,7 +22,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
-import com.battlesbudz.jarvis.v2.JarvisRuntime
 import com.battlesbudz.jarvis.v2.diagnostics.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -32,9 +31,7 @@ import java.io.File
 import java.util.Locale
 
 @Composable
-internal fun PipelineBenchmarkCard(enabled: Boolean) {
-    val context = LocalContext.current
-    val store = remember(context.applicationContext) { JarvisRuntime.get(context.applicationContext).pipelineBenchmarkStore }
+internal fun PipelineBenchmarkCard(store: AndroidPipelineBenchmarkStore, enabled: Boolean) {
     val samples by store.samples.collectAsState()
     var open by remember { mutableStateOf(false) }
     TextButton(onClick = { open = true }, modifier = Modifier.testTag("pipeline_benchmark_open")) {

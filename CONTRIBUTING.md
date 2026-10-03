@@ -27,7 +27,9 @@ an explicit ownership, dependency and testing reason, plus native/ABI validation
 
 - Prefer typed inputs/results and small explicit interfaces. Inject the few
   collaborators a component uses rather than passing `MainActivity` or the entire
-  runtime into domain policy.
+  runtime into domain policy. Keep `JarvisRuntime` at the composition/lifecycle
+  boundary; stage files must not recover arbitrary process state through runtime
+  extensions, global lookup or an all-capability wrapper.
 - Use feature-specific names. Extend an existing policy or adapter before adding
   a generic helper or a parallel code path for voice and text.
 - Keep Compose presentation free of model initialization, downloads and durable
@@ -67,6 +69,8 @@ Describe the user-visible problem and resulting behavior first. Include affected
 owners, persistence/ABI changes, checks run, exact tested revision, and material
 coverage gaps. Update [architecture](docs/architecture/README.md) when ownership
 changes and [feature coverage](docs/verification/features.md) when acceptance changes.
+A repository-wide refactor also needs an explicit subsystem audit and justified
+cohesive exceptions; use the [completion contract](docs/verification/modular-refactor.md).
 Link a dated measurement or plan as evidence; do not present it as current behavior.
 
 Coordinate one file scope per concurrent worker and keep one owner for integration

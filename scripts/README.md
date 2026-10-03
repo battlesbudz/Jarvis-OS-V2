@@ -9,6 +9,7 @@ python3 scripts/dev.py map
 python3 scripts/dev.py map conversation
 python3 scripts/dev.py doctor
 python3 scripts/dev.py check
+python3 scripts/check_architecture.py
 ```
 
 `map` reads the current source tree, lists production packages, shows the ten
@@ -22,8 +23,9 @@ fails simply because a local Android environment is unavailable. Tool presence
 does not validate its version. See [the verification prerequisites](../docs/verification/README.md#local-checks-and-device-exploration)
 for the pinned versions and disposable-emulator requirements.
 
-`check` runs both existing Python helper suites and returns a failure if either
-fails. The hosted workflow's helper-test step uses this same command. It resolves
+`check` checks architecture dependencies, runs both Python helper suites, and
+returns a failure from any of these checks. The hosted workflow's helper-test
+step uses this same command. It resolves
 the repository from its own file location, so an absolute
 invocation also works from another directory. The two underlying commands are:
 
@@ -39,6 +41,15 @@ Android, acoustic or real-model tests and do not establish APK verification.
 The build-751 retry regression uses a checked-in minimal synthetic fixture in
 `verification/fixtures`, preserving the documented artifact-ID ordering without
 depending on a previous developer's scratch directory. It is not CI evidence.
+
+`check_architecture.py` guards the concrete composition and storage-admission
+boundaries: feature implementations cannot reference `JarvisRuntime` or
+`MainActivity`, and model code cannot read conversation implementation state.
+The explicit entry-point allowlists retain the Android lifecycle and public UI
+compatibility adapters. Comments/literal text are ignored while executable Kotlin
+string interpolations are checked; this is a source
+guard, not a Kotlin parser or a complete package dependency analysis. Code review
+and compilation remain required. There are no file-length thresholds.
 
 ## Build inputs and native preparation
 

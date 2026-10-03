@@ -1,3 +1,11 @@
+> **Historical development record.** Earlier “current policy” summaries below
+> are superseded where they conflict with the current source. Calls now select
+> speech-recognition mode or **Gemma audio understanding**; direct Gemma mode
+> submits the original recording and optional Whisper captions are display-only.
+> It is not restricted to empty-ASR recovery. See the [current audio contract](verification/voice-audio-and-metrics.md)
+> and [`VoiceInputMode`](../app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceInputMode.kt).
+> Preserve the dated evidence below; it does not verify the current candidate.
+
 # Current voice pipeline and remaining acceptance
 
 > 17 September incremental-input update: ordinary voice replies now use text-only incremental Gemma prefill on one native input session per utterance. The old speculative answer/restart path is removed. Optional input processing is deferred for ASR backlog or Android thermal status 5/6 only. See [incremental voice input](voice-incremental-input.md) for the implementation, diagnostics and remaining phone checks. This supersedes older speculation/audio-per-answer descriptions below.

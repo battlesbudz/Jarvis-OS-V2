@@ -2,13 +2,18 @@
 
 ## Repository maintainability refactor
 
-The repo-wide refactor uses published Build 885 as its baseline and preserves the
-existing behavioral contracts. See [modular-refactor.md](modular-refactor.md) for
-acceptance and coverage, and [the architecture map](../architecture/README.md) for
-component owners and dependency rules. Runtime, conversation, setup and speech
-responsibilities move into focused collaborators; the Android/native release
-boundary remains one Gradle application module. Passing baseline evidence does
-not verify this changed tree; its exact revision requires the complete release gate.
+The repo-wide maintainability work preserves the published Build 885 behavior
+baseline. `ed30650` is the initial collaborator extraction checkpoint; completion
+requires typed voice/conversation stages, a composition facade with narrow ports,
+an audited whole-repository boundary map with justified exceptions, accurate
+newcomer setup/navigation/test guidance, and the exact final revision's full
+release gate. See [modular-refactor.md](modular-refactor.md) for the explicit
+A1–A8 criteria and [architecture](../architecture/README.md) for current owners.
+
+Smaller files or passing baseline evidence do not establish completion. Preserve
+all behavioral, persistence, native and release-test contracts and every named
+journey. Remaining real-model/physical-device coverage is reported separately from
+architectural acceptance; no voice-quality or latency improvement is implied.
 
 The current combined checkpoint is documented in [combined-audio.md](combined-audio.md). It supersedes the historical candidate/count statements below. The executable contract now preserves **48** named journeys: common test01–29, Audio test30–33, Memory test34–39, Tools test40–44, pipeline benchmark test45, conversation export test46, audio settings test47 and test90. Combined release verification is required; standalone Build 861/863 receipts do not validate this tree.
 

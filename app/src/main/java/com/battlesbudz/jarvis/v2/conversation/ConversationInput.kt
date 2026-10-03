@@ -1,9 +1,7 @@
 package com.battlesbudz.jarvis.v2.conversation
 
 import android.net.Uri
-import com.battlesbudz.jarvis.v2.JarvisRuntime
 import com.battlesbudz.jarvis.v2.ai.GenerationResult
-import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
 import com.battlesbudz.jarvis.v2.chat.AttachmentPolicy
 import com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkCapture
 import com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkPurpose
@@ -22,7 +20,7 @@ internal class ConversationInput(
         private set
     val nativeConversationContainsTurn: Boolean get() = textInput == null || incrementalFallbackUsed
 
-    suspend fun generate(engine: LiteRtLmEngine, prompt: String, onToken: (String) -> Unit,
+    suspend fun generate(engine: ConversationBackend, prompt: String, onToken: (String) -> Unit,
                          onIncrementalFallback: (Throwable) -> Unit): GenerationResult = when {
         directAudio -> engine.generateAudio(prompt, requireNotNull(voiceAudio), onToken)
         textInput != null -> {
@@ -40,7 +38,7 @@ internal class ConversationInput(
     }
 
     /** Retry keeps the authoritative direct-audio/image/file attachment, never a spent prefill. */
-    suspend fun retry(engine: LiteRtLmEngine, prompt: String, onToken: (String) -> Unit): GenerationResult = when {
+    suspend fun retry(engine: ConversationBackend, prompt: String, onToken: (String) -> Unit): GenerationResult = when {
         directAudio -> engine.generateAudio(prompt, requireNotNull(voiceAudio), onToken)
         attachedAudio != null -> engine.generateAudio(prompt, attachedAudio, onToken)
         imageBytes != null -> engine.generate(prompt, imageBytes, onToken)
@@ -74,6 +72,6 @@ internal fun readConversationAttachments(imageUri: Uri?, audioUri: Uri?,
     return ConversationAttachments(image, audio)
 }
 
-internal fun JarvisRuntime.openConversationInputStream(uri: Uri): InputStream? =
-    runCatching { contentResolver.openInputStream(uri) }.getOrNull()
-        ?: runCatching { contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream() }.getOrNull()
+/** Content providers may offer only an asset descriptor; preserve both original resolver paths. */
+internal fun openConversationAttachment(primary: () -> InputStream?, fallback: () -> InputStream?): InputStream? =
+    runCatching { primary() }.getOrNull() ?: runCatching { fallback() }.getOrNull()

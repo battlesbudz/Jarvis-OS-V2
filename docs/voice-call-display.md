@@ -1,3 +1,13 @@
+> **Historical call-display design record.** The earlier separate circular-screen
+> and Moonshine-only descriptions below are superseded. Current UI uses the shared
+> conversation transcript with a floating voice overlay, selectable recognition,
+> and selectable direct Gemma audio with optional display-only Whisper captions.
+> Browsing the chat retains the call; explicit End terminates it. See the
+> [current audio contract](verification/voice-audio-and-metrics.md),
+> [`ConversationScreen`](../app/src/main/java/com/battlesbudz/jarvis/v2/ui/ConversationScreen.kt)
+> and [`VoiceNavigationPolicy`](../app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceNavigationPolicy.kt).
+> Historical designs and measurements below remain unchanged.
+
 # Live voice display
 
 > Historical reference: Kokoro and Paul were removed on 16 September 2026. Their commands, setup steps and experiment plans below are superseded by the [supported stack](supported-model-stack.md) and current pipeline. Retained measurements are historical evidence.

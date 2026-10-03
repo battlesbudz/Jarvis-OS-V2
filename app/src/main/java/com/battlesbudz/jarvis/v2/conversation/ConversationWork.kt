@@ -1,8 +1,8 @@
 package com.battlesbudz.jarvis.v2.conversation
 
-import java.util.concurrent.atomic.AtomicInteger
+import com.battlesbudz.jarvis.v2.work.ProcessConversationAdmission
 
 /** Process-wide conversation admission shared by foreground service and model setup. */
 internal object ConversationWork {
-    val activeJobs = AtomicInteger(0)
+    val activeJobs get() = ProcessConversationAdmission.activeJobs
 }

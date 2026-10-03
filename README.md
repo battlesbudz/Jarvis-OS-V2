@@ -25,7 +25,7 @@ python3 scripts/dev.py doctor
 The app is one Android Gradle module, `:app`, divided into responsibility-focused
 packages and collaborators. [The module decision](docs/architecture/adr-001-package-boundaries.md)
 explains the native and release-test constraints. [The refactoring map](docs/app-modularization.md)
-records the boundaries and remaining large coordination paths.
+records the typed stage owners and justified cohesive components.
 
 ## Current stack
 
@@ -42,7 +42,7 @@ records the boundaries and remaining large coordination paths.
 is the authority for selectable model capabilities, filenames and pinned downloads.
 Model availability is separate from measured accuracy or speed on a particular
 phone. See [model selection](docs/qwen-model-selection.md),
-[Gemma switching](docs/ai-model-switching.md) and [voice acceptance notes](docs/voice-pipeline-current.md).
+[Gemma switching](docs/ai-model-switching.md) and [voice acceptance notes](docs/verification/voice-audio-and-metrics.md).
 Kokoro and Pocket/Paul are retired; historical evidence keeps its original labels.
 
 ## Build and release

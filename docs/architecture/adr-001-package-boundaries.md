@@ -24,7 +24,10 @@ its state. Pure policies and typed contracts remain independent of activity/UI
 details. Use `internal` for implementation contracts and expose only required APIs.
 
 Prefer constructor-injected narrow collaborators or explicit operation callbacks
-to a second global service locator. A new extraction must reduce knowledge or
+to a second global service locator. The process runtime is the composition/lifecycle
+facade; voice/conversation stages receive typed input and their required ports.
+An unrestricted runtime extension or a wrapper exposing the full process surface
+is not an independent stage boundary. A new extraction must reduce knowledge or
 state in its caller and preserve cancellation/resource ordering; changing file
 length alone is insufficient.
 
@@ -33,8 +36,10 @@ length alone is insufficient.
 - Contributors can navigate by responsibility without a build graph migration.
 - JVM regressions, release instrumentation, JNI symbol checks and APK receipts
   continue to exercise the existing shipping boundaries.
-- Packages are a design boundary, not compiler-enforced isolation. Review and the
-  ownership map must keep UI, policy, adapters and orchestration coherent.
+- Packages are a design boundary, not compiler-enforced isolation. The source
+  dependency guard checks explicit process/activity composition and model-storage
+  admission boundaries; source review and the ownership map also verify port
+  breadth, lifecycle and coherent UI/policy/adapter responsibility.
 - Some call and conversation coordinators remain substantial because they own
   ordering. Further extraction should use typed turn stages with one admission
   owner, rather than runtime extension files with unrestricted access.

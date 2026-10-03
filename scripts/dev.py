@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import check_architecture
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -99,8 +100,8 @@ def doctor(root):
 
 
 def run_checks(root):
-    """Run every declared helper suite, retaining failures from either discovery."""
-    failed = 0
+    """Check dependencies and both helper suites, retaining every gate's failure."""
+    failed = check_architecture.run_check(root)
     for directory in PYTHON_SUITES:
         print(f"\n[check] Python helper tests: {directory}", flush=True)
         command = [sys.executable, "-m", "unittest", "discover", "-s", directory,
@@ -121,7 +122,7 @@ def main(argv=None):
     mapping = commands.add_parser("map", help="list production packages and largest sources")
     mapping.add_argument("query", nargs="?", help="filter source paths or package names")
     commands.add_parser("doctor", help="report local tool/configuration presence without changes")
-    commands.add_parser("check", help="run all Python helper suites; no Android SDK required")
+    commands.add_parser("check", help="check architecture and all Python helper suites; no SDK required")
     args = parser.parse_args(argv)
     if args.command == "map":
         return show_map(ROOT, args.query)

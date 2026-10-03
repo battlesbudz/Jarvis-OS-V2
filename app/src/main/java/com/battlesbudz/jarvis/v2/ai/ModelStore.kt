@@ -13,8 +13,12 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
+import com.battlesbudz.jarvis.v2.work.ProcessConversationAdmission
 
-class ModelStore(context: Context) {
+class ModelStore @JvmOverloads constructor(
+    context: Context,
+    private val conversationActive: () -> Boolean = ProcessConversationAdmission::isActive
+) {
     private val downloader = ModelDownloader()
     private val downloadedModels = DownloadedModelLookup(context)
 
@@ -170,7 +174,7 @@ class ModelStore(context: Context) {
         onStatus: (String) -> Unit = {}
     ): Result<File> = runCatching {
         check(operations.tryBeginDownload(spec.id, selectedModel().id,
-            com.battlesbudz.jarvis.v2.conversation.ConversationWork.activeJobs.get() != 0)) {
+            conversationActive())) {
             "This model is currently in use or already downloading. Other models can still be used."
         }
         val transferContext = kotlinx.coroutines.currentCoroutineContext()
@@ -320,7 +324,7 @@ class ModelStore(context: Context) {
         return runCatching {
             // Create the temporary file inside runCatching so storage errors
             // are returned through the UI callback instead of escaping launch.
-            check(com.battlesbudz.jarvis.v2.conversation.ConversationWork.activeJobs.get() == 0 &&
+            check(!conversationActive() &&
                 operations.tryBeginRuntime(spec.id)) { "Another model operation is still running." }
             val temporary = try {
                 File.createTempFile("${spec.fileName}.", ".part", modelDirectory)

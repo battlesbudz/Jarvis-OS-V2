@@ -11,12 +11,12 @@ New maintainers should read [architecture](architecture/README.md),
 | Area | Starting point |
 | --- | --- |
 | Package ownership and runtime flow | [Architecture](architecture/README.md) |
-| Refactoring boundaries and remaining coordination | [App modularization](app-modularization.md) |
+| Refactoring boundaries and acceptance | [App modularization](app-modularization.md), [completion criteria](verification/modular-refactor.md), [repository audit](architecture/repository-audit.md) |
 | Why one Gradle module | [ADR 001](architecture/adr-001-package-boundaries.md) |
 | Automated acceptance and its limits | [Verification workflow](verification/README.md), [feature map](verification/features.md) |
 | Model files, integrity and selection | [Model management](model-management.md), [Gemma switching](ai-model-switching.md), [Qwen catalog](qwen-model-selection.md) |
-| Voice behavior and device acceptance | [Voice pipeline](voice-pipeline-current.md), [current diagnostics](current-diagnostics.md), [voice/audio/metrics checks](verification/voice-audio-and-metrics.md) |
-| Conversation and voice presentation | [Chat and model picker](chat-voice-and-model-picker.md), [call display](voice-call-display.md) |
+| Voice behavior and device acceptance | [Current audio authority and checks](verification/voice-audio-and-metrics.md), [current diagnostics](current-diagnostics.md), [source owners](architecture/README.md) |
+| Conversation and voice presentation | [Architecture and entry points](architecture/README.md#entry-points-and-work-ownership), [UI change owners](architecture/change-guide.md) |
 | Memory storage and implemented milestones | [Memory OS checkpoints](memory-os-native.md), [memory wiki](memory-wiki.md) |
 | Supported native phone actions | [Short multi-action contract](verification/short-multi-action.md) |
 | Exported production measurements | [Pipeline benchmark contract](verification/pipeline-benchmarks.md), [per-reply latency](per-reply-latency.md) |
@@ -40,7 +40,14 @@ same file. Check their dates and the exact-build receipt before relying on a sta
 These are planning and decision records. A planned feature is not an available
 capability until its source and verification contract exist.
 
-## Historical evidence
+## Historical feature records and evidence
+
+[Voice pipeline history](voice-pipeline-current.md), [chat/model-picker history](chat-voice-and-model-picker.md),
+and [call-display history](voice-call-display.md) retain earlier behavior and test
+instructions. Their supersession notices identify the current contract: selectable
+Gemma audio with display-only Whisper captions, attachments/live transcript, and
+explicit call termination. Earlier headings saying “current” in those bodies do
+not override the source or current verification notes.
 
 Build-specific reports such as `voice-build-*.md`, `voice-repair-*.md`,
 `fold6-benchmarks.md`, and `measurements/` retain their original revision, model,

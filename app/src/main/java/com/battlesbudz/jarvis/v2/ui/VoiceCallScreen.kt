@@ -102,7 +102,9 @@ internal fun VoiceCallScreen(
     onStopWakeTest: () -> Unit,
     onEndVoiceCall: ((String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
-    onExportSpeechAudio: () -> Unit
+    onExportSpeechAudio: () -> Unit,
+    pipelineBenchmarkStore: com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore,
+    callEvidenceActions: CallEvidenceActions,
 ) {
     val runtime = com.battlesbudz.jarvis.v2.voice.VoiceSessionUi
     val runtimePhase by runtime.phase.collectAsState()
@@ -309,8 +311,8 @@ internal fun VoiceCallScreen(
             Text(if (diagnosticsOpen) "Hide development diagnostics" else "Development diagnostics")
         }
         if (diagnosticsOpen) {
-            PipelineBenchmarkCard(enabled = !chatSending && !runtimeArmed && !turnInFlight)
-            CallEvidenceExport(enabled = !chatSending && !runtimeArmed && !turnInFlight)
+            PipelineBenchmarkCard(store = pipelineBenchmarkStore, enabled = !chatSending && !runtimeArmed && !turnInFlight)
+            CallEvidenceExport(actions = callEvidenceActions, enabled = !chatSending && !runtimeArmed && !turnInFlight)
             LiveComparisonCard(enabled = !chatSending && !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting)
             AudioPathDiagnosticCard(enabled = !chatSending && !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting,
                 onBusyChanged = { audioPathTesting = it })

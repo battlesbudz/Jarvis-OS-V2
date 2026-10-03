@@ -13,11 +13,14 @@ import dev
 
 
 class DeveloperEntrypointTest(unittest.TestCase):
-    def run_fixture(self, failing_suite):
+    def run_fixture(self, failing_suite, invalid_boundary=False):
         actual_run = subprocess.run
         calls = []
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            source = root / dev.check_architecture.SOURCE / "voice" / "Stage.kt"
+            source.parent.mkdir(parents=True)
+            source.write_text("val runtime: JarvisRuntime" if invalid_boundary else "class Stage", encoding="utf-8")
             for directory in dev.PYTHON_SUITES:
                 folder = root / directory
                 folder.mkdir(parents=True, exist_ok=True)
@@ -51,6 +54,13 @@ class DeveloperEntrypointTest(unittest.TestCase):
                 redirect_stdout(io.StringIO()), redirect_stderr(errors):
             self.assertEqual(1, dev.run_checks(dev.ROOT))
         self.assertIn("interpreter unavailable", errors.getvalue())
+
+    def test_boundary_failure_survives_successful_suites_and_both_suites_run(self):
+        with redirect_stderr(io.StringIO()):
+            status, calls, _ = self.run_fixture(None, invalid_boundary=True)
+        self.assertEqual(1, status)
+        self.assertEqual(2, len(calls))
+        self.assertTrue(all(result.returncode == 0 for _, _, result in calls))
 
     def test_cli_resolves_repo_from_unrelated_working_directory(self):
         with tempfile.TemporaryDirectory() as directory:
