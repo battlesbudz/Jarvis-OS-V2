@@ -26,6 +26,20 @@ does not establish acoustic superiority of either profile. Real Fold 6 beginning
 ending-word accuracy and latency require phone comparison before claiming an
 improvement. Exact release CI is pending for this change.
 
+Build 902 (PR head `62008b1`) retained a compile failure for an Int/Long
+pre-roll duration mismatch; `9375faa` corrects the type. Build 903
+[run 37089409509](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37089409509)
+compiled and ran 1000 JVM tests with one stale telemetry-fixture failure:
+`finalAndRecoveryMeasureTheirOwnInputWithoutIdleCaptureAudio` expected 13760
+submitted samples from the old gate, while the new contiguous input correctly
+submitted 56000 (1200 ms pre-roll + 100 ms speech + 2000 ms ending + 200 ms
+independent recovery). All 14 phrase/gate worker tests passed. The telemetry
+fixture now requires the exact 56000 samples/3500 ms denominator, preserving
+work-time assertions and idle exclusion. No production change or relaxed
+acceptance was made for this repair. Failed unit artifact `11261513405`, ZIP
+SHA-256 `0d87c8eb5ddd703b74b4310ef431fdebb3a414c4c8664c45497a934e1f3ba0e0`,
+retains the raw XML failure; Android/publication was correctly skipped.
+
 ## Repository maintainability refactor
 
 The repo-wide maintainability work preserves the published Build 885 behavior

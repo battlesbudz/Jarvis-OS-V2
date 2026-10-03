@@ -78,8 +78,11 @@ class AsrRecognitionWorkMetricsTest {
             assertEquals(40L, measured.workMs)
             assertEquals(20L, measured.finalDecodeWorkMs)
             assertEquals(20L, measured.recoveryDecodeWorkMs)
-            assertEquals((240L + 100 + 320 + 200) * 16, measured.submittedAudioSamples)
-            assertEquals(860L, measured.submittedAudioMs)
+            // Final decode includes the bounded onset context and complete quiet
+            // ending; recovery is a separate 200 ms submission. Idle time beyond
+            // the 1200 ms pre-roll still never enters the decode denominator.
+            assertEquals((1200L + 100 + 2000 + 200) * 16, measured.submittedAudioSamples)
+            assertEquals(3500L, measured.submittedAudioMs)
         } finally { whisper.close() }
     }
 
