@@ -1,0 +1,16 @@
+{
+  "schema": "memory-overnight-ci-progress/1",
+  "candidate_sha": "deac28fb850b179f9ab5d65cc71b1e03b88b3bff",
+  "run_id": 37092064140,
+  "run_number": 908,
+  "observed_status": "in_progress",
+  "observed_conclusion": null,
+  "pass_claimed": false,
+  "independent_review_status": "in_progress",
+  "coordinator": "1a6dec718db44cb6bc25e4b7522919ef",
+  "coordinator_integration_sha": "87d8f616fa24d93413a9c72c82e185067695d520",
+  "tree": "28a7e5ce3b371969fa42b6ebc8756d72f560280d",
+  "source_head": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "deadline": 1791010800,
+  "next_action": "Retain candidate; finish exact independent review, frozen local harness and full exact-remote release gates before advancement."
+}
