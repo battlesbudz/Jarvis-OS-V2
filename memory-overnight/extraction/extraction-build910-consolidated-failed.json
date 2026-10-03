@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "passed": false,
+  "source_commit": "936d112cab978adab3571a5986d85e4c9d0c9df6",
+  "pr_head": "",
+  "run_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37094449000",
+  "errors": [
+    "Required job did not succeed: build-release",
+    "Required job did not succeed: verify-release",
+    "JVM evidence: Missing JVM test XML",
+    "API 30 app-release: [Errno 2] No such file or directory: 'verification-inputs/jarvis-verification-api-30-app-release/report.json'",
+    "API 35 app-compact: [Errno 2] No such file or directory: 'verification-inputs/jarvis-verification-api-35-app-compact/report.json'"
+  ],
+  "variants": [],
+  "release_approved": false,
+  "coverage": "release JVM + UI + Android actions; no model inference",
+  "not_covered": [
+    "Real-model inference and model-generated tool selection",
+    "Microphone, speaker, Bluetooth and acoustic interruption behavior",
+    "Physical-device GPU/NPU compatibility, thermal behavior and latency",
+    "Successful multi-gigabyte model download/import",
+    "Real-model use of approved memory recall"
+  ],
+  "provenance": "Same-run GitHub Actions artifacts; APK bytes rehashed. Not an external attestation."
+}

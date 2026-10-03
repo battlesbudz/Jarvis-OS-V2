@@ -1,0 +1,81 @@
+{
+  "actor": "/root/jarvis_privacy_review",
+  "dispatch_id": "extraction-review-4",
+  "ticket_id": "01ffd0a2a8ed4bbcb2e1cb0722a10ac1",
+  "coordinator_run": "c3b276ad0a644c87bcb1d074a8541168",
+  "requested_model": "gpt-6-astra",
+  "requested_effort": "high",
+  "actual_usage": null,
+  "base_sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "coder_sha": "93d36f37a4fc2611cc3eeac6b18abcae6656508f",
+  "local_sha": "6f1249015b97c01a4336a5c69ec3fdc31f9f5464",
+  "remote_sha": "73abb16b085e411f4cb50e3f059706a14930f86a",
+  "local_tree": "52b773ff10f3418637de9d97568e3137a8af225c",
+  "remote_tree": "52b773ff10f3418637de9d97568e3137a8af225c",
+  "local_parents": [
+    "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b"
+  ],
+  "remote_parents": [
+    "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b"
+  ],
+  "tree_binding_verified": true,
+  "scope_verified": true,
+  "frozen_verified": true,
+  "approved": true,
+  "summary": "Approved for source review only: actual remote73abb16b085e411f4cb50e3f059706a14930f86a and local integration6f1249015b97c01a4336a5c69ec3fdc31f9f5464 bind to tree52b773ff10f3418637de9d97568e3137a8af225c with sole accepted-base parent53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b; raw Git hashes, clean checkouts and complete scope independently verified. The compatibility repair adds only the explicit persistence/clock secondary constructor, delegating to primary(store,clock,{false}). Legacy trailing/positional/named clocks and File delegation retain closed disclosure; production named unlock and explicit3arg forms retain their live callback. All56 source call-site lines and eight constructor forms were audited, including the four frozen callers that actually failed Build909 release-test compilation. Signatures are distinct by arity/first-argument type and no generated overload collision was found in source; no Kotlin execution is claimed. All prior attribution, comparison-copy, typed-bind, retry/refund and lease-ownership fixes remain byte-identical. All39 Android file/scenario bytes and144 original JVM files are unchanged; constructor regression is additive and docs append-only. No new blocking/advisory source finding identified. Prior review3 source approval and historical failed CI remain immutable evidence. Current exactcandidate frozen harness and full signed release/JVM/native/helper/API30normal/API35compact39 journeys/restart/consolidation are still required; old CI cannot substitute. Model/device and semantic sensitivity limits remain unqualified.",
+  "findings": [],
+  "checks_performed": [
+    "Read bound review-control4 and control4 goal, coder4 report/log/static checks/API audit, actual remote reconstruction receipt; retained repository AGENTS/jarvis-verify verification instructions and read current appended design/feature notes.",
+    "Read actual Build909 failed-CI job metadata/artifact receipt and four compileReleaseUnitTestKotlin errors; independently hashed retained build log. Candidate31c2/run37093680336 only: production Kotlin success does not establish current73abb compilation or test success.",
+    "Independently recomputed local/remote raw Git SHA1s, HEAD/tree/sole-parent binding and clean state; complete581 recursive entries and full base-to-head changed paths inspected.",
+    "Verified37 changes within77 allowed;180 frozen/all nonallowed paths and144 original JVM files unchanged. Both exact heads git diff --check exit0.",
+    "Verified full current39 Android file+scenario bytes identical to prior936 candidate,39 unique paired methods/scenarios, and original accepted37 file recoverable by removing only additive37/38.",
+    "Verified only four repair paths. Removing the added secondary constructor/comment recovers exact prior MemoryOs.kt bytes; removing additive constructor regression recovers prior MemoryAcceptanceTest bytes. Docs append-only. All preceding full Goal2 source and R1/R2/R3 repairs otherwise identical to reviewed blobs.",
+    "Read primary/secondary constructors and all56 MemoryOs call-site source lines in main/JVM/Android, including frozen failed tests and production AndroidMemoryOs named-disclosure construction. Reviewed eight trailing/positional/named/default/File/explicit-disclosure forms and distinct JVM-erasure/default-stub shapes; source reasoning, not compiled ABI evidence.",
+    "Read new regression assertions covering injected advancing createdAt clock, default restricted filtering, live explicit/named unlock and File clock. Frozen MemoryOs keep-all rule retains added constructor; no shrinker changes.",
+    "Retained full cumulative extraction/retention/transaction/source-attribution/erasure/model-ownership/disclosure/retry source review through exact blob equality; this narrow constructor delegation neither widens automatic acceptance nor grants default sensitive disclosure.",
+    "No Kotlin/Gradle/tests/full frozen harness run, source/GitHub/Coordinator write, toolchain installation or new actor. Wrote only external report/log/integrity/API audit evidence."
+  ],
+  "resolved_prior_findings": [
+    "Build909 legacy persistence/trailing-clock incompatibility addressed by explicit2arg secondary constructor with false disclosure; current compiler/runtime gate still pending.",
+    "Previous R1/R2 whole-source attribution/comparison privacy fixes unchanged.",
+    "Previous R3 cancellation refund/affected-row lease fix unchanged.",
+    "Earlier five mixed bind arrays remain explicitly typed."
+  ],
+  "historical_ci_evidence": {
+    "candidate": "31c2b087d20c7dc518de1e8cd486c83830fe32d4",
+    "build": 909,
+    "run": 37093680336,
+    "job": 111119137168,
+    "failed_task": "compileReleaseUnitTestKotlin",
+    "error_count": 4,
+    "log": "extraction-build909-build.log",
+    "log_sha256": "07e582bb85e9355fbf26acccd00c9a872f6ca43b318fe12e23f8716a33029ed7",
+    "failed_artifact_receipt_sha256": "e2d95d4682b20001844165719f2f09211c934702516c02c81945480d6b8ddd29"
+  },
+  "unverified_gates_and_qualified_limits": [
+    "Source approval only. Current exact73abb candidate frozen local+remote harness and full signed release/JVM/native/helper/API30normal/API35compact39 journeys plus restart/consolidated receipt remain mandatory parent-owned gates.",
+    "No current Kotlin overload compilation, Gradle/JVM/Android/R8 or device execution by this reviewer. Constructor signatures/call-site audit is source reasoning only; new regression must compile and run in exactcandidate CI.",
+    "No actual Gemma weights extraction, source-attribution/sensitivity model precision, maximal-context quality/capacity, physical Fold6/audio/TTS-lock-race/responsiveness/RAM/thermal qualification.",
+    "One complete bounded supported statement only; conservative grammar rejects many complex/multisentence/indirect/quoted/counterfactual inputs. Whole-source uncertainty/negation is preserved; this is not general natural-language entailment.",
+    "Save eligibility is independent of disclosure. Rich sensitive derived history/comparison copies remain generic even unlocked; live guarded TTS/direct memory views provide limited disclosure. Raw-user sensitive semantics beyond current model/detector classification remain unproved.",
+    "Original90day source/copy clocks and a broad erasure-time barrier are retained. Unrelated older source jobs may also be suppressed; fresh post-barrier statements may establish new evidence except exact older text cannot renew. No semantic-vector suppression claim.",
+    "Warm selected-model-only bounded batches await eligible foreground boundaries; unknown expired claims consume the bounded attempt budget, while explicit valid cancellation refunds it. No forced load/perpetual drain. Index jobs remain durable intentions pending goal3.",
+    "Prior review3 approved only source; the inherited constructor error established by actual Build909 is preserved. Build910 outcome was not independently verified here. No prior candidate CI result substitutes for current73abb qualification."
+  ],
+  "scope_checks": {
+    "allowed": 77,
+    "frozen": 180,
+    "changed": 37,
+    "repair_paths": 4,
+    "original_jvm_files": 144,
+    "additive_jvm_files": 6,
+    "current_android": 39
+  },
+  "probe_evidence": [
+    "extraction-review-4-probes.json",
+    "extraction-review-4-integrity.json"
+  ],
+  "completed_at": "2026-10-03T04:14:06.164140+00:00",
+  "quiescent_after_report": true
+}

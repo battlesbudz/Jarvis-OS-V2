@@ -1,0 +1,18 @@
+{
+  "run": 37094449000,
+  "source_sha": "936d112cab978adab3571a5986d85e4c9d0c9df6",
+  "classification": "code failure: inherited MemoryOs trailing-clock constructor compatibility",
+  "job": 111121394410,
+  "failed_task": "compileReleaseUnitTestKotlin",
+  "errors": [
+    "2026-10-03T04:09:48.5871797Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt:49:86 Return type mismatch: expected 'Boolean', actual 'Long'.",
+    "2026-10-03T04:09:48.5941034Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt:17:105 Return type mismatch: expected 'Boolean', actual 'Long'.",
+    "2026-10-03T04:09:48.5970910Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt:25:116 Return type mismatch: expected 'Boolean', actual 'Long'.",
+    "2026-10-03T04:09:48.6027655Z e: file:///home/runner/work/Jarvis-OS-V2/Jarvis-OS-V2/app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt:44:122 Return type mismatch: expected 'Boolean', actual 'Long'."
+  ],
+  "retained_decoded_log_sha256": "644fc3c95a684371eaead0dd2e639ccce2221f97ff21980f7f4eee1eec18c871",
+  "jvm_tests_qualified": false,
+  "android_qualified": false,
+  "prior_source_review_unchanged": true,
+  "repaired_candidate": "73abb16b085e411f4cb50e3f059706a14930f86a"
+}
