@@ -173,7 +173,7 @@ class ReleaseLayoutAccessibilityTest {
         val control = find(By.res(tag))
         assertTrue("$tag is disabled", control.isEnabled)
         assertTrue("$tag is not exposed as an actionable accessibility node", control.isClickable)
-        val label = (control.contentDescription ?: control.text).orEmpty()
+        val label = accessibleName(control)
         assertTrue("$tag has no accessible name", label.isNotBlank())
         if (description != null) assertEquals("$tag's spoken name", description, label)
         val bounds = control.visibleBounds
@@ -182,6 +182,18 @@ class ReleaseLayoutAccessibilityTest {
         assertTrue("$tag is clipped offscreen: $bounds", bounds.left >= 0 && bounds.top >= 0 &&
             bounds.right <= device.displayWidth && bounds.bottom <= device.displayHeight)
         return control
+    }
+
+    // Material buttons expose their text/icon label as noninteractive children
+    // on some Android versions. Audit that action's own subtree, rather than
+    // mistaking an empty container label for an unnamed control. Never borrow a
+    // label from a separate clickable action or a sibling elsewhere on screen.
+    private fun accessibleName(control: UiObject2): String {
+        val direct = listOf(control.contentDescription, control.text)
+            .filterNotNull().filter { it.isNotBlank() }.distinct().joinToString(" ")
+        if (direct.isNotBlank()) return direct
+        return control.children.filter { !it.isClickable }.map { accessibleName(it) }
+            .filter { it.isNotBlank() }.distinct().joinToString(" ")
     }
 
     private fun assertCallActions() {

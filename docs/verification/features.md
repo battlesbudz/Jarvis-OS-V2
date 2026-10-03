@@ -104,6 +104,42 @@ ARM64 ABI, page size and original signed-APK checks remain mandatory. The other
 five profiles retain accelerated Linux provisioning; the actual 16 KB image
 advertises ARM64 translation.
 
+## Expanded gate second hosted run and provisioning repair
+
+[Build 916](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37105130242)
+tested head `24d408a89ecf6739faf0220bb0bbc5bca57d7e44`, merge
+`4c7f0ec18f50ca4a11285ea501728da00279225b`. Signed normal and compact APK
+production, all 1,003 release JVM tests, real recorded speech and both static
+native 16 KB audits passed. Independent comparison of the final release/test
+DEX confirmed 111 reviewed method and 9 field references match the shipping
+APK; no additional Compose keep rule is needed. Actual APK hashes are:
+
+- Normal: `eb1a845b5fbf34b178c686f1ffd1179d2dda74fd4547b5a657ddf9c08c6e1d5c`.
+- Compact: `46d43a41c513dad5434a72bc1cfcaf012a392a0c9b253a5de00155cc8852d44a`.
+
+Two profiles stopped before boot on concrete SDK provisioning defects. API 29
+job `111154281024` requested the retired `tools` package through setup-android's
+default; the correction explicitly installs only `platform-tools`, with the
+emulator action owning its emulator/image installation. Foldable job
+`111154281037` requested `pixel_fold`, absent from the hosted Tools 12.0 device
+registry. Its replacement is that SDK's exact `7.6in Foldable` ID, an official
+fold-in/outer-display definition with a 1768 by 2208 inner display, 884 by 2208
+folded region and 0–180-degree hinge. Arbitrary spaced or shell-like identifiers
+remain rejected. Actual fold/unfold, changed dimensions and retained state
+remain required. API 30, API 36 phone and API 35 with 16 KB pages then passed the actual
+previous-APK upgrade, all 48 existing journeys and separate-process selection
+check. Native loading passed all nine libraries at actual 16 KB page size.
+Layout tests failed because the helper ignored names on a control's own
+noninteractive children, and the independently shrunk test DEX invoked the
+R8-removed `Dp.constructor-impl(F)F` ABI. The correction resolves names only
+within the action's own subtree and preserves the narrow Dp API; enablement,
+clickability, expected labels, 48 dp targets and visibility remain required.
+Supplemental lifecycle checks now run before layout so a layout crash cannot
+hide their diagnostic evidence; every phase and the final all-pass requirement
+remain mandatory. This run is not a full release pass and publication remains
+blocked. Fresh current-head verification must include the concurrent farewell
+lifecycle changes retained from the branch.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,

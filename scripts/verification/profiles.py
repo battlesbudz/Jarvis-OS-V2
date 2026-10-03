@@ -33,7 +33,8 @@ def load_profiles(path=PROFILES):
             raise ValueError('Invalid emulator API')
         if profile['apk'] not in ('app-release', 'app-compact'):
             raise ValueError('Invalid APK variant')
-        if not isinstance(profile['device_profile'], str) or not re.fullmatch(r'[A-Za-z0-9_]+', profile['device_profile']):
+        if not isinstance(profile['device_profile'], str) or (profile['device_profile'] != '7.6in Foldable' and
+                not re.fullmatch(r'[A-Za-z0-9_]+', profile['device_profile'])):
             raise ValueError('Invalid emulator device profile')
         if profile['screen_profile'] not in ('phone', 'foldable'):
             raise ValueError('Invalid screen profile')

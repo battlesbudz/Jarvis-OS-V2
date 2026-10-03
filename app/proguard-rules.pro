@@ -109,6 +109,9 @@
 -keep class androidx.compose.material3.SurfaceKt { *; }
 -keep class androidx.compose.material3.TextKt { *; }
 -keep class androidx.compose.foundation.layout.SizeKt { *; }
+# Build 916's layout test calls Dp.constructor-impl through its separate DEX.
+# Preserve this inline value-class ABI used by the 320 dp width fixture.
+-keep class androidx.compose.ui.unit.Dp { *; }
 -keep class androidx.compose.foundation.layout.BoxKt { *; }
 -keep class androidx.compose.ui.semantics.SemanticsModifierKt { *; }
 -keep class androidx.compose.ui.semantics.SemanticsProperties_androidKt { *; }

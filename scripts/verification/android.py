@@ -384,16 +384,6 @@ def verify(args):
         else:
             raise RuntimeError("Model selection did not survive a fresh app process")
         report["process_restart"] = "passed"
-        report["layout"] = {"passed": False}
-        if profile["screen_profile"] == "foldable":
-            device.run("emu", "unfold")
-            time.sleep(1)
-            device.snapshot("layout-unfolded-baseline")
-        report["layout"]["instrumentation"], report["layout"]["fold_events"] = instrument_phase(
-            layout, "layout/instrumentation.txt", foldable=profile["screen_profile"] == "foldable", timeout=300)
-        if profile["screen_profile"] == "foldable" and report["layout"]["fold_events"] != [{"posture": "fold"}, {"posture": "unfold"}]:
-            raise RuntimeError("Foldable profile did not exercise fold and unfold")
-        report["layout"]["passed"] = True
         report["lifecycle"] = {"passed": False, "phases": {},
                                "notification_permission": "runtime" if profile["api"] >= 33 else "platform_not_applicable"}
         device.shell("pm", "grant", PACKAGE, "android.permission.RECORD_AUDIO")
@@ -417,6 +407,18 @@ def verify(args):
                 device.shell("pm", permission_action, PACKAGE, "android.permission.POST_NOTIFICATIONS")
             report["lifecycle"]["phases"][phase], _ = instrument_phase(lifecycle["phases"][phase], f"lifecycle/{phase}.txt")
         report["lifecycle"]["passed"] = True
+        # Run independent recovery/permission phases before layout, so a layout
+        # regression cannot conceal their diagnostic outcomes. All gates remain required.
+        report["layout"] = {"passed": False}
+        if profile["screen_profile"] == "foldable":
+            device.run("emu", "unfold")
+            time.sleep(1)
+            device.snapshot("layout-unfolded-baseline")
+        report["layout"]["instrumentation"], report["layout"]["fold_events"] = instrument_phase(
+            layout, "layout/instrumentation.txt", foldable=profile["screen_profile"] == "foldable", timeout=300)
+        if profile["screen_profile"] == "foldable" and report["layout"]["fold_events"] != [{"posture": "fold"}, {"posture": "unfold"}]:
+            raise RuntimeError("Foldable profile did not exercise fold and unfold")
+        report["layout"]["passed"] = True
         report["passed"] = True
     except (OSError, RuntimeError, subprocess.SubprocessError, ET.ParseError) as error:
         report["errors"].append(str(error))

@@ -20,7 +20,11 @@ commits. Do not create or merge another PR without Justin's permission.
    and use the existing signing identity.
 3. Run `.github/workflows/android-sandbox.yml` on disposable Android
    emulators from `scripts/verification/profiles.json`: API 29/30/35/36,
-   an API 36 foldable and a true 16 KB system image. API 30 and newer use
+   an API 36 foldable and a true 16 KB system image. The foldable uses the SDK's
+   `7.6in Foldable` hardware definition, which is available in the hosted
+   command-line tools: a 1768×2208 inner screen, an 884×2208 folded region and
+   a 0–180° hinge. The controller still requires real fold/unfold commands and
+   actual display-size changes. API 30 and newer use
    accelerated x86-64 images with ARM64 translation. The current API 29 x86
    Google APIs and Play images contain no ARM64 bridge, so that profile uses
    the actual ARM64 image on a standard `macos-15` ARM64 runner with explicit

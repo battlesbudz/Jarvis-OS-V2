@@ -93,6 +93,25 @@ class ProfileContractTest(unittest.TestCase):
             with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'fields'):
                 load_profiles(self.path)
 
+    def test_exact_sdk_foldable_id_with_spaces_is_supported(self):
+        contract = copy.deepcopy(self.original)
+        foldable = next(profile for profile in contract['profiles'] if profile['screen_profile'] == 'foldable')
+        foldable['device_profile'] = '7.6in Foldable'
+        self.path.write_text(json.dumps(contract))
+        actual = next(profile for profile in load_profiles(self.path) if profile['id'] == foldable['id'])
+        self.assertEqual('7.6in Foldable', actual['device_profile'])
+
+    def test_spaced_foldable_id_does_not_admit_arbitrary_or_unsafe_names(self):
+        for value in ('pixel 2', 'Another Foldable', '7.6in Foldable ', ' 7.6in Foldable',
+                      '7.6in  Foldable', '7.6in\tFoldable', '7.6in Foldable\n', '7.6in Foldable\r',
+                      '7.6in\x00Foldable', '"7.6in Foldable"', "7.6in 'Foldable'", '7.6in Foldable;other',
+                      '7.6in Foldable$(other)'):
+            contract = copy.deepcopy(self.original)
+            next(profile for profile in contract['profiles'] if profile['screen_profile'] == 'foldable')['device_profile'] = value
+            self.path.write_text(json.dumps(contract))
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'device profile'):
+                load_profiles(self.path)
+
 
 if __name__ == '__main__':
     unittest.main()
