@@ -25,6 +25,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.Configurator
 import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
@@ -246,8 +247,31 @@ class ReleaseJourneyTest {
         instrumentation.sendStatus(1, android.os.Bundle().apply { putString("jarvisModelChooseGeometry", message) })
     }
 
+    /** Keep explicit settlement waits, without repeating implicit idle waits for every getter. */
+    private inline fun <T> observeNavigation(block: () -> T): T {
+        if (android.os.Build.VERSION.SDK_INT < 34) return block()
+        val configuration = Configurator.getInstance()
+        val savedIdleTimeout = configuration.getWaitForIdleTimeout()
+        configuration.setWaitForIdleTimeout(0)
+        return try { block() } finally { configuration.setWaitForIdleTimeout(savedIdleTimeout) }
+    }
+
+    private fun clearNavigationCache() {
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            assertTrue("Navigation discovery requires a fresh accessibility cache", instrumentation.uiAutomation.clearCache())
+        }
+    }
+
+    private fun findNavigationObject(selector: BySelector): UiObject2? {
+        clearNavigationCache()
+        return device.findObject(selector)
+    }
+
     /** A matching node may be clipped; scroll inside the list until its full 48 dp target is visible. */
-    private fun fullyVisibleModelChoose(selector: BySelector, navigationInset: Int): UiObject2 {
+    private fun fullyVisibleModelChoose(selector: BySelector, navigationInset: Int): UiObject2 =
+        observeNavigation { revealModelChoose(selector, navigationInset) }
+
+    private fun revealModelChoose(selector: BySelector, navigationInset: Int): UiObject2 {
         val minimum = (48 * context.resources.displayMetrics.density).roundToInt()
         val deadline = SystemClock.uptimeMillis() + 15_000
         var swipes = 0
@@ -255,26 +279,40 @@ class ReleaseJourneyTest {
         var lastBounds = "missing"
         while (SystemClock.uptimeMillis() < deadline) {
             try {
-                val list = device.findObject(By.res("model_list"))
+                val list = findNavigationObject(By.res("model_list"))
                     ?: throw AssertionError("Model list disappeared while revealing Choose")
                 val viewport = list.visibleBounds
                 val bottom = minOf(viewport.bottom, device.displayHeight - navigationInset)
-                fun isFullyVisible(control: UiObject2): Boolean {
+                fun isFullyVisible(control: UiObject2, currentViewport: android.graphics.Rect = viewport,
+                    currentBottom: Int = bottom): Boolean {
+                    clearNavigationCache()
                     val bounds = control.visibleBounds
                     lastBounds = bounds.toString()
                     return control.isEnabled && control.isClickable &&
                         bounds.width() >= minimum && bounds.height() >= minimum &&
-                        viewport.contains(bounds) && bounds.bottom <= bottom
+                        currentViewport.contains(bounds) && bounds.bottom <= currentBottom
                 }
-                val control = device.findObject(selector)
+                val control = findNavigationObject(selector)
                 if (control != null && isFullyVisible(control)) {
                     val before = control.visibleBounds
                     device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
                     SystemClock.sleep(minOf(150, (deadline - SystemClock.uptimeMillis()).coerceAtLeast(0)))
-                    val fresh = device.findObject(selector)
+                    var freshViewport = viewport
+                    var freshBottom = bottom
+                    if (android.os.Build.VERSION.SDK_INT >= 34) {
+                        freshViewport = findNavigationObject(By.res("model_list"))?.visibleBounds
+                            ?: throw AssertionError("Model list disappeared while settling Choose")
+                        var freshNavigationInset = navigationInset
+                        activity.onActivity {
+                            freshNavigationInset = it.window.decorView.rootWindowInsets
+                                ?.getInsets(android.view.WindowInsets.Type.navigationBars())?.bottom ?: navigationInset
+                        }
+                        freshBottom = minOf(freshViewport.bottom, device.displayHeight - freshNavigationInset)
+                    }
+                    val fresh = findNavigationObject(selector)
                     if (SystemClock.uptimeMillis() < deadline && fresh != null &&
-                        isFullyVisible(fresh) && fresh.visibleBounds == before) {
-                        recordModelGeometry("model_navigation ready selector=$selector target=${fresh.visibleBounds} viewport=$viewport minimumPx=$minimum navigationBottom=$bottom gestures=$swipes")
+                        isFullyVisible(fresh, freshViewport, freshBottom) && fresh.visibleBounds == before) {
+                        recordModelGeometry("model_navigation ready selector=$selector target=${fresh.visibleBounds} viewport=$freshViewport minimumPx=$minimum navigationBottom=$freshBottom gestures=$swipes")
                         if (SystemClock.uptimeMillis() < deadline) return fresh
                     }
                 }
@@ -295,11 +333,11 @@ class ReleaseJourneyTest {
                 swipes++
                 device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
                 SystemClock.sleep(minOf(150, (deadline - SystemClock.uptimeMillis()).coerceAtLeast(0)))
-                val freshList = device.findObject(By.res("model_list"))
+                val freshList = findNavigationObject(By.res("model_list"))
                     ?: throw AssertionError("Model list disappeared after scrolling")
                 val after = benchmarkViewportSignature(freshList)
                 stationary = if (after == before) stationary + 1 else 0
-                val targetAfter = device.findObject(selector)?.visibleBounds?.toString() ?: "missing"
+                val targetAfter = findNavigationObject(selector)?.visibleBounds?.toString() ?: "missing"
                 recordModelGeometry("model_navigation gesture=$swipes x=$swipeX direction=${if (scrollDown) "DOWN" else "UP"} viewportBefore=$viewport viewportAfter=${freshList.visibleBounds} targetBefore=$targetBefore targetAfter=$targetAfter moved=${after != before} stationary=$stationary minimumPx=$minimum navigationBottom=$bottom remainingMs=${(deadline - SystemClock.uptimeMillis()).coerceAtLeast(0)}")
             } catch (_: StaleObjectException) {
                 // Reacquire the list and target after Compose scrolling/recomposition.
@@ -2257,6 +2295,7 @@ class ReleaseJourneyTest {
 
     /** Benchmark-only navigation: Compose may export descendants wholly outside a LazyColumn. */
     private fun benchmarkScrollAncestor(control: UiObject2): UiObject2? {
+        clearNavigationCache()
         var ancestor = control.parent
         repeat(40) {
             val current = ancestor ?: return null
@@ -2267,6 +2306,7 @@ class ReleaseJourneyTest {
     }
 
     private fun benchmarkHasSafeBounds(control: UiObject2): Boolean {
+        clearNavigationCache()
         val bounds = control.visibleBounds
         val viewport = android.graphics.Rect(24, 24, device.displayWidth - 24, device.displayHeight - 24)
         var ancestor = control.parent
@@ -2287,6 +2327,7 @@ class ReleaseJourneyTest {
 
     /** Observe actual visible content; Compose need not emit a UiAutomator scroll event. */
     private fun benchmarkViewportSignature(list: UiObject2): String {
+        clearNavigationCache()
         val viewport = list.visibleBounds
         val rows = mutableListOf<String>()
         fun visit(node: UiObject2, depth: Int) {
@@ -2301,6 +2342,12 @@ class ReleaseJourneyTest {
         return rows.joinToString("\n")
     }
 
+    private fun benchmarkScrollList(): UiObject2? {
+        val screen = findNavigationObject(By.res("pipeline_benchmark_screen")) ?: return null
+        clearNavigationCache()
+        return screen.findObject(By.scrollable(true))
+    }
+
     private fun benchmarkFindVisible(selector: BySelector, towardTop: Boolean, inDialog: Boolean,
         deadline: Long, swipes: AtomicInteger): UiObject2 {
         var direction = if (towardTop) Direction.UP else Direction.DOWN
@@ -2308,14 +2355,17 @@ class ReleaseJourneyTest {
         var unchangedGestures = 0
         while (SystemClock.uptimeMillis() < deadline) {
             try {
-                val control = device.findObject(selector)
-                if (control != null && benchmarkHasSafeBounds(control)) return control
+                val control = findNavigationObject(selector)
+                if (control != null && benchmarkHasSafeBounds(control)) {
+                    if (android.os.Build.VERSION.SDK_INT < 34 || SystemClock.uptimeMillis() < deadline) return control
+                    break
+                }
                 if (inDialog) {
                     SystemClock.sleep(100)
                     continue
                 }
                 val list = if (control != null) benchmarkScrollAncestor(control)
-                    else device.findObject(By.res("pipeline_benchmark_screen"))?.findObject(By.scrollable(true))
+                    else benchmarkScrollList()
                 if (list == null) {
                     SystemClock.sleep(100)
                     continue
@@ -2334,16 +2384,19 @@ class ReleaseJourneyTest {
                 val fromY = if (direction == Direction.DOWN) lowY else highY
                 val toY = if (direction == Direction.DOWN) highY else lowY
                 val scrollStarted = SystemClock.uptimeMillis()
+                if (android.os.Build.VERSION.SDK_INT >= 34 && SystemClock.uptimeMillis() >= deadline) break
                 check(device.swipe(viewport.centerX(), fromY, viewport.centerX(), toY, 35)) {
                     "Benchmark swipe dispatch failed"
                 }
                 device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
                 if (SystemClock.uptimeMillis() >= deadline) break
                 SystemClock.sleep(150)
-                val fresh = device.findObject(selector)
-                if (fresh != null && benchmarkHasSafeBounds(fresh)) return fresh
-                val freshList = device.findObject(By.res("pipeline_benchmark_screen"))
-                    ?.findObject(By.scrollable(true))
+                val fresh = findNavigationObject(selector)
+                if (fresh != null && benchmarkHasSafeBounds(fresh)) {
+                    if (android.os.Build.VERSION.SDK_INT < 34 || SystemClock.uptimeMillis() < deadline) return fresh
+                    break
+                }
+                val freshList = benchmarkScrollList()
                 val after = freshList?.let { benchmarkViewportSignature(it) }
                 val moved = after != null && after != before
                 unchangedGestures = if (moved) 0 else unchangedGestures + 1
@@ -2362,27 +2415,33 @@ class ReleaseJourneyTest {
         throw AssertionError("Benchmark control did not become fully visible: $selector")
     }
 
-    private fun benchmarkScrollTo(selector: BySelector, towardTop: Boolean = false): UiObject2 =
+    private fun benchmarkScrollTo(selector: BySelector, towardTop: Boolean = false): UiObject2 = observeNavigation {
         benchmarkFindVisible(selector, towardTop, false, SystemClock.uptimeMillis() + 15_000, AtomicInteger())
+    }
 
     private fun benchmarkClickEnabled(selector: BySelector, towardTop: Boolean = false, inDialog: Boolean = false) {
         val deadline = SystemClock.uptimeMillis() + 15_000
         val swipes = AtomicInteger()
         while (SystemClock.uptimeMillis() < deadline) {
-            var ready: UiObject2? = null
-            try {
-                val control = benchmarkFindVisible(selector, towardTop, inDialog, deadline, swipes)
-                if (control.isEnabled) {
-                    val before = control.visibleBounds
-                    device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
-                    SystemClock.sleep(300)
-                    val fresh = device.findObject(selector)
-                    if (SystemClock.uptimeMillis() < deadline && fresh != null && fresh.isEnabled &&
-                        benchmarkHasSafeBounds(fresh) && fresh.visibleBounds == before) ready = fresh
-                } else SystemClock.sleep(100)
-            } catch (_: StaleObjectException) {
-                // Re-query stale nodes only before dispatching the physical tap.
+            val ready = observeNavigation {
+                var ready: UiObject2? = null
+                try {
+                    val control = benchmarkFindVisible(selector, towardTop, inDialog, deadline, swipes)
+                    if (control.isEnabled) {
+                        val before = control.visibleBounds
+                        device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
+                        SystemClock.sleep(300)
+                        val fresh = findNavigationObject(selector)
+                        if (SystemClock.uptimeMillis() < deadline && fresh != null && fresh.isEnabled &&
+                            benchmarkHasSafeBounds(fresh) && fresh.visibleBounds == before) ready = fresh
+                    } else SystemClock.sleep(100)
+                } catch (_: StaleObjectException) {
+                    // Re-query stale nodes only before dispatching the physical tap.
+                }
+                ready
             }
+            // The observation scope has restored the original idle timeout before any tap.
+            if (android.os.Build.VERSION.SDK_INT >= 34 && SystemClock.uptimeMillis() >= deadline) break
             ready?.let {
                 it.click() // Exactly one tap; a dispatch error is never retried.
                 device.waitForIdle()

@@ -457,6 +457,62 @@ report or instrumentation. The required API 29 gate remains failed, and its
 configuration and thresholds are unchanged. The final receipt is false;
 publication was skipped.
 
+## Expanded gate Build 929 and navigation observation repair
+
+[Build 929](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37119723759)
+tested head `05fee0be5e4b87c279c872f34fc4fc219a4a7660`, merge
+`e43bcc21d1fd385635a727d6ac7b24783206a9f9`. The signed producer and static
+native gate passed. All four phone profiles passed their raw 49 main cases,
+four layout cases, actual 907→929 upgrade, process restart and eight lifecycle
+phases. Their exact APK/test hashes agree with the producer. All nine shipped
+native libraries loaded in each phone profile, including actual 16,384-byte
+pages in artifact `11273765024`. The four current 200% font PNGs were inspected.
+
+The fold host now successfully installed `libpulse0`, started its owned Xvfb
+display, and retained successful SDK 37.2.12/build 16428233 GUI executable and
+XCB plugin loader receipts with no unresolved libraries. Display readiness and
+ownership-aware cleanup passed. The actual 907→929 upgrade passed, but the main
+suite finished with 47 passes and two failures: test 12 exhausted its unchanged
+15-second navigation limit after three moving swipes while the accessibility
+target remained missing; test 45 exhausted that limit while revealing Copy
+JSON. The final test 12 PNG paints the full CodeGemma Choose above navigation,
+while the subsequently collected XML still represents an earlier list position
+and omits that control. Test 45's final XML exposes an enabled, clickable Copy
+JSON at `[42,663][293,789]`, a full 126-pixel target. These observations support
+lagging accessibility discovery; they do not prove a renewed production
+clipping defect. Artifact `11272859460` (ZIP SHA-256
+`27d59b699357832c1dd8dedb50c1d18a28b18aa74f24ec0ba36c7326c657a947`)
+retains those failures and GUI diagnostics. Restart, lifecycle and supplemental
+layout/native tests did not run after the main failure. No fold/unfold command
+or folded/unfolded PNG/XML proves posture coverage in this run.
+
+The pinned [UiAutomator 2.3.0 sources](https://dl.google.com/dl/android/maven2/androidx/test/uiautomator/uiautomator/2.3.0/uiautomator-2.3.0-sources.jar)
+show that queries wait for accessibility
+quiet and every `UiObject2` getter waits and refreshes its node. The helper's
+paired recursive signatures repeat these operations hundreds of times per
+swipe. The 500-millisecond quiet criterion is not a fixed delay per accessor,
+and the source cannot assign all observed elapsed time to those calls. Found
+nodes are refreshed, but child discovery still uses the accessibility cache.
+
+The next revision limits its repair to these navigation observations on API
+34 and newer: it saves the configured implicit idle timeout, sets it to zero
+inside read/readiness scopes, and restores it in `finally`. Each independent
+discovery or viewport-signature sample requires successful public
+[`UiAutomation.clearCache()`](https://developer.android.com/reference/android/app/UiAutomation#clearCache()),
+available from API 34 and returning whether the cache was cleared. Explicit
+settlement waits remain active. The fresh
+second model observation reacquires the actual list and navigation bounds;
+benchmark configuration is restored before the single physical click and its
+original post-click idle wait. API levels below 34 retain their original
+behavior. All 15-second deadlines, gesture/stationary limits, stable geometry,
+full 48dp targets, viewport/navigation bounds and exact durable selections
+remain required. These sequential observations are not an atomic snapshot.
+There is no workflow, production UI or API 29 configuration change. API 29 also
+failed before current-app instrumentation after a framework watchdog failure
+blocked baseline installation. The final receipt is false and publication was
+skipped. A fresh exact-revision runtime must still pass all profiles and prove
+actual folded/unfolded dimensions and continuity.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,
