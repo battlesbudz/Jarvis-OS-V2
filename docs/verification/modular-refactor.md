@@ -66,6 +66,30 @@ checks, signed normal and compact APKs, all named journeys from
 receipt, and publication. The receipt distinguishes the tested PR merge commit
 from the candidate branch head. Review the final combined tree before pushing.
 
+## Build 891: first final candidate failed compilation
+
+[Build 891](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37084878313)
+tested PR head `03a6147494a3685a5e309ae34de5d8e7e1c493c8` as merge commit
+`bb77a727d36b613120a567e072815dc9bc43356d`. Its retained receipt reports
+`passed=false`; this run is failure evidence, not a verified APK candidate.
+
+Native keyword and Python checks passed. `compileReleaseKotlin` failed at
+`JarvisRuntime.kt:601`: recursive type inference followed the lazy `voiceTurns`
+initializer through its `::runVoiceTurn` restart callback, with an unresolved
+`start` diagnostic at the entry method. Release JVM checks, signed APK assembly
+and Android journeys did not complete, and publication remained blocked.
+
+The composition repair explicitly types the lazy owner as `VoiceTurnRunner` and
+the entry method's return as `Unit`, breaking inference recursion while preserving
+the restart callback and stage behavior. This source repair requires a new exact
+combined-revision full gate; the passing earlier helper/native checks cannot
+stand in for its JVM, signed normal/compact, Android and publication evidence.
+
+Retained evidence: [failed receipt artifact 11260606908](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37084878313/artifacts/11260606908)
+and [build-performance artifact 11259818814](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37084878313/artifacts/11259818814).
+The receipt contains no completed JVM XML or Android results because compilation
+blocked their production. Preserve this failure when recording the repaired run.
+
 ## Physical-device acceptance
 
 Real model inference, actual large model transfers, microphone/speaker/Bluetooth
