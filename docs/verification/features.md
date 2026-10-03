@@ -273,6 +273,47 @@ Receipt artifact `11269618551` has `passed: false` and
 `release_approved: false`; all publication jobs were skipped. The repaired
 revision must complete a fresh full gate before any new APK can be published.
 
+## Expanded gate Build 924 and off-hinge chooser diagnostics
+
+[Build 924](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37111983640)
+tested head `ba83b55e6f4b4f3072ba3459d4e95c877f23ef81`, merge
+`c558e6502b816716221f7578cdf58f5f04edc3b3`. Signed builds, all 1,005 JVM
+tests across 184 suites, all 138 helper checks, the four recorded-speech cases,
+static native audits and final-APK ABI checks passed. API 30 normal, API 35
+compact, API 36 phone and the true 16 KB profile independently passed their
+complete upgrade/main/lifecycle/layout/native checks. All nine shipping native
+libraries loaded at actual 16,384-byte pages. Current 200% font screenshots were
+inspected. Their tested controls remain usable, with heavy header/placeholder
+wrapping at this scale.
+
+The fold profile passed its real upgrade and 48 of 49 main cases. The settled
+family and non-scrolling erase-modal repairs passed. The last CodeGemma Choose
+target still had only 104 visible pixels instead of its full 126-pixel/48 dp
+height, ending at the model-list viewport bottom. Five physical gestures and
+two stationary content observations did not expose it. This correctly remains
+a failure; lifecycle and actual fold/unfold phases could not follow it.
+
+The official SDK Tools 12 `7.6in Foldable` definition declares a
+`884-0-1-2208` hinge area on the 1768-pixel-wide inner display. The test used
+exactly `viewport.centerX() == 884` for its swipes. This establishes an avoidable
+gesture-coordinate ambiguity, not proven hinge causality or a production
+padding defect. Source inspection confirms the bounded weighted model list
+already has 32 dp bottom content padding plus final-card padding and safe
+drawing/IME insets.
+
+The next repair physically swipes at the quarter-width of the actual list,
+away from the declared center hinge, and records bounded before/after
+viewport/target geometry and observed movement in logcat and raw instrumentation.
+Independent insertion of these non-reserved diagnostic status bundles into
+actual passing output preserves all 49 parsed test results. Full 48 dp width
+and height, containment, navigation clearance, stable reacquisition, durable
+selected/restored model IDs, stationary failure, gesture cap and the 15-second
+deadline remain mandatory. A fresh runtime must determine whether off-hinge
+scrolling exposes the target; actual end clipping would require a separately
+evidenced production fix. API 29's AOSP startup/controller result is assessed
+independently by the same run. The fold failure already prevents publication.
+Live current-head status and its consolidated receipt remain authoritative.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,

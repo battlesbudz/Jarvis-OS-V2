@@ -239,6 +239,13 @@ class ReleaseJourneyTest {
         device.waitForIdle()
     }
 
+    private fun recordModelGeometry(message: String) {
+        android.util.Log.i("JarvisVerification", message)
+        // Keep diagnostics in instrumentation.txt even if later platform logs
+        // rotate. This non-reserved status key carries no test completion fields.
+        instrumentation.sendStatus(1, android.os.Bundle().apply { putString("jarvisModelChooseGeometry", message) })
+    }
+
     /** A matching node may be clipped; scroll inside the list until its full 48 dp target is visible. */
     private fun fullyVisibleModelChoose(selector: BySelector, navigationInset: Int): UiObject2 {
         val minimum = (48 * context.resources.displayMetrics.density).roundToInt()
@@ -266,17 +273,25 @@ class ReleaseJourneyTest {
                     SystemClock.sleep(minOf(150, (deadline - SystemClock.uptimeMillis()).coerceAtLeast(0)))
                     val fresh = device.findObject(selector)
                     if (SystemClock.uptimeMillis() < deadline && fresh != null &&
-                        isFullyVisible(fresh) && fresh.visibleBounds == before) return fresh
+                        isFullyVisible(fresh) && fresh.visibleBounds == before) {
+                        recordModelGeometry("model_navigation ready selector=$selector target=${fresh.visibleBounds} viewport=$viewport minimumPx=$minimum navigationBottom=$bottom gestures=$swipes")
+                        if (SystemClock.uptimeMillis() < deadline) return fresh
+                    }
                 }
                 if (SystemClock.uptimeMillis() >= deadline || swipes >= 14 || stationary >= 2) break
                 val before = benchmarkViewportSignature(list)
                 val scrollDown = control == null || control.visibleBounds.centerY() >= viewport.centerY()
-                // Keep both ends inside the scroll viewport, away from navigation and button edges.
+                val targetBefore = control?.visibleBounds?.toString() ?: "missing"
+                assertTrue("Model list must provide a usable gesture viewport", viewport.width() > 96 && viewport.height() > 96)
+                // The generic unfolded device has a hinge at the exact center X.
+                // Keep gestures in the left quarter of the actual list, and both
+                // vertical ends away from navigation and button edges.
+                val swipeX = viewport.left + viewport.width() / 4
                 val highY = viewport.top + viewport.height() * 3 / 10
                 val lowY = viewport.top + viewport.height() * 3 / 4
                 if (SystemClock.uptimeMillis() >= deadline) break
-                assertTrue("Model list swipe must dispatch", device.swipe(viewport.centerX(),
-                    if (scrollDown) lowY else highY, viewport.centerX(), if (scrollDown) highY else lowY, 35))
+                assertTrue("Model list swipe must dispatch", device.swipe(swipeX,
+                    if (scrollDown) lowY else highY, swipeX, if (scrollDown) highY else lowY, 35))
                 swipes++
                 device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
                 SystemClock.sleep(minOf(150, (deadline - SystemClock.uptimeMillis()).coerceAtLeast(0)))
@@ -284,6 +299,8 @@ class ReleaseJourneyTest {
                     ?: throw AssertionError("Model list disappeared after scrolling")
                 val after = benchmarkViewportSignature(freshList)
                 stationary = if (after == before) stationary + 1 else 0
+                val targetAfter = device.findObject(selector)?.visibleBounds?.toString() ?: "missing"
+                recordModelGeometry("model_navigation gesture=$swipes x=$swipeX direction=${if (scrollDown) "DOWN" else "UP"} viewportBefore=$viewport viewportAfter=${freshList.visibleBounds} targetBefore=$targetBefore targetAfter=$targetAfter moved=${after != before} stationary=$stationary minimumPx=$minimum navigationBottom=$bottom remainingMs=${(deadline - SystemClock.uptimeMillis()).coerceAtLeast(0)}")
             } catch (_: StaleObjectException) {
                 // Reacquire the list and target after Compose scrolling/recomposition.
             }
