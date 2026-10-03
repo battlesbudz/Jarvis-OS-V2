@@ -1,0 +1,14 @@
+{
+  "observed_at": "2026-10-03T05:27:11.002607+00:00",
+  "goal": "hybrid-rag",
+  "authorized_spec_sha256": "9577265a9475306cfe2f753808a638b8be071ecdb18107b728ff3c721b6e7b56",
+  "dependency": "local-extraction exact-candidate full CI qualification required before coding",
+  "allowed_scope_count": 82,
+  "manifest_frozen": true,
+  "network_audit_sha256": "432c4932caf510bb10a0b3a73813f48b5a6535a5b03cbb2dc2134cb5fa10fbe2",
+  "audit_limitation": "Static manifest/native string inspection is not a network absence proof. SDK notice discloses performance/utilization metrics; no supported opt-out verified. No hosted memory/query embedding and no unqualified no-egress claim. Isolated-process manifest change is outside the frozen goal scope.",
+  "current_model_inference_qualified": false,
+  "remaining_dispatches_after_extraction_review": 1,
+  "completion_requires_distinct_review_and_full_exact_candidate_CI": true,
+  "admission_reservations_are_not_provider_spend": true
+}

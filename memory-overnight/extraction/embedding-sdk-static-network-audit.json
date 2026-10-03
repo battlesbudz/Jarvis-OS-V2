@@ -1,0 +1,19 @@
+{
+  "sdk_sha256": "300c3ed4669ef76d48633b8a5f236b71f26c94a4f5717b79d3f999af95f0b3a6",
+  "arm64_sha256": "22d1a40bd79ea42471164a1c7962732fba1da3d0665ba3bd97bc25e6002a8f2b",
+  "static_strings_count": 20244,
+  "matching_strings": [
+    "    // becomes a performance bottleneck.",
+    "dsp_performance_mode = ",
+    "performance_mode = ",
+    "Select TensorFlow op(s), included in the given model, is(are) not supported by this interpreter. Make sure you apply/link the Flex delegate before inference. For the Android, it can be resolved by adding \"org.tensorflow:tensorflow-lite-select-tf-ops\" dependency. See instructions: https://www.tensorflow.org/lite/guide/ops_select",
+    "#include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>",
+    "performance_mode = %d",
+    "htp_performance_mode = ",
+    "See instructions: https://www.tensorflow.org/lite/guide/ops_custom ",
+    "bit_andbit_orset_bitclear_bitExpected '{' in rule parametersflags not allowed in this contextgrammar must have either lark_grammar or json_schemacannot have both lark_grammar and json_schemaadditionalItemsadditionalPropertiesallOfanyOfdependenciesformatitemsmaxLengthmaxPropertiesmaximumminLengthminPropertiesminimummultipleOfoneOfpatternpatternPropertiespropertiesuniqueItemsconstpropertyNamesif$recursiveRefdependentRequiredmaxContainsminContainsprefixItemsunevaluatedProperties$dynamicAnchor$dynamicRefhttps://json-schema.org/draft/2020-12/schemahttps://json-schema.org/draft/2019-09/schemahttp://json-schema.org/draft-07/schemahttp://json-schema.org/draft-06/schemahttp://json-schema.org/draft-04/schema#/schema is falseincompatible boolean valuesincompatible typesSchema intersection stack level exceededanyOf is emptyoneOf is emptyx-guidanceoverride statement not supported yetdeclare statement not supported yetpriority not supported yetparams not supported yetempty grammars arraystartggno tokenizer - can't validate <[...]>no tokenizer - can't validate <special_token>negation of empty token ranges is not supportedno tokenizer - can't validate <[^...]>emptyno tokenizer - can't validate <any_token><[*]>true|falserequired item is unsatisfiableAll options in anyOf are unsatisfiableNo options in anyOfoneOf constraints are not supported. Enable 'coerce_one_of' option to approximate oneOf with anyOfoneOf not fully supported, falling back to anyOf. This may cause validation errors in some cases.min/maxProperties only supported when all keys listed in \"properties\" are required(\\\\([\\\"\\\\\\/bfnrt]|u[a-fA-F0-9]{4})|[^\\\"\\\\\\x00-\\x1F\\x7F])[\\x20\\x0A\\x0D\\x09]+\\[[0-9]+\\]tokenizer_jsonslicetoken_lens and token_bytes must be setEither tokenize_fn or use_approximate_greedy_tokenize_fn must be setforce_bytesforce_bytes_emptytmp_countertokenize_ffcompute_biasprecomputeTokenizer is nullunknown errorregexjson_objectllguidanceEmpty grammar__LIST_APPEND:ff_tokensfailed to advance parser after adding bytes ignoring lexer",
+    "Android (13989888, +pgo, +bolt, +lto, +mlgo, based on r563880c) clang version 21.0.0 (https://android.googlesource.com/toolchain/llvm-project 5e96669f06077099aa41290cdb4c5e6fa0f59349)",
+    "Android (dev, -pgo, -bolt, -lto, -mlgo, based on r563880b) clang version 21.0.0 (https://android.googlesource.com/toolchain/llvm-project 5e96669f06077099aa41290cdb4c5e6fa0f59349)"
+  ],
+  "not_proof": "Strings alone do not establish telemetry execution, text contents, transport reachability, or supported opt-out. Manifest has no permissions but app/dependency manifest and native calls require audit."
+}
