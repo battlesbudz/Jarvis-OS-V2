@@ -1,0 +1,21 @@
+{
+  "argv": [
+    "python3",
+    "-B",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "scripts",
+    "-p",
+    "test_*.py"
+  ],
+  "head": "4080172ecb87bf4953ef3a6f4a2b5bad87c927b7",
+  "tree": "02430133243703948054e7a798ad7a56afde3b72",
+  "exit_code": 0,
+  "log_sha256": "5ec29c73c8803b4ae5bc8b5d0c1c2ccbf3e7256113961e0e7ba0864794ea64b5",
+  "log_bytes": 186,
+  "started_at": 1791002756.2730882,
+  "finished_at": 1791002757.3589127,
+  "clean": true
+}
