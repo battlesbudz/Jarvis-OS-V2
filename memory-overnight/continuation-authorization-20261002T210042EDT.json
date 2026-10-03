@@ -1,0 +1,43 @@
+{
+  "schema": "memory-overnight-continuation-authorization/1",
+  "observed_at": "2026-10-03T01:00:42Z",
+  "user_instruction": "So you're saying you just disabled the whole thing? It was supposed to keep running until 3 a.m.",
+  "interpretation": "Resume the same Memory OS goals until the original 3am Eastern hard cutoff. The user's correction supersedes the earlier whole-task stop at three source-privacy repairs and the first unit's 60-minute window. New bounded units may consume only remaining original aggregate allocations. Prior consumed attempts, dispatches, estimates and failed evidence remain retained.",
+  "cutoff_epoch": 1791010800,
+  "original_spec_sha256": "9577265a9475306cfe2f753808a638b8be071ecdb18107b728ff3c721b6e7b56",
+  "observed_state_commit": "c914f5172ad1b2d74feb7104c377e3db04125469",
+  "consumed": {
+    "coding_attempts": 3,
+    "dispatches": 5,
+    "admission_reservations": 74000,
+    "actual_provider_usage": null
+  },
+  "aggregate_original_limits": {
+    "coding_attempts": 12,
+    "dispatches": 22,
+    "admission_reservations": 289000
+  },
+  "remaining_estimates": {
+    "coding_attempts": 9,
+    "dispatches": 17,
+    "admission_reservations": 215000
+  },
+  "candidate_sha": "bdec0bb9951e98ea9f54b0dafb297274f9f4e2aa",
+  "ci": {
+    "run_id": 37076016454,
+    "head_sha": "bdec0bb9951e98ea9f54b0dafb297274f9f4e2aa",
+    "conclusion": "failure",
+    "build": "success",
+    "api30": "failure",
+    "api35": "failure",
+    "consolidated_receipt": "failure"
+  },
+  "next_action": "Fetch current actual checkpoint and CI artifacts; fresh durable claim/unblock/reserve/bind, new bounded Coordinator unit, precise repair, distinct review and exact candidate full tests. No checkpoint/spec/counter reset. No weakening tests.",
+  "scope_unchanged": [
+    "existing five frozen goals/dependencies",
+    "existing allowed file scopes",
+    "no PR creation, main merge, APK release, grants, or CLI model fallback"
+  ],
+  "schedule_action": "Existing hourly task re-enabled with original end bound and appended user correction; no new task created.",
+  "qualification_status": "No new coding, review or completion claimed by this receipt."
+}
