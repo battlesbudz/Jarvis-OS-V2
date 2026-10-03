@@ -17,6 +17,13 @@ native-worker ownership; wake capture resumes after that worker drains.
 | Android lifecycle | Farewell saves the ended call, drains old queued input, keeps the current turn and real foreground service alive, and permits a fresh call ID. A stale old-call farewell cannot end the new call. Explicit End disarms from an active or passive session. | Release `test48`; exact hosted revision pending |
 | Physical audio/model | After saying “Stop listening”, wait for wake readiness, then say “Hey Jarvis” to start another call, including from a locked/background phone. | Device signoff pending; controlled lifecycle tests do not prove acoustic detection or model inference |
 
+During verification, the pre-fix API 29 job in
+[build 916](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37105130242/job/111154281024)
+failed before emulator launch: `setup-android@v3` requested its default retired
+`tools` package. The ARM64 setup now requests `platform-tools`; the emulator
+runner still installs the unchanged required image and executes the complete
+release gate. This is an infrastructure correction, not a passing API 29 result.
+
 ## Expanded required release checks — hosted verification pending
 
 Every opted-in candidate must pass the recorded-audio, native-page-size and

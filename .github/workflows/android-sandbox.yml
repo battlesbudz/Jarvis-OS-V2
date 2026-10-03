@@ -48,6 +48,10 @@ jobs:
       - name: Set up the ARM64 Android SDK
         if: matrix.acceleration == 'software'
         uses: android-actions/setup-android@v3
+        with:
+          # setup-android v3 defaults to the retired "tools" package. Native ARM64
+          # hosts need current adb only here; the profile step installs emulator/images.
+          packages: platform-tools
       - name: Resolve exact build artifact IDs
         id: artifacts
         env:
