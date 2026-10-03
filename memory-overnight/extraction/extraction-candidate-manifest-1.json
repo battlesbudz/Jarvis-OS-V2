@@ -1,0 +1,230 @@
+{
+  "head": "b4d970d837a78929105816959dcba0cca74e759b",
+  "tree": "28a7e5ce3b371969fa42b6ebc8756d72f560280d",
+  "entries": [
+    {
+      "path": "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+      "sha": "36271f506e3974c536f81f9cdb1324ac61c0f47f",
+      "mode": "100644",
+      "size": 108065
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+      "sha": "69081262bfc86106206a544177ca3633cb14fbd6",
+      "mode": "100644",
+      "size": 169773
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/ai/LiteRtLmEngine.kt",
+      "sha": "131fdfed3d633e97c649ea3bf25cc28fcb37ea7e",
+      "mode": "100644",
+      "size": 11165
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/conversation/ConversationRuntime.kt",
+      "sha": "88cf5f1941e38d1dd6f4cb85f15dca246306f1d9",
+      "mode": "100644",
+      "size": 59211
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+      "sha": "61b3525ee0a41ae00f54a3ed0a1aa8724808515c",
+      "mode": "100644",
+      "size": 16362
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/AndroidMemoryOs.kt",
+      "sha": "103711879d34ca98411ab836338f7102900f8cf5",
+      "mode": "100644",
+      "size": 2693
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/ConversationMemory.kt",
+      "sha": "5c3023d0a8f74677e9d49e7e1f62da04fe93e6de",
+      "mode": "100644",
+      "size": 6635
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptance.kt",
+      "sha": "495c2d5e0a74a69030c222a513dcf406574d8f3b",
+      "mode": "100644",
+      "size": 2062
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryCaptureAcknowledgment.kt",
+      "sha": "f1cb63bce8052e88b7f228f95a64d49f2171f57b",
+      "mode": "100644",
+      "size": 1807
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryDeliveryFence.kt",
+      "sha": "6bdd367175129383b6764d5e150db16e046ffcf6",
+      "mode": "100644",
+      "size": 2248
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryEligibility.kt",
+      "sha": "5053b52a464d1e1168257f38c829ed83e540086f",
+      "mode": "100644",
+      "size": 644
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryExtraction.kt",
+      "sha": "a15550e25a9eb8a60de18cbd3c185d54b1f2784e",
+      "mode": "100644",
+      "size": 3130
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryExtractionJobs.kt",
+      "sha": "1115c6f9c3efdb6fd43ba18ba9a3488a9f38e1e9",
+      "mode": "100644",
+      "size": 700
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryExtractionWorker.kt",
+      "sha": "8e1967307dba044df6b238619959d52037080434",
+      "mode": "100644",
+      "size": 1770
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryModels.kt",
+      "sha": "afff27daf0181b2a3b69847995594dd4aff07c6a",
+      "mode": "100644",
+      "size": 4226
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryOs.kt",
+      "sha": "eeb9ae4292d29cae93bbc0bc01da63e32271bab3",
+      "mode": "100644",
+      "size": 15991
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryPolicy.kt",
+      "sha": "a42d1c2b58205f4de348080caf1b5c608cbb023a",
+      "mode": "100644",
+      "size": 11300
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryRetrieval.kt",
+      "sha": "ec48b76472132a30cc8a00a88285a55e4398c3eb",
+      "mode": "100644",
+      "size": 7400
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemorySensitivityPolicy.kt",
+      "sha": "0daff7f797cf8b3a4244cea686815bd28361578c",
+      "mode": "100644",
+      "size": 3239
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemorySnapshotCodec.kt",
+      "sha": "47ce02eff6804b8df0572af337ff8c1cbd7217df",
+      "mode": "100644",
+      "size": 7304
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemorySourceSupport.kt",
+      "sha": "a475b9c35152140481266d0e555f3bf73650c054",
+      "mode": "100644",
+      "size": 1655
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemorySuppression.kt",
+      "sha": "3acb718f7cceb17f9341f1ff458ff448754c6c84",
+      "mode": "100644",
+      "size": 400
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryTurnContext.kt",
+      "sha": "a546a51f14ace3a53a1a60753edf4b29a8168f0a",
+      "mode": "100644",
+      "size": 3248
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SQLiteMemoryStore.kt",
+      "sha": "143b941398840b29abb32977c78fcfa69fd14162",
+      "mode": "100644",
+      "size": 25853
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/ui/ConversationScreen.kt",
+      "sha": "4f2b370f99344775c559b24e2a79e6d7f14f9d48",
+      "mode": "100644",
+      "size": 14954
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/ui/MemoryScreen.kt",
+      "sha": "940ca03e05cc26d309f69c58d83139717bd8a43e",
+      "mode": "100644",
+      "size": 27135
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/ui/MemoryWikiComponents.kt",
+      "sha": "eede07987ef41f30b907962dc0c37cdb9a355674",
+      "mode": "100644",
+      "size": 15029
+    },
+    {
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+      "sha": "45607d07185c6dea254da78ddaa1a18e2761d676",
+      "mode": "100644",
+      "size": 11541
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptanceTest.kt",
+      "sha": "aa4385e52b9a45aa1f66357379b776dbbdcb3852",
+      "mode": "100644",
+      "size": 2784
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryEligibilityTest.kt",
+      "sha": "97d39eeb9b16b230fc14b593a5af94a5728dca36",
+      "mode": "100644",
+      "size": 1335
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryExtractionJobsTest.kt",
+      "sha": "58c07752314d12f75b988e3e24577920fec90080",
+      "mode": "100644",
+      "size": 1675
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryExtractionTest.kt",
+      "sha": "6afe545e1f4f6afefc602fc2dbafa652c695b6a6",
+      "mode": "100644",
+      "size": 1593
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemorySensitivityPolicyTest.kt",
+      "sha": "a965521325e79bd4055371d467797b4fecbecc9e",
+      "mode": "100644",
+      "size": 2876
+    },
+    {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemorySuppressionTest.kt",
+      "sha": "29c07c0561a52351b9efbd100a29a4a926512587",
+      "mode": "100644",
+      "size": 1108
+    },
+    {
+      "path": "docs/memory-os-native.md",
+      "sha": "f59a0c21a7b7c7e9ae1f89252c689fab66c502a1",
+      "mode": "100644",
+      "size": 56073
+    },
+    {
+      "path": "docs/verification/features.md",
+      "sha": "9db184797b281ce54c49b0ae74be411c4ff104d6",
+      "mode": "100644",
+      "size": 44465
+    },
+    {
+      "path": "scripts/verification/scenarios.json",
+      "sha": "c12442c2473ae944ebda6e15f04861a82996a43e",
+      "mode": "100644",
+      "size": 2742
+    }
+  ],
+  "base": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/1a6dec718db44cb6bc25e4b7522919ef/unit-extraction"
+}
