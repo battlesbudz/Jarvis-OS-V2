@@ -3,13 +3,19 @@ package com.battlesbudz.jarvis.v2.voice
 /** External VAD owns the decoder's acoustic window, not only its first onset.
  * Preserve 240 ms before confirmed speech and 320 ms after it. Long quiet spans
  * stay out of the ungated native decoder; original call audio is retained separately.
- * Raw diagnostic recordings use native VAD; short final-only probes remain bounded.
+ * Whisper's phrase mode instead keeps 1200 ms before onset and contiguous PCM
+ * through finalization; its caller bounds segment duration. Short final-only
+ * probes without observations retain their original samples.
  */
-class ExternalSpeechGate {
-    private val preRoll = RollingAudioBuffer(maxDurationMs = 240)
+class ExternalSpeechGate(
+    preRollMs: Int = 240,
+    private val preservePhrase: Boolean = false
+) {
+    private val preRoll = RollingAudioBuffer(maxDurationMs = preRollMs)
     private var observed = false
     private var speech = false
     private var tailBytes = 0
+    private var phraseStarted = false
     var acceptedBytes = 0L
         private set
     var receivedBytes = 0L
@@ -20,9 +26,13 @@ class ExternalSpeechGate {
         val result = when {
             !observed -> pcm
             speech -> {
+                phraseStarted = true
                 tailBytes = 320 * 32
                 (preRoll.snapshot() + pcm).also { preRoll.clear() }
             }
+            // Whisper finalization needs contiguous phonetic context, including
+            // pauses and quiet endings that external VAD may call non-speech.
+            preservePhrase && phraseStarted -> pcm
             else -> {
                 val count = minOf(tailBytes, pcm.size)
                 tailBytes -= count
@@ -33,5 +43,9 @@ class ExternalSpeechGate {
         acceptedBytes += result.size
         return result
     }
-    fun clear() { preRoll.clear(); observed = false; speech = false; tailBytes = 0 }
+    fun clear() { preRoll.clear(); observed = false; speech = false; tailBytes = 0; phraseStarted = false }
+
+    companion object {
+        fun whisperPhrase() = ExternalSpeechGate(preRollMs = 1200, preservePhrase = true)
+    }
 }

@@ -7,10 +7,9 @@ import java.io.File
 class WhisperTranscriber(private val directory: File, live: Boolean = true, log: (String) -> Unit = {}, modelSession: VoiceModelSession? = null, private val audioEvidence: RecognitionAudioEvidence? = null, warmProbe: Boolean = false) : StreamingTranscriber {
     init { require(!warmProbe || (!live && modelSession != null)) }
     private val audio = RollingAudioBuffer(AudioFormat(16_000), maxDurationMs = 25_000)
-    // Whisper's background windows previously retained all idle room noise and
-    // endpoint silence. Apply the same external acoustic window as Moonshine;
-    // final-only probes without observeSpeech() still receive their complete PCM.
-    private val speechGate = ExternalSpeechGate()
+    // Bound idle room audio, then retain the contiguous phrase through endpoint.
+    // Final-only probes without observeSpeech() still receive their complete PCM.
+    private val speechGate = ExternalSpeechGate.whisperPhrase()
     private fun createRecognizer() = OfflineRecognizer(config = OfflineRecognizerConfig(
         modelConfig = OfflineModelConfig(whisper = OfflineWhisperModelConfig(
             encoder = File(directory, "base.en-encoder.int8.onnx").path,

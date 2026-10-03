@@ -62,7 +62,7 @@ class ExternalSpeechGateTest {
         assertEquals(probe.size.toLong(), gate.acceptedBytes)
     }
 
-    @Test fun whisperWindowUsesTheSameBoundedAudioAsMoonshine() {
+    @Test fun whisperFinalKeepsFullOpeningAndEndingWithoutLongIdleNoise() {
         var decoded = byteArrayOf()
         val whisper = AsyncWhisperSession({ decoded = it; "Where was the first restaurant?" }, {})
         try {
@@ -73,8 +73,27 @@ class ExternalSpeechGateTest {
             whisper.observeSpeech(false)
             repeat(20) { whisper.accept(pcm(3, 100), false) }
             assertEquals("Where was the first restaurant?", whisper.finish())
-            assertArrayEquals(pcm(1, 240) + pcm(2, 500) + pcm(3, 320), decoded)
+            assertArrayEquals(pcm(1, 1200) + pcm(2, 500) + pcm(3, 2000), decoded)
         } finally { whisper.close() }
+    }
+
+    @Test fun whisperPhrasePreservesInternalPauseAndQuietBoundarySoundsInOrder() {
+        val gate = ExternalSpeechGate.whisperPhrase()
+        gate.observe(false)
+        assertTrue(gate.accept(pcm(1, 3000)).isEmpty())
+        gate.observe(true)
+        val opening = gate.accept(pcm(2, 500))
+        gate.observe(false)
+        val pause = gate.accept(pcm(3, 700))
+        gate.observe(true)
+        val ending = gate.accept(pcm(4, 500))
+        gate.observe(false)
+        val quietEnding = gate.accept(pcm(5, 900))
+        assertArrayEquals(pcm(1, 1200) + pcm(2, 500) + pcm(3, 700) + pcm(4, 500) + pcm(5, 900),
+            opening + pause + ending + quietEnding)
+        gate.clear()
+        gate.observe(false)
+        assertTrue(gate.accept(pcm(6, 500)).isEmpty())
     }
 
     @Test fun qualifyingAndClearingCannotMutateOriginalPcm() {

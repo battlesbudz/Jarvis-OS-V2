@@ -68,6 +68,30 @@ class AsyncWhisperSessionTest {
         try { repeat(40) { s.accept(ByteArray(3200)) }; assertEquals(0, calls) }
         finally { s.close() }
     }
+    @Test fun finalWaitsForBusyPartialAndDecodesContiguousPhraseIncludingQuietTail() {
+        val began = CountDownLatch(1); val unblock = CountDownLatch(1)
+        val clips = mutableListOf<ByteArray>()
+        val s = AsyncWhisperSession({ pcm ->
+            clips.add(pcm)
+            if (clips.size == 1) { began.countDown(); check(unblock.await(2, TimeUnit.SECONDS)) }
+            "complete phrase"
+        }, {})
+        try {
+            s.observeSpeech(false)
+            s.accept(ByteArray(64000) { 1 }, false)
+            s.observeSpeech(true)
+            val speech = ByteArray(48000) { 2 }
+            s.accept(speech)
+            assertTrue(began.await(2, TimeUnit.SECONDS))
+            s.observeSpeech(false)
+            val ending = ByteArray(28800) { 3 }
+            s.accept(ending, false)
+            unblock.countDown()
+            assertEquals("complete phrase", s.finish())
+            assertEquals(2, clips.size)
+            assertArrayEquals(ByteArray(38400) { 1 } + speech + ending, clips.last())
+        } finally { unblock.countDown(); s.close() }
+    }
     @Test fun changedPrefixIsNotCommitted() {
         assertEquals("Can you", AsyncWhisperSession.agreeingPrefix("Can you open", "Can you tell me"))
         assertEquals("", AsyncWhisperSession.agreeingPrefix("Radio says", "What time is it?"))

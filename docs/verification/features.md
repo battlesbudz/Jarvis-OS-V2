@@ -1,5 +1,31 @@
 # Feature and acceptance map
 
+## Whisper complete-phrase capture
+
+Whisper base.en keeps 1200 ms of idle pre-roll, then every PCM sample from
+confirmed onset through endpoint/finalization. This replaces Whisper's 240 ms
+pre-roll and 320 ms tail gate, which removed longer internal pauses and quiet
+ending sounds. Live/background and final-only Whisper share the phrase policy;
+Moonshine retains its existing gate. Model, quantization, decoding, capture
+profile preference, endpoint timing, segmented long-turn bounds and microphone
+lease/cancellation contracts are unchanged.
+
+JVM acceptance: `ExternalSpeechGateTest` checks byte-exact opening/internal
+pause/ending order, exclusion of long idle audio and reset behavior;
+`AsyncWhisperSessionTest` checks final decoding includes audio arriving while a
+partial decode is busy. Existing default-gate, idle-no-inference, worker cleanup
+and segmented-transcriber regressions remain required. Android integration uses
+the existing exact-revision release sandbox; no new UI journey is introduced.
+
+Microphone review: both profiles request PCM16 mono at 16 kHz, session-bound
+AEC for call echo requests and explicit NS enable/disable with actual enabled,
+control and status diagnostics. Speech clarity uses VOICE_RECOGNITION/NS off;
+Call noise reduction uses VOICE_COMMUNICATION/NS on. Existing profile choices
+are preserved. Device processing can still differ from requests; code review
+does not establish acoustic superiority of either profile. Real Fold 6 beginning/
+ending-word accuracy and latency require phone comparison before claiming an
+improvement. Exact release CI is pending for this change.
+
 ## Repository maintainability refactor
 
 The repo-wide maintainability work preserves the published Build 885 behavior
