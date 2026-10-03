@@ -1,0 +1,20 @@
+{
+  "source_sha": "4080172ecb87bf4953ef3a6f4a2b5bad87c927b7",
+  "source_files_sha256": {
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryModels.kt": "9d5624a5b89c009b32cdd4d97c36a91c4a982a137b8322eb9326028420407cc2",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryPolicy.kt": "5bf70c0ae90250bd6415cff5ff7d426e10d822447a447e026eac55ae7d1f7ac9",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryRetrieval.kt": "55bcba507fd95f85413a375dfd619851722f2f344fb4a3a035976a8798599053",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryWiki.kt": "8cd9c4a3ea9ce5c10ce12eefd65fb0093b60324b15034918509d810cd0983354",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt": "55eab87e44ca7da012d1ca1be4850a1c22b7b99070ccd18b495c1ad21339a6e5",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemorySourceArchive.kt": "025bbb4abb83a76970ae2f27124cb1a81f46544d9d693a8b60160da52b6dfca9",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryExtractionJobs.kt": "85613b428578896aa32d1a791cb83aa212acb264cd0b50560732e4669a8d0acd",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryRetrievalTest.kt": "a494672556962a755cd260a6859e25828cb608d4000a1653ef8d2e5b1f63c832",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryPolicyTest.kt": "2bff89278f7429060af8ba515b9270ea0b89578b9e3aa7202ea35f26d4824ea4"
+  },
+  "compiler_version": "2.3.0",
+  "compile_exit_code": 1,
+  "compile_log_sha256": "13b7411cba6343ebf1142b1dcb4c02e5b55d9fd5eb6c9df63e917ed490c5187c",
+  "started_at": 1791003285.1942122,
+  "completed_at": 1791003291.7064788,
+  "scope": "Actual unchanged pure memory policy/retrieval production sources and original JUnit tests only. No source stubs or rewritten bodies. This excludes MemoryOs/Android-sensitive delivery/extraction integration and does NOT establish constructor, full Kotlin, release, native, Android or model qualification."
+}

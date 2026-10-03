@@ -1,0 +1,87 @@
+{
+  "pinned_repo_kotlin_version": "2.3.0",
+  "installed_at": 1791003150.7845702,
+  "pom": {
+    "group": "org.jetbrains.kotlin",
+    "artifact": "kotlin-compiler-embeddable",
+    "version": "2.3.0",
+    "path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/kotlin-compiler/kotlin-compiler-embeddable-2.3.0.pom",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/2.3.0/kotlin-compiler-embeddable-2.3.0.pom",
+    "bytes": 2447,
+    "maven_sha1": "b46b4e07af22d7cf85e1a7b4a51960d79860cdbb",
+    "sha256": "cce9b111f211660c5c45393e748df46950b61c01147e0773b6dc719ee8bb77a8"
+  },
+  "artifacts": [
+    {
+      "group": "org.jetbrains.kotlin",
+      "artifact": "kotlin-compiler-embeddable",
+      "version": "2.3.0",
+      "path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/kotlin-compiler/kotlin-compiler-embeddable-2.3.0.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/2.3.0/kotlin-compiler-embeddable-2.3.0.jar",
+      "bytes": 57669576,
+      "maven_sha1": "dfa7ae7e29f042fe2abf0708315aa367989bb07d",
+      "sha256": "8dbd882fa58c3d17e683a27390288315f8b490f8e3e3b1be4dc3e280d37e285a"
+    },
+    {
+      "group": "org.jetbrains.kotlin",
+      "artifact": "kotlin-stdlib",
+      "version": "2.3.0",
+      "path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/kotlin-compiler/kotlin-stdlib-2.3.0.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.3.0/kotlin-stdlib-2.3.0.jar",
+      "bytes": 1796996,
+      "maven_sha1": "ebc4eb2b6e6c91b6c844c1e3183920d86f2ef656",
+      "sha256": "887587c91713250ad52fe14ad9166d042c33835049890e9437f355ffc5a195b1"
+    },
+    {
+      "group": "org.jetbrains.kotlin",
+      "artifact": "kotlin-script-runtime",
+      "version": "2.3.0",
+      "path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/kotlin-compiler/kotlin-script-runtime-2.3.0.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-script-runtime/2.3.0/kotlin-script-runtime-2.3.0.jar",
+      "bytes": 44940,
+      "maven_sha1": "fb89e0ab064ea19d08c6d6bc9f044d16c5487fc4",
+      "sha256": "db826961371d6605318d9c4e4bfcdbfac94c3a0892cdcabd55224870fead57f1"
+    },
+    {
+      "group": "org.jetbrains.kotlin",
+      "artifact": "kotlin-reflect",
+      "version": "1.6.10",
+      "path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/kotlin-compiler/kotlin-reflect-1.6.10.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-reflect/1.6.10/kotlin-reflect-1.6.10.jar",
+      "bytes": 3038560,
+      "maven_sha1": "1cbe9c92c12a94eea200d23c2bbaedaf3daf5132",
+      "sha256": "3277ac102ae17aad10a55abec75ff5696c8d109790396434b496e75087854203"
+    },
+    {
+      "group": "org.jetbrains.kotlin",
+      "artifact": "kotlin-daemon-embeddable",
+      "version": "2.3.0",
+      "path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/kotlin-compiler/kotlin-daemon-embeddable-2.3.0.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-daemon-embeddable/2.3.0/kotlin-daemon-embeddable-2.3.0.jar",
+      "bytes": 348228,
+      "maven_sha1": "3362fbd68a4dfd1df3818cfee0b8d5f4f6a7e35f",
+      "sha256": "39bcb02d8c293aa678554c8b49d7ff84657021709283c6186e3a40806af9bd10"
+    },
+    {
+      "group": "org.jetbrains.kotlinx",
+      "artifact": "kotlinx-coroutines-core-jvm",
+      "version": "1.8.0",
+      "path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/kotlin-compiler/kotlinx-coroutines-core-jvm-1.8.0.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.8.0/kotlinx-coroutines-core-jvm-1.8.0.jar",
+      "bytes": 1548360,
+      "maven_sha1": "ac1dc37a30a93150b704022f8d895ee1bd3a36b3",
+      "sha256": "9860906a1937490bf5f3b06d2f0e10ef451e65b95b269f22daf68a3d1f5065c5"
+    },
+    {
+      "group": "org.jetbrains",
+      "artifact": "annotations",
+      "version": "13.0",
+      "path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/kotlin-compiler/annotations-13.0.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/13.0/annotations-13.0.jar",
+      "bytes": 17536,
+      "maven_sha1": "919f0dfe192fb4e063e7dacadee7f8bb9a2672a9",
+      "sha256": "ace2a10dc8e2d5fd34925ecac03e4988b2c0f851650c94b8cef49ba1bd111478"
+    }
+  ],
+  "not_validation": "Toolchain installation alone proves no app or test success."
+}

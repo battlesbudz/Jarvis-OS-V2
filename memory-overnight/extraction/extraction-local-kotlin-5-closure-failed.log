@@ -1,0 +1,151 @@
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryExtractionJobs.kt:12:64: error: unresolved reference 'ExtractedMemory'.
+    fun finishExtraction(job: MemoryExtractionJob, facts: List<ExtractedMemory>): Boolean
+                                                               ^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryPolicy.kt:65:76: error: unresolved reference 'MemoryEligibility'.
+            return record.source.eventSource == "local_user_extraction" && MemoryEligibility.eligibleFact(record.content) &&
+                                                                           ^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:3:8: error: unresolved reference 'android'.
+import android.content.SharedPreferences
+       ^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:40:61: error: unresolved reference 'chat'.
+                    val context = com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext()
+                                                            ^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:55:31: error: unresolved reference 'SharedPreferences'.
+        private val delegate: SharedPreferences,
+                              ^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:60:9: error: unresolved reference 'SharedPreferences'.
+    ) : SharedPreferences by delegate {
+        ^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:64:34: error: cannot infer type for type parameter 'R'. Specify it explicitly.
+        private fun lineages() = runCatching { org.json.JSONObject(delegate.getString(lineageKey, "{}")) }.getOrDefault(org.json.JSONObject())
+                                 ^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:64:77: error: unresolved reference 'getString'.
+        private fun lineages() = runCatching { org.json.JSONObject(delegate.getString(lineageKey, "{}")) }.getOrDefault(org.json.JSONObject())
+                                                                            ^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:66:33: error: unresolved reference 'getString'.
+            val text = delegate.getString(summaryKey, null) ?: return null
+                                ^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:67:27: error: cannot infer type for type parameter 'R'. Specify it explicitly.
+            val binding = runCatching { org.json.JSONObject(delegate.getString(bindingKey, "{}")) }.getOrDefault(org.json.JSONObject())
+                          ^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:67:70: error: unresolved reference 'getString'.
+            val binding = runCatching { org.json.JSONObject(delegate.getString(bindingKey, "{}")) }.getOrDefault(org.json.JSONObject())
+                                                                     ^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:70:37: error: unresolved reference 'getLong'.
+            val captured = delegate.getLong(timestampKey, 0)
+                                    ^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:76:51: error: unresolved reference 'SharedPreferences'.
+        private fun tombstone(text: String, edit: SharedPreferences.Editor, ledger: org.json.JSONObject = lineages()) {
+                                                  ^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:78:104: error: unresolved reference 'getLong'.
+            val old = ledger.optJSONObject(hash) ?: org.json.JSONObject().put("capturedAtMs", delegate.getLong(timestampKey, 0))
+                                                                                                       ^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:81:18: error: unresolved reference 'putString'.
+            edit.putString(lineageKey, ledger.toString())
+                 ^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:84:52: error: unresolved reference 'getString'.
+            if (key != summaryKey) return delegate.getString(key, defValue)
+                                                   ^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:85:33: error: unresolved reference 'getString'.
+            val text = delegate.getString(summaryKey, null) ?: return defValue
+                                ^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:87:33: error: unresolved reference 'edit'.
+            val edit = delegate.edit().remove(summaryKey)
+                                ^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:90:18: error: cannot infer type for type parameter 'T'. Specify it explicitly.
+            edit.apply()
+                 ^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:90:18: error: unresolved reference. None of the following candidates is applicable because of a receiver type mismatch:
+fun <T> T.apply(block: T.() -> Unit): T
+            edit.apply()
+                 ^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:94:101: error: function invocation 'all(...)' expected.
+        override fun getAll(): MutableMap<String, *> { getString(summaryKey, null); return delegate.all }
+                                                                                                    ^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:95:30: error: unresolved reference 'SharedPreferences'.
+        override fun edit(): SharedPreferences.Editor {
+                             ^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:96:35: error: unresolved reference 'edit'.
+            val editor = delegate.edit()
+                                  ^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:97:29: error: unresolved reference 'SharedPreferences'.
+            return object : SharedPreferences.Editor by editor {
+                            ^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:98:71: error: unresolved reference 'SharedPreferences'.
+                override fun putString(key: String?, value: String?): SharedPreferences.Editor {
+                                                                      ^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:119:34: error: unresolved reference 'getString'.
+                        delegate.getString(summaryKey, null)?.let { tombstone(it, editor, ledger) }
+                                 ^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:119:63: error: cannot infer type for type parameter 'T'. Specify it explicitly.
+                        delegate.getString(summaryKey, null)?.let { tombstone(it, editor, ledger) }
+                                                              ^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:119:63: error: cannot infer type for type parameter 'R'. Specify it explicitly.
+                        delegate.getString(summaryKey, null)?.let { tombstone(it, editor, ledger) }
+                                                              ^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:119:67: error: cannot infer type for type parameter 'T'. Specify it explicitly.
+                        delegate.getString(summaryKey, null)?.let { tombstone(it, editor, ledger) }
+                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:125:87: error: unresolved reference 'SharedPreferences'.
+                override fun putStringSet(key: String?, values: MutableSet<String>?): SharedPreferences.Editor { editor.putStringSet(key, values); return this }
+                                                                                      ^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:126:64: error: unresolved reference 'SharedPreferences'.
+                override fun putInt(key: String?, value: Int): SharedPreferences.Editor { editor.putInt(key, value); return this }
+                                                               ^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:127:66: error: unresolved reference 'SharedPreferences'.
+                override fun putLong(key: String?, value: Long): SharedPreferences.Editor { editor.putLong(key, value); return this }
+                                                                 ^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:128:68: error: unresolved reference 'SharedPreferences'.
+                override fun putFloat(key: String?, value: Float): SharedPreferences.Editor { editor.putFloat(key, value); return this }
+                                                                   ^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:129:72: error: unresolved reference 'SharedPreferences'.
+                override fun putBoolean(key: String?, value: Boolean): SharedPreferences.Editor { editor.putBoolean(key, value); return this }
+                                                                       ^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:130:39: error: unresolved reference 'SharedPreferences'.
+                override fun clear(): SharedPreferences.Editor {
+                                      ^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:133:30: error: unresolved reference 'getString'.
+                    delegate.getString(summaryKey, null)?.let { tombstone(it, editor, ledger) }
+                             ^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:133:59: error: cannot infer type for type parameter 'T'. Specify it explicitly.
+                    delegate.getString(summaryKey, null)?.let { tombstone(it, editor, ledger) }
+                                                          ^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:133:59: error: cannot infer type for type parameter 'R'. Specify it explicitly.
+                    delegate.getString(summaryKey, null)?.let { tombstone(it, editor, ledger) }
+                                                          ^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:133:63: error: cannot infer type for type parameter 'T'. Specify it explicitly.
+                    delegate.getString(summaryKey, null)?.let { tombstone(it, editor, ledger) }
+                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:134:45: error: unresolved reference 'getLong'.
+                    val captured = delegate.getLong(timestampKey, 0)
+                                            ^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:135:44: error: unresolved reference 'getString'.
+                    val binding = delegate.getString(bindingKey, null)
+                                           ^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:136:36: error: unresolved reference 'putString'.
+                    editor.clear().putString(lineageKey, ledger.toString()).putLong(timestampKey, captured)
+                                   ^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:137:30: error: cannot infer type for type parameter 'T'. Specify it explicitly.
+                    binding?.let { editor.putString(bindingKey, it) }
+                             ^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:137:30: error: cannot infer type for type parameter 'R'. Specify it explicitly.
+                    binding?.let { editor.putString(bindingKey, it) }
+                             ^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:137:34: error: cannot infer type for type parameter 'T'. Specify it explicitly.
+                    binding?.let { editor.putString(bindingKey, it) }
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:140:52: error: unresolved reference 'SharedPreferences'.
+                override fun remove(key: String?): SharedPreferences.Editor {
+                                                   ^^^^^^^^^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:142:34: error: unresolved reference 'getString'.
+                        delegate.getString(summaryKey, null)?.let { tombstone(it, editor) }
+                                 ^^^^^^^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:142:63: error: cannot infer type for type parameter 'T'. Specify it explicitly.
+                        delegate.getString(summaryKey, null)?.let { tombstone(it, editor) }
+                                                              ^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:142:63: error: cannot infer type for type parameter 'R'. Specify it explicitly.
+                        delegate.getString(summaryKey, null)?.let { tombstone(it, editor) }
+                                                              ^^^
+/workspace/scratch/d20772bd92e6/jarvis-overnight-control/extraction-remote-candidate-5/app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt:142:67: error: cannot infer type for type parameter 'T'. Specify it explicitly.
+                        delegate.getString(summaryKey, null)?.let { tombstone(it, editor) }
+                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^

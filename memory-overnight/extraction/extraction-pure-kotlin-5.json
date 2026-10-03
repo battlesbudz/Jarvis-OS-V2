@@ -1,0 +1,22 @@
+{
+  "source_sha": "4080172ecb87bf4953ef3a6f4a2b5bad87c927b7",
+  "source_files_sha256": {
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryModels.kt": "9d5624a5b89c009b32cdd4d97c36a91c4a982a137b8322eb9326028420407cc2",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryRetrieval.kt": "55bcba507fd95f85413a375dfd619851722f2f344fb4a3a035976a8798599053",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemoryWiki.kt": "8cd9c4a3ea9ce5c10ce12eefd65fb0093b60324b15034918509d810cd0983354",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryRetrievalTest.kt": "a494672556962a755cd260a6859e25828cb608d4000a1653ef8d2e5b1f63c832"
+  },
+  "compiler_version": "2.3.0",
+  "compile_exit_code": 0,
+  "compile_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "started_at": 1791003364.5953882,
+  "completed_at": 1791003372.1334784,
+  "scope": "Supplement ONLY: exact current-candidate MemoryModels, MemoryWiki, MemoryRetrieval and unchanged original MemoryRetrievalTest. Actual compiler/JUnit execution, no stubs or rewritten bodies. Excludes policy, MemoryOs constructors, extraction, Android/Compose/delivery, full release, native and model gates.",
+  "junit_exit_code": 0,
+  "junit_log_sha256": "1e4e613866c676aeda0930acf27b6c56903f6aa5a4d4d3972e59bdfc576df1f9",
+  "tests": 6,
+  "initial_dependency_closure_failure_retained": {
+    "receipt_sha256": "0356cbf60424f104c1793f008c1f03d9293cc38806aacc2a17f6aa5ed3dcadd8",
+    "log_sha256": "13b7411cba6343ebf1142b1dcb4c02e5b55d9fd5eb6c9df63e917ed490c5187c"
+  }
+}
