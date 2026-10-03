@@ -71,7 +71,12 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Record available Android hardware profiles
-        run: avdmanager list device
+        run: |
+          jarvis_avdmanager="$(command -v avdmanager || true)"
+          if [ -z "$jarvis_avdmanager" ]; then
+            jarvis_avdmanager="${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager"
+          fi
+          "$jarvis_avdmanager" list device
       - name: Verify release on a disposable Android device
         uses: reactivecircus/android-emulator-runner@v2
         with:
