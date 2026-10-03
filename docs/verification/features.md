@@ -366,3 +366,5 @@ Build 873 (run https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36835285
 | Screenshot baseline is attributable | Original files, hashes and seven-row CSV | Duplicate rows or claimed build/model provenance not shown |
 
 Exact-revision signed JVM/native/build and both emulator gates are required before claiming a verified APK. Phone performance and acoustic onset remain outside emulator coverage.
+
+Pre-existing build 891 (run 37084878313, head `03a6147494a3685a5e309ae34de5d8e7e1c493c8`) failed Kotlin compilation at JarvisRuntime line 601: inferred `runVoiceTurn`/lazy `voiceTurns` types formed a recursive cycle through the restart callback. The metrics change inherited this source. Explicit `VoiceTurnRunner` property and `Unit` function types break inference without changing runtime behavior. Failed logs remain in Actions; a fresh full gate is required.

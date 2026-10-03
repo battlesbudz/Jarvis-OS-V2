@@ -510,7 +510,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 capture.finish(outcome, callId = callId, failureCode = failure)?.let { pipelineBenchmarkStore.append(it) }
             }, diagnostics = diagnostics)
     }
-    private val voiceTurns by lazy {
+    private val voiceTurns: VoiceTurnRunner by lazy {
         val call = VoiceCallAccess(voiceCallState, voiceSessionController, VoiceCallEvents(
             post = { mainHandler.post(it) }, report = { sessionReport(it) },
             serviceStatus = com.battlesbudz.jarvis.v2.voice.VoiceCallService::updateStatus,
@@ -598,7 +598,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     private fun startConversation(input: ConversationInvocation, callbacks: ConversationCallbacks): Job? =
         conversationCoordinator.start(input, callbacks).also { if (it != null) conversationJob = it }
 
-    fun runVoiceTurn() = voiceTurns.start()
+    fun runVoiceTurn(): Unit = voiceTurns.start()
 
     fun onServiceStopped() {
         endVoiceCall()
