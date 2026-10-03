@@ -8,7 +8,7 @@ package com.battlesbudz.jarvis.v2.voice
  * probes without observations retain their original samples.
  */
 class ExternalSpeechGate(
-    preRollMs: Int = 240,
+    preRollMs: Long = 240,
     private val preservePhrase: Boolean = false
 ) {
     private val preRoll = RollingAudioBuffer(maxDurationMs = preRollMs)
