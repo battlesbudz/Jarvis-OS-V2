@@ -89,7 +89,9 @@ jobs:
           disk-size: 4096M
           disable-animations: true
           emulator-boot-timeout: ${{ matrix.boot_timeout }}
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot ${{ matrix.acceleration == 'software' && '-accel off' || '' }}
+          # ARM launcher can request HVF even with -accel off; disable its feature
+          # probe as well to force the declared software mode on hosted Mac VMs.
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot ${{ matrix.acceleration == 'software' && '-accel off -feature -HVF' || '' }}
           script: python3 scripts/verification/android.py run --profile "${{ matrix.id }}" --apk inputs/jarvis-os-v2-release-apk/${{ matrix.apk }}.apk --test-apk inputs/jarvis-verification-test-apk/app-release-androidTest.apk --previous-apk inputs/jarvis-previous-release/app-release.apk --previous-metadata inputs/jarvis-previous-release/previous-release.json --out verification-evidence --source-commit "${{ github.sha }}" --pr-head "${{ github.event.pull_request.head.sha }}" --allow-emulator-reset
       - name: Retain evidence even on failure
         if: always()

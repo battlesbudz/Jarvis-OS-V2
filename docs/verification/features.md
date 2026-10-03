@@ -111,8 +111,9 @@ tested head `24d408a89ecf6739faf0220bb0bbc5bca57d7e44`, merge
 `4c7f0ec18f50ca4a11285ea501728da00279225b`. Signed normal and compact APK
 production, all 1,003 release JVM tests, real recorded speech and both static
 native 16 KB audits passed. Independent comparison of the final release/test
-DEX confirmed 111 reviewed method and 9 field references match the shipping
-APK; no additional Compose keep rule is needed. Actual APK hashes are:
+DEX confirmed 111 selected production method and 9 field references match the
+shipping APK. The broader Compose boundary audit then identified the Dp method
+described below. Actual APK hashes are:
 
 - Normal: `eb1a845b5fbf34b178c686f1ffd1179d2dda74fd4547b5a657ddf9c08c6e1d5c`.
 - Compact: `46d43a41c513dad5434a72bc1cfcaf012a392a0c9b253a5de00155cc8852d44a`.
@@ -139,6 +140,27 @@ hide their diagnostic evidence; every phase and the final all-pass requirement
 remain mandatory. This run is not a full release pass and publication remains
 blocked. Fresh current-head verification must include the concurrent farewell
 lifecycle changes retained from the branch.
+
+## Expanded gate Build 920 and SDK diagnostic repair
+
+[Build 920](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37106704224)
+tested head `aaf630119260dee0dbccdc522e249bce549fed40`, merge
+`849ba56149151a5d603e75c45e2a1add1a672531`. Both signed APK builds,
+all 1,005 JVM tests across 184 suites (zero failures, errors or skips), the four
+real recorded-speech cases, previous-release preparation and the static 16 KB
+native audit passed. All five Linux profiles stopped before emulator startup:
+the newly added optional `avdmanager list device` diagnostic assumed the SDK
+command was already on PATH. The concurrent SDK-path repair is preserved: it
+resolves the command through PATH or the current SDK absolute path. Every
+required device test and receipt assertion remains unchanged. API 29
+software boot is still unconfirmed. Its intended software mode now also uses
+`-feature -HVF`: the official ARM launcher can request HVF despite `-accel off`,
+while the Apple Silicon capability probe does not check nested virtualization.
+Disabling that feature makes the ARM launcher use the declared TCG path. See the
+[feature-gated probe](https://android.googlesource.com/platform/external/qemu/+/f0c183f1cc7456ecd6f3607f2f47893768ae4334/android/emu/feature/src/android/emulation/CpuAccelerator.cpp)
+and [ARM launcher](https://android.googlesource.com/platform/external/qemu/+/f0c183f1cc7456ecd6f3607f2f47893768ae4334/android-qemu2-glue/main.cpp).
+Successful boot and journeys remain required. This run is not a complete release
+pass; publication remains blocked until a fresh exact revision passes every profile.
 
 ## Build 900 Gemma audio submission review
 
