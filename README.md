@@ -25,3 +25,7 @@ Active development happens in the working branches ([see all branches](https://g
 ## Try it
 
 Grab the latest APK from [releases](https://github.com/battlesbudz/Jarvis-OS-V2/releases/latest) and install it on your phone. No account needed.
+
+## License
+
+Source-available under the PolyForm Noncommercial License 1.0.0: free for personal, study, research, and other noncommercial use. Commercial use needs permission. See [LICENSE.md](LICENSE.md).
