@@ -1,0 +1,38 @@
+{
+  "run": "57cc04af6314447b959026a6d44422a5",
+  "ticket": {
+    "id": "1a111c27b3154621bb2fa0f28be6ca6b",
+    "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+    "request_key": "extraction-review-6",
+    "request_hash": "4fade30928c56ee3388330d4adcb5a8a254eeb7c8feb5948295495744c1e9785",
+    "operation": "review:57cc04af6314447b959026a6d44422a5",
+    "task": {
+      "allowed_paths": [],
+      "complexity": "routine",
+      "task_kind": "review"
+    },
+    "reserved_tokens": 6000,
+    "manifest": {
+      "fork_turns": "none",
+      "model": "gpt-6-astra",
+      "reason": "review policy",
+      "reasoning_effort": "high"
+    },
+    "state": "bound",
+    "actor_id": "/root/jarvis_privacy_review",
+    "observed_model": "gpt-6-astra",
+    "observed_effort": "high",
+    "outcome": null,
+    "usage": null,
+    "receipt_id": null,
+    "completed_hash": null,
+    "created_at": 1791004761.840344,
+    "completed_at": null
+  },
+  "native_dispatch": "extraction-review-6",
+  "local_sha": "189c9ea9459fb02d157475ddf5d7c6a540352427",
+  "candidate_sha": "3319c32d487ab87829bee9d7b8187281c73eeb23",
+  "tree": "53d2a8987bb218930b62afcf765d28507d171c63",
+  "deadline": 1791007774.451072,
+  "scope_sha256": "e82d650bfb93bf57928b9176d0225f8c52c99c7060565c6c170b7ce8bcf5948a"
+}
