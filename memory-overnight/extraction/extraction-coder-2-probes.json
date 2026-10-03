@@ -1,0 +1,103 @@
+{
+  "kind": "Python translation of actual Kotlin literal source regexes and ASCII offset rules; no Kotlin/model execution",
+  "checked_at": "2026-10-03T03:30:28.385094+00:00",
+  "inner_spans": [
+    {
+      "source": "I think I like apricots",
+      "quote": "I like apricots",
+      "supported_translated_predicate": false
+    },
+    {
+      "source": "I wish I lived in Paris",
+      "quote": "I lived in Paris",
+      "supported_translated_predicate": false
+    },
+    {
+      "source": "My friend believes I live in Boston",
+      "quote": "I live in Boston",
+      "supported_translated_predicate": false
+    },
+    {
+      "source": "I suspect that I have asthma",
+      "quote": "I have asthma",
+      "supported_translated_predicate": false
+    },
+    {
+      "source": "I do not think I like apricots",
+      "quote": "I like apricots",
+      "supported_translated_predicate": false
+    },
+    {
+      "source": "I do not live in Paris",
+      "quote": "live in Paris",
+      "supported_translated_predicate": false
+    },
+    {
+      "source": "I like apricots, probably",
+      "quote": "I like apricots",
+      "supported_translated_predicate": false
+    },
+    {
+      "source": "Please remember that I think I like apricots",
+      "quote": "I like apricots",
+      "supported_translated_predicate": false
+    },
+    {
+      "source": "The claim is \"I live in Boston\"",
+      "quote": "I live in Boston",
+      "supported_translated_predicate": false
+    },
+    {
+      "source": "If I lived there, I like apricots",
+      "quote": "I like apricots",
+      "supported_translated_predicate": false
+    }
+  ],
+  "complete_sources": [
+    {
+      "source": "I like apricots",
+      "supported_translated_predicate": true,
+      "full_source_kind": "EXPLICIT_STATEMENT"
+    },
+    {
+      "source": "I live in Portland",
+      "supported_translated_predicate": true,
+      "full_source_kind": "EXPLICIT_STATEMENT"
+    },
+    {
+      "source": "My diagnosis is asthma",
+      "supported_translated_predicate": true,
+      "full_source_kind": "EXPLICIT_STATEMENT"
+    },
+    {
+      "source": "I enjoy life in Portland",
+      "supported_translated_predicate": true,
+      "full_source_kind": "EXPLICIT_STATEMENT"
+    },
+    {
+      "source": "I think I like apricots",
+      "supported_translated_predicate": true,
+      "full_source_kind": "TENTATIVE_INFERENCE"
+    },
+    {
+      "source": "I believe that I have asthma",
+      "supported_translated_predicate": true,
+      "full_source_kind": "TENTATIVE_INFERENCE"
+    },
+    {
+      "source": "My diagnosis might be asthma",
+      "supported_translated_predicate": true,
+      "full_source_kind": "TENTATIVE_INFERENCE"
+    },
+    {
+      "source": "I am not sure I live in Paris",
+      "supported_translated_predicate": true,
+      "full_source_kind": "TENTATIVE_INFERENCE"
+    },
+    {
+      "source": "I do not live in Paris",
+      "supported_translated_predicate": true,
+      "full_source_kind": "EXPLICIT_STATEMENT"
+    }
+  ]
+}
