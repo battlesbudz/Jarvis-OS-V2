@@ -1,3 +1,5 @@
+# Feature and acceptance map
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,
@@ -26,15 +28,14 @@ native Moonshine word accuracy and added decoder work need device measurement.
 The reviewed microphone profiles retain their general-purpose PCM16 mono 16 kHz,
 AEC and explicit noise-suppression policy; no user-specific tuning is introduced.
 
-# Feature and acceptance map
-
-## Whisper and Moonshine complete-phrase capture
+## Initial Whisper complete-phrase capture checkpoint
 
 Whisper base.en keeps 1200 ms of idle pre-roll, then every PCM sample from
 confirmed onset through endpoint/finalization. This replaces Whisper's 240 ms
 pre-roll and 320 ms tail gate, which removed longer internal pauses and quiet
 ending sounds. Live/background and final-only Whisper share the phrase policy;
-Moonshine retains its existing gate. Model, quantization, decoding, capture
+At this initial checkpoint Moonshine retained its existing gate; the Build 900
+review above extends the same policy to its call path. Model, quantization, decoding, capture
 profile preference, endpoint timing, segmented long-turn bounds and microphone
 lease/cancellation contracts are unchanged.
 
