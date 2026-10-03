@@ -1,21 +1,27 @@
 # Jarvis OS V2
 
-A standalone native Android voice assistant prototype.
+A fully on-device voice assistant for Android. Wake-word activation, conversational barge-in, and a fully local speech pipeline. No cloud, no account, no per-token cost.
 
-## Direction
+**Demo (53s):** [watch it in action](https://github.com/battlesbudz/Jarvis-OS-V2/blob/main/demo/jarvis-voice-demo.mp4) — airplane mode on, phone locked, "Hey Jarvis," interrupted mid-answer.
+
+## What it does
+
+- **Wake-word activation** that works with the phone locked, the screen off, or another app in the foreground, built around Android's background microphone restrictions.
+- **Conversational barge-in:** talk over a response and it stops playback, listens again, and redirects.
+- **On-device pipeline:** local Gemma inference through LiteRT-LM, Moonshine/Whisper speech recognition, Piper speech synthesis.
+- **Timing diagnostics** across recognition, inference, and playback. Hundreds of voice turns logged on a Galaxy Z Fold 6: 740ms median first-token latency, 3.6s median to first spoken word, 32.8 tokens/sec average generation.
+
+## Status
+
+Active development happens in the working branches ([see all branches](https://github.com/battlesbudz/Jarvis-OS-V2/branches)). The [latest release](https://github.com/battlesbudz/Jarvis-OS-V2/releases/latest) APK is the newest app build.
+
+## Stack
 
 - Kotlin and Jetpack Compose
-- Local Gemma 4 E2B for conversation and reasoning
-- FunctionGemma MobileActions-270M for local mobile-action routing
-- Kotlin validates and executes typed actions
+- LiteRT-LM with Gemma (E2B/E4B) for conversation and reasoning
+- Gemma E4B drives tool calling; Kotlin validates and executes typed actions
 - No cloud backend required for the core assistant loop
 
-PR #1 includes the testable local assistant loop. Type a request such as
-“What is my battery level?” in the chat: FunctionGemma emits the registered
-`read_battery` tool call, Kotlin validates it, and the Android executor returns
-the phone's live battery percentage. General questions fall back to Gemma 4 E2B.
-No cloud backend is required for this loop.
+## Try it
 
-## APK signing
-
-Release APKs are signed by GitHub Actions with the repository's permanent release key. The keystore is intentionally not committed. Before merging the first PR, add these repository Actions secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. Future release APKs signed by this same key will install as updates to the previous release.
+Grab the latest APK from [releases](https://github.com/battlesbudz/Jarvis-OS-V2/releases/latest) and install it on your phone. No account needed.
