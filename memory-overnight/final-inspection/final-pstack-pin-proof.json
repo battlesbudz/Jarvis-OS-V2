@@ -1,0 +1,9 @@
+{
+  "actual_pin": "52f049503cdd551326d02759f2d2d9e99a9cd706",
+  "actual_tree": "969c44ac05d317745ba6509e58555f7df46b234d",
+  "all_blob_bytes_modes_paths_verified": true,
+  "contract": "companion0.12.0/session1.2/usage-conscious-v2",
+  "full_file_count": 127,
+  "no_cli_model_fallback": true,
+  "raw_actual_commit_hash_verified": true
+}
