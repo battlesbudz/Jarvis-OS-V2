@@ -1,0 +1,1361 @@
+{
+  "candidate": "3319c32d487ab87829bee9d7b8187281c73eeb23",
+  "zip_sha256": "d4af00343b7cbb0d855c642266f87e323b94ea4d1952d90792458655194d8b9a",
+  "expected_source_classes": {
+    "ai.moonshine.voice.MoonshineUpdateCadenceTest": {
+      "path": "app/src/test/java/ai/moonshine/voice/MoonshineUpdateCadenceTest.kt",
+      "sha256": "5628337dc6ef91ebb8e172a4c6ed23a10218f57bb013ef7fe364fc81239f54c1"
+    },
+    "com.battlesbudz.jarvis.v2.ai.CompactChatPromptTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/CompactChatPromptTest.kt",
+      "sha256": "44739f4b8c48fb7299969b074024f24a0f98fb84fd9785eef2c7710e143f79c5"
+    },
+    "com.battlesbudz.jarvis.v2.ai.SuppliedReferenceTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/SuppliedReferenceTest.kt",
+      "sha256": "6dcb10f87cb1adf7497a47d08e74ef3604780c8a744a84e6d7eeff7ef850e7f8"
+    },
+    "com.battlesbudz.jarvis.v2.ai.VoiceInputPromptTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/VoiceInputPromptTest.kt",
+      "sha256": "75306b3b68286e25823cbb7cf947e8c4f2df17436bae6fdedb4279e2de04de54"
+    },
+    "com.battlesbudz.jarvis.v2.ai.TurnOrchestratorTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/TurnOrchestratorTest.kt",
+      "sha256": "dfd51c4cc63c60b9144ab46634ce24851a85bd38992bf52a35c70eddacd6d6cf"
+    },
+    "com.battlesbudz.jarvis.v2.ai.ModelCompatibilityTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ModelCompatibilityTest.kt",
+      "sha256": "a3508a2beb91da68a7d6aa383494dca4618dc0814c56e8c6bd0e822ecfc197b9"
+    },
+    "com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilderTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ConversationPromptBuilderTest.kt",
+      "sha256": "68f2d566a3ffea5080eac7d71d95e77e657440a40395428387c6caa250756fe9"
+    },
+    "com.battlesbudz.jarvis.v2.ai.LiteRtVoicePrefillSessionTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/LiteRtVoicePrefillSessionTest.kt",
+      "sha256": "451e153f2e8c0d3ab5d06c08ac8ec98db8cd97a29d24d45ed325378e14fed603"
+    },
+    "com.battlesbudz.jarvis.v2.ai.ModelConversationConfigTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ModelConversationConfigTest.kt",
+      "sha256": "0026580966fa9c7e448f2a4e05ccb594c820d6c921e33c1597e0fec6ac05bff2"
+    },
+    "com.battlesbudz.jarvis.v2.ai.InferenceProgressTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/InferenceProgressTest.kt",
+      "sha256": "983a33978eceafee0b979bd73bb39545bd3c05cbe7ca49401068b44a78256751"
+    },
+    "com.battlesbudz.jarvis.v2.ai.ModelCatalogTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ModelCatalogTest.kt",
+      "sha256": "8179e6c1735b57d91518a32708535218b94cd2b17e0bda8f75ef3c9af568fe78"
+    },
+    "com.battlesbudz.jarvis.v2.ai.GemmaSessionTextTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/GemmaSessionTextTest.kt",
+      "sha256": "84d8ea34efd187da0ae33242591c140f3f075f7a0c8372234944650211067e24"
+    },
+    "com.battlesbudz.jarvis.v2.ai.LastReplyRecallTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/LastReplyRecallTest.kt",
+      "sha256": "b3b4869fd5af7b8efa259003860cf5af59c1a7677557b63067377e0f6fdcc1b1"
+    },
+    "com.battlesbudz.jarvis.v2.ai.ReferenceEvidencePolicyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ReferenceEvidencePolicyTest.kt",
+      "sha256": "3511af77a5e2f316cfdd5c2819edef5159004cc010eaded992f4afc1ed32d51a"
+    },
+    "com.battlesbudz.jarvis.v2.ai.VoicePromptTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/VoicePromptTest.kt",
+      "sha256": "151b5178e3c7f406061d6ab2e11e63654e4aeda1558d308ad1da98f03ba91e6a"
+    },
+    "com.battlesbudz.jarvis.v2.ai.TemplateVoiceSessionTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/TemplateVoiceSessionTest.kt",
+      "sha256": "f55c854c1c1a10e5b202e47e3d8fd66e97359aeeb935aa5d1962417feee254fd"
+    },
+    "com.battlesbudz.jarvis.v2.ai.ModelGuidanceTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/ModelGuidanceTest.kt",
+      "sha256": "8ca5f9feb0e302bcbbfc963026d8be4f1dc519592521f7e7b6522889ce766236"
+    },
+    "com.battlesbudz.jarvis.v2.ai.DialogueContextPolicyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/DialogueContextPolicyTest.kt",
+      "sha256": "e0badd697aa9c20a721eeb46e64c828b9c30c0c9be1de2f8972d578e92715364"
+    },
+    "com.battlesbudz.jarvis.v2.chat.ConversationHistoryTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+      "sha256": "9790be7752d7148b4d3cd379cfa4e0a014f2ac64e2a4a37a50ba21081bcb0248"
+    },
+    "com.battlesbudz.jarvis.v2.chat.AnswerQualityPolicyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/chat/AnswerQualityPolicyTest.kt",
+      "sha256": "f1ef66c62c348e6134745886ca389e6682667d06193c0e068983a424659d221f"
+    },
+    "com.battlesbudz.jarvis.v2.chat.AttachmentPolicyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/chat/AttachmentPolicyTest.kt",
+      "sha256": "712c0e874f97ab37da3435c05445f1c92a4b0fd7091194d60433aba617caea2f"
+    },
+    "com.battlesbudz.jarvis.v2.chat.TurnContinuityTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/chat/TurnContinuityTest.kt",
+      "sha256": "f12d88b06e9e04b6102b8049ddf17fcb7e317eb3f663408d49badc501b9f8574"
+    },
+    "com.battlesbudz.jarvis.v2.chat.CompactVoiceContextTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/chat/CompactVoiceContextTest.kt",
+      "sha256": "8102dfc038b0736f5cfa2959dbf1b7fa95145489d6d23f711beebbbe8c205271"
+    },
+    "com.battlesbudz.jarvis.v2.chat.ConversationHistoryPrivacyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+      "sha256": "adb32f1e19b0e0c73aff136f2daa36c48e2213637858c2cf36ecaed0fc20461a"
+    },
+    "com.battlesbudz.jarvis.v2.voice.KeyboardMicrophoneRequestTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/KeyboardMicrophoneRequestTest.kt",
+      "sha256": "d7994610f462632fe2fa4480211c3b88c068dfd0c4b0a399076c7377b21256a8"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceTurnTraceTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceTurnTraceTest.kt",
+      "sha256": "bd53eeafa92eff09aa079590eeb5b7c9b117fa6935e7bc346f1694730e11f2b0"
+    },
+    "com.battlesbudz.jarvis.v2.voice.SherpaPcmCallbackTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SherpaPcmCallbackTest.kt",
+      "sha256": "bdf6d6facb046e6fd2b9ce5bb1efde7a7c76fe03d78cde787ae5f36d82d2dfa2"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceCallPolicyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallPolicyTest.kt",
+      "sha256": "8b26d1bd74b87bb017017c6ab783800d9a91515ec86420360c87396626fb00ac"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceNavigationPolicyTest.kt",
+      "sha256": "7f434d3fc12d10d2ed4538bb27236f7d25df82e36b29f385cd5d321a62969b3d"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceAudioSessionTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceAudioSessionTest.kt",
+      "sha256": "bee9ff4a860604dc5f726edf0f22921f6a8d9a6e4cf87e60f22e2085e8b84de1"
+    },
+    "com.battlesbudz.jarvis.v2.voice.RecognitionAudioEvidenceTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/RecognitionAudioEvidenceTest.kt",
+      "sha256": "be996df6aea0dea93c6361341be5548a1a56e270f291b1efb837272ea59d4991"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceSessionControllerTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceSessionControllerTest.kt",
+      "sha256": "42dce52af60bcdb4a31a621594acc94b29cba65f8e57a5db5f9a7b7839627df5"
+    },
+    "com.battlesbudz.jarvis.v2.voice.LiveReplyMetricsTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/LiveReplyMetricsTest.kt",
+      "sha256": "90881a963d2c38260e0f3f2018b9afc2b212c112e8efa732965a3c5355702058"
+    },
+    "com.battlesbudz.jarvis.v2.voice.SherpaTtsConfigTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SherpaTtsConfigTest.kt",
+      "sha256": "961a1d64942c0cf2c870ff92d2b4943bbf5abffb7265fe09f9ce9204e8d689b2"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceCallResumerTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallResumerTest.kt",
+      "sha256": "281149a6d9f6270c9f3a70c908d2b64cede92d436df5ab16b2223ad0c5461319"
+    },
+    "com.battlesbudz.jarvis.v2.voice.DuplexPlaybackBudgetTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/DuplexPlaybackBudgetTest.kt",
+      "sha256": "36629ee94fc9ebb78d75a799e99c9de9a941581291e71b15bba07adba6f30c0e"
+    },
+    "com.battlesbudz.jarvis.v2.voice.InterruptionProbeBudgetTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/InterruptionProbeBudgetTest.kt",
+      "sha256": "a392a67a1fffbb2aecffabfb7da5b60d7c6a4f3ed46b48e46d31936d9d551903"
+    },
+    "com.battlesbudz.jarvis.v2.voice.QuietSpeechEvidenceTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/QuietSpeechEvidenceTest.kt",
+      "sha256": "ccb31b69f86e23ff78ae8e1cfa8e952d83a9227d6880f1b070944602faa2d414"
+    },
+    "com.battlesbudz.jarvis.v2.voice.CaptureSpeechGateTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CaptureSpeechGateTest.kt",
+      "sha256": "2859e35a7f364651a237721ec7dfad2beda54e786fd1fbe9795a8f349d3d8f61"
+    },
+    "com.battlesbudz.jarvis.v2.voice.CallAdapterClipRecognitionTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CallAdapterClipRecognitionTest.kt",
+      "sha256": "82ed192a4f5bda63ce85dd9a4d165cfd6c8cc3b56c32320144cee488fb15514c"
+    },
+    "com.battlesbudz.jarvis.v2.voice.RecognizedInterruptionWordsTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/RecognizedInterruptionWordsTest.kt",
+      "sha256": "e797a2d02026c8d43f66d7923f1305e474d464c565763a11aec66677813f31da"
+    },
+    "com.battlesbudz.jarvis.v2.voice.SpeechAudioTraceTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpeechAudioTraceTest.kt",
+      "sha256": "6506128f835680d39c1b99c5c91ff40f91558f309c711771baf653ee20b66cf6"
+    },
+    "com.battlesbudz.jarvis.v2.voice.PlaybackDrainTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PlaybackDrainTest.kt",
+      "sha256": "1c2bb0009db33ab83edbf58b0c6208e8763f39b55ca98391209c6183ed7af7f2"
+    },
+    "com.battlesbudz.jarvis.v2.voice.MicrophonePolicyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/MicrophonePolicyTest.kt",
+      "sha256": "c5300ca72d6525fcd27400647a03bc070ce12ae61745436f96111f8a8237b1e9"
+    },
+    "com.battlesbudz.jarvis.v2.voice.KeywordPrimingTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/KeywordPrimingTest.kt",
+      "sha256": "b03c2eb142514fe226be78e2399fe5aefd671f8345035259482a1e842fc51218"
+    },
+    "com.battlesbudz.jarvis.v2.voice.AudioTurnCaptureTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/AudioTurnCaptureTest.kt",
+      "sha256": "686bb5b4bbe8e27f98832ddfb5577d4434575b2278046955c05be61cd400443e"
+    },
+    "com.battlesbudz.jarvis.v2.voice.NativeAudioQueueTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/NativeAudioQueueTest.kt",
+      "sha256": "02d45da27dba90d9e937ba162ab5e5ed2bca332ff2fc45961ca43f8c04f96f65"
+    },
+    "com.battlesbudz.jarvis.v2.voice.BargeInDiagnosticEvidenceTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/BargeInDiagnosticEvidenceTest.kt",
+      "sha256": "15c89a8c3401e87314eaf1615cde375e348fe207978b220979913550181d520b"
+    },
+    "com.battlesbudz.jarvis.v2.voice.BargeInGateTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/BargeInGateTest.kt",
+      "sha256": "6bdf41ccbc4d00944b9dc2096dad766ff799774cff5ca11be08d0c824df65551"
+    },
+    "com.battlesbudz.jarvis.v2.voice.RetiredVoiceFilesTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/RetiredVoiceFilesTest.kt",
+      "sha256": "ef21551ecb456b9bd45a0ebf8b19a4fd08b1706600a67c5f7d2de68a0a778251"
+    },
+    "com.battlesbudz.jarvis.v2.voice.DuplexRouteLeaseTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/DuplexRouteLeaseTest.kt",
+      "sha256": "9218963a3cd7131d71e9633744f9aa149515bd4cce3be96ee6c9d6a25fedc75f"
+    },
+    "com.battlesbudz.jarvis.v2.voice.KeywordBargeInAudioInputTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/KeywordBargeInAudioInputTest.kt",
+      "sha256": "e47fa7206ec0688dafcd0aa1d39331b2747a44e1378ee16001b9414f43a5bcae"
+    },
+    "com.battlesbudz.jarvis.v2.voice.TtsComparisonStoreTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/TtsComparisonStoreTest.kt",
+      "sha256": "179d02666844e3f5a04f56d6926e81df25d539a977da4c8f468124cecc2d142d"
+    },
+    "com.battlesbudz.jarvis.v2.voice.PcmChunkAssemblerTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PcmChunkAssemblerTest.kt",
+      "sha256": "3d26ff5e1db0c81ce688dc6bb0fa0baced034437b12e1c6e49a6d4bafb6b2547"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuardTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceRepetitionGuardTest.kt",
+      "sha256": "57ba01a2063872bc6fc54862247f2ed0cf9c4852125fed5478e8e6549c4eee9a"
+    },
+    "com.battlesbudz.jarvis.v2.voice.QuietSpeechGainTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/QuietSpeechGainTest.kt",
+      "sha256": "41a46644901f03ce2f18a872ed09c6ca1170d5d2e615bb708bd59bbb2aeaad4a"
+    },
+    "com.battlesbudz.jarvis.v2.voice.LiveCallAudioEvidenceTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/LiveCallAudioEvidenceTest.kt",
+      "sha256": "449bbd6043234d8567298ef9a79223a5b216e32c7d2a38ffc7e6ad7ca3581603"
+    },
+    "com.battlesbudz.jarvis.v2.voice.NaturalBargeInAudioInputTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/NaturalBargeInAudioInputTest.kt",
+      "sha256": "f993aa7b18d6bdaa8b24072596afb0139baeac6911347d87a417d3f227ef25ed"
+    },
+    "com.battlesbudz.jarvis.v2.voice.DelayedAcknowledgementTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/DelayedAcknowledgementTest.kt",
+      "sha256": "f65d164e60b08e39c032313984787076a7e64dd5d3afc07c37317088a43e0725"
+    },
+    "com.battlesbudz.jarvis.v2.voice.AsrComparisonStoreTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/AsrComparisonStoreTest.kt",
+      "sha256": "418090b852b4af8664e9ac2dcbdcc4cd6c0a45a7a5fb7c59f837260e6cf1cc83"
+    },
+    "com.battlesbudz.jarvis.v2.voice.CaptureSpeechQueueTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CaptureSpeechQueueTest.kt",
+      "sha256": "7413fba3acdaf932b45ebe412ad054f57e76ff838e74a7f818c3df55166a6c1d"
+    },
+    "com.battlesbudz.jarvis.v2.voice.FillerAudioCacheTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/FillerAudioCacheTest.kt",
+      "sha256": "432f15bf2830aa49e1a8e90a37c91cda886d81694c859d2e3cc14e0d1a169e4d"
+    },
+    "com.battlesbudz.jarvis.v2.voice.FillerPcmTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/FillerPcmTest.kt",
+      "sha256": "42e33c8f884ba63b02e1ed9f6d5184db356ab2b9d2e32b445a08685b810adbff"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceCallStoreTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStoreTest.kt",
+      "sha256": "2f06081c92ea9112281a946c770cd7ee23e25e34b5849827a6b6defe9de8180f"
+    },
+    "com.battlesbudz.jarvis.v2.voice.NaturalCorrectionTextTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/NaturalCorrectionTextTest.kt",
+      "sha256": "d4e1d4a22e690f0f00e89247e37545c56a174e83ffe23704e9cd4d1f03dc4161"
+    },
+    "com.battlesbudz.jarvis.v2.voice.CallInputQueueTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CallInputQueueTest.kt",
+      "sha256": "861b64a0f3f06e1fa8ddee51373641e71ecda5be307861cab118a2f1061c5949"
+    },
+    "com.battlesbudz.jarvis.v2.voice.DuplexAudioEvidenceTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/DuplexAudioEvidenceTest.kt",
+      "sha256": "356daa10fd06e98735453f2f3d2b6ac59f555ab7db818c306227c534a7e9354a"
+    },
+    "com.battlesbudz.jarvis.v2.voice.TranscriptContentTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/TranscriptContentTest.kt",
+      "sha256": "4e4fcaedabc006b6fc25b84382fe3251ba90a24b516261be4d311a356382f4e4"
+    },
+    "com.battlesbudz.jarvis.v2.voice.SpeechChunkerTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpeechChunkerTest.kt",
+      "sha256": "cdfe6872525927787b2d2898c0e58054bb81d67193ae4fec7002a6a7c6cccea4"
+    },
+    "com.battlesbudz.jarvis.v2.voice.RollingAudioBufferTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/RollingAudioBufferTest.kt",
+      "sha256": "3fa754f7d8bb906a51192aa5dd9968784ef7dd12cdc2533d2f70e27913aa5300"
+    },
+    "com.battlesbudz.jarvis.v2.voice.RoutedAudioInputTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/RoutedAudioInputTest.kt",
+      "sha256": "4e01f07d95cda120b7873d3eb15f50f4d7763f5e88e18cbddb2041141e72a0d1"
+    },
+    "com.battlesbudz.jarvis.v2.voice.DiagnosticClipRecognitionTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/DiagnosticClipRecognitionTest.kt",
+      "sha256": "269231497fc8e0252df0006b632b1325721a182bd598cc67b24c8cced165bba5"
+    },
+    "com.battlesbudz.jarvis.v2.voice.Pcm16SignalTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/Pcm16SignalTest.kt",
+      "sha256": "218dc7959adbd02b2e3f5394bcbb104fd7131a243b70eef4bd2603dfedc813ff"
+    },
+    "com.battlesbudz.jarvis.v2.voice.LongUtteranceTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/LongUtteranceTest.kt",
+      "sha256": "69fa25b02020ea12fe3789a4fd31510b6081b9abdf7364c72cdb81ff1c37b3e8"
+    },
+    "com.battlesbudz.jarvis.v2.voice.SpeechDeliveryLedgerTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpeechDeliveryLedgerTest.kt",
+      "sha256": "724fc1c807ba7d7d52275e373172244ec876d293ef1da87da42d625139b61b88"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceActionControlTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceActionControlTest.kt",
+      "sha256": "3673434da9482d70924721936ff54df17e7610175a5b4a3784d2b74d55467331"
+    },
+    "com.battlesbudz.jarvis.v2.voice.CallLifetimePolicyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CallLifetimePolicyTest.kt",
+      "sha256": "538d34e79daab46b9f88ed571f8b6905b64db4a9c8b116b3165daf41414ded9e"
+    },
+    "com.battlesbudz.jarvis.v2.voice.BoundedInterruptionRecognizerTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/BoundedInterruptionRecognizerTest.kt",
+      "sha256": "cc053742c0cf21a3a050de9fa418eaa5a1bc7e66f006576317a1df71b96b29f8"
+    },
+    "com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuardTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/FinalVoiceToolGuardTest.kt",
+      "sha256": "226c997841d33c5db0ecb61fd6b0e0915f583325e54ee74a402aca09c909e935"
+    },
+    "com.battlesbudz.jarvis.v2.voice.SpokenVolumeLevelTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpokenVolumeLevelTest.kt",
+      "sha256": "8848c08f2b8ce559d19b3b5b6c34ffbd2075ced8bb4a234445abd45768f0a79c"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceStopRequestTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceStopRequestTest.kt",
+      "sha256": "352495429d0a76b989888dc416205046abf9f0039f7c8f001ef5a098142b1309"
+    },
+    "com.battlesbudz.jarvis.v2.voice.SpokenCaptionTimelineTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SpokenCaptionTimelineTest.kt",
+      "sha256": "7bbd041e195c69fea163a63f2225ee316968f7227cb86626e0b500c8221ace6a"
+    },
+    "com.battlesbudz.jarvis.v2.voice.ReplyListenerRecoveryTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/ReplyListenerRecoveryTest.kt",
+      "sha256": "82075b140821d68ef0f5f070dcef830dcafafffe71ec3804abbce0c47e0dfc18"
+    },
+    "com.battlesbudz.jarvis.v2.voice.SentenceGapWaiterTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/SentenceGapWaiterTest.kt",
+      "sha256": "f2b56377fcc4becb5e44eeb08599fa8ceffe396557e17691e4415924f2703df0"
+    },
+    "com.battlesbudz.jarvis.v2.voice.CaptureRecognitionBudgetTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CaptureRecognitionBudgetTest.kt",
+      "sha256": "a01456085f34a2de897b018e59468a2f1b788443223bb0bd3671d0083e111718"
+    },
+    "com.battlesbudz.jarvis.v2.voice.WordErrorRateTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/WordErrorRateTest.kt",
+      "sha256": "0821fb247e000f72c4a7fb68a241c2c3a9f3efda34842409b51f2b9ce60754a0"
+    },
+    "com.battlesbudz.jarvis.v2.voice.MicrophoneHandoffTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/MicrophoneHandoffTest.kt",
+      "sha256": "e009e47ff7752e170c308cd07b48c73fc52a532cfb6540f19faf8a1a77c977a4"
+    },
+    "com.battlesbudz.jarvis.v2.voice.PreparedSpeechOpeningTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PreparedSpeechOpeningTest.kt",
+      "sha256": "48a19d02372c4695b2e83689e1cff6a4d6beb4c43424e715e10f3056020ff6a4"
+    },
+    "com.battlesbudz.jarvis.v2.voice.PlaybackClockTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PlaybackClockTest.kt",
+      "sha256": "a0e66bd57cb084f21b8115a08008b7ed8a0e2fef46d3ab5cb2c76cd5358d3463"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceTurnCoordinatorTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceTurnCoordinatorTest.kt",
+      "sha256": "eae3d51868b298e0980687b54aa17be54a6ff2986ee775a3d9d0e23825efaf7c"
+    },
+    "com.battlesbudz.jarvis.v2.voice.PacedStreamingTranscriberTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PacedStreamingTranscriberTest.kt",
+      "sha256": "8b6207edc7fd8a56bbd5a84ea95cb0a95c3bdd39254ec9822faedd5cc247c88f"
+    },
+    "com.battlesbudz.jarvis.v2.voice.CoalescingVoiceCallStoreTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CoalescingVoiceCallStoreTest.kt",
+      "sha256": "f946f8380c20ddb185334b9c9adeaa2736e08bc2827328d158f6edfc11fbbe87"
+    },
+    "com.battlesbudz.jarvis.v2.voice.EchoArchiveReaderTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/EchoArchiveReaderTest.kt",
+      "sha256": "b7caafbb4f5a9f0fa091c2d320d63c4b9e71b4e9ea1b51c8fcfe6c78bebb2b92"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceRepetitionRepairTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceRepetitionRepairTest.kt",
+      "sha256": "90957c771cd2b5337defd1c1a03005cdab9b7424836b57c52a25382e884d6013"
+    },
+    "com.battlesbudz.jarvis.v2.voice.PiperTextStreamTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PiperTextStreamTest.kt",
+      "sha256": "e8f35090c2ee4f1e557b2a36088ded5b0213fb6b402e27795f8b7f98655dae34"
+    },
+    "com.battlesbudz.jarvis.v2.voice.GroundedVoiceSentenceTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/GroundedVoiceSentenceTest.kt",
+      "sha256": "bd2bd20b357e88785c41dedea914f385f8b0a4cc0180b4cb37df18d31a6ba1b0"
+    },
+    "com.battlesbudz.jarvis.v2.voice.WakeWordGateTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/WakeWordGateTest.kt",
+      "sha256": "796f3f5e0f23f3e76c715168fe5c34efe39c819c0721c3b8d17936cc7d184bce"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolverTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceTranscriptResolverTest.kt",
+      "sha256": "01137a8d6821858b17a6cbea648e9b3df275a30c2bd8c82c949aa66eb50881d9"
+    },
+    "com.battlesbudz.jarvis.v2.voice.PlaybackHistoryTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PlaybackHistoryTest.kt",
+      "sha256": "9e139eddaf94899b2c6c238e25f65cba140db7e28a2617616c7cdf6aeec0ae74"
+    },
+    "com.battlesbudz.jarvis.v2.voice.PlaybackBufferPolicyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/PlaybackBufferPolicyTest.kt",
+      "sha256": "90e6235f2b2ba1d8aeabc6d078afc78d108339c34b62ebc092f3b739e60925bf"
+    },
+    "com.battlesbudz.jarvis.v2.voice.CallModelSlotTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CallModelSlotTest.kt",
+      "sha256": "3dd1a606fb308fefda45f05f7065aa15575fc9a28e1fe442a03b74d8c60281a6"
+    },
+    "com.battlesbudz.jarvis.v2.voice.FollowupSpeechEvidenceTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/FollowupSpeechEvidenceTest.kt",
+      "sha256": "456943601f5ea39b4a277ed36e1884385dac2f88c3ae725317952a831994778d"
+    },
+    "com.battlesbudz.jarvis.v2.voice.MicrophonePreferenceTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/MicrophonePreferenceTest.kt",
+      "sha256": "758fffe0a6013cee67cb8c73186ff65587b6b5490c8603ae338fb8927fdfadd8"
+    },
+    "com.battlesbudz.jarvis.v2.voice.FrameSpeechDetectorTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/FrameSpeechDetectorTest.kt",
+      "sha256": "f4e36eedbbe18746a77cf13019ffb53b44d23a44f4956c3d755a9f55558a6d07"
+    },
+    "com.battlesbudz.jarvis.v2.voice.CandidateConfirmationTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CandidateConfirmationTest.kt",
+      "sha256": "f32c78203f2552b2b1227a5b1237894a7cb4e7b8b3a4e5cc32a6c84575509854"
+    },
+    "com.battlesbudz.jarvis.v2.voice.ExternalSpeechGateTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/ExternalSpeechGateTest.kt",
+      "sha256": "00f934fd6daeb595186a97973d7687508a5ca32b53c37afa640667ed5cc52825"
+    },
+    "com.battlesbudz.jarvis.v2.voice.AdaptiveTurnEndTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/AdaptiveTurnEndTest.kt",
+      "sha256": "45207a35b7940bd768018b2ad0b1c8e42d44ac4eeb75872f5f09e120225fea8c"
+    },
+    "com.battlesbudz.jarvis.v2.voice.MicrophoneInterruptionPolicyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/MicrophoneInterruptionPolicyTest.kt",
+      "sha256": "d6ebeb77b875728bd1c4934d62d85a4c4c5181f2c78102e32ba9bd5ea2b380b6"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceWorkSchedulerTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceWorkSchedulerTest.kt",
+      "sha256": "d2c44722f9f608302d369f46d7301c0745a40bcd6aa86f37f0ee7eab4628d4f8"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceInterruptionTestTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceInterruptionTestTest.kt",
+      "sha256": "aea0fd3503f7d808f8391547be275d0fc1012317d4117a60a3f4a2d8acac4310"
+    },
+    "com.battlesbudz.jarvis.v2.voice.CallTurnOwnerTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/CallTurnOwnerTest.kt",
+      "sha256": "b02dc9b74bfe576091f6a2f7fb8c199fcb7b397c2d55a75cad702684180ba86c"
+    },
+    "com.battlesbudz.jarvis.v2.voice.AsyncWhisperSessionTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/AsyncWhisperSessionTest.kt",
+      "sha256": "2b810733cba73e73e388a5fd1241ea4bfbfa41056df73fa783b0f4a144c0bf92"
+    },
+    "com.battlesbudz.jarvis.v2.voice.IncrementalVoiceInputTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/IncrementalVoiceInputTest.kt",
+      "sha256": "9739184143e392e53d060716d8c56a9243bb69cea078ac96c307c5b2d3fdd102"
+    },
+    "com.battlesbudz.jarvis.v2.voice.ReplyInterruptionTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/ReplyInterruptionTest.kt",
+      "sha256": "d8dc69973bf17f026b83d3933a323fb4d15e1cb21e9259ae9c4a31fec91cbb3f"
+    },
+    "com.battlesbudz.jarvis.v2.voice.BargeInAudioInputTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/BargeInAudioInputTest.kt",
+      "sha256": "bddd9542da93f50166a6989bea431e986653668660e00a44a8bd87904920af10"
+    },
+    "com.battlesbudz.jarvis.v2.voice.ContinuousActionSessionTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/ContinuousActionSessionTest.kt",
+      "sha256": "9dc6882160de847e840d8ffab25223d24e3eb8341169890c9ae391b1e2f48ec4"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceSessionUiTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceSessionUiTest.kt",
+      "sha256": "160931c37fd6275cd70d7a2301ac43698903ec772c2b7a5bfcb57b71ebe7909f"
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceCallStorePrivacyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+      "sha256": "a6071cec473d6dc484958c1dbb48bdba5dec770b2f117ea919280748b7967bcd"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemorySuppressionTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemorySuppressionTest.kt",
+      "sha256": "6610fbb38bf47142db9b16eca6ecdef931425ddc95c544603562413fbb40a3bd"
+    },
+    "com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+      "sha256": "d9d6ad3918722916c96ff71e997ace1f1911d061e8574d8e9f4a30397cb83077"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryStoreTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryStoreTest.kt",
+      "sha256": "5ba9a69489284186cb253921642c59aeeca831101d6f7f5dceaf13c315a2033d"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryExtractionJobsTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryExtractionJobsTest.kt",
+      "sha256": "0580b0962f134e34fcad559ea90683cedf49fd253551b0f05f2e50c047d7b0b9"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryExtractionTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryExtractionTest.kt",
+      "sha256": "2603f21d095483aa732cd0e1a3af22f66dc406f7f98f9063cde1d160df9324ac"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryCaptureReceiptCacheTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryCaptureReceiptCacheTest.kt",
+      "sha256": "48d2186986bcb54b965d4ee550b9b7789cef344fc2fa3f0072be3e22f6c6c056"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryDeliveryFenceTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryDeliveryFenceTest.kt",
+      "sha256": "0a1b649e11b5fe3e6fad9cf830e032f26b0c11ef370503465a08558145c56ce3"
+    },
+    "com.battlesbudz.jarvis.v2.memory.ConversationMemoryTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/ConversationMemoryTest.kt",
+      "sha256": "74d334e975d31c3b154bda2cb035c87104eb49b89941948c31028100abdd77f4"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryOsTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryOsTest.kt",
+      "sha256": "3e975df58b029b1a601a8ca33e1d5d9e3e17121604c04d369007f947a42c566b"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryAcceptanceTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryAcceptanceTest.kt",
+      "sha256": "dbd958b9a2b8ad231982acd741a8567ae57a8347ff9deb5e2f07620a73ebcb81"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryWikiTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryWikiTest.kt",
+      "sha256": "70dc2312b38f39cb460620ce1b31a62fec389802965e7f46a8809b7377186b38"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryCaptureAcknowledgmentTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryCaptureAcknowledgmentTest.kt",
+      "sha256": "f2ae7f9b4478324de3dfe27b1fda826b0c23b877f80b8bcd2e81917f8e9522a1"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryArchivePolicyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryArchivePolicyTest.kt",
+      "sha256": "1242eb79d7bc98997eaa018cc0dd034f92127e6ef3f56a7ddf525d64513d8d91"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryEligibilityTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryEligibilityTest.kt",
+      "sha256": "948d83f60d559992761af6507e8503d64be8b002e1aa66be4e0722882570a1e9"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryRecallIntegrationTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryRecallIntegrationTest.kt",
+      "sha256": "86538e91403123c21e650cc55d5464e6711d921bdb204c6aa8a74014b4dcd285"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryPolicyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryPolicyTest.kt",
+      "sha256": "2bff89278f7429060af8ba515b9270ea0b89578b9e3aa7202ea35f26d4824ea4"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryRetrievalTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryRetrievalTest.kt",
+      "sha256": "a494672556962a755cd260a6859e25828cb608d4000a1653ef8d2e5b1f63c832"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryTurnContextTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemoryTurnContextTest.kt",
+      "sha256": "6c6fd46f6b5397520f84aaf4ba49eb92af8c51fc754691261a0f95ed716533ff"
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/memory/MemorySensitivityPolicyTest.kt",
+      "sha256": "4f51ba7440a3b72e025bb6cffaf6b9f2ee6ce4af67ca3a3bd31b0f683ea0e854"
+    },
+    "com.battlesbudz.jarvis.v2.actions.MobileActionPipelineTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/actions/MobileActionPipelineTest.kt",
+      "sha256": "e4ff1342489cae5c39ff7f1727740d4eac85dd0bb027067836bb0e473b9f4dba"
+    },
+    "com.battlesbudz.jarvis.v2.actions.AcceptedActionQueueTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/actions/AcceptedActionQueueTest.kt",
+      "sha256": "2e0e6e9b78f99571aab3709d0773d6c3c04657a1146337d722d490e459a73237"
+    },
+    "com.battlesbudz.jarvis.v2.actions.NativeToolJourneyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/actions/NativeToolJourneyTest.kt",
+      "sha256": "a97156183aa42ab9ac4da24d691826a1a0cd387b4ca404fede4fbf1b58f7d705"
+    },
+    "com.battlesbudz.jarvis.v2.actions.ActionTurnRunnerTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/actions/ActionTurnRunnerTest.kt",
+      "sha256": "c86a715320422a19574962dc5b8023e5f0f505d6a7bd391c45f3268703875278"
+    },
+    "com.battlesbudz.jarvis.v2.actions.DirectAppCommandTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/actions/DirectAppCommandTest.kt",
+      "sha256": "ef10e1cff7c0dc07217f9b8debefe1a38feae2a0651b3828d7a04a8643a90478"
+    },
+    "com.battlesbudz.jarvis.v2.actions.ActionIntentRouterTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/actions/ActionIntentRouterTest.kt",
+      "sha256": "d12bc404ce297d384021b799c7627a233a3cfbab05f6d88df108d576fe1bbd5e"
+    },
+    "com.battlesbudz.jarvis.v2.actions.MobileActionValidatorTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/actions/MobileActionValidatorTest.kt",
+      "sha256": "e190da8f5696dff5c3cb025e214ec36ab44505befe64596abac6c56601b07926"
+    },
+    "com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorderPrivacyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+      "sha256": "440dfadfa2abaee52a58022d5cd178f956d2e2821367cc6e0d4ca04c5e7c4bc2"
+    },
+    "com.battlesbudz.jarvis.v2.diagnostics.TurnLatencyTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/TurnLatencyTest.kt",
+      "sha256": "647fda434fbbf3edcddbb7855d9b1fc1b15f220acf201376ec7ef82568444f00"
+    },
+    "com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorderTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderTest.kt",
+      "sha256": "7960856960cf916359cf74c60f86fbf68ca0aa21de118c9c381aafd3880d5a3c"
+    },
+    "com.battlesbudz.jarvis.v2.ai.storage.ModelStorageTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/storage/ModelStorageTest.kt",
+      "sha256": "0f9a5fc49a2c616ca8e5253e0609a35769de6d27adfe9c71cdfe73366e538ee9"
+    },
+    "com.battlesbudz.jarvis.v2.ai.storage.ModelRemovalTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/ai/storage/ModelRemovalTest.kt",
+      "sha256": "84da0e87aa94c2a93f2c1a5ec7a437c40455d4d8ea28487b0a0e1fd61d60a031"
+    },
+    "com.battlesbudz.jarvis.v2.voice.comparison.LiveComparisonTest": {
+      "path": "app/src/test/java/com/battlesbudz/jarvis/v2/voice/comparison/LiveComparisonTest.kt",
+      "sha256": "46f42d16aefe48625e076aa4f1827d6f107df79ab2fb45d80390f9b03a83e7d8"
+    }
+  },
+  "actual_xml_classes": {
+    "ai.moonshine.voice.MoonshineUpdateCadenceTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-ai.moonshine.voice.MoonshineUpdateCadenceTest.xml",
+      "sha256": "487e5722a3f910b672a452372edf2b1ee62255b0c42ff501f629d31e31cc0d52",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.actions.AcceptedActionQueueTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.actions.AcceptedActionQueueTest.xml",
+      "sha256": "db10067c2140dbb65774af64e0fdc0a5911048cb8f102d18312d7f3b75aef032",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.actions.ActionIntentRouterTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.actions.ActionIntentRouterTest.xml",
+      "sha256": "b3cf782fcda7f5a7d6a85f425293b884bd3941560b02a0c4cb147396c6b5ae6b",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.actions.ActionTurnRunnerTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.actions.ActionTurnRunnerTest.xml",
+      "sha256": "4048f90495b5bf3f84f5107ded37e7dc43fecb9ee89d298794d4a82e8bf5c66f",
+      "tests": 12
+    },
+    "com.battlesbudz.jarvis.v2.actions.DirectAppCommandTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.actions.DirectAppCommandTest.xml",
+      "sha256": "095866c1a1ae37a4ab2856602555db1c9b0168bffb87e98ae14f7807751805bc",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.actions.MobileActionPipelineTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.actions.MobileActionPipelineTest.xml",
+      "sha256": "c0ac09498c6654003bee8080fa55058fd60a5f330368ea0985673f83d5fb23e6",
+      "tests": 7
+    },
+    "com.battlesbudz.jarvis.v2.actions.MobileActionValidatorTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.actions.MobileActionValidatorTest.xml",
+      "sha256": "cb06b67599548ca3d701f330cb1e319a6fbf4938d2649277f21b0a93365dcc45",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.actions.NativeToolJourneyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.actions.NativeToolJourneyTest.xml",
+      "sha256": "58d49ce19101db8e89c7809e5b2506597b5c16cd2ffb906363cd474a20f42cf9",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.ai.CompactChatPromptTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.CompactChatPromptTest.xml",
+      "sha256": "c8b0e3c10da9fe198d802299c2b5b242ad11b40487b573127bd00317cf5328ea",
+      "tests": 1
+    },
+    "com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilderTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilderTest.xml",
+      "sha256": "8265a89dcfd5de2036a80484312f92d54be9105b9f2f36c27b07f3c9aa78440e",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.ai.DialogueContextPolicyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.DialogueContextPolicyTest.xml",
+      "sha256": "654bfff6d9b28216e9741f2f8f2ad1279922569ae8bbb7254eb8bc34f7c2cf75",
+      "tests": 6
+    },
+    "com.battlesbudz.jarvis.v2.ai.GemmaSessionTextTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.GemmaSessionTextTest.xml",
+      "sha256": "0c34bb46a01993da74c6d88e4daf2f68664b62b5d58599d2f06af91f100de2e2",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.ai.InferenceProgressTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.InferenceProgressTest.xml",
+      "sha256": "9d5391c99a1f650275aa45d2a103150f93b900753fbddb2795fa683e47d81469",
+      "tests": 1
+    },
+    "com.battlesbudz.jarvis.v2.ai.LastReplyRecallTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.LastReplyRecallTest.xml",
+      "sha256": "256fbc2186811581599ff7e579009c095cb47590a99861ec7d1ba83007741d57",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.ai.LiteRtVoicePrefillSessionTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.LiteRtVoicePrefillSessionTest.xml",
+      "sha256": "d3bf5bbc06bf5b54ebd508dfbd058e642a2d4b1f828957e2d09d2fba4e52abd4",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.ai.ModelCatalogTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.ModelCatalogTest.xml",
+      "sha256": "510f8161089893c9f33eb2985e1fe771b49bf6c2697da9c0e8a302e1dcf9294a",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.ai.ModelCompatibilityTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.ModelCompatibilityTest.xml",
+      "sha256": "2f37bd66f82441a87a2c3a424bfe789c242b7897930d044d973aec3cf65d32fb",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.ai.ModelConversationConfigTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.ModelConversationConfigTest.xml",
+      "sha256": "f23e2199e3de920aa33383758fb8bfcbe839f2c31c6bf831b524cc03bb35cc5f",
+      "tests": 1
+    },
+    "com.battlesbudz.jarvis.v2.ai.ModelGuidanceTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.ModelGuidanceTest.xml",
+      "sha256": "9617096d4306e6e4a2eb0bacb4bdc039e647fd554b44013d595879e14537305d",
+      "tests": 8
+    },
+    "com.battlesbudz.jarvis.v2.ai.ReferenceEvidencePolicyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.ReferenceEvidencePolicyTest.xml",
+      "sha256": "e2cab3c231ef88e5053a2851db59fcdeb8708a8ac172948cac3d071ad60b77ea",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.ai.SuppliedReferenceTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.SuppliedReferenceTest.xml",
+      "sha256": "316a6da013749ea1dd1216e4cf09a2f5694e3e2bed66d12304a2ae05f9e31818",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.ai.TemplateVoiceSessionTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.TemplateVoiceSessionTest.xml",
+      "sha256": "1baab009f24e2d36de3f144998c3c72a8488111252e37e2eed054e5c72c0c0dc",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.ai.VoiceInputPromptTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.VoiceInputPromptTest.xml",
+      "sha256": "0f9eef5d79477d7f533ca90c65717a4d50954470d5ba6a3addd774a6bac68b37",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.ai.TurnOrchestratorTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.TurnOrchestratorTest.xml",
+      "sha256": "7263fd3b0c0b765a32c47e5dd102b936820aba1e3b6e87965b84066cd7d39a21",
+      "tests": 18
+    },
+    "com.battlesbudz.jarvis.v2.ai.VoicePromptTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.VoicePromptTest.xml",
+      "sha256": "13fcd72bb5d2eb20ccb7320016b77894d23a650bcebb3b1e0bcbda7298614136",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.ai.storage.ModelRemovalTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.storage.ModelRemovalTest.xml",
+      "sha256": "6d499eb4f3f042169af3f3c184660667d5df9dfd153b28c558e97ab977305644",
+      "tests": 1
+    },
+    "com.battlesbudz.jarvis.v2.ai.storage.ModelStorageTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.ai.storage.ModelStorageTest.xml",
+      "sha256": "78c9b61b4fb83c6cab2c87edf4b4da5b7460962d83eb95c41707bef733eb1ab5",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.chat.AnswerQualityPolicyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.chat.AnswerQualityPolicyTest.xml",
+      "sha256": "9953d3b70dad6dbd86ede94756cf91f612ea6c9e7818f6651bd62bee2c1358af",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.chat.AttachmentPolicyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.chat.AttachmentPolicyTest.xml",
+      "sha256": "0f0fc4b2ed359e3d1449c7f47b6597987c8cdcd4053067cccbbb5dc77ef3d345",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.chat.CompactVoiceContextTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.chat.CompactVoiceContextTest.xml",
+      "sha256": "9471a0ac9e41b1d17894208226b3d587bc39c2d08aba9ed350c4f76f94c5543c",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.chat.ConversationHistoryPrivacyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.chat.ConversationHistoryPrivacyTest.xml",
+      "sha256": "fae012eb1055e83e4eb19471acec2de8e505f4f50c84426d925f1a2c9ed2c522",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.chat.ConversationHistoryTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.chat.ConversationHistoryTest.xml",
+      "sha256": "36b3634975b3048ad11ba7acae5679297e3b041bb43e1e90ce0faec7b524c230",
+      "tests": 14
+    },
+    "com.battlesbudz.jarvis.v2.chat.TurnContinuityTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.chat.TurnContinuityTest.xml",
+      "sha256": "fa98ba55ead80e75733fb100d88b9c9a9f7105fd7210697207d259247e9478c8",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorderPrivacyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorderPrivacyTest.xml",
+      "sha256": "cfe5e9bd9b70508a107e1feefa693c57fe010f4cba32a5091778b3eda67e3357",
+      "tests": 8
+    },
+    "com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorderTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorderTest.xml",
+      "sha256": "530af31d7c89df33d597bfd4517db53bdab59aac027eb0ad09f32536d8619f3a",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.diagnostics.TurnLatencyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.diagnostics.TurnLatencyTest.xml",
+      "sha256": "6d891fbe4033b43d3e7a86ded088785e26965395e5a1b92bb1d538998bca27b6",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.memory.ConversationMemoryTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.ConversationMemoryTest.xml",
+      "sha256": "1a425d44162c208ea050a9dc64aa1ad5ae51ba57fb6f467b765506ba5959598c",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryAcceptanceTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryAcceptanceTest.xml",
+      "sha256": "b6d43d6d3b1c165e70382b473c6e75d8af2ac49031c4c500e012519e49182636",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryArchivePolicyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryArchivePolicyTest.xml",
+      "sha256": "38c4afea86980c423d59e04e3b436a2633a583089f8117857b6dcf7a44754deb",
+      "tests": 6
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryCaptureAcknowledgmentTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryCaptureAcknowledgmentTest.xml",
+      "sha256": "b60f40cbbef1f7214e0f6b0f2495ea57c126657b97f21e6eeab9f8ebdcd689fe",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryDeliveryFenceTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryDeliveryFenceTest.xml",
+      "sha256": "2fc01be280dc39b6d494b54594041a9a253a6e511bdf93792fc1bbee70fd9aa5",
+      "tests": 11
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryCaptureReceiptCacheTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryCaptureReceiptCacheTest.xml",
+      "sha256": "9d35c88ccfa932e99b88da36cb7575a6181439f50fa3e90a7ed2662c09576d41",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryEligibilityTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryEligibilityTest.xml",
+      "sha256": "6f695be76e9410d23f8b748632003898711e952959edbbab515f1ea6636aa4ff",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryExtractionJobsTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryExtractionJobsTest.xml",
+      "sha256": "79bbc981c449bb5a60234a661eae0b9c930fde31241e02d7548104ad510cef55",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryExtractionTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryExtractionTest.xml",
+      "sha256": "0e007a232fdae9d174893cff51e1029858ff4476cc7c7e760d29661627445f9d",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryOsTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryOsTest.xml",
+      "sha256": "1f66e6881ad69d0bfd3a91716733c3c88bd8116aaaf2e81ce683f1767bb056aa",
+      "tests": 13
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryPolicyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryPolicyTest.xml",
+      "sha256": "ac280cb9a316b45961a6f78c1e5f4395cbd71bc4e2cffc994e8c4eba9f94070f",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryRecallIntegrationTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryRecallIntegrationTest.xml",
+      "sha256": "d43df8d4ae27860834f68a9be7c6ef8af5e66c78407bfe524688e0025b859790",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryRetrievalTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryRetrievalTest.xml",
+      "sha256": "8e547ba3035a0cb18e556e0baa880e6a89a0ec91a409bcfa1e02fcd27ebd1284",
+      "tests": 6
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicyTest.xml",
+      "sha256": "cd57b4c1cff722203bf5efd723bdedb19232cec4f8218b5f38d99bfff9b631fb",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryStoreTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryStoreTest.xml",
+      "sha256": "0926abc421365294ad3701d76802cd11db5714937a253cfe42b330a9b9bfc2e4",
+      "tests": 8
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemorySuppressionTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemorySuppressionTest.xml",
+      "sha256": "c3061be649755c15a198af6174a2108c500a6cdd446f27e9cac801ab378be17e",
+      "tests": 1
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryTurnContextTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryTurnContextTest.xml",
+      "sha256": "28de04d7ce2cafd9e94e8eb2a7d8fb4c19872477a59fd41ba15a491aa106fef7",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.memory.MemoryWikiTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.MemoryWikiTest.xml",
+      "sha256": "9f99c47b8818eab0d855e63ab51f03630bd9bd571642d2c3ab64678a58424acc",
+      "tests": 6
+    },
+    "com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.memory.SourceTextPersistencePolicyTest.xml",
+      "sha256": "0ee1c0c4108d3f1a8dd99537f3b2f01b8a928f7f649449026c677a31986ebd0e",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.voice.AdaptiveTurnEndTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.AdaptiveTurnEndTest.xml",
+      "sha256": "9fbcdc7c6b255a884c0acb6310cbfb01d6cfc5a14aad2e0c5adeccdcdc6261ca",
+      "tests": 7
+    },
+    "com.battlesbudz.jarvis.v2.voice.AsrComparisonStoreTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.AsrComparisonStoreTest.xml",
+      "sha256": "369f40a6570a0749c8230272995e744ee1ea9b25a6036b5dec4fd90c0c05e9e2",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.voice.AsyncWhisperSessionTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.AsyncWhisperSessionTest.xml",
+      "sha256": "818f5dc286f667f689d72fec2f33eb03f5cb1f9d55575054cf5f530ee8f7e147",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.voice.BargeInAudioInputTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.BargeInAudioInputTest.xml",
+      "sha256": "951178432658f23930572ebe4e88026ac643ac053beba068c36598ea10e18386",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.voice.AudioTurnCaptureTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.AudioTurnCaptureTest.xml",
+      "sha256": "22908e353e1474a27f8070bbae56a93567ac383761a768c56cb7b90a581d3f45",
+      "tests": 46
+    },
+    "com.battlesbudz.jarvis.v2.voice.BargeInDiagnosticEvidenceTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.BargeInDiagnosticEvidenceTest.xml",
+      "sha256": "5ba84cbe8fa0c15199cb82e36170c2fb549a66d3204bb7a9b53ee147c798c39d",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.voice.BargeInGateTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.BargeInGateTest.xml",
+      "sha256": "b0a898dc582aa8597b0b8ca5adabedab580e1c7dcb30620d6ad3de068471e81d",
+      "tests": 16
+    },
+    "com.battlesbudz.jarvis.v2.voice.BoundedInterruptionRecognizerTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.BoundedInterruptionRecognizerTest.xml",
+      "sha256": "0a2d067ba3bbbe8d253c5d6cdeb395dc2ecb2eebb8f0c23b697298a6edc83b25",
+      "tests": 11
+    },
+    "com.battlesbudz.jarvis.v2.voice.CallAdapterClipRecognitionTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CallAdapterClipRecognitionTest.xml",
+      "sha256": "147cae20499b62234c2e3e521de2b2f01233ff9380b1d266990671d076b3801c",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.CallInputQueueTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CallInputQueueTest.xml",
+      "sha256": "e7b354511c85e910e95b4c92393b84c9d19de394fca43d0ff989f43e710bc67c",
+      "tests": 15
+    },
+    "com.battlesbudz.jarvis.v2.voice.CallLifetimePolicyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CallLifetimePolicyTest.xml",
+      "sha256": "c90255d1f1058410e71b6dccdecfb7f9e532e46c908fc221154ecada8435e37f",
+      "tests": 1
+    },
+    "com.battlesbudz.jarvis.v2.voice.CallModelSlotTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CallModelSlotTest.xml",
+      "sha256": "674bfb2e970cee05a26ee4985e24c91785730c2a713ce676616f5649909a654d",
+      "tests": 10
+    },
+    "com.battlesbudz.jarvis.v2.voice.CallTurnOwnerTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CallTurnOwnerTest.xml",
+      "sha256": "5f3a908540bf3d3eab7a94b91cdc0076eb8aa20abbd1c2e865a9c52b249581cd",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.voice.CandidateConfirmationTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CandidateConfirmationTest.xml",
+      "sha256": "bc9f542e6d58721ceb981cdef11049627a269b28eee4a80130cb9fe5acc0ef7d",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.voice.CaptureRecognitionBudgetTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CaptureRecognitionBudgetTest.xml",
+      "sha256": "ad89c6c10a3eb82da9b30dd6c2eb68b0b9d9ee1f6da41a4c2dea0ef6d476289d",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.voice.CaptureSpeechGateTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CaptureSpeechGateTest.xml",
+      "sha256": "808536b439385100015556daf2a75e202df7809545c896ed647bed89c2c76638",
+      "tests": 8
+    },
+    "com.battlesbudz.jarvis.v2.voice.CaptureSpeechQueueTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CaptureSpeechQueueTest.xml",
+      "sha256": "a36ed6ddd42c6ade2e3a737cd3c73c21a077935407a831737cd4aafaad5c9f9b",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.voice.CoalescingVoiceCallStoreTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.CoalescingVoiceCallStoreTest.xml",
+      "sha256": "141174d22973763d1d26ff31312c20f6d30b4b88787c0c96c168e4a3fecf91b6",
+      "tests": 8
+    },
+    "com.battlesbudz.jarvis.v2.voice.ContinuousActionSessionTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.ContinuousActionSessionTest.xml",
+      "sha256": "643cac8c066c4bbf3bb71a453a5603063345d39c7d8382d8a16f4097cade1e2b",
+      "tests": 20
+    },
+    "com.battlesbudz.jarvis.v2.voice.DelayedAcknowledgementTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.DelayedAcknowledgementTest.xml",
+      "sha256": "8e0aaf166a4501a417590b79be1c08f6b1bb15daaaad9bae50e44ce5a6f63c0f",
+      "tests": 8
+    },
+    "com.battlesbudz.jarvis.v2.voice.DiagnosticClipRecognitionTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.DiagnosticClipRecognitionTest.xml",
+      "sha256": "a17a925daa8cc216d4746cf0f4a693e4616972984db80d388f4fe490c1d71d13",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.DuplexAudioEvidenceTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.DuplexAudioEvidenceTest.xml",
+      "sha256": "0dab955c47647667f69dc91cdd7965eeaa9ea0a5ebe72261a1817837bdc24027",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.voice.DuplexPlaybackBudgetTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.DuplexPlaybackBudgetTest.xml",
+      "sha256": "bcb0005838cb43a9408b4e7e588fb362e1d5e829bee8bcdbba43a1b13f2016ce",
+      "tests": 1
+    },
+    "com.battlesbudz.jarvis.v2.voice.DuplexRouteLeaseTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.DuplexRouteLeaseTest.xml",
+      "sha256": "dd116c55b043928482a2a7c51d4a87422539d7bffa8322177f9d43e057623da6",
+      "tests": 8
+    },
+    "com.battlesbudz.jarvis.v2.voice.EchoArchiveReaderTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.EchoArchiveReaderTest.xml",
+      "sha256": "73a3f652ef9766b39c1c5cc354607f834a6e3d84448744daec248eabd82f25ab",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.voice.ExternalSpeechGateTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.ExternalSpeechGateTest.xml",
+      "sha256": "a3c1438c3662a69a4b539f80047871cecd92da22a57cf6bd8af5c62d027676d8",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.voice.FillerAudioCacheTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.FillerAudioCacheTest.xml",
+      "sha256": "0640c90ae7ce6e3eae9949eaa9b0609c85c72adbf2ee41ed498414fd95f95bd3",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.FillerPcmTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.FillerPcmTest.xml",
+      "sha256": "6b79f3d5437a422ec5f2efca59a4d318f4940f3bed8e048bb060601c2d436b7e",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuardTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuardTest.xml",
+      "sha256": "eb934757cb5f92e5f256fe01eb38f393214ca1566959d3bb97d745930f79f11d",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.voice.FollowupSpeechEvidenceTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.FollowupSpeechEvidenceTest.xml",
+      "sha256": "b9e6dd46ea03e5e7048feeba23fcd89fb5c237de6e1ee81d3d73fc314e21135d",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.voice.FrameSpeechDetectorTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.FrameSpeechDetectorTest.xml",
+      "sha256": "76d8853e76eab4882449651fdce681c66874db8662b71d2c4aa20218b2a670f0",
+      "tests": 6
+    },
+    "com.battlesbudz.jarvis.v2.voice.GroundedVoiceSentenceTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.GroundedVoiceSentenceTest.xml",
+      "sha256": "4cd4da9e5368e2cd165172aacad9c105bea65b4982772b8a8bf927782363ea9b",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.IncrementalVoiceInputTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.IncrementalVoiceInputTest.xml",
+      "sha256": "a24c3e45e83c23b8e447f3f4468a8340e52a1d74f2900aabdb0ef1f7ed20cc9c",
+      "tests": 9
+    },
+    "com.battlesbudz.jarvis.v2.voice.InterruptionProbeBudgetTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.InterruptionProbeBudgetTest.xml",
+      "sha256": "25b615923faf9aafc2fc9c691041f719fba50c1efbb55b5e774b702282b220f1",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.KeyboardMicrophoneRequestTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.KeyboardMicrophoneRequestTest.xml",
+      "sha256": "62ada12f6ca61e62931ccd4a2eb41a36d834cf324c75b5bbf35df9f92d770b71",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.voice.KeywordPrimingTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.KeywordPrimingTest.xml",
+      "sha256": "e93425fe6bde7b57633036cf8b146ff6f77f386c51fa43a47c59b240f7557ad6",
+      "tests": 1
+    },
+    "com.battlesbudz.jarvis.v2.voice.KeywordBargeInAudioInputTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.KeywordBargeInAudioInputTest.xml",
+      "sha256": "2622d9e85e36aba0a639ff4571a8de13f2570f6309b5fde8d193912272ce3edf",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.voice.LiveCallAudioEvidenceTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.LiveCallAudioEvidenceTest.xml",
+      "sha256": "facb84f0f4c94925448231e33c361fb3b6c5c95a7c3ab75469dd90e237a9a617",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.voice.LiveReplyMetricsTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.LiveReplyMetricsTest.xml",
+      "sha256": "6caa714051896fff4d2a75ea07cb205d70088fee2098fad5fe6454237200bbd9",
+      "tests": 1
+    },
+    "com.battlesbudz.jarvis.v2.voice.LongUtteranceTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.LongUtteranceTest.xml",
+      "sha256": "7813b31a500cf1808799ce3c800fdf10d223a12c42f9a9640fad9d6dc24560a5",
+      "tests": 10
+    },
+    "com.battlesbudz.jarvis.v2.voice.MicrophoneHandoffTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.MicrophoneHandoffTest.xml",
+      "sha256": "8ebc9ce64b6e535cb3454ff2ff56911936fe92e17658146b942127f5350048d5",
+      "tests": 6
+    },
+    "com.battlesbudz.jarvis.v2.voice.MicrophoneInterruptionPolicyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.MicrophoneInterruptionPolicyTest.xml",
+      "sha256": "78cbba4f217d99f49d0b768a9bfcf0452612a3ca7ebc8031f9ae266f1dadb3bf",
+      "tests": 6
+    },
+    "com.battlesbudz.jarvis.v2.voice.MicrophonePolicyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.MicrophonePolicyTest.xml",
+      "sha256": "bcc601fd232b87e0023dcc9945ed771e5ddbf5ad5e4f2a3c503d2f980ff0606d",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.voice.MicrophonePreferenceTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.MicrophonePreferenceTest.xml",
+      "sha256": "87b9f9e7bd664963f99850fb7fbb904c5577b15032ba265f373c06585409b7b9",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.NativeAudioQueueTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.NativeAudioQueueTest.xml",
+      "sha256": "1c768b6791419fa4f500322c20665c0b6d688affaade0dd9814b12688149c8dd",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.voice.NaturalBargeInAudioInputTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.NaturalBargeInAudioInputTest.xml",
+      "sha256": "67ba06e3aea3f4f7ba4e8c21c5358f77d3205e6df1e2252f5d55d96bb5df69e6",
+      "tests": 31
+    },
+    "com.battlesbudz.jarvis.v2.voice.NaturalCorrectionTextTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.NaturalCorrectionTextTest.xml",
+      "sha256": "39aa9f07295e084c6ac6a4158124b6e678256e1cb60fa81bc3e279b56a9b9d78",
+      "tests": 7
+    },
+    "com.battlesbudz.jarvis.v2.voice.PacedStreamingTranscriberTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.PacedStreamingTranscriberTest.xml",
+      "sha256": "f4486bdf1a4ffca5c5a7c42a41a2a37e72f0f5f2456b1cce7f5d9eabef142cf3",
+      "tests": 1
+    },
+    "com.battlesbudz.jarvis.v2.voice.Pcm16SignalTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.Pcm16SignalTest.xml",
+      "sha256": "20762ae8b5fd68f91914daf10e0f99fbc1a952b1153d049f0b7326dea82cb963",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.voice.PcmChunkAssemblerTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.PcmChunkAssemblerTest.xml",
+      "sha256": "ca62cfbd805b7d0bcc4b88388b667f55a43d9861f1a6b4bdd7d86d8758ef42a1",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.PlaybackBufferPolicyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.PlaybackBufferPolicyTest.xml",
+      "sha256": "2ac896241ae0ff7eb30998f5624fbd99600858549912ae97c8dcd6cae7087898",
+      "tests": 6
+    },
+    "com.battlesbudz.jarvis.v2.voice.PiperTextStreamTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.PiperTextStreamTest.xml",
+      "sha256": "7a5efd2648200f26036e0da01420c171b424a627a906662697a9c11588b03361",
+      "tests": 11
+    },
+    "com.battlesbudz.jarvis.v2.voice.PlaybackClockTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.PlaybackClockTest.xml",
+      "sha256": "b53299645fd89d67e0117fdf9bb5409b83235c8fed876d8d25db94f887e2465a",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.PlaybackDrainTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.PlaybackDrainTest.xml",
+      "sha256": "f2011d08dce054e4be65c5ec5599660d15e3bd079a29aa965f065f314f63e438",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.voice.PlaybackHistoryTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.PlaybackHistoryTest.xml",
+      "sha256": "76763064cef327bb2c533169a76750e37fc9b8b7dd19ec8b5166a65226d40cc9",
+      "tests": 10
+    },
+    "com.battlesbudz.jarvis.v2.voice.PreparedSpeechOpeningTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.PreparedSpeechOpeningTest.xml",
+      "sha256": "086425122356511b5fb4c5b52e32d62ae59b958c4f61ad0833d44b36b633e084",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.voice.QuietSpeechEvidenceTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.QuietSpeechEvidenceTest.xml",
+      "sha256": "587353f15b2c132e44f360772bcf318eeb57e38e2fc6034e92c94ea511cf51f1",
+      "tests": 7
+    },
+    "com.battlesbudz.jarvis.v2.voice.QuietSpeechGainTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.QuietSpeechGainTest.xml",
+      "sha256": "ef7cd02d3f23ed013e1da838107eed8be352ba9deaba33be59329ec3c45dda8b",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.voice.RecognitionAudioEvidenceTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.RecognitionAudioEvidenceTest.xml",
+      "sha256": "e7a2e56fe8a0a83a633eb3bb2dab730b0c6f89a1cf82e575cc2fa0943d5a0199",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.RecognizedInterruptionWordsTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.RecognizedInterruptionWordsTest.xml",
+      "sha256": "984c7d74b45c0fc17cbb88ef7d6776468dee21a626ab1571fdebad52c211bd87",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.voice.ReplyInterruptionTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.ReplyInterruptionTest.xml",
+      "sha256": "a3af6be707d5d230ef65bc4d4352be746506377668ae7f4466291e3e7d60e52e",
+      "tests": 7
+    },
+    "com.battlesbudz.jarvis.v2.voice.ReplyListenerRecoveryTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.ReplyListenerRecoveryTest.xml",
+      "sha256": "f1ee25d4fe6034d162c33dcc8e2007d45d1cec6f4c002a2115da940159e893de",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.RetiredVoiceFilesTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.RetiredVoiceFilesTest.xml",
+      "sha256": "c1cb504faf7d67f4d86d9197cb0ea3179fd332caea1c47532b696690fd184b2e",
+      "tests": 1
+    },
+    "com.battlesbudz.jarvis.v2.voice.RollingAudioBufferTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.RollingAudioBufferTest.xml",
+      "sha256": "fba2afeebdb75174d8eabbee705cbd71121be1f7c74fc486525ace73242fbd4e",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.voice.RoutedAudioInputTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.RoutedAudioInputTest.xml",
+      "sha256": "a57cc447a82902cb3f91b042bbeddaeab6aa4484bad4bfbb6c10fb552b7f424b",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.voice.SentenceGapWaiterTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.SentenceGapWaiterTest.xml",
+      "sha256": "9195fda169f91f218ab5ae2ad7a6f1217542af26f2a1f9741e885d1d15e15532",
+      "tests": 10
+    },
+    "com.battlesbudz.jarvis.v2.voice.SherpaPcmCallbackTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.SherpaPcmCallbackTest.xml",
+      "sha256": "12fb63a08789878614f5a864d78bcf3883d36e6bded42ec2dc546f12845d46f1",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.voice.SherpaTtsConfigTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.SherpaTtsConfigTest.xml",
+      "sha256": "f5cba9b42d12c48cbbfcf2bef3a589b5534a1ae6737c8ae1b092108175a6a928",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.SpeechAudioTraceTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.SpeechAudioTraceTest.xml",
+      "sha256": "121e6819e22795b8932e2439f852d862b500112682ea0a124f2f88ba73948ebd",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.SpeechChunkerTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.SpeechChunkerTest.xml",
+      "sha256": "aeeacc42c5a78ae07caeee87618ea5467ded9a795b92c65e6773c16635ee9f31",
+      "tests": 11
+    },
+    "com.battlesbudz.jarvis.v2.voice.SpeechDeliveryLedgerTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.SpeechDeliveryLedgerTest.xml",
+      "sha256": "e9c25b82a72a4f2fcee53673052a95813748cdd51eb1abbe22baa255706b4174",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.voice.SpokenCaptionTimelineTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.SpokenCaptionTimelineTest.xml",
+      "sha256": "1a33927967e39864998cf1a281d4a73b0f5b418185096b4eae107195928969bf",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.voice.TranscriptContentTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.TranscriptContentTest.xml",
+      "sha256": "dbbdcd61d775f716f2e5cba283f49b490fb6702207daacbd3c3aa1d9dcfe1917",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.SpokenVolumeLevelTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.SpokenVolumeLevelTest.xml",
+      "sha256": "dd31d431fb835f1571b9fdc28cbccd2666290e08a1d5b44970949ddf2d6013ba",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.TtsComparisonStoreTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.TtsComparisonStoreTest.xml",
+      "sha256": "4f6f0adde2bbd7ea2ff7cf6ceecbf716fc1189f272976cb98765a71e69a08e56",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceActionControlTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceActionControlTest.xml",
+      "sha256": "69473cda44dc39398ae1c4e1da953a5f932f6080462b4bbd8c74e5c4994e3c10",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceAudioSessionTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceAudioSessionTest.xml",
+      "sha256": "d24019ad89d9d3691c6c56460d51c3863b09a1f9dcc768441bbfe08babc32fde",
+      "tests": 11
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceCallPolicyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceCallPolicyTest.xml",
+      "sha256": "84a166ee9a651f1e0602cabe7fd46b66f95828f74b77e21eb2ab4977897e8373",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceCallResumerTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceCallResumerTest.xml",
+      "sha256": "14336d66e9d49275fac0e220db731734b3f0df1c2850cb4f1a4982b1c780a109",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceCallStorePrivacyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceCallStorePrivacyTest.xml",
+      "sha256": "712a8c67536a980292b9328472c50b68ff6410886b3f2ebb2176b96b283381b6",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceCallStoreTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceCallStoreTest.xml",
+      "sha256": "84ce2372c8595d61e791c1846d7e02a1bbc6ea1f2af42118d8cd911f55ffdda4",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceInterruptionTestTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceInterruptionTestTest.xml",
+      "sha256": "d3cb5f22132c72f8c3240ae31acfaa9befdbdc944811fa1c0d684dc1106916d7",
+      "tests": 1
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicyTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceNavigationPolicyTest.xml",
+      "sha256": "b3c8fa70287dae0c6859454ce4abde56001ad517691b3220ab9067a523bacdca",
+      "tests": 1
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuardTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuardTest.xml",
+      "sha256": "e23dae91574b3c15eadd54b8c737aafffb59b5a1cc3f6a52061433821e91f55c",
+      "tests": 10
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceRepetitionRepairTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceRepetitionRepairTest.xml",
+      "sha256": "5b430d9b1a8a95b718977fa8d97a8bbbe2555bbd006d6c3c1379036eac1948e3",
+      "tests": 8
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceSessionControllerTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceSessionControllerTest.xml",
+      "sha256": "82fb7cf09b6c5fd65b7826af82f7a41fd82b34d76ec30f675078e8ba55232ea9",
+      "tests": 9
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceSessionUiTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceSessionUiTest.xml",
+      "sha256": "dc9b69ff05c8d50334174600237a5246652fd003c7e26ec2257d74b4e436e2b2",
+      "tests": 1
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolverTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolverTest.xml",
+      "sha256": "ef6fb9b9daf8b825171e0a233de3e9e4e2fc0252778f0ae5ff687c4336b0cf29",
+      "tests": 6
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceStopRequestTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceStopRequestTest.xml",
+      "sha256": "8f73581d62babd4c42606bf6aef325b56065a0a4da31eba6db8b6caaefe5b4a1",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceTurnCoordinatorTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceTurnCoordinatorTest.xml",
+      "sha256": "eacff1f8db3ba657b5b2f3cf4f22370e199efbed26c6fda0c34d185fa1b61852",
+      "tests": 5
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceTurnTraceTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceTurnTraceTest.xml",
+      "sha256": "b3d4e600fac284d965b476e767de7b64557873271a246b383c6177489a6a7bab",
+      "tests": 3
+    },
+    "com.battlesbudz.jarvis.v2.voice.VoiceWorkSchedulerTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.VoiceWorkSchedulerTest.xml",
+      "sha256": "62df89ea57a8ed0870c22e165af4d4fab8ab82c7fda7bc41b7e541f5d1ef0274",
+      "tests": 1
+    },
+    "com.battlesbudz.jarvis.v2.voice.WakeWordGateTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.WakeWordGateTest.xml",
+      "sha256": "0fea12b18cf49287e8b852f961720ec33b423b18a3be6ef2a6cb8f676feadc18",
+      "tests": 2
+    },
+    "com.battlesbudz.jarvis.v2.voice.WordErrorRateTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.WordErrorRateTest.xml",
+      "sha256": "e8d089cdda0b47b20121f3ad3859cc4fb106e88e41887eeebc13e7138acb5be8",
+      "tests": 4
+    },
+    "com.battlesbudz.jarvis.v2.voice.comparison.LiveComparisonTest": {
+      "path": "test-results/testReleaseUnitTest/TEST-com.battlesbudz.jarvis.v2.voice.comparison.LiveComparisonTest.xml",
+      "sha256": "e6e6e812d62645fca5a44facf1cdcac6a28e81c01c2afa0ec56391087afda0ad",
+      "tests": 6
+    }
+  },
+  "all_current_candidate_jvm_classes_executed": true,
+  "tests": 783,
+  "not_proof": "Exact actual test artifacts only; no model/device inference coverage inferred."
+}

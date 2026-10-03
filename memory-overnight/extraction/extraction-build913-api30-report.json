@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "passed": false,
+  "source_commit": "3319c32d487ab87829bee9d7b8187281c73eeb23",
+  "pr_head": "",
+  "run_url": "https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37099349277",
+  "coverage": "release UI + Android actions; no model inference",
+  "not_covered": [
+    "Real-model inference and model-generated tool selection",
+    "Microphone, speaker, Bluetooth and acoustic interruption behavior",
+    "Physical-device GPU/NPU compatibility, thermal behavior and latency",
+    "Successful multi-gigabyte model download/import",
+    "Real-model use of approved memory recall"
+  ],
+  "device_evidence_folder": "jarvis-verification-1791006275399276139",
+  "errors": [
+    "Instrumentation failed; see instrumentation.txt and per-test screenshots"
+  ],
+  "apk_sha256": "0ef88d26402fc97f0d85e02fc855cf1e1db743086528d2286716692cf618b5e1",
+  "test_apk_sha256": "eada7ffed11d744d9d8d79b64b19c2a00f246f53f2097084c7edfde78fabd6c2",
+  "device": {
+    "abi": "x86_64,x86,arm64-v8a,armeabi-v7a,armeabi",
+    "api": "30",
+    "fingerprint": "google/sdk_gphone_x86_64/generic_x86_64_arm64:11/RSR1.240422.006/12134477:userdebug/dev-keys",
+    "native_bridge": "libndk_translation.so"
+  },
+  "instrumentation": {
+    "passed": false,
+    "tests": {
+      "test01_setupRequiresAnInstalledModel": 0,
+      "test02_searchHasAnHonestEmptyState": 0,
+      "test03_browsingDoesNotChangeTheSelectedModel": 0,
+      "test04_batteryToolReadsAndroid": 0,
+      "test05_volumeToolChangesAndroidAndRejectsBadInput": 0,
+      "test06_missingAppReturnsFailure": 0,
+      "test07_settingsToolOpensAndroidSettings": 0,
+      "test08_rejectedToolSequencePreservesAndroidVolume": 0,
+      "test09_repeatedVolumeRequestIsIdempotent": 0,
+      "test10_modelIssueWarningPrecedesSelectionAndCancelPreservesModel": 0,
+      "test11_modelDetailsAreOptionalAndDoNotChangeSelection": 0,
+      "test12_lastFamilyModelCanBeSelectedAboveNavigationBar": 0,
+      "test13_imageAttachmentIsResizedStoredAndInvalidInputRejected": 0,
+      "test14_threeActionTurnUsesRealAndroidState": 0,
+      "test15_invalidActionTurnPreservesAndroidState": 0,
+      "test16_partialFailureKeepsCompletedAndroidAction": 0,
+      "test17_cancelledAndDuplicateActionTurnsDoNotReplay": 0,
+      "test18_naturalActionRoutingOpensSettingsThenReadsBattery": 0,
+      "test19_retryLiteralUnknownAppStopsWithoutBattery": 0,
+      "test20_followupQueuesWhileAcceptedAndroidActionRuns": 0,
+      "test21_speechInterruptionPreservesAcceptedAndroidActions": 0,
+      "test22_explicitCancellationKeepsCompletedAndroidReceipts": 0,
+      "test23_actionResultsSurviveEndCallWithoutReplay": 0,
+      "test24_memoryManagerReviewsCorrectsSearchesAndErases": 0,
+      "test25_finalizedTextAndVoiceMemoryNeedsApprovalBeforePromptUse": 0,
+      "test26_memoryCorrectionAndEraseRefreshApprovedPacket": 0,
+      "test27_controlledConversationSurfaceKeepsCallUntilExplicitEnd": 0,
+      "test28_voiceNavigationRetainsCallIdUntilExplicitEnd": 0,
+      "test29_eachAssistantReplyKeepsPersistedMetricsAcrossReload": 0,
+      "test30_sqliteMigrationPreservesHistoryAndEraseAcrossReopen": 0,
+      "test31_sqliteCorruptMigrationAndFailedEraseDoNotLoseData": 0,
+      "test32_sqliteExceedsLegacyByteLimitAndSerializesSeparateWriters": 0,
+      "test33_sourceArchiveRetainsExplicitHistoryAndExpiresWithoutFactLoss": 0,
+      "test34_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure": -2,
+      "test35_referencePdfExtractionAndPendingAcknowledgmentUseReleaseCode": 0,
+      "test36_sourceCopyPrivacySurvivesPersistenceAndExpiry": 0,
+      "test37_localExtractionJobsAcceptSupportedFactsAndFenceSensitiveRecall": 0,
+      "test38_extractionFifthCancellationRefundSurvivesReopenAndStaleLease": 0,
+      "test90_modelSelectionPersistsAcrossRecreation": 0
+    },
+    "errors": [
+      "Failed, skipped or incomplete instrumentation test",
+      "Missing successful runner completion",
+      "Instrumentation reported a failure"
+    ]
+  }
+}

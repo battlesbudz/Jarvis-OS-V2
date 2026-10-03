@@ -1,0 +1,42 @@
+{
+  "observed_epoch": 1791006804.9797745,
+  "candidate": "3319c32d487ab87829bee9d7b8187281c73eeb23",
+  "run": 37099349277,
+  "conclusion": "failure",
+  "signed_release": "success",
+  "jvm": {
+    "classes": 150,
+    "tests": 783,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "proof_sha256": "b732d3261cc4fe6ba1914fbdadb30eae0e86d25a7709b22472d5eebdab826bfc"
+  },
+  "android": [
+    {
+      "api": 30,
+      "artifact": 11266805389,
+      "zip_sha256": "9438ecff86614e0e198eb2fea76054f309f02fce0e1357adc0872177c2f4d39f",
+      "report_sha256": "b82195a365c3425fcb29c8f81cce642aa1d3547b3690aba188b44f7a8c09b879",
+      "failures": {
+        "test34_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure": -2
+      }
+    },
+    {
+      "api": 35,
+      "artifact": 11266560842,
+      "zip_sha256": "106e7f065feaa8e899d1e56f3f63ae4cdebc44403df61f833e582096038fe258",
+      "report_sha256": "4dd1009d43cd5451c88ab003cd9db8b2ab859c909e2ecbed16495a120b7ed9ac",
+      "failures": {
+        "test24_memoryManagerReviewsCorrectsSearchesAndErases": -2,
+        "test34_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure": -2
+      }
+    }
+  ],
+  "classification": "actual code/UI regression, not infrastructure",
+  "failed_original_tests_frozen": true,
+  "next_repair": "Migration must reuse/validate an existing extraction extension during v1 source-archive upgrade; inspect compact History bulk-erase accessibility without changing frozen test24/34",
+  "no_goal_completion": true,
+  "no_source_promotion": true,
+  "provider_usage": null
+}
