@@ -1,0 +1,38 @@
+{
+  "actual_remote_sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "actual_remote_tree": "ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4",
+  "actual_remote_parent": [
+    "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de"
+  ],
+  "local_coordinator_sha": "ebc1391910a830a42fef882cbd14ababc18533ee",
+  "local_coordinator_tree": "ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4",
+  "local_coder_sha": "38eb34316a5b942ed7ab55d584ada97295644f08",
+  "tree_equivalence": true,
+  "allowed_only": true,
+  "changed_paths": [
+    "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+    "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+    "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+    "docs/memory-os-native.md",
+    "docs/verification/features.md",
+    "scripts/verification/scenarios.json"
+  ],
+  "frozen_paths_count": 179,
+  "frozen_identity": true,
+  "clean_remote": true,
+  "clean_local_integration": true,
+  "actual_raw_commit_git_hash_verified": true,
+  "ci_run": 37088094621,
+  "ci_state": "in_progress",
+  "ci_pass_claimed": false,
+  "review_pending": true,
+  "completion_claimed": false
+}
