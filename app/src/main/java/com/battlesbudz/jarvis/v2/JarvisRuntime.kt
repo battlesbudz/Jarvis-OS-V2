@@ -128,7 +128,51 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     internal val memoryDeliveryFence = MemoryDeliveryFence()
     private val memoryHistoryCutoff = java.util.concurrent.atomic.AtomicBoolean(false)
     @Volatile internal var nativeMemoryStateToken: String? = null
-    private val conversationMemory by lazy { ConversationMemory(AndroidMemoryOs.get(applicationContext), AndroidMemoryOs.sources(applicationContext)) }
+    private val conversationMemory by lazy { ConversationMemory(AndroidMemoryOs.get(applicationContext), AndroidMemoryOs.sources(applicationContext), automaticExtraction = true) }
+    private val extractionLock = Any()
+    @Volatile private var extractionJob: Job? = null
+    internal fun extractionIsActive(): Boolean = extractionJob?.isCompleted == false
+    internal suspend fun yieldMemoryExtraction() {
+        val child = synchronized(extractionLock) { extractionJob }
+        child?.cancel()
+        child?.join() // LiteRT cancellation joins the native callback before foreground reuse.
+    }
+    private fun extractionIdle(): Boolean = !chatBusy.value && !voiceSessionArmed &&
+        voiceTurnJob?.isCompleted != false && conversationJob?.isCompleted != false &&
+        !acceptedVoiceActions.hasUnfinished() && ConversationWork.activeJobs.get() == 0
+    private fun scheduleMemoryExtraction() = synchronized(extractionLock) {
+        if (extractionIsActive() || !extractionIdle()) return@synchronized
+        val engine = conversationEngine ?: return@synchronized // unavailable model retains durable pending jobs
+        if (!engine.isAvailableForExtraction()) return@synchronized
+        if (!engine.modelId.startsWith("Gemma") || engine.modelId != modelStore.selectedModel().id) return@synchronized
+        val next = runtimeScope.launch(Dispatchers.IO, start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            if (!extractionIdle() || !modelStore.tryBeginModelOperation()) return@launch
+            val submitted = engine.onPromptSubmitted
+            val progress = engine.onInferenceProgress
+            try {
+                if (!extractionIdle() || !modelStore.verifyIntegrity(modelStore.selectedModel())) return@launch
+                engine.onPromptSubmitted = { _, _ -> }; engine.onInferenceProgress = {}
+                engine.setToolsEnabled(false); engine.resetConversation()
+                nativeConversationHasContext = false; conversationCharacters = 0
+                com.battlesbudz.jarvis.v2.memory.MemoryExtractionWorker(AndroidMemoryOs.extraction(applicationContext),
+                    com.battlesbudz.jarvis.v2.memory.GemmaMemoryExtractor(engine) { engine.resetConversation() }, ::extractionIdle,
+                    { AndroidMemoryOs.extractionCommitted(applicationContext) }).runBatch()
+            } finally {
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    try { engine.resetConversation() }
+                    catch (_: Throwable) { runCatching { engine.close() }; if (conversationEngine === engine) conversationEngine = null }
+                    finally {
+                        nativeConversationHasContext = false; conversationCharacters = 0
+                        engine.onPromptSubmitted = submitted; engine.onInferenceProgress = progress
+                        modelStore.endModelOperation()
+                    }
+                }
+            }
+        }
+        extractionJob = next
+        next.start()
+        Unit
+    }
     internal val actionIntentRouter = com.battlesbudz.jarvis.v2.actions.ActionIntentRouter()
     internal lateinit var sessionPreferences: android.content.SharedPreferences
     internal lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
@@ -183,7 +227,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             memoryVoiceBinding.getAndSet(null)?.let { binding ->
                 binding.speechJob?.cancel()
                 binding.expiryJob.getAndSet(null)?.cancel()
-                runtimeScope.launch { binding.output.stopSpeaking() }
+                // Revoke queued PCM synchronously with the live disclosure notification.
+                runCatching { binding.output.stopSpeaking() }
             }
             // Production mutation calls are already owned IO. If a future caller invokes the
             // observer on main, fail closed until this owned IO boundary is durable.
@@ -250,6 +295,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         sessionReport = {}; transcriptListener = { _, _, _ -> }; finishedListener = {}
     }
     fun arm() {
+        extractionJob?.cancel()
         audioRecoveryAttempts = 0
         returnToWakeCuePending.set(false)
         com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
@@ -257,6 +303,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         startVoiceDiagnostics("Jarvis session — awaiting wake word")
     }
     fun sendChat(text: String, attachment: com.battlesbudz.jarvis.v2.chat.ChatAttachment? = null): String? {
+        extractionJob?.cancel()
         if (text.isBlank() && attachment == null) return "Write a message first."
         if (attachment != null && !com.battlesbudz.jarvis.v2.chat.AttachmentPolicy.accepts(modelStore.selectedModel(), attachment.kind))
             return "The selected download does not support this attachment. Choose a compatible model or remove it."
@@ -278,7 +325,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         }
         if (chatBusy.value || voiceTurnJob?.isCompleted == false ||
             conversationJob?.isCompleted == false || acceptedVoiceActions.hasUnfinished() ||
-                ConversationWork.activeJobs.get() != 0 || modelStore.isModelOperationActive())
+                ConversationWork.activeJobs.get() != 0 || (modelStore.isModelOperationActive() && !extractionIsActive()))
             return "Wait for the current response or voice session to finish."
         if (!modelStore.isUsable() || !modelStore.smokeTestPassed()) return "Set up and test a model first."
         val history = conversationHistory.context()
@@ -288,11 +335,13 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             com.battlesbudz.jarvis.v2.voice.LiveReplyMetrics(replyId, threadId))
         val userMessageId = conversationHistory.appendUser(userText, attachment)
         val capturedAtMs = System.currentTimeMillis()
+        val sensitiveChatReply = java.util.concurrent.atomic.AtomicBoolean(false)
         conversationHistory.updateReply(threadId, replyId, "", false)
         chatBusy.value = true
         runtimeScope.launch {
             val response = StringBuilder()
             try {
+                yieldMemoryExtraction()
                 withContext(Dispatchers.IO) {
                     captureFinalMemory(userMessageId, threadId, null, ConversationMemorySource.TEXT, userText, capturedAtMs)
                 }
@@ -304,11 +353,12 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     audioUri = attachment?.takeIf { it.kind == com.battlesbudz.jarvis.v2.chat.AttachmentKind.AUDIO }?.let { android.net.Uri.parse(it.uri) },
                     onToken = { token -> synchronized(response) {
                         response.append(token)
-                        conversationHistory.updateReply(threadId, replyId, response.toString(), false)
+                        conversationHistory.updateReply(threadId, replyId, com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.durableCopy(response.toString(), sensitiveChatReply.get()), false)
                     } },
                     onComplete = { answer ->
-                        conversationHistory.updateReply(threadId, replyId, answer, true)
+                        conversationHistory.updateReply(threadId, replyId, com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.durableCopy(answer, sensitiveChatReply.get()), true)
                     },
+                    onMemoryBound = { _, context -> sensitiveChatReply.set(context.containsSensitive) },
                     onActionResult = { name, message, succeeded ->
                         conversationHistory.recordReplyAction(threadId, replyId,
                             com.battlesbudz.jarvis.v2.chat.ActionReceipt(name, message, succeeded))
@@ -332,10 +382,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 conversationJob?.join()
             } catch (error: Exception) {
                 conversationHistory.updateReply(threadId, replyId,
-                    response.toString().ifBlank { "The response was interrupted. Please try again." }, false)
+                    com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.durableCopy(response.toString().ifBlank { "The response was interrupted. Please try again." }, sensitiveChatReply.get()), false)
             } finally {
                 // Completion is posted before this callback on the same main queue.
-                mainHandler.post { chatBusy.value = false }
+                mainHandler.post { chatBusy.value = false; scheduleMemoryExtraction() }
             }
         }
         return null
@@ -429,7 +479,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             // Core supplies the earliest approved expiry from this same coherent snapshot,
             // including facts absent from this packet but retained by history/native context.
             return MemoryTurnContext(packet.text, result.stateToken, query, result.nextApprovedExpiryMs, before,
-                hasApprovedMemories = packet.memories.isNotEmpty()) {
+                hasApprovedMemories = packet.memories.isNotEmpty(),
+                containsSensitive = packet.memories.any { it.memory.source.sensitivity == com.battlesbudz.jarvis.v2.memory.MemorySensitivity.RESTRICTED },
+                canDiscloseSensitive = { com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.unlocked(applicationContext) }) {
                 if (memoryBoundaryPending.get()) Long.MIN_VALUE else memoryEpoch.get()
             }
         }
@@ -515,6 +567,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             var operationOwned = false
             var invocation: Job? = null
             try {
+                yieldMemoryExtraction()
                 if (!voiceSessionArmed || voiceSessionController.currentCallId() != input.callId) return@launch
                 if (ConversationWork.activeJobs.get() != 0 || !modelStore.tryBeginModelOperation()) {
                     if (!callInputQueue.restore(input, voiceSessionController.currentCallId())) {
@@ -527,6 +580,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 val replyId = "typed-" + input.id
                 captureFinalMemory(input.id, input.conversationId, input.callId, ConversationMemorySource.TEXT, input.text, input.capturedAtMs)
                 val response = StringBuilder()
+                val sensitiveTypedReply = java.util.concurrent.atomic.AtomicBoolean(false)
                 if (!callInputQueue.promote(input) {
                         preparingTypedInput.compareAndSet(input, null)
                         voiceSessionController.appendTranscript("You", input.text, origin = com.battlesbudz.jarvis.v2.voice.TranscriptOrigin.TYPED)
@@ -535,8 +589,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             com.battlesbudz.jarvis.v2.voice.LiveReplyMetrics(replyId, input.conversationId))
                         invocation = runConversationInternal(input.text, conversationHistory.context(), null,
                             callOwned = true,
-                            onToken = { token -> response.append(token); voiceSessionController.updateReplyText(input.callId, replyId, response.toString()) },
-                            onComplete = { answer -> voiceSessionController.updateReplyText(input.callId, replyId, answer, finished = true) },
+                            onMemoryBound = { _, context -> sensitiveTypedReply.set(context.containsSensitive) },
+                            onToken = { token -> response.append(token); voiceSessionController.updateReplyText(input.callId, replyId, com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.durableCopy(response.toString(), sensitiveTypedReply.get())) },
+                            onComplete = { answer -> voiceSessionController.updateReplyText(input.callId, replyId, com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.durableCopy(answer, sensitiveTypedReply.get()), finished = true) },
                             onLiveInference = { submittedAt, firstTokenAt, tokensPerSecond, durable ->
                                 voiceSessionController.updateReplyMetrics(input.callId, replyId, durable = durable) { current ->
                                     var updated = current
@@ -660,6 +715,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             // This turn-local reference survives global detachment so every actual publication
             // can distinguish an unbound safe error from an invalidated memory answer.
             val answerMemoryBinding = java.util.concurrent.atomic.AtomicReference<MemoryVoiceBinding?>(null)
+            val sensitiveVoiceReply = java.util.concurrent.atomic.AtomicBoolean(false)
+            fun retainedReply(text: String) = com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.durableCopy(text, sensitiveVoiceReply.get())
             val answerExpiryJob = java.util.concurrent.atomic.AtomicReference<Job?>(null)
             // Every pump-polled typed input remains here until atomic promotion or terminal receipt.
             val activePumpTypedInput = java.util.concurrent.atomic.AtomicReference<com.battlesbudz.jarvis.v2.voice.CallFinalInput?>(null)
@@ -687,6 +744,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 }
             }
             try {
+                yieldMemoryExtraction()
                 while (com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value) {
                     status("Paused — microphone off. Tap Resume microphone to listen again.")
                     kotlinx.coroutines.delay(250)
@@ -782,7 +840,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     comparison?.log("prompt audioBytes=$audioSize text=$submitted")
                     val metadata = "turn=$asrTurnId submission=${++submissionIndex} model=${engine.modelId} " +
                         "mode=${if (audioSize > 0) "audio_text" else "text"} audioBytes=$audioSize promptChars=${submitted.length}"
-                    diagnosticRecorder.recordSourceInferencePrompt(submitted, diagnosticSources.orEmpty(), metadata)
+                    if (!sensitiveVoiceReply.get()) diagnosticRecorder.recordSourceInferencePrompt(submitted, diagnosticSources.orEmpty(), metadata)
                 }
                 if (comparison != null) { shortTermContext.clear(); turnOrchestrator.reset() }
                 val voiceHistory = if (comparison != null) emptyList() else
@@ -795,8 +853,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 val output = PiperVoiceOutput(ttsDirectory.path, engine = ttsEngine,
                     modelSession = models,
                     deliveryLedger = com.battlesbudz.jarvis.v2.voice.SpeechDeliveryLedger(asrTurnId) { delivery ->
-                        finalSpeechDelivery.set(delivery)
-                        voiceSessionController.updateDelivery(expectedCallId, delivery)
+                        val retained = com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.deliveryCopy(delivery, sensitiveVoiceReply.get())
+                        finalSpeechDelivery.set(retained)
+                        voiceSessionController.updateDelivery(expectedCallId, retained)
                         diagnosticRecorder.recordImportant("Voice delivery turn=$asrTurnId state=${delivery.state} " +
                             "completedChars=${delivery.deliveredText.length} partialSpan=${delivery.partialSpanIndex} " +
                             "playedFrames=${delivery.playedFrames} precision=segment_frames")
@@ -808,9 +867,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         val stream = com.battlesbudz.jarvis.v2.voice.CallAudioRouting.stream
                         "${manager.getStreamVolume(stream)}/${manager.getStreamMaxVolume(stream)} muted=${manager.isStreamMute(stream)}"
                     },
-                    audioTrace = com.battlesbudz.jarvis.v2.voice.SpeechAudioTrace(
-                        java.io.File(cacheDir, "latest-jarvis-speech.wav"), asrTurnId,
-                        log = { diagnosticRecorder.recordImportant(it) }),
+                    // Spoken sensitive recall is live-only; ordinary calls retain no TTS audio copy.
+                    audioTrace = null,
                     onPlayback = { voicePlayback.value = it },
                     onMetrics = {
                         comparison?.put("tts_metrics", it.toString())
@@ -1701,6 +1759,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                 },
                                 onLatency = { replyLatency.set(it) },
                                 onMemoryBound = { ticket, context ->
+                                    sensitiveVoiceReply.set(context.containsSensitive)
                                     val binding = MemoryVoiceBinding(ticket, context, output, speechJob, expectedCallId, asrTurnId, answerExpiryJob)
                                     answerMemoryBinding.set(binding)
                                     publicationGuard.bind(ticket) {
@@ -1728,9 +1787,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                 onToken = { token ->
                                     publishBound {
                                         recordFirstText(token)
-                                        onToken(token)
+                                        onToken(retainedReply(token))
                                         streamed.append(token)
-                                        mainHandler.post { publishBound { onTranscript("Jarvis", token, false) } }
+                                        mainHandler.post { publishBound { onTranscript("Jarvis", retainedReply(token), false) } }
                                         speechChunks.trySend(cleanSpeechText(token))
                                     }
                                 },
@@ -1748,8 +1807,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             }
                             val text = completed.await()
                             if (!interruptionTest && recognitionIssue == null) conversationJob?.join()
-                            mainHandler.post { publishBound { onTranscript("Jarvis", text, true) } }
-                            com.battlesbudz.jarvis.v2.ai.GenerationResult(text, -1L, null)
+                            mainHandler.post { publishBound { onTranscript("Jarvis", retainedReply(text), true) } }
+                            com.battlesbudz.jarvis.v2.ai.GenerationResult(retainedReply(text), -1L, null)
                         }
                         // The same binding guards the persisted/coordinator completion, not only
                         // the streaming callback. A mutation must not let buffered old text replace
@@ -1810,7 +1869,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 }
                 val response = (outcome as com.battlesbudz.jarvis.v2.voice.ReplyOutcome.Finished<com.battlesbudz.jarvis.v2.ai.GenerationResult>).value
                 audioRecoveryAttempts = 0
-                finalMessage = "Voice Call turn complete. Heard: $transcript\nJarvis: ${response.text}"
+                finalMessage = if (sensitiveVoiceReply.get()) "Voice Call turn complete. ${com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.PRIVATE_COPY}"
+                    else "Voice Call turn complete. Heard: $transcript\nJarvis: ${response.text}"
             } catch (backlog: com.battlesbudz.jarvis.v2.voice.AudioBacklogException) {
                 audioRecoveryAttempts++
                 diagnosticRecorder.recordImportant("Audio buffer recovery attempt=$audioRecoveryAttempts max=2; incomplete command discarded.")
@@ -2214,10 +2274,12 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             }
         }.onFailure { report("Voice Call could not be saved: ${it.message ?: "unknown error"}") }
             .onSuccess { report("Jarvis session stopped — microphone off.") }
+        runtimeScope.launch { voiceTurnJob?.join(); conversationJob?.join(); scheduleMemoryExtraction() }
     }
 
     internal fun startVoiceDiagnostics(label: String) {
-        if (label.startsWith("Voice Call ")) com.battlesbudz.jarvis.v2.voice.LiveCallAudioEvidence.begin(label)
+        // Raw answer evidence could retain sensitive recall after lock. Ordinary calls are live-only.
+        if (label.startsWith("Voice Call ")) com.battlesbudz.jarvis.v2.voice.LiveCallAudioEvidence.finish()
         com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff.clearDiagnostics()
         asrComparisonStore.clearDiagnostics()
         ttsComparisonStore.clearDiagnostics()

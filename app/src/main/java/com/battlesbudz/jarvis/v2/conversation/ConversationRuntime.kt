@@ -71,7 +71,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 if (firstVisibleMs == null && text.isNotBlank()) firstVisibleMs = elapsed()
                 onLatency(com.battlesbudz.jarvis.v2.diagnostics.TurnLatency(latencyId, elapsed(),
                     firstVisibleMs, loadMs, lookupMs, inferencePasses.toList()))
-                comparison?.put("answer", text)
+                comparison?.put("answer", com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.durableCopy(text, memoryTurnContext?.containsSensitive == true))
                 onComplete(text)
             }
             val ticket = memoryDeliveryTicket
@@ -82,7 +82,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 onComplete("Memory changed while I was responding. Please ask again.")
             }
         }
-        if (voiceAudio == null && frozenActionPlan == null && !callOwned && modelStore.isModelOperationActive()) {
+        if (voiceAudio == null && frozenActionPlan == null && !callOwned && modelStore.isModelOperationActive() && !extractionIsActive()) {
             finish("A voice or model operation is still active. Please finish it first.")
             return null
         }
@@ -93,6 +93,7 @@ internal fun JarvisRuntime.runConversationInternal(
         val invocation = runtimeScope.launch(Dispatchers.Default) {
             var lastLiveRate: Double? = null
             try {
+                yieldMemoryExtraction()
                 if (!modelStore.verifyIntegrity(modelStore.selectedModel())) {
                     incrementalVoice?.close()
                     conversationEngine?.close()
@@ -387,7 +388,7 @@ internal fun JarvisRuntime.runConversationInternal(
                 if (voiceAudio == null && !callOwned) {
                     var textSubmission = 0
                     engine.onPromptSubmitted = { exact, audioBytes ->
-                        diagnosticRecorder.recordInferencePrompt("turn=$latencyId submission=${++textSubmission} mode=text " +
+                        if (memoryTurnContext?.containsSensitive != true) diagnosticRecorder.recordInferencePrompt("turn=$latencyId submission=${++textSubmission} mode=text " +
                             "recordedByBuild=${BuildConfig.VERSION_NAME} model=${engine.modelId} " +
                             "audioBytes=$audioBytes promptChars=${exact.length} historyEntries=${safeHistory.size} " +
                             "capture=${captureReceipt?.outcome ?: "unavailable"}\n${engine.inputContextDescription()}\n" +
@@ -846,8 +847,11 @@ internal fun JarvisRuntime.runConversationInternal(
                     mainHandler.post { finish("Memory changed while I was responding. Please ask again.") }
                     return@launch
                 }
-                turnOrchestrator.recordResponse(prompt, finalResponse, turnPlan)
-                nativeConversationHasContext = nativeConversationContainsCurrentTurn
+                turnOrchestrator.recordResponse(prompt, com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.durableCopy(finalResponse, memoryTurnContext?.containsSensitive == true), turnPlan)
+                if (memoryTurnContext?.containsSensitive == true) {
+                    resetNativeConversation(); shortTermContext.clear()
+                    nativeConversationHasContext = false
+                } else nativeConversationHasContext = nativeConversationContainsCurrentTurn
                 diagnosticRecorder.recordImportant(
                     "Turn\n" +
                         "user=${prompt.take(1_000)}\n" +

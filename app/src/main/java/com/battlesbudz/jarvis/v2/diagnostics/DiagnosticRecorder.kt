@@ -138,7 +138,10 @@ class DiagnosticRecorder(
         if (times.length() >= 20_000 && !times.has(key)) return "atMs=0\n${Privacy.EXPIRED}"
         times.put(key, captured)
         preferences.edit().putString("diagnostics_source_times", times.toString()).apply()
-        val sourceDecision = if (completeSources != null) Privacy.placeholder(completeSources + entry, captured, clock()) else null
+        val sourceDecision = if (completeSources != null) Privacy.placeholder(completeSources + entry, captured, clock()) ?:
+            if ((completeSources + entry).any { com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicy.classify(it,
+                com.battlesbudz.jarvis.v2.memory.MemorySensitivity.NORMAL) == com.battlesbudz.jarvis.v2.memory.MemorySensitivity.RESTRICTED }) Privacy.EXCLUDED else null
+            else null
         val unproven = completeSources == null && !safeNumericInference(entry)
         val placeholder = sourceDecision ?: if (unproven) Privacy.EXCLUDED else Privacy.placeholder(listOf(entry), captured, clock())
         val payload = placeholder ?: entry.take(limit)
