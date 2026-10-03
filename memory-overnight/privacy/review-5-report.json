@@ -1,0 +1,63 @@
+{
+  "actor": "/root/jarvis_privacy_review",
+  "ticket_id": "25bcb503ca9743678584c585d2fe0ec0",
+  "dispatch_id": "privacy-review-5",
+  "coordinator_run": "7cb29286a1a64e5dacf7cb9fd0676cae",
+  "review_stage": "before_verification",
+  "requested_route": "gpt-6-astra/high",
+  "actual_usage": null,
+  "base_sha": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "local_sha": "ebc1391910a830a42fef882cbd14ababc18533ee",
+  "remote_sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "coder_sha": "38eb34316a5b942ed7ab55d584ada97295644f08",
+  "local_tree": "ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4",
+  "remote_tree": "ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4",
+  "local_parents": [
+    "20d4bf9a4c18b13395cf77b01672b57767ff7b40"
+  ],
+  "remote_parents": [
+    "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de"
+  ],
+  "tree_binding_verified": true,
+  "scope_verified": true,
+  "frozen_verified": true,
+  "approved": true,
+  "summary": "Approved at the independent source-review stage to proceed to exact-candidate verification; no blocking defect found in this review. R5 now fails closed for all unprovenanced freeform task strings on reads/writes/resume-shaped checkpoints/reopen/delete/reword, retaining only exact supported tool IDs and task state. R6 validates every original source clock and the history clock before selecting the oldest; missing/future/overflow/expired/empty provenance cannot be masked by an earlier clock. Prior diagnostic full-input/default-deny repairs, summary proof/tombstones and release Keep boundaries remain intact. Actual remote/local full-tree binding, 14-path scope, frozen179, all old36 Android bodies and prior test36 assertions were independently verified. This is source approval only: frozen harness, exact Build901 signed release JVM/native/API30/API35/receipt gates and device qualification remain outstanding. Conservative loss of task prose/generic narrative diagnostics and summary availability remains documented.",
+  "findings": [
+    {
+      "severity": "advisory",
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+      "detail": "The conservative R5 repair intentionally removes all fresh or legacy freeform task descriptions, not only expired ones, because the frozen task DTO has no independent source provenance. Only exact read_battery/set_volume/open_app IDs, list positions/counts and task state survive. Existing source-bearing task placeholders may also make a benign title generic on a later scrub. This availability tradeoff is explicitly documented and consistent with the authorized fail-closed repair; it is not a blocker. Any later restoration of prose task descriptions needs independently bound original provenance."
+    }
+  ],
+  "executed_checks": [
+    "Read real review5 ticket and coder5 report/log; retained original AGENTS/verification skill, immutable spec and prior source-review findings; inspected new acceptance documentation.",
+    "Independently verified remote 53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b, integration ebc1391910a830a42fef882cbd14ababc18533ee, coder 38eb34316a5b942ed7ab55d584ada97295644f08; all clean and exact full tree ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4. Recorded actual distinct ancestry; remote sole parent is original base.",
+    "Verified spec SHA256 9577265a9475306cfe2f753808a638b8be071ecdb18107b728ff3c721b6e7b56; complete base diff is exactly 14 allowed paths, 179 frozen paths unchanged and 180 unchanged manifest file hashes match.",
+    "Removed only test36 in memory and recovered original complete Android file byte-for-byte: all 36 old journey bodies/assertions/names/order unchanged. Verified all previous test36 assertion lines remain in order with only stronger additions.",
+    "Exactly 37 unique scenarios; old names/order/other fields preserved; scenario bytes unchanged from candidate4. ConversationHistoryTest assertions match base and whole file equals candidate4 except no new changes; both docs append-only.",
+    "git diff --check base..HEAD passed on exact integration and remote checkouts.",
+    "Reviewed all repair5 production/test differences and cumulative boundaries/callers from prior independent reviews: per-entry full secret scan, sticky exclusion/expiry, timestamped history/context, durable summary exact text/source proof and tombstones, API-contract diagnostics, hashed metadata, current raw request flow and preserved action IDs/count/outcomes.",
+    "Traced R5 actual controller resume/new-ID/link-empty-transcript lifecycle with the new store schema, including read/save/reopen/delete/reword. Freeform task data fails closed on every path, while exact three supported tool IDs and state remain. Complete incoming task data is still scanned for secrets before replacement.",
+    "Traced R6 original source/history clock checks before min reduction, empty source rejection, invalid-capture fingerprint stickiness on retry/restore and valid oldest clock preservation. Reviewed independent invalid-clock fixtures plus stronger test36 coverage.",
+    "Inspected cumulative direct test36 ABI keep coverage including new DiagnosticRecorder.FullSource annotation and frozen VoiceTaskStatus/VoiceTaskState rules; preserved prior policy/nested/adapter/recorder keeps. Earlier Build890 evidence diagnosis retained; no compiled DEX/device success inferred.",
+    "Executed source-equivalent Python assertions for exact task-ID schema/idempotence and zero/negative/future/overflow/expired/mixed/empty clock cases; saved privacy-review-5-probes.json. These are not Kotlin tests."
+  ],
+  "unverified_gates": [
+    "Root-run full frozen Python harness on both exact local/remote candidates after this review.",
+    "Exact 53dac67 candidate Kotlin/release JVM/native/helper checks and signed normal/compact builds.",
+    "Exact candidate API30/API35 all37 journeys, separate-process restart, compiled target/test DEX ABI and consolidated receipt.",
+    "Build901/run37088094621 is in progress per dispatch; no success/status was independently claimed here. Prior Build898/890/888 evidence is not substituted.",
+    "Real-model, physical audio, sensitive-lock/TTS race and target-device qualification remain unverified."
+  ],
+  "prior_findings_status": {
+    "R1": "resolved statically by default-deny freeform diagnostic channels and restore proof",
+    "R2": "resolved demonstrated summary lineage-reset/Bundle mismatch cases via exact proof and durable tombstones",
+    "R3": "resolved scanned voice epoch metadata false positive by omitting trusted metadata from source text",
+    "R4": "resolved typed exact-prompt API full scan/persistence binding",
+    "R5": "resolved conservatively by exact content-free task schema; documented availability tradeoff",
+    "R6": "resolved by validating all original source/history clocks before reduction"
+  },
+  "quiescent": true,
+  "created_at_utc": "2026-10-03T02:01:46.743547+00:00"
+}

@@ -1,0 +1,57 @@
+{
+  "identities": {
+    "remote": {
+      "head": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+      "tree": "ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4",
+      "parents": [
+        "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de"
+      ],
+      "status": "",
+      "ancestry": [
+        "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de"
+      ]
+    },
+    "integration": {
+      "head": "ebc1391910a830a42fef882cbd14ababc18533ee",
+      "tree": "ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4",
+      "parents": [
+        "20d4bf9a4c18b13395cf77b01672b57767ff7b40"
+      ],
+      "status": "",
+      "ancestry": [
+        "ebc1391910a830a42fef882cbd14ababc18533ee 20d4bf9a4c18b13395cf77b01672b57767ff7b40",
+        "20d4bf9a4c18b13395cf77b01672b57767ff7b40 bccc2ba8fce514a584630b24ea98c0b2b96cf8d2",
+        "bccc2ba8fce514a584630b24ea98c0b2b96cf8d2 19e7b0b313a8655f73c4964c567717c076afd75b",
+        "19e7b0b313a8655f73c4964c567717c076afd75b a9f289cf1eb85d641ff893be017c5baca973444c",
+        "a9f289cf1eb85d641ff893be017c5baca973444c cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de"
+      ]
+    },
+    "coder": {
+      "head": "38eb34316a5b942ed7ab55d584ada97295644f08",
+      "tree": "ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4",
+      "parents": [
+        "ef463f640872934e504067d8ffe2cd0b6f7ebdfa"
+      ],
+      "status": "",
+      "ancestry": [
+        "38eb34316a5b942ed7ab55d584ada97295644f08 ef463f640872934e504067d8ffe2cd0b6f7ebdfa",
+        "ef463f640872934e504067d8ffe2cd0b6f7ebdfa f5a483505f9ccd84e54ac886ec5e88736394482b",
+        "f5a483505f9ccd84e54ac886ec5e88736394482b 9aa65719ded45618679f8691502cda3cc63be92b",
+        "9aa65719ded45618679f8691502cda3cc63be92b 0a20341ec131e897e28523f618a08bf0859707d0",
+        "0a20341ec131e897e28523f618a08bf0859707d0 cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de"
+      ]
+    }
+  },
+  "spec_sha256": "9577265a9475306cfe2f753808a638b8be071ecdb18107b728ff3c721b6e7b56",
+  "exact_allowed_paths": 14,
+  "frozen_paths": 179,
+  "manifest_hashes_checked": 180,
+  "original_36_android_file_preserved": true,
+  "prior_test36_assertions_preserved_in_order": true,
+  "scenario_count": 37,
+  "original_scenario_names_order_fields_preserved": true,
+  "scenario_bytes_unchanged_from_review4": true,
+  "history_assertions_preserved": true,
+  "docs_append_only": true,
+  "diff_check_passed_both": true
+}

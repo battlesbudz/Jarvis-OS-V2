@@ -1,0 +1,52 @@
+{
+  "kind": "Source-equivalent Python assertions; not Kotlin/JVM/Android execution",
+  "invalid_source_clock_cases": [
+    {
+      "source": 0,
+      "derived": 0
+    },
+    {
+      "source": -1,
+      "derived": 0
+    },
+    {
+      "source": 1791000000001,
+      "derived": 0
+    },
+    {
+      "source": 9223372036854775807,
+      "derived": 0
+    },
+    {
+      "source": 1783224000000,
+      "derived": 0
+    }
+  ],
+  "invalid_history_clock_cases": [
+    {
+      "history": 0,
+      "derived": 0
+    },
+    {
+      "history": -1,
+      "derived": 0
+    },
+    {
+      "history": 1791000000001,
+      "derived": 0
+    },
+    {
+      "history": 9223372036854775807,
+      "derived": 0
+    },
+    {
+      "history": 1783224000000,
+      "derived": 0
+    }
+  ],
+  "empty_sources_capture": 0,
+  "valid_oldest_capture": 1790999999980,
+  "task_exact_schema_and_idempotence_passed": true,
+  "task_prose_secret_casefold_rejected": true,
+  "new_uuid_resume_link_delete_reword_does_not_change_task_schema": true
+}
