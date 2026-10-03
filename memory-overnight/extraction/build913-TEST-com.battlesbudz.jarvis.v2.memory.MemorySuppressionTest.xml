@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.battlesbudz.jarvis.v2.memory.MemorySuppressionTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-10-03T05:38:27" hostname="runnervm8df0l" time="0.007">
+  <properties/>
+  <testcase name="erasureBlocksOlderSourcesEvenDifferentIdsAndParaphrasedDerivedFacts" classname="com.battlesbudz.jarvis.v2.memory.MemorySuppressionTest" time="0.007"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

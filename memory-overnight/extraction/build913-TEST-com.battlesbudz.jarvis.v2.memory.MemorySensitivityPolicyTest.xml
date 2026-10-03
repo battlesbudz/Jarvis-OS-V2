@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicyTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-10-03T05:38:26" hostname="runnervm8df0l" time="0.044">
+  <properties/>
+  <testcase name="sensitiveBoundCopiesRemainGenericThroughControllerHistoryDeliveryAndDiagnostics" classname="com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicyTest" time="0.013"/>
+  <testcase name="lockRereadChangesPacketAndLivePromptDeliveryFailsClosed" classname="com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicyTest" time="0.005"/>
+  <testcase name="comparisonScansFullSourceBeforeTruncationAndRetainsTypedNumericMetrics" classname="com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicyTest" time="0.002"/>
+  <testcase name="actualComparisonTrialCannotRetainOrExportSensitiveBoundSourceCopies" classname="com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicyTest" time="0.024"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
