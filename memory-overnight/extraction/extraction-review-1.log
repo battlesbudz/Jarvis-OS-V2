@@ -1,0 +1,22 @@
+Independent review extraction-review-1; actual actor /root/jarvis_privacy_review; ticket2249716d912d49e6b57d0cc9c8032e9c.
+Requested/observed bound route gpt-6-astra/high; provider actual usage unknown.
+Review activated only after parent durable binding, coding actor quiescent.
+1. Read bound ticket, exact spec pin, extraction control, coder report/log/static checks, and remote reconstruction receipt; read AGENTS.md, jarvis-verify skill, verification README/features and MemoryOS design/plan references.
+2. Independent git rev-parse HEAD/tree, git show parents, git cat-file raw commit hashes, git status --porcelain on BOTH integration and remote checkout.
+3. Independent base-to-head changed-path sets checked against77 allowed and180 frozen entries; all other files unchanged by complete diff enumeration.
+4. All existing JVM test paths byte-identical through unchanged Git blobs; exactly six additive JVM test files.
+5. Removing only additive test37 block recovers complete accepted-base Android file byte-for-byte, including all old37 methods/assertions/order;38 unique manifest entries pair with methods and non-test manifest metadata is unchanged.
+6. Both append-only documentation changes checked; git diff --check base..HEAD exit0 on both heads.
+7. Static review of selected local Gemma adapter, strict JSON parser, source-support/acceptance and policy codec; no hosted extraction/API calls added.
+8. Static review of SQLite source+job and memory+completion/index transactions, independently versioned extension migration/no-backfill, lease authenticity/source equality checks, retry bounds, original copy clocks and erase suppression.
+9. Static review of Runtime foreground cancellation/join/model ownership, memory binding/lock observer, model/history/controller/delivery masking, diagnostics and comparison capture/export; targeted frozen caller reads.
+10. Static review of new journey direct ABI owners and @Keep/unchanged proguard coverage; this is not R8/Dex execution.
+11. Executed Python translation of candidate literal source-support regexes for three concrete ASCII counterexamples; recorded exact offsets, labels and confidence consequences.
+12. Executed source-level construction using actual VoiceResponsePolicy literal and ConversationPromptBuilder packet order; confirmed memory-derived sensitive value lies within1500-character comparison prefix.
+One initial git diff used the wrong Java package path and produced empty output; rg located com/battlesbudz/jarvis/v2 and all relevant diffs were then read from the correct paths.
+Large combined read output was truncated; adaptive individual file/diff reads recovered the production paths needed for findings.
+No source, test, harness, GitHub or Coordinator mutation. Only this external review evidence was written.
+R1 exact cases: [{"source": "I think I like apricots", "output": {"content": "I like apricots", "quote": "I like apricots", "start": 8, "end": 23, "category": "FACT", "sensitivity": "NORMAL", "statementKind": "EXPLICIT_STATEMENT"}, "supports_source_predicate": true, "resulting_statement_kind": "EXPLICIT_STATEMENT", "acceptance_confidence": 90}, {"source": "I wish I lived in Paris", "output": {"content": "I lived in Paris", "quote": "I lived in Paris", "start": 7, "end": 23, "category": "FACT", "sensitivity": "NORMAL", "statementKind": "EXPLICIT_STATEMENT"}, "supports_source_predicate": true, "resulting_statement_kind": "EXPLICIT_STATEMENT", "acceptance_confidence": 90}, {"source": "My friend believes I live in Boston", "output": {"content": "I live in Boston", "quote": "I live in Boston", "start": 19, "end": 35, "category": "FACT", "sensitivity": "NORMAL", "statementKind": "EXPLICIT_STATEMENT"}, "supports_source_predicate": true, "resulting_statement_kind": "EXPLICIT_STATEMENT", "acceptance_confidence": 90}]
+R2 source-level prompt probe: sensitive value offset1017, retained limit1500, retained=true.
+Verdict REJECTED; two blocking findings recorded unchanged in report. No compilation, full test suite, real model or physical device evidence claimed.
+Final quiescence after report/log/hash handoff; parent owns unchanged Coordinator review recording and UsageLedger completion.

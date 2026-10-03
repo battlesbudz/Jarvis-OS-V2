@@ -1,0 +1,77 @@
+{
+  "actor": "/root/jarvis_privacy_review",
+  "ticket_id": "2249716d912d49e6b57d0cc9c8032e9c",
+  "dispatch_id": "extraction-review-1",
+  "coordinator_run": "1a6dec718db44cb6bc25e4b7522919ef",
+  "requested_model": "gpt-6-astra",
+  "requested_effort": "high",
+  "actual_usage": null,
+  "base_sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "coder_sha": "b4d970d837a78929105816959dcba0cca74e759b",
+  "local_sha": "87d8f616fa24d93413a9c72c82e185067695d520",
+  "remote_sha": "deac28fb850b179f9ab5d65cc71b1e03b88b3bff",
+  "local_tree": "28a7e5ce3b371969fa42b6ebc8756d72f560280d",
+  "remote_tree": "28a7e5ce3b371969fa42b6ebc8756d72f560280d",
+  "local_parents": [
+    "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b"
+  ],
+  "remote_parents": [
+    "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b"
+  ],
+  "tree_binding_verified": true,
+  "scope_verified": true,
+  "frozen_verified": true,
+  "approved": false,
+  "summary": "Rejected exact extraction candidate deac28fb850b179f9ab5d65cc71b1e03b88b3bff and tree-equivalent local integration87d8f616fa24d93413a9c72c82e185067695d520. Independently verified both raw commit identities, sole accepted-base parent53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b, matching tree28a7e5ce3b371969fa42b6ebc8756d72f560280d and clean checkouts. All37 changed paths are allowed,180 frozen paths and all existing JVM tests are unchanged, and removal of only additive test37 exactly recovers the old Android test file;38 methods pair with the manifest preserving old order. Two blocking defects remain: arbitrary inner-span extraction can strip uncertainty/indirect/counterfactual attribution and automatically store unsupported explicit facts; live comparison prompt logging retains sensitive memory text before the disclosure guard and can later export it without a current unlock check. Static predicate/prompt probes document precise triggers. SQLite extension/job transactions, leases/cancellation, copy clocks, conservative erasure barrier, no-backfill migration and ordinary sensitive-output masking were reviewed, but they do not cure those defects. No frozen harness, Kotlin/JVM/native compilation, Android release instrumentation or real Gemma/device execution was performed by this reviewer. Exact-candidate CI and physical/model qualification remain separate mandatory gates; a green run cannot qualify this rejected source tree.",
+  "findings": [
+    {
+      "severity": "blocking",
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/memory/MemorySourceSupport.kt",
+      "detail": "R1: Arbitrary inner spans discard outer attribution/modality before automatic acceptance. With a current eligible source `I think I like apricots`, model output content/quote `I like apricots`, start=8,end=23,category=FACT,sensitivity=NORMAL,statementKind=EXPLICIT_STATEMENT passes supports() at lines10-16; statementKind() lines5-7 inspects only quote, so MemoryAcceptance.records automatically APPROVES it as an explicit statement at confidence90. The same path accepts the unsupported counterfactual `I lived in Paris` at [7,23) from `I wish I lived in Paris`, and indirect `I live in Boston` at [19,35) from `My friend believes I live in Boston`. GemmaMemoryExtractor.decode delegates to these predicates and the transactional finish repeats the same insufficient check. Static source-regex/predicate translation with ASCII examples confirms acceptance; no real-model/Kotlin execution is claimed. Require complete supported clause/source attribution with outer uncertainty, negation, quotation and hypothetical context preserved or reject fail-closed; merely changing model instructions or enumerating these few words is insufficient. Add additive regressions for inner-span qualifier removal without altering frozen tests."
+    },
+    {
+      "severity": "blocking",
+      "path": "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+      "detail": "R2: The voice onPromptSubmitted callback at line840 calls comparison?.log(\"prompt audioBytes=... text=$submitted\") before the sensitiveVoiceReply guard at843. An opt-in Moonshine live-comparison turn asking `What is my diagnosis?`, while unlocked with an accepted RESTRICTED `My diagnosis is asthma` memory, still takes ConversationRuntime NORMAL_CHAT and freshMemoryTurnContext/onMemoryBound. The nonnull voiceAudio call preserves this callback, and the generated voice prompt contains the sensitive packet. Frozen LiveComparison.Trial.log retains its first1500 characters; the actual VoiceResponsePolicy/prompt layout puts asthma at offset1017 in the static construction probe, within that retained prefix. Trial.finish retains the logs in global results after lock; report()/writeZip and the deferred export callback have no live disclosure fence. Masking comparison answer and skipping DiagnosticRecorder does not remove this raw memory-derived prompt copy. Suppress/sanitize sensitive-bound comparison prompt logging at the allowed Runtime boundary (and audit other comparison output callbacks), or exclude memory context from comparison turns; do not modify frozen LiveComparison/test files. This is a deterministic source-path/copy defect, not a semantic-classifier or physical-device qualification gap."
+    }
+  ],
+  "checks_performed": [
+    "Read bound ticket, exact spec pin, extraction control, coder report/log/static checks, and remote reconstruction receipt; read AGENTS.md, jarvis-verify skill, verification README/features and MemoryOS design/plan references.",
+    "Independent git rev-parse HEAD/tree, git show parents, git cat-file raw commit hashes, git status --porcelain on BOTH integration and remote checkout.",
+    "Independent base-to-head changed-path sets checked against77 allowed and180 frozen entries; all other files unchanged by complete diff enumeration.",
+    "All existing JVM test paths byte-identical through unchanged Git blobs; exactly six additive JVM test files.",
+    "Removing only additive test37 block recovers complete accepted-base Android file byte-for-byte, including all old37 methods/assertions/order;38 unique manifest entries pair with methods and non-test manifest metadata is unchanged.",
+    "Both append-only documentation changes checked; git diff --check base..HEAD exit0 on both heads.",
+    "Static review of selected local Gemma adapter, strict JSON parser, source-support/acceptance and policy codec; no hosted extraction/API calls added.",
+    "Static review of SQLite source+job and memory+completion/index transactions, independently versioned extension migration/no-backfill, lease authenticity/source equality checks, retry bounds, original copy clocks and erase suppression.",
+    "Static review of Runtime foreground cancellation/join/model ownership, memory binding/lock observer, model/history/controller/delivery masking, diagnostics and comparison capture/export; targeted frozen caller reads.",
+    "Static review of new journey direct ABI owners and @Keep/unchanged proguard coverage; this is not R8/Dex execution.",
+    "Executed Python translation of candidate literal source-support regexes for three concrete ASCII counterexamples; recorded exact offsets, labels and confidence consequences.",
+    "Executed source-level construction using actual VoiceResponsePolicy literal and ConversationPromptBuilder packet order; confirmed memory-derived sensitive value lies within1500-character comparison prefix."
+  ],
+  "unverified_gates_and_qualified_limits": [
+    "Frozen local Python harness deliberately not run before review; root owns later verification.",
+    "No Kotlin compilation, Gradle release JVM/native/helper suite, signed/minified APK build, API30/API35 full38-scenario instrumentation, restart check or consolidated exact-SHA CI receipt verified by this reviewer.",
+    "No real Gemma weights extraction/source-attribution/sensitivity-quality or maximal-context evaluation; static controlled model-output counterexamples establish parser defects independently of model frequency.",
+    "No physical Fold6/model responsiveness/RAM/thermal/audio/TTS-lock-race qualification.",
+    "Conservative erasure barrier suppresses all retained pre-erase sources and exact copied text retains oldest clock; fresh post-erase statements can establish new evidence. This is not semantic-vector duplicate suppression.",
+    "Warm-model-only bounded idle batches wait for future eligible foreground boundaries; no automatic model load or continuously draining worker is claimed.",
+    "Sensitive-bound rich chat/voice history is replaced by generic text; live guarded TTS and unlocked memory views provide limited disclosure. Semantic classification and raw sensitive-user coverage beyond detectors remain unproved.",
+    "Index jobs are durable invalidation intents for later goal3; no consumed vector index or semantic retrieval is claimed."
+  ],
+  "scope_checks": {
+    "allowed_paths": 77,
+    "frozen_paths": 180,
+    "changed_paths": 37,
+    "old_android_tests": 37,
+    "new_android_tests": 38,
+    "existing_jvm_files": 144,
+    "new_jvm_files": 6
+  },
+  "probe_evidence": [
+    "extraction-review-1-probes.json",
+    "extraction-review-1-integrity.json"
+  ],
+  "completed_at": "2026-10-03T03:15:00.430143+00:00",
+  "quiescent_after_report": true
+}
