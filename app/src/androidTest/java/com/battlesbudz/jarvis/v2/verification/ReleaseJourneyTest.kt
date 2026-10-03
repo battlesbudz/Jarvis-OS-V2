@@ -209,6 +209,88 @@ class ReleaseJourneyTest {
         device.waitForIdle()
     }
 
+    /** Modal actions must settle without page-seeking gestures that can dismiss the dialog. */
+    private fun clickModalAction(selector: BySelector) {
+        val deadline = SystemClock.uptimeMillis() + 15_000
+        var ready: UiObject2? = null
+        while (SystemClock.uptimeMillis() < deadline) {
+            try {
+                val control = device.findObject(selector)
+                if (control != null && control.isEnabled && hasSafeTapBounds(control)) {
+                    val bounds = control.visibleBounds
+                    device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
+                    SystemClock.sleep(minOf(300, (deadline - SystemClock.uptimeMillis()).coerceAtLeast(0)))
+                    val fresh = device.findObject(selector)
+                    if (SystemClock.uptimeMillis() < deadline && fresh != null && fresh.isEnabled &&
+                        hasSafeTapBounds(fresh) && fresh.visibleBounds == bounds) {
+                        ready = fresh
+                        break
+                    }
+                }
+            } catch (_: StaleObjectException) {
+                // No tap has been dispatched; await a fresh node in the same modal.
+            }
+            SystemClock.sleep(minOf(100, (deadline - SystemClock.uptimeMillis()).coerceAtLeast(0)))
+        }
+        val control = ready ?: throw AssertionError("Modal action did not become stably enabled: $selector")
+        assertTrue("Modal action must settle within its deadline", SystemClock.uptimeMillis() < deadline)
+        // The tap is outside the retry loop: a mutation must never be replayed.
+        control.click()
+        device.waitForIdle()
+    }
+
+    /** A matching node may be clipped; scroll inside the list until its full 48 dp target is visible. */
+    private fun fullyVisibleModelChoose(selector: BySelector, navigationInset: Int): UiObject2 {
+        val minimum = (48 * context.resources.displayMetrics.density).roundToInt()
+        val deadline = SystemClock.uptimeMillis() + 15_000
+        var swipes = 0
+        var stationary = 0
+        var lastBounds = "missing"
+        while (SystemClock.uptimeMillis() < deadline) {
+            try {
+                val list = device.findObject(By.res("model_list"))
+                    ?: throw AssertionError("Model list disappeared while revealing Choose")
+                val viewport = list.visibleBounds
+                val bottom = minOf(viewport.bottom, device.displayHeight - navigationInset)
+                fun isFullyVisible(control: UiObject2): Boolean {
+                    val bounds = control.visibleBounds
+                    lastBounds = bounds.toString()
+                    return control.isEnabled && control.isClickable &&
+                        bounds.width() >= minimum && bounds.height() >= minimum &&
+                        viewport.contains(bounds) && bounds.bottom <= bottom
+                }
+                val control = device.findObject(selector)
+                if (control != null && isFullyVisible(control)) {
+                    val before = control.visibleBounds
+                    device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
+                    SystemClock.sleep(minOf(150, (deadline - SystemClock.uptimeMillis()).coerceAtLeast(0)))
+                    val fresh = device.findObject(selector)
+                    if (SystemClock.uptimeMillis() < deadline && fresh != null &&
+                        isFullyVisible(fresh) && fresh.visibleBounds == before) return fresh
+                }
+                if (SystemClock.uptimeMillis() >= deadline || swipes >= 14 || stationary >= 2) break
+                val before = benchmarkViewportSignature(list)
+                val scrollDown = control == null || control.visibleBounds.centerY() >= viewport.centerY()
+                // Keep both ends inside the scroll viewport, away from navigation and button edges.
+                val highY = viewport.top + viewport.height() * 3 / 10
+                val lowY = viewport.top + viewport.height() * 3 / 4
+                if (SystemClock.uptimeMillis() >= deadline) break
+                assertTrue("Model list swipe must dispatch", device.swipe(viewport.centerX(),
+                    if (scrollDown) lowY else highY, viewport.centerX(), if (scrollDown) highY else lowY, 35))
+                swipes++
+                device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
+                SystemClock.sleep(minOf(150, (deadline - SystemClock.uptimeMillis()).coerceAtLeast(0)))
+                val freshList = device.findObject(By.res("model_list"))
+                    ?: throw AssertionError("Model list disappeared after scrolling")
+                val after = benchmarkViewportSignature(freshList)
+                stationary = if (after == before) stationary + 1 else 0
+            } catch (_: StaleObjectException) {
+                // Reacquire the list and target after Compose scrolling/recomposition.
+            }
+        }
+        throw AssertionError("Choose did not expose its full 48 dp target above navigation: $selector bounds=$lastBounds swipes=$swipes")
+    }
+
     /** Category chips live in horizontal LazyRows, so vertical page seeking cannot reveal all of them. */
     private fun clickHorizontalChip(strip: BySelector, target: BySelector) {
         repeat(8) {
@@ -354,14 +436,17 @@ class ReleaseJourneyTest {
     }
 
     @Test fun test11_modelDetailsAreOptionalAndDoNotChangeSelection() {
+        val selectedBefore = ModelStore(context).selectedModel().id
+        assertEquals("Gemma-4-E2B-it", selectedBefore)
         assertFalse(device.hasObject(By.textContains("bundle /")))
         find(By.res("selected_model_details")).click()
         assertNotNull(find(By.text("About this model")))
         find(By.text("Close details")).click()
         assertNotNull(find(By.text("Gemma-4-E2B-it")))
         openBrowser()
-        find(By.res("model_search")).text = "Gemma"
-        find(By.res("model_family_Gemma")).click()
+        enterText(By.res("model_search"), "Gemma")
+        clickEnabled(By.res("model_family_Gemma"))
+        assertNotNull(find(By.res("model_list")))
         assertNotNull(find(By.text("Not yet verified for this Jarvis setup.")))
         assertFalse(device.hasObject(By.textContains("bundle /")))
         scrollTo(By.res("model_details_Gemma3-1B-IT")).click()
@@ -369,7 +454,14 @@ class ReleaseJourneyTest {
         captureEvidence("model_details_open")
         find(By.text("Close details")).click()
         assertNotNull(find(By.res("model_choose_Gemma3-1B-IT")))
-        // Keep the compact family view visible for the screenshot.
+        captureEvidence("model_details_returned_to_family")
+        clickEnabled(By.text("Done"))
+        assertTrue("Details browsing must close without choosing a model", device.wait(
+            Until.gone(By.res("model_search")), 15_000
+        ))
+        assertNotNull(find(By.res("selected_model_details")))
+        assertNotNull(find(By.text(selectedBefore)))
+        assertEquals("Details must not change the durable model selection", selectedBefore, ModelStore(context).selectedModel().id)
     }
 
     @Test fun test12_lastFamilyModelCanBeSelectedAboveNavigationBar() {
@@ -378,32 +470,37 @@ class ReleaseJourneyTest {
         clickEnabled(By.res("model_family_Gemma"))
         assertNotNull(find(By.res("model_list")))
         val target = By.res("model_choose_codegemma-7b-it-int4-litertlm")
-        scrollTo(target)
-        // Reach the actual end of the list, not just the first partly visible button.
-        repeat(3) {
-            val list = find(By.res("model_list")).visibleBounds
-            device.swipe(list.centerX(), list.bottom - 30, list.centerX(), list.top + 30, 25)
-            device.waitForIdle()
-        }
-        val button = find(target)
         var navigationInset = 0
         activity.onActivity {
-            navigationInset = it.window.decorView.rootWindowInsets
-                ?.getInsets(android.view.WindowInsets.Type.navigationBars())?.bottom ?: 0
+            val insets = it.window.decorView.rootWindowInsets
+            navigationInset = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                insets?.getInsets(android.view.WindowInsets.Type.navigationBars())?.bottom ?: 0
+            } else insets?.systemWindowInsetBottom ?: 0
         }
+        val button = fullyVisibleModelChoose(target, navigationInset)
         val bounds = button.visibleBounds
         assertTrue("Choose must be above Android navigation", bounds.bottom <= device.displayHeight - navigationInset)
-        assertTrue("Choose must have its full touch target", bounds.height() >= (40 * context.resources.displayMetrics.density).roundToInt())
+        assertTrue("Choose must have its full 48 dp touch target", bounds.height() >= (48 * context.resources.displayMetrics.density).roundToInt())
         captureEvidence("last_model_button")
         button.click()
+        assertTrue("Choosing the last model must dismiss the browser", device.wait(
+            Until.gone(By.res("model_search")), 15_000
+        ))
+        assertNotNull(find(By.res("selected_model_details")))
         assertNotNull(find(By.text("codegemma-7b-it-int4-litertlm")))
+        assertEquals("The last model must be selected in durable preferences", "codegemma-7b-it-int4-litertlm", ModelStore(context).selectedModel().id)
         // Restore the starting model without touching files or bypassing the UI.
         openBrowser()
         enterText(By.res("model_search"), "Gemma-4-E2B-it")
         clickEnabled(By.res("model_family_Gemma"))
         assertNotNull(find(By.res("model_list")))
         scrollTo(By.res("model_choose_Gemma-4-E2B-it")).click()
+        assertTrue("Restoring the starting model must dismiss the browser", device.wait(
+            Until.gone(By.res("model_search")), 15_000
+        ))
+        assertNotNull(find(By.res("selected_model_details")))
         assertNotNull(find(By.text("Gemma-4-E2B-it")))
+        assertEquals("The starting model must be restored in durable preferences", "Gemma-4-E2B-it", ModelStore(context).selectedModel().id)
     }
 
     @Test fun test13_imageAttachmentIsResizedStoredAndInvalidInputRejected() {
@@ -1016,11 +1113,15 @@ class ReleaseJourneyTest {
             enterText(By.res("memory_search_input"), "")
             clickEnabled(By.res("memory_erase_all"))
             assertNotNull(find(By.text("Erase all memories?")))
-            clickEnabled(By.text("Cancel"))
+            clickModalAction(By.text("Cancel"))
+            assertTrue("Cancelled erase-all dialog must close before reopening", device.wait(
+                Until.gone(By.text("Erase all memories?")), 15_000
+            ))
             searchMemory("persistent amber tea", By.text(persistent))
             enterText(By.res("memory_search_input"), "")
             clickEnabled(By.res("memory_erase_all"))
-            clickEnabled(By.res("memory_delete_all_confirm"))
+            assertNotNull(find(By.text("Erase all memories?")))
+            clickModalAction(By.res("memory_delete_all_confirm"))
             assertTrue("Erase-all confirmation must finish before checking the ledger", device.wait(
                 Until.gone(By.text("Erase all memories?")), 15_000
             ))
@@ -1041,7 +1142,7 @@ class ReleaseJourneyTest {
             assertNotNull(scrollTo(By.text(rejectedOnly.content)))
             clickEnabled(By.res("memory_erase_all"))
             assertNotNull(find(By.text("Erase all memories?")))
-            clickEnabled(By.res("memory_delete_all_confirm"))
+            clickModalAction(By.res("memory_delete_all_confirm"))
             assertTrue("History erase confirmation must finish", device.wait(Until.gone(By.text("Erase all memories?")), 15_000))
             assertNotNull(find(By.text("No memory history yet.")))
         } finally {

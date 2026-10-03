@@ -27,7 +27,8 @@ commits. Do not create or merge another PR without Justin's permission.
    actual display-size changes. API 30 and newer use
    accelerated x86-64 images with ARM64 translation. The current API 29 x86
    Google APIs and Play images contain no ARM64 bridge, so that profile uses
-   the actual ARM64 image on a standard `macos-15` ARM64 runner with explicit
+   the official AOSP `system-images;android-29;default;arm64-v8a` image on a
+   standard `macos-15` ARM64 runner with explicit
    software emulation (`-accel off -feature -HVF`). GitHub's M1 VMs do not
    support nested hardware virtualization. The software-specific launcher
    `scripts/verification/software_emulator.py` retains provisioning/emulator
@@ -37,6 +38,15 @@ commits. Do not create or merge another PR without Justin's permission.
    the job remains bounded by 60 minutes. A boot flag alone is not a passing
    device result. Missing services, ABI/page-size compatibility, a failed test
    or a timeout fails rather than skips. Linux profiles retain emulator-runner.
+   The API 29 target is AOSP `default`; the other five image targets remain
+   unchanged. Google's official Android system-image catalog currently lists
+   stable revision 8 (`arm64-v8a-29_r08.zip`, 498,049,256 bytes, SHA-1
+   `fa0d67d7430fcc84b2fe2508ea81e92ac644e264`). This avoids the Google APIs
+   bundle whose framework permission initialization and watchdog failed under
+   software emulation in Build 923. Faster usable startup is an inference to
+   verify in a fresh run; the actual API, ARM64 ABI, services, cold input,
+   observed unlock, full controller and both time limits remain required.
+   Catalog: https://dl.google.com/android/repository/sys-img/android/sys-img2-1.xml
 4. Run every named method in `scripts/verification/scenarios.json`, retain a
    screenshot and UI hierarchy per scenario, then run the separately retained
    external process-loss, upgrade, platform and layout phases. The previous

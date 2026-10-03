@@ -32,7 +32,7 @@ def require_software_profile(profile, system=None, machine=None):
     if (system or platform.system(), machine or platform.machine()) != ("Darwin", "arm64"):
         raise RuntimeError("API 29 software emulation requires a native Darwin/arm64 host")
     if (profile["api"], profile["arch"], profile["target"], profile["acceleration"], profile["runner"]) != (
-            29, "arm64-v8a", "google_apis", "software", "macos-15"):
+            29, "arm64-v8a", "default", "software", "macos-15"):
         raise RuntimeError("Software launcher requires the genuine API 29 ARM64 profile")
 
 
@@ -157,7 +157,7 @@ class SoftwareSession:
         self.run([sdkmanager, "--licenses"], timeout=120, input="y\n" * 100)
         self.run([sdkmanager, "--install", "build-tools;37.0.0", "platform-tools", "platforms;android-29"], timeout=600)
         self.run([sdkmanager, "--install", "emulator", "--channel=0"], timeout=600)
-        image = "system-images;android-29;google_apis;arm64-v8a"
+        image = "system-images;android-29;default;arm64-v8a"
         self.run([sdkmanager, "--install", image, "--channel=0"], timeout=600)
         avd_home = Path(self.environment["ANDROID_AVD_HOME"])
         avd_home.mkdir(parents=True, exist_ok=True)

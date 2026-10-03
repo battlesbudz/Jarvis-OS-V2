@@ -40,7 +40,8 @@ def load_profiles(path=PROFILES):
             raise ValueError('Invalid screen profile')
         if isinstance(profile['page_size'], bool) or profile['page_size'] not in (4096, 16384):
             raise ValueError('Invalid emulator page size')
-        if profile['target'] not in ('google_apis', 'google_apis_ps16k'):
+        allowed_targets = ('default',) if profile['api'] == 29 else ('google_apis', 'google_apis_ps16k')
+        if profile['target'] not in allowed_targets:
             raise ValueError('Invalid system image target')
         if (profile['target'] == 'google_apis_ps16k') != (profile['page_size'] == 16384):
             raise ValueError('Page size disagrees with system image target')

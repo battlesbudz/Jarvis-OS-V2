@@ -136,9 +136,33 @@ class SoftwareSessionTest(unittest.TestCase):
         for host in (("Linux", "x86_64"), ("Darwin", "x86_64")):
             with self.assertRaisesRegex(RuntimeError, "native Darwin/arm64"):
                 require_software_profile(PROFILE, *host)
-        for field, value in (("api", 30), ("arch", "x86_64"), ("acceleration", "kvm")):
+        for field, value in (("api", 30), ("arch", "x86_64"), ("acceleration", "kvm"),
+                             ("target", "google_apis"), ("target", "google_apis_ps16k")):
             with self.assertRaisesRegex(RuntimeError, "genuine API 29"):
                 require_software_profile(dict(PROFILE, **{field: value}), "Darwin", "arm64")
+
+    def test_sdk_install_and_avd_creation_use_the_same_exact_aosp_api29_image(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            session = SoftwareSession(PROFILE, Path(temporary) / "evidence", "/sdk")
+            calls = []
+
+            def run(command, **kwargs):
+                calls.append(command)
+                if "create" in command:
+                    config = session.avd_home / "jarvis-api29-software.avd/config.ini"
+                    config.parent.mkdir()
+                    config.write_text("fixture config\n")
+                return reply("")
+
+            with patch.object(session, "run", side_effect=run):
+                session.provision()
+            image = "system-images;android-29;default;arm64-v8a"
+            installed = next(command for command in calls if image in command and "--install" in command)
+            created = next(command for command in calls if "create" in command)
+            self.assertIn("--channel=0", installed)
+            self.assertEqual(image, created[created.index("--package") + 1])
+            self.assertFalse(any("google_apis" in argument for command in calls for argument in command))
+            session.close()
 
     def test_unlock_failure_retains_startup_evidence_and_never_reaches_ready(self):
         clock = Clock()

@@ -210,6 +210,69 @@ were skipped. Failed receipt artifact `11268648681`, ZIP SHA-256
 retains the failed upstream/missing API 29 evidence result. The next revision
 requires a fresh complete release gate; no partial pass authorizes publication.
 
+## Expanded gate Build 923 and fold journey repair
+
+[Build 923](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37109843675)
+tested head `3c1fa2ee74470f21072d800f91be8493ec717ac2`, merge
+`658be06b4091b09f77eebc258cd5b6c97363cd4c`. Both signed APKs, all 1,005 JVM
+tests across 184 suites with no failures/errors/skips, all 136 helper tests,
+the four pinned recorded-speech cases and both static native audits passed.
+Independent final-APK DEX review resolved all 173 selected methods and 11
+fields. The normal APK SHA-256 is
+`3fefb43c0b7f061eb4dd761a326bbc6ffdd99b0fa06e7bb2e62321f4b9943010`;
+compact is `a9e99ef8f2e208f9cbf454716626c591373a3d9317acba1dae643ec0e9577b76`.
+
+API 30 normal, API 35 compact and API 36 phone independently passed the full
+profile: all 48 required journeys and fresh-process selection, actual
+907-to-923 update, all eight external lifecycle phases, all four layout cases
+and all nine shipping native-library loads. Current 200% font/320 dp and
+rotation screenshots were inspected. Their controls remain visible and usable;
+header and placeholder text wrap heavily at this font scale. This verifies the
+tested semantics, target sizes, callbacks and state continuity, not a complete
+TalkBack, contrast or visual-design audit.
+
+The fold profile passed the upgrade and 46 of 49 main instrumentation cases.
+Its `test11` still tapped the model family before the search/UI transition
+settled; PNG/XML show the family chooser. In `test12`, the correct last-model
+Choose button was clipped to 104 pixels by the list viewport while the full
+48 dp target is 126 pixels. `test24` sought a reopened erase confirmation
+before the dialog appeared, and its page-seeking gestures dismissed it. The
+narrow repair settles the exact family/list boundary, physically scrolls inside
+the list until a freshly acquired full 48 dp target is visible above navigation,
+and waits for the exact modal before a single non-scrolling confirmation tap.
+Actual selected/restored model IDs are additionally checked in durable
+preferences after browser dismissal. The navigation inset uses the API 29
+legacy fallback below API 30. All original model, erase and history assertions
+remain; real fold/unfold still requires a new successful run.
+
+The 16 KB guest passed the real upgrade and the first 18 main cases, then
+Android `system_server` crashed in platform
+`AppIdleHistory.getPackageHistory` with SIGSEGV. Its unchanged 4 GB emulator
+configuration and identical image fingerprint passed Build 922. No Jarvis
+assertion preceded the guest crash, and no evidence supports a production or
+RAM change. Failed artifact `11269382996` is retained; actual 16 KB loading
+must pass again on the new revision.
+
+The API 29 launcher retained its failed startup evidence for the first time
+(`11269778165`, ZIP SHA-256
+`b1eb288bf18442f1ac5a24adce7923b091dcb01a675ecab7544dabafbcdcbf24`).
+The Google APIs guest failed `PermissionPolicyService` permission initialization,
+then a replacement `system_server` was watchdog-killed while waiting on
+`installd.createAppData`. Binder services disappeared and reappeared. Although
+all four eventually answered, cold input exhausted the remaining boot budget;
+there was no observed unlock or controller result. The next profile uses the
+official stable AOSP API 29 ARM64 image (`default`, revision 8) instead of the
+Google APIs bundle. It still requires actual API 29/native ARM64/4 KB pages,
+all services, successful cold input, observed unlock and the unchanged complete
+controller within the same 900-second boot and 60-minute job limits. Reduced
+startup load is an inference, not verified compatibility or a passing result.
+
+The consolidated receipt validated the three complete phone profiles and
+rejected missing API 29/controller evidence, fold failures and the 16 KB crash.
+Receipt artifact `11269618551` has `passed: false` and
+`release_approved: false`; all publication jobs were skipped. The repaired
+revision must complete a fresh full gate before any new APK can be published.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,

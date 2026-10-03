@@ -27,12 +27,26 @@ class ProfileContractTest(unittest.TestCase):
         self.assertTrue(any(p['screen_profile'] == 'foldable' for p in profiles))
         self.assertTrue(any(p['page_size'] == 16384 for p in profiles))
         oldest = next(profile for profile in profiles if profile['api'] == 29)
-        self.assertEqual(('macos-15', 'arm64-v8a', 'software', 900, 60),
-                         tuple(oldest[key] for key in ('runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout')))
+        self.assertEqual(('default', 4096, 'macos-15', 'arm64-v8a', 'software', 900, 60),
+                         tuple(oldest[key] for key in ('target', 'page_size', 'runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout')))
         for profile in profiles:
             if profile['api'] != 29:
                 self.assertEqual(('ubuntu-latest', 'x86_64', 'kvm', 300, 40),
                                  tuple(profile[key] for key in ('runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout')))
+
+    def test_default_image_is_required_only_for_native_api29(self):
+        for index, target in ((0, 'google_apis'), (0, 'google_apis_ps16k'), (1, 'default')):
+            contract = copy.deepcopy(self.original)
+            contract['profiles'][index]['target'] = target
+            self.path.write_text(json.dumps(contract))
+            with self.subTest(index=index, target=target), self.assertRaisesRegex(ValueError, 'system image target'):
+                load_profiles(self.path)
+        for changes in ({'arch': 'x86_64'}, {'runner': 'ubuntu-latest'}, {'acceleration': 'kvm'}, {'page_size': 16384}):
+            contract = copy.deepcopy(self.original)
+            contract['profiles'][0].update(changes)
+            self.path.write_text(json.dumps(contract))
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                load_profiles(self.path)
 
     def test_duplicate_id_or_identical_profile_rejected(self):
         for change_id in (False, True):
