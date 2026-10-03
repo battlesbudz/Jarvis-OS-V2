@@ -1,0 +1,19 @@
+{
+  "sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "argv": [
+    "python3",
+    "-B",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "scripts",
+    "-p",
+    "test_*.py"
+  ],
+  "exit_code": 0,
+  "log_sha256": "4070c14b1586ae5dd6cc42206c9ede8eaa3148a7def3f9bbd20670a5e7403544",
+  "log_bytes": 186,
+  "clean": true,
+  "kind": "harness only, not Kotlin/Android qualification"
+}

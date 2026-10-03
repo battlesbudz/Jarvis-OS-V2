@@ -1,0 +1,561 @@
+{
+  "schema": 1,
+  "id": "7cb29286a1a64e5dacf7cb9fd0676cae",
+  "run_id": "7cb29286a1a64e5dacf7cb9fd0676cae",
+  "state": "ready_for_signoff",
+  "repository": "/workspace/scratch/5ea62c991b3f/jarvis",
+  "base_head": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+  "integration_head": "ebc1391910a830a42fef882cbd14ababc18533ee",
+  "integration_tree": "ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4",
+  "integration_worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/7cb29286a1a64e5dacf7cb9fd0676cae/integration",
+  "verification": {
+    "argv": [
+      "python3",
+      "-B",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "scripts",
+      "-p",
+      "test_*.py"
+    ],
+    "complete": true,
+    "exit_code": 0,
+    "head": "ebc1391910a830a42fef882cbd14ababc18533ee",
+    "log_bytes": 186,
+    "log_path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/logs/7cb29286a1a64e5dacf7cb9fd0676cae/verification.log",
+    "log_sha256": "f06ca3e77003441ddcddc028757a30028133ba6dd917046cf2a6d41cd718bc44",
+    "reason": null,
+    "tree": "ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4"
+  },
+  "precheck": {
+    "argv": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "complete": true,
+    "exit_code": 0,
+    "head": "ebc1391910a830a42fef882cbd14ababc18533ee",
+    "log_bytes": 0,
+    "log_path": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/logs/7cb29286a1a64e5dacf7cb9fd0676cae/precheck.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "reason": null,
+    "tree": "ec3f104c7eb33206eca9d9b8b1d05324fef9d1c4"
+  },
+  "review": {
+    "actor": "/root/jarvis_privacy_review",
+    "findings": [
+      {
+        "detail": "The conservative R5 repair intentionally removes all fresh or legacy freeform task descriptions, not only expired ones, because the frozen task DTO has no independent source provenance. Only exact read_battery/set_volume/open_app IDs, list positions/counts and task state survive. Existing source-bearing task placeholders may also make a benign title generic on a later scrub. This availability tradeoff is explicitly documented and consistent with the authorized fail-closed repair; it is not a blocker. Any later restoration of prose task descriptions needs independently bound original provenance.",
+        "path": "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+        "severity": "advisory"
+      }
+    ],
+    "head": "ebc1391910a830a42fef882cbd14ababc18533ee",
+    "summary": "Approved at the independent source-review stage to proceed to exact-candidate verification; no blocking defect found in this review. R5 now fails closed for all unprovenanced freeform task strings on reads/writes/resume-shaped checkpoints/reopen/delete/reword, retaining only exact supported tool IDs and task state. R6 validates every original source clock and the history clock before selecting the oldest; missing/future/overflow/expired/empty provenance cannot be masked by an earlier clock. Prior diagnostic full-input/default-deny repairs, summary proof/tombstones and release Keep boundaries remain intact. Actual remote/local full-tree binding, 14-path scope, frozen179, all old36 Android bodies and prior test36 assertions were independently verified. This is source approval only: frozen harness, exact Build901 signed release JVM/native/API30/API35/receipt gates and device qualification remain outstanding. Conservative loss of task prose/generic narrative diagnostics and summary availability remains documented.",
+    "usage_effort": "high",
+    "usage_model": "gpt-6-astra",
+    "usage_ticket_id": "25bcb503ca9743678584c585d2fe0ec0"
+  },
+  "units": {
+    "privacy": {
+      "actor": "/root/jarvis_privacy_coder",
+      "allowed_paths": [
+        "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+        "docs/memory-os-native.md",
+        "docs/verification/features.md",
+        "scripts/verification/scenarios.json"
+      ],
+      "base_head": "cd7280cfbdd15e54bf3eb5f243c0a3fffdb6d4de",
+      "changed_paths": [
+        "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+        "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+        "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+        "docs/memory-os-native.md",
+        "docs/verification/features.md",
+        "scripts/verification/scenarios.json"
+      ],
+      "commits": [
+        "0a20341ec131e897e28523f618a08bf0859707d0",
+        "9aa65719ded45618679f8691502cda3cc63be92b",
+        "f5a483505f9ccd84e54ac886ec5e88736394482b",
+        "ef463f640872934e504067d8ffe2cd0b6f7ebdfa",
+        "38eb34316a5b942ed7ab55d584ada97295644f08"
+      ],
+      "head": "38eb34316a5b942ed7ab55d584ada97295644f08",
+      "state": "submitted",
+      "usage_effort": "high",
+      "usage_model": "gpt-6.1-sol",
+      "usage_ticket_id": "9b0e0533220047d593c3b09bed51f6a9",
+      "worktree": "/workspace/scratch/d20772bd92e6/jarvis-overnight-control/coordination/worktrees/7cb29286a1a64e5dacf7cb9fd0676cae/unit-privacy"
+    }
+  },
+  "issues": [],
+  "ready_for_user_review": true,
+  "release_approved": false,
+  "actor_identity_assurance": "operator-supplied native-session provenance; not authentication",
+  "workspace_isolation": "detached Git worktrees; not a process or credential sandbox",
+  "unattended_execution": false,
+  "verification_process": {
+    "automatic_crash_cleanup": false,
+    "normal_cleanup_completed": true,
+    "pid": 20,
+    "process_group": 20,
+    "started_at": 1790992939.8669622
+  },
+  "usage": {
+    "schema": 1,
+    "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+    "scope_hash": "f6ac0b3f7ce87afbef7d4ba045ce5a2b2e3a073631c7850c11c7234c70d4e4d0",
+    "spec": {
+      "deadline": 1791010800.0,
+      "max_concurrent": 4,
+      "max_dispatches": 24,
+      "max_reserved_tokens": 300000,
+      "routing_policy": "usage-conscious-v2",
+      "schema": 1
+    },
+    "deadline_exhausted": false,
+    "dispatches": 11,
+    "active_reservations": 0,
+    "stored_deadline": 1791010800.0,
+    "measured_tokens": 0,
+    "measured_ticket_count": 0,
+    "retained_unknown_reservation_tokens": 137000,
+    "reserved_tokens": 0,
+    "total_commitment_tokens": 137000,
+    "actual_total_tokens": null,
+    "usage_complete": false,
+    "remaining_admission_tokens": 163000,
+    "token_budget_exhausted": false,
+    "overrun": false,
+    "model_effort_counts": {
+      "gpt-6-astra/high": 6,
+      "gpt-6.1-sol/high": 5
+    },
+    "outcomes": {
+      "success": 8,
+      "failed": 3
+    },
+    "cost": null,
+    "pro_remaining_allowance": null,
+    "billing_note": "Local estimates and admission limits; actual native billing is unavailable.",
+    "tickets": [
+      {
+        "id": "5c8f4851f4c9413f825c6f1b80801e4d",
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "request_key": "architecture",
+        "request_hash": "3bd6ad8437ab9cca4d155dcbcd9b898d5743cf4894e12ff0b62125a829493265",
+        "operation": "plan:architecture",
+        "task": {
+          "allowed_paths": [],
+          "complexity": "routine",
+          "task_kind": "planning"
+        },
+        "reserved_tokens": 6500,
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6-astra",
+          "reason": "planning policy",
+          "reasoning_effort": "high"
+        },
+        "state": "completed",
+        "actor_id": "/root/jarvis_memory_architecture",
+        "observed_model": "gpt-6-astra",
+        "observed_effort": "high",
+        "outcome": "success",
+        "usage": null,
+        "receipt_id": null,
+        "completed_hash": "ca814229caf3113f4c27806a005dca25c0950b51ef24c0d83d864d6b63601db3",
+        "created_at": 1790976973.5790482,
+        "completed_at": 1790977271.563279
+      },
+      {
+        "id": "3dd46d4d341f4a2e9c051973e36902d2",
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "request_key": "embedding-research",
+        "request_hash": "debe64dd9a74705407c502f0c1e7ccde46a390e0ef5a4b7df7f3d93de3f00d1e",
+        "operation": "plan:embedding-research",
+        "task": {
+          "allowed_paths": [],
+          "complexity": "routine",
+          "task_kind": "planning"
+        },
+        "reserved_tokens": 4500,
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6-astra",
+          "reason": "planning policy",
+          "reasoning_effort": "high"
+        },
+        "state": "completed",
+        "actor_id": "/root/jarvis_embedding_research",
+        "observed_model": "gpt-6-astra",
+        "observed_effort": "high",
+        "outcome": "success",
+        "usage": null,
+        "receipt_id": null,
+        "completed_hash": "77cb501c8166617d24169e2b94b80620dd1598b1fa314ee5911b83ca7de4e781",
+        "created_at": 1790976973.5795786,
+        "completed_at": 1790977341.0840213
+      },
+      {
+        "id": "60ca21bea1294c90bfcfaa2912008860",
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "request_key": "privacy-1",
+        "request_hash": "c91af82de6ea50faebdeac8bb9a87fe876a96c03561a9974f33e3b1f569d2599",
+        "operation": "prepare:95d900f74f6446e08d1ee7e8015ba76d:privacy",
+        "task": {
+          "allowed_paths": [
+            "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+            "docs/memory-os-native.md",
+            "docs/verification/features.md",
+            "scripts/verification/scenarios.json"
+          ],
+          "complexity": "complex",
+          "task_kind": "implementation"
+        },
+        "reserved_tokens": 18000,
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6.1-sol",
+          "reason": "complex implementation",
+          "reasoning_effort": "high"
+        },
+        "state": "completed",
+        "actor_id": "/root/jarvis_privacy_coder",
+        "observed_model": "gpt-6.1-sol",
+        "observed_effort": "high",
+        "outcome": "success",
+        "usage": null,
+        "receipt_id": "5528c1a91a6ab2ee6275ece4d705d466df76ade1ed6d1c1c3aa034e872b3cfa0",
+        "completed_hash": "b7c3a90a0d87d410bc78577326c3dbbde91120e4b60bcdad5bbd3736c22fcf98",
+        "created_at": 1790977271.5806286,
+        "completed_at": 1790978233.6969485
+      },
+      {
+        "id": "7e585da2a02047e48fdc969dd948aa8f",
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "request_key": "privacy-review-1",
+        "request_hash": "bac3a3b4f6e96026be66c53d816e48f71066e3497fe37184b1c74817197578d6",
+        "operation": "review:95d900f74f6446e08d1ee7e8015ba76d",
+        "task": {
+          "allowed_paths": [],
+          "complexity": "routine",
+          "task_kind": "review"
+        },
+        "reserved_tokens": 12000,
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6-astra",
+          "reason": "review policy",
+          "reasoning_effort": "high"
+        },
+        "state": "completed",
+        "actor_id": "/root/jarvis_privacy_review",
+        "observed_model": "gpt-6-astra",
+        "observed_effort": "high",
+        "outcome": "failed",
+        "usage": null,
+        "receipt_id": "e4454b99daf4522769d41c0450decee6590b9036bfd5d66d7440b82d7e6a5b5c",
+        "completed_hash": "c13bc7f4f744587bcb854ab4beb989f3c0eb94090f76890b1762ad09d7a54fa0",
+        "created_at": 1790978392.9562085,
+        "completed_at": 1790978773.6469178
+      },
+      {
+        "id": "6e7101b166e042adbaccca27d6b6fbbd",
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "request_key": "privacy-coding-2",
+        "request_hash": "bf7a6d3b0f5327f2d2a275d501ca8ca89f3fb28a04955862d3ec339a5d01bf1c",
+        "operation": "prepare:f35cf4d78fbd44b59e9670bc749ba15b:privacy",
+        "task": {
+          "allowed_paths": [
+            "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+            "docs/memory-os-native.md",
+            "docs/verification/features.md",
+            "scripts/verification/scenarios.json"
+          ],
+          "complexity": "complex",
+          "task_kind": "implementation"
+        },
+        "reserved_tokens": 18000,
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6.1-sol",
+          "reason": "complex implementation",
+          "reasoning_effort": "high"
+        },
+        "state": "completed",
+        "actor_id": "/root/jarvis_privacy_coder",
+        "observed_model": "gpt-6.1-sol",
+        "observed_effort": "high",
+        "outcome": "success",
+        "usage": null,
+        "receipt_id": "6a92cada37ed4780cc366ca7ace695ad8951febe03a85aa24c1665f78888cfb1",
+        "completed_hash": "5a97ec8ae13c5533a33109f4a5660164bcee66652c64fabb7027ac5943044580",
+        "created_at": 1790978839.5873473,
+        "completed_at": 1790979473.5931292
+      },
+      {
+        "id": "670d971f4e2948699d7751deafa3f204",
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "request_key": "privacy-review-2",
+        "request_hash": "17c9b4dbc9d86b6b0388695e05de2cff9e2415e3c49ea497985f091962139908",
+        "operation": "review:f35cf4d78fbd44b59e9670bc749ba15b",
+        "task": {
+          "allowed_paths": [],
+          "complexity": "routine",
+          "task_kind": "review"
+        },
+        "reserved_tokens": 12000,
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6-astra",
+          "reason": "review policy",
+          "reasoning_effort": "high"
+        },
+        "state": "completed",
+        "actor_id": "/root/jarvis_privacy_review",
+        "observed_model": "gpt-6-astra",
+        "observed_effort": "high",
+        "outcome": "failed",
+        "usage": null,
+        "receipt_id": "eef3de87d4a6d672a08ec1caec068cdf2e53c148eedf2a6e5f3289de57b93ae7",
+        "completed_hash": "53202787a3769290faa9e29d6eb268b6bd77df3b30cfd8caf05912de6df1e474",
+        "created_at": 1790979623.4235888,
+        "completed_at": 1790979971.851262
+      },
+      {
+        "id": "7e70a09be7bd47689c5331abf76705a3",
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "request_key": "privacy-coding-3",
+        "request_hash": "6c64c8030c9aab510bbdd2df3885839ff29ecd6a9b9e3486afda938d5f4ad1a0",
+        "operation": "prepare:f97878388bb945dab3631856c13d52d8:privacy",
+        "task": {
+          "allowed_paths": [
+            "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+            "docs/memory-os-native.md",
+            "docs/verification/features.md",
+            "scripts/verification/scenarios.json"
+          ],
+          "complexity": "complex",
+          "task_kind": "implementation"
+        },
+        "reserved_tokens": 14000,
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6.1-sol",
+          "reason": "complex implementation",
+          "reasoning_effort": "high"
+        },
+        "state": "completed",
+        "actor_id": "/root/jarvis_privacy_coder",
+        "observed_model": "gpt-6.1-sol",
+        "observed_effort": "high",
+        "outcome": "success",
+        "usage": null,
+        "receipt_id": "a941aee36a89a5376feec7d56d567dc47c79250992459721f470e5a364f0068e",
+        "completed_hash": "2d900bd3171ed3d44058a5b79904785568bf568e13a416a87ddc407898219e26",
+        "created_at": 1790979971.866401,
+        "completed_at": 1790982370.042197
+      },
+      {
+        "id": "ed605875437245509cd8a5c5e8432a3a",
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "request_key": "privacy-coding-4",
+        "request_hash": "94fd119581a73a253d97d354d05e2447fb35009d73c74b0505bd5e56b69cf095",
+        "operation": "prepare:7bfab527f2894d08a773ce79ba68b286:privacy",
+        "task": {
+          "allowed_paths": [
+            "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+            "docs/memory-os-native.md",
+            "docs/verification/features.md",
+            "scripts/verification/scenarios.json"
+          ],
+          "complexity": "complex",
+          "task_kind": "implementation"
+        },
+        "reserved_tokens": 14000,
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6.1-sol",
+          "reason": "complex implementation",
+          "reasoning_effort": "high"
+        },
+        "state": "completed",
+        "actor_id": "/root/jarvis_privacy_coder",
+        "observed_model": "gpt-6.1-sol",
+        "observed_effort": "high",
+        "outcome": "success",
+        "usage": null,
+        "receipt_id": "be7ffe5975fa16a1b677f15daf3872020b8834a7ed4df0f535d33e8ec41681df",
+        "completed_hash": "f77add3bcac345e3c21563d44ed0be93932e23afdbd370f9208527e8fe3edfdc",
+        "created_at": 1790991584.72667,
+        "completed_at": 1790991831.3970146
+      },
+      {
+        "id": "4c31b63f52184f81b7150b0211022e07",
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "request_key": "privacy-review-4",
+        "request_hash": "86dd78961cd18161663283fa5031777c5f45cd1c2b43799b3b4651f4b0f22c02",
+        "operation": "review:7bfab527f2894d08a773ce79ba68b286",
+        "task": {
+          "allowed_paths": [],
+          "complexity": "routine",
+          "task_kind": "review"
+        },
+        "reserved_tokens": 12000,
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6-astra",
+          "reason": "review policy",
+          "reasoning_effort": "high"
+        },
+        "state": "completed",
+        "actor_id": "/root/jarvis_privacy_review",
+        "observed_model": "gpt-6-astra",
+        "observed_effort": "high",
+        "outcome": "failed",
+        "usage": null,
+        "receipt_id": "55dfc2b16b84cd31b0e7337a935c240459d0c36b6243bba7e73df34d1de513ae",
+        "completed_hash": "393bad124a17390f3c621ee894eb74631a50c84fe8522f7330d81aeca0649ff7",
+        "created_at": 1790991956.2865956,
+        "completed_at": 1790992226.4188352
+      },
+      {
+        "id": "9b0e0533220047d593c3b09bed51f6a9",
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "request_key": "privacy-coding-5",
+        "request_hash": "709b13b59bf13e56f307f9ef5b83126181571fe07744e8e1dec320e54cce08c2",
+        "operation": "prepare:7cb29286a1a64e5dacf7cb9fd0676cae:privacy",
+        "task": {
+          "allowed_paths": [
+            "app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/JarvisRuntime.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/chat/ConversationHistory.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorder.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicy.kt",
+            "app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStore.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryPrivacyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/chat/ConversationHistoryTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/diagnostics/DiagnosticRecorderPrivacyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/memory/SourceTextPersistencePolicyTest.kt",
+            "app/src/test/java/com/battlesbudz/jarvis/v2/voice/VoiceCallStorePrivacyTest.kt",
+            "docs/memory-os-native.md",
+            "docs/verification/features.md",
+            "scripts/verification/scenarios.json"
+          ],
+          "complexity": "complex",
+          "task_kind": "implementation"
+        },
+        "reserved_tokens": 14000,
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6.1-sol",
+          "reason": "complex implementation",
+          "reasoning_effort": "high"
+        },
+        "state": "completed",
+        "actor_id": "/root/jarvis_privacy_coder",
+        "observed_model": "gpt-6.1-sol",
+        "observed_effort": "high",
+        "outcome": "success",
+        "usage": null,
+        "receipt_id": "0af0a9b238385175de57e32a47db27d0e48a0466d75d621aa5ddbcff12c1c3c9",
+        "completed_hash": "ef862f2fff76bf92a21acefca6c051964bbd0ddd533fa9b76758b785550a030c",
+        "created_at": 1790992284.5189452,
+        "completed_at": 1790992616.3420398
+      },
+      {
+        "id": "25bcb503ca9743678584c585d2fe0ec0",
+        "scope_id": "7c0594eb67cc49e39dad6d80d726e395",
+        "request_key": "privacy-review-5",
+        "request_hash": "ab2ce1a2251f4cd545faa5596cae96b6614d2e13858c8bff7fbc8c4bac09438a",
+        "operation": "review:7cb29286a1a64e5dacf7cb9fd0676cae",
+        "task": {
+          "allowed_paths": [],
+          "complexity": "routine",
+          "task_kind": "review"
+        },
+        "reserved_tokens": 12000,
+        "manifest": {
+          "fork_turns": "none",
+          "model": "gpt-6-astra",
+          "reason": "review policy",
+          "reasoning_effort": "high"
+        },
+        "state": "completed",
+        "actor_id": "/root/jarvis_privacy_review",
+        "observed_model": "gpt-6-astra",
+        "observed_effort": "high",
+        "outcome": "success",
+        "usage": null,
+        "receipt_id": "ff1b5a2944642ef41ff0af7cc21301541ba554f4ee628176ed3ec887be177dcc",
+        "completed_hash": "361025d30eca98e574d8318d17473aafe85836832da4261a2c8aff08da508ee4",
+        "created_at": 1790992743.447391,
+        "completed_at": 1790992939.846413
+      }
+    ]
+  },
+  "recovery_limitation": "A force-killed coordinator may leave child processes running; inspect and stop them manually before a new run"
+}
