@@ -1,0 +1,45 @@
+{
+  "actor": "/root/jarvis_privacy_review",
+  "ticket_id": "1a111c27b3154621bb2fa0f28be6ca6b",
+  "dispatch_id": "extraction-review-6",
+  "coordinator_run": "57cc04af6314447b959026a6d44422a5",
+  "base_sha": "53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b",
+  "local_sha": "189c9ea9459fb02d157475ddf5d7c6a540352427",
+  "remote_sha": "3319c32d487ab87829bee9d7b8187281c73eeb23",
+  "tree": "53d2a8987bb218930b62afcf765d28507d171c63",
+  "local_tree": "53d2a8987bb218930b62afcf765d28507d171c63",
+  "remote_tree": "53d2a8987bb218930b62afcf765d28507d171c63",
+  "tree_binding_verified": true,
+  "scope_verified": true,
+  "frozen_verified": true,
+  "approved": true,
+  "approval_scope": "Independent source review before verification only",
+  "summary": "SOURCE REVIEW ONLY: approved for subsequent verification; no blocking source finding identified. Independently reconstructed both raw commit hashes: local 189c9ea9459fb02d157475ddf5d7c6a540352427 and durable fetched remote 3319c32d487ab87829bee9d7b8187281c73eeb23, both clean with tree 53d2a8987bb218930b62afcf765d28507d171c63 and sole accepted parent 53dac67cb37dc8f9a2eda27d6c65f0661cc39a5b. All37 cumulative changed paths are within77 allowed;180 frozen and every nonallowed path unchanged. All144 original JVM files, all39 current Android file/scenario bytes and retained base37 bodies are unchanged. The five-path repair preserves all prior assertions and adds six checks. Actual retained Build912 XMLs establish empty delivery spans at the bridge and rejected unsupported fresh-source wording. The bridge now supplies revision1 after beginReply creates revision0; unchanged updateDelivery requires a strictly newer revision. Its masked span remains PENDING with zero played frames and empty deliveredText, without bypassing monotonic/terminal guards. Both actual callers begin a new reply before this first-checkpoint bridge; it is not a general playback publisher. The fresh suppression fixture now uses supported full-statement wording I like plums at unchanged2001 after erasure2000, preserving acceptance and suppression assertions; production grammar/eligibility is unchanged. Complete-source attribution, comparison masking, expiry/erasure, retry leases and disjoint constructors remain byte-identical to the prior reviewed candidate. Inspected retained Kotlin2.3/JUnit proof and verified source/log hashes for five unchanged SpeechDeliveryLedger tests only; neither repaired failing test nor full Android closure was executed by that check. Reviewer executed static integrity checks only. Build913/run37099349277 is reported in progress on current3319 and is not a pass. Exact-candidate compilation/full JVM/native/helper, signed release/R8, API30 normal/API35 compact39 journeys, restart and consolidated gates remain required. Real Gemma attribution/sensitivity quality, broader raw-user sensitive classification and physical Fold6/audio/TTS/performance remain unqualified. Historical review mistakes/failures remain preserved; this approval is not release qualification.",
+  "findings": [],
+  "checks_performed": [
+    "Read current bound review/control and coder report/log/static checks/targeted proof; retained applicable repository skill/gate instructions from prior review.",
+    "Read complete five-file prior-to-current diff, current MemorySensitivityPolicy, both bridge callers, VoiceSessionController beginReply/updateDelivery/changeReply and SpeechDelivery/SpeechDeliveryLedger definitions.",
+    "Read actual two Build912 failed XMLs and retained narrow compiler/JUnit proof; independently hash-bound targeted unchanged source files/logs.",
+    "Executed new extraction-review-6-check.py: raw SHA1 commit reconstruction for both actual heads, tree/sole parent/clean status, fullscope37of77, frozen180/allnonallowed identity, both diffcheck0.",
+    "Verified all144 original JVM files and current39 Android file/scenario bytes unchanged; recovered entire base37 Android file by removing only new37/38 region.",
+    "Confirmed all original lines of new sensitivity test remain in order with six added assertions; suppression test only changed unsupported wording to supported wording, timestamp/assertions untouched; docs append-only.",
+    "Verified prior cumulative critical source fixes and Runtime/controller/ledger byte-identical; analyzed first-checkpoint revision and no-playback semantics."
+  ],
+  "qualified_limits": [
+    "Source approval only. Reviewer did not execute compiler/JVM/harness/Android/native tests.",
+    "Retained local Kotlin2.3 and five JUnit tests cover only unchanged SpeechDeliveryLedger, not repaired bridge/controller/history or suppression tests.",
+    "Build912 passed compilation but failed two of783 JVM tests; that old-candidate failure is not current-candidate qualification.",
+    "Current Build913 full exact-SHA gates are pending, including 39 Android journeys/API30/API35, restart and consolidated result.",
+    "Real local model quality/sensitivity/semantic coverage, physical Fold6/TTS lock races and performance remain unverified."
+  ],
+  "evidence_files": [
+    "extraction-review-6-check.py",
+    "extraction-review-6-integrity.json",
+    "extraction-review-6.log"
+  ],
+  "retained_failed_xml_sha256": {
+    "build912-TEST-com.battlesbudz.jarvis.v2.memory.MemorySensitivityPolicyTest.xml": "d48f436fb10f3726939f0556a6c6c00bb68e7a6ef3b2687e1b789b60deb577ba",
+    "build912-TEST-com.battlesbudz.jarvis.v2.memory.MemorySuppressionTest.xml": "9ff7c5eaa5aa7caf80628981876f3fc206df563ec3213cfa1c6024081e8bd39d"
+  },
+  "quiescent": true
+}
