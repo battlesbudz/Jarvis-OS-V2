@@ -48,7 +48,8 @@ commits. Do not create or merge another PR without Justin's permission.
    version caused or repairs the failure. The software-specific launcher
    `scripts/verification/software_emulator.py` retains provisioning/emulator
    output and guest logcat, and requires the boot flag, input/activity/package/
-   window services and successful unlock before invoking the same full release
+   window services, successful unlock and actual user0 BOOT_COMPLETED delivery
+   for the current system_server before invoking the same full release
    controller. All readiness and unlock checks share the 15-minute boot budget;
    software rendering uses two vCPUs, 2 GiB RAM, `vm.heapSize=256M` and a
    540×960 framebuffer at 210 dpi, preserving Pixel 2's exact Android dp viewport.
@@ -68,6 +69,10 @@ commits. Do not create or merge another PR without Justin's permission.
    verify in a fresh run; the actual API, ARM64 ABI, services, cold input,
    observed unlock, full controller and both time limits remain required.
    Catalog: https://dl.google.com/android/repository/sys-img/android/sys-img2-1.xml
+   Genuine Pixel Fold transitions may show the disposable keyguard. After the
+   actual display-size change, the layout journey wakes the device and observes
+   keyguard dismissal within the same transition deadline before checking call
+   and draft continuity. It never relaunches the activity to restore those states.
 4. Run every named method in `scripts/verification/scenarios.json`, retain a
    screenshot and UI hierarchy per scenario, then run the separately retained
    external process-loss, upgrade, platform and layout phases. The previous

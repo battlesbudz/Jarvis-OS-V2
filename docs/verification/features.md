@@ -590,7 +590,8 @@ no input-dispatch trace proves exclusive causality. The benchmark path now uses
 the right quarter of the actual viewport (`x=789` on this phone, `x=1305` on
 Build 936's legacy unfolded profile), avoiding the observed clipboard preview
 and central hinge. The new Pixel Fold uses its own observed viewport.
-Model-list gestures retain their left-quarter path. At that revision, twelve steps and a 15–85% stroke,
+Model-list gestures retain their left-quarter path. At that revision, twelve
+steps and a 15–85% stroke,
 all deadlines, full/safe/stable bounds, gesture limits and single-tap checks stay
 unchanged. Actual folded clipboard geometry is not inferred from this phone PNG;
 the main foldable benchmark journey runs unfolded. A full fresh matrix is required.
@@ -656,81 +657,122 @@ call and draft continuity, all six profiles and all other checks remain required
 This is a provisioning correction pending actual folded/unfolded evidence.
 Official catalog: https://dl.google.com/android/repository/repository2-3.xml
 
-## Build 937 benchmark navigation and device provisioning
+## Build 937 known-control navigation alignment
 
 [Build 937](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37174425659)
-tests head `b54087e327f8bb16569cbff2eda63e05e8ef9b09`, actual checkout
-`4cb20365f4d34c5d5ee9be72b16b48ecd58fb024`. Its signed build, 1,005 JVM cases,
-recorded speech and native packaging audits pass. API 30 passes all required
-device phases. Three other completed profiles each pass their upgrade and 48 of
-49 main cases, failing different steps in test45. These are failed results,
-not evidence that a repaired candidate passes.
+tests head `b54087e327f8bb16569cbff2eda63e05e8ef9b09`, merge
+`4cb20365f4d34c5d5ee9be72b16b48ecd58fb024`, tree
+`7a625816d662426a6eecd8f205b961fc2e4d0319`. Both signed APKs, all 1,005 JVM
+cases, all four recorded-speech checks and both nine-library native 16 KB
+audits pass. API 30 passes its complete device gate; the other five profiles
+fail. Receipt `11293146777`, ZIP SHA-256
+`a70b729a17de1b0491112d5b2fa2da2d040d252bcb05762af40612f3612c8e16`,
+is false and all publishers are skipped. No clean APK is established.
 
-API 36 phone artifact `11293530650` fails the first reference-button approach
-at line 2511. API 35 compact artifact `11293740180` passes reference scoring,
-quality review and JSON privacy checks, then fails the restored reference-button
-visibility assertion at line 2578. Their navigation logs rediscover the target
-but reverse direction after another full stroke; both finish at an observed edge
-with about five seconds remaining. Inspected failure PNGs show the expanded
-card's lower metrics, without a clipboard overlay or launcher modal. The phone
-XML reflects cleanup after the failure, so it does not prove a missing control.
+API 35 compact artifact `11293740180`, ZIP SHA-256
+`cf51a064453202ac781998ed4ffa52df1a7f8d408772e3dacc72064b845ab34c`,
+passes the actual upgrade and 48 of 49 main cases, including test12 and test48.
+Test45 fails at line2578 revealing `pipeline_benchmark_reference` after the
+completed sample is reopened from the restored store. The control briefly
+appears after DOWN, then the helper sends a full UP stroke, reaches a stationary
+top edge, reverses once and reaches the bottom with 4.875 seconds still left.
+The inspected PNG shows lower expanded metrics and the cancelled sample, with
+the reference above the viewport; no clipboard overlay or platform modal appears.
+There is no retained fatal/ANR marker. Lifecycle/layout phases do not run after
+this main failure. The extra missing layout evidence error is a consequence of
+the controller's failed main phase, not a completed layout pass.
 
-The explicit harness correction uses a short, slower physical approach only
-when a positive-size target rectangle has been discovered: at most a quarter of
-the viewport, 80 injection steps, in the same right-quarter lane. Empty exported
-bounds cannot change direction. Undiscovered-target search retains its existing
-15–85% stroke and 12 steps. Fresh bounds, stable enabled controls, the 15-second
-deadline, 14-stroke cap, two stationary observations before a single edge reversal,
-one actual tap, and every scoring/privacy/persistence assertion remain required.
-Target bounds, distance and steps are retained in the navigation log.
+API 36 phone artifact `11293530650`, ZIP SHA-256
+`259284c095b0e9437cdce49c3960c2313eaf0b3eba2cb6a60a21dff7a8b70aab`,
+also passes the upgrade and 48 of 49 main cases, including test12 and test48.
+Its test45 fails at line2511 on the reference control before scoring, after
+opening the completed sample and selecting NOISY. The target exists before a
+full 1,109-pixel DOWN stroke sends it out of the visible hierarchy. Later UP
+strokes find it again, but another full DOWN stroke loses it; the helper reaches
+the second stationary bottom with 4.675 seconds still left. The inspected PNG
+shows the expanded card's lower metrics and cancelled sample without a clipboard
+overlay. The XML reflects teardown and does not prove failure-time bounds.
 
-API 35 true 16 KB artifact `11293031512` reaches the final reset check at line
-2582. Its PNG/XML show "Retained benchmarks reset." and zero retained attempts,
-but the viewport ends on the Recent samples heading before the empty-state
-sentence. The assertion now scrolls to that same exact sentence through the
-bounded benchmark helper before checking it. The subsequent fresh-store empty
-assertion remains unchanged. No platform crash is present in these three logs;
-none of their later restart, lifecycle, layout or native-smoke phases ran.
+These failures support a known-control alignment defect in the harness, rather
+than a failed scoring/privacy assertion or a platform retry. Exact target bounds
+were not logged, so a specific zero rectangle or exclusive fling cause is not
+proven. The correction ignores empty rectangles when choosing direction and
+uses a shorter, slower physical adjustment when a positive-size target overlaps
+the viewport: at most one fifth of the viewport, 24 injection steps and observed
+edge distance plus room inside it. Absent or wholly off-viewport targets retain
+the 15–85% search stroke and 12 steps in the same right-quarter path. All full/safe bounds, the 15-second
+and 14-gesture ceilings, two stationary observations, one edge reversal,
+300-ms stable enabled observation, single tap and test-body assertions remain
+required. Navigation receipts now retain before/after geometry and adjustment
+mode. The next complete matrix must establish that this correction works.
 
-The Pixel Fold artifact `11293521290` passes all 49 main journeys, restart,
-both upgrade phases and all eight lifecycle phases. Its actual fold changes
-the inner display from 2208×1840 to the 1080×2092 cover, but Android's keyguard
-covers the app before the continuity assertion. The inspected PNG shows that
-lock screen. Unfold and continuity are therefore unverified, and the subsequent
-layout tests, including native loading, also fail behind the lock screen.
-The fixture must wake and dismiss the disposable emulator's keyguard after a
-real dimension change, then check the same call, conversation and unsent draft
-without relaunching or restoring them. Both actual posture events and all layout
-checks remain required.
+API 35 true 16 KB artifact `11293031512`, ZIP SHA-256
+`5aa148bc6dd3d7638f3c63f3f7045db09a03131e0e3982eca39a891163bf6c35`,
+passes the actual 16,384-byte page/ARM64-bridge check, upgrade and 48 of 49 main
+cases, including test48. This time there is no retained platform crash/ANR marker.
+Test45 passes the restored reference check and reaches reset, then fails its
+plain empty-state text lookup at line2582. The inspected PNG and XML show
+"Retained benchmarks reset." and zero retained attempts; the Recent samples
+header is clipped at viewport bottom1815 and the expected next lazy item is
+below it. Reset succeeded; the lookup did not scroll. A bounded read-only reveal
+keeps that exact text-presence assertion and the later flush/reload-empty check.
+Existing controls retain all tap visibility margins; the final unpadded text
+item is read without imposing a click-only inset that it cannot satisfy.
 
-Host `exec-out screencap -p` also prefixes this multi-display profile's PNGs
-with a display-selection warning. Those files fail the strict evidence validator;
-instrumentation screenshots are clean. The controller captures to a fresh device
-file and pulls its bytes, retaining capture diagnostics separately. It never strips
-prefixes or accepts malformed images. This transport correction needs fresh valid
-PNG evidence from the real cover and inner displays.
+API 29 artifact `11292887329`, ZIP SHA-256
+`93cafec1fcc7782fad4bf2649237bc710e1a48397f7130c12347477bff9f3e44`,
+confirms physical 540×960 at 210 dpi, the intended RAM/heap/two-vCPU settings,
+UTC, native ARM64/API 29, all services and observed unlock. The controller runs,
+but the previous Build 907 APK installation exceeds its unchanged 180-second
+limit before any journey executes. Guest logs show its speed-profile dexopt
+competing with BOOT_COMPLETED receivers; the actual user0 broadcast finishes
+well after the earlier boot flag/services observation. Host receipts show no
+swap traffic and substantial free memory, so memory exhaustion is not supported.
+The API 29-only launcher also retains the version experiment added on head
+`082e3e683c30c49c03bc889787ad193184f4cb90`: official Apple Silicon Emulator
+37.2.6/build16138043, ZIP 419,847,722 bytes, SHA-256
+`ca9eeb7857771de6219591a70b39342ac2d056b7701d1df0d0c719f41260f4a5`.
+Its download, checksum/size, safe staged extraction, package metadata and staged/
+installed binary version checks share one 600-second provisioning budget. A
+failed replacement restores the previous emulator. This preserves the same
+guest image, software renderer, resources, real API/ABI/page-size observations,
+900-second boot and 180-second install limits and complete controller. It is a
+controlled version experiment; Build 937 does not prove that an emulator-version
+regression caused its installation failure. Other profiles retain their emulator
+provisioning. [Build 939](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37176281538)
+tests that head's first navigation, fold-unlock, screenshot and version-pin repairs;
+it is not yet a verified APK.
 
-API 29 artifact `11292887329` reaches the controller after boot, services,
-input, unlock and exact 540×960/210 dpi checks, but installing the unchanged
-published Build 907 APK times out at 180 seconds. Guest logs show a SystemUI
-fatal exception and ANRs before that install, watchdog half-wait observations,
-and later media/dialer ANRs. The same system-server PID remains present; these
-logs do not prove it died. Host receipts report available memory and no swap,
-so memory exhaustion is not established. No upgrade or release instrumentation
-starts, and final hierarchy/logcat reads also time out.
+The next launch requires actual BOOT_COMPLETED delivery to user0 for the current
+system_server, using filtered current-session logcat and matching process IDs,
+before the existing animation settings and final service/display checks. Every
+probe consumes the same 900-second boot deadline; install and job limits remain
+unchanged. This stronger startup barrier is a contention experiment, not proof
+that either installation will finish within 180 seconds.
 
-The next API 29 launch uses the official Mac ARM64 emulator 37.2.6/build
-16138043 archive as a controlled version experiment, preserving this revision's
-2 GiB RAM, recognized heap property, framebuffer/density, system image, renderer,
-UTC, software acceleration and every deadline. Its full archive checksum,
-package metadata and actual executable version must agree before boot; a failed
-pin restores the original SDK package and fails before launching. The official
-tracker's reported 37.2.7+ slowdown concerns a different visible/background
-configuration, so it supports a hypothesis rather than proving this guest's
-cause or a successful repair. Other profiles keep their current emulator.
+Pixel Fold artifact `11293521290`, ZIP SHA-256
+`f308900af5564eeddbb8c86ba8a80948aec250faaae3a97d363c90b9a21e00f3`,
+passes all 49 main journeys, both upgrade phases and all eight lifecycle phases.
+The pinned catalog and GUI loader receipts pass. The real fold switches default
+display0 from 2208×1840 to the 1080×2092 cover; platform fold policy then shows
+dismissible keyguard. The inspected test03 PNG/XML show the lockscreen, and its
+composer lookup fails before call/draft continuity assertions. The same activity
+instance stops at this point, with destruction only during teardown; fixture
+recreation is not established as the cause. The sleeping device then causes the
+other three layout setup failures. Folded continuity and subsequent unfold remain
+unverified. The next transition wakes and dismisses the disposable keyguard after
+the genuine dimension change, observes actual dismissal, and retains all original
+continuity assertions within the same transition deadline. No activity relaunch
+or fixture reset substitutes for continuity.
 
-The false receipt prevents every publisher. A fresh full release gate must
-validate all corrections before publication.
+The fold's host baseline screencap also carries a multi-display diagnostic prefix
+before its PNG signature, while per-test UiDevice PNGs are valid. Host snapshots
+now remove the previous remote PNG, write a fresh remote PNG and pull its bytes
+separately, retaining command warnings in receipts and rejecting invalid images
+or failed commands. The shared 60-second snapshot budget is not renewed between
+commands. Positive dimensions, complete PNG chunks/CRCs and a parsed XML hierarchy
+remain required. Actual posture proof
+continues to use the per-test folded/unfolded snapshots.
 
 ## Build 900 Gemma audio submission review
 

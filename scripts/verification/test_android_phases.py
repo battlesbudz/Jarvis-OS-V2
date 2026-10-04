@@ -1,14 +1,17 @@
 """Failure evidence must not be mistaken for an intentional external process death."""
 from contextlib import redirect_stdout
+import base64
 import io
 import json
 import shlex
 import subprocess
+import sys
 from types import SimpleNamespace
 import unittest
 from pathlib import Path
 import tempfile
 from unittest.mock import patch
+from xml.etree.ElementTree import ParseError
 
 from android import Device, PACKAGE, instrumentation_results, interrupted_results, sha256, verify
 from profiles import load_profiles
@@ -69,97 +72,6 @@ class PhaseEvidenceTest(unittest.TestCase):
                                  (raw.replace("CODE: 0", "CODE: invalid"), ["phase"]), ("OK (0 tests)\n", [])):
             with self.subTest(output=output, expected=expected):
                 self.assertFalse(instrumentation_results(output, expected, "Suite")["passed"])
-
-
-class SnapshotTransportTest(unittest.TestCase):
-    def exercise(self, fault=None):
-        with tempfile.TemporaryDirectory() as temporary:
-            folder = Path(temporary)
-            png = b"\x89PNG\r\n\x1a\nfresh capture"
-            stale = b"\x89PNG\r\n\x1a\nprevious capture"
-            warning = "[Warning] Multiple displays were found, but no display id was specified!\n"
-            remote = {"/sdcard/jarvis-screen.png": stale}
-            target = folder / "current.png"
-            target.write_bytes(stale)
-            calls = []
-
-            class ScreenshotDevice(Device):
-                def run(self, *argv, **kwargs):
-                    calls.append(argv)
-                    if argv[0] == "pull":
-                        if fault == "pull" or argv[1] not in remote:
-                            raise RuntimeError("Capture file could not be pulled")
-                        Path(argv[2]).write_bytes(remote[argv[1]])
-                        return "pulled"
-                    if argv[0] != "shell":
-                        raise AssertionError("Diagnostic bytes must not be captured as an image stream")
-                    command = shlex.split(argv[1])
-                    if command == ["rm", "-f", "/sdcard/jarvis-screen.png"]:
-                        if fault == "remove":
-                            raise RuntimeError("Could not remove previous capture")
-                        remote.pop(command[2], None)
-                        return ""
-                    if command[:2] == ["sh", "-c"]:
-                        if len(command) != 3 or command[2] != "screencap -p /sdcard/jarvis-screen.png 2>&1":
-                            raise AssertionError("The diagnostic redirection must be shell syntax")
-                        if fault == "capture":
-                            raise RuntimeError("Screenshot capture failed")
-                        if fault != "missing":
-                            remote["/sdcard/jarvis-screen.png"] = warning.encode() + png if fault == "malformed" else png
-                        return warning
-                    if command == ["uiautomator", "dump", "/sdcard/jarvis-window.xml"]:
-                        if fault == "hierarchy":
-                            raise RuntimeError("Hierarchy capture failed")
-                        return "dumped"
-                    if command == ["cat", "/sdcard/jarvis-window.xml"]:
-                        return "<hierarchy />"
-                    raise AssertionError(f"Unexpected snapshot command: {command}")
-
-            device = ScreenshotDevice("emulator-5554", folder)
-            result = error = None
-            try:
-                result = device.snapshot("current")
-            except RuntimeError as failure:
-                error = failure
-            diagnostic = folder / "current-screencap.txt"
-            return {"xml": result, "error": error, "calls": calls,
-                    "image": target.read_bytes() if target.exists() else None,
-                    "diagnostic": diagnostic.read_text() if diagnostic.exists() else None,
-                    "expected_image": png, "warning": warning, "remote": remote}
-
-    def test_multidisplay_warning_is_retained_separately_from_fresh_png(self):
-        result = self.exercise()
-        self.assertIsNone(result["error"])
-        self.assertEqual("<hierarchy />", result["xml"])
-        self.assertEqual(result["expected_image"], result["image"])
-        self.assertEqual(result["warning"], result["diagnostic"])
-
-    def test_failed_or_missing_capture_cannot_reuse_a_previous_local_or_remote_image(self):
-        for fault in ("remove", "capture", "missing"):
-            with self.subTest(fault=fault):
-                result = self.exercise(fault)
-                self.assertIsInstance(result["error"], RuntimeError)
-                self.assertIsNone(result["xml"])
-                self.assertIsNone(result["image"])
-                if fault != "remove":
-                    self.assertNotIn("/sdcard/jarvis-screen.png", result["remote"])
-                if fault == "capture":
-                    self.assertIn("Screenshot capture failed", result["diagnostic"])
-
-    def test_prefixed_or_malformed_pulled_image_is_rejected_without_trimming(self):
-        result = self.exercise("malformed")
-        self.assertRegex(str(result["error"]), "Invalid captured screenshot")
-        self.assertIsNone(result["xml"])
-        self.assertEqual(result["warning"].encode() + result["expected_image"], result["image"])
-        self.assertFalse(any("uiautomator" in str(call) for call in result["calls"]))
-
-    def test_pull_or_hierarchy_failure_remains_a_failed_snapshot(self):
-        for fault in ("pull", "hierarchy"):
-            with self.subTest(fault=fault):
-                result = self.exercise(fault)
-                self.assertIsInstance(result["error"], RuntimeError)
-                self.assertIsNone(result["xml"])
-                self.assertEqual(result["warning"], result["diagnostic"])
 
 
 class InstallTransportTest(unittest.TestCase):
@@ -278,6 +190,159 @@ class InstallTransportTest(unittest.TestCase):
                 self.assertFalse(report["upgrade"]["passed"])
                 self.assertEqual(1, sum(argv[0] == "instrument" for argv, _ in calls))
                 self.assertIn("INSTALL_FAILED_UPDATE_INCOMPATIBLE", report["errors"][0])
+
+
+class SnapshotEvidenceTest(unittest.TestCase):
+    PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=')
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.fake_adb = self.root / 'adb'
+        self.fake_adb.write_text(f'#!{sys.executable}\n' + '''import json,shlex,shutil,sys
+from pathlib import Path
+root=Path(__file__).parent
+mode=json.loads((root/'mode.json').read_text())
+args=sys.argv[3:]
+with (root/'calls.jsonl').open('a') as log:
+    log.write(json.dumps(args)+'\\n')
+if args[0]=='pull':
+    if mode.get('failure')=='pull':
+        print('failed pull',file=sys.stderr);sys.exit(8)
+    shutil.copyfile(root/'device.png',args[2])
+    print('1 file pulled')
+elif args[0]=='shell':
+    command=shlex.split(args[1])
+    if command==['rm','-f','/sdcard/jarvis-screen.png']:
+        if mode.get('failure')=='remove':
+            print('failed removal',file=sys.stderr);sys.exit(6)
+        (root/'device.png').unlink(missing_ok=True)
+    elif command[0]=='screencap':
+        assert command==['screencap','-p','/sdcard/jarvis-screen.png']
+        print('[Warning] Multiple displays were found')
+        print('capture stderr diagnostic',file=sys.stderr)
+        if mode.get('failure')=='capture':sys.exit(7)
+        if mode.get('failure')!='missing':
+            (root/'device.png').write_bytes(bytes.fromhex(mode['png']))
+    elif command[:2]==['uiautomator','dump']:
+        assert command[2]=='/sdcard/jarvis-window.xml'
+        if mode.get('failure')=='hierarchy':
+            print('failed hierarchy',file=sys.stderr);sys.exit(9)
+        print('UI hierarchy dumped')
+    elif command==['cat','/sdcard/jarvis-window.xml']:
+        print(mode.get('xml','<hierarchy />'))
+    else:raise AssertionError(command)
+else:raise AssertionError(args)
+''')
+        self.fake_adb.chmod(0o755)
+        self.device = Device('emulator-5554', self.root / 'evidence', str(self.fake_adb))
+        self.mode()
+
+    def mode(self, **changes):
+        (self.root / 'mode.json').write_text(json.dumps(dict(png=self.PNG.hex(), **changes)))
+
+    def receipts(self):
+        return [json.loads(line) for line in (self.device.out / 'commands.jsonl').read_text().splitlines()]
+
+    def test_device_file_and_pull_preserve_png_bytes_and_both_diagnostic_streams(self):
+        self.assertEqual('<hierarchy />\n', self.device.snapshot('baseline'))
+        self.assertEqual(self.PNG, (self.device.out / 'baseline.png').read_bytes())
+        receipts = self.receipts()
+        self.assertEqual(['shell', 'shell', 'pull', 'shell', 'shell'], [r['argv'][3] for r in receipts])
+        self.assertEqual('rm -f /sdcard/jarvis-screen.png', receipts[0]['argv'][4])
+        self.assertEqual('screencap -p /sdcard/jarvis-screen.png', receipts[1]['argv'][4])
+        self.assertEqual(['/sdcard/jarvis-screen.png', str(self.device.out / 'baseline.png')], receipts[2]['argv'][4:])
+        self.assertIn('Multiple displays', receipts[1]['stdout'])
+        self.assertIn('capture stderr diagnostic', receipts[1]['stderr'])
+        diagnostic = (self.device.out / 'baseline-screencap.txt').read_text()
+        self.assertIn('Multiple displays', diagnostic)
+        self.assertIn('capture stderr diagnostic', diagnostic)
+        self.assertFalse(any('exec-out' in r['argv'] for r in receipts))
+        self.assertTrue(all(r['exit'] == 0 for r in receipts))
+
+    def test_capture_and_pull_failures_stop_before_hierarchy_and_retain_diagnostics(self):
+        for failure, expected in (('remove', 1), ('capture', 2), ('pull', 3)):
+            with self.subTest(failure=failure):
+                for f in self.device.out.iterdir(): f.unlink()
+                (self.device.out / 'baseline.png').write_bytes(self.PNG)
+                self.mode(failure=failure)
+                with self.assertRaisesRegex(RuntimeError, 'adb (shell|pull) failed'):
+                    self.device.snapshot('baseline')
+                receipts = self.receipts()
+                self.assertEqual(expected, len(receipts))
+                self.assertNotEqual(0, receipts[-1]['exit'])
+                self.assertTrue(receipts[-1]['stderr'])
+                self.assertFalse((self.device.out / 'baseline.png').exists())
+                if failure != 'remove':
+                    self.assertIn('capture stderr diagnostic', (self.device.out / 'baseline-screencap.txt').read_text())
+
+    def test_missing_new_capture_cannot_reuse_a_previous_local_or_remote_png(self):
+        (self.root / 'device.png').write_bytes(self.PNG)
+        (self.device.out / 'baseline.png').write_bytes(self.PNG)
+        self.mode(failure='missing')
+        with self.assertRaisesRegex(RuntimeError, 'adb pull failed'):
+            self.device.snapshot('baseline')
+        self.assertFalse((self.root / 'device.png').exists())
+        self.assertFalse((self.device.out / 'baseline.png').exists())
+        self.assertEqual(3, len(self.receipts()))
+        self.assertIn('Multiple displays', (self.device.out / 'baseline-screencap.txt').read_text())
+
+    def test_hierarchy_command_failure_remains_a_failed_snapshot_with_valid_png_and_diagnostics(self):
+        self.mode(failure='hierarchy')
+        with self.assertRaisesRegex(RuntimeError, 'failed hierarchy'):
+            self.device.snapshot('baseline')
+        self.assertEqual(self.PNG, (self.device.out / 'baseline.png').read_bytes())
+        self.assertEqual(4, len(self.receipts()))
+        self.assertIn('Multiple displays', (self.device.out / 'baseline-screencap.txt').read_text())
+
+    def test_warning_prefixed_truncated_and_crc_corrupt_pngs_are_rejected_intact(self):
+        for png in (b'[Warning] Multiple displays\n' + self.PNG, self.PNG[:-3], self.PNG[:-1] + b'\x00'):
+            with self.subTest(png=png):
+                for f in self.device.out.iterdir(): f.unlink()
+                (self.root / 'mode.json').write_text(json.dumps({'png': png.hex()}))
+                with self.assertRaisesRegex(RuntimeError, 'Invalid screenshot PNG'):
+                    self.device.snapshot('baseline')
+                self.assertEqual(png, (self.device.out / 'baseline.png').read_bytes())
+                self.assertEqual(3, len(self.receipts()))
+
+    def test_invalid_hierarchy_still_fails_after_valid_screenshot(self):
+        self.mode(xml='not xml')
+        with self.assertRaises(ParseError):
+            self.device.snapshot('baseline')
+        self.assertEqual(self.PNG, (self.device.out / 'baseline.png').read_bytes())
+        self.assertEqual(5, len(self.receipts()))
+
+    def test_timeout_retains_partial_diagnostics_and_propagates(self):
+        timeout = subprocess.TimeoutExpired('adb', 60, output=b'partial capture', stderr=b'timed out')
+        with patch('android.subprocess.run', side_effect=[subprocess.CompletedProcess([], 0, b'', b''), timeout]):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.device.snapshot('baseline')
+        removed, receipt = self.receipts()
+        self.assertEqual('rm -f /sdcard/jarvis-screen.png', removed['argv'][4])
+        self.assertIsNone(receipt['exit'])
+        self.assertTrue(receipt['timed_out'])
+        self.assertEqual('partial capture', receipt['stdout'])
+        self.assertEqual('timed out', receipt['stderr'])
+        diagnostic = (self.device.out / 'baseline-screencap.txt').read_text()
+        self.assertIn('partial capture', diagnostic)
+        self.assertIn('timed out', diagnostic)
+
+    def test_capture_pull_and_hierarchy_share_existing_60_second_budget(self):
+        clock, budgets = [0.0], []
+        real_run = subprocess.run
+
+        def run(*args, **kwargs):
+            budgets.append(kwargs['timeout'])
+            result = real_run(*args, **kwargs)
+            clock[0] += 20
+            return result
+
+        with patch('android.time.monotonic', side_effect=lambda: clock[0]), patch('android.subprocess.run', side_effect=run):
+            with self.assertRaisesRegex(RuntimeError, '60-second command budget'):
+                self.device.snapshot('baseline')
+        self.assertEqual([60, 40, 20], budgets)
+        self.assertEqual(3, len(self.receipts()))
 
 
 if __name__ == "__main__":

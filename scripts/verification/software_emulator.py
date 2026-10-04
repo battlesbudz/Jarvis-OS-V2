@@ -244,6 +244,58 @@ def wait_for_unlock(adb, running, deadline, *, now=time.monotonic, pause=time.sl
     raise TimeoutError("Actual keyguard dismissal was not observed within declared boot timeout")
 
 
+def wait_for_boot_broadcast(adb, running, deadline, *, now=time.monotonic, pause=time.sleep,
+                            record=lambda raw: None):
+    """Observe Android 10's ordered user0 boot delivery, within the existing budget.
+
+    Build 937 started installation while cold-boot receivers still consumed guest CPU.
+    This completion barrier tests that contention hypothesis; it does not prove idle
+    CPU or a successful installation. Android 10 emits this exact completion message:
+    https://android.googlesource.com/platform/frameworks/base/+/refs/heads/android10-release/services/core/java/com/android/server/am/UserController.java
+    """
+    state = {"completed": False}
+
+    def expired():
+        summary = {key: state[key] for key in ("completed", "system_server_pid") if key in state}
+        summary["probe_exit_codes"] = {key: probe["exit_code"]
+                                       for key, probe in state.get("probes", {}).items()}
+        raise TimeoutError("Actual user0 BOOT_COMPLETED delivery was not observed within declared boot timeout: "
+                           + json.dumps(summary))
+
+    while now() < deadline:
+        if not running():
+            raise RuntimeError("Emulator exited before user0 BOOT_COMPLETED delivery was observed")
+        state = {"completed": False, "probes": {}}
+        for name, args in (("pid_before", ("shell", "pidof", "system_server")),
+                           ("logcat", ("logcat", "-b", "system", "-d", "-v", "threadtime",
+                                       "-s", "ActivityManager:I")),
+                           ("pid_after", ("shell", "pidof", "system_server"))):
+            if now() >= deadline:
+                expired()
+            result = adb(*args, deadline=deadline, timeout=15)
+            state["probes"][name] = {"exit_code": result.returncode, "stdout": result.stdout,
+                                     "stderr": result.stderr}
+            record(state)
+        probes = state["probes"]
+        before = re.fullmatch(r"\s*([1-9][0-9]*)\s*", probes["pid_before"]["stdout"])
+        after = re.fullmatch(r"\s*([1-9][0-9]*)\s*", probes["pid_after"]["stdout"])
+        if (all(probe["exit_code"] == 0 for probe in probes.values()) and before and after
+                and before.group(1) == after.group(1)):
+            pid = before.group(1)
+            state["system_server_pid"] = int(pid)
+            # The fresh guest's current PID must remain stable across the filtered
+            # receipt. A previous crashed system_server's marker cannot authorize it.
+            pattern = (rf"^\d{{2}}-\d{{2}} \d{{2}}:\d{{2}}:\d{{2}}\.\d{{3}}\s+{pid}\s+"
+                       r"[0-9]+\s+I\s+ActivityManager\s*:\s+"
+                       r"Finished processing BOOT_COMPLETED for u0\s*$")
+            state["completed"] = bool(re.search(pattern, probes["logcat"]["stdout"], re.MULTILINE))
+        record(state)
+        if state["completed"] and running() and now() < deadline:
+            return state
+        pause(min(2, max(0, deadline - now())))
+    expired()
+
+
 class SoftwareSession:
     def __init__(self, profile, out, sdk, *, now=time.monotonic):
         self.profile, self.out, self.sdk, self.now = profile, Path(out), Path(sdk), now
@@ -422,6 +474,9 @@ class SoftwareSession:
                      timeout=remaining(deadline, self.now))
             wait_for_unlock(self.adb, lambda: self.emulator.poll() is None, deadline, now=self.now,
                             record=lambda raw: (self.diagnostics / "unlock-state.txt").write_text(raw))
+            self.report["boot_broadcast"] = wait_for_boot_broadcast(
+                self.adb, lambda: self.emulator.poll() is None, deadline, now=self.now,
+                record=self.record_boot_broadcast)
             for setting in ("window_animation_scale", "transition_animation_scale", "animator_duration_scale"):
                 self.adb("shell", "settings", "put", "global", setting, "0.0",
                          deadline=deadline, check=True, timeout=30)
@@ -431,6 +486,10 @@ class SoftwareSession:
         finally:
             self.capture_host_resources("boot-ready" if self.report["status"] == "ready" else "boot-failed", deadline)
         print("API 29 boot flag, input/activity/package/window services and unlock succeeded", flush=True)
+
+    def record_boot_broadcast(self, receipt):
+        with (self.diagnostics / "boot-broadcast.jsonl").open("a") as stream:
+            stream.write(json.dumps(receipt) + "\n")
 
     def wait_ready(self, deadline):
         def record(state):

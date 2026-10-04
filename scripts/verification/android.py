@@ -244,23 +244,78 @@ class Device:
             self.out.joinpath("last-instrumentation.txt").write_text("".join(lines))
 
     def snapshot(self, name):
-        # Multi-display screencap writes a diagnostic to stderr. exec-out mixes
-        # that remote stream with PNG bytes, so capture a named file instead.
-        png = self.out / f"{name}.png"
+        import zlib
+
+        deadline = time.monotonic() + 60
+
+        def command(*args, diagnostic=None):
+            argv = [self.adb, "-s", self.serial, *map(str, args)]
+            started = time.monotonic()
+            remaining = deadline - started
+            if remaining <= 0:
+                raise RuntimeError("Snapshot exceeded its 60-second command budget")
+            receipt = {"argv": argv}
+            try:
+                result = subprocess.run(argv, capture_output=True, timeout=remaining)
+                receipt.update(exit=result.returncode, stdout=result.stdout.decode(errors="replace"),
+                               stderr=result.stderr.decode(errors="replace"))
+            except subprocess.TimeoutExpired as error:
+                receipt.update(exit=None, timed_out=True, stdout=(error.stdout or b"").decode(errors="replace"),
+                               stderr=(error.stderr or b"").decode(errors="replace"), error=str(error))
+                raise
+            except OSError as error:
+                receipt.update(exit=None, stdout="", stderr=str(error), error=str(error))
+                raise
+            finally:
+                receipt["seconds"] = round(time.monotonic() - started, 2)
+                with (self.out / "commands.jsonl").open("a") as log:
+                    log.write(json.dumps(receipt) + "\n")
+                if diagnostic is not None:
+                    diagnostic.write_text(receipt.get("stdout", "") + receipt.get("stderr", "") +
+                                          ("\n" + receipt["error"] if "error" in receipt else ""))
+            if result.returncode:
+                raise RuntimeError(f"adb {args[0]} failed: {receipt['stderr']}")
+            if time.monotonic() >= deadline:
+                raise RuntimeError("Snapshot exceeded its 60-second command budget")
+            return result.stdout.decode(errors="replace")
+
+        target = self.out / f"{name}.png"
         remote = "/sdcard/jarvis-screen.png"
-        png.unlink(missing_ok=True)
-        self.shell("rm", "-f", remote)
-        try:
-            diagnostics = self.shell("sh", "-c", f"screencap -p {shlex.quote(remote)} 2>&1")
-        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
-            self.out.joinpath(f"{name}-screencap.txt").write_text(str(error) + "\n")
-            raise
-        self.out.joinpath(f"{name}-screencap.txt").write_text(diagnostics)
-        self.run("pull", remote, png)
-        if not png.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"):
-            raise RuntimeError("Invalid captured screenshot; diagnostic text is not PNG evidence")
-        self.shell("uiautomator", "dump", "/sdcard/jarvis-window.xml")
-        xml = self.shell("cat", "/sdcard/jarvis-window.xml")
+        target.unlink(missing_ok=True)
+        # A device file keeps screencap's multi-display diagnostics out of the
+        # image bytes. Remove the prior device file so a capture that produces
+        # no new file cannot pass by pulling stale pixels. Keep both diagnostic
+        # streams in command receipts and the dedicated capture diagnostic.
+        command("shell", shlex.join(["rm", "-f", remote]))
+        command("shell", shlex.join(["screencap", "-p", remote]),
+                diagnostic=self.out / f"{name}-screencap.txt")
+        command("pull", remote, target)
+        png = target.read_bytes()
+        valid, offset, kinds = png.startswith(b"\x89PNG\r\n\x1a\n"), 8, []
+        while valid and offset < len(png):
+            if len(png) - offset < 12:
+                valid = False
+                break
+            size = int.from_bytes(png[offset:offset + 4], "big")
+            kind = png[offset + 4:offset + 8]
+            end = offset + 12 + size
+            if end > len(png) or zlib.crc32(png[offset + 4:end - 4]) != int.from_bytes(png[end - 4:end], "big"):
+                valid = False
+                break
+            kinds.append(kind)
+            if len(kinds) == 1:
+                valid = (kind == b"IHDR" and size == 13 and
+                         int.from_bytes(png[offset + 8:offset + 12], "big") > 0 and
+                         int.from_bytes(png[offset + 12:offset + 16], "big") > 0)
+            if kind == b"IEND":
+                valid = valid and size == 0 and end == len(png)
+                offset = end
+                break
+            offset = end
+        if not valid or not kinds or kinds[-1] != b"IEND" or b"IDAT" not in kinds:
+            raise RuntimeError(f"Invalid screenshot PNG for {name}")
+        command("shell", shlex.join(["uiautomator", "dump", "/sdcard/jarvis-window.xml"]))
+        xml = command("shell", shlex.join(["cat", "/sdcard/jarvis-window.xml"]))
         self.out.joinpath(f"{name}.xml").write_text(xml)
         ET.fromstring(xml)  # A failed hierarchy dump is not valid evidence.
         return xml

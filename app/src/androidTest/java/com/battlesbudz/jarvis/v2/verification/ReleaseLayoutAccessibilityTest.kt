@@ -30,6 +30,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.Configurator
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -272,23 +273,19 @@ class ReleaseLayoutAccessibilityTest {
         val initial = device.displayWidth to device.displayHeight
         val foldable = InstrumentationRegistry.getArguments().getString("jarvisFoldable") == "true"
         if (foldable) {
-            requestPosture("fold")
-            awaitDifferentDimensions(initial, afterPosture = true)
+            awaitDifferentDimensions(initial, "fold") { requestPosture("fold") }
             assertContinuity(threadId, draft)
             capture("${testName.methodName}-folded")
             val folded = device.displayWidth to device.displayHeight
-            requestPosture("unfold")
-            awaitDifferentDimensions(folded, afterPosture = true)
+            awaitDifferentDimensions(folded, "unfold") { requestPosture("unfold") }
             assertContinuity(threadId, draft)
             capture("${testName.methodName}-unfolded")
         } else {
-            device.setOrientationLeft()
-            awaitDifferentDimensions(initial)
+            awaitDifferentDimensions(initial, "rotated") { device.setOrientationLeft() }
             assertContinuity(threadId, draft)
             capture("${testName.methodName}-rotated")
             val rotated = device.displayWidth to device.displayHeight
-            device.setOrientationNatural()
-            awaitDifferentDimensions(rotated)
+            awaitDifferentDimensions(rotated, "natural") { device.setOrientationNatural() }
             assertContinuity(threadId, draft)
         }
         assertAction("voice_call_end", "End call").click()
@@ -343,39 +340,96 @@ class ReleaseLayoutAccessibilityTest {
         instrumentation.sendStatus(1, Bundle().apply { putString("jarvisFold", posture) })
     }
 
-    private fun awaitDifferentDimensions(before: Pair<Int, Int>, afterPosture: Boolean = false) {
-        val deadline = SystemClock.uptimeMillis() + 45_000
-        while (SystemClock.uptimeMillis() < deadline) {
-            if ((device.displayWidth to device.displayHeight) != before) {
-                if (afterPosture) {
-                    // The genuine Pixel Fold transition shows a dismissible
-                    // keyguard. Wake/unlock this test device without relaunching
-                    // the activity or replacing retained conversation/call state.
-                    device.wakeUp()
-                    device.executeShellCommand("wm dismiss-keyguard")
-                    val keyguard = checkNotNull(context.getSystemService(KeyguardManager::class.java))
-                    while (SystemClock.uptimeMillis() < deadline &&
-                        (!device.isScreenOn || keyguard.isKeyguardLocked)) SystemClock.sleep(100)
-                    assertTrue("Posture must leave the device awake and unlocked within the original deadline",
-                        SystemClock.uptimeMillis() < deadline && device.isScreenOn && !keyguard.isKeyguardLocked)
-                    device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
-                    val remaining = deadline - SystemClock.uptimeMillis()
-                    assertTrue("Posture settling must stay within the original deadline", remaining > 0)
-                    assertNotNull("The retained composer must be visible after waking the new display",
-                        device.wait(Until.findObject(By.res("chat_composer")), remaining.coerceAtMost(15_000)))
-                    assertTrue("The settled posture must still have changed the real display dimensions",
-                        (device.displayWidth to device.displayHeight) != before)
-                    assertTrue("Composer observation must stay within the original deadline",
-                        SystemClock.uptimeMillis() < deadline)
-                    return
-                }
-                device.waitForIdle()
-                find(By.res("chat_composer"))
-                return
+    private fun awaitDifferentDimensions(before: Pair<Int, Int>, transition: String, request: () -> Unit) {
+        val started = SystemClock.uptimeMillis()
+        val deadline = started + 45_000
+        val keyguard = checkNotNull(context.getSystemService(KeyguardManager::class.java))
+        val configurator = Configurator.getInstance()
+        val originalIdleTimeout = configurator.getWaitForIdleTimeout()
+        val observation = JSONObject().put("transition", transition)
+            .put("before_width", before.first).put("before_height", before.second)
+            .put("started_uptime_ms", started).put("deadline_uptime_ms", deadline)
+            .put("ready", false)
+        var stage = "request"
+        var transitionFailure: Throwable? = null
+        fun remaining() = deadline - SystemClock.uptimeMillis()
+        fun requireBudget() = assertTrue("$transition exceeded its 45-second transition budget during $stage", remaining() > 0)
+        fun awaitCondition(message: String, condition: () -> Boolean) {
+            while (remaining() > 0) {
+                if (condition()) { requireBudget(); return }
+                SystemClock.sleep(minOf(100L, remaining().coerceAtLeast(1L)))
             }
-            SystemClock.sleep(100)
+            fail(message)
         }
-        fail("Requested posture/rotation did not change real display dimensions from $before")
+        try {
+            // Accessibility's implicit idle wait must not add time beyond the
+            // same transition budget used for physical change and unlocking.
+            configurator.setWaitForIdleTimeout(0)
+            request()
+            requireBudget()
+            observation.put("requested_uptime_ms", SystemClock.uptimeMillis())
+            stage = "display dimensions"
+            awaitCondition("Requested posture/rotation did not change real display dimensions from $before") {
+                (device.displayWidth to device.displayHeight) != before
+            }
+            observation.put("changed_width", device.displayWidth).put("changed_height", device.displayHeight)
+                .put("dimensions_changed_uptime_ms", SystemClock.uptimeMillis())
+                .put("screen_on_before_wake", device.isScreenOn).put("keyguard_before_dismiss", keyguard.isKeyguardLocked)
+            stage = "wake"
+            // wakeUp waits 500 ms when the default display is off. Folding a
+            // Pixel Fold can also show swipe keyguard while its cover stays on.
+            if (!device.isScreenOn) assertTrue("No wake-up time remains within the transition budget", remaining() > 500)
+            requireBudget()
+            observation.put("wake_requested_uptime_ms", SystemClock.uptimeMillis())
+            device.wakeUp()
+            requireBudget()
+            observation.put("wake_completed_uptime_ms", SystemClock.uptimeMillis())
+            stage = "dismiss keyguard"
+            observation.put("dismiss_command", "wm dismiss-keyguard")
+                .put("dismiss_output", device.executeShellCommand("wm dismiss-keyguard"))
+            requireBudget()
+            observation.put("dismiss_completed_uptime_ms", SystemClock.uptimeMillis())
+            stage = "observe unlocked display"
+            awaitCondition("$transition did not leave the changed display awake with keyguard dismissed") {
+                device.isScreenOn && !keyguard.isKeyguardLocked
+            }
+            observation.put("unlocked_uptime_ms", SystemClock.uptimeMillis())
+                .put("screen_on_after_dismiss", device.isScreenOn).put("keyguard_after_dismiss", keyguard.isKeyguardLocked)
+            stage = "composer"
+            requireBudget()
+            val composer = device.wait(Until.findObject(By.res("chat_composer")), minOf(15_000L, remaining()))
+            requireBudget()
+            assertNotNull("Missing accessible control chat_composer after $transition", composer)
+            assertTrue("The changed display must still be awake and unlocked", device.isScreenOn && !keyguard.isKeyguardLocked)
+            assertTrue("The real display change must remain visible", (device.displayWidth to device.displayHeight) != before)
+            requireBudget()
+            observation.put("composer_observed_uptime_ms", SystemClock.uptimeMillis())
+                .put("ready_width", device.displayWidth).put("ready_height", device.displayHeight)
+            requireBudget()
+            observation.put("ready", true)
+            stage = "ready"
+        } catch (failure: Throwable) {
+            transitionFailure = failure
+            throw failure
+        } finally {
+            val elapsed = SystemClock.uptimeMillis() - started
+            var cleanupFailure: Throwable? = null
+            fun cleanup(action: () -> Unit) {
+                try { action() } catch (failure: Throwable) {
+                    val original = transitionFailure ?: cleanupFailure
+                    if (original == null) cleanupFailure = failure else original.addSuppressed(failure)
+                }
+            }
+            cleanup { configurator.setWaitForIdleTimeout(originalIdleTimeout) }
+            cleanup {
+                observation.put("last_stage", stage).put("elapsed_ms", elapsed)
+                transitionFailure?.let { observation.put("failure", it.toString()) }
+                val file = File(context.cacheDir, "${testName.methodName}-$transition-transition.json")
+                    .apply { writeText(observation.toString(2)) }
+                export(file, "application/json")
+            }
+            if (transitionFailure == null) cleanupFailure?.let { throw it }
+        }
     }
 
     private fun capture(name: String) {

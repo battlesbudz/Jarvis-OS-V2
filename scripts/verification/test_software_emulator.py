@@ -15,11 +15,12 @@ import zipfile
 from profiles import load_profiles
 from software_emulator import (EMULATOR_PIN, SERVICES, SoftwareSession, emulator_command, main,
                                keyguard_dismissed, require_software_profile,
-                               wait_for_android, wait_for_unlock)
+                               wait_for_android, wait_for_boot_broadcast, wait_for_unlock)
 
 
 PROFILE = next(profile for profile in load_profiles() if profile["id"] == "29-phone-normal")
 UNLOCKED = "  isHomeRecentsComponent=false  KeyguardController:\n    mKeyguardShowing=false\n    mAodShowing=false\n    mKeyguardGoingAway=false\n"
+BOOT_DELIVERED = "10-04 04:03:49.805   279   353 I ActivityManager: Finished processing BOOT_COMPLETED for u0\n"
 
 
 class Clock:
@@ -134,6 +135,100 @@ class SoftwareReadinessTest(unittest.TestCase):
 
         wait_for_unlock(adb, lambda: True, 6, now=clock.now, pause=clock.pause)
         self.assertEqual(4, clock.now())
+
+
+class BootBroadcastTest(unittest.TestCase):
+    def test_pending_delivery_must_complete_for_current_server_before_original_deadline(self):
+        clock, deadlines, receipts = Clock(), [], []
+
+        def adb(*args, deadline, timeout):
+            deadlines.append(deadline)
+            self.assertEqual(15, timeout)
+            if args[0] == "shell":
+                self.assertEqual(("shell", "pidof", "system_server"), args)
+                return reply("279\n")
+            self.assertEqual(("logcat", "-b", "system", "-d", "-v", "threadtime",
+                              "-s", "ActivityManager:I"), args)
+            return reply(BOOT_DELIVERED if clock.now() >= 4 else "Posting BOOT_COMPLETED user #0\n")
+
+        result = wait_for_boot_broadcast(adb, lambda: True, 6, now=clock.now, pause=clock.pause,
+                                        record=lambda raw: receipts.append(json.loads(json.dumps(raw))))
+        self.assertEqual(4, clock.now())
+        self.assertEqual({6}, set(deadlines))
+        self.assertEqual(279, result["system_server_pid"])
+        self.assertTrue(result["completed"])
+        self.assertTrue(any(not receipt["completed"] for receipt in receipts))
+        self.assertEqual(BOOT_DELIVERED, receipts[-1]["probes"]["logcat"]["stdout"])
+
+    def test_wrong_server_user_tag_partial_and_failed_probes_never_complete(self):
+        for raw, log_exit, pid in ((BOOT_DELIVERED.replace("279", "278"), 0, "279"),
+                                  (BOOT_DELIVERED.replace("for u0", "for u10"), 0, "279"),
+                                  (BOOT_DELIVERED.replace("ActivityManager", "OtherService"), 0, "279"),
+                                  (BOOT_DELIVERED.replace("for u0", "for u"), 0, "279"),
+                                  (BOOT_DELIVERED.replace("for u0", "for u0 pending"), 0, "279"),
+                                  (BOOT_DELIVERED, 1, "279"), (BOOT_DELIVERED, 0, "279 280")):
+            with self.subTest(raw=raw, log_exit=log_exit, pid=pid):
+                clock = Clock()
+
+                def adb(*args, **kwargs):
+                    return reply(pid) if args[0] == "shell" else reply(raw, log_exit)
+
+                with self.assertRaisesRegex(TimeoutError, "Actual user0 BOOT_COMPLETED delivery"):
+                    wait_for_boot_broadcast(adb, lambda: True, 4, now=clock.now, pause=clock.pause)
+                self.assertEqual(4, clock.now())
+
+    def test_system_server_restart_during_receipt_rejects_old_completion(self):
+        clock = Clock()
+        adb = Mock(side_effect=[reply("279"), reply(BOOT_DELIVERED), reply("775")])
+        with self.assertRaises(TimeoutError):
+            wait_for_boot_broadcast(adb, lambda: True, 2, now=clock.now, pause=clock.pause)
+        self.assertEqual(3, adb.call_count)
+
+    def test_failed_pid_query_does_not_authorize_matching_marker(self):
+        clock = Clock()
+        adb = Mock(side_effect=[reply("279", 1), reply(BOOT_DELIVERED), reply("279")])
+        with self.assertRaises(TimeoutError):
+            wait_for_boot_broadcast(adb, lambda: True, 2, now=clock.now, pause=clock.pause)
+
+    def test_current_launch_completion_can_precede_wait_start(self):
+        adb = Mock(side_effect=[reply("279"), reply(BOOT_DELIVERED), reply("279")])
+        result = wait_for_boot_broadcast(adb, lambda: True, 2, now=lambda: 0)
+        self.assertTrue(result["completed"])
+
+    def test_late_receipt_cannot_renew_deadline_or_authorize_controller(self):
+        clock, receipts = Clock(), []
+
+        def adb(*args, deadline, **kwargs):
+            self.assertEqual(3, deadline)
+            clock.pause(1)
+            return reply("279" if args[0] == "shell" else BOOT_DELIVERED)
+
+        with self.assertRaisesRegex(TimeoutError, '"completed": true'):
+            wait_for_boot_broadcast(adb, lambda: True, 3, now=clock.now, pause=clock.pause,
+                                    record=lambda raw: receipts.append(json.loads(json.dumps(raw))))
+        self.assertEqual(3, clock.now())
+        self.assertEqual(BOOT_DELIVERED, receipts[-1]["probes"]["logcat"]["stdout"])
+
+    def test_budget_expiring_mid_poll_keeps_partial_receipt_without_more_queries(self):
+        clock, receipts, calls = Clock(), [], []
+
+        def adb(*args, **kwargs):
+            calls.append(args)
+            clock.pause(2)
+            return reply("279" if args[0] == "shell" else BOOT_DELIVERED)
+
+        with self.assertRaisesRegex(TimeoutError, "declared boot timeout"):
+            wait_for_boot_broadcast(adb, lambda: True, 3, now=clock.now, pause=clock.pause,
+                                    record=lambda raw: receipts.append(json.loads(json.dumps(raw))))
+        self.assertEqual(2, len(calls))
+        self.assertEqual({"pid_before", "logcat"}, set(receipts[-1]["probes"]))
+
+    def test_emulator_death_cannot_authorize_a_valid_receipt(self):
+        running = Mock(side_effect=[True, False, False])
+        adb = Mock(side_effect=[reply("279"), reply(BOOT_DELIVERED), reply("279")])
+        clock = Clock()
+        with self.assertRaisesRegex(RuntimeError, "Emulator exited"):
+            wait_for_boot_broadcast(adb, running, 4, now=clock.now, pause=clock.pause)
 
 
 class SoftwareSessionTest(unittest.TestCase):
@@ -335,7 +430,7 @@ class SoftwareSessionTest(unittest.TestCase):
             self.assertTrue(all("Host resource query unavailable" in receipt["error"] for receipt in receipts))
 
     def test_successful_unlock_settings_and_final_readiness_share_one_budget(self):
-        clock, deadlines = Clock(), []
+        clock, deadlines, operations = Clock(), [], []
         with tempfile.TemporaryDirectory() as temporary:
             session = SoftwareSession(PROFILE, Path(temporary) / "evidence", "/sdk", now=clock.now)
             emulator = Mock(pid=12345)
@@ -343,6 +438,7 @@ class SoftwareSessionTest(unittest.TestCase):
 
             def ready(deadline):
                 deadlines.append(deadline)
+                operations.append("services")
                 clock.pause(800 if clock.now() < 800 else 1)
 
             def resources(stage, deadline):
@@ -351,13 +447,18 @@ class SoftwareSessionTest(unittest.TestCase):
 
             def adb(*args, deadline, **kwargs):
                 deadlines.append(deadline)
+                operations.append(args[0])
                 if "input" in args:
                     self.assertEqual(99, kwargs["timeout"], "Resource receipts consume the existing boot budget")
                 if "settings" in args:
                     self.assertEqual(30, kwargs["timeout"], "Animation setting deadlines remain unchanged")
-                if "dumpsys" not in args:
+                if "dumpsys" not in args and "pidof" not in args and "logcat" not in args:
                     self.assertTrue(kwargs["check"])
                 clock.pause(1)
+                if "pidof" in args:
+                    return reply("279")
+                if "logcat" in args:
+                    return reply(BOOT_DELIVERED)
                 if "wm" in args:
                     return reply("Physical size: 540x960" if args[-1] == "size" else "Physical density: 210")
                 return reply(UNLOCKED if "dumpsys" in args else "")
@@ -368,9 +469,58 @@ class SoftwareSessionTest(unittest.TestCase):
                     patch.object(session, "adb", side_effect=adb):
                 session.boot()
             self.assertEqual("ready", session.report["status"])
-            self.assertEqual([900] * 11, deadlines)
+            self.assertEqual([900] * 14, deadlines)
             self.assertFalse(session.report["passed"], "Ready emulator alone does not pass the controller")
             self.assertEqual({"width": 540, "height": 960, "density_dpi": 210}, session.report["display"])
+            self.assertTrue(session.report["boot_broadcast"]["completed"])
+            self.assertEqual(279, session.report["boot_broadcast"]["system_server_pid"])
+            self.assertLess(operations.index("logcat"), len(operations) - 1 - operations[::-1].index("services"))
+            calls = [json.loads(line) for line in (session.diagnostics / "boot-broadcast.jsonl").read_text().splitlines()]
+            self.assertTrue(calls[-1]["completed"])
+
+    def test_boot_delivery_timeout_retains_receipts_and_never_reaches_settings_or_controller(self):
+        clock, commands = Clock(), []
+        with tempfile.TemporaryDirectory() as temporary:
+            session = SoftwareSession(PROFILE, Path(temporary) / "evidence", "/sdk", now=clock.now)
+            emulator = Mock(pid=12345, returncode=-15)
+            emulator.poll.return_value = None
+
+            def ready(deadline):
+                self.assertEqual(900, deadline)
+                clock.pause(897)
+
+            def adb(*args, deadline, **kwargs):
+                self.assertEqual(900, deadline)
+                commands.append(args)
+                if "dumpsys" in args:
+                    return reply(UNLOCKED)
+                if "pidof" in args:
+                    return reply("775")
+                return reply(BOOT_DELIVERED if "logcat" in args else "")
+
+            def wait(*args, **kwargs):
+                return wait_for_boot_broadcast(*args, pause=clock.pause, **kwargs)
+
+            with patch("software_emulator.subprocess.Popen", return_value=emulator), \
+                    patch.object(session, "capture_host_resources"), \
+                    patch.object(session, "wait_ready", side_effect=ready), \
+                    patch.object(session, "adb", side_effect=adb), \
+                    patch("software_emulator.wait_for_boot_broadcast", side_effect=wait):
+                with self.assertRaisesRegex(TimeoutError, "Actual user0 BOOT_COMPLETED delivery"):
+                    session.boot()
+            self.assertEqual(900, clock.now())
+            self.assertEqual("booting", session.report["status"])
+            self.assertFalse(session.report["passed"])
+            self.assertFalse(any("settings" in command or "wm" in command for command in commands))
+            self.assertFalse(session.out.exists(), "Controller cannot be started after failed boot delivery")
+            with patch.object(session, "adb", return_value=reply("raw final diagnostics")), \
+                    patch("software_emulator.os.killpg"):
+                session.close()
+            receipts = [json.loads(line) for line in (session.out / "software-emulator/boot-broadcast.jsonl").read_text().splitlines()]
+            self.assertTrue(receipts)
+            self.assertTrue(all(not receipt["completed"] for receipt in receipts))
+            self.assertEqual(775, receipts[-1]["system_server_pid"])
+            self.assertTrue((session.out / "software-emulator/startup.json").exists())
 
     def test_process_disappearance_during_close_still_attaches_all_diagnostics(self):
         with tempfile.TemporaryDirectory() as temporary:

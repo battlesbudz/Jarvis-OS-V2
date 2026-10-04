@@ -2350,15 +2350,33 @@ class ReleaseJourneyTest {
         return screen.findObject(By.scrollable(true))
     }
 
+    /** Text assertions observe rendered content; they do not require room for a tap. */
+    private fun benchmarkHasVisibleTextBounds(control: UiObject2): Boolean {
+        clearNavigationCache()
+        val bounds = control.visibleBounds
+        if (bounds.width() <= 0 || bounds.height() <= 0) return false
+        val viewport = android.graphics.Rect(0, 0, device.displayWidth, device.displayHeight)
+        var ancestor = control.parent
+        var depth = 0
+        while (ancestor != null && depth++ < 40) {
+            val current = ancestor
+            if (current.isScrollable && !viewport.intersect(current.visibleBounds)) return false
+            ancestor = current.parent
+        }
+        return ancestor == null && viewport.contains(bounds)
+    }
+
     private fun benchmarkFindVisible(selector: BySelector, towardTop: Boolean, inDialog: Boolean,
-        deadline: Long, swipes: AtomicInteger): UiObject2 {
+        deadline: Long, swipes: AtomicInteger, requireSafeTapBounds: Boolean = true): UiObject2 {
+        fun hasRequiredBounds(control: UiObject2): Boolean = if (requireSafeTapBounds)
+            benchmarkHasSafeBounds(control) else benchmarkHasVisibleTextBounds(control)
         var direction = if (towardTop) Direction.UP else Direction.DOWN
         var reversedAtEdge = false
         var unchangedGestures = 0
         while (SystemClock.uptimeMillis() < deadline) {
             try {
                 val control = findNavigationObject(selector)
-                if (control != null && benchmarkHasSafeBounds(control)) {
+                if (control != null && hasRequiredBounds(control)) {
                     if (android.os.Build.VERSION.SDK_INT < 34 || SystemClock.uptimeMillis() < deadline) return control
                     break
                 }
@@ -2375,8 +2393,15 @@ class ReleaseJourneyTest {
                 if (swipes.incrementAndGet() > 14) break
                 val viewport = list.visibleBounds
                 check(viewport.width() > 0 && viewport.height() > 96) { "Benchmark scroll viewport is unavailable" }
-                val bounds = control?.visibleBounds?.takeIf { it.width() > 0 && it.height() > 0 }
-                if (bounds != null) direction = if (bounds.centerY() < viewport.centerY()) Direction.UP else Direction.DOWN
+                val bounds = control?.visibleBounds
+                // An empty accessibility rectangle has no useful direction. UiAutomator
+                // also retains off-viewport bounds when clipping has no intersection.
+                val knownBounds = bounds?.takeIf { it.width() > 0 && it.height() > 0 }
+                if (knownBounds != null) direction = when {
+                    knownBounds.top < viewport.top + 24 && knownBounds.bottom <= viewport.bottom - 24 -> Direction.UP
+                    knownBounds.bottom > viewport.bottom - 24 && knownBounds.top >= viewport.top + 24 -> Direction.DOWN
+                    else -> if (knownBounds.centerY() < viewport.centerY()) Direction.UP else Direction.DOWN
+                }
                 // Dispatch physical gestures as the older release journeys do. The
                 // UiObject2.scroll result conflates a missing accessibility event with
                 // an actual edge, so determine progress from fresh visible content.
@@ -2386,17 +2411,20 @@ class ReleaseJourneyTest {
                 val swipeX = viewport.left + viewport.width() * 3 / 4
                 val lowY = viewport.top + viewport.height() * 85 / 100
                 val highY = viewport.top + viewport.height() * 15 / 100
+                // Once the target overlaps the viewport, align it instead of taking
+                // another full search stroke. Aim 24 pixels inside the viewport,
+                // add 24 pixels of room, and cap each adjustment at one fifth of it.
+                val fine = knownBounds != null && android.graphics.Rect.intersects(viewport, knownBounds)
+                val gap = if (knownBounds == null) 0 else if (direction == Direction.UP)
+                    viewport.top + 24 - knownBounds.top else knownBounds.bottom - (viewport.bottom - 24)
+                val fineLimit = viewport.height() / 5
+                val stroke = if (fine) (gap + 24).coerceIn(48.coerceAtMost(fineLimit), fineLimit) else lowY - highY
                 val fromY = if (direction == Direction.DOWN) lowY else highY
-                // Build 937 rediscovered the reference at an edge, then a full
-                // stroke flung it past the opposite edge. Approach an observed
-                // target with a short, slower gesture; empty exported bounds
-                // provide no direction. Discovery still uses the full stroke.
-                val distance = if (bounds != null) kotlin.math.abs(bounds.centerY() - viewport.centerY())
-                    .coerceIn(24, viewport.height() / 4) else lowY - highY
-                val steps = if (bounds != null) 80 else 12
-                val toY = if (direction == Direction.DOWN) fromY - distance else fromY + distance
+                val toY = fromY + if (direction == Direction.DOWN) -stroke else stroke
+                val steps = if (fine) 24 else 12
                 val scrollStarted = SystemClock.uptimeMillis()
                 if (android.os.Build.VERSION.SDK_INT >= 34 && SystemClock.uptimeMillis() >= deadline) break
+                android.util.Log.i("JarvisVerification", "benchmark_navigation_dispatch selector=$selector direction=$direction mode=${if (fine) "fine" else "blind"} requireSafeTapBounds=$requireSafeTapBounds beforeTarget=$bounds beforeViewport=$viewport stroke=$stroke x=$swipeX fromY=$fromY toY=$toY steps=$steps gestures=${swipes.get()} remainingMs=${deadline - scrollStarted}")
                 check(device.swipe(swipeX, fromY, swipeX, toY, steps)) {
                     "Benchmark swipe dispatch failed"
                 }
@@ -2404,15 +2432,19 @@ class ReleaseJourneyTest {
                 if (SystemClock.uptimeMillis() >= deadline) break
                 SystemClock.sleep(150)
                 val fresh = findNavigationObject(selector)
-                if (fresh != null && benchmarkHasSafeBounds(fresh)) {
+                val freshReady = fresh != null && hasRequiredBounds(fresh)
+                val freshBounds = fresh?.visibleBounds
+                val freshList = benchmarkScrollList()
+                val freshViewport = freshList?.visibleBounds
+                android.util.Log.i("JarvisVerification", "benchmark_navigation_observed selector=$selector direction=$direction mode=${if (fine) "fine" else "blind"} requireSafeTapBounds=$requireSafeTapBounds afterTarget=$freshBounds afterViewport=$freshViewport ready=$freshReady gestures=${swipes.get()} gestureMs=${SystemClock.uptimeMillis() - scrollStarted} remainingMs=${deadline - SystemClock.uptimeMillis()}")
+                if (fresh != null && freshReady) {
                     if (android.os.Build.VERSION.SDK_INT < 34 || SystemClock.uptimeMillis() < deadline) return fresh
                     break
                 }
-                val freshList = benchmarkScrollList()
                 val after = freshList?.let { benchmarkViewportSignature(it) }
                 val moved = after != null && after != before
                 unchangedGestures = if (moved) 0 else unchangedGestures + 1
-                android.util.Log.i("JarvisVerification", "benchmark_navigation selector=$selector direction=$direction targetBefore=$bounds targetAfterFound=${fresh != null} distance=$distance steps=$steps moved=$moved unchangedGestures=$unchangedGestures gestures=${swipes.get()} gestureMs=${SystemClock.uptimeMillis() - scrollStarted} remainingMs=${deadline - SystemClock.uptimeMillis()}")
+                android.util.Log.i("JarvisVerification", "benchmark_navigation selector=$selector direction=$direction moved=$moved unchangedGestures=$unchangedGestures gestures=${swipes.get()} gestureMs=${SystemClock.uptimeMillis() - scrollStarted} remainingMs=${deadline - SystemClock.uptimeMillis()}")
                 // Require two observed stationary gestures before reversing once.
                 if (after != null && unchangedGestures >= 2) {
                     if (reversedAtEdge) break
@@ -2424,11 +2456,17 @@ class ReleaseJourneyTest {
                 // Re-query after scrolling or recomposition, before dispatching any tap.
             }
         }
-        throw AssertionError("Benchmark control did not become fully visible: $selector")
+        throw AssertionError(if (requireSafeTapBounds) "Benchmark control did not become fully visible: $selector"
+            else "Benchmark text did not become visible: $selector")
     }
 
     private fun benchmarkScrollTo(selector: BySelector, towardTop: Boolean = false): UiObject2 = observeNavigation {
         benchmarkFindVisible(selector, towardTop, false, SystemClock.uptimeMillis() + 15_000, AtomicInteger())
+    }
+
+    private fun benchmarkRevealText(text: String): UiObject2 = observeNavigation {
+        benchmarkFindVisible(By.text(text), false, false, SystemClock.uptimeMillis() + 15_000,
+            AtomicInteger(), requireSafeTapBounds = false)
     }
 
     private fun benchmarkClickEnabled(selector: BySelector, towardTop: Boolean = false, inDialog: Boolean = false) {
@@ -2586,7 +2624,7 @@ class ReleaseJourneyTest {
             captureEvidence("pipeline_benchmark_restored_redacted_scores")
             benchmarkClickEnabled(By.res("pipeline_benchmark_reset"), towardTop = true)
             benchmarkClickEnabled(By.res("pipeline_benchmark_reset_confirm"), inDialog = true)
-            assertNotNull(benchmarkScrollTo(By.text("No pipeline measurements yet. Complete a text or voice turn, then return here.")))
+            assertNotNull(benchmarkRevealText("No pipeline measurements yet. Complete a text or voice turn, then return here."))
             restored.flush()
             assertTrue(AndroidPipelineBenchmarkStore(fixtureContext).samples.value.isEmpty())
         } finally {
