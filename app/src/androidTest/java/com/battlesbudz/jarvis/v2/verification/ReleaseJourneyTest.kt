@@ -2648,7 +2648,7 @@ class ReleaseJourneyTest {
     }
 
     private fun benchmarkClickEnabled(selector: BySelector, towardTop: Boolean = false, inDialog: Boolean = false,
-        holdDiscovery: Boolean = false) {
+        holdDiscovery: Boolean = false, sparseHeldDiscovery: Boolean = false) {
         val deadline = SystemClock.uptimeMillis() + 15_000
         val swipes = AtomicInteger()
         while (SystemClock.uptimeMillis() < deadline) {
@@ -2656,7 +2656,7 @@ class ReleaseJourneyTest {
                 var ready: UiObject2? = null
                 try {
                     val control = benchmarkFindVisible(selector, towardTop, inDialog, deadline, swipes,
-                        holdTextDiscovery = holdDiscovery)
+                        holdTextDiscovery = holdDiscovery, sparseHeldTextDiscovery = sparseHeldDiscovery)
                     if (control.isEnabled) {
                         val before = control.visibleBounds
                         device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
@@ -2752,7 +2752,8 @@ class ReleaseJourneyTest {
             assertNull("Original ASR content must not become retained content", score.hypothesis)
 
             // A completed pipeline can still have an incorrect result: human review is independent.
-            benchmarkClickEnabled(By.res("benchmark_quality_task_FAIL"), holdDiscovery = true)
+            benchmarkClickEnabled(By.res("benchmark_quality_task_FAIL"), holdDiscovery = true,
+                sparseHeldDiscovery = android.os.Build.VERSION.SDK_INT >= 35)
             benchmarkClickEnabled(By.res("benchmark_quality_intent_PASS"))
             benchmarkClickEnabled(By.res("benchmark_quality_factuality_FAIL"))
             assertFalse(benchmarkScrollTo(By.res("pipeline_benchmark_quality_save")).isEnabled)

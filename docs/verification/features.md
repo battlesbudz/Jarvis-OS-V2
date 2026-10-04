@@ -1185,6 +1185,64 @@ install, 60-minute job, all required app/native phases and publication gates
 remain unchanged. Neither failed candidate has a clean numbered release. A
 fresh signed candidate must complete all six profiles and the consolidated gate.
 
+## Build 952 interactive held discovery correction
+
+[Build 952](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37187161071)
+tests merge `77b1d8df8785159a22fbadee1a2e9bb12f562d89` from PR head
+`2ca8d324de5cc1ac3a561d5048d7f3b1a581cbab`. Signed normal/compact packaging,
+all 1,005 release JVM cases, 197 Python helper cases, four recorded-speech cases
+and both static native audits pass. API 30 normal, API 35 compact and API 36
+normal each pass all 49 main journeys, both actual Build 907 upgrade phases,
+restart, eight lifecycle phases, four layout cases and nine native loads.
+The consolidated receipt is false with three admitted profiles; all three
+publishers skip and the numbered release is absent.
+
+Fold artifact `11297729163`, ZIP SHA-256
+`4954d124fc6ceea7f5e6ae0333ad8e591826c13ae19eceda2e02221d63bc09b8`,
+passes the actual replacement upgrade and 48 of 49 main methods, including
+test48. Test45 fails while revealing Task FAIL, before reaching the sparse TTS
+gesture added previously. Its initial held 736-pixel Point-array swipe takes
+7,726 ms; two subsequent 48-pixel, 24-step fine adjustment cycles take 2,318 and
+2,385 ms. The last observed target bottom is 1714, outside the unchanged safe
+bottom of 1702. The next adjustment starts with 1,896 ms remaining and cannot
+authorize a stable enabled tap before expiry. The inspected PNG shows the
+review row at the viewport bottom without an ANR modal. The later XML reflects
+fixture cleanup and does not establish the same review geometry. Later restart,
+lifecycle, layout, real posture and native phases remain unreached.
+
+The focused correction gives `benchmarkClickEnabled` a default-false sparse
+held discovery option and enables it only for Task FAIL on API 35 and newer.
+It uses the existing successful real 12-MOVE gesture and explicit 250 ms hold;
+API 29/30 retain their prior path. Known-target fine adjustments, safe margins,
+fresh enabled/stable bounds, exactly one tap, the original shared 15-second and
+14-gesture limits, cache/idle handling, edge rules and every test assertion
+remain unchanged. Reducing the first gesture's redundant input work can leave
+time for fine alignment; only the next complete run can establish a pass.
+
+API 29 artifact `11297928957`, ZIP SHA-256
+`c0de7b4f08d3ce41feedacbc4cd5f11a5b64c0f2b6ac72302e614910392f86f5`,
+confirms that the exact pinned emulator applies the disabled guest Vulkan
+feature. The host GLES backend remains SwANGLE over SwiftShader Vulkan.
+Initial system-server PID 266 dies after the stock runtime-permission grant
+request times out. Replacement PID 726 posts user0 BOOT_COMPLETED, but no
+Finished marker exists in the full native stream or 18 distinct timely native
+reads. Cold receivers keep advancing near and after the original 900-second
+deadline; the logs do not identify one uniquely stuck receiver. SystemUI and
+other platform ANRs remain retained. No APK installation, controller or test48
+runs. The graphics trial applied but did not establish timely healthy startup.
+
+True 16 KB artifact `11298331230`, ZIP SHA-256
+`57031e7d31be9f1a1015b070e54f6986a1c2f9f66b629c3cdf34ae0eddf5d16e`,
+confirms API 35, 16,384-byte pages and the ARM64 bridge, and passes both upgrade
+phases and test01. The Jarvis process crashes during test02 evidence capture:
+its JIT thread receives SIGSEGV, with retained x86-64 libart frames through
+Class::GetDescriptor, ResolveMethod and JitCompile. This is an app process
+crash, unlike Build 948's recovered off-app crashes. Test02 does not complete,
+the other 47 main methods and all later phases remain unreached. The trigger
+is unresolved; native packaging checks do not exclude generated code,
+dependencies or earlier native corruption. No JIT/GC override conceals it.
+The next fresh signed candidate repeats all six profiles and every release gate.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,
