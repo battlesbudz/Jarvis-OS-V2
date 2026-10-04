@@ -1759,23 +1759,30 @@ class ReleaseJourneyTest {
         } finally {
             // Unlock through the PIN pad: the keyguard UI does not refresh
             // a locksettings clear issued while it is showing, so enter the
-            // PIN first, then clear it.
+            // PIN first, then clear it. The bouncer needs a swipe to reveal.
             device.wakeUp()
             runCatching {
-                for (digit in "1234") {
-                    device.findObject(By.desc(digit.toString()))?.click()
+                device.swipe(device.displayWidth / 2, device.displayHeight * 4 / 5,
+                    device.displayWidth / 2, device.displayHeight / 5, 20)
+                device.waitForIdle()
+                val digitDeadline = android.os.SystemClock.uptimeMillis() + 10_000
+                var digit: UiObject2? = null
+                while (digit == null && android.os.SystemClock.uptimeMillis() < digitDeadline) {
+                    digit = device.findObject(By.desc("1"))
+                    if (digit == null) Thread.sleep(300)
+                }
+                if (digit != null) {
+                    for (d in "1234") {
+                        device.findObject(By.desc(d.toString()))?.click()
+                        device.waitForIdle()
+                    }
+                    device.findObject(By.res("com.android.systemui:id/key_enter"))?.click()
                     device.waitForIdle()
                 }
-                device.findObject(By.res("com.android.systemui:id/key_enter"))?.click()
-                device.waitForIdle()
             }
             runCatching { device.executeShellCommand("locksettings clear --old 1234") }
             device.wakeUp()
             runCatching { device.executeShellCommand("wm dismiss-keyguard") }
-            if (keyguard?.isKeyguardLocked == true) {
-                device.swipe(device.displayWidth / 2, device.displayHeight * 4 / 5,
-                    device.displayWidth / 2, device.displayHeight / 5, 20)
-            }
         }
         assertFalse("PIN must be cleared so later journeys run unlocked",
             keyguard?.isDeviceLocked == true)
