@@ -38,6 +38,7 @@
 
 # Explicit application boundary exercised by the release integration tests.
 -keep class com.battlesbudz.jarvis.v2.actions.MobileAction** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenScrollDirection { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ActionRequest { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ActionValidation** { *; }
@@ -166,3 +167,19 @@
 
 # Shared assistant readiness API used by the separately shrunk release journey.
 -keep class com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService** { *; }
+
+# M1c screen-control boundary exercised by the release integration tests
+# (test40-test43). The separately shrunk instrumentation DEX constructs
+# ScreenNode fixtures, calls the top-level extractor, and drives the session
+# through the service bridge; without these, R8 strips or renames them and the
+# tests fail with NoClassDefFoundError/NoSuchMethodError.
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenControlService { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenControlService$Companion { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenControlServiceKt { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenControlSession { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenNode { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenObservation { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenBridge { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AdmitResult** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.DispatchGate** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TargetVerification** { *; }
