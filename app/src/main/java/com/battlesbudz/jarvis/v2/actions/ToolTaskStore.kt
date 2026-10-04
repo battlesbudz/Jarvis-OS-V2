@@ -49,7 +49,7 @@ class FileToolTaskStore(
     override fun readJournal(): ToolTaskJournal = synchronized(lockFor(file)) { readLocked().frozen() }
     override fun updateJournal(change: (ToolTaskJournal) -> ToolTaskJournal): ToolTaskJournal = synchronized(lockFor(file)) {
         val before = readLocked()
-        val after = retain(change(before.frozen()).frozen())
+        val after = retain(retainWorkflows(change(before.frozen()).frozen()))
         if (after != before) {
             validate(after)
             val encoded = encode(after)
@@ -71,7 +71,7 @@ class FileToolTaskStore(
             require(file.isFile && file.length() <= MAX_BYTES)
             val root = JSONObject(file.readText(StandardCharsets.UTF_8))
             val version = root.getInt("schemaVersion")
-            require(version in 1..2 && root.get("schemaVersion") is Int)
+            require(version in 1..3 && root.get("schemaVersion") is Int)
             val journal = ToolTaskJournal(
                 attempts = root.getJSONArray("attempts").objects { a -> ToolTaskAttempt(
                     id = a.getString("id"), generation = a.strictLong("generation"),
@@ -103,7 +103,20 @@ class FileToolTaskStore(
                 sourceAccess = if (version == 1 || !root.has("sourceAccess")) emptyList()
                     else root.getJSONArray("sourceAccess").objects { s -> ToolSourceAccessRecord(
                     s.getString("family"), s.getJSONArray("scopes").strings().toSet(),
-                    SourceAccessState.valueOf(s.getString("state")), s.strictLong("updatedAtMs")) })
+                    SourceAccessState.valueOf(s.getString("state")), s.strictLong("updatedAtMs")) },
+                workflows = if (version < 3) emptyList()
+                    else root.getJSONArray("workflows").objects { it.workflowDefinition() },
+                occurrences = if (version < 3) emptyList()
+                    else root.getJSONArray("occurrences").objects { o -> WorkflowOccurrence(
+                    o.getString("id"), o.getString("workflowId"), o.strictLong("definitionVersion"),
+                    o.getInt("triggerIndex"), o.getString("dedupKey"), o.strictLong("scheduledForMs"),
+                    o.strictLong("windowEndMs"), WorkflowOccurrenceState.valueOf(o.getString("state")),
+                    o.getJSONArray("resumePath").ints(), o.strictLong("createdAtMs"), o.strictLong("updatedAtMs"),
+                    o.nullString("resultSummary")) },
+                workflowReceipts = if (version < 3) emptyList()
+                    else root.getJSONArray("workflowReceipts").objects { r -> WorkflowReceipt(
+                    r.getString("id"), r.getString("workflowId"), r.nullString("occurrenceId"),
+                    WorkflowReceiptKind.valueOf(r.getString("kind")), r.getString("message"), r.strictLong("atMs")) })
             validate(journal)
             journal
         }
@@ -179,10 +192,33 @@ class FileToolTaskStore(
             // A persisted grant can never exceed its family's scope set (T08).
             require(s.scopes.all { it in ToolSourcePolicy.familyScopes(s.family) })
         }
+        // M2 workflows: definitions validate structurally; occurrences pin
+        // an existing version; dedup keys are unique among unfinished runs.
+        require(j.workflows.size <= MAX_WORKFLOWS && j.occurrences.size <= MAX_OCCURRENCES &&
+            j.workflowReceipts.size <= MAX_WORKFLOW_RECEIPTS)
+        j.workflows.forEach { w ->
+            require(w.id.isUuid())
+            try { validateWorkflowDefinition(w) } catch (_: IllegalArgumentException) {
+                throw ToolTaskStorageException()
+            }
+        }
+        j.occurrences.forEach { o ->
+            require(o.id.isUuid() && o.dedupKey.isNotBlank() && o.dedupKey.length <= 256)
+            require(o.scheduledForMs > 0 && o.windowEndMs >= o.scheduledForMs)
+            require(o.createdAtMs >= 0 && o.updatedAtMs >= o.createdAtMs)
+            require(o.resumePath.size <= 8 && o.resumePath.all { it >= 0 })
+            require(o.resultSummary == null || o.resultSummary.length <= 512)
+            require(j.workflows.any { it.id == o.workflowId && it.version == o.definitionVersion })
+        }
+        require(j.occurrences.filter { !it.state.isWorkflowTerminal() }.map { it.dedupKey }.toSet().size ==
+            j.occurrences.count { !it.state.isWorkflowTerminal() })
+        j.workflowReceipts.forEach { r ->
+            require(r.id.isUuid() && r.workflowId.isNotBlank() && r.message.length <= 512 && r.atMs >= 0)
+        }
         Unit
     } catch (_: Exception) { throw ToolTaskStorageException() }
 
-    private fun encode(j: ToolTaskJournal) = JSONObject().put("schemaVersion", 2)
+    private fun encode(j: ToolTaskJournal) = JSONObject().put("schemaVersion", 3)
         .put("attempts", JSONArray(j.attempts.map { a -> JSONObject()
             .put("id", a.id).put("generation", a.generation).put("state", a.state.name).put("request", a.request.json())
             .put("createdAtMs", a.createdAtMs).put("updatedAtMs", a.updatedAtMs)
@@ -205,6 +241,17 @@ class FileToolTaskStore(
             .put("kind", e.kind.name).put("atMs", e.atMs) }))
         .put("sourceAccess", JSONArray(j.sourceAccess.map { s -> JSONObject().put("family", s.family)
             .put("scopes", JSONArray(s.scopes.toList())).put("state", s.state.name).put("updatedAtMs", s.updatedAtMs) }))
+        .put("workflows", JSONArray(j.workflows.map { it.json() }))
+        .put("occurrences", JSONArray(j.occurrences.map { o -> JSONObject().put("id", o.id)
+            .put("workflowId", o.workflowId).put("definitionVersion", o.definitionVersion)
+            .put("triggerIndex", o.triggerIndex).put("dedupKey", o.dedupKey)
+            .put("scheduledForMs", o.scheduledForMs).put("windowEndMs", o.windowEndMs)
+            .put("state", o.state.name).put("resumePath", JSONArray(o.resumePath))
+            .put("createdAtMs", o.createdAtMs).put("updatedAtMs", o.updatedAtMs)
+            .put("resultSummary", o.resultSummary ?: JSONObject.NULL) }))
+        .put("workflowReceipts", JSONArray(j.workflowReceipts.map { r -> JSONObject().put("id", r.id)
+            .put("workflowId", r.workflowId).put("occurrenceId", r.occurrenceId ?: JSONObject.NULL)
+            .put("kind", r.kind.name).put("message", r.message).put("atMs", r.atMs) }))
         .put("activeQuestionId", j.activeQuestionId ?: JSONObject.NULL).toString()
 
     private fun JSONObject.strictLong(key: String): Long = get(key).let { require(it is Int || it is Long); (it as Number).toLong() }
@@ -223,7 +270,173 @@ class FileToolTaskStore(
     }
     private fun <T> JSONArray.objects(map: (JSONObject) -> T) = (0 until length()).map { map(getJSONObject(it)) }
     private fun JSONArray.strings() = (0 until length()).map { getString(it) }
+    private fun JSONArray.ints() = (0 until length()).map { getInt(it) }
     private fun String.isUuid() = UUID.fromString(this).toString() == this
+
+    // -- M2 workflow JSON codec (schema 3) ------------------------------------
+
+    private fun WorkflowDefinition.json() = JSONObject()
+        .put("id", id).put("name", name).put("description", description)
+        .put("steps", JSONArray(steps.map { it.json() }))
+        .put("triggers", JSONArray(triggers.map { it.json() }))
+        .put("origin", origin.name).put("version", version).put("enabled", enabled)
+        .put("createdAtMs", createdAtMs).put("updatedAtMs", updatedAtMs)
+        .put("maxStepsPerRun", maxStepsPerRun)
+
+    private fun JSONObject.workflowDefinition(): WorkflowDefinition {
+        val steps = getJSONArray("steps").objects { it.workflowStep() }
+        val triggers = getJSONArray("triggers").objects { it.workflowTrigger() }
+        return WorkflowDefinition(getString("id"), getString("name"), getString("description"),
+            steps, triggers, WorkflowOrigin.valueOf(getString("origin")),
+            strictLong("version"), getBoolean("enabled"), strictLong("createdAtMs"),
+            strictLong("updatedAtMs"), getInt("maxStepsPerRun"))
+    }
+
+    private fun WorkflowStep.json(): JSONObject = when (this) {
+        is WorkflowStep.Tool -> JSONObject().put("kind", "tool").put("id", id)
+            .put("request", request.json())
+            .put("bindings", JSONObject(bindings.mapValues { (_, b) ->
+                JSONObject().put("stepId", b.stepId).put("output", b.outputName) }))
+            .put("outputs", JSONObject(outputs.mapValues { (_, t) -> t.name }))
+        is WorkflowStep.Branch -> JSONObject().put("kind", "branch").put("id", id)
+            .put("condition", condition.json())
+            .put("then", JSONArray(thenSteps.map { it.json() }))
+            .put("else", JSONArray(elseSteps.map { it.json() }))
+        is WorkflowStep.Wait -> JSONObject().put("kind", "wait").put("id", id)
+            .put("wait", wait.json())
+        is WorkflowStep.Adaptive -> JSONObject().put("kind", "adaptive").put("id", id)
+            .put("goal", goal)
+            .put("candidates", JSONArray(candidates.map { it.json() }))
+            .put("budget", JSONObject().put("maxAttempts", budget.maxAttempts)
+                .put("maxWallMs", budget.maxWallMs).put("noProgressLimit", budget.noProgressLimit))
+    }
+
+    private fun JSONObject.workflowStep(): WorkflowStep {
+        val id = getString("id")
+        return when (getString("kind")) {
+            "tool" -> {
+                val bindings = getJSONObject("bindings").keys().asSequence().associateWith { key ->
+                    val b = getJSONObject("bindings").getJSONObject(key)
+                    WorkflowBinding(b.getString("stepId"), b.getString("output"))
+                }
+                val outputsObj = getJSONObject("outputs")
+                val outputs = outputsObj.keys().asSequence().associateWith { key ->
+                    WorkflowValueType.valueOf(outputsObj.getString(key))
+                }
+                WorkflowStep.Tool(id, getJSONObject("request").request(), bindings, outputs)
+            }
+            "branch" -> WorkflowStep.Branch(id, getJSONObject("condition").workflowCondition(),
+                getJSONArray("then").objects { it.workflowStep() },
+                getJSONArray("else").objects { it.workflowStep() })
+            "wait" -> WorkflowStep.Wait(id, getJSONObject("wait").workflowWait())
+            "adaptive" -> {
+                val budget = getJSONObject("budget")
+                WorkflowStep.Adaptive(id, getString("goal"),
+                    getJSONArray("candidates").objects { it.request() },
+                    EffortBudget(budget.getInt("maxAttempts"), budget.strictLong("maxWallMs"),
+                        budget.getInt("noProgressLimit")))
+            }
+            else -> throw IllegalArgumentException("Unknown step kind.")
+        }
+    }
+
+    private fun WorkflowCondition.json(): JSONObject {
+        fun base(kind: String, binding: WorkflowBinding) = JSONObject().put("kind", kind)
+            .put("stepId", binding.stepId).put("output", binding.outputName)
+        return when (this) {
+            is WorkflowCondition.Equals -> base("eq", binding).put("literal", literal)
+            is WorkflowCondition.NotEquals -> base("ne", binding).put("literal", literal)
+            is WorkflowCondition.GreaterThan -> base("gt", binding).put("number", number)
+            is WorkflowCondition.LessThan -> base("lt", binding).put("number", number)
+            is WorkflowCondition.Matches -> base("matches", binding).put("regex", regex)
+        }
+    }
+
+    private fun JSONObject.workflowCondition(): WorkflowCondition {
+        val binding = WorkflowBinding(getString("stepId"), getString("output"))
+        return when (getString("kind")) {
+            "eq" -> WorkflowCondition.Equals(binding, getString("literal"))
+            "ne" -> WorkflowCondition.NotEquals(binding, getString("literal"))
+            "gt" -> WorkflowCondition.GreaterThan(binding, getDouble("number"))
+            "lt" -> WorkflowCondition.LessThan(binding, getDouble("number"))
+            "matches" -> WorkflowCondition.Matches(binding, getString("regex"))
+            else -> throw IllegalArgumentException("Unknown condition kind.")
+        }
+    }
+
+    private fun WorkflowWait.json(): JSONObject = when (this) {
+        is WorkflowWait.Timer -> JSONObject().put("kind", "timer").put("durationMs", durationMs)
+        is WorkflowWait.UntilTime -> JSONObject().put("kind", "until").put("epochMs", epochMs)
+        is WorkflowWait.Event -> JSONObject().put("kind", "event").put("eventKind", kind.name)
+            .put("appKey", appKey ?: JSONObject.NULL)
+            .put("latitude", latitude ?: JSONObject.NULL).put("longitude", longitude ?: JSONObject.NULL)
+            .put("radiusMeters", radiusMeters ?: JSONObject.NULL)
+    }
+
+    private fun JSONObject.workflowWait(): WorkflowWait = when (getString("kind")) {
+        "timer" -> WorkflowWait.Timer(strictLong("durationMs"))
+        "until" -> WorkflowWait.UntilTime(strictLong("epochMs"))
+        "event" -> WorkflowWait.Event(WorkflowEventKind.valueOf(getString("eventKind")),
+            nullString("appKey"),
+            if (isNull("latitude")) null else getDouble("latitude"),
+            if (isNull("longitude")) null else getDouble("longitude"),
+            if (isNull("radiusMeters")) null else getDouble("radiusMeters"))
+        else -> throw IllegalArgumentException("Unknown wait kind.")
+    }
+
+    private fun WorkflowTrigger.json(): JSONObject = when (this) {
+        is WorkflowTrigger.Manual -> JSONObject().put("kind", "manual")
+        is WorkflowTrigger.Reminder -> JSONObject().put("kind", "reminder").put("atMs", atMs)
+        is WorkflowTrigger.Daily -> JSONObject().put("kind", "daily").put("hour", hour).put("minute", minute)
+        is WorkflowTrigger.Window -> JSONObject().put("kind", "window")
+            .put("earliestMs", earliestMs).put("latestMs", latestMs)
+        is WorkflowTrigger.OnNotification -> JSONObject().put("kind", "notification").put("appKey", appKey)
+        is WorkflowTrigger.OnLocation -> JSONObject().put("kind", "location")
+            .put("latitude", latitude).put("longitude", longitude).put("radiusMeters", radiusMeters)
+        is WorkflowTrigger.Deadline -> JSONObject().put("kind", "deadline")
+            .put("atMs", atMs).put("title", title)
+    }
+
+    private fun JSONObject.workflowTrigger(): WorkflowTrigger = when (getString("kind")) {
+        "manual" -> WorkflowTrigger.Manual
+        "reminder" -> WorkflowTrigger.Reminder(strictLong("atMs"))
+        "daily" -> WorkflowTrigger.Daily(getInt("hour"), getInt("minute"))
+        "window" -> WorkflowTrigger.Window(strictLong("earliestMs"), strictLong("latestMs"))
+        "notification" -> WorkflowTrigger.OnNotification(getString("appKey"))
+        "location" -> WorkflowTrigger.OnLocation(getDouble("latitude"), getDouble("longitude"), getDouble("radiusMeters"))
+        "deadline" -> WorkflowTrigger.Deadline(strictLong("atMs"), getString("title"))
+        else -> throw IllegalArgumentException("Unknown trigger kind.")
+    }
+
+    /**
+     * M2 retention: keep every unfinished occurrence and the versions they
+     * pin; keep recent terminal occurrences and their receipts; drop oldest
+     * unreferenced non-current definition versions first when over budget.
+     */
+    private fun retainWorkflows(j: ToolTaskJournal): ToolTaskJournal {
+        val unfinished = j.occurrences.filter { !it.state.isWorkflowTerminal() }
+        val keptOccurrences = (unfinished +
+            j.occurrences.filter { it.state.isWorkflowTerminal() }
+                .sortedByDescending { it.updatedAtMs }.take(RETAIN_OCCURRENCES)).toSet()
+        val keptOccurrenceIds = keptOccurrences.mapTo(hashSetOf()) { it.id }
+        val keptReceipts = (j.workflowReceipts.filter { it.occurrenceId in keptOccurrenceIds } +
+            j.workflowReceipts.sortedByDescending { it.atMs }.take(RETAIN_WORKFLOW_RECEIPTS))
+            .distinctBy { it.id }.sortedBy { it.atMs }.takeLast(MAX_WORKFLOW_RECEIPTS)
+        val referenced = keptOccurrences.mapTo(hashSetOf()) { it.workflowId to it.definitionVersion }
+        val currentVersions = j.workflows.groupBy { it.id }.mapValues { (_, versions) -> versions.maxOf { it.version } }
+        var keptWorkflows = j.workflows.filter { (it.id to it.version) in referenced || currentVersions[it.id] == it.version }
+        if (keptWorkflows.size > MAX_WORKFLOWS) {
+            val drop = keptWorkflows
+                .filter { (it.id to it.version) !in referenced && currentVersions[it.id] != it.version }
+                .sortedBy { it.updatedAtMs }
+                .take(keptWorkflows.size - MAX_WORKFLOWS)
+                .mapTo(hashSetOf()) { it.id to it.version }
+            keptWorkflows = keptWorkflows.filter { (it.id to it.version) !in drop }
+        }
+        return j.copy(workflows = keptWorkflows,
+            occurrences = j.occurrences.filter { it.id in keptOccurrenceIds },
+            workflowReceipts = keptReceipts)
+    }
     companion object {
         const val MAX_ATTEMPTS = 512
         const val MAX_BYTES = 1_048_576
@@ -232,6 +445,12 @@ class FileToolTaskStore(
         const val MAX_EVENTS = 256
         const val MAX_SOURCE_ACCESS = 64
         const val RETAIN_RECEIPTS = 256
+        /** M2 workflow storage budgets. */
+        const val MAX_WORKFLOWS = 64
+        const val MAX_OCCURRENCES = 256
+        const val MAX_WORKFLOW_RECEIPTS = 256
+        const val RETAIN_OCCURRENCES = 128
+        const val RETAIN_WORKFLOW_RECEIPTS = 256
         private val locks = ConcurrentHashMap<String, Any>()
         private fun lockFor(file: File) = locks.getOrPut(file.canonicalPath) { Any() }
         private fun atomicWrite(destination: File, contents: String) {

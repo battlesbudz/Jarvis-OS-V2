@@ -133,6 +133,10 @@ class MainActivity : ComponentActivity() {
             // torn down. The visible transcript remains recoverable.
             sessionPreferences.edit().remove(ConversationPolicy.SHORT_TERM_SUMMARY_KEY).apply()
         }
+        // M2: refresh the saved-workflow settings projection and evaluate
+        // past-due routine occurrences against current circumstances.
+        runtime.refreshWorkflowSettings()
+        runtime.evaluateMissedWorkflowRuns()
         setContent {
             JarvisApp(
                 store = modelStore,
@@ -144,6 +148,9 @@ class MainActivity : ComponentActivity() {
                 // M1d explicit silent work (D21/T05).
                 silentWork = runtime.silentWorkState,
                 onSilentWork = runtime::setSilentWork,
+                // M2 saved workflows (D36): settings lists them; chat stays the operating surface.
+                workflowSettings = runtime.workflowSettings,
+                onWorkflowSetEnabled = runtime::setWorkflowEnabled,
                 callState = voiceSessionController.state,
                 onSendChat = runtime::sendChat,
                 onSelectConversation = runtime::selectConversation,

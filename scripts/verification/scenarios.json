@@ -53,6 +53,10 @@
     "test50_lockedDeviceGatesSensitiveActions",
     "test51_crossFamilyRegressionInvalidArgsProduceNoEffects",
     "test52_crashBeforeAndAfterDispatchReconcilesWithoutRepeat",
+    "test53_routineGrantReuseMatchesLimitsAndDisablePausesAffectedTasks",
+    "test54_workflowDraftNeedsEnablementAndRevisionKeepsRunningVersion",
+    "test55_reminderTimingWindowsDstAndRebootDedup",
+    "test56_missedRunEvaluationAndBoundedEffort",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

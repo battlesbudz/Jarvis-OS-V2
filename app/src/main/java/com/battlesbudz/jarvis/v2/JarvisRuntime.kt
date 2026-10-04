@@ -106,10 +106,15 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     @Volatile internal var nativeMemoryStateToken: String? = null
     private val conversationMemory by lazy { ConversationMemory(AndroidMemoryOs.get(applicationContext)) }
     internal val actionIntentRouter = com.battlesbudz.jarvis.v2.actions.ActionIntentRouter()
+    private val phoneActionStore by lazy {
+        com.battlesbudz.jarvis.v2.actions.FileToolTaskStore(java.io.File(noBackupFilesDir, "phone-action-attempts.json"))
+    }
     private val phoneActionLedger by lazy {
-        com.battlesbudz.jarvis.v2.actions.ToolTaskLedger(
-            com.battlesbudz.jarvis.v2.actions.FileToolTaskStore(java.io.File(noBackupFilesDir, "phone-action-attempts.json"))
-        )
+        com.battlesbudz.jarvis.v2.actions.ToolTaskLedger(phoneActionStore)
+    }
+    /** M2: the workflow ledger shares the task ledger's durable store. */
+    private val workflowLedger by lazy {
+        com.battlesbudz.jarvis.v2.actions.WorkflowLedger(phoneActionStore)
     }
     internal val phoneTasks = kotlinx.coroutines.flow.MutableStateFlow<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>(null)
     internal val phoneTaskError = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
@@ -147,6 +152,212 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             phoneTaskError.value = "I couldn't save the cancellation. No further action will start in this turn."
         }
         refreshPhoneTasks()
+    }
+
+    // -- M2 reusable workflows (D31–D36, T11–T14) -------------------------------
+
+    /** Settings projection: saved workflows plus connected tools. Chat stays the operating surface. */
+    internal val workflowSettings =
+        kotlinx.coroutines.flow.MutableStateFlow<com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection?>(null)
+
+    internal fun refreshWorkflowSettings() {
+        workflowSettings.value = try {
+            com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection.from(
+                phoneActionLedger.journal(), System.currentTimeMillis())
+        } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) { null }
+    }
+
+    /** Settings toggle: explicit enable/disable; disabling pauses affected unfinished work (D17). */
+    internal fun setWorkflowEnabled(id: String, enabled: Boolean) {
+        try {
+            if (enabled) {
+                val scheduled = workflowLedger.enable(id)
+                val scheduler = com.battlesbudz.jarvis.v2.actions.WorkflowAlarmScheduler(this)
+                for (occurrence in scheduled) {
+                    try { scheduler.schedule(occurrence) } catch (_: Exception) { /* receipt kept; retry on launch */ }
+                }
+            } else {
+                val result = workflowLedger.disable(id)
+                val scheduler = com.battlesbudz.jarvis.v2.actions.WorkflowAlarmScheduler(this)
+                for (occurrenceId in result.pausedOccurrenceIds) {
+                    try { scheduler.cancel(occurrenceId) } catch (_: Exception) { }
+                }
+            }
+        } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+            phoneTaskError.value = "The action journal is unavailable. The routine was not changed."
+        } catch (_: IllegalArgumentException) {
+            phoneTaskError.value = "I couldn't find that routine."
+        } finally { refreshWorkflowSettings() }
+    }
+
+    /** Alarm fire: claim the occurrence atomically, then run it. Redeliveries find it claimed and stop. */
+    internal fun onWorkflowAlarm(occurrenceId: String, done: () -> Unit) {
+        runtimeScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            try {
+                val claimed = try { workflowLedger.claimDueOccurrence(occurrenceId) }
+                catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) { null }
+                if (claimed != null) runWorkflowOccurrence(claimed)
+            } finally { done() }
+        }
+    }
+
+    internal fun runWorkflowOccurrence(occurrence: com.battlesbudz.jarvis.v2.actions.WorkflowOccurrence) {
+        runtimeScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            val definition = try { workflowLedger.definitionFor(occurrence) }
+            catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) { null }
+            if (definition == null) {
+                try { workflowLedger.completeOccurrence(occurrence.id, false, "The routine's definition is gone.") }
+                catch (_: Exception) { }
+                return@launch
+            }
+            val outcome = try {
+                com.battlesbudz.jarvis.v2.actions.WorkflowEngine()
+                    .run(definition, dispatch = { request -> dispatchWorkflowStep(occurrence, request) })
+            } catch (e: Exception) {
+                com.battlesbudz.jarvis.v2.actions.WorkflowRunOutcome.Failed(
+                    "The routine stopped on an internal error: ${e.message}", emptyList())
+            }
+            try {
+                when (outcome) {
+                    is com.battlesbudz.jarvis.v2.actions.WorkflowRunOutcome.Completed ->
+                        workflowLedger.completeOccurrence(occurrence.id, outcome.succeeded, outcome.summary)
+                    is com.battlesbudz.jarvis.v2.actions.WorkflowRunOutcome.Suspended -> {
+                        workflowLedger.markWaiting(occurrence.id,
+                            com.battlesbudz.jarvis.v2.actions.WorkflowOccurrenceState.WAITING_EVENT,
+                            outcome.resumePath, "Waiting: ${describeWorkflowWait(outcome.wait)}")
+                        scheduleWorkflowResume(occurrence.id, outcome.wait)
+                    }
+                    is com.battlesbudz.jarvis.v2.actions.WorkflowRunOutcome.NeedsApproval -> {
+                        workflowLedger.markWaiting(occurrence.id,
+                            com.battlesbudz.jarvis.v2.actions.WorkflowOccurrenceState.WAITING_APPROVAL,
+                            outcome.resumePath, "Needs your approval: ${outcome.request.describeForOverlay()}")
+                        // The chat layer picks up WAITING_APPROVAL occurrences
+                        // and asks through the exact-approval path; each
+                        // occurrence keeps its independent approval branch.
+                    }
+                    is com.battlesbudz.jarvis.v2.actions.WorkflowRunOutcome.NeedsUser -> {
+                        workflowLedger.markWaiting(occurrence.id,
+                            com.battlesbudz.jarvis.v2.actions.WorkflowOccurrenceState.WAITING_USER,
+                            outcome.resumePath, outcome.question)
+                    }
+                    is com.battlesbudz.jarvis.v2.actions.WorkflowRunOutcome.Failed ->
+                        workflowLedger.completeOccurrence(occurrence.id, false, outcome.reason)
+                }
+            } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) { }
+            refreshWorkflowSettings()
+        }
+    }
+
+    /**
+     * Dispatch one routine-eligible step under the occurrence's routine
+     * grant. The grant is reused only when its exact request limits match
+     * (T11); a new tool can never broaden it. Each step is admitted as its
+     * own group so a failed step stops the run before later steps are
+     * admitted.
+     */
+    private fun dispatchWorkflowStep(
+        occurrence: com.battlesbudz.jarvis.v2.actions.WorkflowOccurrence,
+        request: com.battlesbudz.jarvis.v2.actions.ActionRequest
+    ): com.battlesbudz.jarvis.v2.actions.ExecutionResult {
+        fun refusal(message: String) =
+            com.battlesbudz.jarvis.v2.actions.ExecutionResult(false, message)
+        if (!request.isRoutineEligible()) {
+            return refusal("The routine asked for an action outside its granted limits. It didn't run.")
+        }
+        val grant = try {
+            workflowLedger.reusableGrant(occurrence.workflowId, listOf(request))
+                ?: workflowLedger.createGrant(occurrence.workflowId, listOf(request))
+        } catch (_: Exception) { return refusal("I couldn't save this routine's permission, so it didn't run.") }
+        val group = try {
+            phoneActionLedger.admit(listOf(request), "workflow:${occurrence.id}",
+                authority = com.battlesbudz.jarvis.v2.actions.ToolAuthority.ROUTINE, grantId = grant.id)
+        } catch (_: Exception) { return refusal("The routine's actions weren't admitted.") }
+        val executor = com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(this,
+            canLaunchDirectly = { activityVisible }, onDiagnostic = diagnosticRecorder::recordImportant)
+        val id = group.attemptIds.single()
+        val attempt = phoneActionLedger.get(id)
+            ?: return refusal("The routine's action disappeared before it could run.")
+        val claimed = phoneActionLedger.claim(attempt.id, attempt.generation)
+            ?: return refusal("The routine's action is no longer authorized.")
+        return try { phoneActionPipeline(executor).executeAttempt(claimed) }
+        catch (_: Exception) { com.battlesbudz.jarvis.v2.actions.ExecutionResult(
+            com.battlesbudz.jarvis.v2.actions.ExecutionResult.Outcome.UNKNOWN_COMPLETION,
+            "The routine's action may have run; its outcome is unknown and it won't be repeated.") }
+    }
+
+    private fun scheduleWorkflowResume(occurrenceId: String,
+        wait: com.battlesbudz.jarvis.v2.actions.WorkflowWait) {
+        // Timer/UntilTime waits re-arm an alarm; event waits are picked up
+        // by the notification/location listeners when they land.
+        val fireAt = when (wait) {
+            is com.battlesbudz.jarvis.v2.actions.WorkflowWait.Timer ->
+                System.currentTimeMillis() + wait.durationMs
+            is com.battlesbudz.jarvis.v2.actions.WorkflowWait.UntilTime -> wait.epochMs
+            is com.battlesbudz.jarvis.v2.actions.WorkflowWait.Event -> return
+        }
+        try {
+            val scheduler = com.battlesbudz.jarvis.v2.actions.WorkflowAlarmScheduler(this)
+            // Reuse the occurrence's own alarm slot for the resume.
+            val occurrence = workflowLedger.occurrence(occurrenceId) ?: return
+            scheduler.schedule(occurrence.copy(scheduledForMs = fireAt, windowEndMs = fireAt))
+        } catch (_: Exception) { }
+    }
+
+    private fun describeWorkflowWait(wait: com.battlesbudz.jarvis.v2.actions.WorkflowWait): String = when (wait) {
+        is com.battlesbudz.jarvis.v2.actions.WorkflowWait.Timer -> "a timer"
+        is com.battlesbudz.jarvis.v2.actions.WorkflowWait.UntilTime -> "a scheduled time"
+        is com.battlesbudz.jarvis.v2.actions.WorkflowWait.Event -> when (wait.kind) {
+            com.battlesbudz.jarvis.v2.actions.WorkflowEventKind.NOTIFICATION -> "a notification"
+            com.battlesbudz.jarvis.v2.actions.WorkflowEventKind.LOCATION -> "arriving at a location"
+        }
+    }
+
+    /**
+     * Evaluate past-due occurrences against current circumstances (D33,
+     * T14). Coalesces duplicate missed slots so there is no catch-up
+     * duplicate storm; relevant runs are claimed and run, the rest get an
+     * honest missed receipt.
+     */
+    internal fun evaluateMissedWorkflowRuns() {
+        runtimeScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            try {
+                val at = System.currentTimeMillis()
+                val journal = phoneActionLedger.journal()
+                val pastDue = journal.occurrences.filter {
+                    it.state == com.battlesbudz.jarvis.v2.actions.WorkflowOccurrenceState.SCHEDULED &&
+                        it.scheduledForMs <= at
+                }
+                if (pastDue.isEmpty()) return@launch
+                val (candidates, coalesced) =
+                    com.battlesbudz.jarvis.v2.actions.WorkflowScheduling.coalesceMissed(pastDue)
+                for (skipped in coalesced) {
+                    workflowLedger.recordMissedEvaluation(skipped.id,
+                        com.battlesbudz.jarvis.v2.actions.MissedRunDecision.Irrelevant(
+                            "A later occurrence of the same routine covers this time — skipped to avoid a duplicate run."))
+                }
+                for (occurrence in candidates) {
+                    val definition = workflowLedger.definitionFor(occurrence) ?: continue
+                    val trigger = definition.triggers.getOrNull(occurrence.triggerIndex)
+                    val decision = com.battlesbudz.jarvis.v2.actions.WorkflowScheduling.evaluateMissedRun(
+                        occurrence, definition,
+                        com.battlesbudz.jarvis.v2.actions.WorkflowScheduling.MissedRunCircumstances(
+                            triggerStillValid = trigger !is com.battlesbudz.jarvis.v2.actions.WorkflowTrigger.Deadline ||
+                                trigger.atMs >= at - 86_400_000,
+                            // Proxy: an unseen question is unlikely to be
+                            // answered while the app is in the background.
+                            userActiveRecently = activityVisible,
+                            latenessMs = at - occurrence.scheduledForMs))
+                    when (decision) {
+                        is com.battlesbudz.jarvis.v2.actions.MissedRunDecision.Relevant -> {
+                            val claimed = workflowLedger.claimDueOccurrence(occurrence.id)
+                            if (claimed != null) runWorkflowOccurrence(claimed)
+                        }
+                        else -> workflowLedger.recordMissedEvaluation(occurrence.id, decision)
+                    }
+                }
+                refreshWorkflowSettings()
+            } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) { }
+        }
     }
 
     internal fun executePhoneAction(

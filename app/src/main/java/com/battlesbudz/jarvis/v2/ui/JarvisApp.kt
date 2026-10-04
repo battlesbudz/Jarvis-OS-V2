@@ -70,6 +70,9 @@ fun JarvisApp(
     // M1d explicit silent work (D21/T05).
     silentWork: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
     onSilentWork: (Boolean) -> Unit = {},
+    // M2 saved workflows (D36): settings lists them with enable/disable; chat stays the operating surface.
+    workflowSettings: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection?>? = null,
+    onWorkflowSetEnabled: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     var selectedModel by remember { mutableStateOf(store.selectedModel()) }
     var selectionError by remember { mutableStateOf<String?>(null) }
@@ -332,7 +335,10 @@ fun JarvisApp(
                         onCopyDiagnostics = onCopyDiagnostics,
                         onExportSpeechAudio = onExportSpeechAudio,
                         silentWork = silentWork,
-                        onSilentWork = onSilentWork
+                        onSilentWork = onSilentWork,
+                        // M2 saved workflows (D36).
+                        workflowSettings = workflowSettings,
+                        onWorkflowSetEnabled = onWorkflowSetEnabled
                     ) }
                     }
                     }

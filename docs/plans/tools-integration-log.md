@@ -5,6 +5,80 @@ Epic: [#8](https://github.com/battlesbudz/Jarvis-OS-V2/issues/8). Implementation
 workflow, whose push trigger covers `feature/**`; older entries below still say
 `muse/feature-tools`).
 
+## Item 6: M2 reusable workflows and triggers — 2026-10-04
+
+Implements versioned step graphs with typed result bindings, deterministic
+conditions, event/timer waits and bounded adaptive steps (D31–D36, T11–T14),
+on top of the M1 ledger/approval/grant model — extended, never duplicated.
+
+Changed files (commit `<m2-sha>`; server head `<m2-sha>` on `feature/muse-tools`):
+- `actions/WorkflowDefinition.kt` (new): immutable versioned definitions —
+  tool steps with typed result bindings (`${stepId.output}` placeholders and
+  explicit bindings against declared TEXT/NUMBER/BOOLEAN outputs),
+  deterministic conditions evaluated in code, timer/clock/event waits,
+  bounded adaptive steps with effort budgets. Steps are routine-eligible
+  tools (routine grant) or screen mutations (independent exact-approval
+  branch per occurrence). `previewText()` renders the plain-language
+  summary shown before enabling (D31).
+- `actions/WorkflowLedger.kt` (new): drafts saved disabled until an explicit
+  `enable()` (T12); `revise()` adds versions while running occurrences pin
+  theirs; `reusableGrant()` reuses a routine grant only on exact request
+  match (T11); `disable()` pauses unfinished occurrences, revokes the
+  routine's grants and pauses affected attempts without touching unrelated
+  tasks (D17); idempotent occurrence claims (dedup keys); missed-run
+  decision receipts; conversation capture of successful tasks; restart
+  recovery that never re-fires.
+- `actions/WorkflowScheduling.kt` (new, JVM-pure): reminders at requested
+  times, flexible windows, daily triggers with DST gap/overlap handling,
+  timezone-change recomputation, stable dedup keys, missed-run
+  relevant/irrelevant/uncertain evaluation, coalescing against catch-up
+  duplicate storms, honest exact/inexact alarm mode.
+- `actions/WorkflowEngine.kt` (new): runs one pinned occurrence — one
+  ledger group per step so a failed step stops later steps from being
+  admitted, never repeats unknown outcomes, suspends on waits with a
+  resumable index path, suspends on screen steps for independent approval,
+  asks the user when adaptive budgets exhaust (completed steps never
+  re-run).
+- `actions/WorkflowSettingsProjection.kt` (new): settings data — saved
+  workflows with enable/disable state and next-run info, connected tools
+  with family states (D36).
+- `actions/WorkflowAlarmScheduler.kt`, `actions/WorkflowScheduleReceiver.kt`
+  (new): honest exact-alarm scheduling, reboot/timezone re-arm from the
+  ledger, atomic due-claims so redeliveries cannot double-fire.
+- `actions/ToolTaskJournal.kt`: journal gains `workflows` (all versions),
+  `occurrences`, `workflowReceipts`. `actions/ToolTaskStore.kt`: schema 3
+  encode/decode/validate/retain; tampered definitions refused.
+- `JarvisRuntime.kt`: shares the file store between ledgers, runs
+  occurrences from alarms, evaluates missed runs on launch, settings
+  projection + `setWorkflowEnabled`. `MainActivity.kt` threads
+  `workflowSettings`/`onWorkflowSetEnabled` through `JarvisApp` →
+  `VoiceCallScreen`; the settings dialog gains a “Tools & workflows”
+  section (`ui/WorkflowSettings.kt`). Manifest: schedule receiver +
+  `SCHEDULE_EXACT_ALARM`/`RECEIVE_BOOT_COMPLETED`. Proguard keeps for the
+  new journey-driven classes.
+- Tests: `M2WorkflowsTest` (new JVM); `ReleaseJourneyTest` test53 (T11),
+  test54 (T12), test55 (T13), test56 (T14); `scenarios.json` now 56 tests;
+  `docs/verification/features.md` updated; plan M2 checkpoint added.
+
+Acceptance: per `.agents/skills/jarvis-verify/SKILL.md` — build + both
+emulator variants + consolidated receipt, all green on the final head.
+Named contract: 56/56 on API 30 and API 35, including new test53-56;
+<JVM count> JVM unit tests green.
+
+CI evidence:
+- Run <run-id>: <result>
+- Release: `v0.1.0-build.<NNN>` (published <date>) with app-release.apk +
+  app-compact.apk, titled "Jarvis OS V2 feature/muse-tools build <NNN> (M2 workflows)".
+- Run URLs: <urls>
+- Release: https://github.com/battlesbudz/Jarvis-OS-V2/releases/tag/v0.1.0-build.<NNN>
+
+Unverified: real-model proposal of workflow steps; physical Fold 6 alarm
+delivery while the app is closed; real notification/location trigger
+listeners; on-device approval UX for screen-step branches; physical-device
+timing. Event listeners for notification/location triggers and the
+chat-side creation bridge are follow-up work; the substrate (wait kinds,
+trigger kinds, occurrence claims) is in place.
+
 ## Item 5: M1e device validation slice (permission/lock handling, regression) — 2026-10-04
 
 Completes permission/lock handling and regression/device validation, closing out M1.

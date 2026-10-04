@@ -17,6 +17,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- M2 workflow scheduling: exact alarms are optional and checked honestly at schedule time. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <application
         android:theme="@style/Theme.JarvisOSV2"
         android:label="Jarvis OS V2"
@@ -54,6 +57,15 @@
             android:permission="android.permission.BIND_SPEECH_RECOGNITION_SERVICE">
             <intent-filter><action android:name="android.speech.RecognitionService" /></intent-filter>
         </service>
+        <!-- M2: re-arms workflow alarms after reboot/timezone changes and claims due occurrences. -->
+        <receiver android:name=".actions.WorkflowScheduleReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.LOCALE_CHANGED" />
+            </intent-filter>
+        </receiver>
         <service android:name=".assistant.JarvisInteractionSessionService" android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
         <activity android:name=".MainActivity" android:exported="true">

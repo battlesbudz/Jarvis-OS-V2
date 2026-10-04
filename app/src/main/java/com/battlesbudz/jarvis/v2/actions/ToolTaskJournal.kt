@@ -9,7 +9,13 @@ data class ToolTaskJournal(
     val events: List<ToolTaskEvent> = emptyList(),
     val activeQuestionId: String? = null,
     /** M1e: remembered first-source access per tool family (D09, T08). */
-    val sourceAccess: List<ToolSourceAccessRecord> = emptyList()
+    val sourceAccess: List<ToolSourceAccessRecord> = emptyList(),
+    /** M2: versioned workflow definitions (all versions; running occurrences pin theirs). */
+    val workflows: List<WorkflowDefinition> = emptyList(),
+    /** M2: workflow occurrences with idempotent dedup keys. */
+    val occurrences: List<WorkflowOccurrence> = emptyList(),
+    /** M2: occurrence/decision receipts. */
+    val workflowReceipts: List<WorkflowReceipt> = emptyList()
 )
 data class ToolTaskGroup(
     val id: String, val conversationId: String, val summary: String, val attemptIds: List<String>,
@@ -32,7 +38,9 @@ internal fun ToolTaskJournal.frozen() = copy(
     groups = groups.map { it.copy(attemptIds = it.attemptIds.toList()) },
     approvals = approvals.map { it.copy(action = it.action.frozen()) },
     grants = grants.map { it.copy(requests = it.requests.map { request -> request.frozen() }) }, events = events.toList(),
-    sourceAccess = sourceAccess.map { it.copy(scopes = it.scopes.toSet()) })
+    sourceAccess = sourceAccess.map { it.copy(scopes = it.scopes.toSet()) },
+    occurrences = occurrences.map { it.copy(resumePath = it.resumePath.toList()) },
+    workflowReceipts = workflowReceipts.toList())
 
 /** Screen mutations are never routine-eligible and never auto-dispatched (D23). */
 internal val SCREEN_MUTATION_TOOLS = setOf("screen_tap", "screen_scroll", "screen_type")

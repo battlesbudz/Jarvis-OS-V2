@@ -5,6 +5,86 @@ Follow-up source baseline: `feature-tools` at `bfeca6d06dc3dba583e0f92e812046e9e
 Created: September 24, 2026. Updated: September 30, 2026 (America/New_York). Owner: Justin Battles.
 Status: existing tools scope retained; September 29 autonomous messaging/warm-inference requirements integrated. New phases below are planned, not implemented or verified by this documentation update.
 
+## Implementation checkpoint — October 4, 2026 (M2 reusable workflows and triggers)
+
+M2 is implemented on `feature/muse-tools` (no PR, no merge), building on the
+M1 ledger/approval/grant model — extended, never duplicated. `FinalVoiceToolGuard`
+untouched.
+
+- Versioned step graphs (T12): `actions/WorkflowDefinition.kt` holds
+  immutable definitions — tool steps with typed result bindings
+  (`${stepId.output}` placeholders plus explicit argument bindings against
+  declared TEXT/NUMBER/BOOLEAN outputs), deterministic conditions evaluated
+  in code (the model proposes, code authorizes), timer/clock/event waits,
+  and bounded adaptive steps with task-specific effort budgets
+  (maxAttempts/maxWallMs/noProgressLimit). Steps are limited to
+  routine-eligible tools (run under a routine grant) or screen mutations
+  (run on an independent exact-approval branch per occurrence — no routine
+  may waive D11/D23). `previewText()` renders the plain-language summary
+  of steps, triggers and permissions shown before enabling (D31).
+- Lifecycle (T12): `actions/WorkflowLedger.kt` saves conversation-created
+  or captured drafts disabled — they cannot schedule or run until an
+  explicit `enable()`. `revise()` adds a new version; running occurrences
+  pin their definition version, so revisions never mutate them. Capture
+  (`captureFromTask`) only accepts fully-succeeded routine-eligible groups.
+- Routine grants (T11): `reusableGrant()` reuses a grant only when its
+  request list exactly matches the occurrence's steps — a new tool can
+  never broaden it (M1e family discipline carried forward). `disable()`
+  pauses unfinished occurrences, revokes the routine's grants and pauses
+  affected attempts, without touching unrelated tasks (D17).
+- Scheduling (T13): `actions/WorkflowScheduling.kt` is JVM-pure — reminders
+  fire at the requested time, flexible routines use windows, daily triggers
+  recompute across DST gaps/overlaps via java.time rules, timezone changes
+  re-derive future occurrences from their trigger slots, and stable dedup
+  keys make every trigger idempotent across restarts (no replay, no
+  catch-up duplicate storm; `coalesceMissed` keeps only the latest missed
+  slot). `WorkflowAlarmScheduler` checks exact-alarm eligibility honestly
+  and falls back to inexact with a truthful note; `WorkflowScheduleReceiver`
+  re-arms alarms after reboot/timezone changes and claims due occurrences
+  atomically so redeliveries cannot double-fire.
+- Missed runs (T14): `evaluateMissedRun` weighs trigger validity,
+  lateness and user activity — relevant runs are claimed and run,
+  irrelevant ones get an honest missed receipt, uncertain ones ask the
+  user. All decisions persist as occurrence/decision receipts.
+- Engine: `actions/WorkflowEngine.kt` runs one pinned occurrence — one
+  ledger group per step so a failed step stops the run before later steps
+  are admitted, never repeats unknown outcomes, suspends on waits with a
+  resumable index path, suspends on screen steps for independent approval,
+  and asks the user when adaptive budgets exhaust (completed steps never
+  re-run).
+- Persistence: the journal gains `workflows` (all versions), `occurrences`
+  and `workflowReceipts`; `FileToolTaskStore` moves to schema 3 with
+  encode/decode/validate/retain and refuses tampered definitions.
+- Production wiring: `JarvisRuntime` shares the file store between the task
+  and workflow ledgers, runs occurrences from alarms (`onWorkflowAlarm`),
+  evaluates missed runs on launch, and exposes the settings projection;
+  `MainActivity` threads `workflowSettings`/`onWorkflowSetEnabled` through
+  `JarvisApp` → `VoiceCallScreen`, whose settings dialog now has a
+  “Tools & workflows” section (D36) listing saved routines with
+  enable/disable plus connected tools — chat remains the operating surface.
+  Manifest declares the schedule receiver plus `SCHEDULE_EXACT_ALARM` and
+  `RECEIVE_BOOT_COMPLETED`; proguard keeps the new journey-driven classes.
+- Tests: `M2WorkflowsTest` (JVM) covers the full contract above; release
+  journeys `test53` (T11), `test54` (T12), `test55` (T13), `test56` (T14).
+  The named contract is now 56 methods. `docs/verification/features.md`
+  updated.
+
+M2 definition of done: satisfiable on emulator evidence — definitions
+version and pin correctly, grants reuse only on exact limits, disable
+pauses only affected work, reminders target requested times with honest
+exact/inexact reporting, DST/timezone/reboot never duplicate, missed runs
+evaluate with receipts, and bounded effort asks without duplicate effects.
+Explicitly unverified per the coverage boundaries: real-model proposal of
+workflow steps, physical Fold 6 alarm delivery while the app is closed,
+real notification/location trigger listeners, on-device approval UX for
+screen-step branches, and physical-device timing. Event listeners for
+notification/location triggers and the chat-side creation bridge are
+follow-up work; the substrate (wait kinds, trigger kinds, occurrence
+claims) is in place.
+
+M2 remaining: none — reusable workflows and triggers are implemented.
+M3–M8 and A0–A6 are still planned.
+
 ## Implementation checkpoint — October 4, 2026 (M1e device validation)
 
 M1e is implemented on `feature/muse-tools` (no PR, no merge), completing

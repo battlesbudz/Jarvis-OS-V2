@@ -47,6 +47,7 @@ import org.junit.rules.TestName
 import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
 import java.io.File
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
@@ -1870,6 +1871,220 @@ class ReleaseJourneyTest {
             }
             assertEquals("the effect happened exactly once", 1, dispatched.get())
         } finally { file.delete() }
+    }
+
+    @Test fun test53_routineGrantReuseMatchesLimitsAndDisablePausesAffectedTasks() {
+        // T11: a saved workflow's routine steps run under a reusable routine
+        // grant whose exact limits must match; an approval wait blocks only
+        // its dependents; disabling the routine pauses affected work while
+        // unrelated tasks are untouched.
+        val dispatched = AtomicInteger(0)
+        val executor = MobileActionExecutor { dispatched.incrementAndGet(); ExecutionResult(true, "ok") }
+        val store = InMemoryToolTaskStore()
+        val tasks = ToolTaskLedger(store)
+        val workflows = WorkflowLedger(store)
+        val battery = ActionRequest("read_battery")
+        val volume20 = ActionRequest("set_volume", mapOf("level" to "20"))
+        val definition = WorkflowDefinition(UUID.randomUUID().toString(), "Evening check", "test",
+            listOf(WorkflowStep.Tool(UUID.randomUUID().toString(), battery),
+                WorkflowStep.Tool(UUID.randomUUID().toString(), volume20)),
+            listOf(WorkflowTrigger.Manual), WorkflowOrigin.CONVERSATION, createdAtMs = 0, updatedAtMs = 0)
+        val saved = workflows.saveDraft(definition)
+        workflows.enable(saved.id)
+        // Production-shaped dispatch: reuse the exact-limits grant, admit
+        // under ROUTINE authority, claim and dispatch through the pipeline —
+        // one step at a time, so a failure stops later steps.
+        fun dispatchStep(request: ActionRequest): ExecutionResult {
+            val grant = workflows.reusableGrant(saved.id, listOf(request))
+                ?: workflows.createGrant(saved.id, listOf(request))
+            val group = tasks.admit(listOf(request), "workflow:occ-53",
+                authority = ToolAuthority.ROUTINE, grantId = grant.id)
+            val attempt = checkNotNull(tasks.get(group.attemptIds.single()))
+            return JournaledActionPipeline(tasks, executor).executeAttempt(attempt)
+        }
+        val occurrence = checkNotNull(workflows.scheduleOccurrence(saved.id, 0,
+            System.currentTimeMillis() - 1, System.currentTimeMillis() - 1, "t53-1"))
+        val claimedOccurrence = checkNotNull(workflows.claimDueOccurrence(occurrence.id))
+        val outcome = WorkflowEngine().run(checkNotNull(workflows.definitionFor(claimedOccurrence)),
+            dispatch = ::dispatchStep)
+        assertTrue("routine occurrence completes under its grant", outcome is WorkflowRunOutcome.Completed)
+        assertEquals(2, dispatched.get())
+        // The second occurrence reuses the same grant for identical limits.
+        val grant = checkNotNull(workflows.reusableGrant(saved.id, listOf(battery, volume20)))
+        assertNull("changed limits must not reuse the grant",
+            workflows.reusableGrant(saved.id, listOf(battery, ActionRequest("set_volume", mapOf("level" to "30")))))
+        try {
+            tasks.admit(listOf(battery, ActionRequest("set_volume", mapOf("level" to "30"))),
+                "workflow:occ-x", authority = ToolAuthority.ROUTINE, grantId = grant.id)
+            fail("admit must reject requests outside the grant's exact limits")
+        } catch (_: IllegalArgumentException) { }
+        // Approval waits block dependents only.
+        val waiting = tasks.admit(listOf(battery, volume20), "chat-t53")
+        val first = checkNotNull(tasks.get(waiting.attemptIds[0]))
+        tasks.requestApproval(first.id, first.generation, "native", MobileToolCatalog.VERSION)
+        val second = checkNotNull(tasks.get(waiting.attemptIds[1]))
+        assertNull("dependent step cannot claim while its approval waits", tasks.claim(second.id, second.generation))
+        val independent = tasks.admit(listOf(battery), "chat-t53-free")
+        val freeAttempt = checkNotNull(tasks.get(independent.attemptIds.single()))
+        assertNotNull("independent work is unaffected", tasks.claim(freeAttempt.id, freeAttempt.generation))
+        // Disable pauses the routine's unfinished work, not the unrelated wait.
+        val occurrence2 = checkNotNull(workflows.scheduleOccurrence(saved.id, 0,
+            System.currentTimeMillis() + 600_000, System.currentTimeMillis() + 600_000, "t53-2"))
+        val disabled = workflows.disable(saved.id)
+        assertTrue(occurrence2.id in disabled.pausedOccurrenceIds)
+        assertEquals(WorkflowOccurrenceState.CANCELLED, workflows.occurrence(occurrence2.id)!!.state)
+        assertEquals("unrelated approval wait untouched",
+            ToolTaskState.WAITING_APPROVAL, tasks.get(first.id)!!.state)
+    }
+
+    @Test fun test54_workflowDraftNeedsEnablementAndRevisionKeepsRunningVersion() {
+        // T12: a conversation-created workflow shows its plain-language
+        // summary and cannot run until explicitly enabled; revising the
+        // definition never mutates an already-running occurrence's version.
+        val store = InMemoryToolTaskStore()
+        val workflows = WorkflowLedger(store)
+        val v1 = WorkflowDefinition(UUID.randomUUID().toString(), "Morning briefing", "test",
+            listOf(WorkflowStep.Tool(UUID.randomUUID().toString(), ActionRequest("read_battery"))),
+            listOf(WorkflowTrigger.Daily(7, 0)), WorkflowOrigin.CONVERSATION, createdAtMs = 0, updatedAtMs = 0)
+        val draft = workflows.saveDraft(v1)
+        val preview = workflows.preview(draft.id)
+        assertTrue(preview.contains("Morning briefing"))
+        assertTrue("preview names the step", preview.contains("battery"))
+        assertTrue("preview names the trigger", preview.contains("07:00"))
+        assertTrue("preview states the draft needs enabling", preview.contains("draft"))
+        assertNull("disabled drafts schedule nothing",
+            workflows.scheduleOccurrence(draft.id, 0, System.currentTimeMillis() + 60_000,
+                System.currentTimeMillis() + 60_000, "t54-1"))
+        // Capture path: a completed task becomes a disabled draft too.
+        val tasks = ToolTaskLedger(store)
+        val group = tasks.admit(listOf(ActionRequest("read_battery")), "chat-t54")
+        val attempt = checkNotNull(tasks.get(group.attemptIds.single()))
+        tasks.finish(checkNotNull(tasks.claim(attempt.id, attempt.generation)),
+            ExecutionResult(true, "Battery is at 80 percent."))
+        val captured = checkNotNull(workflows.captureFromTask(group.id, "Battery check"))
+        assertFalse("captured drafts start disabled", captured.enabled)
+        assertEquals(WorkflowOrigin.CAPTURED, captured.origin)
+        // Enable, start an occurrence, then revise: the running one keeps v1.
+        workflows.enable(draft.id)
+        val occurrence = checkNotNull(workflows.scheduleOccurrence(draft.id, 0,
+            System.currentTimeMillis() - 1, System.currentTimeMillis() - 1, "t54-2"))
+        val running = checkNotNull(workflows.claimDueOccurrence(occurrence.id))
+        val revised = workflows.revise(draft.id, v1.copy(name = "Morning briefing v2", steps = listOf(
+            WorkflowStep.Tool(UUID.randomUUID().toString(), ActionRequest("read_battery")),
+            WorkflowStep.Tool(UUID.randomUUID().toString(), ActionRequest("set_volume", mapOf("level" to "20")))))))
+        assertEquals(2, revised.version)
+        assertEquals("running occurrence keeps its pinned version",
+            1, checkNotNull(workflows.definitionFor(running)).version)
+        assertEquals(2, checkNotNull(workflows.current(draft.id)).version)
+        assertTrue(workflows.preview(draft.id).contains("Morning briefing v2"))
+    }
+
+    @Test fun test55_reminderTimingWindowsDstAndRebootDedup() {
+        // T13: reminders target the requested time; flexible routines use
+        // windows; DST shifts resolve forward; reboot recovery never replays
+        // a trigger and never duplicates an occurrence.
+        val file = File(context.cacheDir, "release-m2-schedule.json").apply { delete() }
+        try {
+            val store = FileToolTaskStore(file)
+            val workflows = WorkflowLedger(store)
+            val at = System.currentTimeMillis()
+            val definition = WorkflowDefinition(UUID.randomUUID().toString(), "Water reminder", "test",
+                listOf(WorkflowStep.Tool(UUID.randomUUID().toString(), ActionRequest("read_battery"))),
+                listOf(WorkflowTrigger.Reminder(at + 3_600_000),
+                    WorkflowTrigger.Window(at + 7_200_000, at + 10_800_000)),
+                WorkflowOrigin.CONVERSATION, createdAtMs = 0, updatedAtMs = 0)
+            val saved = workflows.saveDraft(definition)
+            val scheduled = workflows.enable(saved.id)
+            assertEquals(2, scheduled.size)
+            val reminder = scheduled.single { it.triggerIndex == 0 }
+            assertEquals("reminder targets the requested time", at + 3_600_000, reminder.scheduledForMs)
+            val window = scheduled.single { it.triggerIndex == 1 }
+            assertEquals(at + 7_200_000, window.scheduledForMs)
+            assertEquals(at + 10_800_000, window.windowEndMs)
+            // Exact-alarm honesty against the real Android alarm service.
+            val alarm = context.getSystemService(android.app.AlarmManager::class.java)
+            val canExact = if (android.os.Build.VERSION.SDK_INT >= 31) {
+                try { alarm!!.canScheduleExactAlarms() } catch (_: SecurityException) { false }
+            } else true
+            val alarmScheduler = WorkflowAlarmScheduler(context)
+            val scheduledAlarm = alarmScheduler.schedule(reminder)
+            assertEquals(if (canExact) WorkflowScheduling.AlarmMode.EXACT
+                else WorkflowScheduling.AlarmMode.INEXACT_FALLBACK, scheduledAlarm.mode)
+            if (!canExact) assertNotNull("fallback must say so honestly", scheduledAlarm.honestNote)
+            alarmScheduler.cancel(reminder.id)
+            // DST: a daily trigger across the spring-forward resolves forward.
+            val zone = java.time.ZoneId.of("America/New_York")
+            val before = java.time.ZonedDateTime.of(2026, 3, 7, 12, 0, 0, 0, zone).toInstant().toEpochMilli()
+            val next = WorkflowScheduling.nextDailyFire(WorkflowTrigger.Daily(2, 30), before, zone)
+            val zoned = java.time.ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(next), zone)
+            assertEquals(8, zoned.dayOfMonth)
+            // Reboot: reconstruct the ledger ("restart"), recover, and prove
+            // no trigger replays and no occurrence duplicates.
+            val rebooted = WorkflowLedger(FileToolTaskStore(file))
+            val recovered = rebooted.recoverAfterRestart()
+            assertEquals(2, recovered.filter { it.state == WorkflowOccurrenceState.SCHEDULED }.size)
+            assertNull("dedup key survives the restart",
+                rebooted.scheduleOccurrence(saved.id, 0, at + 3_600_000, at + 3_600_000, reminder.dedupKey))
+            val due = checkNotNull(rebooted.scheduleOccurrence(saved.id, 0, at - 1_000, at - 1_000, "t55-due"))
+            assertNotNull(rebooted.claimDueOccurrence(due.id))
+            assertNull("a redelivered claim cannot double-fire", rebooted.claimDueOccurrence(due.id))
+        } finally { file.delete() }
+    }
+
+    @Test fun test56_missedRunEvaluationAndBoundedEffort() {
+        // T14: a missed run is evaluated against current circumstances —
+        // run if relevant, report if not, ask if uncertain — with decision
+        // receipts; bounded effort asks the user instead of repeating
+        // completed work.
+        val store = InMemoryToolTaskStore()
+        val workflows = WorkflowLedger(store)
+        val at = System.currentTimeMillis()
+        val definition = WorkflowDefinition(UUID.randomUUID().toString(), "Missed routine", "test",
+            listOf(WorkflowStep.Tool(UUID.randomUUID().toString(), ActionRequest("read_battery"))),
+            listOf(WorkflowTrigger.Reminder(at - 5 * 60_000)),
+            WorkflowOrigin.CONVERSATION, createdAtMs = 0, updatedAtMs = 0)
+        val saved = workflows.saveDraft(definition)
+        workflows.enable(saved.id)
+        // enable() skips the past reminder; schedule it explicitly for evaluation.
+        val missed = checkNotNull(workflows.scheduleOccurrence(saved.id, 0,
+            at - 5 * 60_000, at - 5 * 60_000, "t56-1"))
+        val relevant = WorkflowScheduling.evaluateMissedRun(missed, checkNotNull(workflows.current(saved.id)),
+            WorkflowScheduling.MissedRunCircumstances(true, true, 5 * 60_000))
+        assertTrue("fresh and active: relevant", relevant is MissedRunDecision.Relevant)
+        val uncertain = WorkflowScheduling.evaluateMissedRun(missed, checkNotNull(workflows.current(saved.id)),
+            WorkflowScheduling.MissedRunCircumstances(true, false, 2 * 3_600_000))
+        assertTrue("stale and nobody around: ask", uncertain is MissedRunDecision.Uncertain)
+        assertTrue(workflows.recordMissedEvaluation(missed.id,
+            MissedRunDecision.Irrelevant("the moment has passed")))
+        assertEquals(WorkflowOccurrenceState.MISSED, workflows.occurrence(missed.id)!!.state)
+        assertTrue("decision receipts are kept",
+            workflows.receiptsFor(saved.id).any { it.kind == WorkflowReceiptKind.MISSED_IRRELEVANT })
+        // A stale duplicate slot coalesces to the latest — no catch-up storm.
+        val old1 = checkNotNull(workflows.scheduleOccurrence(saved.id, 0,
+            at - 90 * 60_000, at - 90 * 60_000, "t56-old1"))
+        val old2 = checkNotNull(workflows.scheduleOccurrence(saved.id, 0,
+            at - 60 * 60_000, at - 60 * 60_000, "t56-old2"))
+        val (keep, skipped) = WorkflowScheduling.coalesceMissed(
+            store.readJournal().occurrences.filter { it.state == WorkflowOccurrenceState.SCHEDULED })
+        assertTrue(old2.id in keep.map { it.id })
+        assertTrue(old1.id in skipped.map { it.id })
+        // Bounded effort: the adaptive step exhausts its budget and asks the
+        // user; completed steps are never re-run for the question.
+        val dispatched = AtomicInteger(0)
+        val adaptive = WorkflowDefinition(UUID.randomUUID().toString(), "Try quiet", "test", listOf(
+            WorkflowStep.Tool(UUID.randomUUID().toString(), ActionRequest("read_battery")),
+            WorkflowStep.Adaptive(UUID.randomUUID().toString(), "lower the volume",
+                listOf(ActionRequest("set_volume", mapOf("level" to "10"))),
+                EffortBudget(3, 60_000, 2))),
+            listOf(WorkflowTrigger.Manual), WorkflowOrigin.CONVERSATION, createdAtMs = 0, updatedAtMs = 0)
+        val outcome = WorkflowEngine().run(adaptive, dispatch = { request ->
+            dispatched.incrementAndGet(); ExecutionResult(false, "denied")
+        })
+        assertTrue("budget exhaustion asks the user", outcome is WorkflowRunOutcome.NeedsUser)
+        val asked = outcome as WorkflowRunOutcome.NeedsUser
+        assertTrue(asked.question.contains("lower the volume"))
+        assertEquals("one battery read plus three bounded attempts", 4, dispatched.get())
+        assertEquals("only the completed battery read is recorded", 1, asked.completedStepIds.size)
     }
 
     // Leave this selection in durable preferences for the controller's separate-process check.

@@ -47,7 +47,10 @@ internal fun VoiceCallScreen(
     onExportSpeechAudio: () -> Unit,
     // M1d explicit silent work (D21/T05): toggle plus observable posture.
     silentWork: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
-    onSilentWork: (Boolean) -> Unit = {}
+    onSilentWork: (Boolean) -> Unit = {},
+    // M2 saved workflows (D36): settings lists them with enable/disable; chat stays the operating surface.
+    workflowSettings: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection?>? = null,
+    onWorkflowSetEnabled: (String, Boolean) -> Unit = { _, _ -> }
 ) {
     val runtime = com.battlesbudz.jarvis.v2.voice.VoiceSessionUi
     val runtimePhase by runtime.phase.collectAsState()
@@ -221,6 +224,10 @@ internal fun VoiceCallScreen(
         text = { Column(Modifier.verticalScroll(rememberScrollState())) {
             Text("One model for chat and voice", style = MaterialTheme.typography.bodySmall)
             modelSelector(!chatSending && !runtimeArmed && !turnInFlight && !wakeTesting && !audioPathTesting && !inputTesting)
+        // M2 saved workflows (D36): list with enable/disable; chat stays the operating surface.
+        val workflowProjection by (workflowSettings?.collectAsState()
+            ?: androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection?>(null) })
+        WorkflowSettingsSection(projection = workflowProjection, onSetEnabled = onWorkflowSetEnabled)
         androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 16.dp))
         Text("Voice & microphone", style = MaterialTheme.typography.titleMedium)
         Text("Voice: Piper Northern English", style = MaterialTheme.typography.bodyMedium)

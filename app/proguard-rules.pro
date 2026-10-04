@@ -64,6 +64,31 @@
 -keep class com.battlesbudz.jarvis.v2.actions.ToolSourcePolicy { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ToolSourceAccessRecord { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.SourceAccessState { *; }
+# M2 workflows: release journeys drive the workflow ledger, scheduling
+# policy and engine directly from the instrumentation DEX.
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowDefinition { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowStep** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowTrigger** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowCondition** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowWait** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowEventKind { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowValueType { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowBinding { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.EffortBudget { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowOrigin { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowLedger { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowOccurrence { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowOccurrenceState { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowReceipt { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowReceiptKind { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.MissedRunDecision** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowScheduling { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowScheduling** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowEngine { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowRunOutcome** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowAlarmScheduler { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.DeviceLockGate { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.OwnerRecognitionMode { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.LockVerdict { *; }
