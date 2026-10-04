@@ -15,11 +15,11 @@ class JournaledActionPipelineTest {
     @Test fun executorObservesDurableIntentThenTypedReceiptReloads() = withFile { file ->
         val ledger = ToolTaskLedger(FileToolTaskStore(file))
         var calls = 0
-        val pipeline = JournaledActionPipeline(ledger) {
+        val pipeline = JournaledActionPipeline(ledger, MobileActionExecutor  {
             calls++
             assertEquals(ToolTaskState.RUNNING, ToolTaskLedger(FileToolTaskStore(file)).snapshot().single().state)
             ExecutionResult(true, "85%")
-        }
+        })
         assertTrue(pipeline.execute(ActionRequest("read_battery")).succeeded)
         assertEquals(1, calls)
         val saved = ToolTaskLedger(FileToolTaskStore(file)).snapshot().single()
@@ -54,7 +54,7 @@ class JournaledActionPipelineTest {
             }
         }
         var calls = 0
-        val result = JournaledActionPipeline(ToolTaskLedger(store)) { calls++; ExecutionResult(true, "effect") }
+        val result = JournaledActionPipeline(ToolTaskLedger(store), MobileActionExecutor  { calls++; ExecutionResult(true, "effect") })
             .execute(ActionRequest("read_battery"))
         assertEquals(ExecutionResult.Outcome.UNKNOWN_COMPLETION, result.outcome)
         assertEquals(ToolTaskState.RUNNING, goodStore.read().single().state)
@@ -66,7 +66,7 @@ class JournaledActionPipelineTest {
     @Test fun cancellationAndProgrammingErrorsPropagateAndFencePossibleEffects() = withFile { file ->
         for (error in listOf(CancellationException("cancel"), IllegalArgumentException("bug"))) {
             file.delete()
-            val pipeline = JournaledActionPipeline(ToolTaskLedger(FileToolTaskStore(file))) { throw error }
+            val pipeline = JournaledActionPipeline(ToolTaskLedger(FileToolTaskStore(file)), MobileActionExecutor  { throw error })
             try { pipeline.execute(ActionRequest("read_battery")); fail("Expected original exception") }
             catch (observed: Exception) { assertSame(error, observed) }
             assertEquals(ToolTaskState.UNKNOWN_OUTCOME, ToolTaskLedger(FileToolTaskStore(file)).snapshot().single().state)
@@ -77,7 +77,7 @@ class JournaledActionPipelineTest {
         for ((error, outcome) in listOf(SecurityException() to ExecutionResult.Outcome.DENIED_PERMISSION,
             IllegalStateException() to ExecutionResult.Outcome.UNKNOWN_COMPLETION)) {
             file.delete()
-            val result = JournaledActionPipeline(ToolTaskLedger(FileToolTaskStore(file))) { throw error }
+            val result = JournaledActionPipeline(ToolTaskLedger(FileToolTaskStore(file)), MobileActionExecutor  { throw error })
                 .execute(ActionRequest("read_battery"))
             assertEquals(outcome, result.outcome)
             assertEquals(outcome, ToolTaskLedger(FileToolTaskStore(file)).snapshot().single().resultOutcome)

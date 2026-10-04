@@ -1112,7 +1112,7 @@ class ReleaseJourneyTest {
             val a = ledger.get(id)?.takeIf { it.generation == generation }
             if (a != null) {
                 when (command) {
-                    "approve" -> JournaledActionPipeline(ledger) { effects.incrementAndGet(); ExecutionResult(true, "25%") }
+                    "approve" -> JournaledActionPipeline(ledger, MobileActionExecutor  { effects.incrementAndGet(); ExecutionResult(true, "25%") })
                         .executeAttempt(a, a.approvalId?.let { approvals.get(it) })
                     "deny" -> a.approvalId?.let { approvals.deny(it) }
                     "checked" -> ledger.reconcileUnknown(id, generation)
@@ -1824,7 +1824,8 @@ class ReleaseJourneyTest {
             val after = ledger.admit(listOf(ActionRequest("read_battery")), "thread-52")
             val afterAttempt = checkNotNull(ledger.get(after.attemptIds.single()))
             val claimedAfter = checkNotNull(ledger.claim(afterAttempt.id, afterAttempt.generation))
-            executor.execute(claimedAfter.request)
+            val afterAction = (MobileActionValidator().validate(claimedAfter.request) as ActionValidation.Valid).action
+            executor.execute(afterAction)
             assertEquals(1, dispatched.get())
             ledger = ToolTaskLedger(FileToolTaskStore(file))
             val recoveredAfter = ledger.recoverAfterRestart().single { it.id == claimedAfter.id }
