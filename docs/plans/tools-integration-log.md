@@ -117,6 +117,13 @@ CI evidence:
   failed before reaching the adaptive step — dispatch now succeeds on
   battery). ProGuard: added keeps for `WorkflowAlarmScheduler$Scheduled`
   and `DisableResult` (test53 reads `pausedOccurrenceIds`).
+- Run 37243982784 (M2 build, test53-56 fix commit): build green, JVM
+  tests green (923), API 30 emulator green (56/56, incl. test53-56) — but
+  API 35 failed at test37 `@Before launch()`: "Missing UI element:
+  model_browse". Evidence shows a Pixel Launcher ANR dialog ("Pixel
+  Launcher isn't responding") — emulator infra flake, no app crash, no
+  M2 code on the path. Re-running via a fresh push (API has no
+  re-run permission).
 - Run <run-id>: <result>
 - Release: `v0.1.0-build.<NNN>` (published <date>) with app-release.apk +
   app-compact.apk, titled "Jarvis OS V2 feature/muse-tools build <NNN> (M2 workflows)".
