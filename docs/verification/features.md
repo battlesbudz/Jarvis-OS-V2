@@ -1243,6 +1243,62 @@ is unresolved; native packaging checks do not exclude generated code,
 dependencies or earlier native corruption. No JIT/GC override conceals it.
 The next fresh signed candidate repeats all six profiles and every release gate.
 
+## Build 954 API 29 host graphics compatibility trial
+
+[Build 954](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37189376357)
+tests merge `d669bd4969b3b68990cee288ca0c2f1476a1a118` from PR head
+`b84e0b562040a468d67e595c563815de9a8317d2`. Signed normal/compact packaging,
+all 1,005 release JVM cases, 197 Python helper cases, four recorded-speech cases
+and both static native audits pass. API 30 normal, API 35 compact, API 36
+normal, Fold compact and true 16 KB normal each complete all 49 main journeys,
+including test48, both actual Build 907 upgrade phases, restart, eight lifecycle
+phases, four layout cases and nine native loads. Fold also completes actual
+fold/unfold transitions. The earlier sparse Task FAIL correction passes under
+the original navigation limits. The true 16 KB profile retains two positively
+attributed Google Play services native crashes; no Jarvis fatal or ANR is retained.
+
+API 29 first-attempt artifact `11299282453`, ZIP SHA-256
+`ad384b3a00d6d656d550aeafdfbca4c2894fee77b809d4f504ea118c0ac4cc50`,
+passes the complete boot barrier and both upgrade phases. A cold stock SystemUI
+service ANR precedes Jarvis installation. The retained first-launch and main
+screenshots show its blocking "System UI isn't responding" dialog. Main methods
+01 through 20 fail in setup; method21 starts but reaches the unchanged
+900-second instrumentation timeout without a terminal result. The 20 failed
+test bodies and test48 do not run. This failure is not the missing
+BOOT_COMPLETED delivery seen in Build 952.
+
+One unchanged infrastructure retry is accepted. Fresh API 29 job `111406997721`
+produces artifact `11299493564`, ZIP SHA-256
+`30d0fac7e9e75f4fbb9bb34f91e362475171cecc04831b03bbf73a410bd2ac0f`.
+Two system-server processes die after stock runtime-permission grant requests
+time out at 30 seconds. A third is killed by the actual platform watchdog with
+its UI thread in `HardwareRenderer.nSetStopped` through `performDraw`.
+SystemUI service initialization and ANR remain retained. The full native stream
+contains neither Posting nor Finished user0 BOOT_COMPLETED markers; cached boot
+properties do not satisfy the unchanged 900-second delivery barrier. No APK
+installation, controller or app tests run. The retry carries the five original
+same-revision successes; those profiles are not five new executions.
+
+The final receipt artifact `11299069001`, ZIP SHA-256
+`504dd5b733a0dc039be85836c60dc5979155b7d798920e4646e8c141440ba733`,
+is false with five admitted profiles. The eligible signed publisher skips;
+the other two publishers are ineligible for this PR and also skip. Neither
+attempt produces a numbered Build 954 release.
+
+The next isolated compatibility trial changes only API 29's requested GPU
+selector from `swiftshader` to `host`. The exact pinned emulator's native help
+advertises `host`; a usable host OpenGL context, its actual backend and any
+improvement remain unproven. The observed prior GLES backend is SwANGLE over
+SwiftShader. Render/UI stalls support investigating graphics, but the grant
+timeouts mean graphics is not an established sole cause. Requested and observed
+backends remain separate receipts. The emulator/image pin, native ARM64 CPU
+emulation, disabled HVF/guest Vulkan, resources, viewport, every readiness check,
+all deadlines and every release assertion remain unchanged. No JIT, GC or
+watchdog override hides a failure. A fresh signed candidate must rerun all six
+profiles and pass consolidation before publication; Build 954 results do not
+credit the changed revision. Physical wake-word/audio behavior still needs final
+phone signoff.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,

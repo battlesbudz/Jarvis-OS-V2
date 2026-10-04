@@ -47,12 +47,12 @@ EMULATOR_PIN = {
 SOFTWARE_AVD_SETTINGS = {"hw.cpu.ncore": "2", "hw.ramSize": "2048M", "vm.heapSize": "256M",
                          "hw.lcd.width": "540", "hw.lcd.height": "960", "hw.lcd.density": "210",
                          "disk.dataPartition.size": "4096M"}
-# Builds 947/948 requested SwiftShader but retained GLES SwANGLE, with SystemUI
-# ANRs/system-server watchdogs. Disable the guest Vulkan feature as a documented
-# compatibility trial; this does not prove a graphics cause or remove all host
-# Vulkan use. Keep the selector and record the actual backend independently.
-# https://developer.android.com/studio/run/emulator-troubleshooting
-SOFTWARE_GPU_SELECTOR = "swiftshader"
+# API 29-only compatibility trial of the documented host graphics selector.
+# Keep CPU emulation and disabled HVF/guest Vulkan unchanged. A usable host
+# OpenGL context and any improvement remain unproven; retain the requested
+# selector and actual backend separately and require the unchanged release gate.
+# https://developer.android.com/studio/run/emulator-acceleration
+SOFTWARE_GPU_SELECTOR = "host"
 
 
 def require_software_profile(profile, system=None, machine=None):
