@@ -201,8 +201,11 @@ class FileToolTaskStore(
     }
     private fun ActionRequest.json() = JSONObject().put("name", name).put("arguments", JSONObject(arguments))
     private fun ActionRequest.validateRequest() {
-        require(name in setOf("read_battery", "set_volume", "open_app", "media_control"))
-        require(arguments.size <= 2 && arguments.all { (k, v) -> k.length <= 64 && v.length <= 512 })
+        // M1d: the durable journal must accept every catalog tool, not just
+        // the original four — screen and destination tools are admitted for
+        // tracking/approval and must persist like the rest.
+        require(MobileToolCatalog.find(name) != null)
+        require(arguments.size <= 3 && arguments.all { (k, v) -> k.length <= 64 && v.length <= 512 })
     }
     private fun <T> JSONArray.objects(map: (JSONObject) -> T) = (0 until length()).map { map(getJSONObject(it)) }
     private fun JSONArray.strings() = (0 until length()).map { getString(it) }
