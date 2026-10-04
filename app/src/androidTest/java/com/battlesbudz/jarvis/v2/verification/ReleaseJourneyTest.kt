@@ -1133,6 +1133,12 @@ class ReleaseJourneyTest {
             captureEvidence("phone_task_approval")
             find(By.res("task_approve_${pending.task.id}")).click()
             device.waitForIdle()
+            // The approve handler runs the effect off the UI thread; poll briefly
+            // rather than asserting immediately (fixes intermittent test32 flake).
+            val deadline = android.os.SystemClock.uptimeMillis() + 10_000
+            while (effects.get() != 1 && android.os.SystemClock.uptimeMillis() < deadline) {
+                Thread.sleep(200)
+            }
             assertEquals(1, effects.get())
             assertEquals(ToolTaskState.SUCCEEDED, ledger.get(pending.task.id)?.state)
             find(By.res("task_checked_${unknown.id}")).click()
