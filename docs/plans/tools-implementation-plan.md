@@ -5,6 +5,74 @@ Follow-up source baseline: `feature-tools` at `bfeca6d06dc3dba583e0f92e812046e9e
 Created: September 24, 2026. Updated: September 30, 2026 (America/New_York). Owner: Justin Battles.
 Status: existing tools scope retained; September 29 autonomous messaging/warm-inference requirements integrated. New phases below are planned, not implemented or verified by this documentation update.
 
+## Implementation checkpoint — October 4, 2026 (M1e device validation)
+
+M1e is implemented on `feature/muse-tools` (no PR, no merge), completing
+permission/lock handling and regression/device validation. It closes out M1:
+every command family now dispatches through its supported Android adapter
+with permission, capability and lock checks at admission and immediately
+before dispatch. `FinalVoiceToolGuard` untouched.
+
+- Permission handling (T08, D09/D10): `actions/ToolSourceAccess.kt` holds
+  the family-grained permission policy — phone, media, web, settings, map,
+  screen families with fixed scope sets. `ToolTaskJournal.sourceAccess`
+  persists the remembered first-source grant per family (new
+  `ToolSourceAccessRecord` type; `FileToolTaskStore` encodes/decodes/
+  validates it, capped at 64 records, and refuses any persisted grant that
+  exceeds its family's scope set). `ToolTaskLedger.recordSourceGrant`
+  remembers the first successful dispatch's family grant; a dispatch never
+  overwrites a denial/revocation and never broadens the grant beyond the
+  family's scopes. `ToolTaskLedger.eligible` blocks claims for
+  denied/revoked/out-of-scope families, so revocation stops the approval
+  path too. `ToolCapabilityProbe` (with the Android-backed
+  `AndroidToolCapabilityProbe`: BatteryManager/AudioManager presence,
+  accessibility-service availability for the screen family) is consulted at
+  admission and again immediately before dispatch — a capability lost
+  mid-flight still blocks the effect. Denial blocks dispatch on all adapters
+  with a truthful `DENIED_PERMISSION` receipt; no adapter is touched.
+- Lock handling (T09, D30/D61): `actions/DeviceLockGate.kt` gates
+  locked-device dispatch against the real keyguard state. While locked, only
+  the non-sensitive `read_battery` read continues; every other tool returns
+  the new `NEEDS_UNLOCK` outcome with an unlock-handoff receipt
+  ("Unlock your phone and ask again"), saved terminal and never auto-retried.
+  Owner recognition is `GATED`: speaker verification is an unverified
+  device-validation dependency, so no code path treats a voice match as
+  authorization — there is no input for it and the mode cannot be switched
+  until on-device speaker verification is measured and approved. Sensitive
+  remembered details always require unlock (D61).
+- Production wiring: `JarvisRuntime.phoneActionPipeline` builds every
+  production `JournaledActionPipeline` (direct, approval-panel and
+  restart-recovery paths) with the source-access admission, the Android
+  capability probe and the keyguard-backed lock gate.
+- Crash/outcome reconciliation (T10): the existing journal recovery is
+  extended with explicit stale-callback rejection coverage — a `finish` with
+  a pre-crash generation (or on a non-running attempt) returns null and
+  changes nothing; `recoverAfterRestart` still converts interrupted RUNNING
+  attempts to `UNKNOWN_OUTCOME`; `reconcileUnknown` acknowledges without
+  ever re-dispatching the unknown mutation.
+- Regression/device validation: `M1eDeviceValidationTest` (JVM) covers the
+  full contract above; release journeys `test49` (source-access
+  denial/revocation blocks every adapter; tampered cross-family scope
+  refused), `test50` (real keyguard state: locked device hands sensitive
+  actions to unlock, battery read dispatches through the real adapter),
+  `test51` (cross-family T01 regression: invalid args for all eleven tools
+  rejected before any adapter runs; volume unchanged; no screen effects),
+  `test52` (crash before/after dispatch reconciles; stale callbacks
+  rejected; unknown mutations never repeated). The named contract is now 52
+  methods. `app/proguard-rules.pro` keeps the new gate classes for the
+  instrumentation DEX.
+- M1 definition of done: satisfiable on emulator evidence — each command
+  family dispatches through its real Android adapter, invalid args produce
+  no effects, receipts stay honest, follow-up/cancel/call-end behavior is
+  covered by test20–test23/test45–test48, and overlay stop / touch
+  pause-resume are covered by test41/test42/test45. Fold 6 physical
+  behavior (lock UX, real accessibility enablement, acoustics, thermal)
+  is explicitly unverified per the coverage boundaries; owner recognition
+  stays gated until measured on-device.
+
+M1e remaining: none — permission/lock handling and regression/device
+validation are implemented. M2–M8 and A0–A6 are still planned.
+
 ## Implementation checkpoint — October 4, 2026 (M1d task/conversation scheduling)
 
 M1d is implemented on `feature/muse-tools` (no PR, no merge), building on the

@@ -5,6 +5,81 @@ Epic: [#8](https://github.com/battlesbudz/Jarvis-OS-V2/issues/8). Implementation
 workflow, whose push trigger covers `feature/**`; older entries below still say
 `muse/feature-tools`).
 
+## Item 5: M1e device validation slice (permission/lock handling, regression) — 2026-10-04
+
+Completes permission/lock handling and regression/device validation, closing out M1.
+Every tool family checks its required Android permission/scope at admission AND
+immediately before dispatch; denial or revocation blocks dispatch across all adapters
+with a truthful receipt; first-granted source access is remembered per family and a
+new tool can never broaden an existing grant's scope (T08). Locked-device gating:
+sensitive actions require unlock; owner recognition is gated — an untested voice
+match is never described or treated as secure authorization (T09). Crash
+before/after dispatch reconciles via the journal; unknown mutations are never
+blindly repeated; stale callbacks are rejected (T10).
+
+Changed files (commit `<m1e-sha>`; server head `<server-head>` on `feature/muse-tools`):
+- `actions/ToolSourceAccess.kt` (new, JVM-pure): `ToolSourcePolicy` — six tool
+  families (phone/media/web/settings/map/screen) with fixed scope sets;
+  `ToolSourceAccess` admission over the persisted journal — denial/revocation/
+  out-of-scope blocks with an honest `DENIED_PERMISSION` receipt. Grants are
+  family-grained (D10): the first successful dispatch records the family's full
+  scope set; a dispatch never overwrites a denial/revocation and never broadens
+  beyond the family's scopes.
+- `actions/DeviceLockGate.kt` (new, JVM-pure): `DeviceLockGate` against a
+  lock-state provider; while locked only `read_battery` is allowed, everything
+  else returns the new `NEEDS_UNLOCK` outcome with an unlock-handoff receipt.
+  `OwnerRecognitionMode.GATED` — no code path treats a voice match as
+  authorization; the mode cannot be switched until on-device speaker
+  verification is measured and approved.
+- `actions/AndroidToolGates.kt` (new): `ToolCapabilityProbe` interface,
+  `AndroidToolCapabilityProbe` (BatteryManager/AudioManager presence,
+  accessibility-service availability for the screen family) and
+  `androidLockGate` (real keyguard state).
+- `actions/MobileActionPipeline.kt`: new `ExecutionResult.Outcome.NEEDS_UNLOCK`
+  (terminal; never auto-retried).
+- `actions/ToolTaskJournal.kt`: `sourceAccess` persisted per family; frozen.
+- `actions/ToolTaskLedger.kt`: `recordSourceGrant`/`recordSourceDenial`/
+  `revokeSourceAccess`; `eligible()` blocks claims for denied/revoked/
+  out-of-scope families (approval path included).
+- `actions/ToolTaskStore.kt`: `sourceAccess` encode/decode/validate
+  (capped at 64 records; persisted grants can never exceed family scopes).
+- `actions/JournaledActionPipeline.kt`: optional `sourceAccess`,
+  `capabilityProbe`, `lockGate` — checked at admission (`execute`,
+  `executeAttempt`) and re-checked immediately before dispatch (`perform`);
+  first grant recorded after successful dispatch; blocked attempts saved
+  terminal.
+- `JarvisRuntime.kt`: `phoneActionPipeline()` wires the source-access
+  admission, Android capability probe and keyguard lock gate into all three
+  production dispatch sites (direct, panel-approve, restart-recovery).
+- `app/proguard-rules.pro`: keep rules for the new gate classes used from the
+  instrumentation DEX.
+- Tests: `M1eDeviceValidationTest.kt` (new JVM: first-grant remembered,
+  within-family auto-exposure, denial/revocation blocks dispatch and claim,
+  dispatch never overwrites denial, out-of-family scope refused at admission
+  and by the file store, file round-trip, capability denial at admission and
+  mid-flight, lock classification, gated owner recognition, NEEDS_UNLOCK
+  without effects, stale-callback rejection, crash-before/after-dispatch
+  reconciliation without repeat); emulator test49 (source-access
+  denial/revocation blocks every adapter; tampered cross-family scope
+  refused), test50 (real keyguard state: locked device hands sensitive actions
+  to unlock; battery read dispatches through the real adapter), test51
+  (cross-family T01 regression: invalid args for all eleven tools rejected
+  before any adapter runs; volume unchanged; no screen effects), test52 (crash
+  before/after dispatch reconciles; stale callbacks rejected; unknown mutations
+  never repeated). `scenarios.json`: 52 tests.
+  `docs/verification/features.md`: 52 methods + M1e row.
+- `docs/plans/tools-implementation-plan.md`: M1e implementation checkpoint
+  (M1 definition of done satisfiable on emulator evidence; Fold 6 physical
+  behavior explicitly unverified).
+- `FinalVoiceToolGuard` untouched.
+
+CI evidence: (pending — will update after the gate runs)
+- Release: (pending)
+
+Unverified: physical Fold 6 lock behavior and real permission-revocation UX;
+on-device speaker-verification measurement (owner recognition stays gated
+until measured); real-model tool selection; physical-device performance.
+
 ## Item 4: M1d task/conversation scheduling slice — 2026-10-04
 
 Implements explicit silent work, wake reactivation, concurrent independent tasks,

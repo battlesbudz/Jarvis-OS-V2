@@ -7,7 +7,9 @@ data class ToolTaskJournal(
     val approvals: List<ActionApprovalRequest> = emptyList(),
     val grants: List<ToolActionGrant> = emptyList(),
     val events: List<ToolTaskEvent> = emptyList(),
-    val activeQuestionId: String? = null
+    val activeQuestionId: String? = null,
+    /** M1e: remembered first-source access per tool family (D09, T08). */
+    val sourceAccess: List<ToolSourceAccessRecord> = emptyList()
 )
 data class ToolTaskGroup(
     val id: String, val conversationId: String, val summary: String, val attemptIds: List<String>,
@@ -29,7 +31,8 @@ internal fun ToolTaskJournal.frozen() = copy(
     attempts = attempts.map { it.copy(request = it.request.frozen()) },
     groups = groups.map { it.copy(attemptIds = it.attemptIds.toList()) },
     approvals = approvals.map { it.copy(action = it.action.frozen()) },
-    grants = grants.map { it.copy(requests = it.requests.map { request -> request.frozen() }) }, events = events.toList())
+    grants = grants.map { it.copy(requests = it.requests.map { request -> request.frozen() }) }, events = events.toList(),
+    sourceAccess = sourceAccess.map { it.copy(scopes = it.scopes.toSet()) })
 
 /** Screen mutations are never routine-eligible and never auto-dispatched (D23). */
 internal val SCREEN_MUTATION_TOOLS = setOf("screen_tap", "screen_scroll", "screen_type")

@@ -1675,6 +1675,171 @@ class ReleaseJourneyTest {
         assertEquals(1, projection.completedSteps)
     }
 
+    @Test fun test49_sourceAccessDenialBlocksDispatchAcrossAdapters() {
+        // T08: first-source access is remembered per family; a denial or
+        // revocation blocks dispatch on every adapter with a truthful
+        // receipt, and a new tool can never broaden an existing grant's
+        // scope. The approval claim path is blocked too.
+        val dispatched = AtomicInteger(0)
+        val executor = MobileActionExecutor { dispatched.incrementAndGet(); ExecutionResult(true, "ok") }
+        val ledger = ToolTaskLedger()
+        val access = ToolSourceAccess(ledger)
+        val pipeline = JournaledActionPipeline(ledger, executor,
+            sourceAccess = access,
+            capabilityProbe = ToolCapabilityProbe { null },
+            lockGate = DeviceLockGate(isLocked = { false }))
+        // First grant: read_battery succeeds and its family access is remembered.
+        assertTrue(pipeline.execute(ActionRequest("read_battery")).succeeded)
+        val record = ledger.journal().sourceAccess.single { it.family == "phone" }
+        assertEquals(SourceAccessState.GRANTED, record.state)
+        assertEquals(ToolSourcePolicy.familyScopes("phone"), record.scopes)
+        // Revocation blocks the direct path with an honest receipt.
+        assertTrue(access.revoke("phone"))
+        val denied = pipeline.execute(ActionRequest("set_volume", mapOf("level" to "25")))
+        assertFalse(denied.succeeded)
+        assertEquals(ExecutionResult.Outcome.DENIED_PERMISSION, denied.outcome)
+        // Revocation blocks the approval claim path too: no dispatch.
+        val group = ledger.admit(listOf(ActionRequest("read_battery")), "thread-49")
+        val attempt = checkNotNull(ledger.get(group.attemptIds.single()))
+        val pending = ledger.requestApproval(attempt.id, attempt.generation, "native", MobileToolCatalog.VERSION)
+        assertNull("revoked family must not claim",
+            ledger.claim(pending.task.id, pending.task.generation, approval = pending.approval))
+        assertEquals("exactly one real dispatch happened", 1, dispatched.get())
+        // A new tool can never broaden an existing grant's scope: a record
+        // claiming another family's scopes does not admit.
+        val tamperedStore = InMemoryToolTaskStore()
+        tamperedStore.updateJournal { j -> j.copy(sourceAccess = listOf(
+            ToolSourceAccessRecord("web", setOf("screen.control"), SourceAccessState.GRANTED, 0))) }
+        val tamperedDenial = ToolSourceAccess(ToolTaskLedger(tamperedStore))
+            .denial(ActionRequest("open_website", mapOf("url" to "https://example.com")))
+        assertNotNull("out-of-family scope must not admit", tamperedDenial)
+        assertEquals(ExecutionResult.Outcome.DENIED_PERMISSION, tamperedDenial!!.outcome)
+    }
+
+    @Test fun test50_lockedDeviceGatesSensitiveActions() {
+        // T09: on a locked device, sensitive actions hand off to unlock;
+        // owner recognition is gated (a voice match never authorizes); the
+        // non-sensitive battery read still dispatches through the real
+        // Android adapter.
+        val keyguard = context.getSystemService(android.app.KeyguardManager::class.java)
+        device.sleep()
+        try {
+            val deadline = android.os.SystemClock.uptimeMillis() + 5_000
+            while (keyguard?.isDeviceLocked != true && android.os.SystemClock.uptimeMillis() < deadline) {
+                Thread.sleep(200)
+            }
+            assertTrue("device must be locked for this journey", keyguard?.isDeviceLocked == true)
+            val gate = androidLockGate(context)
+            assertEquals(OwnerRecognitionMode.GATED, gate.ownerRecognition)
+            val dispatched = AtomicInteger(0)
+            val fake = MobileActionExecutor { dispatched.incrementAndGet(); ExecutionResult(true, "ok") }
+            val realExecutor = AndroidMobileActionExecutor(context)
+            val pipeline = JournaledActionPipeline(ToolTaskLedger(), fake,
+                sourceAccess = null, capabilityProbe = null, lockGate = gate)
+            val realPipeline = JournaledActionPipeline(ToolTaskLedger(), realExecutor,
+                sourceAccess = null, capabilityProbe = null, lockGate = gate)
+            val battery = realPipeline.execute(ActionRequest("read_battery"))
+            assertTrue("non-sensitive read works while locked: ${battery.message}", battery.succeeded)
+            assertTrue("real battery receipt, was: ${battery.message}",
+                battery.message.startsWith("Battery is at"))
+            val tap = pipeline.execute(
+                ActionRequest("screen_tap", mapOf("target" to "n0", "token" to "0123456789abcdef")))
+            assertEquals(ExecutionResult.Outcome.NEEDS_UNLOCK, tap.outcome)
+            assertTrue("handoff must name the lock, was: ${tap.message}",
+                tap.message.contains("locked", ignoreCase = true))
+            assertFalse("never describe a voice match as authorization",
+                tap.message.contains("voice", ignoreCase = true))
+            val volume = pipeline.execute(ActionRequest("set_volume", mapOf("level" to "25")))
+            assertEquals(ExecutionResult.Outcome.NEEDS_UNLOCK, volume.outcome)
+            assertEquals("only the battery read dispatched", 0, dispatched.get())
+        } finally {
+            device.wakeUp()
+        }
+    }
+
+    @Test fun test51_crossFamilyRegressionInvalidArgsProduceNoEffects() {
+        // T01 regression across all M1 command families: invalid args are
+        // rejected before any adapter runs, so nothing changes on the device.
+        val audio = context.getSystemService(AudioManager::class.java)
+        val volumeBefore = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes()))
+        val executor = AndroidMobileActionExecutor(context, screenBridge = bridge)
+        val dispatched = AtomicInteger(0)
+        val counting = MobileActionExecutor { action -> dispatched.incrementAndGet(); executor.execute(action) }
+        val ledger = ToolTaskLedger()
+        val pipeline = JournaledActionPipeline(ledger, counting,
+            sourceAccess = ToolSourceAccess(ledger),
+            capabilityProbe = ToolCapabilityProbe { null },
+            lockGate = DeviceLockGate(isLocked = { false }))
+        val invalid = listOf(
+            ActionRequest("set_volume", mapOf("level" to "999")),
+            ActionRequest("media_control", mapOf("action" to "explode")),
+            ActionRequest("open_app", mapOf("app" to "   ")),
+            ActionRequest("open_website", mapOf("url" to "javascript:alert(1)")),
+            ActionRequest("open_settings", mapOf("screen" to "nuclear")),
+            ActionRequest("navigate", mapOf("destination" to "   ")),
+            ActionRequest("screen_tap", mapOf("target" to "zzz", "token" to "bad")),
+            ActionRequest("screen_scroll", mapOf("target" to "n2", "direction" to "sideways", "token" to "bad")),
+            ActionRequest("screen_type", mapOf("target" to "n1", "text" to "", "token" to "bad"))
+        )
+        for (request in invalid) {
+            val rejected = pipeline.execute(request)
+            assertEquals("invalid ${request.name} must be rejected, was: ${rejected.message}",
+                ExecutionResult.Outcome.REJECTED_VALIDATION, rejected.outcome)
+        }
+        assertEquals("no adapter may run for invalid args", 0, dispatched.get())
+        assertEquals("volume must be unchanged", volumeBefore, audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+        assertTrue("no screen effects", bridge.tapped.isEmpty() && bridge.scrolled.isEmpty() && bridge.typed.isEmpty())
+        // Valid anchor: the real battery adapter still dispatches through the gate.
+        val battery = pipeline.execute(ActionRequest("read_battery"))
+        assertTrue("valid read_battery must dispatch: ${battery.message}", battery.succeeded)
+        assertEquals(1, dispatched.get())
+    }
+
+    @Test fun test52_crashBeforeAndAfterDispatchReconcilesWithoutRepeat() {
+        // T10: crash before dispatch and crash after dispatch both recover to
+        // an unknown outcome; stale callbacks are rejected and the unknown
+        // mutation is never blindly repeated.
+        val file = File(context.cacheDir, "release-m1e-crash.json").apply { delete() }
+        try {
+            val dispatched = AtomicInteger(0)
+            val executor = MobileActionExecutor {
+                dispatched.incrementAndGet()
+                ExecutionResult(true, "Battery 80%")
+            }
+            // Crash before dispatch: claimed RUNNING, then "process death".
+            var ledger = ToolTaskLedger(FileToolTaskStore(file))
+            val before = ledger.admit(listOf(ActionRequest("read_battery")), "thread-52")
+            val beforeAttempt = checkNotNull(ledger.get(before.attemptIds.single()))
+            val claimedBefore = checkNotNull(ledger.claim(beforeAttempt.id, beforeAttempt.generation))
+            ledger = ToolTaskLedger(FileToolTaskStore(file))
+            val recoveredBefore = ledger.recoverAfterRestart().single { it.id == claimedBefore.id }
+            assertEquals(ToolTaskState.UNKNOWN_OUTCOME, recoveredBefore.state)
+            assertNull("stale pre-crash callback must be rejected",
+                ledger.finish(claimedBefore, ExecutionResult(true, "late")))
+            assertEquals(ToolTaskState.UNKNOWN_OUTCOME, ledger.get(claimedBefore.id)?.state)
+            assertTrue(ledger.reconcileUnknown(recoveredBefore.id, recoveredBefore.generation))
+            // Crash after dispatch: the real effect happened once, then
+            // "death" before the receipt saved.
+            val after = ledger.admit(listOf(ActionRequest("read_battery")), "thread-52")
+            val afterAttempt = checkNotNull(ledger.get(after.attemptIds.single()))
+            val claimedAfter = checkNotNull(ledger.claim(afterAttempt.id, afterAttempt.generation))
+            executor.execute(claimedAfter.request)
+            assertEquals(1, dispatched.get())
+            ledger = ToolTaskLedger(FileToolTaskStore(file))
+            val recoveredAfter = ledger.recoverAfterRestart().single { it.id == claimedAfter.id }
+            assertEquals(ToolTaskState.UNKNOWN_OUTCOME, recoveredAfter.state)
+            assertTrue(ledger.reconcileUnknown(recoveredAfter.id, recoveredAfter.generation))
+            // Neither unknown mutation is ever repeated.
+            val pipeline = JournaledActionPipeline(ledger, executor)
+            for (id in listOf(claimedBefore.id, claimedAfter.id)) {
+                val retry = pipeline.executeAttempt(checkNotNull(ledger.get(id)))
+                assertFalse("reconciled attempt must not redispatch", retry.succeeded)
+            }
+            assertEquals("the effect happened exactly once", 1, dispatched.get())
+        } finally { file.delete() }
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()

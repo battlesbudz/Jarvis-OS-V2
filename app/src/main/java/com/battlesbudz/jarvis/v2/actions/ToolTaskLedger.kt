@@ -111,6 +111,62 @@ class ToolTaskLedger(
         return changed
     }
 
+    /**
+     * M1e source-access records (D09, T08): remember the first-source grant
+     * per tool family. A denial or revocation blocks dispatch on every
+     * adapter; a dispatch never overwrites them and never broadens the
+     * grant beyond the family's scope set.
+     *
+     * Grants are family-grained (D10): the first successful dispatch records
+     * the family's full scope set, so new tools within the approved access
+     * are automatically exposed. A tool can never claim another family's
+     * scopes, and a persisted grant can never exceed its family's set.
+     */
+    fun recordSourceGrant(request: ActionRequest) {
+        val family = ToolSourcePolicy.familyOf(request.name)
+        val scopes = ToolSourcePolicy.familyScopes(family)
+        if (scopes.isEmpty()) return
+        val at = now()
+        store.updateJournal { j ->
+            val existing = j.sourceAccess.find { it.family == family }
+            val next = when {
+                existing == null -> ToolSourceAccessRecord(family, scopes, SourceAccessState.GRANTED, at)
+                existing.state != SourceAccessState.GRANTED -> existing
+                else -> existing.copy(
+                    scopes = (existing.scopes + scopes) intersect ToolSourcePolicy.familyScopes(family),
+                    updatedAtMs = at)
+            }
+            if (next == existing) j
+            else j.copy(sourceAccess = (j.sourceAccess.filterNot { it.family == family } + next))
+        }
+    }
+
+    /** Record that the user denied a family's access; blocks every adapter until restored. */
+    fun recordSourceDenial(family: String) {
+        if (family.isBlank()) return
+        val at = now()
+        store.updateJournal { j ->
+            val existing = j.sourceAccess.find { it.family == family }
+            val next = ToolSourceAccessRecord(family,
+                existing?.scopes ?: ToolSourcePolicy.familyScopes(family), SourceAccessState.DENIED, at)
+            j.copy(sourceAccess = j.sourceAccess.filterNot { it.family == family } + next)
+        }
+    }
+
+    /** Revoke a family's remembered access; in-flight attempts lose dispatch eligibility. */
+    fun revokeSourceAccess(family: String): Boolean {
+        var changed = false
+        store.updateJournal { j ->
+            val existing = j.sourceAccess.find { it.family == family && it.state == SourceAccessState.GRANTED }
+                ?: return@updateJournal j
+            changed = true
+            j.copy(sourceAccess = j.sourceAccess.map {
+                if (it.family == family) it.copy(state = SourceAccessState.REVOKED, updatedAtMs = now()) else it
+            })
+        }
+        return changed
+    }
+
     fun requestApproval(id: String, expectedGeneration: Long, provider: String, schemaVersion: Int): AuthorizedDispatch {
         var dispatch: AuthorizedDispatch? = null
         store.updateJournal { j ->
@@ -320,6 +376,7 @@ class ToolTaskLedger(
 
     private fun eligible(a: ToolTaskAttempt, j: ToolTaskJournal, at: Long, checkDependencies: Boolean = true): Boolean {
         if (a.provider != "native" || a.schemaVersion != MobileToolCatalog.VERSION || !a.request.isDispatchEligible(a.authority)) return false
+        if (!sourceAdmitted(a, j)) return false
         if (a.authority == ToolAuthority.ROUTINE && !granted(a, j, at)) return false
         val group = a.groupId?.let { id -> j.groups.find { it.id == id } } ?: return a.groupId == null
         if (group.cancelled || at >= group.expiresAtMs || at < group.createdAtMs) return false
@@ -330,6 +387,16 @@ class ToolTaskLedger(
     private fun granted(a: ToolTaskAttempt, j: ToolTaskJournal, at: Long) = j.grants.any {
         it.id == a.grantId && !it.revoked && at < it.expiresAtMs && it.provider == a.provider &&
             it.schemaVersion == a.schemaVersion && a.request in it.requests && a.request.isRoutineEligible()
+    }
+    /**
+     * M1e (T08): a denied or revoked family grant — or a request whose scope
+     * exceeds the remembered grant — is not dispatch-eligible on any adapter.
+     * No record means first use: the live capability probe is the check.
+     */
+    private fun sourceAdmitted(a: ToolTaskAttempt, j: ToolTaskJournal): Boolean {
+        val record = j.sourceAccess.find { it.family == ToolSourcePolicy.familyOf(a.request.name) } ?: return true
+        return record.state == SourceAccessState.GRANTED &&
+            ToolSourcePolicy.requiredScopes(a.request.name).all { it in record.scopes }
     }
     private fun ToolTaskAttempt.advance(state: ToolTaskState, result: String? = null, outcome: ExecutionResult.Outcome? = null) =
         copy(generation = Math.addExact(generation, 1), state = state, updatedAtMs = maxOf(updatedAtMs, now()), result = result, resultOutcome = outcome)

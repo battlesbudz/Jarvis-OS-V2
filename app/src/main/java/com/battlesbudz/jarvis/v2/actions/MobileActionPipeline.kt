@@ -12,7 +12,9 @@ class ExecutionResult private constructor(
     val outcome: Outcome,
     val batteryPercent: Int? = null
 ) {
-    enum class Outcome { SUCCEEDED, FAILED, REJECTED_VALIDATION, DENIED_PERMISSION, UNKNOWN_COMPLETION }
+    enum class Outcome { SUCCEEDED, FAILED, REJECTED_VALIDATION, DENIED_PERMISSION, UNKNOWN_COMPLETION,
+        /** M1e (T09): the device is locked and this action hands off to unlock. Terminal; never auto-retried. */
+        NEEDS_UNLOCK }
 
     /** Retains the existing JVM constructor used by Android instrumentation and callers. */
     constructor(succeeded: Boolean, message: String) : this(

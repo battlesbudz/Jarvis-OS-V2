@@ -58,6 +58,16 @@
 -keep class com.battlesbudz.jarvis.v2.actions.ApprovalDecision { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ActionDispatchGate { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.AuthorizedDispatch { *; }
+# M1e device validation: release journeys drive the permission, lock and
+# source-access gates directly from the instrumentation DEX.
+-keep class com.battlesbudz.jarvis.v2.actions.ToolSourceAccess { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ToolSourcePolicy { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ToolSourceAccessRecord { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.SourceAccessState { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.DeviceLockGate { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.OwnerRecognitionMode { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.LockVerdict { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ToolCapabilityProbe { *; }
 -keep class com.battlesbudz.jarvis.v2.ui.PhoneTaskPanelKt { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.NativeActionDecoder { *; }
 -keep class com.battlesbudz.jarvis.v2.ai.ToolCall { *; }

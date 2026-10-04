@@ -155,7 +155,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         groupId: String? = null,
         stepIndex: Int = 0
     ): com.battlesbudz.jarvis.v2.actions.ExecutionResult = try {
-        val pipeline = com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline(phoneActionLedger, executor)
+        val pipeline = phoneActionPipeline(executor)
         if (groupId == null) pipeline.execute(request) else {
             val journal = phoneActionLedger.journal()
             val id = journal.groups.find { it.id == groupId }?.attemptIds?.getOrNull(stepIndex)
@@ -168,6 +168,23 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         com.battlesbudz.jarvis.v2.actions.ExecutionResult(false,
             "The phone-action journal is unavailable, so I didn't start this action.")
     } finally { refreshPhoneTasks() }
+
+    /**
+     * M1e production dispatch path (T08/T09): every phone action checks its
+     * remembered source access, its live Android capability and the lock
+     * state at admission and immediately before dispatch. Denial or
+     * revocation blocks dispatch on all adapters with a truthful receipt.
+     */
+    private fun phoneActionPipeline(
+        executor: com.battlesbudz.jarvis.v2.actions.MobileActionExecutor
+    ): com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline =
+        com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline(
+            phoneActionLedger,
+            executor,
+            sourceAccess = com.battlesbudz.jarvis.v2.actions.ToolSourceAccess(phoneActionLedger),
+            capabilityProbe = com.battlesbudz.jarvis.v2.actions.AndroidToolCapabilityProbe(this),
+            lockGate = com.battlesbudz.jarvis.v2.actions.androidLockGate(this)
+        )
 
     /** Re-evaluate only at process startup or foreground/unlock; no periodic memory polling. */
     internal fun resumePhoneTasksAfterUnlock() {
@@ -187,7 +204,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         val attempt = phoneActionLedger.get(id) ?: break
                         if (attempt.state == com.battlesbudz.jarvis.v2.actions.ToolTaskState.SUCCEEDED) continue
                         if (attempt.state != com.battlesbudz.jarvis.v2.actions.ToolTaskState.READY) break
-                        val result = com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline(phoneActionLedger,
+                        val result = phoneActionPipeline(
                             com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(this@JarvisRuntime,
                                 canLaunchDirectly = { activityVisible }, onDiagnostic = diagnosticRecorder::recordImportant)).executeAttempt(attempt)
                         projectPhoneTask(group.id, recovered = true)
@@ -275,7 +292,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                 return@launch
                             }
                         }
-                        val result = com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline(phoneActionLedger,
+                        val result = phoneActionPipeline(
                             com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(this@JarvisRuntime,
                                 canLaunchDirectly = { activityVisible }, onDiagnostic = diagnosticRecorder::recordImportant)).executeAttempt(a, approval)
                         if (!result.succeeded) {

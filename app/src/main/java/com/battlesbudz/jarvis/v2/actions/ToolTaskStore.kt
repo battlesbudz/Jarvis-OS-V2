@@ -99,7 +99,11 @@ class FileToolTaskStore(
                     g.strictLong("expiresAtMs"), g.getBoolean("revoked")) },
                 events = if (version == 1) emptyList() else root.getJSONArray("events").objects { e -> ToolTaskEvent(
                     e.getString("attemptId"), e.strictLong("generation"), ToolTaskEventKind.valueOf(e.getString("kind")), e.strictLong("atMs")) },
-                activeQuestionId = if (version == 1) null else root.nullString("activeQuestionId"))
+                activeQuestionId = if (version == 1) null else root.nullString("activeQuestionId"),
+                sourceAccess = if (version == 1 || !root.has("sourceAccess")) emptyList()
+                    else root.getJSONArray("sourceAccess").objects { s -> ToolSourceAccessRecord(
+                    s.getString("family"), s.getJSONArray("scopes").strings().toSet(),
+                    SourceAccessState.valueOf(s.getString("state")), s.strictLong("updatedAtMs")) })
             validate(journal)
             journal
         }
@@ -167,6 +171,14 @@ class FileToolTaskStore(
         }
         require(j.activeQuestionId == null || j.approvals.any { it.id == j.activeQuestionId && !it.consumed })
         j.events.forEach { e -> require(e.attemptId.isUuid() && e.generation >= 0 && e.atMs >= 0) }
+        require(j.sourceAccess.size <= MAX_SOURCE_ACCESS &&
+            j.sourceAccess.map { it.family }.toSet().size == j.sourceAccess.size)
+        j.sourceAccess.forEach { s ->
+            require(s.family.isNotBlank() && s.family.length <= 64 && s.updatedAtMs >= 0)
+            require(s.scopes.size <= 16 && s.scopes.all { it.length <= 64 })
+            // A persisted grant can never exceed its family's scope set (T08).
+            require(s.scopes.all { it in ToolSourcePolicy.familyScopes(s.family) })
+        }
         Unit
     } catch (_: Exception) { throw ToolTaskStorageException() }
 
@@ -191,6 +203,8 @@ class FileToolTaskStore(
             .put("createdAtMs", g.createdAtMs).put("expiresAtMs", g.expiresAtMs).put("revoked", g.revoked) }))
         .put("events", JSONArray(j.events.map { e -> JSONObject().put("attemptId", e.attemptId).put("generation", e.generation)
             .put("kind", e.kind.name).put("atMs", e.atMs) }))
+        .put("sourceAccess", JSONArray(j.sourceAccess.map { s -> JSONObject().put("family", s.family)
+            .put("scopes", JSONArray(s.scopes.toList())).put("state", s.state.name).put("updatedAtMs", s.updatedAtMs) }))
         .put("activeQuestionId", j.activeQuestionId ?: JSONObject.NULL).toString()
 
     private fun JSONObject.strictLong(key: String): Long = get(key).let { require(it is Int || it is Long); (it as Number).toLong() }
@@ -216,6 +230,7 @@ class FileToolTaskStore(
         const val MAX_APPROVALS = 512
         const val MAX_GRANTS = 128
         const val MAX_EVENTS = 256
+        const val MAX_SOURCE_ACCESS = 64
         const val RETAIN_RECEIPTS = 256
         private val locks = ConcurrentHashMap<String, Any>()
         private fun lockFor(file: File) = locks.getOrPut(file.canonicalPath) { Any() }
