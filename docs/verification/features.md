@@ -877,6 +877,65 @@ count, stationary-edge/reversal limits, all exact metric/export/privacy/persiste
 assertions and test48 remain required. Primary source:
 [Android 11 UiAutomation](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-11.0.0_r1/core/java/android/app/UiAutomation.java).
 
+## Build 943 shared navigation helper correction
+
+[Build 943](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37178650021)
+tests head `74f48b0404499530139b9e495cf21f0c84bbf149`, actual checkout
+`dde2d7715d80772bc3969984fcf305fd3d597111`, tree
+`10c8e01a444b2ecaef180dbe60aa109d7d351ece`. All 1,005 JVM cases and four
+recorded-speech checks pass, but release instrumentation compilation fails:
+model-list navigation still references `benchmarkViewportSignature` at lines
+320 and 340 after the benchmark helper was renamed. No device profile or native
+APK audit runs, the exact-build receipt fails, and publication is skipped. This
+run provides no result for the API 29 renderer trial or API 30 cache correction.
+
+The correction restores the original signature helper byte-for-byte from head
+`ee65bd8e4e1c43feef0e3e07ba22ce130bdd61b9`. Its two model-list callers retain
+the original cache and bounded traversal behavior. The new observation helper
+remains used only by benchmark navigation. All test bodies, model navigation,
+assertions and acceptance limits remain unchanged. Shared definitions and every
+benchmark-prefixed caller are checked together; the next hosted instrumentation
+compilation and complete release gate remain required.
+
+## Build 942 asynchronous copy-status observation
+
+[Build 942](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37178356592)
+API 30 artifact `11295095234`, ZIP SHA-256
+`a7c4fa53e0f08ca484c158c0e85062dbbbef43e05c6c459a3761b392928c81d5`,
+tests head `ee65bd8e4e1c43feef0e3e07ba22ce130bdd61b9`, actual checkout
+`052ef3fe24e7d159d6a286df2da1d42a8eecd2f6`. The upgrade passes and 48 of
+49 main cases pass, including test48. Test45 successfully finds the held TTS
+metric, then fails the exact post-copy status assertion at line2606. The single
+actual copy tap is recorded at 05:11:34.194 UTC; the failure PNG at 05:11:34.257
+shows export controls disabled and the earlier scored-reference status. The
+hierarchy dump begun at 05:11:34.455 already contains the exact copied status
+and enabled controls. Those are successive observations, not simultaneous state.
+
+Production export launches a coroutine and computes its payload on
+`Dispatchers.Default` before updating the clipboard and terminal status. UI idle
+does not join that work. The narrow harness correction includes the same exact
+`Redacted JSON report copied.` text in the existing status selector, so its
+bounded navigation observes completion before the unchanged literal equality
+assertion. The same 15-second deadline, full visibility bounds, gesture/edge
+limits and one actual copy tap remain; no export retry or mutation is added.
+Clipboard JSON, privacy, original/reference exclusion, counts, durable scoring
+and subsequent reset/reload assertions remain required. The later missing layout
+snapshot is collection fallout after main failure, not the earliest failure.
+Fresh complete verification is still required.
+
+The separate true 16 KB artifact `11294615919`, ZIP SHA-256
+`a9add239d8208ff9662bf7072966f83b24328848c1dda42d3db33aed9fe46e51`,
+also passes upgrade and 48 of 49 main cases, including test27 and test48. Its
+only failure is earlier in test45, seeking `benchmark_quality_task_FAIL` before
+review, TTS and copy. The target is absent through all eleven blind discovery
+strokes, with two stationary edges and one reversal; fine alignment never runs.
+The lookup exits with 5.661 seconds remaining. No fatal/ANR is retained. The
+inspected final PNG shows the scored dashboard and two unreviewed attempts;
+subsequent teardown XML does not prove search-time expansion or bounds. This
+is not the Build 939 EmojiCompat abort, and neither overshoot nor cache causality
+is established. The next candidate retains full acceptance and bounded
+before/after row receipts for diagnosis; no tap margin or assertion is relaxed.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,

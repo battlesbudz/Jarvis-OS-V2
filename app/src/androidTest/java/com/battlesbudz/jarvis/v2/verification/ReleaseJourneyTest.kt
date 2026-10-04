@@ -2368,6 +2368,23 @@ class ReleaseJourneyTest {
             bounds.centerY() >= viewport.top + 24 && bounds.centerY() <= viewport.bottom - 24
     }
 
+    /** Observe actual visible content; Compose need not emit a UiAutomator scroll event. */
+    private fun benchmarkViewportSignature(list: UiObject2): String {
+        clearNavigationCache()
+        val viewport = list.visibleBounds
+        val rows = mutableListOf<String>()
+        fun visit(node: UiObject2, depth: Int) {
+            if (depth > 12 || rows.size >= 256) return
+            val bounds = node.visibleBounds
+            if (bounds.width() <= 0 || bounds.height() <= 0 ||
+                !android.graphics.Rect.intersects(viewport, bounds)) return
+            rows.add("${node.resourceName}|${node.text}|$bounds")
+            node.children.forEach { visit(it, depth + 1) }
+        }
+        list.children.forEach { visit(it, 0) }
+        return rows.joinToString("\n")
+    }
+
     private data class BenchmarkViewportObservation(val signature: String, val receipt: String)
 
     /** Keep raw content only in memory; diagnostic rows expose fixed identities and geometry. */
@@ -2681,7 +2698,8 @@ class ReleaseJourneyTest {
             captureEvidence("pipeline_benchmark_verified_reference_and_review")
 
             benchmarkClickEnabled(By.res("pipeline_benchmark_copy_json"), towardTop = true)
-            assertEquals("Redacted JSON report copied.", benchmarkScrollTo(By.res("pipeline_benchmark_status"), towardTop = true).text)
+            assertEquals("Redacted JSON report copied.", benchmarkScrollTo(By.res("pipeline_benchmark_status")
+                .text("Redacted JSON report copied."), towardTop = true).text)
             val clipboard = AtomicReference<String>()
             activity.onActivity { host ->
                 clipboard.set(host.getSystemService(android.content.ClipboardManager::class.java)
