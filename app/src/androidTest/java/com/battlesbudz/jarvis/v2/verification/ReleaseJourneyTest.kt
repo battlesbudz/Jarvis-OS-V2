@@ -1971,7 +1971,7 @@ class ReleaseJourneyTest {
         val running = checkNotNull(workflows.claimDueOccurrence(occurrence.id))
         val revised = workflows.revise(draft.id, v1.copy(name = "Morning briefing v2", steps = listOf(
             WorkflowStep.Tool(UUID.randomUUID().toString(), ActionRequest("read_battery")),
-            WorkflowStep.Tool(UUID.randomUUID().toString(), ActionRequest("set_volume", mapOf("level" to "20")))))))
+            WorkflowStep.Tool(UUID.randomUUID().toString(), ActionRequest("set_volume", mapOf("level" to "20"))))))
         assertEquals(2, revised.version)
         assertEquals("running occurrence keeps its pinned version",
             1, checkNotNull(workflows.definitionFor(running)).version)

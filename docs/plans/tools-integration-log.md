@@ -73,6 +73,9 @@ CI evidence:
   corrected to `Intent.ACTION_TIME_CHANGED`) in
   `WorkflowScheduleReceiver.kt`. Fixed in a follow-up commit; full gate
   re-run required before release.
+- Run 37235512906 (M2 build, repair commit): FAILED at `compileReleaseKotlin`
+  — one Kotlin syntax error in `ReleaseJourneyTest.kt` test54
+  (unbalanced parens in the `workflows.revise(...)` statement).
 - Run <run-id>: <result>
 - Release: `v0.1.0-build.<NNN>` (published <date>) with app-release.apk +
   app-compact.apk, titled "Jarvis OS V2 feature/muse-tools build <NNN> (M2 workflows)".
