@@ -305,3 +305,53 @@ CI evidence:
 Unverified: real-model selection of media_control from text (needs on-device Gemma);
 physical Fold 6 behavior (needs Battles on device). test32 flakiness is pre-existing and
 not caused by this change.
+
+## Item 2: M1b destinations slice (open_website, open_settings, navigate) — 2026-10-04
+
+Implements website/settings/map destination tools following the media_control conventions
+(strict catalog/validator/decoder agreement, Android executor dispatch, honest receipts,
+JVM + emulator journey tests).
+
+Changed files (commits `32ce56e` + fixes `7c5e746`, `03b5d2d`; server head
+`8cf79e74b6c2738a93dfebfc8cc9787c61a2cae1` on `muse/feature-tools`):
+- `MobileAction.kt`: `OpenWebsite(url)`, `OpenSettings(screen)`, `Navigate(destination)` +
+  `SettingsScreen` enum (10 screens: wifi/bluetooth/display/sound/apps/battery/location/
+  storage/network/general; intent actions as string literals so the validator stays JVM-testable).
+- `MobileToolCatalog.kt`: 3 new tools with strict params; settings screen has strict pattern.
+- `MobileActionValidator`: `normalizeUrl` (bare domains → https; rejects
+  `javascript:`/`file:`/`data:`/`intent:`).
+- `NativeActionDecoder.kt`: tolerant arg mapping for the 3 tools.
+- `AndroidMobileActionExecutor.kt`: `dispatchViewIntent` helper (assistant-service route when
+  not visible, else startActivity); honest "Opening/Requested opening" receipts since
+  startActivity returns void; `navigate` uses Google Maps universal directions URL (shows
+  directions, does not auto-start navigation).
+- Parser (`ActionRequestText.kt`, `ActionTurnPlan.kt`): `websiteTarget` (dot/scheme check so
+  "open Chrome"/"open Settings" still route to open_app), `settingsScreen` (checked before
+  appTarget), `navigationTarget` ("navigate to X", "directions to X", "take me to X").
+- Tests: `M1bDestinationsTest.kt` (JVM: catalog/validator/decoder/parser);
+  `NativeToolJourneyTest` destination dispatch; emulator test37 (open wifi settings),
+  test38 (open website honest receipt), test39 (navigate honest receipt).
+  `scenarios.json`: 40 tests. `docs/verification/features.md`: 40 methods, seven tools.
+
+Fixes during CI:
+- `actionClauses` split URLs on internal periods ("open youtube.com" → "open youtube"+"com").
+  Fixed: split on period only when followed by whitespace/end.
+- `MobileToolCatalogTest` hardcoded 4-tool list; updated to 7.
+- Pre-existing test32 flake (`expected:<1> but was:<0>` — approve effect runs off UI thread;
+  `device.waitForIdle()` insufficient). Fixed with 10s poll for the effect; not a product change.
+
+Acceptance: JVM tests green; release journey test37-39 pass on both emulator variants;
+honest receipts (dispatch reported, never claim external app consumed it).
+
+CI evidence:
+- Run 37190346593: build FAILED on 2 JVM tests (URL split, catalog list) — fixed in `7c5e746`.
+- Run 37191501249: build SUCCESS, API 35 SUCCESS, API 30 FAILED on test32 flake — fixed in `03b5d2d`.
+- Run 37192901766: ALL GREEN — build + both emulators + receipt + publish.
+- Release: `v0.1.0-build.957` (published 2026-10-04T10:02Z) with app-release.apk + app-compact.apk.
+- Run URLs: https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37190346593,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37191501249,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37192901766
+
+Unverified: real-model selection of the new tools (needs on-device Gemma); physical Fold 6
+behavior for website/settings/navigate (needs Battles on device); actual external-app
+launch confirmation beyond intent dispatch (startActivity returns void by design).
