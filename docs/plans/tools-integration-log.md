@@ -2,6 +2,41 @@
 
 Epic: [#8](https://github.com/battlesbudz/Jarvis-OS-V2/issues/8). Implementation branch: `feature-tools`.
 
+## October 4 — M1b media control slice (`media_control` tool)
+
+Branch: `muse/feature-tools` (agent working branch for this epic; no PR created or
+merged). The first M1b command family beyond the existing three tools is implemented:
+`media_control` with strict verbs play/pause/toggle/next/previous.
+
+Changed files:
+- `app/.../actions/MobileToolCatalog.kt` — new catalog entry; single `action` string
+  parameter with `^(play|pause|toggle|next|previous)$` pattern; drives the LiteRT schema.
+- `app/.../actions/MobileAction.kt` — new `MediaControlAction` enum (verb + receipt
+  label) and `MobileAction.MediaControl`; validator binds exact verbs, rejects the rest.
+- `app/.../actions/NativeActionDecoder.kt` — tolerant `media_control` arg mapping
+  (strict `decodeStrict` already routes through the catalog).
+- `app/.../actions/AndroidMobileActionExecutor.kt` — dispatches the matching media
+  key down/up pair via `AudioManager.dispatchMediaKeyEvent`; receipt reports the
+  dispatch honestly because Android does not confirm session consumption.
+- JVM tests — `MobileToolCatalogTest` (schema parity, strict accept/reject, tolerant
+  decode), `MobileActionValidatorTest` (verb mapping, rejection, typed pipeline
+  delivery, no-executor-effect on invalid input).
+- Release journey `test35_mediaControlDispatchesViaAudioManager` +
+  `scripts/verification/scenarios.json` — all five verbs dispatch on the emulator
+  through the real executor; unknown verb rejected; volume unchanged.
+- `.github/workflows/android.yml` — push trigger and build-job condition now opt in
+  `muse/feature-tools` so this branch gets the exact-revision build, both emulator
+  variants, consolidated receipt and publication. No other workflow behavior changed.
+
+Acceptance: per `.agents/skills/jarvis-verify/SKILL.md` — observable checks stated
+before implementation (JVM catalog/decoder/validator/pipeline; Android test35;
+existing test01–test34/test90 intact), failure case (unknown verb → rejected, no
+side effect), real-model selection and physical Fold 6 media behavior explicitly
+labeled unverified. Exact-revision hosted CI pending at commit time; run evidence to
+be recorded here after the gate completes.
+
+M1b remaining: website/settings/map destinations. M1c/M1d/M1e, M2–M8, A0–A6 still open.
+
 ## September 30 — publish every verified build
 
 Build [851](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36668555984) at

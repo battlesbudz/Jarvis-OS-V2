@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.os.BatteryManager
+import android.os.SystemClock
+import android.view.KeyEvent
 import kotlin.math.round
 
 class AndroidMobileActionExecutor(
@@ -86,6 +88,34 @@ class AndroidMobileActionExecutor(
                     onDiagnostic("App launch result=rejected type=SecurityException app=${resolution.app.packageName}")
                     ExecutionResult(false, "Could not open ${resolution.app.label}: ${error.message ?: "Android rejected the launch."}")
                 }
+            }
+        }
+        is MobileAction.MediaControl -> {
+            val audioManager = context.getSystemService(AudioManager::class.java)
+            if (audioManager == null) {
+                ExecutionResult(false, "Media control is unavailable.")
+            } else {
+                val keyCode = when (action.action) {
+                    MediaControlAction.PLAY -> KeyEvent.KEYCODE_MEDIA_PLAY
+                    MediaControlAction.PAUSE -> KeyEvent.KEYCODE_MEDIA_PAUSE
+                    MediaControlAction.TOGGLE -> KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+                    MediaControlAction.NEXT -> KeyEvent.KEYCODE_MEDIA_NEXT
+                    MediaControlAction.PREVIOUS -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
+                }
+                val eventTime = SystemClock.uptimeMillis()
+                audioManager.dispatchMediaKeyEvent(
+                    KeyEvent(eventTime, eventTime, KeyEvent.ACTION_DOWN, keyCode, 0)
+                )
+                audioManager.dispatchMediaKeyEvent(
+                    KeyEvent(eventTime, eventTime, KeyEvent.ACTION_UP, keyCode, 0)
+                )
+                // The key event is dispatched to the active media session; Android does
+                // not report whether a session consumed it, so the receipt describes the
+                // dispatch honestly rather than claiming a playback state change.
+                ExecutionResult(
+                    true,
+                    "Sent ${action.action.label} command to the active media session."
+                )
             }
         }
     }

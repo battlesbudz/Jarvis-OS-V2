@@ -31,10 +31,11 @@ internal fun ToolTaskJournal.frozen() = copy(
     approvals = approvals.map { it.copy(action = it.action.frozen()) },
     grants = grants.map { it.copy(requests = it.requests.map { request -> request.frozen() }) }, events = events.toList())
 
-/** No grant can expand these three tools into arbitrary or consequential operations. */
+/** No grant can expand these tools into arbitrary or consequential operations. */
 internal fun ActionRequest.isRoutineEligible() = when (name) {
     "read_battery" -> arguments.isEmpty()
     "set_volume" -> arguments.keys == setOf("level") && arguments["level"]?.toIntOrNull()?.let { it in 0..100 } == true
     "open_app" -> arguments.keys == setOf("app") && !arguments["app"].isNullOrBlank() && arguments.getValue("app").length <= 512
+    "media_control" -> arguments.keys == setOf("action") && MediaControlAction.fromVerb(arguments.getValue("action")) != null
     else -> false
 }

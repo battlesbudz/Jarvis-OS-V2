@@ -62,6 +62,7 @@ class ActionTurnRunner(
         "set_volume" -> left.arguments["level"] == right.arguments["level"]
         "open_app" -> left.arguments.keys == setOf("app") && right.arguments.keys == setOf("app") &&
             left.arguments["app"]?.trim()?.equals(right.arguments["app"]?.trim(), ignoreCase = true) == true
+        "media_control" -> left.arguments["action"] == right.arguments["action"]
         else -> false
     }
 }

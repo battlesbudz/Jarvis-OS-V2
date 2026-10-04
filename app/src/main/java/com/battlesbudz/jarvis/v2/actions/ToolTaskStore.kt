@@ -201,7 +201,7 @@ class FileToolTaskStore(
     }
     private fun ActionRequest.json() = JSONObject().put("name", name).put("arguments", JSONObject(arguments))
     private fun ActionRequest.validateRequest() {
-        require(name in setOf("read_battery", "set_volume", "open_app"))
+        require(name in setOf("read_battery", "set_volume", "open_app", "media_control"))
         require(arguments.size <= 2 && arguments.all { (k, v) -> k.length <= 64 && v.length <= 512 })
     }
     private fun <T> JSONArray.objects(map: (JSONObject) -> T) = (0 until length()).map { map(getJSONObject(it)) }

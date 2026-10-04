@@ -77,6 +77,17 @@ object MobileToolCatalog {
                 minimum = 0,
                 maximum = 100
             ))
+        ),
+        Tool(
+            name = "media_control",
+            description = "Control media playback on the phone: play, pause, toggle play/pause, or skip to the next or previous track.",
+            parameters = listOf(Parameter(
+                name = "action",
+                type = ParameterType.STRING,
+                description = "The media command: one of play, pause, toggle, next, previous.",
+                minLength = 1,
+                pattern = "^(play|pause|toggle|next|previous)$"
+            ))
         )
     )
 

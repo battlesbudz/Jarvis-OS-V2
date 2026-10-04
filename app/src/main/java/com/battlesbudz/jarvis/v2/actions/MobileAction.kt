@@ -9,6 +9,21 @@ sealed interface MobileAction {
         val packageNameHint: String? = null
     ) : MobileAction
     data class SetVolume(val level: Int) : MobileAction
+    data class MediaControl(val action: MediaControlAction) : MobileAction
+}
+
+/** Verbs accepted by the media_control tool; skip maps to next/previous track. */
+enum class MediaControlAction(val verb: String, val label: String) {
+    PLAY("play", "play"),
+    PAUSE("pause", "pause"),
+    TOGGLE("toggle", "play/pause toggle"),
+    NEXT("next", "skip to next track"),
+    PREVIOUS("previous", "skip to previous track");
+
+    companion object {
+        fun fromVerb(verb: String): MediaControlAction? =
+            entries.firstOrNull { it.verb == verb }
+    }
 }
 
 data class ActionRequest(
@@ -45,6 +60,9 @@ class MobileActionValidator {
         "set_volume" -> parseVolumeLevel(request.arguments["level"].orEmpty())
             ?.let { ActionValidation.Valid(MobileAction.SetVolume(it)) }
             ?: ActionValidation.Rejected("Volume must be a percentage from 0 to 100.")
+        "media_control" -> MediaControlAction.fromVerb(request.arguments["action"]?.trim().orEmpty())
+            ?.let { ActionValidation.Valid(MobileAction.MediaControl(it)) }
+            ?: ActionValidation.Rejected("Media action must be one of play, pause, toggle, next, previous.")
         else -> ActionValidation.Rejected("Unsupported action: ${request.name}")
     }
 

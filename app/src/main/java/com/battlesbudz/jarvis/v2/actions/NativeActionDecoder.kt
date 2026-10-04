@@ -34,6 +34,10 @@ object NativeActionDecoder {
                 name = call.name,
                 arguments = mapOf("level" to args.optString("level"))
             )
+            "media_control" -> ActionRequest(
+                name = call.name,
+                arguments = mapOf("action" to args.optString("action"))
+            )
             else -> null
         }
     }

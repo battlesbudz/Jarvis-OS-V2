@@ -1255,6 +1255,26 @@ class ReleaseJourneyTest {
         }
     }
 
+    @Test fun test35_mediaControlDispatchesViaAudioManager() {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context))
+        try {
+            listOf("play", "pause", "toggle", "next", "previous").forEach { verb ->
+                val result = pipeline.execute(ActionRequest("media_control", mapOf("action" to verb)))
+                assertTrue("media_control $verb must dispatch: ${result.message}", result.succeeded)
+                assertTrue("receipt must describe the dispatch honestly, not claim a playback change",
+                    result.message.contains("active media session"))
+            }
+            val rejected = pipeline.execute(ActionRequest("media_control", mapOf("action" to "rewind")))
+            assertFalse("unknown media verb must not dispatch", rejected.succeeded)
+            assertEquals("media keys must not change the volume", before,
+                audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+        } finally {
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
+        }
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()

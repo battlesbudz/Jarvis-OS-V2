@@ -5,6 +5,35 @@ Follow-up source baseline: `feature-tools` at `bfeca6d06dc3dba583e0f92e812046e9e
 Created: September 24, 2026. Updated: September 30, 2026 (America/New_York). Owner: Justin Battles.
 Status: existing tools scope retained; September 29 autonomous messaging/warm-inference requirements integrated. New phases below are planned, not implemented or verified by this documentation update.
 
+## Implementation checkpoint — October 4, 2026
+
+M1b media control slice is implemented on `muse/feature-tools`: the native tool
+catalog gains `media_control` with a single strict `action` parameter
+(`play|pause|toggle|next|previous`). The LiteRT schema is generated from the same
+catalog entry, `NativeActionDecoder` maps tolerant model args, `MobileActionValidator`
+binds exact verbs to a new `MobileAction.MediaControl` type, and
+`AndroidMobileActionExecutor` dispatches the matching media key events through
+`AudioManager.dispatchMediaKeyEvent`. The receipt honestly reports the dispatch to
+the active media session rather than claiming a playback state change, because
+Android does not report whether a session consumed the key. Unknown verbs and
+malformed arguments are rejected with no executor effect.
+
+JVM coverage: catalog/schema parity and strict-decode acceptance/rejection for the
+new tool, validator verb mapping, tolerant decode, and pipeline tests proving a valid
+request reaches the executor typed and an invalid one never does. Release journey
+`test35` dispatches all five verbs through the real Android executor on the emulator
+and confirms rejection of an unknown verb; the named contract is now 36 methods and
+`scripts/verification/scenarios.json` carries `test35` alongside the existing
+journeys. The `Android APK` push trigger and build-job condition now also opt in
+`muse/feature-tools` so this branch receives the exact-revision release/compact
+build, both emulator variants, consolidated receipt and publication.
+
+M1b remaining: website/settings/map destinations. M1c screen control, M1d
+task/conversation scheduling, M1e device validation, M2–M8 and A0–A6 are still
+planned. Real-model selection of `media_control` with actual weights and physical
+Fold 6 media behavior remain unverified, consistent with the existing coverage
+boundaries.
+
 ## Implementation checkpoint — September 30, 2026
 
 M1a implementation is complete for the existing three native tools: typed outcomes,
