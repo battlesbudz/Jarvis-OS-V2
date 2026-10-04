@@ -553,6 +553,18 @@ Accelerated profiles retain their existing installation transport. No product
 audio behavior, release gate assertion or publication dependency is changed.
 A fresh exact-revision full gate is required before handing out a newest APK.
 
+The next head `9a2c3e2c6848fe4d4ee8be9ad0bdc9cb48a4b4cb` passed local
+architecture and all 143 Python helper tests, but GitHub could not create a PR
+merge candidate after `main` diverged. Its eight incoming commits through
+`37f037e384db4c1cefaa7e2c738ef226ae2c0cf5` add the license/demo and change
+README and the old foundational workflow. Branch reconciliation retains the
+complete audio workflow unchanged, including every expanded gate and PR6
+candidate publisher; adopting the older workflow would remove required checks
+and require a PR merge that has not been authorized. The incoming license/demo
+assets and current documentation are retained. This is a branch merge, not a
+merge of PR6 into main. All production, harness and regression blobs from
+`9a2c3e2c` remain unchanged; a fresh combined candidate still requires CI.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,

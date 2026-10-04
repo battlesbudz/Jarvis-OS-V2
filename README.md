@@ -1,8 +1,30 @@
 # Jarvis OS V2
 
+![Build](https://github.com/battlesbudz/Jarvis-OS-V2/actions/workflows/android.yml/badge.svg)
+![Latest release](https://img.shields.io/github/v/release/battlesbudz/Jarvis-OS-V2)
+
 A native Android assistant written in Kotlin and Jetpack Compose. Conversation,
 speech recognition and speech output run on the device. Model downloads and
 explicit reference lookup use the network; there is no required conversation backend.
+
+[<img src="demo/jarvis-voice-demo-thumbnail.jpg" width="320" alt="Watch the Jarvis voice demo">](https://cdn.jsdelivr.net/gh/battlesbudz/Jarvis-OS-V2@main/demo/jarvis-voice-demo.mp4)
+
+*53-second demo: airplane mode on, phone locked, "Hey Jarvis," interrupted mid-answer. Click to watch.*
+
+Wake-word activation and conversational barge-in keep the core assistant loop
+on the device, using Moonshine/Whisper recognition, Gemma through LiteRT-LM,
+and Piper speech output.
+
+## Reported device measurements
+
+| Metric | Value |
+| --- | --- |
+| First-token latency (median) | 740 ms |
+| Time to first spoken word (median) | 3.6 s |
+| Generation speed (average) | 32.8 tokens/sec |
+| Test setup | Hundreds of voice turns on a Galaxy Z Fold 6 |
+
+These reported phone measurements are separate from the emulator release gate.
 
 ## Start here
 
@@ -48,7 +70,8 @@ Kokoro and Pocket/Paul are retired; historical evidence keeps its original label
 ## Build and release
 
 The hosted `Android APK` workflow runs native/helper checks, release JVM tests,
-signed normal and compact ARM64 builds, API 30/API 35 emulator journeys, and an
+signed normal and compact ARM64 builds, recorded speech, native page-size checks,
+API 29/30/35/36, foldable and genuine 16 KB emulator journeys, and an
 exact-build evidence receipt before publishing GitHub Release APKs.
 The app targets Android 10+; the shipped native ABI is `arm64-v8a`.
 
@@ -58,3 +81,9 @@ microphone, speaker, Bluetooth and Fold 6 performance still require device evide
 
 Work continues on `audio-pr2` under existing PR #6. Read [AGENTS.md](AGENTS.md)
 before automated work; creation or merging of a PR requires Justin's explicit permission.
+
+## License
+
+Source-available under the PolyForm Noncommercial License 1.0.0: free for personal,
+study, research, and other noncommercial use. Commercial use needs permission.
+See [LICENSE.md](LICENSE.md).
