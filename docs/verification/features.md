@@ -1011,6 +1011,45 @@ receipt and skipped publishers prevent a numbered APK release. Build 945 tests
 the narrow quality-control search correction but retains the earlier adb boot
 read path; its results cannot qualify this subsequent boot-observation change.
 
+## Build 946 explicit API 29 renderer trial
+
+[Build 946](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37181469100)
+tests source `51d8ad11f93ffe3b77a3a64de7e2b519c8566a16` from PR head
+`011e24715744cf87859c77112866b742e89ab2d1`. API 29 artifact `11296330808`,
+ZIP SHA-256 `b4024debb3d1d1738dc6e008a9a8a04e6d0547e93427f2df54bd34fb9b3ba98e`,
+contains 136 progress receipts with 34 distinct successful native observations,
+and no exact Posting or Finished BOOT_COMPLETED marker in the full native log.
+The reader never accepts completion. System process PID 257 is killed by the UI
+watchdog; replacement PID 1512 is later killed with foreground and UI handlers
+blocked. The latter stacks include user-unlock `IInstalld.createAppData` and
+`HardwareRenderer.nSetStopped`. Replacement PID 2348 does not finish boot before
+the original 900-second deadline. No install or release controller runs.
+
+The installed 37.2.6 binary's help and the official
+[graphics configuration guide](https://developer.android.com/studio/run/emulator-acceleration)
+support `swiftshader` for GLES and Vulkan separately from `swangle`, which uses
+ANGLE with SwiftShader. The failed launch's `software` selection actually uses
+GLES SwANGLE and Vulkan Lavapipe. The next API 29-only trial selects
+`-gpu swiftshader` explicitly and retains actual backend receipts. This is a
+one-variable compatibility trial; the stacks do not establish graphics as the
+sole cause, and startup host receipts do not establish memory pressure. The
+image and emulator pin, native ARM64 execution, resources, physical display,
+live completion/PID guards, final services, 900-second boot, 180-second install,
+60-minute job and full release/publication gates remain unchanged. A fresh
+complete signed candidate must pass; no clean APK is claimed for Build 946.
+
+The four completed phone/true 16 KB profiles pass all required phases, including
+test48. Fold artifact `11295493528`, ZIP SHA-256
+`6f442a809acbc600399546a82b92f9ff9f896d3cb57c0d4c12aaf3f62105a7b7`,
+instead retains a System UI ANR modal in the first-launch and later screenshots,
+with Jarvis setup behind it. Upgrade passes, but 46 main tests fail their setup
+lookup and instrumentation expires while test47 starts; test48, lifecycle,
+layout/fold transitions and native loading are not reached. The retained app log
+starts after clearing logcat and does not establish the Android ANR's cause.
+No Fold/product repair or ANR dismissal is inferred. The next exact candidate
+must run the full fresh Fold gate. Build 946's failed consolidated receipt and
+all three skipped publishers prevent a numbered release.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,

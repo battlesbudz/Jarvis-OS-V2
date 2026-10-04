@@ -47,11 +47,12 @@ EMULATOR_PIN = {
 SOFTWARE_AVD_SETTINGS = {"hw.cpu.ncore": "2", "hw.ramSize": "2048M", "vm.heapSize": "256M",
                          "hw.lcd.width": "540", "hw.lcd.height": "960", "hw.lcd.density": "210",
                          "disk.dataPartition.size": "4096M"}
-# Build 940's framework UI watchdog stalled in HardwareRenderer.nSetStopped.
-# The documented selector tests backend compatibility without changing boot gates;
-# actual GLES/Vulkan choices must be observed rather than assumed to be Lavapipe.
-# https://developer.android.com/studio/releases/emulator#36-4-9
-SOFTWARE_GPU_SELECTOR = "software"
+# Build 946's software selector used GLES SwANGLE/Vulkan Lavapipe and still hit
+# framework watchdogs, including HardwareRenderer.nSetStopped. The pinned native
+# help and official docs support explicit SwiftShader for GLES/Vulkan. This is a
+# compatibility trial with unproven causality; retain actual backend receipts.
+# https://developer.android.com/studio/run/emulator-acceleration
+SOFTWARE_GPU_SELECTOR = "swiftshader"
 
 
 def require_software_profile(profile, system=None, machine=None):

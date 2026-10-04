@@ -604,7 +604,7 @@ class SoftwareSessionTest(unittest.TestCase):
             (session.diagnostics / "emulator-stdout.txt").write_text(raw)
             session.capture_graphics_backend()
             graphics = session.report["graphics"]
-            self.assertEqual("software", graphics["requested_selector"])
+            self.assertEqual("swiftshader", graphics["requested_selector"])
             self.assertEqual("gfxstream", graphics["graphics_backend"])
             self.assertEqual("swiftshader", graphics["vulkan_mode"])
             self.assertEqual("swangle", graphics["gles_mode"])
@@ -842,7 +842,7 @@ class SoftwareSessionTest(unittest.TestCase):
         self.assertEqual("-HVF", command[command.index("-feature") + 1])
         self.assertEqual("*:V", command[command.index("-logcat") + 1])
         self.assertEqual("/evidence/guest-startup-logcat.txt", command[command.index("-logcat-output") + 1])
-        self.assertEqual("software", command[command.index("-gpu") + 1])
+        self.assertEqual("swiftshader", command[command.index("-gpu") + 1])
         self.assertNotIn("-no-watchdog", command)
 
     def test_launcher_timezone_does_not_inherit_invalid_host_detection(self):

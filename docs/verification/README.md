@@ -56,11 +56,13 @@ commits. Do not create or merge another PR without Justin's permission.
    before the original deadline remain required; a retained artifact alone cannot
    authorize readiness. This avoids Build 944's repeatedly timed-out guest logcat
    dumps without extending a deadline. All readiness and unlock checks share the 15-minute boot budget;
-   software rendering uses the supported `-gpu software` selector, with the
+   software rendering uses the supported `-gpu swiftshader` selector, with the
    installed binary's supported modes and actual startup backend retained as
-   diagnostics. Build 940's watchdog blocked in `HardwareRenderer.nSetStopped`
-   under ANGLE/SwiftShader; changing the selector is a compatibility experiment,
-   not proof of a rendering cause or faster boot. Two vCPUs, 2 GiB RAM,
+   diagnostics. Build 946's `software` selector chose GLES SwANGLE and Vulkan
+   Lavapipe; Android's system process was killed twice before boot completion,
+   with UI and foreground handlers blocked. The explicit SwiftShader trial
+   tests a different supported GLES/Vulkan selection; it does not establish a
+   rendering cause or faster boot. Two vCPUs, 2 GiB RAM,
    `vm.heapSize=256M` and a 540×960 framebuffer at 210 dpi preserve Pixel 2's exact
    Android dp viewport.
    Physical size/density are observed before ready; optional read-only host
