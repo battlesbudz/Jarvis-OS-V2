@@ -92,6 +92,18 @@ CI evidence:
   (`PatternSyntaxException`; desktop JVM accepts it, which is why unit
   tests passed). Fixed by moving the hyphen to the front
   (`[-0-9a-fA-F]`), behaviorally identical.
+- Run 37240127232 (M2 build, regex-hyphen commit): build + JVM tests green
+  (922 tests), but BOTH emulator variants failed again — same 4
+  instrumentation failures (test53-56). The hyphen was NOT the problem:
+  both `[0-9a-fA-F-]` and `[-0-9a-fA-F]` fail at pattern index 49 (the end
+  of the pattern), so Android's ICU engine rejects something structural
+  about the pattern that the desktop JVM accepts. Replaced the regex
+  entirely with a manual `${<36-char id>.<name>}` scanner
+  (`findBindingPlaceholders`/`substituteBindingPlaceholders` in
+  `WorkflowDefinition.kt`; call sites in validation and
+  `WorkflowEngine.resolveArguments` updated), plus a JVM test locking the
+  scanner's behavior. No regex remains in the workflow path except
+  user-supplied condition patterns, which were already try/catch-guarded.
 - Run <run-id>: <result>
 - Release: `v0.1.0-build.<NNN>` (published <date>) with app-release.apk +
   app-compact.apk, titled "Jarvis OS V2 feature/muse-tools build <NNN> (M2 workflows)".

@@ -443,6 +443,26 @@ class M2WorkflowsTest {
         assertTrue(receipts.any { it.kind == WorkflowReceiptKind.MISSED_IRRELEVANT })
     }
 
+    // -- Binding placeholder scanner ------------------------------------------
+
+    @Test fun placeholderScannerFindsValidPlaceholdersOnly() {
+        val id = "123e4567-e89b-12d3-a456-426614174000"
+        val found = findBindingPlaceholders("vol=\${$id.message} and \${$id.battery_percent}!")
+        assertEquals(2, found.size)
+        assertEquals(id, found[0].stepId)
+        assertEquals("message", found[0].outputName)
+        assertEquals("\${$id.message}", found[0].text)
+        assertEquals("battery_percent", found[1].outputName)
+        // Too short an id, a bad output name, and a missing brace never match.
+        assertTrue(findBindingPlaceholders("x=\${abc.message}").isEmpty())
+        assertTrue(findBindingPlaceholders("x=\${$id.9bad}").isEmpty())
+        assertTrue(findBindingPlaceholders("x=\${$id.message").isEmpty())
+        assertTrue(findBindingPlaceholders("no placeholders here").isEmpty())
+        // Substitution replaces every occurrence.
+        val subbed = substituteBindingPlaceholders("a=\${$id.message},b=\${$id.message}") { _, _, _ -> "Q" }
+        assertEquals("a=Q,b=Q", subbed)
+    }
+
     // -- Engine --------------------------------------------------------------------------
 
     private fun scripted(vararg results: ExecutionResult): (ActionRequest) -> ExecutionResult {

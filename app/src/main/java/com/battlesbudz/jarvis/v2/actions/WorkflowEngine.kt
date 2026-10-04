@@ -211,10 +211,10 @@ class WorkflowEngine(private val now: () -> Long = System::currentTimeMillis) {
                         "Step “${step.id.take(8)}” needs “${binding.outputName}” from an earlier step, but it has no value yet.")
             }
             for ((key, value) in args) {
-                args[key] = BINDING_PLACEHOLDER.replace(value) { match ->
-                    results[match.groupValues[1]]?.get(match.groupValues[2])
+                args[key] = substituteBindingPlaceholders(value) { refId, refOutput, text ->
+                    results[refId]?.get(refOutput)
                         ?: throw IllegalArgumentException(
-                            "Step “${step.id.take(8)}” references an unknown value “${match.value}”.")
+                            "Step “${step.id.take(8)}” references an unknown value “$text”.")
                 }
             }
             return args

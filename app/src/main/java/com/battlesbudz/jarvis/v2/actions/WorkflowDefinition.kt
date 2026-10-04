@@ -149,8 +149,67 @@ fun standardToolOutputs(request: ActionRequest): Map<String, WorkflowValueType> 
     if (request.name == "read_battery") put("battery_percent", WorkflowValueType.NUMBER)
 }
 
-/** Placeholder syntax for typed bindings inside argument values: ${stepId.outputName}. */
-internal val BINDING_PLACEHOLDER = Regex("\\$\\{([-0-9a-fA-F]{36})\\.([A-Za-z_][A-Za-z0-9_]*)}")
+/** Placeholder syntax for typed bindings inside argument values: `${stepId.outputName}`. */
+internal data class BindingPlaceholder(
+    val range: IntRange,
+    val stepId: String,
+    val outputName: String,
+    val text: String
+)
+
+/**
+ * Finds `${<36-char step id>.<outputName>}` placeholders by manual scan.
+ *
+ * A regex is deliberately NOT used here: Android's ICU regex engine throws
+ * PatternSyntaxException for the hyphen-in-character-class forms this
+ * pattern needs, while the desktop JVM accepts them — a mismatch JVM unit
+ * tests cannot catch (it crashed test53-56 on-device). The manual scan is
+ * deterministic on every runtime and matches the same language.
+ */
+internal fun findBindingPlaceholders(value: String): List<BindingPlaceholder> {
+    fun isHexOrHyphen(c: Char) = c == '-' || c in '0'..'9' || c in 'a'..'f' || c in 'A'..'F'
+    fun isNameStart(c: Char) = c == '_' || c in 'a'..'z' || c in 'A'..'Z'
+    fun isNamePart(c: Char) = isNameStart(c) || c in '0'..'9'
+    val found = mutableListOf<BindingPlaceholder>()
+    var i = 0
+    while (i < value.length) {
+        val open = value.indexOf("\${", i)
+        if (open < 0) break
+        val close = value.indexOf('}', open + 2)
+        if (close < 0) break
+        val inner = value.substring(open + 2, close)
+        val dot = inner.indexOf('.')
+        if (dot > 0 && dot < inner.length - 1) {
+            val id = inner.substring(0, dot)
+            val name = inner.substring(dot + 1)
+            if (id.length == 36 && id.all(::isHexOrHyphen) &&
+                isNameStart(name[0]) && name.all(::isNamePart)
+            ) {
+                found += BindingPlaceholder(open..close, id, name, value.substring(open, close + 1))
+            }
+        }
+        i = close + 1
+    }
+    return found
+}
+
+/** Replaces every binding placeholder in [value] with [lookup]'s result. */
+internal fun substituteBindingPlaceholders(
+    value: String,
+    lookup: (stepId: String, outputName: String, text: String) -> String
+): String {
+    val placeholders = findBindingPlaceholders(value)
+    if (placeholders.isEmpty()) return value
+    val out = StringBuilder(value.length)
+    var cursor = 0
+    for (p in placeholders) {
+        out.append(value, cursor, p.range.first)
+        out.append(lookup(p.stepId, p.outputName, p.text))
+        cursor = p.range.last + 1
+    }
+    out.append(value, cursor, value.length)
+    return out.toString()
+}
 
 private fun String.isUuid(): Boolean = try {
     UUID.fromString(this).toString() == this
@@ -199,12 +258,13 @@ fun validateWorkflowDefinition(definition: WorkflowDefinition) {
                 }
                 // Inline placeholders must reference earlier steps too.
                 for (value in step.request.arguments.values) {
-                    for (match in BINDING_PLACEHOLDER.findAll(value)) {
-                        val refId = match.groupValues[1]
-                        val refOutput = match.groupValues[2]
-                        val outputs = seenOutputs[refId]
-                            ?: throw IllegalArgumentException("Placeholder references unknown step $refId.")
-                        require(refOutput in outputs) { "Placeholder references undeclared output $refOutput." }
+                    for (placeholder in findBindingPlaceholders(value)) {
+                        val outputs = seenOutputs[placeholder.stepId]
+                            ?: throw IllegalArgumentException(
+                                "Placeholder references unknown step ${placeholder.stepId}.")
+                        require(placeholder.outputName in outputs) {
+                            "Placeholder references undeclared output ${placeholder.outputName}."
+                        }
                     }
                 }
                 seenOutputs[step.id] = step.outputs.ifEmpty { declared }
