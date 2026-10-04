@@ -249,8 +249,52 @@ def wait_for_unlock(adb, running, deadline, *, now=time.monotonic, pause=time.sl
     raise TimeoutError("Actual keyguard dismissal was not observed within declared boot timeout")
 
 
+def read_native_boot_log(path, *, deadline, now=time.monotonic, max_bytes=256 * 1024):
+    """Read complete lines from a bounded tail of this launch's native guest log.
+
+    Build 944's filtered adb logcat dumps all timed out, although the independent
+    native stream retained the actual completion marker. Only a live observation
+    inside the original deadline can authorize readiness; retained artifacts cannot.
+    """
+    path = Path(path)
+    receipt = {"source": "native-startup-logcat", "path": path.name,
+               "max_bytes": max_bytes, "exit_code": 1, "stdout": "", "stderr": ""}
+    try:
+        remaining(deadline, now)
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("Native startup log must be a regular file")
+        with path.open("rb") as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode):
+                raise ValueError("Native startup log must be a regular file")
+            start = max(0, before.st_size - max_bytes)
+            stream.seek(start)
+            raw = stream.read(before.st_size - start)
+            after, current = os.fstat(stream.fileno()), path.stat()
+            receipt.update(file_size_bytes=before.st_size, start_offset=start, read_bytes=len(raw))
+            if (len(raw) != before.st_size - start or after.st_size < before.st_size
+                    or current.st_size < before.st_size
+                    or (after.st_dev, after.st_ino) != (current.st_dev, current.st_ino)):
+                raise ValueError("Native startup log was truncated or replaced during observation")
+        # A tail can begin in the middle of a line, and a concurrent writer can
+        # leave its last line unfinished. Neither fragment is completion evidence.
+        first = raw.find(b"\n") + 1 if start else 0
+        last = raw.rfind(b"\n") + 1
+        complete = raw[first:last] if last >= first else b""
+        receipt.update(complete_start_offset=start + first, complete_end_offset=start + last,
+                       incomplete_suffix_bytes=len(raw) - last, stdout=complete.decode("utf-8"))
+        remaining(deadline, now)
+        receipt["exit_code"] = 0
+    except (OSError, ValueError, UnicodeError, TimeoutError) as error:
+        receipt["exit_code"] = 124 if isinstance(error, TimeoutError) else 1
+        receipt["stderr"] = str(error)
+    receipt["observed_monotonic_seconds"] = now()
+    receipt["deadline_monotonic_seconds"] = deadline
+    return receipt
+
+
 def wait_for_boot_broadcast(adb, running, deadline, *, now=time.monotonic, pause=time.sleep,
-                            record=lambda raw: None):
+                            record=lambda raw: None, log_reader=None):
     """Observe Android 10's ordered user0 boot delivery, within the existing budget.
 
     Build 937 started installation while cold-boot receivers still consumed guest CPU.
@@ -277,9 +321,12 @@ def wait_for_boot_broadcast(adb, running, deadline, *, now=time.monotonic, pause
                            ("pid_after", ("shell", "pidof", "system_server"))):
             if now() >= deadline:
                 expired()
-            result = adb(*args, deadline=deadline, timeout=15)
-            state["probes"][name] = {"exit_code": result.returncode, "stdout": result.stdout,
-                                     "stderr": result.stderr}
+            if name == "logcat" and log_reader is not None:
+                state["probes"][name] = log_reader(deadline=deadline)
+            else:
+                result = adb(*args, deadline=deadline, timeout=15)
+                state["probes"][name] = {"exit_code": result.returncode, "stdout": result.stdout,
+                                         "stderr": result.stderr}
             record(state)
         probes = state["probes"]
         before = re.fullmatch(r"\s*([1-9][0-9]*)\s*", probes["pid_before"]["stdout"])
@@ -524,7 +571,9 @@ class SoftwareSession:
                             record=lambda raw: (self.diagnostics / "unlock-state.txt").write_text(raw))
             self.report["boot_broadcast"] = wait_for_boot_broadcast(
                 self.adb, lambda: self.emulator.poll() is None, deadline, now=self.now,
-                record=self.record_boot_broadcast)
+                record=self.record_boot_broadcast,
+                log_reader=lambda deadline: read_native_boot_log(
+                    self.diagnostics / "guest-startup-logcat.txt", deadline=deadline, now=self.now))
             for setting in ("window_animation_scale", "transition_animation_scale", "animator_duration_scale"):
                 self.adb("shell", "settings", "put", "global", setting, "0.0",
                          deadline=deadline, check=True, timeout=30)

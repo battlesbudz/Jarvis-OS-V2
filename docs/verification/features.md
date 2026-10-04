@@ -976,6 +976,41 @@ controls and the API 30 read-only TTS opt-in retain their existing behavior.
 All scoring, clipboard privacy, export, persistence and reset assertions remain;
 fresh full exact-candidate verification is required before publication.
 
+## Build 944 live API 29 boot-completion observation
+
+Build 944's API 29 startup artifact `11295276480`, ZIP SHA-256
+`0a16bd2ec467731860270645064faa9feb620d139652fb8be2678e47ca62ae08`,
+binds the same `fcf6deeb790a344e579132f04df14001a17cfc09` source and verified
+37.2.6/build 16138043 emulator pin. Requested `software` selects Vulkan Lavapipe
+(llvmpipe LLVM 21.1.4) and GLES SwANGLE over SwiftShader; the actual backend is
+retained independently of the requested selector. Unlike the previous failures,
+the native guest stream contains PID 277's exact user0 boot-completion message
+at guest time 05:48:53.388, with no watchdog kill. Unlock evidence observes
+keyguard dismissal. All fifteen filtered adb logcat dumps time out, consuming
+210.721 seconds, while single PID probes continue succeeding. The host reports
+the unchanged 900-second boot deadline expired at 05:49:09.488. Retained guest
+timestamps do not prove when the host received the marker or sufficient time for
+the remaining checks, so no completed startup, install or device pass is claimed.
+
+The correction reads the fresh launch's native guest log live between the same
+current PID-before/PID-after probes. A maximum 256 KiB tail excludes incomplete
+first/last lines; absent, malformed, truncated, replaced or unreadable input
+cannot authorize readiness. Exact INFO ActivityManager user0 completion for the
+same single successful PID, a still-running emulator and remaining original
+deadline are required. Source, byte bounds and monotonic observation/deadline
+receipts are retained. No guest clock or archived marker independently grants a
+pass. The renderer, resources, unlock order, final service/display checks,
+900-second boot, 180-second install and 60-minute job limits remain unchanged.
+The default helper's adb read path is preserved for existing callers; the active
+software session uses its owned native capture. Fresh full hosted verification
+is required, including actual installation and every named release phase.
+
+Build 944 finishes failed with four fully admitted phone/Fold profiles; API 29
+never invokes the controller and true 16 KB fails benchmark discovery. The failed
+receipt and skipped publishers prevent a numbered APK release. Build 945 tests
+the narrow quality-control search correction but retains the earlier adb boot
+read path; its results cannot qualify this subsequent boot-observation change.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,

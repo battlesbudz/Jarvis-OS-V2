@@ -14,7 +14,7 @@ import zipfile
 
 from profiles import load_profiles
 from software_emulator import (EMULATOR_PIN, SERVICES, SoftwareSession, emulator_command, main,
-                               keyguard_dismissed, require_software_profile,
+                               keyguard_dismissed, read_native_boot_log, require_software_profile,
                                wait_for_android, wait_for_boot_broadcast, wait_for_unlock)
 
 
@@ -229,6 +229,189 @@ class BootBroadcastTest(unittest.TestCase):
         clock = Clock()
         with self.assertRaisesRegex(RuntimeError, "Emulator exited"):
             wait_for_boot_broadcast(adb, running, 4, now=clock.now, pause=clock.pause)
+
+
+class NativeBootBroadcastTest(unittest.TestCase):
+    def test_bounded_tail_keeps_complete_marker_and_excludes_partial_lines(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "guest-startup-logcat.txt"
+            prefix = b"earlier guest output\n" * 20000
+            suffix = b"an unfinished guest line"
+            path.write_bytes(prefix + BOOT_DELIVERED.encode() + suffix)
+            receipt = read_native_boot_log(path, deadline=2, now=lambda: 0)
+            self.assertEqual(0, receipt["exit_code"])
+            self.assertLessEqual(receipt["read_bytes"], 256 * 1024)
+            self.assertGreater(receipt["start_offset"], 0)
+            self.assertIn(BOOT_DELIVERED, receipt["stdout"])
+            self.assertNotIn(suffix.decode(), receipt["stdout"])
+            self.assertEqual(len(suffix), receipt["incomplete_suffix_bytes"])
+            self.assertEqual(path.stat().st_size, receipt["file_size_bytes"])
+            self.assertEqual("native-startup-logcat", receipt["source"])
+            self.assertEqual(2, receipt["deadline_monotonic_seconds"])
+
+    def test_fragmented_marker_is_never_reconstructed_from_tail_or_unfinished_line(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "guest-startup-logcat.txt"
+            for raw, limit in ((BOOT_DELIVERED.encode(), len(BOOT_DELIVERED) - 10),
+                               (BOOT_DELIVERED.rstrip("\n").encode(), 256 * 1024)):
+                with self.subTest(raw=raw, limit=limit):
+                    path.write_bytes(raw)
+                    clock = Clock()
+                    adb = Mock(return_value=reply("279"))
+                    with self.assertRaisesRegex(TimeoutError, "BOOT_COMPLETED delivery"):
+                        wait_for_boot_broadcast(adb, lambda: True, 2, now=clock.now, pause=clock.pause,
+                                                log_reader=lambda deadline: read_native_boot_log(
+                                                    path, deadline=deadline, now=clock.now, max_bytes=limit))
+
+    def test_native_completion_is_read_between_fresh_pid_checks_without_guest_logcat(self):
+        clock, operations, receipts = Clock(), [], []
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "guest-startup-logcat.txt"
+            path.write_text("Posting BOOT_COMPLETED user #0\n")
+
+            def adb(*args, deadline, timeout):
+                self.assertEqual(("shell", "pidof", "system_server"), args)
+                self.assertEqual((6, 15), (deadline, timeout))
+                operations.append("pid")
+                return reply("279\n")
+
+            def read(deadline):
+                operations.append("native")
+                if clock.now() >= 2:
+                    path.write_text(BOOT_DELIVERED)
+                return read_native_boot_log(path, deadline=deadline, now=clock.now)
+
+            result = wait_for_boot_broadcast(adb, lambda: True, 6, now=clock.now, pause=clock.pause,
+                                            log_reader=read,
+                                            record=lambda state: receipts.append(json.loads(json.dumps(state))))
+            self.assertEqual(["pid", "native", "pid"] * 2, operations)
+            self.assertEqual(2, clock.now())
+            self.assertTrue(result["completed"])
+            self.assertEqual(279, result["system_server_pid"])
+            self.assertFalse(receipts[3]["completed"])
+            self.assertEqual(BOOT_DELIVERED, receipts[-1]["probes"]["logcat"]["stdout"])
+
+    def test_native_marker_requires_correct_current_server_and_successful_stable_pid_probes(self):
+        cases = [(BOOT_DELIVERED, reply("279 280"), reply("279")),
+                 (BOOT_DELIVERED, reply("279", 1), reply("279")),
+                 (BOOT_DELIVERED, reply("279"), reply("279", 1)),
+                 (BOOT_DELIVERED, reply("279"), reply("775"))]
+        cases += [(BOOT_DELIVERED.replace(old, new), reply("279"), reply("279"))
+                  for old, new in (("279", "278"), ("for u0", "for u10"),
+                                   ("I ActivityManager", "W ActivityManager"),
+                                   ("ActivityManager", "OtherService"),
+                                   ("for u0", "for u0 pending"))]
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "guest-startup-logcat.txt"
+            for raw, before, after in cases:
+                with self.subTest(raw=raw, before=before, after=after):
+                    path.write_text(raw)
+                    clock = Clock()
+                    adb = Mock(side_effect=[before, after])
+                    with self.assertRaisesRegex(TimeoutError, "BOOT_COMPLETED delivery"):
+                        wait_for_boot_broadcast(adb, lambda: True, 2, now=clock.now, pause=clock.pause,
+                                                log_reader=lambda deadline: read_native_boot_log(
+                                                    path, deadline=deadline, now=clock.now))
+
+    def test_missing_unreadable_or_malformed_native_log_cannot_fall_back_to_adb_logcat(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "guest-startup-logcat.txt"
+            for mode in ("missing", "directory", "invalid-utf8"):
+                with self.subTest(mode=mode):
+                    if mode == "directory":
+                        path.mkdir()
+                    elif mode == "invalid-utf8":
+                        path.write_bytes(b"\xff\n" + BOOT_DELIVERED.encode())
+                    clock, receipts = Clock(), []
+                    adb = Mock(return_value=reply("279"))
+                    with self.assertRaisesRegex(TimeoutError, "BOOT_COMPLETED delivery"):
+                        wait_for_boot_broadcast(adb, lambda: True, 2, now=clock.now, pause=clock.pause,
+                                                record=receipts.append,
+                                                log_reader=lambda deadline: read_native_boot_log(
+                                                    path, deadline=deadline, now=clock.now))
+                    self.assertTrue(all(call.args == ("shell", "pidof", "system_server")
+                                        for call in adb.call_args_list))
+                    self.assertNotEqual(0, receipts[-1]["probes"]["logcat"]["exit_code"])
+                    self.assertTrue(receipts[-1]["probes"]["logcat"]["stderr"])
+                    if path.is_dir():
+                        path.rmdir()
+                    elif path.exists():
+                        path.unlink()
+
+    def test_file_truncated_during_live_observation_is_not_completion_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "guest-startup-logcat.txt"
+            path.write_text(BOOT_DELIVERED)
+            original_open = Path.open
+
+            class TruncatingReader:
+                def __enter__(self):
+                    self.stream = original_open(path, "r+b")
+                    return self
+
+                def __exit__(self, *args):
+                    self.stream.close()
+
+                def fileno(self):
+                    return self.stream.fileno()
+
+                def seek(self, offset):
+                    return self.stream.seek(offset)
+
+                def read(self, size):
+                    raw = self.stream.read(size)
+                    self.stream.truncate(0)
+                    return raw
+
+            with patch("software_emulator.Path.open", return_value=TruncatingReader()):
+                receipt = read_native_boot_log(path, deadline=2, now=lambda: 0)
+            self.assertNotEqual(0, receipt["exit_code"])
+            self.assertIn("truncated", receipt["stderr"])
+            self.assertEqual("", receipt["stdout"])
+
+    def test_late_native_read_cannot_query_after_pid_or_renew_original_deadline(self):
+        clock, receipts = Clock(), []
+        adb = Mock(return_value=reply("279"))
+
+        def read(deadline):
+            self.assertEqual(3, deadline)
+            clock.pause(3)
+            return {"source": "native-startup-logcat", "exit_code": 0,
+                    "stdout": BOOT_DELIVERED, "stderr": ""}
+
+        with self.assertRaisesRegex(TimeoutError, "BOOT_COMPLETED delivery"):
+            wait_for_boot_broadcast(adb, lambda: True, 3, now=clock.now, pause=clock.pause,
+                                    log_reader=read, record=receipts.append)
+        self.assertEqual(1, adb.call_count)
+        self.assertEqual({"pid_before", "logcat"}, set(receipts[-1]["probes"]))
+
+    def test_native_reader_retains_late_marker_as_failure_evidence_only(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "guest-startup-logcat.txt"
+            path.write_text(BOOT_DELIVERED)
+            receipt = read_native_boot_log(path, deadline=3, now=Mock(side_effect=[0, 3, 3]))
+            self.assertEqual(124, receipt["exit_code"])
+            self.assertEqual(BOOT_DELIVERED, receipt["stdout"])
+            self.assertEqual(3, receipt["observed_monotonic_seconds"])
+            self.assertIn("deadline expired", receipt["stderr"])
+
+    def test_late_after_pid_and_emulator_death_reject_an_otherwise_valid_native_marker(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "guest-startup-logcat.txt"
+            path.write_text(BOOT_DELIVERED)
+            for late in (True, False):
+                with self.subTest(late=late):
+                    clock = Clock()
+                    running = (lambda: True) if late else Mock(side_effect=[True, False, False])
+
+                    def adb(*args, **kwargs):
+                        clock.pause(1.5 if late else 0)
+                        return reply("279")
+
+                    with self.assertRaises(TimeoutError if late else RuntimeError):
+                        wait_for_boot_broadcast(adb, running, 3, now=clock.now, pause=clock.pause,
+                                                log_reader=lambda deadline: read_native_boot_log(
+                                                    path, deadline=deadline, now=clock.now))
 
 
 class SoftwareSessionTest(unittest.TestCase):
@@ -496,6 +679,7 @@ class SoftwareSessionTest(unittest.TestCase):
             session = SoftwareSession(PROFILE, Path(temporary) / "evidence", "/sdk", now=clock.now)
             emulator = Mock(pid=12345)
             emulator.poll.return_value = None
+            (session.diagnostics / "guest-startup-logcat.txt").write_text(BOOT_DELIVERED)
 
             def ready(deadline):
                 deadlines.append(deadline)
@@ -506,9 +690,16 @@ class SoftwareSessionTest(unittest.TestCase):
                 deadlines.append(deadline)
                 clock.pause(1)
 
+            record_broadcast = session.record_boot_broadcast
+
+            def broadcast(receipt):
+                if receipt["completed"]:
+                    operations.append("boot-completed")
+                record_broadcast(receipt)
+
             def adb(*args, deadline, **kwargs):
                 deadlines.append(deadline)
-                operations.append(args[0])
+                operations.append("settings" if "settings" in args else "display" if "wm" in args else args[0])
                 if "input" in args:
                     self.assertEqual(99, kwargs["timeout"], "Resource receipts consume the existing boot budget")
                 if "settings" in args:
@@ -527,15 +718,20 @@ class SoftwareSessionTest(unittest.TestCase):
             with patch("software_emulator.subprocess.Popen", return_value=emulator), \
                     patch.object(session, "wait_ready", side_effect=ready), \
                     patch.object(session, "capture_host_resources", side_effect=resources), \
+                    patch.object(session, "record_boot_broadcast", side_effect=broadcast), \
                     patch.object(session, "adb", side_effect=adb):
                 session.boot()
             self.assertEqual("ready", session.report["status"])
-            self.assertEqual([900] * 14, deadlines)
+            self.assertEqual([900] * 13, deadlines)
             self.assertFalse(session.report["passed"], "Ready emulator alone does not pass the controller")
             self.assertEqual({"width": 540, "height": 960, "density_dpi": 210}, session.report["display"])
             self.assertTrue(session.report["boot_broadcast"]["completed"])
             self.assertEqual(279, session.report["boot_broadcast"]["system_server_pid"])
-            self.assertLess(operations.index("logcat"), len(operations) - 1 - operations[::-1].index("services"))
+            self.assertNotIn("logcat", operations, "Native capture avoids repeated guest log downloads")
+            completed = operations.index("boot-completed")
+            self.assertLess(completed, operations.index("settings"))
+            self.assertLess(completed, len(operations) - 1 - operations[::-1].index("services"))
+            self.assertLess(completed, operations.index("display"))
             calls = [json.loads(line) for line in (session.diagnostics / "boot-broadcast.jsonl").read_text().splitlines()]
             self.assertTrue(calls[-1]["completed"])
 
@@ -545,6 +741,7 @@ class SoftwareSessionTest(unittest.TestCase):
             session = SoftwareSession(PROFILE, Path(temporary) / "evidence", "/sdk", now=clock.now)
             emulator = Mock(pid=12345, returncode=-15)
             emulator.poll.return_value = None
+            (session.diagnostics / "guest-startup-logcat.txt").write_text(BOOT_DELIVERED)
 
             def ready(deadline):
                 self.assertEqual(900, deadline)

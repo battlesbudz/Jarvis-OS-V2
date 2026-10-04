@@ -50,7 +50,12 @@ commits. Do not create or merge another PR without Justin's permission.
    output and guest logcat, and requires the boot flag, input/activity/package/
    window services, successful unlock and actual user0 BOOT_COMPLETED delivery
    for the current system_server before invoking the same full release
-   controller. All readiness and unlock checks share the 15-minute boot budget;
+   controller. Completion is read live from a bounded 256 KiB complete-line tail
+   of that launch's native guest log, between fresh matching system_server PID
+   probes. The exact user0 completion marker, a running emulator and observation
+   before the original deadline remain required; a retained artifact alone cannot
+   authorize readiness. This avoids Build 944's repeatedly timed-out guest logcat
+   dumps without extending a deadline. All readiness and unlock checks share the 15-minute boot budget;
    software rendering uses the supported `-gpu software` selector, with the
    installed binary's supported modes and actual startup backend retained as
    diagnostics. Build 940's watchdog blocked in `HardwareRenderer.nSetStopped`
