@@ -20,7 +20,7 @@ internal object ActionRequestText {
         val discourse = unquoted.replaceFirst(Regex("""(?i)^(?:(?:but\s+)?actually|and\s+then|then)\s+(?=$actionLead)"""), "")
         val retried = discourse.replaceFirst(Regex("""(?i)^(?:i\s+(?:said|asked)(?:\s+you)?[, ]+)(?=(?:can|could|would|will)\s+you\b|please\s+(?:open|launch|start|set|read|check|show|tell)\b)"""), "")
         val directed = lead.replaceFirst(retried, "").trim()
-        return directed.split(Regex("""(?i)[.!?;\n]+|,\s*(?=$actionLead|please\s+)|\s*(?:,?\s+and\s+then\s+|,?\s+then\s+|,?\s+and\s+)"""))
+        return directed.split(Regex("""(?i)(?:[!?;\n]|\.(?=\s|$))+|,\s*(?=$actionLead|please\s+)|\s*(?:,?\s+and\s+then\s+|,?\s+then\s+|,?\s+and\s+)"""))
             .map {
                 val normalized = trailing.replace(lead.replaceFirst(it.trim(), "").trim(), "").trim().trimEnd('.', '!', '?')
                 Regex("""(?i)\s+after that$""").replace(normalized, "").trim()
