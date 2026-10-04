@@ -1358,7 +1358,7 @@ the other two publishers remain ineligible for this PR and also skip. No
 numbered Build 958 release exists. Every deadline and release assertion remains
 in force; a changed revision requires a fresh signed build and all six profiles.
 
-The next controlled harness correction aligns a fresh known target at most
+The then-next controlled harness correction aligns a fresh known target at most
 one fine-stroke limit outside a modern Android viewport with the existing
 bounded fine gesture. Unknown/distant targets retain discovery; fresh safe
 bounds, 300-millisecond stability and the single physical tap remain required.
@@ -1367,7 +1367,7 @@ exact zero-exit null-root diagnostic, retaining first-attempt pixels and both
 diagnostics inside the original 60-second budget. Other errors, invalid
 captures and a second null root still fail.
 
-API 29 separately trials official Stable 32.1.15/build 10696886 with
+That successor separately trials official Stable 32.1.15/build 10696886 with
 `swiftshader_indirect`. The official archive's indexed version/size/checksum
 and adjacent AOSP renderer/CLI/ARM64 TCG sources qualify this candidate; no
 local binary or successful runtime is claimed. Staged/installed identity must
@@ -1376,6 +1376,72 @@ requested two CPUs in the older off-HVF path. Memory, raster, CPU emulation,
 HVF/guest Vulkan exclusions, native startup-log ownership, boot barrier and
 all acceptance deadlines remain unchanged. Actual GLES support, two CPUs,
 BOOT_COMPLETED and all app phases must be observed in the fresh run.
+
+## Build 962 supported density and disabled Save discovery
+
+[Build 962](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37196250299)
+tests PR head `40b4de5a013605f87a92830b788da327c96fac73`, merge
+`5c972bef6f7c651cc9b445232f2997acd7fecba7`, tree
+`9e282a2b8a8690ccdc2abd314b4633221fd861c5`. Signed normal/compact builds,
+1,005 JVM tests in 184 suites, 203 helper tests, native keyword/page-size
+checks and four recorded ASR checks pass. Same-run shipping identities are
+normal `b29843cab2efc8431e5bdde3d9c2a23113b39c5fe97c0ea36c2d7174da9932af`,
+compact `9895b34afebbbadbb8706076ea45e261939dcd9d03bad8814103d63854d703f0`
+and test `75d30d45787bda0cee734cbfed94b8b6ba13b7081e5431e8cab302b776369666`.
+
+API 30 normal, API 36 normal, true 16 KB normal and Fold compact pass all
+49 main journeys, two actual Build 907 upgrades without a data clear,
+process restart, eight lifecycle phases, four layout methods and nine native
+loads. Fold includes actual fold/unfold transitions and retained call/draft
+continuity. True 16 KB observes 16,384-byte pages. Its retained log contains
+one GMS ReferenceQueueDaemon crash reported twice, not a Jarvis fatal or ANR;
+main, layout and lifecycle complete afterward; upgrades had already passed.
+Test48 passes on all five profiles
+that reach main instrumentation, including the otherwise-failing compact
+phone. This proves controlled foreground-service/session contracts; physical
+microphone, wake-word inference and real-model behavior still require signoff.
+
+API 35 compact artifact `11301049442`, ZIP SHA-256
+`c9e8bd5ecd6e9ca6a890873ebb47f8af2e8f2e8f3851efcb18eb02772ddeba46`,
+passes both upgrades and 48 of 49 main cases. Test45 cannot discover the
+initial disabled Save-review control before evaluating `isEnabled`. Product
+source unconditionally tags the button immediately below the review checkbox.
+The fresh checkbox starts clipped at the viewport bottom; the first 1,109-pixel
+blind stroke samples below the controls in the metrics, and subsequent search
+never observes Save. The retained test45 PNG is the dashboard top after edge
+reversal, not an atomic observation of the initial Save target. Later restart,
+lifecycle, layout and native phases are unreached. The correction changes only
+that initial discovery call on API 35+ to the existing half-viewport physical
+held gesture (12 MOVE events, 250 ms); the disabled assertion, later checkbox
+and Save taps, fresh safe bounds, 300 ms stability, 15-second/14-gesture limits
+and all 49 named cases remain unchanged. This is a bounded discovery trial,
+not proof of stale-node or inertia causality.
+
+API 29 artifact `11300944065`, ZIP SHA-256
+`bcb560c322912a42e7be321747062314d3ae736fea6f71aa0f7a4d3639da0612`,
+verifies the complete pinned 32.1.15/build 10696886 archive, staged/installed
+versions and successful GPU/feature help. Native QEMU then rejects LCD density
+210 before guest startup. There is no guest BOOT_COMPLETED, installed app,
+test48 or actual initialized GLES identity. The wrapper advertises GLES 3 in
+kernel arguments; that is not a renderer capability receipt. Its unchanged
+`vm.heapSize=256M` request is interpreted as zero and promoted to a 512 MiB
+minimum in generated hardware/kernel arguments. Actual guest heap/CPU/runtime
+coverage is not established by this failed startup.
+
+The API 29 correction uses supported 280 dpi with 720×1280 physical pixels,
+preserving the exact Pixel 2 dp viewport. The unchanged strict physical
+size/density receipt rejects the old raster, skin mismatches and any wm
+override. This increases pixel count by 16/9 from the prior raster; no speed
+gain is claimed. Pin verification, two requested CPUs, RAM/heap request,
+SwiftShader, HVF/guest Vulkan exclusions, native log ownership, current-PID
+boot barrier and every deadline remain unchanged. Fresh complete execution
+must qualify the density and renderer before app coverage can count.
+
+Final receipt artifact `11300724529`, ZIP SHA-256
+`c2ebb6321bbd0d0f8ca4be2afee0c5ee6925e28f86d68beed615fb1504fcfc0a`,
+is false with exactly four admitted profiles. All three publishers skip;
+the numbered Build 962 release and tag are absent. The next changed revision
+must pass the complete signed host gate and all six fresh profiles.
 
 ## Build 900 Gemma audio submission review
 

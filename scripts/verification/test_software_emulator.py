@@ -463,30 +463,32 @@ class SoftwareSessionTest(unittest.TestCase):
             for dimension, original in (("width", 1080), ("height", 1920)):
                 pixels = int(effective[f"hw.lcd.{dimension}"])
                 self.assertEqual(original * density, pixels * 420, "Pixel 2 dp viewport must remain exact")
-                self.assertEqual(original, pixels * 2, "Software raster dimensions must halve")
+                self.assertEqual(original * 2, pixels * 3, "Supported software raster dimensions must be two-thirds")
             self.assertEqual({"boot_timeout": 900, "job_timeout": 60},
                              {key: session.profile[key] for key in ("boot_timeout", "job_timeout")})
             session.close()
 
     def test_physical_framebuffer_receipt_rejects_skin_or_wm_override(self):
-        for output in ("Physical size: 1080x1920", "Physical size: 1080x1920\nOverride size: 540x960",
-                       "Physical size: 540x960\nOverride size: 1080x1920"):
+        for output in ("Physical size: 540x960", "Physical size: 1080x1920",
+                       "Physical size: 1080x1920\nOverride size: 720x1280",
+                       "Physical size: 720x1280\nOverride size: 1080x1920"):
             with self.subTest(output=output), tempfile.TemporaryDirectory() as temporary:
                 session = SoftwareSession(PROFILE, Path(temporary) / "evidence", "/sdk")
                 with patch.object(session, "adb", return_value=reply(output)) as adb:
-                    with self.assertRaisesRegex(RuntimeError, "physical size must be 540x960"):
+                    with self.assertRaisesRegex(RuntimeError, "physical size must be 720x1280"):
                         session.require_display(900)
                 adb.assert_called_once_with("shell", "wm", "size", deadline=900, check=True)
                 self.assertEqual(output, json.loads((session.diagnostics / "display-state.json").read_text())["size"]["stdout"])
                 self.assertNotIn("display", session.report)
 
     def test_density_receipt_rejects_mismatched_or_overridden_dpi(self):
-        for output in ("Physical density: 420", "Physical density: 420\nOverride density: 210",
-                       "Physical density: 210\nOverride density: 420"):
+        for output in ("Physical density: 210", "Physical density: 420",
+                       "Physical density: 420\nOverride density: 280",
+                       "Physical density: 280\nOverride density: 420"):
             with self.subTest(output=output), tempfile.TemporaryDirectory() as temporary:
                 session = SoftwareSession(PROFILE, Path(temporary) / "evidence", "/sdk")
-                with patch.object(session, "adb", side_effect=[reply("Physical size: 540x960"), reply(output)]):
-                    with self.assertRaisesRegex(RuntimeError, "physical density must be 210"):
+                with patch.object(session, "adb", side_effect=[reply("Physical size: 720x1280"), reply(output)]):
+                    with self.assertRaisesRegex(RuntimeError, "physical density must be 280"):
                         session.require_display(900)
                 self.assertEqual(output, json.loads((session.diagnostics / "display-state.json").read_text())["density"]["stdout"])
                 self.assertNotIn("display", session.report)
@@ -499,7 +501,7 @@ class SoftwareSessionTest(unittest.TestCase):
             def adb(*args, deadline, **kwargs):
                 self.assertEqual(3, deadline)
                 clock.pause(2)
-                return reply("Physical size: 540x960" if args[-1] == "size" else "Physical density: 210")
+                return reply("Physical size: 720x1280" if args[-1] == "size" else "Physical density: 280")
 
             with patch.object(session, "adb", side_effect=adb):
                 with self.assertRaisesRegex(TimeoutError, "deadline expired"):
@@ -713,7 +715,7 @@ class SoftwareSessionTest(unittest.TestCase):
                 if "logcat" in args:
                     return reply(BOOT_DELIVERED)
                 if "wm" in args:
-                    return reply("Physical size: 540x960" if args[-1] == "size" else "Physical density: 210")
+                    return reply("Physical size: 720x1280" if args[-1] == "size" else "Physical density: 280")
                 return reply(UNLOCKED if "dumpsys" in args else "")
 
             with patch("software_emulator.subprocess.Popen", return_value=emulator), \
@@ -725,7 +727,7 @@ class SoftwareSessionTest(unittest.TestCase):
             self.assertEqual("ready", session.report["status"])
             self.assertEqual([900] * 13, deadlines)
             self.assertFalse(session.report["passed"], "Ready emulator alone does not pass the controller")
-            self.assertEqual({"width": 540, "height": 960, "density_dpi": 210}, session.report["display"])
+            self.assertEqual({"width": 720, "height": 1280, "density_dpi": 280}, session.report["display"])
             self.assertTrue(session.report["boot_broadcast"]["completed"])
             self.assertEqual(279, session.report["boot_broadcast"]["system_server_pid"])
             self.assertNotIn("logcat", operations, "Native capture avoids repeated guest log downloads")
@@ -966,8 +968,8 @@ class EmulatorPinTest(unittest.TestCase):
         self.assertEqual(self.version, proof["installed_version_output"])
         self.assertTrue((self.session.diagnostics / "emulator-package.xml").exists())
         config = (self.session.diagnostics / "avd-config.ini").read_text()
-        for setting in ("hw.cpu.ncore=2", "hw.ramSize=2048M", "vm.heapSize=256M", "hw.lcd.width=540",
-                        "hw.lcd.height=960", "hw.lcd.density=210", "disk.dataPartition.size=4096M"):
+        for setting in ("hw.cpu.ncore=2", "hw.ramSize=2048M", "vm.heapSize=256M", "hw.lcd.width=720",
+                        "hw.lcd.height=1280", "hw.lcd.density=280", "disk.dataPartition.size=4096M"):
             self.assertIn(setting, config)
         self.assertEqual(3600, self.session.deadline)
         self.assertFalse(self.session.report["passed"], "Provisioning does not establish test coverage")

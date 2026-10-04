@@ -44,8 +44,11 @@ EMULATOR_PIN = {
 # Build 936 exhausted guest CPU during API 29 permission initialization. This
 # bounded headroom/raster experiment retains two vCPUs and the Pixel 2 dp viewport;
 # it does not establish host memory pressure as the cause or change any deadline.
+# Build 962's pinned QEMU rejects 210dpi before boot. The supported 280dpi
+# raster preserves that exact dp viewport, with 16/9 as many pixels as 540x960.
+# https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/vl.c
 SOFTWARE_AVD_SETTINGS = {"hw.cpu.ncore": "2", "hw.ramSize": "2048M", "vm.heapSize": "256M",
-                         "hw.lcd.width": "540", "hw.lcd.height": "960", "hw.lcd.density": "210",
+                         "hw.lcd.width": "720", "hw.lcd.height": "1280", "hw.lcd.density": "280",
                          "disk.dataPartition.size": "4096M"}
 # API 29-only compatibility trial of Emulator 32's direct SwiftShader path.
 # Its source selects swiftshader_indirect without the newer Mac SwANGLE redirect.
@@ -520,7 +523,7 @@ class SoftwareSession:
         # Verify physical framebuffer/density, including any SDK skin override.
         # An Android wm override would change logical layout without cutting the raster.
         display = {}
-        expected = {"size": "540x960", "density": "210"}
+        expected = {"size": "720x1280", "density": "280"}
         for field, value in expected.items():
             result = self.adb("shell", "wm", field, deadline=deadline, check=True)
             display[field] = {"stdout": result.stdout, "stderr": result.stderr}
@@ -528,7 +531,7 @@ class SoftwareSession:
             if result.stdout.strip() != f"Physical {field}: {value}":
                 raise RuntimeError(f"Software emulator physical {field} must be {value}: {result.stdout.strip()}")
         remaining(min(deadline, self.deadline), self.now)
-        self.report["display"] = {"width": 540, "height": 960, "density_dpi": 210}
+        self.report["display"] = {"width": 720, "height": 1280, "density_dpi": 280}
 
     def capture_graphics_backend(self):
         """Read bounded, already captured startup output; never start another probe."""

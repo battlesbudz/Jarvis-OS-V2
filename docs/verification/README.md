@@ -74,9 +74,15 @@ commits. Do not create or merge another PR without Justin's permission.
    The older ARM64 TCG source omits its generated SMP argument when HVF is
    disabled; trailing `-qemu -smp 2` preserves the requested two-vCPU setting.
    Actual installed execution, backend/GLES capability, CPU count and complete
-   device coverage remain fresh-run requirements. Two vCPUs, 2 GiB RAM,
-   `vm.heapSize=256M` and a 540×960 framebuffer at 210 dpi preserve Pixel 2's exact
-   Android dp viewport.
+   device coverage remain fresh-run requirements. The AVD requests two vCPUs,
+   2 GiB RAM and `vm.heapSize=256M`. Build 962's older wrapper interpreted that
+   heap request as zero and promoted it to its 512 MiB minimum; its generated
+   hardware and kernel arguments record 512 MiB, not a verified 256 MiB guest
+   heap. The next trial keeps the request unchanged. The framebuffer is
+   720×1280 at supported 280 dpi after Build 962 rejected 210 dpi before guest
+   startup. This preserves Pixel 2's exact Android dp viewport, with 16/9 as
+   many physical pixels as the previous 540×960 raster; it does not establish
+   a performance improvement.
    Physical size/density are observed before ready; optional read-only host
    resource receipts consume the existing deadline. These provisioning settings
    are experiments pending a complete passing run, not evidence of a memory cause.
