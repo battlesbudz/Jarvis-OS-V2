@@ -19,6 +19,8 @@ class NativeToolJourneyTest {
                     ExecutionResult(true, "Volume applied")
                 }
                 is MobileAction.OpenApp -> ExecutionResult(false, "App is unavailable")
+                is MobileAction.MediaControl ->
+                    ExecutionResult(true, "Sent ${action.action.label} command to the active media session.")
             }
         }
     }
@@ -56,5 +58,15 @@ class NativeToolJourneyTest {
         assertFalse(result.succeeded)
         assertEquals("App is unavailable", result.message)
         assertEquals(listOf(MobileAction.OpenApp("Missing app", "org.example.missing")), world.executed)
+    }
+
+    @Test fun mediaControlCallDispatchesThroughWorld() {
+        val world = World()
+        val result = execute(world, ToolCall("media_control", """{"args":{"action":"toggle"}}"""))!!
+        assertTrue(result.succeeded)
+        assertTrue(result.message.contains("active media session"))
+        assertEquals(listOf(MobileAction.MediaControl(MediaControlAction.TOGGLE)), world.executed)
+        assertFalse(execute(world, ToolCall("media_control", """{"action":"rewind"}"""))!!.succeeded)
+        assertEquals(1, world.executed.size)
     }
 }
