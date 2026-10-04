@@ -292,6 +292,13 @@ class SoftwareSessionTest(unittest.TestCase):
         self.assertEqual("/evidence/guest-startup-logcat.txt", command[command.index("-logcat-output") + 1])
         self.assertNotIn("-no-watchdog", command)
 
+    def test_launcher_timezone_does_not_inherit_invalid_host_detection(self):
+        with patch.dict("os.environ", {"TZ": "Unknown/Unknown"}):
+            command = emulator_command(Path("/sdk"), Path("/evidence"))
+        self.assertEqual(1, command.count("-timezone"))
+        self.assertEqual("Etc/UTC", command[command.index("-timezone") + 1])
+        self.assertNotIn("Unknown/Unknown", command)
+
 
 if __name__ == "__main__":
     unittest.main()

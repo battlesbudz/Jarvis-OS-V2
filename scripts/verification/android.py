@@ -130,6 +130,13 @@ class Device:
         # adb joins shell arguments remotely; quote even though local shell=False.
         return self.run("shell", shlex.join(map(str, args)), **kwargs)
 
+    def install(self, apk, *flags, profile):
+        # Default streaming installation timed out on API 29 software emulation.
+        # Push the same signed bytes before invoking Package Manager; -r/-t and
+        # the install deadline still apply exactly as on accelerated profiles.
+        transport = ("--no-streaming",) if profile["api"] == 29 and profile["acceleration"] == "software" else ()
+        return self.run("install", *transport, *flags, apk, timeout=180)
+
     def copy_phase_boundary(self, test, evidence_folder, boundary):
         """Reuse evidence already captured by the active instrumentation UiAutomation.
 
@@ -346,8 +353,8 @@ def verify(args):
         (out / "upgrade" / "previous-release.json").write_text(json.dumps(previous_metadata, indent=2) + "\n")
         device.run("uninstall", PACKAGE, check=False)
         device.run("uninstall", PACKAGE + ".test", check=False)
-        device.run("install", args.previous_apk, timeout=180)
-        device.run("install", "-r", "-t", args.test_apk, timeout=180)
+        device.install(args.previous_apk, profile=profile)
+        device.install(args.test_apk, "-r", "-t", profile=profile)
         if "Success" not in device.shell("pm", "clear", PACKAGE):
             raise RuntimeError("Previous-release fixture data reset failed")
         report["upgrade"]["previous_version_code"] = package_version("upgrade/previous-package.txt")
@@ -355,7 +362,7 @@ def verify(args):
             raise RuntimeError("Previous installed APK version disagrees with its numbered published release")
         report["upgrade"]["seed"], _ = instrument_phase(lifecycle["upgrade"]["seed"], "upgrade/seed.txt")
         device.shell("am", "force-stop", PACKAGE)
-        device.run("install", "-r", args.apk, timeout=180)
+        device.install(args.apk, "-r", profile=profile)
         report["upgrade"]["candidate_version_code"] = package_version("upgrade/candidate-package.txt")
         if report["upgrade"]["candidate_version_code"] <= report["upgrade"]["previous_version_code"]:
             raise RuntimeError("Candidate is not a newer APK than the previous release")

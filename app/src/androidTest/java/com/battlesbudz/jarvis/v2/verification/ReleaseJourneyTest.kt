@@ -325,11 +325,13 @@ class ReleaseJourneyTest {
                 // Keep gestures in the left quarter of the actual list, and both
                 // vertical ends away from navigation and button edges.
                 val swipeX = viewport.left + viewport.width() / 4
-                val highY = viewport.top + viewport.height() * 3 / 10
-                val lowY = viewport.top + viewport.height() * 3 / 4
+                // UiAutomator synchronously injects every step. A longer stroke
+                // with fewer steps keeps navigation within its existing deadline.
+                val highY = viewport.top + viewport.height() * 15 / 100
+                val lowY = viewport.top + viewport.height() * 85 / 100
                 if (SystemClock.uptimeMillis() >= deadline) break
                 assertTrue("Model list swipe must dispatch", device.swipe(swipeX,
-                    if (scrollDown) lowY else highY, swipeX, if (scrollDown) highY else lowY, 35))
+                    if (scrollDown) lowY else highY, swipeX, if (scrollDown) highY else lowY, 12))
                 swipes++
                 device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
                 SystemClock.sleep(minOf(150, (deadline - SystemClock.uptimeMillis()).coerceAtLeast(0)))
@@ -2379,13 +2381,16 @@ class ReleaseJourneyTest {
                 // UiObject2.scroll result conflates a missing accessibility event with
                 // an actual edge, so determine progress from fresh visible content.
                 val before = benchmarkViewportSignature(list)
-                val lowY = viewport.top + viewport.height() * 3 / 4
-                val highY = viewport.top + viewport.height() * 3 / 10
+                // Avoid the unfolded hinge and reduce synchronous input work,
+                // preserving overlap between strokes and the same safe-tap checks.
+                val swipeX = viewport.left + viewport.width() / 4
+                val lowY = viewport.top + viewport.height() * 85 / 100
+                val highY = viewport.top + viewport.height() * 15 / 100
                 val fromY = if (direction == Direction.DOWN) lowY else highY
                 val toY = if (direction == Direction.DOWN) highY else lowY
                 val scrollStarted = SystemClock.uptimeMillis()
                 if (android.os.Build.VERSION.SDK_INT >= 34 && SystemClock.uptimeMillis() >= deadline) break
-                check(device.swipe(viewport.centerX(), fromY, viewport.centerX(), toY, 35)) {
+                check(device.swipe(swipeX, fromY, swipeX, toY, 12)) {
                     "Benchmark swipe dispatch failed"
                 }
                 device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))

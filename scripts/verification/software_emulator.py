@@ -69,6 +69,7 @@ def emulator_command(sdk, diagnostics):
     # AOSP f0c183f1, android-qemu2-glue/main.cpp and android/android-emu/android/main-common.c.
     return [str(sdk / "emulator/emulator"), "-port", "5554", "-avd", AVD_NAME,
             "-no-window", "-gpu", "swiftshader_indirect", "-noaudio", "-no-boot-anim", "-no-snapshot",
+            "-timezone", "Etc/UTC",
             "-accel", "off", "-feature", "-HVF", "-show-kernel", "-logcat", "*:V",
             "-logcat-output", str(diagnostics / "guest-startup-logcat.txt")]
 

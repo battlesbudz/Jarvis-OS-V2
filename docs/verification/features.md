@@ -14,7 +14,7 @@ native-worker ownership; wake capture resumes after that worker drains.
 | Layer | Acceptance and failure case | Coverage |
 | --- | --- | --- |
 | JVM | A verified farewell interruption ends the call even with no PCM; failed recognition, quoted phrases, ordinary requests and stop-speaking keep the call. | `ReplyInterruptionTest`, `VoiceCallPolicyTest`, `CallLifetimePolicyTest` |
-| Android lifecycle | Farewell saves the ended call, drains old queued input, keeps the current turn and real foreground service alive, and permits a fresh call ID. A stale old-call farewell cannot end the new call. Explicit End disarms from an active or passive session. | Release `test48` passed Build 922 on API 30, API 35 compact/16 KB and API 36 phone; the full run was blocked by layout/infrastructure failures |
+| Android lifecycle | Farewell saves the ended call, drains old queued input, keeps the current turn and real foreground service alive, and permits a fresh call ID. A stale old-call farewell cannot end the new call. Explicit End disarms from an active or passive session. | Release `test48` passed Build 930 on API 30, API 35 compact/16 KB, API 36 phone and foldable; the full run was blocked by navigation/installation failures |
 | Physical audio/model | After saying “Stop listening”, wait for wake readiness, then say “Hey Jarvis” to start another call, including from a locked/background phone. | Device signoff pending; controlled lifecycle tests do not prove acoustic detection or model inference |
 
 During verification, the pre-fix API 29 job in
@@ -512,6 +512,46 @@ failed before current-app instrumentation after a framework watchdog failure
 blocked baseline installation. The final receipt is false and publication was
 skipped. A fresh exact-revision runtime must still pass all profiles and prove
 actual folded/unfolded dimensions and continuity.
+
+## Build 930 installation and navigation repair
+
+[Build 930](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37122256536)
+tested head `f82ee6af7031d1a49b43a0e731135fb0020a89ae`, merge
+`ca4930cae001e77b9932c723d7e857c5504a09bf`. Signed APK production,
+all 1,005 release JVM tests, recorded speech, native page-size audits and the
+four ordinary phone profiles passed. The foldable passed the farewell/wake
+session test48, but failed the same two navigation cases, test12 and test45,
+within their unchanged 15-second limits. Main-suite failure correctly prevented
+the subsequent actual fold/unfold phases. The required API 29 and foldable
+results remain failed, the receipt is false, and publication was skipped.
+
+Foldable artifact `11274123162`, ZIP SHA-256
+`e88ecc69d6c61552f8545632712df2b733b48a7c684cacbe4d1ee31f2396ec96`,
+retains 47 successful main cases and two failures. Its inspected test12 PNG/XML
+shows the full 48dp Choose target finally exposed after the navigation deadline.
+The before/after accessibility observations took roughly 80–320 milliseconds,
+while each model swipe took 5.6–6.9 seconds and benchmark swipes took roughly
+4.1–4.3 seconds. This narrows the dominant cost to gesture delivery/settlement;
+the pinned UiAutomator 2.3.0 controller synchronously injects each swipe step.
+The harness now uses twelve steps instead of thirty-five and strokes from 15%
+to 85% of the actual viewport, with the benchmark path in its left quarter to
+avoid the hinge. Fresh accessibility discovery, explicit settlement, stable
+second bounds, full 48dp controls, one physical tap, the 15-second deadline,
+fourteen-gesture cap and stationary-edge checks remain required. The complete
+journey matrix must still establish that intermediate controls remain reachable.
+
+API 29 artifact `11274417685`, ZIP SHA-256
+`5d056e8c19316ebc541b928b35dc96c7b9bfb3d4b6b9507bbcd03766995d8499`,
+booted and unlocked but timed out installing the actual previous APK after
+180 seconds; candidate instrumentation never began. Guest SDK setup crashes
+show the invalid autodetected timezone `Unknown/Unknown`. The software launcher
+now supplies `-timezone Etc/UTC`. Its profile uses non-streaming APK installation
+to separate file transfer from the package-manager command; this transport
+experiment is not a proven explanation of the stall. It preserves the same
+signed APKs, replacement upgrade, 180-second install deadline and full checks.
+Accelerated profiles retain their existing installation transport. No product
+audio behavior, release gate assertion or publication dependency is changed.
+A fresh exact-revision full gate is required before handing out a newest APK.
 
 ## Build 900 Gemma audio submission review
 
