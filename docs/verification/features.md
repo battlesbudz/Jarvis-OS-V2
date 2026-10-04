@@ -1087,6 +1087,60 @@ metric region; they do not isolate fling or cache behavior as its sole mechanism
 The correction is not a passing result. A fresh exact signed candidate
 must pass all six complete profiles and the consolidated receipt.
 
+## Build 948 held metric gesture correction
+
+[Build 948](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37184660957)
+tests merge `47c9d9cb126e0fbc065df0aa9085f3f31c72f852` from PR head
+`51360da06a084c43a8a43cd6e45fd137e17f7117`. All 1,005 release JVM cases,
+four recorded-speech cases, signed APK checks and both static native audits pass.
+API 30, API 35 compact, API 36 phone and the genuine 16 KB profile pass all 49
+main journeys and every separate upgrade, restart, lifecycle, layout and native
+loading phase. Their APK and test hashes match this exact source and run.
+
+Fold artifact `11296544541`, ZIP SHA-256
+`ba9139ccd1bb65cc113fc3afc9b19b443f7bca2f6f926b24b025aa8a896a1946`,
+passes the real Build 907 upgrade and 48 of 49 main methods. Test45 fails its
+exact `tts_load_ms: unavailable` visibility assertion. Two 736-pixel held
+discovery strokes move the content but consume 7,033 and 6,937 ms, leaving
+36 ms in the unchanged 15-second budget. The target is still below the viewport;
+no stationary edge, reversal or target safe-bound rejection occurs. The actual
+DOWN-to-UP event-time spans are 6,583 and 6,496 ms. Fresh target queries begin
+244 and 246 ms after UP, so the retained trace identifies gesture dispatch as
+the main cost of these cycles. It does not isolate the host or platform cause
+of each synchronous injection's latency.
+
+UiAutomator 2.3.0 interprets Point-array steps per segment. The three-point
+51-step path injects 100 MOVE events, including 50 repeated endpoint events.
+The focused correction uses sparse real motion and an explicit 250 ms endpoint
+hold for only the non-API-30 exact TTS lookup. Every gesture event must succeed;
+deadline expiry or an injection failure rejects the gesture and attempts CANCEL
+cleanup for any possibly held pointer. Synchronous Binder injection can return
+after expiry; that late result cannot qualify the stroke. API 30 and the existing Task FAIL held gesture retain
+their original path. Half-viewport overlap, cache refresh, idle settlement,
+safe bounds, the 15-second/14-gesture limits, edge detection and all scoring,
+export and persistence assertions remain required. This further focused repair
+extends the default benchmark repair budget because the new raw trace identifies
+redundant physical input work. Android compilation and full fresh device
+verification remain required for the correction.
+
+The inspected failure PNG shows expanded metrics without a platform modal.
+Test45 clears its fixture store in `finally`; the subsequent PNG and XML captures
+start at 07:32:19.496 and 07:32:19.797 and show different observations. The later
+empty-store XML does not prove data loss during navigation. Fold restart,
+lifecycle, measured posture and native-loading phases are unreached.
+
+API 29 artifact `11297103192`, ZIP SHA-256
+`aac01d43b81fbc29c7e6965226246dd9e35743aa869ce15bbbe8d75bcc2aca7f`,
+retains two system-server Watchdog deaths. Final PID 2146 has no observed user0
+completion within the original 900-second boot deadline. No APK installation
+or app controller runs. Actual Vulkan SwiftShader/GLES SwANGLE matches Build
+947's trial, whose real upgrade passed but main suite was blocked by System UI's
+ANR modal. A new run must establish a healthy API 29 environment independently.
+The gesture correction changes no emulator provisioning or acceptance limits.
+Build 948's exact receipt is false, all three publishers skip, and its numbered
+release is absent. All six complete fresh profiles and the exact receipt must
+pass before a new numbered APK can be published.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,

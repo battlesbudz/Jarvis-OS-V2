@@ -2461,9 +2461,76 @@ class ReleaseJourneyTest {
         return ancestor == null && viewport.contains(bounds)
     }
 
+    /** A real half-viewport stroke with one elapsed-time endpoint hold. */
+    private fun benchmarkHeldMetricSwipe(swipeX: Int, fromY: Int, toY: Int, deadline: Long): Boolean {
+        if (SystemClock.uptimeMillis() >= deadline) return false
+        val downTime = SystemClock.uptimeMillis()
+        var currentY = fromY
+        var needsCancel = false
+        fun inject(action: Int): Boolean {
+            val properties = android.view.MotionEvent.PointerProperties().apply {
+                id = 0
+                toolType = Configurator.getInstance().toolType
+            }
+            val coords = android.view.MotionEvent.PointerCoords().apply {
+                x = swipeX.toFloat()
+                y = currentY.toFloat()
+                pressure = 1f
+                size = 1f
+            }
+            val event = android.view.MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action,
+                1, arrayOf(properties), arrayOf(coords), 0, 0, 1f, 1f, 0, 0,
+                android.view.InputDevice.SOURCE_TOUCHSCREEN, 0)
+            return try {
+                if (action != android.view.MotionEvent.ACTION_CANCEL && SystemClock.uptimeMillis() >= deadline)
+                    false else instrumentation.uiAutomation.injectInputEvent(event, true)
+            }
+                finally { event.recycle() }
+        }
+        try {
+            if (SystemClock.uptimeMillis() >= deadline) return false
+            // A rejected or interrupted injection can leave an uncertain touch state.
+            needsCancel = true
+            if (!inject(android.view.MotionEvent.ACTION_DOWN) || SystemClock.uptimeMillis() >= deadline)
+                return false
+            for (step in 1..12) {
+                if (SystemClock.uptimeMillis() >= deadline) return false
+                currentY = fromY + (toY - fromY) * step / 12
+                if (!inject(android.view.MotionEvent.ACTION_MOVE) || SystemClock.uptimeMillis() >= deadline)
+                    return false
+                if (step < 12) {
+                    if (deadline - SystemClock.uptimeMillis() <= 5) return false
+                    SystemClock.sleep(5)
+                    if (SystemClock.uptimeMillis() >= deadline) return false
+                }
+            }
+            val holdStarted = SystemClock.uptimeMillis()
+            if (deadline - holdStarted <= 250) return false
+            // Repeated stationary MOVE injections each synchronize with the platform;
+            // they are not an elapsed-time timer. Keep the contact down for 250 ms.
+            SystemClock.sleep(250)
+            if (SystemClock.uptimeMillis() >= deadline) return false
+            val heldMs = SystemClock.uptimeMillis() - holdStarted
+            if (!inject(android.view.MotionEvent.ACTION_UP) || SystemClock.uptimeMillis() >= deadline)
+                return false
+            needsCancel = false
+            android.util.Log.i("JarvisVerification", "benchmark_metric_swipe_completed x=$swipeX fromY=$fromY toY=$toY moves=12 heldMs=$heldMs gestureMs=${SystemClock.uptimeMillis() - downTime} remainingMs=${deadline - SystemClock.uptimeMillis()}")
+            return true
+        } finally {
+            if (needsCancel) {
+                // Cleanup must also run after expiry; a late UP never qualifies the stroke.
+                try {
+                    check(inject(android.view.MotionEvent.ACTION_CANCEL)) { "Benchmark swipe cancellation failed" }
+                } catch (failure: RuntimeException) {
+                    android.util.Log.w("JarvisVerification", "Benchmark swipe cancellation failed", failure)
+                }
+            }
+        }
+    }
+
     private fun benchmarkFindVisible(selector: BySelector, towardTop: Boolean, inDialog: Boolean,
         deadline: Long, swipes: AtomicInteger, requireSafeTapBounds: Boolean = true,
-        holdTextDiscovery: Boolean = false): UiObject2 {
+        holdTextDiscovery: Boolean = false, sparseHeldTextDiscovery: Boolean = false): UiObject2 {
         fun hasRequiredBounds(control: UiObject2): Boolean = if (requireSafeTapBounds)
             benchmarkHasSafeBounds(control) else benchmarkHasVisibleTextBounds(control)
         var direction = if (towardTop) Direction.UP else Direction.DOWN
@@ -2514,12 +2581,12 @@ class ReleaseJourneyTest {
                 val gap = if (knownBounds == null) 0 else if (direction == Direction.UP)
                     viewport.top + 24 - knownBounds.top else knownBounds.bottom - (viewport.bottom - 24)
                 val fineLimit = viewport.height() / 5
-                val hold = holdTextDiscovery && !fine
+                val hold = (holdTextDiscovery || sparseHeldTextDiscovery) && !fine
                 val stroke = if (fine) (gap + 24).coerceIn(48.coerceAtMost(fineLimit), fineLimit)
                     else if (hold) viewport.height() / 2 else lowY - highY
                 val fromY = if (direction == Direction.DOWN) lowY else highY
                 val toY = fromY + if (direction == Direction.DOWN) -stroke else stroke
-                val steps = if (hold) 51 else if (fine) 24 else 12
+                val steps = if (hold && sparseHeldTextDiscovery) 12 else if (hold) 51 else if (fine) 24 else 12
                 val scrollStarted = SystemClock.uptimeMillis()
                 if (SystemClock.uptimeMillis() >= deadline) break
                 android.util.Log.i("JarvisVerification", "benchmark_navigation_dispatch selector=$selector direction=$direction mode=${if (hold) "held_text" else if (fine) "fine" else "blind"} requireSafeTapBounds=$requireSafeTapBounds beforeTarget=$bounds beforeViewport=$viewport beforeRows=${before.receipt} stroke=$stroke x=$swipeX fromY=$fromY toY=$toY steps=$steps gestures=${swipes.get()} reversedAtEdge=$reversedAtEdge remainingMs=${deadline - scrollStarted}")
@@ -2528,7 +2595,9 @@ class ReleaseJourneyTest {
                 // bounded settlement trial, not proof of the stale-node cause.
                 // The public point path still requires successful real injection;
                 // viewport observations determine progress, not scroll events.
-                val dispatched = if (hold) device.swipe(arrayOf(
+                val dispatched = if (hold && sparseHeldTextDiscovery)
+                    benchmarkHeldMetricSwipe(swipeX, fromY, toY, deadline)
+                    else if (hold) device.swipe(arrayOf(
                     android.graphics.Point(swipeX, fromY), android.graphics.Point(swipeX, toY),
                     android.graphics.Point(swipeX, toY)), steps)
                     else device.swipe(swipeX, fromY, swipeX, toY, steps)
@@ -2568,9 +2637,9 @@ class ReleaseJourneyTest {
     }
 
     private fun benchmarkScrollTo(selector: BySelector, towardTop: Boolean = false,
-        holdDiscovery: Boolean = false): UiObject2 = observeBenchmarkNavigation {
+        holdDiscovery: Boolean = false, sparseHeldDiscovery: Boolean = false): UiObject2 = observeBenchmarkNavigation {
         benchmarkFindVisible(selector, towardTop, false, SystemClock.uptimeMillis() + 15_000, AtomicInteger(),
-            holdTextDiscovery = holdDiscovery)
+            holdTextDiscovery = holdDiscovery, sparseHeldTextDiscovery = sparseHeldDiscovery)
     }
 
     private fun benchmarkRevealText(text: String, holdDiscovery: Boolean = false): UiObject2 = observeBenchmarkNavigation {
@@ -2698,7 +2767,7 @@ class ReleaseJourneyTest {
             assertEquals(PipelineBenchmarkEnvironment.NOISY, store.samples.value.single { it.turnId == completedId }.environment)
             assertNotNull(if (android.os.Build.VERSION.SDK_INT == 30)
                 benchmarkRevealText("tts_load_ms: unavailable", holdDiscovery = true)
-                else benchmarkScrollTo(By.text("tts_load_ms: unavailable"), holdDiscovery = true))
+                else benchmarkScrollTo(By.text("tts_load_ms: unavailable"), sparseHeldDiscovery = true))
             captureEvidence("pipeline_benchmark_verified_reference_and_review")
 
             benchmarkClickEnabled(By.res("pipeline_benchmark_copy_json"), towardTop = true)
