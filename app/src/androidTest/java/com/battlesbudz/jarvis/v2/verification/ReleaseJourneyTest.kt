@@ -1112,7 +1112,7 @@ class ReleaseJourneyTest {
             val a = ledger.get(id)?.takeIf { it.generation == generation }
             if (a != null) {
                 when (command) {
-                    "approve" -> JournaledActionPipeline(ledger, MobileActionExecutor  { effects.incrementAndGet(); ExecutionResult(true, "25%") })
+                    "approve" -> JournaledActionPipeline(ledger, MobileActionExecutor { effects.incrementAndGet(); ExecutionResult(true, "25%") })
                         .executeAttempt(a, a.approvalId?.let { approvals.get(it) })
                     "deny" -> a.approvalId?.let { approvals.deny(it) }
                     "checked" -> ledger.reconcileUnknown(id, generation)
@@ -1720,15 +1720,19 @@ class ReleaseJourneyTest {
         // T09: on a locked device, sensitive actions hand off to unlock;
         // owner recognition is gated (a voice match never authorizes); the
         // non-sensitive battery read still dispatches through the real
-        // Android adapter.
+        // Android adapter. The CI emulator ships without a lock screen, so
+        // the journey sets a real PIN via locksettings first — the keyguard
+        // state below is genuine Android lock state, not a fixture.
         val keyguard = context.getSystemService(android.app.KeyguardManager::class.java)
-        device.sleep()
+        device.executeShellCommand("locksettings set-pin 1234")
         try {
-            val deadline = android.os.SystemClock.uptimeMillis() + 5_000
+            device.sleep()
+            val deadline = android.os.SystemClock.uptimeMillis() + 10_000
             while (keyguard?.isDeviceLocked != true && android.os.SystemClock.uptimeMillis() < deadline) {
                 Thread.sleep(200)
             }
-            assertTrue("device must be locked for this journey", keyguard?.isDeviceLocked == true)
+            assertTrue("device must be locked for this journey (locksettings PIN must take effect)",
+                keyguard?.isDeviceLocked == true)
             val gate = androidLockGate(context)
             assertEquals(OwnerRecognitionMode.GATED, gate.ownerRecognition)
             val dispatched = AtomicInteger(0)
@@ -1753,8 +1757,11 @@ class ReleaseJourneyTest {
             assertEquals(ExecutionResult.Outcome.NEEDS_UNLOCK, volume.outcome)
             assertEquals("only the battery read dispatched", 0, dispatched.get())
         } finally {
+            runCatching { device.executeShellCommand("locksettings clear --old 1234") }
             device.wakeUp()
         }
+        assertFalse("PIN must be cleared so later journeys run unlocked",
+            keyguard?.isDeviceLocked == true)
     }
 
     @Test fun test51_crossFamilyRegressionInvalidArgsProduceNoEffects() {
