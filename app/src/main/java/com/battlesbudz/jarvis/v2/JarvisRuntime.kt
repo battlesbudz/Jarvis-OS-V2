@@ -243,7 +243,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         // does not conflict; a conflicting task queues behind the
                         // running work instead of racing it.
                         val scheduler = com.battlesbudz.jarvis.v2.actions.TaskScheduler()
-                        when (val decision = scheduler.schedule(scheduler.resourceFor(a.request), runningTaskResources())) {
+                        when (val decision = scheduler.schedule(
+                            scheduler.resourceFor(a.request), runningTaskResources(a.groupId))) {
                             is com.battlesbudz.jarvis.v2.actions.ScheduleDecision.Queue -> {
                                 phoneTaskError.value = decision.reason
                                 refreshPhoneTasks()
@@ -344,11 +345,14 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     }
 
     /** Resources currently held by running work, for the M1d scheduling policy (D18). */
-    private fun runningTaskResources(): List<com.battlesbudz.jarvis.v2.actions.TaskResource> {
+    private fun runningTaskResources(excludeGroupId: String? = null): List<com.battlesbudz.jarvis.v2.actions.TaskResource> {
         val scheduler = com.battlesbudz.jarvis.v2.actions.TaskScheduler()
         val out = mutableListOf<com.battlesbudz.jarvis.v2.actions.TaskResource>()
         try {
-            if (com.battlesbudz.jarvis.v2.actions.ScreenControlService.sharedSession.holderGroupId != null) {
+            // M1d: a task approving its own group's next step is not
+            // conflicting with itself — the lease it holds is its own.
+            val holder = com.battlesbudz.jarvis.v2.actions.ScreenControlService.sharedSession.holderGroupId
+            if (holder != null && holder != excludeGroupId) {
                 out += com.battlesbudz.jarvis.v2.actions.TaskResource(
                     com.battlesbudz.jarvis.v2.actions.TaskResourceKind.SCREEN_LEASE)
             }
