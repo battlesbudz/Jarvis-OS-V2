@@ -2577,10 +2577,19 @@ class ReleaseJourneyTest {
                 // Once the target overlaps the viewport, align it instead of taking
                 // another full search stroke. Aim 24 pixels inside the viewport,
                 // add 24 pixels of room, and cap each adjustment at one fifth of it.
-                val fine = knownBounds != null && android.graphics.Rect.intersects(viewport, knownBounds)
+                val fineLimit = viewport.height() / 5
+                // Modern accessibility can retain a positive rectangle just outside
+                // the viewport. Align that nearby known target with the same bounded
+                // fine gesture instead of another full search stroke. Fresh safe bounds still
+                // authorize the tap; unknown or distant targets retain discovery.
+                val nearbyOutside = android.os.Build.VERSION.SDK_INT >= 35 && knownBounds != null &&
+                    knownBounds.left < viewport.right && knownBounds.right > viewport.left &&
+                    ((knownBounds.bottom <= viewport.top && viewport.top - knownBounds.bottom <= fineLimit) ||
+                        (knownBounds.top >= viewport.bottom && knownBounds.top - viewport.bottom <= fineLimit))
+                val fine = knownBounds != null &&
+                    (android.graphics.Rect.intersects(viewport, knownBounds) || nearbyOutside)
                 val gap = if (knownBounds == null) 0 else if (direction == Direction.UP)
                     viewport.top + 24 - knownBounds.top else knownBounds.bottom - (viewport.bottom - 24)
-                val fineLimit = viewport.height() / 5
                 val hold = (holdTextDiscovery || sparseHeldTextDiscovery) && !fine
                 val stroke = if (fine) (gap + 24).coerceIn(48.coerceAtMost(fineLimit), fineLimit)
                     else if (hold) viewport.height() / 2 else lowY - highY

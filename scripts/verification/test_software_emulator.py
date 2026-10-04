@@ -604,7 +604,7 @@ class SoftwareSessionTest(unittest.TestCase):
             (session.diagnostics / "emulator-stdout.txt").write_text(raw)
             session.capture_graphics_backend()
             graphics = session.report["graphics"]
-            self.assertEqual("host", graphics["requested_selector"])
+            self.assertEqual("swiftshader_indirect", graphics["requested_selector"])
             self.assertEqual(["HVF", "Vulkan"], graphics["requested_disabled_features"])
             self.assertEqual("gfxstream", graphics["graphics_backend"])
             self.assertEqual("swiftshader", graphics["vulkan_mode"])
@@ -843,7 +843,12 @@ class SoftwareSessionTest(unittest.TestCase):
         self.assertEqual("-HVF,-Vulkan", command[command.index("-feature") + 1])
         self.assertEqual("*:V", command[command.index("-logcat") + 1])
         self.assertEqual("/evidence/guest-startup-logcat.txt", command[command.index("-logcat-output") + 1])
-        self.assertEqual("host", command[command.index("-gpu") + 1])
+        self.assertEqual("swiftshader_indirect", command[command.index("-gpu") + 1])
+        self.assertEqual(1, command.count("-verbose"))
+        self.assertLess(command.index("-verbose"), command.index("-qemu"))
+        self.assertEqual(["-qemu", "-smp", "2"], command[-3:])
+        self.assertEqual(1, command.count("-qemu"))
+        self.assertEqual(1, command.count("-smp"))
         self.assertNotIn("-no-watchdog", command)
 
     def test_launcher_timezone_does_not_inherit_invalid_host_detection(self):
@@ -872,7 +877,7 @@ class EmulatorPinTest(unittest.TestCase):
         (self.original / "package.xml").write_bytes(self.original_xml)
         self.archive = self.root / "fixture.zip"
         self.calls = []
-        self.version = "Android emulator version 37.2.6.0 (build_id 16138043) (CL:N/A)\n"
+        self.version = "Android emulator version 32.1.15.0 (build_id 10696886) (CL:N/A)\n"
         self.installed_version = self.version
         self.gpu_help = reply("GPU modes: auto, host, swiftshader_indirect\n")
         self.feature_help = reply("-feature -HVF -feature Wifi\n")
@@ -890,7 +895,7 @@ class EmulatorPinTest(unittest.TestCase):
         self.addCleanup(mocked.stop)
 
     def write_archive(self, extra=(), properties=None):
-        properties = properties or "Pkg.Revision=37.2.6\nPkg.BuildId=16138043\nPkg.Path=emulator\n"
+        properties = properties or "Pkg.Revision=32.1.15\nPkg.BuildId=10696886\nPkg.Path=emulator\n"
         entries = [("emulator/", b"", stat.S_IFDIR | 0o755),
                    ("emulator/emulator", b"pinned executable", stat.S_IFREG | 0o755),
                    ("emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless", b"qemu", stat.S_IFREG | 0o755),
@@ -952,12 +957,12 @@ class EmulatorPinTest(unittest.TestCase):
         self.assertEqual(0o755, stat.S_IMODE((self.original / "qemu/darwin-aarch64/qemu-system-aarch64-headless").stat().st_mode))
         document = minidom.parseString((self.original / "package.xml").read_bytes())
         self.assertEqual("urn:generic", document.documentElement.getAttribute("xmlns:g"))
-        self.assertEqual(["37", "2", "6"], [document.getElementsByTagName(name)[0].firstChild.data
+        self.assertEqual(["32", "1", "15"], [document.getElementsByTagName(name)[0].firstChild.data
                                              for name in ("major", "minor", "micro")])
         proof = self.session.report["emulator_pin"]
         self.assertTrue(proof["verified"])
         self.assertEqual(EMULATOR_PIN["sha256"], proof["actual_sha256"])
-        self.assertEqual("16138043", proof["source_properties"]["Pkg.BuildId"])
+        self.assertEqual("10696886", proof["source_properties"]["Pkg.BuildId"])
         self.assertEqual(self.version, proof["installed_version_output"])
         self.assertTrue((self.session.diagnostics / "emulator-package.xml").exists())
         config = (self.session.diagnostics / "avd-config.ini").read_text()
@@ -993,14 +998,14 @@ class EmulatorPinTest(unittest.TestCase):
                 self.assertFalse((self.root / "escaped").exists())
 
     def test_metadata_and_executable_version_must_both_match_official_pin(self):
-        self.write_archive(properties="Pkg.Revision=37.2.12\nPkg.BuildId=16138043\nPkg.Path=emulator\n")
+        self.write_archive(properties="Pkg.Revision=37.2.12\nPkg.BuildId=10696886\nPkg.Path=emulator\n")
         with self.assertRaisesRegex(ValueError, "source.properties"):
             self.session.pin_emulator()
         self.assertFalse(any(command[-1] == "-version" for command, _ in self.calls))
         self.assert_original_retained()
         self.write_archive()
-        for version in (self.version.replace("37.2.6", "37.2.12"),
-                        self.version.replace("16138043", "16199999"), self.version * 2):
+        for version in (self.version.replace("32.1.15", "37.2.12"),
+                        self.version.replace("10696886", "16199999"), self.version * 2):
             with self.subTest(version=version):
                 self.version = version
                 with self.assertRaisesRegex(ValueError, "actual emulator version"):
@@ -1016,7 +1021,7 @@ class EmulatorPinTest(unittest.TestCase):
         self.assertFalse(self.session.report["emulator_pin"]["verified"])
 
     def test_failed_installed_version_check_restores_original_sdk_emulator(self):
-        self.installed_version = self.version.replace("37.2.6", "37.2.12")
+        self.installed_version = self.version.replace("32.1.15", "37.2.12")
         with self.assertRaisesRegex(ValueError, "actual emulator version"):
             self.session.pin_emulator()
         self.assert_original_retained()
@@ -1099,7 +1104,7 @@ class EmulatorPinTest(unittest.TestCase):
         self.assert_original_retained()
 
     def test_invalid_pin_stops_main_before_boot_or_controller_and_retains_failure(self):
-        self.version = self.version.replace("37.2.6", "37.2.12")
+        self.version = self.version.replace("32.1.15", "37.2.12")
         arguments = ["software_emulator.py", "--profile", PROFILE["id"], "--out", str(self.session.out),
                      "--", "release-controller"]
         with patch.object(sys, "argv", arguments), \

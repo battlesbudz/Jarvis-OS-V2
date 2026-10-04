@@ -34,13 +34,14 @@ commits. Do not create or merge another PR without Justin's permission.
    software emulation (`-accel off -feature -HVF,-Vulkan`). GitHub's M1 VMs do not
    support nested hardware virtualization. This profile alone uses the official
    [Emulator archive](https://developer.android.com/studio/emulator_archive)
-   Canary 37.2.6 Apple Silicon package, build 16138043, as a controlled version
-   experiment after Build 937's SystemUI crash/ANRs and previous-APK install
-   timeout. The full official ZIP is 419,847,722 bytes with SHA-256
-   `ca9eeb7857771de6219591a70b39342ac2d056b7701d1df0d0c719f41260f4a5`;
+   Stable 32.1.15 Apple Silicon package, build 10696886, as a controlled
+   direct SwiftShader trial after Build 958's host GLES 2 context failed
+   SurfaceFlinger's GLES 3 initialization. Official indexed archive metadata
+   binds the version/build/filename, 265,751,100-byte size and SHA-256
+   `f70d764fd756664bc782bb24f8da67cbaa51d7e5ffac732108b9e6545cd9faf4`;
    its size/hash are checked before safe staged extraction. Executable modes and
    SDK package metadata are preserved, `source.properties` must match, and both
-   staged and installed binaries must report version 37.2.6/build 16138043 before
+   staged and installed binaries must report version 32.1.15/build 10696886 before
    boot. Invalid input retains the previous emulator; a failed installed-version
    check restores it. Download, verification and replacement share one 600-second
    provisioning budget within the existing 60-minute job limit. This is a
@@ -56,7 +57,7 @@ commits. Do not create or merge another PR without Justin's permission.
    before the original deadline remain required; a retained artifact alone cannot
    authorize readiness. This avoids Build 944's repeatedly timed-out guest logcat
    dumps without extending a deadline. All readiness and unlock checks share the 15-minute boot budget;
-   software rendering uses the supported `-gpu swiftshader` selector, with the
+   software rendering requests `-gpu swiftshader_indirect`, with the
    installed binary's raw GPU/feature help and actual startup backend retained as
    diagnostics. Both help commands share the original provisioning budget and
    are individually bounded by 15 seconds; help text does not authorize readiness.
@@ -70,7 +71,10 @@ commits. Do not create or merge another PR without Justin's permission.
    actual backend are separate receipts: this does not prove Vulkan caused the
    failure or that all host Vulkan use disappears. See the official
    [troubleshooting guide](https://developer.android.com/studio/run/emulator-troubleshooting).
-   Two vCPUs, 2 GiB RAM,
+   The older ARM64 TCG source omits its generated SMP argument when HVF is
+   disabled; trailing `-qemu -smp 2` preserves the requested two-vCPU setting.
+   Actual installed execution, backend/GLES capability, CPU count and complete
+   device coverage remain fresh-run requirements. Two vCPUs, 2 GiB RAM,
    `vm.heapSize=256M` and a 540×960 framebuffer at 210 dpi preserve Pixel 2's exact
    Android dp viewport.
    Physical size/density are observed before ready; optional read-only host

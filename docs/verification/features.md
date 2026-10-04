@@ -1299,6 +1299,84 @@ profiles and pass consolidation before publication; Build 954 results do not
 credit the changed revision. Physical wake-word/audio behavior still needs final
 phone signoff.
 
+## Build 958 graphics capability and capture evidence
+
+[Build 958](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37193671520)
+tests merge `5f275f9ad3414a0b0d90f9bbf2ea99bf8fce4a92` from PR head
+`222ab4f0fdeea69ecb6ab6ecdade21410ff06bed`. Signed normal/compact packaging,
+all 1,005 release JVM cases, 197 Python helper cases, four recorded-speech cases
+and both static native audits pass. Fresh API 30 normal and API 35 compact
+complete all 49 main journeys including test48, both actual Build 907 upgrade
+phases without clearing data, restart, eight lifecycle phases, four layout cases
+and nine native loads. Their 85 PNG/XML pairs are independently validated.
+
+API 36 normal artifact `11300049235`, ZIP SHA-256
+`7684d926764390c25c0fdb50346a543193dcb28a6981abc45dde7bc9155043f6`,
+passes both upgrade phases and 48 of 49 main methods, including test48. Test45
+fails finding Intent PASS after successfully reviewing Task FAIL. Its fresh
+positive target rectangle is only 35 pixels below the viewport, but the
+intersection-only alignment decision chooses a 1,109-pixel search stroke.
+Subsequent observations show lower metric rows; the bounded search reaches an
+edge, reverses once and ends without authorizing a tap. No fatal/ANR header is
+retained. The failure PNG is a later summary state, not the initial geometry.
+Restart, lifecycle and layout phases remain unreached.
+
+True 16 KB job `111412924858` fails before the controller or APK installation:
+the emulator runner's physical unlock command receives input-service
+`Broken pipe (32)`. No device artifact is created. The retained completed job
+log is 51,901 bytes, SHA-256
+`4d2ea83d504c5a3c0f50f62db1a55003cf4d0a19531effe6932d64fb6357cd26`.
+This supplies no app, native-loading or test48 coverage; the underlying guest
+cause remains unresolved without guest logs.
+
+Fold artifact `11300004844`, ZIP SHA-256
+`33b2dc88de754320dfd2d11bf93da3b4c7238fcfaed9e4add48a3ff9433cb906`,
+passes all main, upgrade, restart, lifecycle, layout and native-loading phases,
+including actual fold/unfold transitions and test48. Final capture overlaps
+normal instrumentation teardown and an EmptyActivity closing transition. Its
+fresh PNG is a blank white surface with a navigation handle. `uiautomator dump`
+exits zero while reporting a null root; the fresh hierarchy file is absent and
+the subsequent cat fails. The report correctly remains false. No fatal/ANR
+header is retained; this is not another benchmark navigation failure.
+
+API 29 artifact `11301125436`, ZIP SHA-256
+`dacfb757b0a65704d879a3fe0d11f4a47000ae74756f62c1c72da841f38d3b07`,
+verifies the exact emulator pin and observes the requested host/host backend:
+Apple Software Renderer, GLES 2.0. Stock SurfaceFlinger requests GLES 3 and
+encounters 13 `EGL_BAD_CONFIG: no ES 3 support` failures and 13 native SIGABRTs.
+Initial boot and all four services remain unavailable at the original
+900-second deadline. No unlock, broadcast barrier, controller, installation or
+app tests run. This is a concrete host graphics capability failure; advertising
+the host selector did not establish a suitable GLES context.
+
+Final receipt artifact `11300184994`, ZIP SHA-256
+`4d44cc263af2fd0673a8f6afc4bf4c4ae9c9f7b03d24409bc0fbd7a1998fcfad`,
+is false with zero admitted variants: the missing true 16 KB artifact prevents
+input selection/download. The separate raw API 30/35 passes are retained, but
+are not admitted variants in that receipt. The eligible signed publisher skips;
+the other two publishers remain ineligible for this PR and also skip. No
+numbered Build 958 release exists. Every deadline and release assertion remains
+in force; a changed revision requires a fresh signed build and all six profiles.
+
+The next controlled harness correction aligns a fresh known target at most
+one fine-stroke limit outside a modern Android viewport with the existing
+bounded fine gesture. Unknown/distant targets retain discovery; fresh safe
+bounds, 300-millisecond stability and the single physical tap remain required.
+Final snapshots admit one additional fresh PNG/XML observation only for the
+exact zero-exit null-root diagnostic, retaining first-attempt pixels and both
+diagnostics inside the original 60-second budget. Other errors, invalid
+captures and a second null root still fail.
+
+API 29 separately trials official Stable 32.1.15/build 10696886 with
+`swiftshader_indirect`. The official archive's indexed version/size/checksum
+and adjacent AOSP renderer/CLI/ARM64 TCG sources qualify this candidate; no
+local binary or successful runtime is claimed. Staged/installed identity must
+still pass the unchanged pin checks. Trailing `-qemu -smp 2` preserves the
+requested two CPUs in the older off-HVF path. Memory, raster, CPU emulation,
+HVF/guest Vulkan exclusions, native startup-log ownership, boot barrier and
+all acceptance deadlines remain unchanged. Actual GLES support, two CPUs,
+BOOT_COMPLETED and all app phases must be observed in the fresh run.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,

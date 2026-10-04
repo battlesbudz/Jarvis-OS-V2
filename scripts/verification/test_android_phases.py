@@ -4,14 +4,17 @@ import base64
 import io
 import json
 import shlex
+import struct
 import subprocess
 import sys
+import time
 from types import SimpleNamespace
 import unittest
 from pathlib import Path
 import tempfile
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from xml.etree.ElementTree import ParseError
+import zlib
 
 from android import Device, PACKAGE, instrumentation_results, interrupted_results, sha256, verify
 from profiles import load_profiles
@@ -194,6 +197,15 @@ class InstallTransportTest(unittest.TestCase):
 
 class SnapshotEvidenceTest(unittest.TestCase):
     PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=')
+    NULL_ROOT = 'ERROR: null root node returned by UiTestAutomationBridge.'
+
+    @staticmethod
+    def fresh_png():
+        """A second valid image with independently different pixel content."""
+        def chunk(kind, data):
+            return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+        return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 6, 0, 0, 0)) +
+                chunk(b'IDAT', zlib.compress(b'\x00\xff\x00\x00\xff')) + chunk(b'IEND', b''))
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -231,6 +243,14 @@ elif args[0]=='shell':
             (root/'device.png').write_bytes(bytes.fromhex(mode['png']))
     elif command[:2]==['uiautomator','dump']:
         assert command[2]=='/sdcard/jarvis-window.xml'
+        if mode.get('null_roots',0):
+            diagnostic=mode.get('null_diagnostic','ERROR: null root node returned by UiTestAutomationBridge.')
+            exit_code=mode.get('null_exit',0)
+            mode['null_roots']-=1
+            mode.update(mode.pop('after_null_root',{}))
+            (root/'mode.json').write_text(json.dumps(mode))
+            sys.stderr.write(diagnostic)
+            sys.exit(exit_code)
         if mode.get('failure')=='hierarchy':
             print('failed hierarchy',file=sys.stderr);sys.exit(9)
         if mode.get('failure')=='hierarchy_missing':
@@ -331,6 +351,171 @@ else:raise AssertionError(args)
         self.assertIn('null root node', receipts[4]['stderr'])
         self.assertEqual(11, receipts[5]['exit'])
         self.assertIn('no new device XML', receipts[5]['stderr'])
+
+    def test_exact_null_root_retry_recaptures_both_files_and_retains_first_failure(self):
+        first_xml = '<hierarchy><node text="first attempt must not pass" /></hierarchy>'
+        fresh_xml = '<hierarchy><node text="new second capture" /></hierarchy>'
+        fresh_png = self.fresh_png()
+        self.assertNotEqual(self.PNG, fresh_png)
+        (self.root / 'device.png').write_bytes(b'stale remote pixels')
+        (self.root / 'device.xml').write_text(first_xml)
+        (self.device.out / 'retried.png').write_bytes(b'stale local pixels')
+        (self.device.out / 'retried.xml').write_text(first_xml)
+        self.mode(null_roots=1, xml=first_xml,
+                  after_null_root={'png': fresh_png.hex(), 'xml': fresh_xml})
+
+        sleep = Mock()
+        with patch('android.time', SimpleNamespace(monotonic=time.monotonic, sleep=sleep)):
+            self.assertEqual(fresh_xml + '\n', self.device.snapshot('retried'))
+
+        sleep.assert_called_once()
+        self.assertEqual(0.5, sleep.call_args.args[0])
+        self.assertEqual(self.PNG, (self.device.out / 'retried-attempt-1.png').read_bytes())
+        self.assertEqual(fresh_png, (self.device.out / 'retried.png').read_bytes())
+        self.assertEqual(fresh_xml + '\n', (self.device.out / 'retried.xml').read_text())
+        self.assertEqual(fresh_xml, (self.root / 'device.xml').read_text())
+        first_capture = (self.device.out / 'retried-attempt-1-screencap.txt').read_text()
+        self.assertIn('Multiple displays', first_capture)
+        self.assertIn('capture stderr diagnostic', first_capture)
+        self.assertEqual(self.NULL_ROOT, (self.device.out / 'retried-hierarchy-attempt-1.txt').read_text())
+        self.assertIn('UI hierarchy dumped', (self.device.out / 'retried-hierarchy-attempt-2.txt').read_text())
+        self.assertIn('capture stderr diagnostic', (self.device.out / 'retried-screencap.txt').read_text())
+        commands = [r['argv'][3:] for r in self.receipts()]
+        first = [['shell', 'rm -f /sdcard/jarvis-screen.png'],
+                 ['shell', 'screencap -p /sdcard/jarvis-screen.png'],
+                 ['pull', '/sdcard/jarvis-screen.png', str(self.device.out / 'retried.png')],
+                 ['shell', 'rm -f /sdcard/jarvis-window.xml'],
+                 ['shell', 'uiautomator dump /sdcard/jarvis-window.xml']]
+        self.assertEqual(first + first + [['shell', 'cat /sdcard/jarvis-window.xml']], commands)
+
+    def test_second_exact_null_root_fails_without_a_third_attempt_or_cat(self):
+        self.mode(null_roots=2, after_null_root={'png': self.fresh_png().hex()})
+        sleep = Mock()
+        with patch('android.time', SimpleNamespace(monotonic=time.monotonic, sleep=sleep)):
+            with self.assertRaisesRegex(RuntimeError, 'no active root after two attempts'):
+                self.device.snapshot('retried')
+        sleep.assert_called_once_with(0.5)
+        receipts = self.receipts()
+        self.assertEqual(10, len(receipts))
+        self.assertEqual(2, sum('screencap -p' in r['argv'][-1] for r in receipts))
+        self.assertEqual(2, sum('uiautomator dump' in r['argv'][-1] for r in receipts))
+        self.assertFalse(any(r['argv'][-1] == 'cat /sdcard/jarvis-window.xml' for r in receipts))
+        self.assertEqual(self.PNG, (self.device.out / 'retried-attempt-1.png').read_bytes())
+        self.assertEqual(self.fresh_png(), (self.device.out / 'retried.png').read_bytes())
+        self.assertFalse((self.device.out / 'retried.xml').exists())
+        for attempt in (1, 2):
+            self.assertEqual(self.NULL_ROOT,
+                             (self.device.out / f'retried-hierarchy-attempt-{attempt}.txt').read_text())
+
+    def test_null_root_text_does_not_retry_nonzero_other_diagnostics_or_dump_timeout(self):
+        cases = [(self.NULL_ROOT, 9), ('Warning before\n' + self.NULL_ROOT, 0),
+                 (self.NULL_ROOT + '\nDifferent failure', 0), ('ERROR: null root node returned', 0)]
+        for diagnostic, exit_code in cases:
+            with self.subTest(diagnostic=diagnostic, exit_code=exit_code):
+                for path in self.device.out.iterdir(): path.unlink()
+                self.mode(null_roots=1, null_diagnostic=diagnostic, null_exit=exit_code)
+                sleep = Mock()
+                with patch('android.time', SimpleNamespace(monotonic=time.monotonic, sleep=sleep)):
+                    with self.assertRaisesRegex(RuntimeError, 'adb shell failed'):
+                        self.device.snapshot('retried')
+                sleep.assert_not_called()
+                receipts = self.receipts()
+                self.assertEqual(5 if exit_code else 6, len(receipts))
+                self.assertEqual(1, sum('screencap -p' in r['argv'][-1] for r in receipts))
+                self.assertFalse((self.device.out / 'retried-attempt-1.png').exists())
+                self.assertFalse((self.device.out / 'retried.xml').exists())
+        for path in self.device.out.iterdir(): path.unlink()
+        self.mode()
+        real_run = subprocess.run
+
+        def dump_timeout(argv, **kwargs):
+            if argv[-1] == 'uiautomator dump /sdcard/jarvis-window.xml':
+                raise subprocess.TimeoutExpired(argv, kwargs['timeout'], stderr=self.NULL_ROOT.encode())
+            return real_run(argv, **kwargs)
+
+        sleep = Mock()
+        with patch('android.subprocess.run', side_effect=dump_timeout), \
+                patch('android.time', SimpleNamespace(monotonic=time.monotonic, sleep=sleep)):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.device.snapshot('retried')
+        sleep.assert_not_called()
+        self.assertEqual(5, len(self.receipts()))
+        self.assertTrue(self.receipts()[-1]['timed_out'])
+        self.assertFalse((self.device.out / 'retried-attempt-1.png').exists())
+
+    def test_retry_settlement_and_all_commands_share_the_original_shrinking_deadline(self):
+        self.mode(null_roots=1, after_null_root={'png': self.fresh_png().hex()})
+        clock, budgets, sleeps = [0.0], [], []
+        real_run = subprocess.run
+
+        def run(*args, **kwargs):
+            budgets.append(kwargs['timeout'])
+            result = real_run(*args, **kwargs)
+            clock[0] += 5
+            return result
+
+        def settle(seconds):
+            sleeps.append(seconds)
+            clock[0] += seconds
+
+        with patch('android.time', SimpleNamespace(monotonic=lambda: clock[0], sleep=settle)), \
+                patch('android.subprocess.run', side_effect=run):
+            self.assertEqual('<hierarchy />\n', self.device.snapshot('retried'))
+        self.assertEqual([0.5], sleeps)
+        self.assertEqual([60, 55, 50, 45, 40, 34.5, 29.5, 24.5, 19.5, 14.5, 9.5], budgets)
+        self.assertEqual(55.5, clock[0])
+        self.assertEqual(11, len(self.receipts()))
+
+    def test_retry_expiry_during_settlement_cannot_begin_another_capture(self):
+        self.mode(null_roots=1)
+        clock, sleeps = [0.0], []
+        real_run = subprocess.run
+
+        def run(argv, **kwargs):
+            result = real_run(argv, **kwargs)
+            if argv[-1] == 'uiautomator dump /sdcard/jarvis-window.xml':
+                clock[0] = 59.8
+            return result
+
+        def settle(seconds):
+            sleeps.append(seconds)
+            clock[0] += seconds
+
+        with patch('android.time', SimpleNamespace(monotonic=lambda: clock[0], sleep=settle)), \
+                patch('android.subprocess.run', side_effect=run):
+            with self.assertRaisesRegex(RuntimeError, '60-second command budget'):
+                self.device.snapshot('retried')
+        self.assertEqual(1, len(sleeps))
+        self.assertAlmostEqual(0.2, sleeps[0])
+        self.assertEqual(5, len(self.receipts()))
+        self.assertEqual(self.PNG, (self.device.out / 'retried-attempt-1.png').read_bytes())
+        self.assertFalse((self.device.out / 'retried.png').exists())
+        self.assertFalse((self.device.out / 'retried.xml').exists())
+        self.assertFalse((self.device.out / 'retried-hierarchy-attempt-2.txt').exists())
+
+    def test_corrupt_second_capture_fails_without_reusing_first_attempt_evidence(self):
+        corrupt_png = self.PNG[:-1] + b'\x00'
+        for changed, error, pattern, command_count in (
+                ({'png': corrupt_png.hex()}, RuntimeError, 'Invalid screenshot PNG', 8),
+                ({'png': self.fresh_png().hex(), 'xml': 'not xml'}, ParseError, None, 11),
+                ({'png': self.fresh_png().hex(), 'xml': '<diagnostic />'}, RuntimeError,
+                 'expected hierarchy root', 11)):
+            with self.subTest(changed=changed):
+                for path in self.device.out.iterdir(): path.unlink()
+                self.mode(null_roots=1, after_null_root=changed)
+                sleep = Mock()
+                with patch('android.time', SimpleNamespace(monotonic=time.monotonic, sleep=sleep)):
+                    assertion = self.assertRaisesRegex(error, pattern) if pattern else self.assertRaises(error)
+                    with assertion:
+                        self.device.snapshot('retried')
+                sleep.assert_called_once_with(0.5)
+                self.assertEqual(command_count, len(self.receipts()))
+                self.assertEqual(self.PNG, (self.device.out / 'retried-attempt-1.png').read_bytes())
+                self.assertEqual(bytes.fromhex(changed['png']), (self.device.out / 'retried.png').read_bytes())
+                if 'xml' in changed:
+                    self.assertEqual(changed['xml'] + '\n', (self.device.out / 'retried.xml').read_text())
+                else:
+                    self.assertFalse((self.device.out / 'retried.xml').exists())
 
     def test_failed_remote_hierarchy_removal_stops_before_dump_and_retains_receipt(self):
         stale = '<hierarchy><node text="previous model" /></hierarchy>'

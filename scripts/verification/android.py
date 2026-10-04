@@ -277,55 +277,76 @@ class Device:
                 raise RuntimeError(f"adb {args[0]} failed: {receipt['stderr']}")
             if time.monotonic() >= deadline:
                 raise RuntimeError("Snapshot exceeded its 60-second command budget")
-            return result.stdout.decode(errors="replace")
+            return result
 
         target = self.out / f"{name}.png"
         remote = "/sdcard/jarvis-screen.png"
-        target.unlink(missing_ok=True)
-        # A device file keeps screencap's multi-display diagnostics out of the
-        # image bytes. Remove the prior device file so a capture that produces
-        # no new file cannot pass by pulling stale pixels. Keep both diagnostic
-        # streams in command receipts and the dedicated capture diagnostic.
-        command("shell", shlex.join(["rm", "-f", remote]))
-        command("shell", shlex.join(["screencap", "-p", remote]),
-                diagnostic=self.out / f"{name}-screencap.txt")
-        command("pull", remote, target)
-        png = target.read_bytes()
-        valid, offset, kinds = png.startswith(b"\x89PNG\r\n\x1a\n"), 8, []
-        while valid and offset < len(png):
-            if len(png) - offset < 12:
-                valid = False
-                break
-            size = int.from_bytes(png[offset:offset + 4], "big")
-            kind = png[offset + 4:offset + 8]
-            end = offset + 12 + size
-            if end > len(png) or zlib.crc32(png[offset + 4:end - 4]) != int.from_bytes(png[end - 4:end], "big"):
-                valid = False
-                break
-            kinds.append(kind)
-            if len(kinds) == 1:
-                valid = (kind == b"IHDR" and size == 13 and
-                         int.from_bytes(png[offset + 8:offset + 12], "big") > 0 and
-                         int.from_bytes(png[offset + 12:offset + 16], "big") > 0)
-            if kind == b"IEND":
-                valid = valid and size == 0 and end == len(png)
-                offset = end
-                break
-            offset = end
-        if not valid or not kinds or kinds[-1] != b"IEND" or b"IDAT" not in kinds:
-            raise RuntimeError(f"Invalid screenshot PNG for {name}")
+        capture_diagnostic = self.out / f"{name}-screencap.txt"
         hierarchy = self.out / f"{name}.xml"
         remote_hierarchy = "/sdcard/jarvis-window.xml"
         hierarchy.unlink(missing_ok=True)
-        # uiautomator can exit zero without writing a hierarchy. A fresh cat
-        # must fail in that case, rather than accepting the previous device XML.
-        command("shell", shlex.join(["rm", "-f", remote_hierarchy]))
-        command("shell", shlex.join(["uiautomator", "dump", remote_hierarchy]))
-        xml = command("shell", shlex.join(["cat", remote_hierarchy]))
-        hierarchy.write_text(xml)
-        if ET.fromstring(xml).tag != "hierarchy":
-            raise RuntimeError(f"Invalid captured hierarchy for {name}: expected hierarchy root")
-        return xml
+
+        def capture_png():
+            target.unlink(missing_ok=True)
+            # A device file keeps screencap's multi-display diagnostics out of the
+            # image bytes. Remove the prior device file so a capture that produces
+            # no new file cannot pass by pulling stale pixels. Keep both diagnostic
+            # streams in command receipts and the dedicated capture diagnostic.
+            command("shell", shlex.join(["rm", "-f", remote]))
+            command("shell", shlex.join(["screencap", "-p", remote]),
+                    diagnostic=capture_diagnostic)
+            command("pull", remote, target)
+            png = target.read_bytes()
+            valid, offset, kinds = png.startswith(b"\x89PNG\r\n\x1a\n"), 8, []
+            while valid and offset < len(png):
+                if len(png) - offset < 12:
+                    valid = False
+                    break
+                size = int.from_bytes(png[offset:offset + 4], "big")
+                kind = png[offset + 4:offset + 8]
+                end = offset + 12 + size
+                if end > len(png) or zlib.crc32(png[offset + 4:end - 4]) != int.from_bytes(png[end - 4:end], "big"):
+                    valid = False
+                    break
+                kinds.append(kind)
+                if len(kinds) == 1:
+                    valid = (kind == b"IHDR" and size == 13 and
+                             int.from_bytes(png[offset + 8:offset + 12], "big") > 0 and
+                             int.from_bytes(png[offset + 12:offset + 16], "big") > 0)
+                if kind == b"IEND":
+                    valid = valid and size == 0 and end == len(png)
+                    offset = end
+                    break
+                offset = end
+            if not valid or not kinds or kinds[-1] != b"IEND" or b"IDAT" not in kinds:
+                raise RuntimeError(f"Invalid screenshot PNG for {name}")
+
+        for attempt in range(2):
+            capture_png()
+            # Each attempt must produce its own XML; no old device hierarchy
+            # can qualify a successful capture or the one permitted reattempt.
+            command("shell", shlex.join(["rm", "-f", remote_hierarchy]))
+            dump = command("shell", shlex.join(["uiautomator", "dump", remote_hierarchy]),
+                           diagnostic=self.out / f"{name}-hierarchy-attempt-{attempt + 1}.txt")
+            # This CLI condition exits zero before writing a file. All ordinary
+            # adb failures, different diagnostics and malformed XML still fail.
+            if dump.stderr.strip() == b"ERROR: null root node returned by UiTestAutomationBridge.":
+                if attempt:
+                    raise RuntimeError(f"Captured hierarchy for {name} still has no active root after two attempts")
+                # Retain first-attempt pixels/diagnostics, then recapture both
+                # files without launching an app or changing device state.
+                target.replace(self.out / f"{name}-attempt-1.png")
+                capture_diagnostic.replace(self.out / f"{name}-attempt-1-screencap.txt")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError("Snapshot exceeded its 60-second command budget")
+                time.sleep(min(0.5, remaining))
+                continue
+            xml = command("shell", shlex.join(["cat", remote_hierarchy])).stdout.decode(errors="replace")
+            hierarchy.write_text(xml)
+            if ET.fromstring(xml).tag != "hierarchy":
+                raise RuntimeError(f"Invalid captured hierarchy for {name}: expected hierarchy root")
+            return xml
 
 
 def verify(args):

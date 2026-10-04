@@ -32,13 +32,13 @@ SERVICES = ("input", "activity", "package", "window")
 AVD_NAME = "jarvis-api29-software"
 SERIAL = "emulator-5554"
 # Official manual-install package; this controlled API 29 diagnostic does not
-# establish that this Canary version repairs framework startup/install failures.
+# establish that this Stable version repairs framework startup/install failures.
 # https://developer.android.com/studio/emulator_archive
 EMULATOR_PIN = {
-    "version": "37.2.6", "build_id": "16138043", "channel": "Canary",
-    "url": "https://dl.google.com/android/repository/emulator-darwin_aarch64-16138043.zip",
-    "size_bytes": 419847722,
-    "sha256": "ca9eeb7857771de6219591a70b39342ac2d056b7701d1df0d0c719f41260f4a5",
+    "version": "32.1.15", "build_id": "10696886", "channel": "Stable",
+    "url": "https://dl.google.com/android/repository/emulator-darwin_aarch64-10696886.zip",
+    "size_bytes": 265751100,
+    "sha256": "f70d764fd756664bc782bb24f8da67cbaa51d7e5ffac732108b9e6545cd9faf4",
 }
 
 # Build 936 exhausted guest CPU during API 29 permission initialization. This
@@ -47,12 +47,12 @@ EMULATOR_PIN = {
 SOFTWARE_AVD_SETTINGS = {"hw.cpu.ncore": "2", "hw.ramSize": "2048M", "vm.heapSize": "256M",
                          "hw.lcd.width": "540", "hw.lcd.height": "960", "hw.lcd.density": "210",
                          "disk.dataPartition.size": "4096M"}
-# API 29-only compatibility trial of the documented host graphics selector.
-# Keep CPU emulation and disabled HVF/guest Vulkan unchanged. A usable host
-# OpenGL context and any improvement remain unproven; retain the requested
+# API 29-only compatibility trial of Emulator 32's direct SwiftShader path.
+# Its source selects swiftshader_indirect without the newer Mac SwANGLE redirect.
+# Actual GLES capability and any improvement remain unproven; retain requested
 # selector and actual backend separately and require the unchanged release gate.
-# https://developer.android.com/studio/run/emulator-acceleration
-SOFTWARE_GPU_SELECTOR = "host"
+# https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/android/android-emu/android/opengl/emugl_config.cpp
+SOFTWARE_GPU_SELECTOR = "swiftshader_indirect"
 
 
 def require_software_profile(profile, system=None, machine=None):
@@ -208,11 +208,15 @@ def wait_for_android(adb, running, deadline, *, now=time.monotonic, pause=time.s
 def emulator_command(sdk, diagnostics):
     # -logcat-output captures guest logs from startup, including when adb is broken.
     # AOSP f0c183f1, android-qemu2-glue/main.cpp and android/android-emu/android/main-common.c.
+    # Emulator 32 forwards the AVD core count only with acceleration; explicit
+    # QEMU SMP retains the declared two CPUs for TCG. Actual kernel proof is required.
+    # -verbose retains older OpenGL identity and final QEMU argv diagnostics.
+    # https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/android-qemu2-glue/main.cpp
     return [str(sdk / "emulator/emulator"), "-port", "5554", "-avd", AVD_NAME,
             "-no-window", "-gpu", SOFTWARE_GPU_SELECTOR, "-noaudio", "-no-boot-anim", "-no-snapshot",
             "-timezone", "Etc/UTC",
-            "-accel", "off", "-feature", "-HVF,-Vulkan", "-show-kernel", "-logcat", "*:V",
-            "-logcat-output", str(diagnostics / "guest-startup-logcat.txt")]
+            "-accel", "off", "-feature", "-HVF,-Vulkan", "-verbose", "-show-kernel", "-logcat", "*:V",
+            "-logcat-output", str(diagnostics / "guest-startup-logcat.txt"), "-qemu", "-smp", "2"]
 
 
 def keyguard_dismissed(output):
