@@ -68,6 +68,7 @@
 -keep class com.battlesbudz.jarvis.v2.actions.OwnerRecognitionMode { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.LockVerdict { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ToolCapabilityProbe { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AndroidToolGatesKt { *; }
 -keep class com.battlesbudz.jarvis.v2.ui.PhoneTaskPanelKt { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.NativeActionDecoder { *; }
 -keep class com.battlesbudz.jarvis.v2.ai.ToolCall { *; }

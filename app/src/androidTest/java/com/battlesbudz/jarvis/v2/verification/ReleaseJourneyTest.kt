@@ -1759,6 +1759,13 @@ class ReleaseJourneyTest {
         } finally {
             runCatching { device.executeShellCommand("locksettings clear --old 1234") }
             device.wakeUp()
+            // A non-secure swipe keyguard can remain after the PIN is
+            // cleared; dismiss it so later journeys find the app UI.
+            runCatching { device.executeShellCommand("wm dismiss-keyguard") }
+            if (keyguard?.isKeyguardLocked == true) {
+                device.swipe(device.displayWidth / 2, device.displayHeight * 4 / 5,
+                    device.displayWidth / 2, device.displayHeight / 5, 20)
+            }
         }
         assertFalse("PIN must be cleared so later journeys run unlocked",
             keyguard?.isDeviceLocked == true)
