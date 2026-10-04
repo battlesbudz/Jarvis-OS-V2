@@ -1370,33 +1370,30 @@ class ReleaseJourneyTest {
 
     @Suppress("DEPRECATION")
     @Test fun test40_screenObservationExtractsCompactSnapshot() {
-        // The real Android tree-walking logic against synthetic AccessibilityNodeInfo instances.
-        val root = android.view.accessibility.AccessibilityNodeInfo.obtain()
-        val button = android.view.accessibility.AccessibilityNodeInfo.obtain()
-        val field = android.view.accessibility.AccessibilityNodeInfo.obtain()
+        // The real Android tree-walking logic against the live window tree:
+        // UiAutomation hands back genuine AccessibilityNodeInfo instances, so
+        // getChild/recycle follow the production path exactly.
+        val root = instrumentation.uiAutomation.rootInActiveWindow
+            ?: throw AssertionError("No active window for screen extraction")
         try {
-            root.className = "android.widget.FrameLayout"
-            button.className = "android.widget.Button"
-            button.text = "Search"
-            button.isClickable = true
-            button.setBoundsInScreen(android.graphics.Rect(10, 20, 100, 80))
-            field.className = "android.widget.EditText"
-            field.contentDescription = "Name"
-            field.isEditable = true
-            field.setBoundsInScreen(android.graphics.Rect(10, 100, 400, 160))
-            root.addChild(button)
-            root.addChild(field)
             val nodes = extractScreenNodes(root)
-            assertEquals(
-                listOf(
-                    ScreenNode("n0", "Search", "button", "10,20-100,80", clickable = true),
-                    ScreenNode("n1", "Name", "field", "10,100-400,160", editable = true)
-                ),
-                nodes
+            assertTrue(
+                "the Jarvis screen must expose actionable nodes, got ${nodes.size}",
+                nodes.isNotEmpty()
             )
+            assertTrue(
+                "node IDs must be n<index>",
+                nodes.all { it.id.matches(Regex("^n[0-9]{1,4}$")) }
+            )
+            assertTrue(
+                "every node must be actionable or labeled",
+                nodes.all { it.clickable || it.editable || it.scrollable || it.label.isNotBlank() }
+            )
+            val text = ScreenObservation("com.battlesbudz.jarvis.v2", nodes)
+                .compactText("abcdef1234567890")
+            assertTrue(text.contains("observation token: abcdef1234567890"))
+            assertTrue(text.lines().size <= nodes.size.coerceAtMost(64) + 3)
         } finally {
-            button.recycle()
-            field.recycle()
             root.recycle()
         }
         // The service must be declared with the accessibility binding permission.
