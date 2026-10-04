@@ -76,6 +76,13 @@ CI evidence:
 - Run 37235512906 (M2 build, repair commit): FAILED at `compileReleaseKotlin`
   — one Kotlin syntax error in `ReleaseJourneyTest.kt` test54
   (unbalanced parens in the `workflows.revise(...)` statement).
+- Run 37236850780 (M2 build, repair commit): FAILED at `testReleaseUnitTest`
+  — two test failures: `DurableToolTaskTest.schemaOneMigratesWithoutPromotingLegacyWork`
+  (expected schema 2, M2 bumped the file format to 3 — updated the
+  expectation; v2 files still migrate cleanly) and
+  `M2WorkflowsTest.draftIsSavedDisabledAndShowsPreview` (test bug: two
+  separate ledgers, so `preview` could not find the draft — fixed to one
+  ledger instance).
 - Run <run-id>: <result>
 - Release: `v0.1.0-build.<NNN>` (published <date>) with app-release.apk +
   app-compact.apk, titled "Jarvis OS V2 feature/muse-tools build <NNN> (M2 workflows)".

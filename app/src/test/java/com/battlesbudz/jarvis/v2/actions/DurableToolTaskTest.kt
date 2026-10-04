@@ -242,7 +242,7 @@ class DurableToolTaskTest {
         val ledger = ToolTaskLedger(FileToolTaskStore(file))
         ledger.recoverAfterRestart()
         assertEquals(ToolTaskState.UNKNOWN_OUTCOME, ledger.get(id)?.state)
-        assertEquals(2, JSONObject(file.readText()).getInt("schemaVersion"))
+        assertEquals(3, JSONObject(file.readText()).getInt("schemaVersion"))
         assertTrue(ledger.journal().groups.isEmpty())
     }
 

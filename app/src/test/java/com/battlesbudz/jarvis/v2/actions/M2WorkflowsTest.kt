@@ -150,9 +150,10 @@ class M2WorkflowsTest {
     private fun ledger() = WorkflowLedger(InMemoryToolTaskStore(), now)
 
     @Test fun draftIsSavedDisabledAndShowsPreview() {
-        val saved = ledger().saveDraft(definition())
+        val l = ledger()
+        val saved = l.saveDraft(definition())
         assertFalse(saved.enabled)
-        val preview = ledger().preview(saved.id)
+        val preview = l.preview(saved.id)
         assertTrue(preview.contains("Evening wind-down"))
     }
 
