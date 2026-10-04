@@ -2523,9 +2523,9 @@ class ReleaseJourneyTest {
                 val scrollStarted = SystemClock.uptimeMillis()
                 if (SystemClock.uptimeMillis() >= deadline) break
                 android.util.Log.i("JarvisVerification", "benchmark_navigation_dispatch selector=$selector direction=$direction mode=${if (hold) "held_text" else if (fine) "fine" else "blind"} requireSafeTapBounds=$requireSafeTapBounds beforeTarget=$bounds beforeViewport=$viewport beforeRows=${before.receipt} stroke=$stroke x=$swipeX fromY=$fromY toY=$toY steps=$steps gestures=${swipes.get()} reversedAtEdge=$reversedAtEdge remainingMs=${deadline - scrollStarted}")
-                // API 30's metric search traversed both edges without observing
-                // the narrow label. Overlap successive viewports and hold the
-                // endpoint for 250 ms, as UiAutomator's own scroll gesture does.
+                // Overlap successive discovery viewports and hold the endpoint
+                // for 250 ms, as UiAutomator's own scroll gesture does. This is a
+                // bounded settlement trial, not proof of the stale-node cause.
                 // The public point path still requires successful real injection;
                 // viewport observations determine progress, not scroll events.
                 val dispatched = if (hold) device.swipe(arrayOf(
@@ -2576,14 +2576,16 @@ class ReleaseJourneyTest {
             AtomicInteger(), requireSafeTapBounds = false, holdTextDiscovery = holdDiscovery)
     }
 
-    private fun benchmarkClickEnabled(selector: BySelector, towardTop: Boolean = false, inDialog: Boolean = false) {
+    private fun benchmarkClickEnabled(selector: BySelector, towardTop: Boolean = false, inDialog: Boolean = false,
+        holdDiscovery: Boolean = false) {
         val deadline = SystemClock.uptimeMillis() + 15_000
         val swipes = AtomicInteger()
         while (SystemClock.uptimeMillis() < deadline) {
             val ready = observeBenchmarkNavigation {
                 var ready: UiObject2? = null
                 try {
-                    val control = benchmarkFindVisible(selector, towardTop, inDialog, deadline, swipes)
+                    val control = benchmarkFindVisible(selector, towardTop, inDialog, deadline, swipes,
+                        holdTextDiscovery = holdDiscovery)
                     if (control.isEnabled) {
                         val before = control.visibleBounds
                         device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
@@ -2679,7 +2681,7 @@ class ReleaseJourneyTest {
             assertNull("Original ASR content must not become retained content", score.hypothesis)
 
             // A completed pipeline can still have an incorrect result: human review is independent.
-            benchmarkClickEnabled(By.res("benchmark_quality_task_FAIL"))
+            benchmarkClickEnabled(By.res("benchmark_quality_task_FAIL"), holdDiscovery = true)
             benchmarkClickEnabled(By.res("benchmark_quality_intent_PASS"))
             benchmarkClickEnabled(By.res("benchmark_quality_factuality_FAIL"))
             assertFalse(benchmarkScrollTo(By.res("pipeline_benchmark_quality_save")).isEnabled)

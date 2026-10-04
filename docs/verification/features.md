@@ -936,6 +936,46 @@ is not the Build 939 EmojiCompat abort, and neither overshoot nor cache causalit
 is established. The next candidate retains full acceptance and bounded
 before/after row receipts for diagnosis; no tap margin or assertion is relaxed.
 
+## Build 944 bounded quality-control discovery
+
+[Build 944](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37179672067)
+tests head `9beef0b0b7ee37227bce5dd1819fceaf6cf2cf26`, actual checkout
+`fcf6deeb790a344e579132f04df14001a17cfc09`, tree
+`9e4868721dff433da7ba8e44d1871377a0bffa8a`. Release instrumentation compiles;
+all 1,005 JVM cases, 187 Python helpers, four recorded-speech checks, both signed
+APK builds and native 16 KB audits pass. API 30 and the API 35 compact/API 36
+normal phone jobs pass. The full gate remains blocked by the true 16 KB profile;
+API 29 and Fold are still running at this checkpoint.
+
+The true 16 KB artifact `11295260609`, ZIP SHA-256
+`99d7949ac8a9e2f4a3e7522505012c5be15554135e3917c7285d3f05e7158b66`,
+passes upgrade from Build 907 and completes all 49 main cases. Only test45 fails
+at the first `benchmark_quality_task_FAIL` lookup; test27 and the spoken-stop
+test48 pass. Main failure prevents restart, lifecycle, layout and native-loading
+phases, so their missing evidence is secondary fallout, not passing coverage.
+
+Fresh navigation receipts show ten 1,109-pixel/12-step blind gestures in a
+1,584-pixel viewport: three downward moves reach expanded metrics, two stationary
+observations cause one reversal, and three upward moves return to the summary
+before two stationary observations end lookup with 5.115 seconds left. The
+second and seventh gestures lack after-observation receipts after stale-node
+refresh. Sampled content skips the quality region before metrics; production
+places human review before metrics in the same expanded sample. A transient
+ByMatcher warning names the correct Task FAIL tag with bounds crossing the
+viewport's top edge, followed by failed refresh and null lookup. The inspected
+final PNG shows scored recognition and two unreviewed attempts. Teardown XML
+does not establish search-time bounds. These observations support a discovery
+sampling correction; they do not prove a fling, cache or product cause.
+
+The next candidate opts only the first Task FAIL search into the existing
+half-viewport, repeated-endpoint physical gesture. Known-bounds fine alignment,
+full safe-tap bounds, 300-millisecond stable enabled observation, successful
+injection and exactly one tap remain required. The same 15-second deadline,
+14-gesture cap, two stationary observations and one reversal remain. Other
+controls and the API 30 read-only TTS opt-in retain their existing behavior.
+All scoring, clipboard privacy, export, persistence and reset assertions remain;
+fresh full exact-candidate verification is required before publication.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,
