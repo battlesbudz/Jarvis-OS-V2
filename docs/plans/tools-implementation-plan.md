@@ -5,6 +5,78 @@ Follow-up source baseline: `feature-tools` at `bfeca6d06dc3dba583e0f92e812046e9e
 Created: September 24, 2026. Updated: September 30, 2026 (America/New_York). Owner: Justin Battles.
 Status: existing tools scope retained; September 29 autonomous messaging/warm-inference requirements integrated. New phases below are planned, not implemented or verified by this documentation update.
 
+## Implementation checkpoint — October 4, 2026 (M1d task/conversation scheduling)
+
+M1d is implemented on `feature/muse-tools` (no PR, no merge), building on the
+conversation/voice/task code rather than duplicating it. Voice lifecycle, task
+lifecycle and the screen lease stay independent of each other.
+
+- Explicit silent work (D21/D22, T05): `voice/SilentWorkMode.kt` holds the
+  posture. A "Work silently" toggle on the voice call screen (`ui/`,
+  `MainActivity`, `JarvisApp`) puts Jarvis into silent work; ordinary speech
+  is ignored by the `ContinuousActionSession` gate until "hey jarvis" wakes
+  back up. Tasks continue untouched; waking never restarts them. Stop/cancel
+  controls are always honored while silent. A required question (pending panel
+  approval) temporarily opens a 30s answer window (`refreshPhoneTasks`
+  requests it; panel approve/deny closes it); the mode returns to silence
+  afterwards. Typed input bypasses the gate (deliberate input is never
+  ignored).
+- Concurrent independent tasks (D18, T02): `actions/TaskScheduling.kt`
+  classifies each task's resource (screen lease, app target, none). A
+  follow-up needing the screen lease or the same app queues behind the running
+  work with a truthful waiting receipt; independent work runs now. Normal chat
+  never triggers tool calls (unchanged).
+- Task-targeted cancellation (D19/D24, T03): new D24 phrases — "stop your
+  task"/"stop this task"/"stop my task"/"cancel your task" (current task),
+  "stop all tasks"/"cancel all tasks" (all). `TaskStopRouter` maps parsed
+  controls to an exact scope (speech-only / single task by identity / current
+  / all / queued-only); `ToolTaskLedger.cancelTaskById` and
+  `cancelAllTasks` execute it. Speech-only stop preserves work; completed
+  effects are never replayed. Voice stop controls now reach the durable
+  ledger at both cancel call sites.
+- Call-end continuity (T04): ending a call detaches audio but never cancels
+  admitted work. A voice task finishing after its call ended posts a silent
+  notification with its result (chat already persists it through the voice
+  call store). A finished task group releases the screen lease, hides the
+  Stop overlay and posts a terminal projection notification.
+- Approval-UI → session `admit()` wiring (M1c handoff, D11/D13/D23, T07):
+  `actions/ScreenApprovalAdmission.kt` binds the panel's Approve to
+  `ScreenControlSession.admit()`. The approval must be unconsumed and name
+  the task's exact action+revision; a changed target invalidates the prior
+  approval (the stale approval is denied, never admitted). Approval
+  consumption and dispatch eligibility still commit together in the ledger
+  `claim`; a failed claim releases any lease admitted for it. Screen tools
+  are claimable only under exact approval — never via routine grants or bare
+  user-request.
+- Model-proposed screen mutations never auto-dispatch (D23): `validateBatch`
+  partitions them into `Batch.NeedsApproval`; `runNative` parks each one for
+  the user's explicit approval via a new `onNeedsApproval` callback (default
+  null preserves the historical reject for existing callers). The
+  conversation runtime parks them as WAITING_APPROVAL ledger attempts with a
+  truthful not-yet receipt.
+- Chat/notification progress (D35, T04, T15): one addressable
+  `TaskStatusProjection` per group feeds chat bubbles, the panel and
+  notifications alike. `TaskProgressNotification` posts on a LOW-importance
+  silent channel — during Do Not Disturb it posts immediately and silently,
+  never deferred; when permission is denied it is an honest no-op.
+- JVM coverage in `SilentWorkModeTest` and `M1dTaskSchedulingTest`
+  (scheduling policy, stop phrases/router, admission, changed-target
+  invalidation, dispatch eligibility, cancellation by identity, projection,
+  proposal parking); release journeys `test45` (panel approve admits the
+  session and dispatches exactly; stale approval denied), `test46`
+  (lease-conflict queues), `test47` (DND silent notification), `test48`
+  (call-end continuity + lease release + projection). The named contract is
+  now 48 methods. `FinalVoiceToolGuard` untouched.
+
+M1d remaining: none — silent work, wake, independent/queued scheduling,
+targeted cancellation, call-end continuity, approval→admit wiring and
+chat/notification progress are implemented. M1e device validation, M2–M8 and
+A0–A6 are still planned. Spoken yes/no approval during the answer window is
+future work (the window opens/closes correctly; no production caller of
+`presentQuestion`/`authorizeSpoken` exists yet); real-model screen-tool
+selection, Fold 6 physical behavior and microphone/wake acoustics remain
+unverified.
+
 ## Implementation checkpoint — October 4, 2026 (M1c screen control)
 
 Four new catalog tools on `feature/muse-tools` (renamed from `muse/feature-tools`

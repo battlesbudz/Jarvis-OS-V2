@@ -5,6 +5,124 @@ Epic: [#8](https://github.com/battlesbudz/Jarvis-OS-V2/issues/8). Implementation
 workflow, whose push trigger covers `feature/**`; older entries below still say
 `muse/feature-tools`).
 
+## Item 4: M1d task/conversation scheduling slice — 2026-10-04
+
+Implements explicit silent work, wake reactivation, concurrent independent tasks,
+task-targeted cancellation, call-end continuity, chat/notification progress, and the
+M1c handoff item (approval-UI wiring that calls `ScreenControlSession.admit()`).
+Built on the existing conversation/voice/task code; voice lifecycle, task lifecycle
+and the screen lease stay independent.
+
+Changed files (commits `3c4d89bf` + fixes `47d448ee`, `58cba20b`, `21b937c6`,
+`60e21ba1`, `bc673b1e`, `1dfdb775`; server head
+`1dfdb775dd04df6dee524f710f012c30f4819ca0` on `feature/muse-tools`):
+- `voice/SilentWorkMode.kt` (new, JVM-pure): `SilentWorkController` — explicit
+  silent work ignores ordinary speech until "hey jarvis" wakes back up; tasks
+  continue untouched and waking never restarts them; stop/cancel controls always
+  honored; a required question opens a 30s answer window then returns to silence.
+- `voice/ContinuousActionSession.kt`: optional silent-work gate in `onCaptured`
+  (Ignored→Duplicate, Wake→exit+process, Control passthrough); `onTyped`
+  bypasses the gate; wake-exit callback syncs the UI toggle.
+- `voice/VoiceActionControl.kt`: D24 phrases — "stop your task"/"stop this
+  task"/"stop my task"/"cancel your task" → CancelCurrent; "stop all
+  tasks"/"cancel all tasks" → CancelAll.
+- `actions/TaskScheduling.kt` (new, JVM-pure): `TaskScheduler` (screen-lease /
+  app / none resources; independent tasks run now, conflicting queue with a
+  truthful waiting receipt — D18, T02) and `TaskStopRouter` (speech-only /
+  single-task-by-identity / current / all / queued-only scopes — D19/D24, T03).
+- `actions/ToolTaskLedger.kt`: `cancelTaskById`, `cancelAllTasks` (completed
+  effects never replayed); `claim`/`revise` accept screen mutations under exact
+  approval only; `isDispatchEligible` — screen tools claimable only under
+  EXACT_APPROVAL, never via routine grants or bare user-request.
+- `actions/ScreenApprovalAdmission.kt` (new, JVM-pure): panel Approve admits
+  the session grant with exact-approval semantics — unconsumed approval naming
+  the task's exact action+revision; changed target invalidates the prior
+  approval (D13); failed claim releases the admitted lease.
+- `actions/ActionTurnRunner.kt`: `Batch.NeedsApproval`; `validateBatch`
+  partitions screen mutations out (never auto-dispatch, D23);
+  `runNative(onNeedsApproval)` parks them for approval (default null preserves
+  the historical reject); `same()` now recognizes `screen_observe` so the
+  model-proposed observation validates against its plan step.
+- `actions/TaskProgressProjection.kt` (new, JVM-pure): one addressable
+  `TaskStatusProjection` per group feeding chat, panel and notifications.
+- `actions/TaskProgressNotification.kt` (new, Android): IMPORTANCE_LOW silent
+  channel — posts immediately during DND, never deferred; honest no-op when
+  permission denied.
+- `JarvisRuntime.kt`: `silentWork` controller + UI state; panel approve runs
+  scheduler check → session admit → atomic claim → Stop overlay; denied lease
+  stays WAITING_APPROVAL; `projectPhoneTask` projects + notifies + releases
+  lease/hides overlay on terminal; voice stop controls reach the ledger;
+  call-end terminal voice tasks post notifications; answer window opens for
+  pending approvals while silent.
+- `conversation/ConversationRuntime.kt`: `runNative` parks model-proposed
+  screen mutations as WAITING_APPROVAL ledger attempts with a truthful receipt.
+- `ui/` (`VoiceCallScreen`, `JarvisApp`, `MainActivity`): "Work silently"
+  toggle with status text.
+- `app/proguard-rules.pro`: keep rules for the M1d scheduling boundary
+  (test45-48 drive it from the instrumentation DEX).
+- Tests: `SilentWorkModeTest.kt`, `M1dTaskSchedulingTest.kt` (JVM); emulator
+  test45 (panel approve admits the session and dispatches exactly; stale
+  approval denied), test46 (lease-conflict queues), test47 (DND silent
+  notification), test48 (call-end continuity + lease release + projection).
+  `scenarios.json`: 48 tests. `docs/verification/features.md`: 48 methods.
+- `docs/plans/tools-implementation-plan.md`: M1d implementation checkpoint.
+- `FinalVoiceToolGuard` untouched.
+
+Fixes during CI:
+- `applyLedgerStopControl` used the internal actions-package `isTerminal()`
+  without import; `Notification.Builder.setSilent()` is androidx-only — the
+  IMPORTANCE_LOW channel already delivers silently. Fixed in `58cba20b`.
+- test45 missing `ExperimentalComposeUiApi` OptIn for `testTagsAsResourceId`.
+  Fixed in `21b937c6`.
+- `ActionTurnRunner.same()` returned false for `screen_observe`, so model
+  observations never validated; 3 JVM tests failed. Fixed in `60e21ba1`.
+- `FileToolTaskStore.validateRequest()` hardcoded the four original tools, so
+  admitting any screen/destination tool to the file-backed ledger threw —
+  screen tasks could never persist (critical; test45 caught it). Now validates
+  against `MobileToolCatalog`. Fixed in `bc673b1e`.
+- R8 renamed the new M1d classes used directly by the instrumentation DEX
+  (test46-48: IncompatibleClassChangeError/NoSuchMethodError/
+  NoClassDefFoundError). Fixed in `1dfdb775` with keep rules following the M1c
+  convention.
+- Own-group lease self-conflict: approving a later step of the group holding
+  the lease was misclassified as a conflict. `runningTaskResources` now
+  excludes the task's own group. Fixed in `47d448ee`.
+
+Acceptance: per `.agents/skills/jarvis-verify/SKILL.md` — build + both emulator
+variants + consolidated receipt, all green on the final head. Named contract:
+48/48 on API 30 and API 35, including new test45-48; 854 JVM unit tests green.
+
+CI evidence:
+- Run 37204422484 (first attempt): build FAILED — `isTerminal` unresolved in
+  `JarvisRuntime`, `setSilent` unavailable on framework `Notification.Builder`.
+- Run 37204796854 (retry): build FAILED — test45 missing OptIn.
+- Run 37207317537 (retry): build SUCCESS (854 JVM green), both emulator
+  variants FAILED 3 JVM tests — `same()` rejected `screen_observe`.
+- Run 37208335416 (retry): build SUCCESS, both emulator variants FAILED
+  test45 — file-backed ledger rejected screen tools in `validateRequest`.
+- Run 37210119461 (retry): build SUCCESS, both emulator variants FAILED
+  test46-48 — R8 renamed M1d classes (no keep rules).
+- Run 37211912741: ALL GREEN — build + both emulator variants (48/48 named
+  tests on API 30 and API 35, including new test45-48) + consolidated receipt
+  (PASS) + publish.
+- Release: `v0.1.0-build.974` (published 2026-10-04T15:27Z) with
+  app-release.apk + app-compact.apk, titled "Jarvis OS V2 feature/muse-tools
+  build 974 (M1d scheduling)".
+- Run URLs: https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37204422484,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37204796854,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37207317537,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37208335416,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37210119461,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37211912741
+- Release: https://github.com/battlesbudz/Jarvis-OS-V2/releases/tag/v0.1.0-build.974
+
+Unverified: real-model selection of the screen tools (needs on-device Gemma);
+physical Fold 6 behavior for observation/tap/scroll/type and the real
+accessibility-service enablement; microphone/wake-word acoustics for the silent
+gate; spoken yes/no approval during the answer window (window opens/closes
+correctly; no production caller of `presentQuestion`/`authorizeSpoken` yet);
+on-device approval UX for the panel flow.
+
 ## Item 3: M1c screen control slice (screen_observe, screen_tap, screen_scroll, screen_type) — 2026-10-04
 
 Implements compact screen observation, tap/scroll/type with verified targets,
