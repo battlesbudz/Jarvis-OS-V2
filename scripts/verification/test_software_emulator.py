@@ -389,6 +389,67 @@ class SoftwareSessionTest(unittest.TestCase):
             self.assertNotEqual("ready", session.report["status"])
             self.assertEqual(["Host receipt storage unavailable"] * 2, session.report["host_resource_errors"])
 
+    def test_graphics_receipt_failure_cannot_replace_boot_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            session = SoftwareSession(PROFILE, Path(temporary) / "evidence", "/sdk", now=lambda: 0)
+            original_open = Path.open
+
+            def open_file(path, *args, **kwargs):
+                if path.name == "emulator-stdout.txt" and args == ("rb",):
+                    raise OSError("Renderer receipt unavailable")
+                return original_open(path, *args, **kwargs)
+
+            with patch("software_emulator.subprocess.Popen", return_value=Mock(pid=12345)), \
+                    patch.object(session, "capture_host_resources"), \
+                    patch.object(session, "wait_ready", side_effect=TimeoutError("Original boot failure")), \
+                    patch.object(Path, "open", open_file):
+                with self.assertRaisesRegex(TimeoutError, "Original boot failure"):
+                    session.boot()
+            self.assertEqual("Renderer receipt unavailable", session.report["graphics"]["receipt_error"])
+            self.assertFalse(session.report["passed"])
+            self.assertEqual("booting", session.report["status"])
+
+    def test_graphics_receipt_records_native_selection_without_assuming_requested_backend(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            session = SoftwareSession(PROFILE, Path(temporary) / "evidence", "/sdk", now=lambda: 0)
+            raw = ("INFO         | Graphics backend: gfxstream\n"
+                   "INFO         | emuglConfig_init: vulkan_mode_selected:swiftshader gles_mode_selected:swangle\n"
+                   "INFO         | Selecting Vulkan device: SwiftShader Device (LLVM 10.0.0), Version: 1.3.0\n"
+                   "INFO         | Graphics Adapter Vendor Google\n"
+                   "INFO         | Graphics Adapter Android Emulator OpenGL ES Translator (ANGLE (SwiftShader))\n"
+                   "INFO         | Graphics API Version OpenGL ES 3.0\n")
+            (session.diagnostics / "emulator-stdout.txt").write_text(raw)
+            session.capture_graphics_backend()
+            graphics = session.report["graphics"]
+            self.assertEqual("software", graphics["requested_selector"])
+            self.assertEqual("gfxstream", graphics["graphics_backend"])
+            self.assertEqual("swiftshader", graphics["vulkan_mode"])
+            self.assertEqual("swangle", graphics["gles_mode"])
+            self.assertEqual("Android Emulator OpenGL ES Translator (ANGLE (SwiftShader))", graphics["adapter"])
+            self.assertEqual("OpenGL ES 3.0", graphics["api_version"])
+            self.assertEqual("emulator-stdout.txt", graphics["receipt_source"])
+            self.assertTrue(graphics["backend_observed"])
+            self.assertEqual(5, len(graphics["backend_receipt"]))
+            self.assertFalse(session.report["passed"], "Observed renderer alone does not pass any device gate")
+
+    def test_graphics_receipt_is_bounded_and_cannot_infer_backend_from_guest_or_help_text(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            session = SoftwareSession(PROFILE, Path(temporary) / "evidence", "/sdk", now=lambda: 0)
+            raw = ("supported modes: software lavapipe swiftshader swangle\n"
+                   "[    0.000000] Graphics backend: gfxstream\n"
+                   "I guest: emuglConfig_init: vulkan_mode_selected:lavapipe gles_mode_selected:swangle\n")
+            with (session.diagnostics / "emulator-stdout.txt").open("w") as stream:
+                stream.write(raw + "x" * (256 * 1024) + "\n")
+                stream.write("INFO         | Graphics backend: excluded beyond bounded capture\n")
+            session.capture_graphics_backend()
+            graphics = session.report["graphics"]
+            self.assertEqual(256 * 1024, graphics["receipt_bytes"])
+            self.assertFalse(graphics["backend_observed"])
+            self.assertEqual([], graphics["backend_receipt"])
+            self.assertNotIn("graphics_backend", graphics)
+            self.assertNotIn("vulkan_mode", graphics)
+            self.assertNotIn("gles_mode", graphics)
+
     def test_unlock_failure_retains_startup_evidence_and_never_reaches_ready(self):
         clock = Clock()
         with tempfile.TemporaryDirectory() as temporary:
@@ -584,7 +645,7 @@ class SoftwareSessionTest(unittest.TestCase):
         self.assertEqual("-HVF", command[command.index("-feature") + 1])
         self.assertEqual("*:V", command[command.index("-logcat") + 1])
         self.assertEqual("/evidence/guest-startup-logcat.txt", command[command.index("-logcat-output") + 1])
-        self.assertEqual("swiftshader_indirect", command[command.index("-gpu") + 1])
+        self.assertEqual("software", command[command.index("-gpu") + 1])
         self.assertNotIn("-no-watchdog", command)
 
     def test_launcher_timezone_does_not_inherit_invalid_host_detection(self):
@@ -615,6 +676,7 @@ class EmulatorPinTest(unittest.TestCase):
         self.calls = []
         self.version = "Android emulator version 37.2.6.0 (build_id 16138043) (CL:N/A)\n"
         self.installed_version = self.version
+        self.gpu_help = reply("GPU modes: auto, host, swiftshader_indirect\n")
         for target, value in (("software_emulator.platform.system", "Darwin"),
                               ("software_emulator.platform.machine", "arm64")):
             patcher = patch(target, return_value=value)
@@ -649,6 +711,8 @@ class EmulatorPinTest(unittest.TestCase):
             shutil.copyfile(self.archive, command[command.index("--output") + 1])
         elif command[-1] == "-version":
             return reply(self.installed_version if command[0] == str(self.original / "emulator") else self.version)
+        elif command[-1] == "-help-gpu":
+            return self.gpu_help
         elif "create" in command:
             config = self.session.avd_home / "jarvis-api29-software.avd/config.ini"
             config.parent.mkdir()
@@ -754,6 +818,41 @@ class EmulatorPinTest(unittest.TestCase):
         self.installed_version = self.version.replace("37.2.6", "37.2.12")
         with self.assertRaisesRegex(ValueError, "actual emulator version"):
             self.session.pin_emulator()
+        self.assert_original_retained()
+
+    def test_native_gpu_help_is_a_bounded_receipt_not_an_exhaustive_capability_gate(self):
+        for help_result in (reply("GPU modes: auto, host, swiftshader_indirect\n"),
+                            reply("GPU modes: software, lavapipe, swangle\n", code=0),
+                            reply("partial native help", code=124)):
+            with self.subTest(code=help_result.returncode, output=help_result.stdout):
+                self.gpu_help = help_result
+                self.session.pin_emulator()
+                command, kwargs = next((command, kwargs) for command, kwargs in reversed(self.calls)
+                                       if command[-1] == "-help-gpu")
+                self.assertEqual([str(self.original / "emulator"), "-help-gpu"], command)
+                self.assertEqual({"deadline": 600, "timeout": 15, "check": False}, kwargs)
+                receipt = self.session.report["graphics"]["native_help"]
+                self.assertEqual(help_result.stdout, receipt["stdout"])
+                self.assertEqual(help_result.stderr, receipt["stderr"])
+                self.assertEqual(help_result.returncode, receipt["exit_code"])
+                self.assertEqual("software" in help_result.stdout, receipt["mentions_software"])
+                self.assertTrue(self.session.report["emulator_pin"]["verified"])
+                self.assertFalse(self.session.report["passed"])
+
+    def test_native_gpu_help_cannot_renew_remaining_pin_budget_or_leave_replacement_after_expiry(self):
+        self.session.deadline = 10
+
+        def help_expires(command, **kwargs):
+            self.assertEqual(10, kwargs["deadline"])
+            result = self.host_command(command, **kwargs)
+            if command[-1] == "-help-gpu":
+                self.clock.pause(10)
+            return result
+
+        self.mock_run.side_effect = help_expires
+        with self.assertRaisesRegex(TimeoutError, "deadline expired"):
+            self.session.pin_emulator()
+        self.assertEqual(10, self.clock.now())
         self.assert_original_retained()
 
     def test_pin_download_and_verification_share_remaining_provisioning_budget(self):

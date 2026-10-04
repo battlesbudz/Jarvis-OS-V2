@@ -826,6 +826,57 @@ repair this earlier failure and is not included. The exact-build receipt fails,
 and all publication jobs are skipped. API 29 remains required in the next full
 run; none of the successful profiles can substitute for it.
 
+## Build 940 legacy observation and API 29 renderer follow-up
+
+The final exact-build receipt, artifact `11292929950`, ZIP SHA-256
+`771b31d098f5c11d71e3acc8e116c82d7e36748660cbc49e8d4e25c277ca0050`,
+rejects Build 940: four of six required profiles are admitted, API 30 has the
+failed metric lookup described above, and API 29 never reaches the controller.
+All three publication jobs are skipped. The passing profiles do not establish a
+clean APK for this revision. External head
+`ee65bd8e4e1c43feef0e3e07ba22ce130bdd61b9` preserves these failures and adds
+the narrow held metric discovery and fresh hierarchy checks described above;
+its Build 942 run remains separate evidence.
+
+API 29 startup artifact `11294101256`, ZIP SHA-256
+`b32034c457bc18866947885b6feb1fbff507f44aad38a84af73c0b09606a6815`,
+verifies the complete pinned emulator and intended resources. The native guest
+stream shows system_server PID 259 killed by the watchdog at 04:45:28 UTC,
+blocked in `HardwareRenderer.nSetStopped` on `android.ui`; replacement PID 1506
+has the same blocked stack. Neither process emits the actual user0 boot-delivery
+completion marker. The final ADB timeout is therefore not evidence of a timely
+completion missed by the probe. The current-PID barrier correctly fails. No
+installation, call-rearm journey or other controller phase runs on this profile.
+
+The retained renderer selection is GLES `swangle` over Vulkan `swiftshader`,
+with ANGLE reporting SwiftShader LLVM 10 and the guest using `skiagl`. The next
+API 29-only compatibility trial replaces deprecated `-gpu swiftshader_indirect`
+with the documented `-gpu software` selector. Android Emulator release notes
+introduce that selector in 36.4.9, before the pinned 37.2.6 version. It selects the
+available software backends; actual startup selection remains evidence to inspect,
+not an assumed Lavapipe result. The image, emulator pin, native ARM64 execution,
+two vCPUs, RAM/heap, physical viewport, stable-PID boot barrier, 900-second boot,
+180-second installation, 60-minute job and complete controller remain required.
+The blocked render stack motivates this experiment but does not prove backend
+causality or a successful boot. Primary references:
+[graphics acceleration options](https://developer.android.com/studio/run/emulator-acceleration#accel-graphics)
+and [Emulator release notes](https://developer.android.com/studio/releases/emulator#36-4-9).
+
+Benchmark discovery also refreshes the legacy accessibility cache through the
+public `UiAutomation.setServiceInfo` API, reapplying the existing service info
+unchanged; API 34 and newer retain public `clearCache`. Android 10/11 framework
+source clears the client cache before applying that info. This establishes the
+mechanism, not that cached nodes caused Build 940's missing metric. Benchmark
+observations use zero implicit getter idle with guaranteed restoration, retain
+explicit settlement, and may re-observe a missing target once after at most
+100 ms within the same 15-second deadline. Before/after discovery receipts
+expose bounded semantic row identities, counts and geometry; private text and
+metric values are not logged. A ready target returns before unrelated diagnostic
+traversal. Full tap bounds, stable enabled observation, one actual tap, gesture
+count, stationary-edge/reversal limits, all exact metric/export/privacy/persistence
+assertions and test48 remain required. Primary source:
+[Android 11 UiAutomation](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-11.0.0_r1/core/java/android/app/UiAutomation.java).
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,

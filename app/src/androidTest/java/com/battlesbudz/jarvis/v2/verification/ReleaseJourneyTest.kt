@@ -2295,9 +2295,50 @@ class ReleaseJourneyTest {
         }
     }
 
+    /** Benchmark observations own their explicit deadline on every supported API. */
+    private inline fun <T> observeBenchmarkNavigation(block: () -> T): T {
+        val configuration = Configurator.getInstance()
+        val savedIdleTimeout = configuration.getWaitForIdleTimeout()
+        configuration.setWaitForIdleTimeout(0)
+        return try { block() } finally { configuration.setWaitForIdleTimeout(savedIdleTimeout) }
+    }
+
+    private fun benchmarkRefreshNavigationCache() {
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            clearNavigationCache()
+        } else {
+            // Android 10/11 UiAutomation.setServiceInfo clears the client cache.
+            // Reapply the current info unchanged, preserving every service flag.
+            val automation = instrumentation.uiAutomation
+            val info = checkNotNull(automation.serviceInfo) { "Benchmark accessibility service is unavailable" }
+            automation.serviceInfo = info
+        }
+    }
+
+    private fun benchmarkFindNavigationObject(selector: BySelector): UiObject2? {
+        benchmarkRefreshNavigationCache()
+        return device.findObject(selector)
+    }
+
+    private fun benchmarkObserveTarget(selector: BySelector, deadline: Long): UiObject2? {
+        if (SystemClock.uptimeMillis() >= deadline) return null
+        val first = benchmarkFindNavigationObject(selector)
+        if (first != null) return first
+        // A missing descendant may be awaiting accessibility settlement. Refresh
+        // and observe once more without spending another gesture or new deadline.
+        val remaining = deadline - SystemClock.uptimeMillis()
+        if (remaining <= 0) return null
+        val pause = remaining.coerceAtMost(100)
+        SystemClock.sleep(pause)
+        if (SystemClock.uptimeMillis() >= deadline) return null
+        val refreshed = benchmarkFindNavigationObject(selector)
+        android.util.Log.i("JarvisVerification", "benchmark_navigation_missing_observation selector=$selector api=${android.os.Build.VERSION.SDK_INT} pauseMs=$pause refreshedTarget=${refreshed?.visibleBounds} remainingMs=${deadline - SystemClock.uptimeMillis()}")
+        return refreshed
+    }
+
     /** Benchmark-only navigation: Compose may export descendants wholly outside a LazyColumn. */
     private fun benchmarkScrollAncestor(control: UiObject2): UiObject2? {
-        clearNavigationCache()
+        benchmarkRefreshNavigationCache()
         var ancestor = control.parent
         repeat(40) {
             val current = ancestor ?: return null
@@ -2308,7 +2349,7 @@ class ReleaseJourneyTest {
     }
 
     private fun benchmarkHasSafeBounds(control: UiObject2): Boolean {
-        clearNavigationCache()
+        benchmarkRefreshNavigationCache()
         val bounds = control.visibleBounds
         val viewport = android.graphics.Rect(24, 24, device.displayWidth - 24, device.displayHeight - 24)
         var ancestor = control.parent
@@ -2327,32 +2368,69 @@ class ReleaseJourneyTest {
             bounds.centerY() >= viewport.top + 24 && bounds.centerY() <= viewport.bottom - 24
     }
 
-    /** Observe actual visible content; Compose need not emit a UiAutomator scroll event. */
-    private fun benchmarkViewportSignature(list: UiObject2): String {
-        clearNavigationCache()
+    private data class BenchmarkViewportObservation(val signature: String, val receipt: String)
+
+    /** Keep raw content only in memory; diagnostic rows expose fixed identities and geometry. */
+    private fun benchmarkViewportObservation(list: UiObject2): BenchmarkViewportObservation {
+        benchmarkRefreshNavigationCache()
         val viewport = list.visibleBounds
         val rows = mutableListOf<String>()
+        val visibleRows = mutableListOf<Pair<android.graphics.Rect, String>>()
+        val visibleMetrics = mutableListOf<String>()
+        val metricKeys = setOf("process_cpu_work_ms", "turn_total_ms", "model_load_ms", "llm_setup_ms",
+            "attachment_preparation_ms", "memory_retrieval_ms", "reference_lookup_ms", "tool_execution_ms",
+            "audio_fallback_ms", "gemma_final_caption_ms", "endpoint_to_preparation_sealed_ms",
+            "request_processing_ms", "microphone_ready_ms", "first_reply_text_ready_ms",
+            "endpoint_to_first_answer_text_ready_ms", "endpoint_to_first_answer_text_ms",
+            "endpoint_to_first_answer_playback_ms", "speech_end_to_first_answer_text_ms",
+            "speech_end_to_first_answer_playback_ms", "reply_dispatch_to_first_answer_text_ms",
+            "asr_load_ms", "asr_capture_ready_ms", "asr_input_audio_ms", "asr_decode_work_ms",
+            "asr_finalization_ms", "asr_first_partial_ms", "asr_endpoint_delay_ms", "asr_max_decode_chunk_ms",
+            "asr_max_backlog_ms", "asr_realtime_factor", "tts_load_ms", "tts_first_text_to_pcm_ms",
+            "tts_first_text_to_playback_ms", "tts_synthesis_ms", "tts_generated_audio_ms", "tts_queue_wait_ms",
+            "tts_playback_starvation_ms", "tts_underruns", "tts_realtime_factor", "asr_wer", "asr_cer")
         fun visit(node: UiObject2, depth: Int) {
             if (depth > 12 || rows.size >= 256) return
             val bounds = node.visibleBounds
             if (bounds.width() <= 0 || bounds.height() <= 0 ||
                 !android.graphics.Rect.intersects(viewport, bounds)) return
-            rows.add("${node.resourceName}|${node.text}|$bounds")
-            node.children.forEach { visit(it, depth + 1) }
+            val resource = node.resourceName
+            val text = node.text
+            val children = node.children
+            rows.add("$resource|$text|$bounds")
+            if (resource != null || text != null || children.isEmpty()) {
+                val tag = resource?.substringAfterLast('/')?.let {
+                    when {
+                        it.startsWith("pipeline_benchmark_sample_") -> "pipeline_benchmark_sample"
+                        it in setOf("pipeline_benchmark_reference", "pipeline_benchmark_quality_save",
+                            "pipeline_benchmark_quality_verify", "pipeline_benchmark_copy_json",
+                            "pipeline_benchmark_reset", "pipeline_benchmark_status") -> it
+                        it.matches(Regex("benchmark_quality_(task|intent|factuality)_(PASS|FAIL|NOT_EVALUATED)")) -> it
+                        it.matches(Regex("benchmark_environment_(UNSPECIFIED|QUIET|NOISY)")) -> it
+                        else -> null
+                    }
+                }
+                val metric = text?.substringBefore(": ")?.takeIf { it in metricKeys }
+                if (metric != null) visibleMetrics.add("$metric:$bounds")
+                visibleRows.add(android.graphics.Rect(bounds) to "${node.className}:${tag ?: metric ?: "other"}:$bounds")
+            }
+            children.forEach { visit(it, depth + 1) }
         }
         list.children.forEach { visit(it, 0) }
-        return rows.joinToString("\n")
+        val ordered = visibleRows.sortedWith(compareBy({ it.first.top }, { it.first.bottom }, { it.first.left }))
+        return BenchmarkViewportObservation(rows.joinToString("\n"),
+            "rows=${ordered.size},first=${ordered.firstOrNull()?.second},last=${ordered.lastOrNull()?.second},metrics=$visibleMetrics,truncated=${rows.size >= 256}")
     }
 
     private fun benchmarkScrollList(): UiObject2? {
-        val screen = findNavigationObject(By.res("pipeline_benchmark_screen")) ?: return null
-        clearNavigationCache()
+        val screen = benchmarkFindNavigationObject(By.res("pipeline_benchmark_screen")) ?: return null
+        benchmarkRefreshNavigationCache()
         return screen.findObject(By.scrollable(true))
     }
 
     /** Text assertions observe rendered content; they do not require room for a tap. */
     private fun benchmarkHasVisibleTextBounds(control: UiObject2): Boolean {
-        clearNavigationCache()
+        benchmarkRefreshNavigationCache()
         val bounds = control.visibleBounds
         if (bounds.width() <= 0 || bounds.height() <= 0) return false
         val viewport = android.graphics.Rect(0, 0, device.displayWidth, device.displayHeight)
@@ -2376,9 +2454,9 @@ class ReleaseJourneyTest {
         var unchangedGestures = 0
         while (SystemClock.uptimeMillis() < deadline) {
             try {
-                val control = findNavigationObject(selector)
+                val control = benchmarkObserveTarget(selector, deadline)
                 if (control != null && hasRequiredBounds(control)) {
-                    if (android.os.Build.VERSION.SDK_INT < 34 || SystemClock.uptimeMillis() < deadline) return control
+                    if (SystemClock.uptimeMillis() < deadline) return control
                     break
                 }
                 if (inDialog) {
@@ -2406,7 +2484,7 @@ class ReleaseJourneyTest {
                 // Dispatch physical gestures as the older release journeys do. The
                 // UiObject2.scroll result conflates a missing accessibility event with
                 // an actual edge, so determine progress from fresh visible content.
-                val before = benchmarkViewportSignature(list)
+                val before = benchmarkViewportObservation(list)
                 // Avoid the unfolded hinge and the system clipboard preview at
                 // the lower left, preserving overlap and the same safe-tap checks.
                 val swipeX = viewport.left + viewport.width() * 3 / 4
@@ -2426,8 +2504,8 @@ class ReleaseJourneyTest {
                 val toY = fromY + if (direction == Direction.DOWN) -stroke else stroke
                 val steps = if (hold) 51 else if (fine) 24 else 12
                 val scrollStarted = SystemClock.uptimeMillis()
-                if (android.os.Build.VERSION.SDK_INT >= 34 && SystemClock.uptimeMillis() >= deadline) break
-                android.util.Log.i("JarvisVerification", "benchmark_navigation_dispatch selector=$selector direction=$direction mode=${if (hold) "held_text" else if (fine) "fine" else "blind"} requireSafeTapBounds=$requireSafeTapBounds beforeTarget=$bounds beforeViewport=$viewport stroke=$stroke x=$swipeX fromY=$fromY toY=$toY steps=$steps gestures=${swipes.get()} remainingMs=${deadline - scrollStarted}")
+                if (SystemClock.uptimeMillis() >= deadline) break
+                android.util.Log.i("JarvisVerification", "benchmark_navigation_dispatch selector=$selector direction=$direction mode=${if (hold) "held_text" else if (fine) "fine" else "blind"} requireSafeTapBounds=$requireSafeTapBounds beforeTarget=$bounds beforeViewport=$viewport beforeRows=${before.receipt} stroke=$stroke x=$swipeX fromY=$fromY toY=$toY steps=$steps gestures=${swipes.get()} reversedAtEdge=$reversedAtEdge remainingMs=${deadline - scrollStarted}")
                 // API 30's metric search traversed both edges without observing
                 // the narrow label. Overlap successive viewports and hold the
                 // endpoint for 250 ms, as UiAutomator's own scroll gesture does.
@@ -2442,19 +2520,19 @@ class ReleaseJourneyTest {
                 }
                 device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
                 if (SystemClock.uptimeMillis() >= deadline) break
-                SystemClock.sleep(150)
-                val fresh = findNavigationObject(selector)
+                SystemClock.sleep((deadline - SystemClock.uptimeMillis()).coerceIn(0, 150))
+                val fresh = benchmarkObserveTarget(selector, deadline)
                 val freshReady = fresh != null && hasRequiredBounds(fresh)
                 val freshBounds = fresh?.visibleBounds
                 val freshList = benchmarkScrollList()
                 val freshViewport = freshList?.visibleBounds
-                android.util.Log.i("JarvisVerification", "benchmark_navigation_observed selector=$selector direction=$direction mode=${if (hold) "held_text" else if (fine) "fine" else "blind"} requireSafeTapBounds=$requireSafeTapBounds afterTarget=$freshBounds afterViewport=$freshViewport ready=$freshReady gestures=${swipes.get()} gestureMs=${SystemClock.uptimeMillis() - scrollStarted} remainingMs=${deadline - SystemClock.uptimeMillis()}")
+                val after = if (freshReady) null else freshList?.let { benchmarkViewportObservation(it) }
+                android.util.Log.i("JarvisVerification", "benchmark_navigation_observed selector=$selector direction=$direction mode=${if (hold) "held_text" else if (fine) "fine" else "blind"} requireSafeTapBounds=$requireSafeTapBounds afterTarget=$freshBounds afterViewport=$freshViewport afterRows=${if (freshReady) "not_required_ready" else after?.receipt} ready=$freshReady gestures=${swipes.get()} reversedAtEdge=$reversedAtEdge gestureMs=${SystemClock.uptimeMillis() - scrollStarted} remainingMs=${deadline - SystemClock.uptimeMillis()}")
                 if (fresh != null && freshReady) {
-                    if (android.os.Build.VERSION.SDK_INT < 34 || SystemClock.uptimeMillis() < deadline) return fresh
+                    if (SystemClock.uptimeMillis() < deadline) return fresh
                     break
                 }
-                val after = freshList?.let { benchmarkViewportSignature(it) }
-                val moved = after != null && after != before
+                val moved = after != null && after.signature != before.signature
                 unchangedGestures = if (moved) 0 else unchangedGestures + 1
                 android.util.Log.i("JarvisVerification", "benchmark_navigation selector=$selector direction=$direction moved=$moved unchangedGestures=$unchangedGestures gestures=${swipes.get()} gestureMs=${SystemClock.uptimeMillis() - scrollStarted} remainingMs=${deadline - SystemClock.uptimeMillis()}")
                 // Require two observed stationary gestures before reversing once.
@@ -2472,11 +2550,11 @@ class ReleaseJourneyTest {
             else "Benchmark text did not become visible: $selector")
     }
 
-    private fun benchmarkScrollTo(selector: BySelector, towardTop: Boolean = false): UiObject2 = observeNavigation {
+    private fun benchmarkScrollTo(selector: BySelector, towardTop: Boolean = false): UiObject2 = observeBenchmarkNavigation {
         benchmarkFindVisible(selector, towardTop, false, SystemClock.uptimeMillis() + 15_000, AtomicInteger())
     }
 
-    private fun benchmarkRevealText(text: String, holdDiscovery: Boolean = false): UiObject2 = observeNavigation {
+    private fun benchmarkRevealText(text: String, holdDiscovery: Boolean = false): UiObject2 = observeBenchmarkNavigation {
         benchmarkFindVisible(By.text(text), false, false, SystemClock.uptimeMillis() + 15_000,
             AtomicInteger(), requireSafeTapBounds = false, holdTextDiscovery = holdDiscovery)
     }
@@ -2485,7 +2563,7 @@ class ReleaseJourneyTest {
         val deadline = SystemClock.uptimeMillis() + 15_000
         val swipes = AtomicInteger()
         while (SystemClock.uptimeMillis() < deadline) {
-            val ready = observeNavigation {
+            val ready = observeBenchmarkNavigation {
                 var ready: UiObject2? = null
                 try {
                     val control = benchmarkFindVisible(selector, towardTop, inDialog, deadline, swipes)
@@ -2493,7 +2571,7 @@ class ReleaseJourneyTest {
                         val before = control.visibleBounds
                         device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
                         SystemClock.sleep(300)
-                        val fresh = findNavigationObject(selector)
+                        val fresh = benchmarkFindNavigationObject(selector)
                         if (SystemClock.uptimeMillis() < deadline && fresh != null && fresh.isEnabled &&
                             benchmarkHasSafeBounds(fresh) && fresh.visibleBounds == before) ready = fresh
                     } else SystemClock.sleep(100)
@@ -2503,7 +2581,7 @@ class ReleaseJourneyTest {
                 ready
             }
             // The observation scope has restored the original idle timeout before any tap.
-            if (android.os.Build.VERSION.SDK_INT >= 34 && SystemClock.uptimeMillis() >= deadline) break
+            if (SystemClock.uptimeMillis() >= deadline) break
             ready?.let {
                 it.click() // Exactly one tap; a dispatch error is never retried.
                 device.waitForIdle()

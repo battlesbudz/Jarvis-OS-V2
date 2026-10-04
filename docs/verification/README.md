@@ -51,8 +51,13 @@ commits. Do not create or merge another PR without Justin's permission.
    window services, successful unlock and actual user0 BOOT_COMPLETED delivery
    for the current system_server before invoking the same full release
    controller. All readiness and unlock checks share the 15-minute boot budget;
-   software rendering uses two vCPUs, 2 GiB RAM, `vm.heapSize=256M` and a
-   540×960 framebuffer at 210 dpi, preserving Pixel 2's exact Android dp viewport.
+   software rendering uses the supported `-gpu software` selector, with the
+   installed binary's supported modes and actual startup backend retained as
+   diagnostics. Build 940's watchdog blocked in `HardwareRenderer.nSetStopped`
+   under ANGLE/SwiftShader; changing the selector is a compatibility experiment,
+   not proof of a rendering cause or faster boot. Two vCPUs, 2 GiB RAM,
+   `vm.heapSize=256M` and a 540×960 framebuffer at 210 dpi preserve Pixel 2's exact
+   Android dp viewport.
    Physical size/density are observed before ready; optional read-only host
    resource receipts consume the existing deadline. These provisioning settings
    are experiments pending a complete passing run, not evidence of a memory cause.

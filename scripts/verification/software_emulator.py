@@ -47,6 +47,11 @@ EMULATOR_PIN = {
 SOFTWARE_AVD_SETTINGS = {"hw.cpu.ncore": "2", "hw.ramSize": "2048M", "vm.heapSize": "256M",
                          "hw.lcd.width": "540", "hw.lcd.height": "960", "hw.lcd.density": "210",
                          "disk.dataPartition.size": "4096M"}
+# Build 940's framework UI watchdog stalled in HardwareRenderer.nSetStopped.
+# The documented selector tests backend compatibility without changing boot gates;
+# actual GLES/Vulkan choices must be observed rather than assumed to be Lavapipe.
+# https://developer.android.com/studio/releases/emulator#36-4-9
+SOFTWARE_GPU_SELECTOR = "software"
 
 
 def require_software_profile(profile, system=None, machine=None):
@@ -203,7 +208,7 @@ def emulator_command(sdk, diagnostics):
     # -logcat-output captures guest logs from startup, including when adb is broken.
     # AOSP f0c183f1, android-qemu2-glue/main.cpp and android/android-emu/android/main-common.c.
     return [str(sdk / "emulator/emulator"), "-port", "5554", "-avd", AVD_NAME,
-            "-no-window", "-gpu", "swiftshader_indirect", "-noaudio", "-no-boot-anim", "-no-snapshot",
+            "-no-window", "-gpu", SOFTWARE_GPU_SELECTOR, "-noaudio", "-no-boot-anim", "-no-snapshot",
             "-timezone", "Etc/UTC",
             "-accel", "off", "-feature", "-HVF", "-show-kernel", "-logcat", "*:V",
             "-logcat-output", str(diagnostics / "guest-startup-logcat.txt")]
@@ -314,7 +319,8 @@ class SoftwareSession:
         self.emulator = None
         self.report = {"schema": 1, "passed": False, "profile": profile,
                        "acceleration": "software", "boot_timeout_seconds": profile["boot_timeout"],
-                       "status": "provisioning", "errors": []}
+                       "status": "provisioning", "errors": [],
+                       "graphics": {"requested_selector": SOFTWARE_GPU_SELECTOR}}
 
     def run(self, command, *, deadline=None, timeout=60, check=True, input=None):
         deadline = self.deadline if deadline is None else min(deadline, self.deadline)
@@ -390,6 +396,15 @@ class SoftwareSession:
                 candidate.rename(original)
                 proof["installed_version_output"] = require_pinned_version(
                     self.run([str(original / "emulator"), "-version"], deadline=deadline))
+                # Native help is a receipt, not an exhaustive parser capability
+                # contract. Actual startup/backend selection and readiness decide
+                # whether this pinned binary can run the documented selector.
+                help_result = self.run([str(original / "emulator"), "-help-gpu"],
+                                       deadline=deadline, timeout=15, check=False)
+                self.report["graphics"]["native_help"] = {
+                    "exit_code": help_result.returncode, "stdout": help_result.stdout,
+                    "stderr": help_result.stderr,
+                    "mentions_software": bool(re.search(r"\bsoftware\b", help_result.stdout))}
                 remaining(deadline, self.now)
             except (OSError, ValueError, RuntimeError, TimeoutError):
                 if original.exists():
@@ -456,6 +471,39 @@ class SoftwareSession:
         remaining(min(deadline, self.deadline), self.now)
         self.report["display"] = {"width": 540, "height": 960, "density_dpi": 210}
 
+    def capture_graphics_backend(self):
+        """Read bounded, already captured startup output; never start another probe."""
+        graphics = self.report["graphics"]
+        try:
+            with (self.diagnostics / "emulator-stdout.txt").open("rb") as stream:
+                raw = stream.read(256 * 1024)
+        except OSError as error:
+            graphics["receipt_error"] = str(error)
+            return
+        graphics["receipt_source"] = "emulator-stdout.txt"
+        graphics["receipt_bytes"] = len(raw)
+        text = raw.decode(errors="replace")
+        # Only the native renderer initialization statements identify actual
+        # backends. Kernel/guest mentions of software graphics do not qualify.
+        patterns = {
+            "graphics_backend": r"^INFO\s*\| Graphics backend: (.+)$",
+            "selected_modes": r"^INFO\s*\| emuglConfig_init: vulkan_mode_selected:(\S+) gles_mode_selected:(\S+)\s*$",
+            "adapter": r"^INFO\s*\| Graphics Adapter (?!Vendor )(.+)$",
+            "api_version": r"^INFO\s*\| Graphics API Version (.+)$",
+            "vulkan_device": r"^INFO\s*\| Selecting Vulkan device: (.+)$"}
+        evidence = []
+        for field, pattern in patterns.items():
+            matches = list(re.finditer(pattern, text, re.MULTILINE))
+            if matches:
+                evidence.extend(match.group(0) for match in matches)
+                if field == "selected_modes":
+                    graphics["vulkan_mode"], graphics["gles_mode"] = matches[-1].groups()
+                else:
+                    graphics[field] = matches[-1].group(1)
+        graphics["backend_observed"] = all(field in graphics for field in
+                                            ("graphics_backend", "vulkan_mode", "gles_mode", "adapter"))
+        graphics["backend_receipt"] = evidence
+
     def boot(self):
         deadline = min(self.deadline, self.now() + self.profile["boot_timeout"])
         command = emulator_command(self.sdk, self.diagnostics.resolve())
@@ -484,6 +532,7 @@ class SoftwareSession:
             self.require_display(deadline)
             self.report["status"] = "ready"
         finally:
+            self.capture_graphics_backend()
             self.capture_host_resources("boot-ready" if self.report["status"] == "ready" else "boot-failed", deadline)
         print("API 29 boot flag, input/activity/package/window services and unlock succeeded", flush=True)
 
