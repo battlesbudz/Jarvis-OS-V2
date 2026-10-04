@@ -590,7 +590,7 @@ no input-dispatch trace proves exclusive causality. The benchmark path now uses
 the right quarter of the actual viewport (`x=789` on this phone, `x=1305` on
 Build 936's legacy unfolded profile), avoiding the observed clipboard preview
 and central hinge. The new Pixel Fold uses its own observed viewport.
-Model-list gestures retain their left-quarter path. Twelve steps, 15–85% stroke,
+Model-list gestures retain their left-quarter path. At that revision, twelve steps and a 15–85% stroke,
 all deadlines, full/safe/stable bounds, gesture limits and single-tap checks stay
 unchanged. Actual folded clipboard geometry is not inferred from this phone PNG;
 the main foldable benchmark journey runs unfolded. A full fresh matrix is required.
@@ -655,6 +655,82 @@ loader receipts, true fold/unfold commands, 45-second dimension waits, active
 call and draft continuity, all six profiles and all other checks remain required.
 This is a provisioning correction pending actual folded/unfolded evidence.
 Official catalog: https://dl.google.com/android/repository/repository2-3.xml
+
+## Build 937 benchmark navigation and device provisioning
+
+[Build 937](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37174425659)
+tests head `b54087e327f8bb16569cbff2eda63e05e8ef9b09`, actual checkout
+`4cb20365f4d34c5d5ee9be72b16b48ecd58fb024`. Its signed build, 1,005 JVM cases,
+recorded speech and native packaging audits pass. API 30 passes all required
+device phases. Three other completed profiles each pass their upgrade and 48 of
+49 main cases, failing different steps in test45. These are failed results,
+not evidence that a repaired candidate passes.
+
+API 36 phone artifact `11293530650` fails the first reference-button approach
+at line 2511. API 35 compact artifact `11293740180` passes reference scoring,
+quality review and JSON privacy checks, then fails the restored reference-button
+visibility assertion at line 2578. Their navigation logs rediscover the target
+but reverse direction after another full stroke; both finish at an observed edge
+with about five seconds remaining. Inspected failure PNGs show the expanded
+card's lower metrics, without a clipboard overlay or launcher modal. The phone
+XML reflects cleanup after the failure, so it does not prove a missing control.
+
+The explicit harness correction uses a short, slower physical approach only
+when a positive-size target rectangle has been discovered: at most a quarter of
+the viewport, 80 injection steps, in the same right-quarter lane. Empty exported
+bounds cannot change direction. Undiscovered-target search retains its existing
+15–85% stroke and 12 steps. Fresh bounds, stable enabled controls, the 15-second
+deadline, 14-stroke cap, two stationary observations before a single edge reversal,
+one actual tap, and every scoring/privacy/persistence assertion remain required.
+Target bounds, distance and steps are retained in the navigation log.
+
+API 35 true 16 KB artifact `11293031512` reaches the final reset check at line
+2582. Its PNG/XML show "Retained benchmarks reset." and zero retained attempts,
+but the viewport ends on the Recent samples heading before the empty-state
+sentence. The assertion now scrolls to that same exact sentence through the
+bounded benchmark helper before checking it. The subsequent fresh-store empty
+assertion remains unchanged. No platform crash is present in these three logs;
+none of their later restart, lifecycle, layout or native-smoke phases ran.
+
+The Pixel Fold artifact `11293521290` passes all 49 main journeys, restart,
+both upgrade phases and all eight lifecycle phases. Its actual fold changes
+the inner display from 2208×1840 to the 1080×2092 cover, but Android's keyguard
+covers the app before the continuity assertion. The inspected PNG shows that
+lock screen. Unfold and continuity are therefore unverified, and the subsequent
+layout tests, including native loading, also fail behind the lock screen.
+The fixture must wake and dismiss the disposable emulator's keyguard after a
+real dimension change, then check the same call, conversation and unsent draft
+without relaunching or restoring them. Both actual posture events and all layout
+checks remain required.
+
+Host `exec-out screencap -p` also prefixes this multi-display profile's PNGs
+with a display-selection warning. Those files fail the strict evidence validator;
+instrumentation screenshots are clean. The controller captures to a fresh device
+file and pulls its bytes, retaining capture diagnostics separately. It never strips
+prefixes or accepts malformed images. This transport correction needs fresh valid
+PNG evidence from the real cover and inner displays.
+
+API 29 artifact `11292887329` reaches the controller after boot, services,
+input, unlock and exact 540×960/210 dpi checks, but installing the unchanged
+published Build 907 APK times out at 180 seconds. Guest logs show a SystemUI
+fatal exception and ANRs before that install, watchdog half-wait observations,
+and later media/dialer ANRs. The same system-server PID remains present; these
+logs do not prove it died. Host receipts report available memory and no swap,
+so memory exhaustion is not established. No upgrade or release instrumentation
+starts, and final hierarchy/logcat reads also time out.
+
+The next API 29 launch uses the official Mac ARM64 emulator 37.2.6/build
+16138043 archive as a controlled version experiment, preserving this revision's
+2 GiB RAM, recognized heap property, framebuffer/density, system image, renderer,
+UTC, software acceleration and every deadline. Its full archive checksum,
+package metadata and actual executable version must agree before boot; a failed
+pin restores the original SDK package and fails before launching. The official
+tracker's reported 37.2.7+ slowdown concerns a different visible/background
+configuration, so it supports a hypothesis rather than proving this guest's
+cause or a successful repair. Other profiles keep their current emulator.
+
+The false receipt prevents every publisher. A fresh full release gate must
+validate all corrections before publication.
 
 ## Build 900 Gemma audio submission review
 

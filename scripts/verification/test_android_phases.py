@@ -71,6 +71,97 @@ class PhaseEvidenceTest(unittest.TestCase):
                 self.assertFalse(instrumentation_results(output, expected, "Suite")["passed"])
 
 
+class SnapshotTransportTest(unittest.TestCase):
+    def exercise(self, fault=None):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            png = b"\x89PNG\r\n\x1a\nfresh capture"
+            stale = b"\x89PNG\r\n\x1a\nprevious capture"
+            warning = "[Warning] Multiple displays were found, but no display id was specified!\n"
+            remote = {"/sdcard/jarvis-screen.png": stale}
+            target = folder / "current.png"
+            target.write_bytes(stale)
+            calls = []
+
+            class ScreenshotDevice(Device):
+                def run(self, *argv, **kwargs):
+                    calls.append(argv)
+                    if argv[0] == "pull":
+                        if fault == "pull" or argv[1] not in remote:
+                            raise RuntimeError("Capture file could not be pulled")
+                        Path(argv[2]).write_bytes(remote[argv[1]])
+                        return "pulled"
+                    if argv[0] != "shell":
+                        raise AssertionError("Diagnostic bytes must not be captured as an image stream")
+                    command = shlex.split(argv[1])
+                    if command == ["rm", "-f", "/sdcard/jarvis-screen.png"]:
+                        if fault == "remove":
+                            raise RuntimeError("Could not remove previous capture")
+                        remote.pop(command[2], None)
+                        return ""
+                    if command[:2] == ["sh", "-c"]:
+                        if len(command) != 3 or command[2] != "screencap -p /sdcard/jarvis-screen.png 2>&1":
+                            raise AssertionError("The diagnostic redirection must be shell syntax")
+                        if fault == "capture":
+                            raise RuntimeError("Screenshot capture failed")
+                        if fault != "missing":
+                            remote["/sdcard/jarvis-screen.png"] = warning.encode() + png if fault == "malformed" else png
+                        return warning
+                    if command == ["uiautomator", "dump", "/sdcard/jarvis-window.xml"]:
+                        if fault == "hierarchy":
+                            raise RuntimeError("Hierarchy capture failed")
+                        return "dumped"
+                    if command == ["cat", "/sdcard/jarvis-window.xml"]:
+                        return "<hierarchy />"
+                    raise AssertionError(f"Unexpected snapshot command: {command}")
+
+            device = ScreenshotDevice("emulator-5554", folder)
+            result = error = None
+            try:
+                result = device.snapshot("current")
+            except RuntimeError as failure:
+                error = failure
+            diagnostic = folder / "current-screencap.txt"
+            return {"xml": result, "error": error, "calls": calls,
+                    "image": target.read_bytes() if target.exists() else None,
+                    "diagnostic": diagnostic.read_text() if diagnostic.exists() else None,
+                    "expected_image": png, "warning": warning, "remote": remote}
+
+    def test_multidisplay_warning_is_retained_separately_from_fresh_png(self):
+        result = self.exercise()
+        self.assertIsNone(result["error"])
+        self.assertEqual("<hierarchy />", result["xml"])
+        self.assertEqual(result["expected_image"], result["image"])
+        self.assertEqual(result["warning"], result["diagnostic"])
+
+    def test_failed_or_missing_capture_cannot_reuse_a_previous_local_or_remote_image(self):
+        for fault in ("remove", "capture", "missing"):
+            with self.subTest(fault=fault):
+                result = self.exercise(fault)
+                self.assertIsInstance(result["error"], RuntimeError)
+                self.assertIsNone(result["xml"])
+                self.assertIsNone(result["image"])
+                if fault != "remove":
+                    self.assertNotIn("/sdcard/jarvis-screen.png", result["remote"])
+                if fault == "capture":
+                    self.assertIn("Screenshot capture failed", result["diagnostic"])
+
+    def test_prefixed_or_malformed_pulled_image_is_rejected_without_trimming(self):
+        result = self.exercise("malformed")
+        self.assertRegex(str(result["error"]), "Invalid captured screenshot")
+        self.assertIsNone(result["xml"])
+        self.assertEqual(result["warning"].encode() + result["expected_image"], result["image"])
+        self.assertFalse(any("uiautomator" in str(call) for call in result["calls"]))
+
+    def test_pull_or_hierarchy_failure_remains_a_failed_snapshot(self):
+        for fault in ("pull", "hierarchy"):
+            with self.subTest(fault=fault):
+                result = self.exercise(fault)
+                self.assertIsInstance(result["error"], RuntimeError)
+                self.assertIsNone(result["xml"])
+                self.assertEqual(result["warning"], result["diagnostic"])
+
+
 class InstallTransportTest(unittest.TestCase):
     def test_install_transport_retains_flags_and_deadline_on_every_required_profile(self):
         with tempfile.TemporaryDirectory() as temporary:

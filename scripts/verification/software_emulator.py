@@ -7,16 +7,21 @@ https://github.com/ReactiveCircus/android-emulator-runner/blob/a421e43855164a819
 Unlike that action, boot completion alone never authorizes an input command.
 """
 import argparse
+import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import platform
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
+import tempfile
 import time
+from xml.dom import minidom
+import zipfile
 
 try:
     from .profiles import load_profiles
@@ -26,6 +31,16 @@ except ImportError:
 SERVICES = ("input", "activity", "package", "window")
 AVD_NAME = "jarvis-api29-software"
 SERIAL = "emulator-5554"
+# Official manual-install package; this controlled API 29 diagnostic does not
+# establish that this Canary version repairs framework startup/install failures.
+# https://developer.android.com/studio/emulator_archive
+EMULATOR_PIN = {
+    "version": "37.2.6", "build_id": "16138043", "channel": "Canary",
+    "url": "https://dl.google.com/android/repository/emulator-darwin_aarch64-16138043.zip",
+    "size_bytes": 419847722,
+    "sha256": "ca9eeb7857771de6219591a70b39342ac2d056b7701d1df0d0c719f41260f4a5",
+}
+
 # Build 936 exhausted guest CPU during API 29 permission initialization. This
 # bounded headroom/raster experiment retains two vCPUs and the Pixel 2 dp viewport;
 # it does not establish host memory pressure as the cause or change any deadline.
@@ -47,6 +62,120 @@ def remaining(deadline, now=time.monotonic):
     if seconds <= 0:
         raise TimeoutError("Declared emulator deadline expired")
     return seconds
+
+
+def extract_emulator(archive, destination, deadline, now):
+    """Extract only regular files/directories under emulator/, retaining modes."""
+    try:
+        with zipfile.ZipFile(archive) as zipped:
+            members, names, total = zipped.infolist(), set(), 0
+            if not members or len(members) > 4096:
+                raise ValueError("Unexpected emulator archive entry count")
+            for member in members:
+                remaining(deadline, now)
+                name = member.filename
+                path = PurePosixPath(name)
+                mode = member.external_attr >> 16
+                kind = stat.S_IFMT(mode)
+                canonical = path.as_posix() + ("/" if member.is_dir() else "")
+                if (not name or not path.parts or name != canonical or "\\" in name or "\0" in name or path.is_absolute()
+                        or ".." in path.parts or path.parts[0] != "emulator"
+                        or name.rstrip("/").casefold() in names or member.flag_bits & 1
+                        or kind != (stat.S_IFDIR if member.is_dir() else stat.S_IFREG)
+                        or mode & 0o7000):
+                    raise ValueError(f"Unsafe emulator archive entry: {name!r}")
+                names.add(name.rstrip("/").casefold())
+                total += member.file_size
+            if total > 2 * 1024 ** 3:
+                raise ValueError("Unexpected emulator archive expanded size")
+            directories = []
+            for member in members:
+                remaining(deadline, now)
+                target = destination / member.filename
+                if member.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    directories.append((target, member.external_attr >> 16 & 0o777))
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zipped.open(member) as source, target.open("xb") as output:
+                    while chunk := source.read(1024 * 1024):
+                        remaining(deadline, now)
+                        output.write(chunk)
+                target.chmod(member.external_attr >> 16 & 0o777)
+            for target, mode in reversed(directories):
+                remaining(deadline, now)
+                target.chmod(mode)
+    except zipfile.BadZipFile as error:
+        raise ValueError(f"Invalid emulator archive: {error}") from error
+
+
+def emulator_properties(directory):
+    source = directory / "source.properties"
+    if source.is_symlink() or not source.is_file() or source.stat().st_size > 65536:
+        raise ValueError("Invalid emulator source.properties")
+    properties = {}
+    for line in source.read_text().splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        key, separator, value = line.partition("=")
+        if not separator or key.strip() in properties:
+            raise ValueError("Malformed emulator source.properties")
+        properties[key.strip()] = value.strip()
+    expected = {"Pkg.Revision": EMULATOR_PIN["version"], "Pkg.BuildId": EMULATOR_PIN["build_id"],
+                "Pkg.Path": "emulator"}
+    if any(properties.get(key) != value for key, value in expected.items()):
+        raise ValueError(f"Unexpected emulator source.properties: {properties}")
+    return properties
+
+
+def pinned_package_xml(original, staged):
+    # The official manual install requires preserving package.xml and updating
+    # its revision. minidom also preserves prefixes used only in xsi:type values.
+    source = original / "package.xml"
+    if source.is_symlink() or not source.is_file() or source.stat().st_size > 1024 * 1024:
+        raise ValueError("Existing SDK emulator package.xml is required")
+    raw = source.read_bytes()
+    if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+        raise ValueError("Unsupported SDK package.xml declarations")
+    try:
+        document = minidom.parseString(raw)
+        packages = [node for node in document.getElementsByTagName("*")
+                    if node.localName == "localPackage" and node.getAttribute("path") == "emulator"]
+        if len(packages) != 1:
+            raise ValueError("Expected one emulator localPackage")
+
+        def children(node, name):
+            return [child for child in node.childNodes if child.nodeType == child.ELEMENT_NODE
+                    and child.localName == name]
+
+        revisions = children(packages[0], "revision")
+        if len(revisions) != 1:
+            raise ValueError("Expected one SDK emulator revision")
+        revision = revisions[0]
+        for name, value in zip(("major", "minor", "micro"), EMULATOR_PIN["version"].split(".")):
+            values = children(revision, name)
+            if len(values) != 1:
+                raise ValueError(f"Expected one SDK emulator revision {name}")
+            node = values[0]
+            for child in list(node.childNodes):
+                node.removeChild(child)
+            node.appendChild(document.createTextNode(value))
+        for preview in children(revision, "preview"):
+            revision.removeChild(preview)
+        target = staged / "package.xml"
+        target.write_bytes(document.toxml(encoding="utf-8"))
+        target.chmod(stat.S_IMODE(source.stat().st_mode) & 0o777)
+    except Exception as error:
+        raise ValueError(f"Invalid SDK emulator package.xml: {error}") from error
+
+
+def require_pinned_version(result):
+    raw = result.stdout + result.stderr
+    versions = re.findall(r"^Android emulator version (\d+\.\d+\.\d+)(?:\.0)? \(build_id (\d+)\).*$",
+                          raw, re.MULTILINE)
+    if versions != [(EMULATOR_PIN["version"], EMULATOR_PIN["build_id"])]:
+        raise ValueError(f"Unexpected actual emulator version: {raw.strip()}")
+    return raw
 
 
 def wait_for_android(adb, running, deadline, *, now=time.monotonic, pause=time.sleep, record=lambda state: None):
@@ -159,13 +288,73 @@ class SoftwareSession:
         return self.run([str(self.sdk / "platform-tools/adb"), "-s", SERIAL, *args],
                         deadline=deadline, timeout=timeout, check=check)
 
+    def pin_emulator(self):
+        require_software_profile(self.profile)
+        deadline = min(self.deadline, self.now() + 600)
+        proof = self.report["emulator_pin"] = dict(EMULATOR_PIN, verified=False,
+                                                 timeout_seconds=600)
+        original = self.sdk / "emulator"
+        if original.is_symlink() or not original.is_dir():
+            raise ValueError("A regular SDK emulator directory is required")
+        # Same-filesystem staging lets publication use rename only after every
+        # archive/metadata/executable check succeeds. Never reuse partial input.
+        with tempfile.TemporaryDirectory(prefix="jarvis-emulator-", dir=self.sdk) as temporary:
+            stage = Path(temporary)
+            archive = stage / "emulator.zip"
+            self.run(["curl", "--fail", "--location", "--proto", "=https", "--proto-redir", "=https",
+                      "--connect-timeout", "30", "--max-time", str(remaining(deadline, self.now)),
+                      "--max-filesize", str(EMULATOR_PIN["size_bytes"]),
+                      "--output", str(archive), EMULATOR_PIN["url"]], deadline=deadline, timeout=600)
+            remaining(deadline, self.now)
+            proof["actual_size_bytes"] = archive.stat().st_size
+            if proof["actual_size_bytes"] != EMULATOR_PIN["size_bytes"]:
+                raise ValueError("Emulator archive size differs from official pinned package")
+            digest = hashlib.sha256()
+            with archive.open("rb") as source:
+                while chunk := source.read(1024 * 1024):
+                    remaining(deadline, self.now)
+                    digest.update(chunk)
+            remaining(deadline, self.now)
+            proof["actual_sha256"] = digest.hexdigest()
+            if proof["actual_sha256"] != EMULATOR_PIN["sha256"]:
+                raise ValueError("Emulator archive SHA256 differs from official pinned package")
+            proof["archive_verified"] = True
+            unpacked = stage / "unpacked"
+            unpacked.mkdir()
+            extract_emulator(archive, unpacked, deadline, self.now)
+            candidate = unpacked / "emulator"
+            proof["source_properties"] = emulator_properties(candidate)
+            pinned_package_xml(original, candidate)
+            remaining(deadline, self.now)
+            self.run(["xattr", "-dr", "com.apple.quarantine", str(candidate)], deadline=deadline)
+            proof["staged_version_output"] = require_pinned_version(
+                self.run([str(candidate / "emulator"), "-version"], deadline=deadline))
+            shutil.copyfile(candidate / "source.properties", self.diagnostics / "emulator-source.properties")
+            shutil.copyfile(candidate / "package.xml", self.diagnostics / "emulator-package.xml")
+            remaining(deadline, self.now)
+            backup = stage / "original-emulator"
+            original.rename(backup)
+            try:
+                candidate.rename(original)
+                proof["installed_version_output"] = require_pinned_version(
+                    self.run([str(original / "emulator"), "-version"], deadline=deadline))
+                remaining(deadline, self.now)
+            except (OSError, ValueError, RuntimeError, TimeoutError):
+                if original.exists():
+                    shutil.rmtree(original)
+                backup.rename(original)
+                raise
+            proof["verified"] = True
+
     def provision(self):
+        require_software_profile(self.profile)
         sdkmanager = str(self.sdk / "cmdline-tools/latest/bin/sdkmanager")
         self.run([sdkmanager, "--licenses"], timeout=120, input="y\n" * 100)
         self.run([sdkmanager, "--install", "build-tools;37.0.0", "platform-tools", "platforms;android-29"], timeout=600)
         self.run([sdkmanager, "--install", "emulator", "--channel=0"], timeout=600)
         image = "system-images;android-29;default;arm64-v8a"
         self.run([sdkmanager, "--install", image, "--channel=0"], timeout=600)
+        self.pin_emulator()
         avd_home = Path(self.environment["ANDROID_AVD_HOME"])
         avd_home.mkdir(parents=True, exist_ok=True)
         self.run([str(self.sdk / "cmdline-tools/latest/bin/avdmanager"), "create", "avd", "--force",
@@ -178,7 +367,6 @@ class SoftwareSession:
                           "".join(f"{key}={value}\n" for key, value in SOFTWARE_AVD_SETTINGS.items()))
         self.report["avd_settings"] = SOFTWARE_AVD_SETTINGS
         shutil.copyfile(config, self.diagnostics / "avd-config.ini")
-        self.run([str(self.sdk / "emulator/emulator"), "-version"])
         self.run([str(self.sdk / "platform-tools/adb"), "start-server"])
 
     def capture_host_resources(self, stage, deadline):

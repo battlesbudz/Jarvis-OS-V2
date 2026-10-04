@@ -1,13 +1,19 @@
 """Software boot must not turn a stale boot flag or failed unlock into test coverage."""
 import json
+import hashlib
 from pathlib import Path
+import shutil
+import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
+from xml.dom import minidom
+import zipfile
 
 from profiles import load_profiles
-from software_emulator import (SERVICES, SoftwareSession, emulator_command,
+from software_emulator import (EMULATOR_PIN, SERVICES, SoftwareSession, emulator_command, main,
                                keyguard_dismissed, require_software_profile,
                                wait_for_android, wait_for_unlock)
 
@@ -155,8 +161,12 @@ class SoftwareSessionTest(unittest.TestCase):
                                       "hw.lcd.width=1080\nhw.lcd.height=1920\nhw.lcd.density=420\n")
                 return reply("")
 
-            with patch.object(session, "run", side_effect=run):
+            with patch.object(session, "run", side_effect=run), \
+                    patch.object(session, "pin_emulator") as pin, \
+                    patch("software_emulator.platform.system", return_value="Darwin"), \
+                    patch("software_emulator.platform.machine", return_value="arm64"):
                 session.provision()
+            pin.assert_called_once()
             image = "system-images;android-29;default;arm64-v8a"
             installed = next(command for command in calls if image in command and "--install" in command)
             created = next(command for command in calls if "create" in command)
@@ -433,6 +443,202 @@ class SoftwareSessionTest(unittest.TestCase):
         self.assertEqual(1, command.count("-timezone"))
         self.assertEqual("Etc/UTC", command[command.index("-timezone") + 1])
         self.assertNotIn("Unknown/Unknown", command)
+
+
+class EmulatorPinTest(unittest.TestCase):
+    """Use real ZIP/hash/XML/filesystem operations; fake only hosted commands."""
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.clock = Clock()
+        self.session = SoftwareSession(PROFILE, self.root / "evidence", self.root / "sdk", now=self.clock.now)
+        self.addCleanup(lambda: self.session.close() if self.session.diagnostics.exists() else None)
+        self.original = self.session.sdk / "emulator"
+        self.original.mkdir(parents=True)
+        (self.original / "emulator").write_text("original installed executable")
+        self.original_xml = b'''<r:repository xmlns:r="urn:repository" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:g="urn:generic">
+<localPackage path="emulator"><type-details xsi:type="g:genericDetailsType"/>
+<revision><major>37</major><minor>2</minor><micro>12</micro></revision></localPackage></r:repository>'''
+        (self.original / "package.xml").write_bytes(self.original_xml)
+        self.archive = self.root / "fixture.zip"
+        self.calls = []
+        self.version = "Android emulator version 37.2.6.0 (build_id 16138043) (CL:N/A)\n"
+        self.installed_version = self.version
+        for target, value in (("software_emulator.platform.system", "Darwin"),
+                              ("software_emulator.platform.machine", "arm64")):
+            patcher = patch(target, return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        pin = patch.dict(EMULATOR_PIN)
+        pin.start()
+        self.addCleanup(pin.stop)
+        self.write_archive()
+        mocked = patch.object(self.session, "run", side_effect=self.host_command)
+        self.mock_run = mocked.start()
+        self.addCleanup(mocked.stop)
+
+    def write_archive(self, extra=(), properties=None):
+        properties = properties or "Pkg.Revision=37.2.6\nPkg.BuildId=16138043\nPkg.Path=emulator\n"
+        entries = [("emulator/", b"", stat.S_IFDIR | 0o755),
+                   ("emulator/emulator", b"pinned executable", stat.S_IFREG | 0o755),
+                   ("emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless", b"qemu", stat.S_IFREG | 0o755),
+                   ("emulator/source.properties", properties.encode(), stat.S_IFREG | 0o644), *extra]
+        with zipfile.ZipFile(self.archive, "w") as archive:
+            for name, content, mode in entries:
+                info = zipfile.ZipInfo(name)
+                info.create_system = 3
+                info.external_attr = mode << 16
+                archive.writestr(info, content)
+        EMULATOR_PIN.update(size_bytes=self.archive.stat().st_size,
+                            sha256=hashlib.sha256(self.archive.read_bytes()).hexdigest())
+
+    def host_command(self, command, **kwargs):
+        self.calls.append((command, kwargs))
+        if command[0] == "curl":
+            shutil.copyfile(self.archive, command[command.index("--output") + 1])
+        elif command[-1] == "-version":
+            return reply(self.installed_version if command[0] == str(self.original / "emulator") else self.version)
+        elif "create" in command:
+            config = self.session.avd_home / "jarvis-api29-software.avd/config.ini"
+            config.parent.mkdir()
+            config.write_text("hw.cpu.ncore=1\nhw.ramSize=1536M\nvm.heapSize=256M\n"
+                              "hw.lcd.width=1080\nhw.lcd.height=1920\nhw.lcd.density=420\n")
+        return reply("")
+
+    def assert_original_retained(self):
+        self.assertEqual("original installed executable", (self.original / "emulator").read_text())
+        self.assertEqual(self.original_xml, (self.original / "package.xml").read_bytes())
+        self.assertFalse(list(self.session.sdk.glob("jarvis-emulator-*")))
+        self.assertFalse(self.session.report["emulator_pin"]["verified"])
+        self.assertFalse(self.session.report["passed"])
+
+    def test_provision_preserves_guest_and_settings_and_publishes_verified_pin_before_avd(self):
+        self.session.provision()
+        commands = [command for command, _ in self.calls]
+        image = "system-images;android-29;default;arm64-v8a"
+        installed = next(command for command in commands if image in command and "--install" in command)
+        created = next(command for command in commands if "create" in command)
+        curl = next(command for command in commands if command[0] == "curl")
+        self.assertIn("--channel=0", installed)
+        self.assertEqual(image, created[created.index("--package") + 1])
+        self.assertLess(commands.index(installed), commands.index(curl))
+        version_checks = [command for command in commands if command[-1] == "-version"]
+        self.assertEqual(2, len(version_checks))
+        self.assertLess(commands.index(version_checks[-1]), commands.index(created))
+        self.assertFalse(any("--install" in command and "emulator" in command
+                             for command in commands[commands.index(curl):]))
+        self.assertFalse(any("google_apis" in argument for command in commands for argument in command))
+        self.assertEqual("=https", curl[curl.index("--proto-redir") + 1])
+        self.assertEqual(str(EMULATOR_PIN["size_bytes"]), curl[curl.index("--max-filesize") + 1])
+        for command, kwargs in self.calls[commands.index(curl):commands.index(created)]:
+            self.assertEqual(600, kwargs["deadline"])
+        self.assertEqual(0o755, stat.S_IMODE((self.original / "emulator").stat().st_mode))
+        self.assertEqual(0o755, stat.S_IMODE((self.original / "qemu/darwin-aarch64/qemu-system-aarch64-headless").stat().st_mode))
+        document = minidom.parseString((self.original / "package.xml").read_bytes())
+        self.assertEqual("urn:generic", document.documentElement.getAttribute("xmlns:g"))
+        self.assertEqual(["37", "2", "6"], [document.getElementsByTagName(name)[0].firstChild.data
+                                             for name in ("major", "minor", "micro")])
+        proof = self.session.report["emulator_pin"]
+        self.assertTrue(proof["verified"])
+        self.assertEqual(EMULATOR_PIN["sha256"], proof["actual_sha256"])
+        self.assertEqual("16138043", proof["source_properties"]["Pkg.BuildId"])
+        self.assertEqual(self.version, proof["installed_version_output"])
+        self.assertTrue((self.session.diagnostics / "emulator-package.xml").exists())
+        config = (self.session.diagnostics / "avd-config.ini").read_text()
+        for setting in ("hw.cpu.ncore=2", "hw.ramSize=2048M", "vm.heapSize=256M", "hw.lcd.width=540",
+                        "hw.lcd.height=960", "hw.lcd.density=210", "disk.dataPartition.size=4096M"):
+            self.assertIn(setting, config)
+        self.assertEqual(3600, self.session.deadline)
+        self.assertFalse(self.session.report["passed"], "Provisioning does not establish test coverage")
+
+    def test_corrupt_or_truncated_archive_is_rejected_before_extraction(self):
+        valid = self.archive.read_bytes()
+        for corrupt in (valid[:-1], valid[:-1] + bytes([valid[-1] ^ 1])):
+            with self.subTest(size=len(corrupt)):
+                self.archive.write_bytes(corrupt)
+                with patch("software_emulator.extract_emulator") as extract:
+                    with self.assertRaisesRegex(ValueError, "archive (size|SHA256)"):
+                        self.session.pin_emulator()
+                    extract.assert_not_called()
+                self.assert_original_retained()
+
+    def test_unsafe_archive_paths_symlinks_and_case_collisions_never_publish(self):
+        entries = (("emulator/../../escaped", b"bad", stat.S_IFREG | 0o644),
+                   ("/emulator/escaped", b"bad", stat.S_IFREG | 0o644),
+                   ("emulator\\escaped", b"bad", stat.S_IFREG | 0o644),
+                   ("emulator/link", b"../../escaped", stat.S_IFLNK | 0o777),
+                   ("emulator/EMULATOR", b"collision", stat.S_IFREG | 0o755))
+        for entry in entries:
+            with self.subTest(entry=entry[0]):
+                self.write_archive([entry])
+                with self.assertRaisesRegex(ValueError, "Unsafe emulator archive entry"):
+                    self.session.pin_emulator()
+                self.assert_original_retained()
+                self.assertFalse((self.root / "escaped").exists())
+
+    def test_metadata_and_executable_version_must_both_match_official_pin(self):
+        self.write_archive(properties="Pkg.Revision=37.2.12\nPkg.BuildId=16138043\nPkg.Path=emulator\n")
+        with self.assertRaisesRegex(ValueError, "source.properties"):
+            self.session.pin_emulator()
+        self.assertFalse(any(command[-1] == "-version" for command, _ in self.calls))
+        self.assert_original_retained()
+        self.write_archive()
+        for version in (self.version.replace("37.2.6", "37.2.12"),
+                        self.version.replace("16138043", "16199999"), self.version * 2):
+            with self.subTest(version=version):
+                self.version = version
+                with self.assertRaisesRegex(ValueError, "actual emulator version"):
+                    self.session.pin_emulator()
+                self.assert_original_retained()
+
+    def test_invalid_package_xml_fails_before_running_candidate(self):
+        (self.original / "package.xml").write_text('<repository><localPackage path="other"/></repository>')
+        with self.assertRaisesRegex(ValueError, "package.xml"):
+            self.session.pin_emulator()
+        self.assertFalse(any(command[-1] == "-version" for command, _ in self.calls))
+        self.assertEqual("original installed executable", (self.original / "emulator").read_text())
+        self.assertFalse(self.session.report["emulator_pin"]["verified"])
+
+    def test_failed_installed_version_check_restores_original_sdk_emulator(self):
+        self.installed_version = self.version.replace("37.2.6", "37.2.12")
+        with self.assertRaisesRegex(ValueError, "actual emulator version"):
+            self.session.pin_emulator()
+        self.assert_original_retained()
+
+    def test_pin_download_and_verification_share_remaining_provisioning_budget(self):
+        self.session.deadline = 25
+
+        def expired_download(command, **kwargs):
+            self.assertEqual(25, kwargs["deadline"])
+            self.assertEqual("25", command[command.index("--max-time") + 1])
+            result = self.host_command(command, **kwargs)
+            self.clock.pause(25)
+            return result
+
+        self.mock_run.side_effect = expired_download
+        with self.assertRaisesRegex(TimeoutError, "deadline expired"):
+            self.session.pin_emulator()
+        self.assertEqual(1, self.mock_run.call_count)
+        self.assert_original_retained()
+
+    def test_invalid_pin_stops_main_before_boot_or_controller_and_retains_failure(self):
+        self.version = self.version.replace("37.2.6", "37.2.12")
+        arguments = ["software_emulator.py", "--profile", PROFILE["id"], "--out", str(self.session.out),
+                     "--", "release-controller"]
+        with patch.object(sys, "argv", arguments), \
+                patch.dict("os.environ", {"ANDROID_HOME": str(self.session.sdk)}), \
+                patch("software_emulator.SoftwareSession", return_value=self.session), \
+                patch("software_emulator.subprocess.Popen") as boot, \
+                patch("software_emulator.subprocess.run") as controller:
+            self.assertEqual(1, main())
+        boot.assert_not_called()
+        controller.assert_not_called()
+        report = json.loads((self.session.out / "software-emulator/startup.json").read_text())
+        self.assertEqual("failed", report["status"])
+        self.assertFalse(report["passed"])
+        self.assertFalse(report["emulator_pin"]["verified"])
+        self.assertIn("actual emulator version", report["errors"][0])
 
 
 if __name__ == "__main__":

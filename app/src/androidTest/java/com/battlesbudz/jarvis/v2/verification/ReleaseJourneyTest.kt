@@ -2375,7 +2375,7 @@ class ReleaseJourneyTest {
                 if (swipes.incrementAndGet() > 14) break
                 val viewport = list.visibleBounds
                 check(viewport.width() > 0 && viewport.height() > 96) { "Benchmark scroll viewport is unavailable" }
-                val bounds = control?.visibleBounds
+                val bounds = control?.visibleBounds?.takeIf { it.width() > 0 && it.height() > 0 }
                 if (bounds != null) direction = if (bounds.centerY() < viewport.centerY()) Direction.UP else Direction.DOWN
                 // Dispatch physical gestures as the older release journeys do. The
                 // UiObject2.scroll result conflates a missing accessibility event with
@@ -2387,10 +2387,17 @@ class ReleaseJourneyTest {
                 val lowY = viewport.top + viewport.height() * 85 / 100
                 val highY = viewport.top + viewport.height() * 15 / 100
                 val fromY = if (direction == Direction.DOWN) lowY else highY
-                val toY = if (direction == Direction.DOWN) highY else lowY
+                // Build 937 rediscovered the reference at an edge, then a full
+                // stroke flung it past the opposite edge. Approach an observed
+                // target with a short, slower gesture; empty exported bounds
+                // provide no direction. Discovery still uses the full stroke.
+                val distance = if (bounds != null) kotlin.math.abs(bounds.centerY() - viewport.centerY())
+                    .coerceIn(24, viewport.height() / 4) else lowY - highY
+                val steps = if (bounds != null) 80 else 12
+                val toY = if (direction == Direction.DOWN) fromY - distance else fromY + distance
                 val scrollStarted = SystemClock.uptimeMillis()
                 if (android.os.Build.VERSION.SDK_INT >= 34 && SystemClock.uptimeMillis() >= deadline) break
-                check(device.swipe(swipeX, fromY, swipeX, toY, 12)) {
+                check(device.swipe(swipeX, fromY, swipeX, toY, steps)) {
                     "Benchmark swipe dispatch failed"
                 }
                 device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
@@ -2405,7 +2412,7 @@ class ReleaseJourneyTest {
                 val after = freshList?.let { benchmarkViewportSignature(it) }
                 val moved = after != null && after != before
                 unchangedGestures = if (moved) 0 else unchangedGestures + 1
-                android.util.Log.i("JarvisVerification", "benchmark_navigation selector=$selector direction=$direction moved=$moved unchangedGestures=$unchangedGestures gestures=${swipes.get()} gestureMs=${SystemClock.uptimeMillis() - scrollStarted} remainingMs=${deadline - SystemClock.uptimeMillis()}")
+                android.util.Log.i("JarvisVerification", "benchmark_navigation selector=$selector direction=$direction targetBefore=$bounds targetAfterFound=${fresh != null} distance=$distance steps=$steps moved=$moved unchangedGestures=$unchangedGestures gestures=${swipes.get()} gestureMs=${SystemClock.uptimeMillis() - scrollStarted} remainingMs=${deadline - SystemClock.uptimeMillis()}")
                 // Require two observed stationary gestures before reversing once.
                 if (after != null && unchangedGestures >= 2) {
                     if (reversedAtEdge) break
@@ -2579,7 +2586,7 @@ class ReleaseJourneyTest {
             captureEvidence("pipeline_benchmark_restored_redacted_scores")
             benchmarkClickEnabled(By.res("pipeline_benchmark_reset"), towardTop = true)
             benchmarkClickEnabled(By.res("pipeline_benchmark_reset_confirm"), inDialog = true)
-            assertNotNull(find(By.text("No pipeline measurements yet. Complete a text or voice turn, then return here.")))
+            assertNotNull(benchmarkScrollTo(By.text("No pipeline measurements yet. Complete a text or voice turn, then return here.")))
             restored.flush()
             assertTrue(AndroidPipelineBenchmarkStore(fixtureContext).samples.value.isEmpty())
         } finally {

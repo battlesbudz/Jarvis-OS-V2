@@ -32,7 +32,20 @@ commits. Do not create or merge another PR without Justin's permission.
    the official AOSP `system-images;android-29;default;arm64-v8a` image on a
    standard `macos-15` ARM64 runner with explicit
    software emulation (`-accel off -feature -HVF`). GitHub's M1 VMs do not
-   support nested hardware virtualization. The software-specific launcher
+   support nested hardware virtualization. This profile alone uses the official
+   [Emulator archive](https://developer.android.com/studio/emulator_archive)
+   Canary 37.2.6 Apple Silicon package, build 16138043, as a controlled version
+   experiment after Build 937's SystemUI crash/ANRs and previous-APK install
+   timeout. The full official ZIP is 419,847,722 bytes with SHA-256
+   `ca9eeb7857771de6219591a70b39342ac2d056b7701d1df0d0c719f41260f4a5`;
+   its size/hash are checked before safe staged extraction. Executable modes and
+   SDK package metadata are preserved, `source.properties` must match, and both
+   staged and installed binaries must report version 37.2.6/build 16138043 before
+   boot. Invalid input retains the previous emulator; a failed installed-version
+   check restores it. Download, verification and replacement share one 600-second
+   provisioning budget within the existing 60-minute job limit. This is a
+   hypothesis requiring a complete device pass, not evidence that the emulator
+   version caused or repairs the failure. The software-specific launcher
    `scripts/verification/software_emulator.py` retains provisioning/emulator
    output and guest logcat, and requires the boot flag, input/activity/package/
    window services and successful unlock before invoking the same full release
@@ -42,7 +55,8 @@ commits. Do not create or merge another PR without Justin's permission.
    Physical size/density are observed before ready; optional read-only host
    resource receipts consume the existing deadline. These provisioning settings
    are experiments pending a complete passing run, not evidence of a memory cause.
-   the job remains bounded by 60 minutes. A boot flag alone is not a passing
+   The job remains bounded by 60 minutes, with the existing 180-second APK install
+   limit. A boot flag alone is not a passing
    device result. Missing services, ABI/page-size compatibility, a failed test
    or a timeout fails rather than skips. Linux profiles retain emulator-runner.
    The API 29 target is AOSP `default`; the other five image targets remain

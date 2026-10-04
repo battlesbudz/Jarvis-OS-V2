@@ -2,6 +2,7 @@ package com.battlesbudz.jarvis.v2.verification
 
 import android.app.Activity
 import android.app.Application
+import android.app.KeyguardManager
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -272,12 +273,12 @@ class ReleaseLayoutAccessibilityTest {
         val foldable = InstrumentationRegistry.getArguments().getString("jarvisFoldable") == "true"
         if (foldable) {
             requestPosture("fold")
-            awaitDifferentDimensions(initial)
+            awaitDifferentDimensions(initial, afterPosture = true)
             assertContinuity(threadId, draft)
             capture("${testName.methodName}-folded")
             val folded = device.displayWidth to device.displayHeight
             requestPosture("unfold")
-            awaitDifferentDimensions(folded)
+            awaitDifferentDimensions(folded, afterPosture = true)
             assertContinuity(threadId, draft)
             capture("${testName.methodName}-unfolded")
         } else {
@@ -342,10 +343,32 @@ class ReleaseLayoutAccessibilityTest {
         instrumentation.sendStatus(1, Bundle().apply { putString("jarvisFold", posture) })
     }
 
-    private fun awaitDifferentDimensions(before: Pair<Int, Int>) {
+    private fun awaitDifferentDimensions(before: Pair<Int, Int>, afterPosture: Boolean = false) {
         val deadline = SystemClock.uptimeMillis() + 45_000
         while (SystemClock.uptimeMillis() < deadline) {
             if ((device.displayWidth to device.displayHeight) != before) {
+                if (afterPosture) {
+                    // The genuine Pixel Fold transition shows a dismissible
+                    // keyguard. Wake/unlock this test device without relaunching
+                    // the activity or replacing retained conversation/call state.
+                    device.wakeUp()
+                    device.executeShellCommand("wm dismiss-keyguard")
+                    val keyguard = checkNotNull(context.getSystemService(KeyguardManager::class.java))
+                    while (SystemClock.uptimeMillis() < deadline &&
+                        (!device.isScreenOn || keyguard.isKeyguardLocked)) SystemClock.sleep(100)
+                    assertTrue("Posture must leave the device awake and unlocked within the original deadline",
+                        SystemClock.uptimeMillis() < deadline && device.isScreenOn && !keyguard.isKeyguardLocked)
+                    device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
+                    val remaining = deadline - SystemClock.uptimeMillis()
+                    assertTrue("Posture settling must stay within the original deadline", remaining > 0)
+                    assertNotNull("The retained composer must be visible after waking the new display",
+                        device.wait(Until.findObject(By.res("chat_composer")), remaining.coerceAtMost(15_000)))
+                    assertTrue("The settled posture must still have changed the real display dimensions",
+                        (device.displayWidth to device.displayHeight) != before)
+                    assertTrue("Composer observation must stay within the original deadline",
+                        SystemClock.uptimeMillis() < deadline)
+                    return
+                }
                 device.waitForIdle()
                 find(By.res("chat_composer"))
                 return

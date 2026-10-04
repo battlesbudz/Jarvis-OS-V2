@@ -244,7 +244,21 @@ class Device:
             self.out.joinpath("last-instrumentation.txt").write_text("".join(lines))
 
     def snapshot(self, name):
-        self.out.joinpath(f"{name}.png").write_bytes(self.run("exec-out", "screencap", "-p", binary=True))
+        # Multi-display screencap writes a diagnostic to stderr. exec-out mixes
+        # that remote stream with PNG bytes, so capture a named file instead.
+        png = self.out / f"{name}.png"
+        remote = "/sdcard/jarvis-screen.png"
+        png.unlink(missing_ok=True)
+        self.shell("rm", "-f", remote)
+        try:
+            diagnostics = self.shell("sh", "-c", f"screencap -p {shlex.quote(remote)} 2>&1")
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            self.out.joinpath(f"{name}-screencap.txt").write_text(str(error) + "\n")
+            raise
+        self.out.joinpath(f"{name}-screencap.txt").write_text(diagnostics)
+        self.run("pull", remote, png)
+        if not png.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"):
+            raise RuntimeError("Invalid captured screenshot; diagnostic text is not PNG evidence")
         self.shell("uiautomator", "dump", "/sdcard/jarvis-window.xml")
         xml = self.shell("cat", "/sdcard/jarvis-window.xml")
         self.out.joinpath(f"{name}.xml").write_text(xml)
