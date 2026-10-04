@@ -1757,10 +1757,20 @@ class ReleaseJourneyTest {
             assertEquals(ExecutionResult.Outcome.NEEDS_UNLOCK, volume.outcome)
             assertEquals("only the battery read dispatched", 0, dispatched.get())
         } finally {
+            // Unlock through the PIN pad: the keyguard UI does not refresh
+            // a locksettings clear issued while it is showing, so enter the
+            // PIN first, then clear it.
+            device.wakeUp()
+            runCatching {
+                for (digit in "1234") {
+                    device.findObject(By.desc(digit.toString()))?.click()
+                    device.waitForIdle()
+                }
+                device.findObject(By.res("com.android.systemui:id/key_enter"))?.click()
+                device.waitForIdle()
+            }
             runCatching { device.executeShellCommand("locksettings clear --old 1234") }
             device.wakeUp()
-            // A non-secure swipe keyguard can remain after the PIN is
-            // cleared; dismiss it so later journeys find the app UI.
             runCatching { device.executeShellCommand("wm dismiss-keyguard") }
             if (keyguard?.isKeyguardLocked == true) {
                 device.swipe(device.displayWidth / 2, device.displayHeight * 4 / 5,
