@@ -2567,8 +2567,10 @@ class ReleaseJourneyTest {
             else "Benchmark text did not become visible: $selector")
     }
 
-    private fun benchmarkScrollTo(selector: BySelector, towardTop: Boolean = false): UiObject2 = observeBenchmarkNavigation {
-        benchmarkFindVisible(selector, towardTop, false, SystemClock.uptimeMillis() + 15_000, AtomicInteger())
+    private fun benchmarkScrollTo(selector: BySelector, towardTop: Boolean = false,
+        holdDiscovery: Boolean = false): UiObject2 = observeBenchmarkNavigation {
+        benchmarkFindVisible(selector, towardTop, false, SystemClock.uptimeMillis() + 15_000, AtomicInteger(),
+            holdTextDiscovery = holdDiscovery)
     }
 
     private fun benchmarkRevealText(text: String, holdDiscovery: Boolean = false): UiObject2 = observeBenchmarkNavigation {
@@ -2696,7 +2698,7 @@ class ReleaseJourneyTest {
             assertEquals(PipelineBenchmarkEnvironment.NOISY, store.samples.value.single { it.turnId == completedId }.environment)
             assertNotNull(if (android.os.Build.VERSION.SDK_INT == 30)
                 benchmarkRevealText("tts_load_ms: unavailable", holdDiscovery = true)
-                else benchmarkScrollTo(By.text("tts_load_ms: unavailable")))
+                else benchmarkScrollTo(By.text("tts_load_ms: unavailable"), holdDiscovery = true))
             captureEvidence("pipeline_benchmark_verified_reference_and_review")
 
             benchmarkClickEnabled(By.res("pipeline_benchmark_copy_json"), towardTop = true)

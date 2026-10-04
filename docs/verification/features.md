@@ -1050,6 +1050,43 @@ No Fold/product repair or ANR dismissal is inferred. The next exact candidate
 must run the full fresh Fold gate. Build 946's failed consolidated receipt and
 all three skipped publishers prevent a numbered release.
 
+## Build 947 compact metric observation correction
+
+[Build 947](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37183356238)
+tests source `95e482bba64610afb31e6b88ac61913f7d36b547` from PR head
+`3561e46a04441f80bbf31b7a08d8543aa589f1a7`. API 35 compact artifact `11296456202`
+has ZIP SHA-256 `6c85929bbd7e47bd09aa10dddce09f31add97b675bbeb53e6314858bcd1f1974`.
+The API 35 compact profile runs all
+49 main journeys: 48 pass and test45 fails to reveal the exact text
+`tts_load_ms: unavailable`. Its real Build 907 upgrade passes. The metric search
+performs ten 1,109-pixel, 12-step blind strokes, reverses after two stationary
+lower observations, and stops after two stationary upper observations with
+4,772 ms of its original 15-second budget remaining. This is not deadline or
+14-gesture exhaustion.
+
+Fresh row receipts show the first stroke crossing from early metrics ending at
+`gemma_final_caption_ms` at y=1,798–1,815 to later TTS metrics beginning with
+`tts_playback_starvation_ms` at y=231–246. On reversal, the next retained
+pre-stroke receipt already shows the earlier process, Gemma and endpoint rows;
+the intervening post-stroke observation was interrupted by a stale node. The
+source's fixed metric order places `tts_load_ms` between these observed regions.
+The completed fixture has no TTS measurement, so its value remains the literal
+`unavailable`. Selection state belongs to the screen outside the lazy item, and
+later TTS rows demonstrate that the sample remains expanded. The final PNG shows
+two retained attempts and the saved failed quality review; the subsequent XML
+reflects the test's `finally` cleanup and does not prove earlier data loss.
+
+This correction opts only the non-API-30 exact TTS text lookup into the
+existing overlapping half-viewport discovery gesture with its 250 ms endpoint
+hold. API 30 keeps its existing text observation path. All non-API-30 safe bounds,
+cache refresh, explicit idle settlement, 15-second/14-gesture limits and edge
+reversal rules remain unchanged. All clickable controls retain their enabled,
+stable-geometry and single-tap checks. No production UI, scoring, export,
+persistence, profile or publication gate changes. The receipts support a skipped
+metric region; they do not isolate fling or cache behavior as its sole mechanism.
+The correction is not a passing result. A fresh exact signed candidate
+must pass all six complete profiles and the consolidated receipt.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,
