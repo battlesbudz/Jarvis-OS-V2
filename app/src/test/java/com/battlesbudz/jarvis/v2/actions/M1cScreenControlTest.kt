@@ -95,12 +95,15 @@ class M1cScreenControlTest {
         for (request in listOf(
             ActionRequest("screen_tap", mapOf("target" to "n3", "token" to "short")),
             ActionRequest("screen_tap", mapOf("target" to "3", "token" to token)),
-            ActionRequest("screen_tap", mapOf("target" to "n3", "token" to token, "extra" to "x")),
             ActionRequest("screen_scroll", mapOf("target" to "n3", "direction" to "sideways", "token" to token)),
             ActionRequest("screen_type", mapOf("target" to "n3", "text" to "  ", "token" to token)),
             ActionRequest("screen_type", mapOf("target" to "n3", "text" to "x".repeat(201), "token" to token)),
             ActionRequest("screen_tap", mapOf("target" to "n3"))
         )) {
+            // Note: extra keys are rejected by the strict decoder (see
+            // strictDecodeEnforcesTargetTokenAndDirectionShapes), not the
+            // validator — the validator checks value shapes, matching the
+            // existing tools' convention.
             val result = validator.validate(request)
             assertTrue("${request.name} ${request.arguments} must be rejected", result is ActionValidation.Rejected)
         }
