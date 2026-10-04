@@ -83,6 +83,15 @@ CI evidence:
   `M2WorkflowsTest.draftIsSavedDisabledAndShowsPreview` (test bug: two
   separate ledgers, so `preview` could not find the draft — fixed to one
   ledger instance).
+- Run 37238225177 (M2 build, test-fix commit): build + JVM tests green
+  (922 tests), but BOTH emulator variants failed — 4 instrumentation
+  failures (test53-56): `NoClassDefFoundError` from
+  `ExceptionInInitializerError` in `WorkflowDefinition`'s companion:
+  Android's ICU regex engine rejects the trailing `-` in the character
+  class `[0-9a-fA-F-]` of `BINDING_PLACEHOLDER`
+  (`PatternSyntaxException`; desktop JVM accepts it, which is why unit
+  tests passed). Fixed by moving the hyphen to the front
+  (`[-0-9a-fA-F]`), behaviorally identical.
 - Run <run-id>: <result>
 - Release: `v0.1.0-build.<NNN>` (published <date>) with app-release.apk +
   app-compact.apk, titled "Jarvis OS V2 feature/muse-tools build <NNN> (M2 workflows)".

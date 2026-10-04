@@ -150,7 +150,7 @@ fun standardToolOutputs(request: ActionRequest): Map<String, WorkflowValueType> 
 }
 
 /** Placeholder syntax for typed bindings inside argument values: ${stepId.outputName}. */
-internal val BINDING_PLACEHOLDER = Regex("\\$\\{([0-9a-fA-F-]{36})\\.([A-Za-z_][A-Za-z0-9_]*)}")
+internal val BINDING_PLACEHOLDER = Regex("\\$\\{([-0-9a-fA-F]{36})\\.([A-Za-z_][A-Za-z0-9_]*)}")
 
 private fun String.isUuid(): Boolean = try {
     UUID.fromString(this).toString() == this
