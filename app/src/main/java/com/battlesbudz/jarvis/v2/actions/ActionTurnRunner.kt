@@ -86,7 +86,7 @@ class ActionTurnRunner(
         else "I completed ${receipts.size} action(s), but stopped before the rest.")
 
     fun same(left: ActionRequest, right: ActionRequest): Boolean = left.name == right.name && when (left.name) {
-        "read_battery" -> left.arguments.isEmpty() && right.arguments.isEmpty()
+        "read_battery", "screen_observe" -> left.arguments.isEmpty() && right.arguments.isEmpty()
         "set_volume" -> left.arguments["level"] == right.arguments["level"]
         "open_app" -> left.arguments.keys == setOf("app") && right.arguments.keys == setOf("app") &&
             left.arguments["app"]?.trim()?.equals(right.arguments["app"]?.trim(), ignoreCase = true) == true
