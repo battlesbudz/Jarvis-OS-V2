@@ -377,7 +377,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             control == com.battlesbudz.jarvis.v2.voice.VoiceActionControl.None) return
         val journal = try { phoneActionLedger.journal() }
         catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) { return }
-        val unfinished = journal.attempts.filter { !it.state.isTerminal() }
+        val unfinished = journal.attempts.filter { !it.state.isTerminalForUi() }
         if (unfinished.isEmpty()) return
         val router = com.battlesbudz.jarvis.v2.actions.TaskStopRouter()
         val newestId = unfinished.maxByOrNull { it.createdAtMs }?.id

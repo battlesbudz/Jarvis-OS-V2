@@ -14,8 +14,8 @@ import android.os.Build
  * M1d task progress notifications (D35, T04, T15).
  *
  * Progress for admitted work continues into chat and notifications after a
- * call ends. The channel is IMPORTANCE_LOW and every post is explicitly
- * silent: during Do Not Disturb the notification is posted immediately and
+ * call ends. The channel is IMPORTANCE_LOW, which delivers silently on its
+ * own: during Do Not Disturb the notification is posted immediately and
  * silently, never deferred until DND ends and never given separate
  * quiet-hours handling. Tapping opens the conversation.
  *
@@ -68,7 +68,7 @@ object TaskProgressNotification {
                 .setContentTitle("Jarvis: ${projection.label}")
                 .setContentText(projection.statusLine)
                 .setOnlyAlertOnce(true)
-                .setSilent(true)
+                // No setSilent: the IMPORTANCE_LOW channel delivers silently.
                 .setOngoing(true)
                 .apply { openApp(context)?.let { setContentIntent(it) } }
             if (projection.totalSteps > 0) {
@@ -103,7 +103,7 @@ object TaskProgressNotification {
                 .setContentText(text.take(256))
                 .setStyle(Notification.BigTextStyle().bigText(text))
                 .setAutoCancel(true)
-                .setSilent(true)
+                // No setSilent: the IMPORTANCE_LOW channel delivers silently.
                 .apply { openApp(context)?.let { setContentIntent(it) } }
                 .build())
             true
