@@ -12,7 +12,8 @@ temporary touch takeover, session grant and floating Stop, following the M1b
 conventions (strict catalog/validator/decoder agreement, Android executor
 dispatch, honest receipts, JVM + emulator journey tests).
 
-Changed files (commit TBD; server head TBD on `feature/muse-tools`):
+Changed files (commits `247116bd` + fixes `3d8f09e1`, `3c3c0776`, `af2a673a`;
+server head `af2a673a8a4fa3b2cb25a4d54fc1bc24415119d0` on `feature/muse-tools`):
 - `actions/ScreenControl.kt` (new, JVM-pure): `ScreenNode`, `ScreenObservation`
   (compact rendering, bounded at 64 nodes), `ScreenBridge` interface,
   `ScreenControlSession` — one grant per task group (second group denied, D26),
@@ -43,6 +44,9 @@ Changed files (commit TBD; server head TBD on `feature/muse-tools`):
   untouched: screen tools stay voice-denied by design.
 - `AndroidManifest.xml`: new service declaration (BIND_ACCESSIBILITY_SERVICE)
   + SYSTEM_ALERT_WINDOW permission for the overlay.
+- `app/proguard-rules.pro`: keep rules for the screen-control boundary
+  (service, session, nodes, bridge, gate/result types) so the separately
+  shrunk instrumentation DEX can construct fixtures and call the extractor.
 - `res/xml/screen_control_service.xml`, `res/values/strings.xml`: service
   config and honest user-facing label/description.
 - Tests: `M1cScreenControlTest.kt` (new JVM: catalog/validator/decoder/parser,
@@ -64,7 +68,28 @@ rejected, no dispatch; unadmitted mutation → needs-approval, no dispatch;
 service disabled → honest unavailability), real-model selection and physical
 Fold 6 screen behavior explicitly labeled unverified.
 
-CI evidence: TBD (run URL, build + both emulator variants + receipt + publish).
+CI evidence:
+- Run 37195729064 (first attempt): build FAILED on 1 JVM test —
+  `M1cScreenControlTest.rejectsMalformedScreenTargets` expected the validator
+  to reject extra keys, but exact-key enforcement is the strict decoder's job
+  (validator checks value shapes, matching the existing tools' convention).
+  Fixed in `3c3c0776` (corrected the misplaced expectation; the extra-key case
+  stays covered in the strict-decode test).
+- Run 37199689861 (retry): build SUCCESS (809 JVM tests green), then both
+  emulator variants FAILED test40-test42 — R8 had stripped/renamed the new
+  screen-control classes (NoClassDefFoundError/NoSuchMethodError). Fixed in
+  `af2a673a` with proguard keep rules for the test-exercised boundary,
+  following the file's existing convention.
+- Run 37201312225: ALL GREEN — build + both emulator variants (44/44 named
+  tests on API 30 and API 35, including new test40-test43) + consolidated
+  receipt (PASS, no errors) + publish.
+- Release: `v0.1.0-build.966` (published 2026-10-04T12:39Z) with app-release.apk
+  + app-compact.apk, titled "Jarvis OS V2 feature/muse-tools build 966 (M1c
+  screen control)".
+- Run URLs: https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37195729064,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37199689861,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37201312225
+- Release: https://github.com/battlesbudz/Jarvis-OS-V2/releases/tag/v0.1.0-build.966
 
 Unverified: real-model selection of the screen tools (needs on-device Gemma);
 physical Fold 6 behavior for observation/tap/scroll/type, the real
