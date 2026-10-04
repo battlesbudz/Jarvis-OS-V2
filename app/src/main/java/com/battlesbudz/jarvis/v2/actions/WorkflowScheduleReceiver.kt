@@ -38,7 +38,7 @@ class WorkflowScheduleReceiver : BroadcastReceiver() {
             }
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_TIMEZONE_CHANGED,
-            Intent.ACTION_TIME_SET,
+            Intent.ACTION_TIME_CHANGED,
             Intent.ACTION_LOCALE_CHANGED -> {
                 val pending = goAsync()
                 try {

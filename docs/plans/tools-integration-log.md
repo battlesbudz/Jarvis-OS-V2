@@ -11,7 +11,8 @@ Implements versioned step graphs with typed result bindings, deterministic
 conditions, event/timer waits and bounded adaptive steps (D31–D36, T11–T14),
 on top of the M1 ledger/approval/grant model — extended, never duplicated.
 
-Changed files (commit `<m2-sha>`; server head `<m2-sha>` on `feature/muse-tools`):
+Changed files (commit `6a5e5b4d`; server head
+`6a5e5b4de7c399e5e13b47d993c5894f9e1b7897` on `feature/muse-tools`):
 - `actions/WorkflowDefinition.kt` (new): immutable versioned definitions —
   tool steps with typed result bindings (`${stepId.output}` placeholders and
   explicit bindings against declared TEXT/NUMBER/BOOLEAN outputs),
@@ -66,6 +67,12 @@ Named contract: 56/56 on API 30 and API 35, including new test53-56;
 <JVM count> JVM unit tests green.
 
 CI evidence:
+- Run 37233942959 (first M2 build): FAILED at `compileReleaseKotlin` —
+  two Kotlin compile errors: missing import for `actions.isRoutineEligible`
+  in `JarvisRuntime.kt`, and `Intent.ACTION_TIME_SET` (does not exist —
+  corrected to `Intent.ACTION_TIME_CHANGED`) in
+  `WorkflowScheduleReceiver.kt`. Fixed in a follow-up commit; full gate
+  re-run required before release.
 - Run <run-id>: <result>
 - Release: `v0.1.0-build.<NNN>` (published <date>) with app-release.apk +
   app-compact.apk, titled "Jarvis OS V2 feature/muse-tools build <NNN> (M2 workflows)".

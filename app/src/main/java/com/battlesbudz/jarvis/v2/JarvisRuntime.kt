@@ -2,6 +2,7 @@ package com.battlesbudz.jarvis.v2
 
 import com.battlesbudz.jarvis.v2.conversation.ConversationPolicy
 import com.battlesbudz.jarvis.v2.conversation.ConversationWork
+import com.battlesbudz.jarvis.v2.actions.isRoutineEligible
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
