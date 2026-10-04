@@ -314,10 +314,17 @@ class Device:
             offset = end
         if not valid or not kinds or kinds[-1] != b"IEND" or b"IDAT" not in kinds:
             raise RuntimeError(f"Invalid screenshot PNG for {name}")
-        command("shell", shlex.join(["uiautomator", "dump", "/sdcard/jarvis-window.xml"]))
-        xml = command("shell", shlex.join(["cat", "/sdcard/jarvis-window.xml"]))
-        self.out.joinpath(f"{name}.xml").write_text(xml)
-        ET.fromstring(xml)  # A failed hierarchy dump is not valid evidence.
+        hierarchy = self.out / f"{name}.xml"
+        remote_hierarchy = "/sdcard/jarvis-window.xml"
+        hierarchy.unlink(missing_ok=True)
+        # uiautomator can exit zero without writing a hierarchy. A fresh cat
+        # must fail in that case, rather than accepting the previous device XML.
+        command("shell", shlex.join(["rm", "-f", remote_hierarchy]))
+        command("shell", shlex.join(["uiautomator", "dump", remote_hierarchy]))
+        xml = command("shell", shlex.join(["cat", remote_hierarchy]))
+        hierarchy.write_text(xml)
+        if ET.fromstring(xml).tag != "hierarchy":
+            raise RuntimeError(f"Invalid captured hierarchy for {name}: expected hierarchy root")
         return xml
 
 

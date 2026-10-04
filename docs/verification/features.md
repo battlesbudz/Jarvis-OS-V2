@@ -774,6 +774,58 @@ commands. Positive dimensions, complete PNG chunks/CRCs and a parsed XML hierarc
 remain required. Actual posture proof
 continues to use the per-test folded/unfolded snapshots.
 
+## Build 940 metric discovery and fresh hierarchy evidence
+
+[Build 940](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37176861888)
+tests head `bea2456b8ca7822d4260dda8230641079d94aa00`, actual checkout
+`2a5e594722fe95cdbfa246fe4d6b6c9fea24c036`. The signed producer, 1,005 JVM
+cases, recorded speech and native packaging audits pass. API 35 compact, API 36
+phone, true 16 KB and Pixel Fold each pass all 49 main cases, restart, both
+published-907 upgrade phases, eight lifecycle phases, four layout cases and nine
+native-loading checks. Pixel Fold changes 2208×1840 to 1080×2092 and back,
+retaining the same conversation, unsent draft and armed controlled call. Its
+transition receipts observe dimension change before wake/unlock/composer readiness,
+within the original 45-second deadline. This does not establish physical audio or
+real Android language-model inference.
+
+API 30 passes its upgrade and 48 of 49 main cases. Test45 fails while searching
+for the exact read-only `tts_load_ms: unavailable` label after scoring and human
+review. The target is absent from every observed query: six full discovery strokes
+reach the lower edge, followed by five strokes back to the upper edge. Fine target
+alignment never runs. The PNG shows two attempts and the reviewed ASR score; XML
+was captured after fixture cleanup and cannot establish search-time expansion.
+No app fatal or ANR is present. Other profiles and the earlier passing API 30 run
+show the same literal label; production metric rendering is unchanged.
+
+The explicit API 30 metric-search correction uses overlapping half-viewport
+discovery gestures with a stationary endpoint, retaining real injection success,
+fresh viewport observations and the same 15-second/14-gesture/edge bounds.
+UiAutomator 2.3.0's own scroll gesture holds its endpoint for 250 ms; the public
+point-path swipe provides that hold without requiring a Compose scroll event.
+Compose 1.7.6's velocity tracker resets when pointer-up is more than 40 ms after
+the last tracked movement. This supports a nonflinging search; it does not prove
+that the failed run flung past the label. Only this API 30 text assertion opts in;
+interactive controls and other profiles retain their existing paths. Every literal
+metric, privacy, export, durable score and empty-store assertion remains required.
+Primary source archives:
+[UiAutomator 2.3.0](https://dl.google.com/dl/android/maven2/androidx/test/uiautomator/uiautomator/2.3.0/uiautomator-2.3.0-sources.jar),
+[Compose foundation 1.7.6](https://dl.google.com/dl/android/maven2/androidx/compose/foundation/foundation/1.7.6/foundation-1.7.6-sources.jar),
+and [Compose UI 1.7.6](https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui/1.7.6/ui-1.7.6-sources.jar).
+
+Host hierarchy capture also removes both previous local and remote XML before
+dumping. AOSP's dump command can exit successfully without producing a hierarchy;
+accepting an old file would make a snapshot's evidence stale. A fresh well-formed
+hierarchy, valid PNG bytes and the existing shared 60-second budget remain required.
+This closes a demonstrated command/evidence failure case; stale XML was not
+established in Build 940. Fresh full verification remains necessary before release.
+
+API 29 exhausts the original 900-second boot budget while trying to observe
+user0 boot-delivery completion for the current system server. The final filtered
+logcat read times out; no controller phase starts. A display-read retry cannot
+repair this earlier failure and is not included. The exact-build receipt fails,
+and all publication jobs are skipped. API 29 remains required in the next full
+run; none of the successful profiles can substitute for it.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,

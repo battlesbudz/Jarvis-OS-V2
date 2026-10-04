@@ -2367,7 +2367,8 @@ class ReleaseJourneyTest {
     }
 
     private fun benchmarkFindVisible(selector: BySelector, towardTop: Boolean, inDialog: Boolean,
-        deadline: Long, swipes: AtomicInteger, requireSafeTapBounds: Boolean = true): UiObject2 {
+        deadline: Long, swipes: AtomicInteger, requireSafeTapBounds: Boolean = true,
+        holdTextDiscovery: Boolean = false): UiObject2 {
         fun hasRequiredBounds(control: UiObject2): Boolean = if (requireSafeTapBounds)
             benchmarkHasSafeBounds(control) else benchmarkHasVisibleTextBounds(control)
         var direction = if (towardTop) Direction.UP else Direction.DOWN
@@ -2418,14 +2419,25 @@ class ReleaseJourneyTest {
                 val gap = if (knownBounds == null) 0 else if (direction == Direction.UP)
                     viewport.top + 24 - knownBounds.top else knownBounds.bottom - (viewport.bottom - 24)
                 val fineLimit = viewport.height() / 5
-                val stroke = if (fine) (gap + 24).coerceIn(48.coerceAtMost(fineLimit), fineLimit) else lowY - highY
+                val hold = holdTextDiscovery && !fine
+                val stroke = if (fine) (gap + 24).coerceIn(48.coerceAtMost(fineLimit), fineLimit)
+                    else if (hold) viewport.height() / 2 else lowY - highY
                 val fromY = if (direction == Direction.DOWN) lowY else highY
                 val toY = fromY + if (direction == Direction.DOWN) -stroke else stroke
-                val steps = if (fine) 24 else 12
+                val steps = if (hold) 51 else if (fine) 24 else 12
                 val scrollStarted = SystemClock.uptimeMillis()
                 if (android.os.Build.VERSION.SDK_INT >= 34 && SystemClock.uptimeMillis() >= deadline) break
-                android.util.Log.i("JarvisVerification", "benchmark_navigation_dispatch selector=$selector direction=$direction mode=${if (fine) "fine" else "blind"} requireSafeTapBounds=$requireSafeTapBounds beforeTarget=$bounds beforeViewport=$viewport stroke=$stroke x=$swipeX fromY=$fromY toY=$toY steps=$steps gestures=${swipes.get()} remainingMs=${deadline - scrollStarted}")
-                check(device.swipe(swipeX, fromY, swipeX, toY, steps)) {
+                android.util.Log.i("JarvisVerification", "benchmark_navigation_dispatch selector=$selector direction=$direction mode=${if (hold) "held_text" else if (fine) "fine" else "blind"} requireSafeTapBounds=$requireSafeTapBounds beforeTarget=$bounds beforeViewport=$viewport stroke=$stroke x=$swipeX fromY=$fromY toY=$toY steps=$steps gestures=${swipes.get()} remainingMs=${deadline - scrollStarted}")
+                // API 30's metric search traversed both edges without observing
+                // the narrow label. Overlap successive viewports and hold the
+                // endpoint for 250 ms, as UiAutomator's own scroll gesture does.
+                // The public point path still requires successful real injection;
+                // viewport observations determine progress, not scroll events.
+                val dispatched = if (hold) device.swipe(arrayOf(
+                    android.graphics.Point(swipeX, fromY), android.graphics.Point(swipeX, toY),
+                    android.graphics.Point(swipeX, toY)), steps)
+                    else device.swipe(swipeX, fromY, swipeX, toY, steps)
+                check(dispatched) {
                     "Benchmark swipe dispatch failed"
                 }
                 device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))
@@ -2436,7 +2448,7 @@ class ReleaseJourneyTest {
                 val freshBounds = fresh?.visibleBounds
                 val freshList = benchmarkScrollList()
                 val freshViewport = freshList?.visibleBounds
-                android.util.Log.i("JarvisVerification", "benchmark_navigation_observed selector=$selector direction=$direction mode=${if (fine) "fine" else "blind"} requireSafeTapBounds=$requireSafeTapBounds afterTarget=$freshBounds afterViewport=$freshViewport ready=$freshReady gestures=${swipes.get()} gestureMs=${SystemClock.uptimeMillis() - scrollStarted} remainingMs=${deadline - SystemClock.uptimeMillis()}")
+                android.util.Log.i("JarvisVerification", "benchmark_navigation_observed selector=$selector direction=$direction mode=${if (hold) "held_text" else if (fine) "fine" else "blind"} requireSafeTapBounds=$requireSafeTapBounds afterTarget=$freshBounds afterViewport=$freshViewport ready=$freshReady gestures=${swipes.get()} gestureMs=${SystemClock.uptimeMillis() - scrollStarted} remainingMs=${deadline - SystemClock.uptimeMillis()}")
                 if (fresh != null && freshReady) {
                     if (android.os.Build.VERSION.SDK_INT < 34 || SystemClock.uptimeMillis() < deadline) return fresh
                     break
@@ -2464,9 +2476,9 @@ class ReleaseJourneyTest {
         benchmarkFindVisible(selector, towardTop, false, SystemClock.uptimeMillis() + 15_000, AtomicInteger())
     }
 
-    private fun benchmarkRevealText(text: String): UiObject2 = observeNavigation {
+    private fun benchmarkRevealText(text: String, holdDiscovery: Boolean = false): UiObject2 = observeNavigation {
         benchmarkFindVisible(By.text(text), false, false, SystemClock.uptimeMillis() + 15_000,
-            AtomicInteger(), requireSafeTapBounds = false)
+            AtomicInteger(), requireSafeTapBounds = false, holdTextDiscovery = holdDiscovery)
     }
 
     private fun benchmarkClickEnabled(selector: BySelector, towardTop: Boolean = false, inDialog: Boolean = false) {
@@ -2585,7 +2597,9 @@ class ReleaseJourneyTest {
             assertEquals(PipelineBenchmarkVerdict.FAIL, quality.factualityVerdict)
             assertEquals(PipelineBenchmarkOutcome.COMPLETE, store.samples.value.single { it.turnId == completedId }.outcome)
             assertEquals(PipelineBenchmarkEnvironment.NOISY, store.samples.value.single { it.turnId == completedId }.environment)
-            assertNotNull(benchmarkScrollTo(By.text("tts_load_ms: unavailable")))
+            assertNotNull(if (android.os.Build.VERSION.SDK_INT == 30)
+                benchmarkRevealText("tts_load_ms: unavailable", holdDiscovery = true)
+                else benchmarkScrollTo(By.text("tts_load_ms: unavailable")))
             captureEvidence("pipeline_benchmark_verified_reference_and_review")
 
             benchmarkClickEnabled(By.res("pipeline_benchmark_copy_json"), towardTop = true)
