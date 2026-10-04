@@ -17,7 +17,9 @@ match is never described or treated as secure authorization (T09). Crash
 before/after dispatch reconciles via the journal; unknown mutations are never
 blindly repeated; stale callbacks are rejected (T10).
 
-Changed files (commit `<m1e-sha>`; server head `<server-head>` on `feature/muse-tools`):
+Changed files (commits `71452fcc` + repairs `13ce4a04`, `c282a1c0`, `0fb0b6ac`,
+`1d73853d`, `2e11dd71`, `0bf833a0`; server head
+`0bf833a0c0c61e4cadf1de63e1c79a7e442a2c9f` on `feature/muse-tools`):
 - `actions/ToolSourceAccess.kt` (new, JVM-pure): `ToolSourcePolicy` — six tool
   families (phone/media/web/settings/map/screen) with fixed scope sets;
   `ToolSourceAccess` admission over the persisted journal — denial/revocation/
@@ -73,8 +75,29 @@ Changed files (commit `<m1e-sha>`; server head `<server-head>` on `feature/muse-
   behavior explicitly unverified).
 - `FinalVoiceToolGuard` untouched.
 
-CI evidence: (pending — will update after the gate runs)
-- Release: (pending)
+CI evidence (green run
+[37228236666](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37228236666),
+commit `0bf833a0`):
+- Build signed release APK: success (JVM tests green, incl. 17 new
+  `M1eDeviceValidationTest`).
+- Emulator API 30: success — 52/52 named journeys, test49 (denial/revocation
+  blocks all adapters; tampered scope refused), test50 (real keyguard: locked
+  device hands sensitive actions to unlock; `read_battery` dispatches through
+  the real adapter), test51 (T01 regression across all 11 tools), test52
+  (crash reconciliation; stale callbacks rejected; no repeats).
+- Emulator API 35: success — 52/52.
+- Consolidate exact-build verification evidence: success (receipt PASS).
+- Repair history (test-only, never product): `13ce4a04` (SAM-conversion
+  breakage), `c282a1c0` (paren), `0fb0b6ac` (emulator ships with no lock
+  screen — set a real PIN), `1d73853d` (R8 keep for `AndroidToolGatesKt`),
+  `2e11dd71` (unlock through the PIN pad before clearing — the showing
+  keyguard UI never refreshes a `locksettings clear`), `0bf833a0` (swipe up
+  to reveal the PIN bouncer before entering digits). test50 leaves the
+  device unlocked and PIN-free for later journeys (asserted).
+- Release:
+  [v0.1.0-build.982](https://github.com/battlesbudz/Jarvis-OS-V2/releases/tag/v0.1.0-build.982)
+  — title "Jarvis OS V2 feature/muse-tools build 982 (M1e device validation)",
+  both signed APKs attached.
 
 Unverified: physical Fold 6 lock behavior and real permission-revocation UX;
 on-device speaker-verification measurement (owner recognition stays gated
