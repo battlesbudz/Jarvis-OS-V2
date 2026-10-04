@@ -2381,9 +2381,9 @@ class ReleaseJourneyTest {
                 // UiObject2.scroll result conflates a missing accessibility event with
                 // an actual edge, so determine progress from fresh visible content.
                 val before = benchmarkViewportSignature(list)
-                // Avoid the unfolded hinge and reduce synchronous input work,
-                // preserving overlap between strokes and the same safe-tap checks.
-                val swipeX = viewport.left + viewport.width() / 4
+                // Avoid the unfolded hinge and the system clipboard preview at
+                // the lower left, preserving overlap and the same safe-tap checks.
+                val swipeX = viewport.left + viewport.width() * 3 / 4
                 val lowY = viewport.top + viewport.height() * 85 / 100
                 val highY = viewport.top + viewport.height() * 15 / 100
                 val fromY = if (direction == Direction.DOWN) lowY else highY

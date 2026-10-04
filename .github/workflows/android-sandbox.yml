@@ -52,6 +52,44 @@ jobs:
           # setup-android v3 defaults to the retired "tools" package. Native ARM64
           # hosts need current adb only here; the profile step installs emulator/images.
           packages: platform-tools
+      - name: Set up Java for the pinned Pixel Fold SDK
+        if: matrix.screen_profile == 'foldable'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          architecture: x64
+      - name: Install the pinned Pixel Fold device catalog
+        if: matrix.screen_profile == 'foldable'
+        uses: android-actions/setup-android@v3
+        with:
+          # Official SDK tools 23.0 contains the genuine pixel_fold definition.
+          cmdline-tools-version: '16111833'
+          packages: platform-tools
+      - name: Select the pinned catalog for the emulator runner
+        if: matrix.screen_profile == 'foldable'
+        run: |
+          set -euo pipefail
+          jarvis_pinned_tools="${ANDROID_HOME:?}/cmdline-tools/16111833"
+          jarvis_latest_tools="$ANDROID_HOME/cmdline-tools/latest"
+          test "$(sed -n 's/^Pkg.Revision=//p' "$jarvis_pinned_tools/source.properties")" = '23.0'
+          test -x "$jarvis_pinned_tools/bin/avdmanager"
+          # The emulator action prepends latest/bin, overriding the setup action's
+          # versioned PATH. Preserve the hosted catalog outside the SDK and make
+          # the exact pinned bundle the catalog used during AVD creation.
+          jarvis_preinstalled_tools="$RUNNER_TEMP/jarvis-fold-preinstalled-cmdline-tools"
+          test ! -e "$jarvis_preinstalled_tools"
+          test ! -L "$jarvis_preinstalled_tools"
+          if [ -e "$jarvis_latest_tools" ] || [ -L "$jarvis_latest_tools" ]; then
+            mv "$jarvis_latest_tools" "$jarvis_preinstalled_tools"
+          fi
+          mv "$jarvis_pinned_tools" "$jarvis_latest_tools"
+          printf '%s\n' "$jarvis_latest_tools/bin" >> "$GITHUB_PATH"
+          jarvis_catalog_dir="$RUNNER_TEMP/jarvis-fold-display"
+          mkdir -p "$jarvis_catalog_dir"
+          cp "$jarvis_latest_tools/source.properties" "$jarvis_catalog_dir/pinned-sdk-source.properties"
+          "$jarvis_latest_tools/bin/avdmanager" list device | tee "$jarvis_catalog_dir/hardware-profiles.txt"
+          grep -Eq '^[[:space:]]*id: [0-9]+ or "pixel_fold"$' "$jarvis_catalog_dir/hardware-profiles.txt"
       - name: Resolve exact build artifact IDs
         id: artifacts
         env:

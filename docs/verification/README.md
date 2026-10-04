@@ -21,9 +21,11 @@ commits. Do not create or merge another PR without Justin's permission.
 3. Run `.github/workflows/android-sandbox.yml` on disposable Android
    emulators from `scripts/verification/profiles.json`: API 29/30/35/36,
    an API 36 foldable and a true 16 KB system image. The foldable uses the SDK's
-   `7.6in Foldable` hardware definition, which is available in the hosted
-   command-line tools: a 1768×2208 inner screen, an 884×2208 folded region and
-   a 0–180° hinge. The controller still requires real fold/unfold commands and
+   genuine `pixel_fold` hardware definition from pinned command-line tools
+   23.0, build 16111833: a 2208×1840 inner screen, a 1080×2092 cover display and
+   a 0–180° hinge. The fold job promotes the verified pinned tools directory to
+   `cmdline-tools/latest`, which emulator-runner actually consumes, and retains
+   its catalog receipt. The controller still requires real fold/unfold commands and
    actual display-size changes. API 30 and newer use
    accelerated x86-64 images with ARM64 translation. The current API 29 x86
    Google APIs and Play images contain no ARM64 bridge, so that profile uses
@@ -35,6 +37,11 @@ commits. Do not create or merge another PR without Justin's permission.
    output and guest logcat, and requires the boot flag, input/activity/package/
    window services and successful unlock before invoking the same full release
    controller. All readiness and unlock checks share the 15-minute boot budget;
+   software rendering uses two vCPUs, 2 GiB RAM, `vm.heapSize=256M` and a
+   540×960 framebuffer at 210 dpi, preserving Pixel 2's exact Android dp viewport.
+   Physical size/density are observed before ready; optional read-only host
+   resource receipts consume the existing deadline. These provisioning settings
+   are experiments pending a complete passing run, not evidence of a memory cause.
    the job remains bounded by 60 minutes. A boot flag alone is not a passing
    device result. Missing services, ABI/page-size compatibility, a failed test
    or a timeout fails rather than skips. Linux profiles retain emulator-runner.

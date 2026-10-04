@@ -565,6 +565,97 @@ assets and current documentation are retained. This is a branch merge, not a
 merge of PR6 into main. All production, harness and regression blobs from
 `9a2c3e2c` remain unchanged; a fresh combined candidate still requires CI.
 
+## Build 936 clipboard-preview navigation repair
+
+[Build 936](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37172234250)
+tests head `4f427ed6da260d8ecbca31f2a6364b8568aba93d`, actual merge
+`e5a0a76026a5acbee4eb7e898f9ac1bc97ff5570`. The initially reported PR merge
+`ed5b40c0fc4d927481bdeb61ed2e7ee98a888458` has the same parents and tree;
+the run's workflow and artifact source fields identify the actual tested merge.
+Both signed APKs, all 1,005 JVM cases, recorded speech and native 16 KB audits
+passed. API 30 passed its complete device gate; the other five device profiles
+failed. These results do not establish a clean APK.
+
+API 36 phone artifact `11292107914`, ZIP SHA-256
+`24256e51b498efce1141811b5de312abb2e849e47edc339799947b38d779ceb5`,
+passed the actual upgrade and 48 of 49 main cases, including test12 and test48.
+Test45 failed revealing the completed sample after Copy JSON and store reload.
+The inspected PNG still shows Android's clipboard preview at the lower left,
+including its dismiss circle near `[273,1598]`. The actual viewport is
+`[42,231][1038,1815]`; both physical DOWN strokes start at `[291,1577]`,
+inside that visible overlay. Their fresh viewport signatures are stationary.
+Before copying, the same sample's navigation succeeded. Clipboard interception
+is the evidence-supported explanation; no fling overshoot is demonstrated and
+no input-dispatch trace proves exclusive causality. The benchmark path now uses
+the right quarter of the actual viewport (`x=789` on this phone, `x=1305` on
+Build 936's legacy unfolded profile), avoiding the observed clipboard preview
+and central hinge. The new Pixel Fold uses its own observed viewport.
+Model-list gestures retain their left-quarter path. Twelve steps, 15–85% stroke,
+all deadlines, full/safe/stable bounds, gesture limits and single-tap checks stay
+unchanged. Actual folded clipboard geometry is not inferred from this phone PNG;
+the main foldable benchmark journey runs unfolded. A full fresh matrix is required.
+
+API 35 true 16 KB artifact `11291824807`, ZIP SHA-256
+`e27eecdde5318331400b5043043710cc6ba1c3eb50130e16780fcdf11ab7269b`,
+passed the upgrade and main cases01–19 before Android's `system_server` crashed
+in the next case's setup. Its native trace shows an ART null-pointer dereference
+in `NterpGetStaticField`, through `PackageDexUseProto.dynamicMethod` and
+`DexUseManagerLocal.save`; all 38 frames are platform/runtime frames. Subsequent
+UiAutomator binder and device I/O failures follow that crash. This supports an
+infrastructure classification, with the failed evidence retained. No check or
+system-image requirement is removed; the next candidate must pass this profile.
+
+The completed receipt is false and all publishers are skipped. API 35 compact
+artifact `11292018480`, ZIP SHA-256
+`fb4765c8864bcc58a90290e7a738fd15da85ba034a18563f6cbfeed61ad330c3`,
+passed the upgrade, but a Pixel Launcher ANR dialog covered Jarvis throughout
+all 49 main-test setup failures. Their test bodies, including test48, never ran.
+The inspected first-launch PNG/XML show the same platform modal over the app;
+the retained post-upgrade log does not contain the originating ANR stack.
+This warrants re-exercising the unchanged compact profile in the next full run.
+
+API 29 artifact `11291878809`, ZIP SHA-256
+`f8e9fc3b52b5fc12b209a4d7a0e30e18ee4e4469cf5e3ae57c2e034c3c1f9cf1`,
+never reached installation. UTC is correct in the actual command and guest
+properties, with no former `Unknown/Unknown` setup crash. Android's default
+permission-grant request timed out after its internal 30-second limit, causing
+`PermissionPolicyService` to kill `system_server` and restart it. Cold input then
+took 127 seconds and the second animation-setting command exceeded its existing
+30-second limit. Guest ANR evidence reports high CPU load, including long GC,
+without an OOM or disk error. Any host/AVD resource correction still needs actual
+boot, installation and the full unchanged controller; a boot flag is insufficient.
+The next software launch retains two vCPUs, the same API 29 default ARM64 image,
+UTC, renderer and deadlines. It uses 2 GiB guest RAM and the recognized
+`vm.heapSize=256M` property instead of the unrecognized `hw.heapSize`, with a
+540×960 framebuffer at 210 dpi. This preserves the exact 411.43×731.43 dp
+Pixel 2 viewport while reducing raster pixels fourfold. RAM headroom and lower
+CPU graphics load are bounded provisioning experiments, not proven fixes or
+evidence of memory exhaustion. Read-only host CPU/memory/process receipts have
+at most two seconds per command and consume the existing boot/job budget;
+receipt failures cannot replace the original boot failure.
+
+Foldable artifact `11291729306`, ZIP SHA-256
+`4f655d1c570caa710fbd162de015868ef13c25e92091d57a5bfe11b1ea2a32f7`,
+passed all 49 main journeys, both upgrade phases and all eight lifecycle phases.
+The new gesture work reaches the valid Choose target with almost ten seconds
+remaining, and Copy JSON gestures take roughly 1.6–1.7 seconds. Three layout
+tests pass, including the visually inspected 200% font controls and all nine
+native library loads. The actual fold command succeeds, but display dimensions
+stay `1768x2208` throughout the unchanged 45-second wait; unfold is not reached.
+No folded screenshot proves posture coverage. The generic hardware path requires
+provisioning investigation, with genuine folded/unfolded dimension changes and
+continuity still mandatory.
+The next candidate replaces that generic profile with the genuine `pixel_fold`
+definition from official command-line tools 23.0/build 16111833. Its catalog
+declares a 2208×1840 inner display and 1080×2092 cover display. The fold-only
+SDK step verifies the selected version and `pixel_fold` catalog entry and makes
+it the runner's `cmdline-tools/latest`; merely adding a versioned SDK directory
+would leave emulator-runner using the old catalog. The owned X display, GUI
+loader receipts, true fold/unfold commands, 45-second dimension waits, active
+call and draft continuity, all six profiles and all other checks remain required.
+This is a provisioning correction pending actual folded/unfolded evidence.
+Official catalog: https://dl.google.com/android/repository/repository2-3.xml
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,

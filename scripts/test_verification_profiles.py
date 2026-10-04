@@ -25,6 +25,8 @@ class ProfileContractTest(unittest.TestCase):
         self.assertTrue(any(p['api'] == 29 for p in profiles))
         self.assertTrue(any(p['api'] == 36 for p in profiles))
         self.assertTrue(any(p['screen_profile'] == 'foldable' for p in profiles))
+        foldable = next(profile for profile in profiles if profile['screen_profile'] == 'foldable')
+        self.assertEqual('pixel_fold', foldable['device_profile'])
         self.assertTrue(any(p['page_size'] == 16384 for p in profiles))
         oldest = next(profile for profile in profiles if profile['api'] == 29)
         self.assertEqual(('default', 4096, 'macos-15', 'arm64-v8a', 'software', 900, 60),

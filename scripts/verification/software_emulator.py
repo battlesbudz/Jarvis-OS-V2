@@ -26,6 +26,12 @@ except ImportError:
 SERVICES = ("input", "activity", "package", "window")
 AVD_NAME = "jarvis-api29-software"
 SERIAL = "emulator-5554"
+# Build 936 exhausted guest CPU during API 29 permission initialization. This
+# bounded headroom/raster experiment retains two vCPUs and the Pixel 2 dp viewport;
+# it does not establish host memory pressure as the cause or change any deadline.
+SOFTWARE_AVD_SETTINGS = {"hw.cpu.ncore": "2", "hw.ramSize": "2048M", "vm.heapSize": "256M",
+                         "hw.lcd.width": "540", "hw.lcd.height": "960", "hw.lcd.density": "210",
+                         "disk.dataPartition.size": "4096M"}
 
 
 def require_software_profile(profile, system=None, machine=None):
@@ -166,11 +172,49 @@ class SoftwareSession:
                   "-n", AVD_NAME, "--package", image, "--device", self.profile["device_profile"]],
                  input="no\n", timeout=120)
         config = avd_home / f"{AVD_NAME}.avd/config.ini"
-        with config.open("a") as stream:
-            stream.write("\nhw.cpu.ncore=2\nhw.ramSize=4096M\nhw.heapSize=512M\ndisk.dataPartition.size=4096M\n")
+        retained = [line for line in config.read_text().splitlines()
+                    if line.partition("=")[0].strip() not in SOFTWARE_AVD_SETTINGS]
+        config.write_text("\n".join(retained) + "\n" +
+                          "".join(f"{key}={value}\n" for key, value in SOFTWARE_AVD_SETTINGS.items()))
+        self.report["avd_settings"] = SOFTWARE_AVD_SETTINGS
         shutil.copyfile(config, self.diagnostics / "avd-config.ini")
         self.run([str(self.sdk / "emulator/emulator"), "-version"])
         self.run([str(self.sdk / "platform-tools/adb"), "start-server"])
+
+    def capture_host_resources(self, stage, deadline):
+        """Optional read-only receipts consume the existing budget, never extend it."""
+        commands = (["/usr/sbin/sysctl", "-n", "hw.ncpu", "hw.memsize"],
+                    ["/usr/bin/vm_stat"], ["/usr/bin/memory_pressure", "-Q"],
+                    ["/bin/ps", "-p", str(self.emulator.pid), "-o", "pid=,pcpu=,rss=,comm="])
+        for command in commands:
+            receipt = {"stage": stage, "command": command}
+            try:
+                result = self.run(command, deadline=deadline, timeout=2, check=False)
+                receipt.update(exit_code=result.returncode, stdout=result.stdout, stderr=result.stderr)
+            except (OSError, TimeoutError) as error:
+                receipt["error"] = str(error)
+            try:
+                with (self.diagnostics / "host-resources.jsonl").open("a") as stream:
+                    stream.write(json.dumps(receipt) + "\n")
+            except OSError as error:
+                self.report.setdefault("host_resource_errors", []).append(str(error))
+                return
+            if self.now() >= min(deadline, self.deadline):
+                break
+
+    def require_display(self, deadline):
+        # Verify physical framebuffer/density, including any SDK skin override.
+        # An Android wm override would change logical layout without cutting the raster.
+        display = {}
+        expected = {"size": "540x960", "density": "210"}
+        for field, value in expected.items():
+            result = self.adb("shell", "wm", field, deadline=deadline, check=True)
+            display[field] = {"stdout": result.stdout, "stderr": result.stderr}
+            (self.diagnostics / "display-state.json").write_text(json.dumps(display, indent=2) + "\n")
+            if result.stdout.strip() != f"Physical {field}: {value}":
+                raise RuntimeError(f"Software emulator physical {field} must be {value}: {result.stdout.strip()}")
+        remaining(min(deadline, self.deadline), self.now)
+        self.report["display"] = {"width": 540, "height": 960, "density_dpi": 210}
 
     def boot(self):
         deadline = min(self.deadline, self.now() + self.profile["boot_timeout"])
@@ -180,19 +224,24 @@ class SoftwareSession:
             self.emulator = subprocess.Popen(command, env=self.environment, stdout=output,
                                              stderr=subprocess.STDOUT, start_new_session=True)
         self.report["emulator_pid"] = self.emulator.pid
-        self.wait_ready(deadline)
-        # Successful binder lookups alone do not prove the input service can execute.
-        # Software cold-start input may take minutes. It gets the remaining shared
-        # boot budget, rather than a separate shorter limit or a renewed deadline.
-        self.adb("shell", "input", "keyevent", "82", deadline=deadline, check=True,
-                 timeout=remaining(deadline, self.now))
-        wait_for_unlock(self.adb, lambda: self.emulator.poll() is None, deadline, now=self.now,
-                        record=lambda raw: (self.diagnostics / "unlock-state.txt").write_text(raw))
-        for setting in ("window_animation_scale", "transition_animation_scale", "animator_duration_scale"):
-            self.adb("shell", "settings", "put", "global", setting, "0.0",
-                     deadline=deadline, check=True, timeout=30)
-        self.wait_ready(deadline)
-        self.report["status"] = "ready"
+        try:
+            self.capture_host_resources("boot-start", deadline)
+            self.wait_ready(deadline)
+            # Successful binder lookups alone do not prove the input service can execute.
+            # Software cold-start input may take minutes. It gets the remaining shared
+            # boot budget, rather than a separate shorter limit or a renewed deadline.
+            self.adb("shell", "input", "keyevent", "82", deadline=deadline, check=True,
+                     timeout=remaining(deadline, self.now))
+            wait_for_unlock(self.adb, lambda: self.emulator.poll() is None, deadline, now=self.now,
+                            record=lambda raw: (self.diagnostics / "unlock-state.txt").write_text(raw))
+            for setting in ("window_animation_scale", "transition_animation_scale", "animator_duration_scale"):
+                self.adb("shell", "settings", "put", "global", setting, "0.0",
+                         deadline=deadline, check=True, timeout=30)
+            self.wait_ready(deadline)
+            self.require_display(deadline)
+            self.report["status"] = "ready"
+        finally:
+            self.capture_host_resources("boot-ready" if self.report["status"] == "ready" else "boot-failed", deadline)
         print("API 29 boot flag, input/activity/package/window services and unlock succeeded", flush=True)
 
     def wait_ready(self, deadline):
