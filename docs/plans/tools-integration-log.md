@@ -1,6 +1,76 @@
 # Tools epic integration log
 
-Epic: [#8](https://github.com/battlesbudz/Jarvis-OS-V2/issues/8). Implementation branch: `feature-tools`.
+Epic: [#8](https://github.com/battlesbudz/Jarvis-OS-V2/issues/8). Implementation branch: `feature-tools`
+(renamed from `muse/feature-tools` on 2026-10-04 so pushes trigger the Android CI
+workflow, whose push trigger covers `feature/**`; older entries below still say
+`muse/feature-tools`).
+
+## Item 3: M1c screen control slice (screen_observe, screen_tap, screen_scroll, screen_type) — 2026-10-04
+
+Implements compact screen observation, tap/scroll/type with verified targets,
+temporary touch takeover, session grant and floating Stop, following the M1b
+conventions (strict catalog/validator/decoder agreement, Android executor
+dispatch, honest receipts, JVM + emulator journey tests).
+
+Changed files (commit TBD; server head TBD on `feature/muse-tools`):
+- `actions/ScreenControl.kt` (new, JVM-pure): `ScreenNode`, `ScreenObservation`
+  (compact rendering, bounded at 64 nodes), `ScreenBridge` interface,
+  `ScreenControlSession` — one grant per task group (second group denied, D26),
+  token rotation per observation, `verifyTarget` (stale token/target rejected),
+  touch pause with configurable idle interval (default 3s) and countdown-free
+  re-observe resume (T06, D25), stop request, release.
+- `actions/ScreenControlService.kt` (new AccessibilityService): tree-walk node
+  extraction, tap (ACTION_CLICK), scroll (ACTION_SCROLL_FORWARD/BACKWARD), type
+  (ACTION_FOCUS + ACTION_SET_TEXT), each re-verified against a fresh tree walk
+  before dispatch; touch-interaction events feed the session; floating Stop
+  overlay (TYPE_APPLICATION_OVERLAY, best-effort) calls requestStop (D24).
+  Enabled by the user in Android Accessibility settings (D09); until then the
+  bridge reports unavailable and tools answer honestly.
+- `actions/MobileToolCatalog.kt`: 4 new tools with strict params (target
+  `^n[0-9]{1,4}$`, token `^[0-9a-f]{16}$`, direction `^(up|down)$`).
+- `actions/MobileAction.kt`: `ScreenObserve`, `ScreenTap`, `ScreenScroll`,
+  `ScreenType` + `ScreenScrollDirection` enum; validator binds shapes (text
+  capped at 200 chars) — freshness stays in the session at dispatch.
+- `actions/NativeActionDecoder.kt`: tolerant arg mapping for the 4 tools.
+- `actions/AndroidMobileActionExecutor.kt`: `observeScreen` (honest
+  unavailability when the service is disabled) and `dispatchScreenMutation`
+  (admission/touch/stop gate, verified target, honest performAction receipts);
+  new optional `screenBridge`/`screenSession` constructor params (defaults keep
+  existing call sites working).
+- `actions/ActionRequestText.kt`, `actions/ActionTurnPlan.kt`: "what's on my
+  screen" forms route to `screen_observe`; mutations stay model-path only
+  (targets must come from a fresh observation). `FinalVoiceToolGuard`
+  untouched: screen tools stay voice-denied by design.
+- `AndroidManifest.xml`: new service declaration (BIND_ACCESSIBILITY_SERVICE)
+  + SYSTEM_ALERT_WINDOW permission for the overlay.
+- `res/xml/screen_control_service.xml`, `res/values/strings.xml`: service
+  config and honest user-facing label/description.
+- Tests: `M1cScreenControlTest.kt` (new JVM: catalog/validator/decoder/parser,
+  session grant/verify/pause/resume/stop/release, compact rendering,
+  voice-denied); `NativeToolJourneyTest` screen dispatch (+4 exhaustive
+  executor branches); `MobileToolCatalogTest` 11-tool list; emulator
+  test40 (real tree-walk extraction + manifest declaration), test41
+  (verified-target tap: unadmitted/stale/wrong-kind rejected, release hides
+  overlay), test42 (touch pause + idle resume re-observe), test43 (honest
+  unavailability when the service is disabled). `scenarios.json`: 44 tests.
+  `docs/verification/features.md`: 44 methods, eleven tools.
+- `docs/plans/tools-implementation-plan.md`: M1c implementation checkpoint
+  (also records the branch rename and the deliberate audio-pr2 no-import).
+
+Acceptance: per `.agents/skills/jarvis-verify/SKILL.md` — observable checks
+stated before implementation (JVM catalog/decoder/validator/session; Android
+test40–43; existing test01–test39/test90 intact), failure cases (stale token →
+rejected, no dispatch; unadmitted mutation → needs-approval, no dispatch;
+service disabled → honest unavailability), real-model selection and physical
+Fold 6 screen behavior explicitly labeled unverified.
+
+CI evidence: TBD (run URL, build + both emulator variants + receipt + publish).
+
+Unverified: real-model selection of the screen tools (needs on-device Gemma);
+physical Fold 6 behavior for observation/tap/scroll/type, the real
+accessibility-service enablement flow, and overlay display (needs Battles on
+device); approval-UI wiring that calls `admit()` is M1d work — until then
+mutations require an explicit admission.
 
 ## October 4 — M1b media control slice (`media_control` tool)
 

@@ -119,6 +119,83 @@ object MobileToolCatalog {
                 description = "The destination address or place name.",
                 minLength = 1
             ))
+        ),
+        Tool(
+            name = "screen_observe",
+            description = "Look at the current phone screen and return a compact list of the visible interactive elements with IDs and an observation token. Call this before screen_tap, screen_scroll, or screen_type; element IDs and tokens expire when the screen changes."
+        ),
+        Tool(
+            name = "screen_tap",
+            description = "Tap a screen element from the latest screen_observe result. The target ID and token must come from that observation; stale or mismatched targets are rejected and never tapped.",
+            parameters = listOf(
+                Parameter(
+                    name = "target",
+                    type = ParameterType.STRING,
+                    description = "The element ID from screen_observe, e.g. n3.",
+                    minLength = 1,
+                    pattern = "^n[0-9]{1,4}$"
+                ),
+                Parameter(
+                    name = "token",
+                    type = ParameterType.STRING,
+                    description = "The observation token from screen_observe.",
+                    minLength = 1,
+                    pattern = "^[0-9a-f]{16}$"
+                )
+            )
+        ),
+        Tool(
+            name = "screen_scroll",
+            description = "Scroll a scrollable element from the latest screen_observe result up or down. The target ID and token must come from that observation; stale targets are rejected.",
+            parameters = listOf(
+                Parameter(
+                    name = "target",
+                    type = ParameterType.STRING,
+                    description = "The element ID from screen_observe, e.g. n3.",
+                    minLength = 1,
+                    pattern = "^n[0-9]{1,4}$"
+                ),
+                Parameter(
+                    name = "direction",
+                    type = ParameterType.STRING,
+                    description = "The scroll direction: up or down.",
+                    minLength = 1,
+                    pattern = "^(up|down)$"
+                ),
+                Parameter(
+                    name = "token",
+                    type = ParameterType.STRING,
+                    description = "The observation token from screen_observe.",
+                    minLength = 1,
+                    pattern = "^[0-9a-f]{16}$"
+                )
+            )
+        ),
+        Tool(
+            name = "screen_type",
+            description = "Type text into an editable field from the latest screen_observe result. The target ID and token must come from that observation; stale targets are rejected.",
+            parameters = listOf(
+                Parameter(
+                    name = "target",
+                    type = ParameterType.STRING,
+                    description = "The element ID from screen_observe, e.g. n3.",
+                    minLength = 1,
+                    pattern = "^n[0-9]{1,4}$"
+                ),
+                Parameter(
+                    name = "text",
+                    type = ParameterType.STRING,
+                    description = "The text to type, 1 to 200 characters.",
+                    minLength = 1
+                ),
+                Parameter(
+                    name = "token",
+                    type = ParameterType.STRING,
+                    description = "The observation token from screen_observe.",
+                    minLength = 1,
+                    pattern = "^[0-9a-f]{16}$"
+                )
+            )
         )
     )
 

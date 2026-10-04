@@ -13,6 +13,16 @@ sealed interface MobileAction {
     data class OpenWebsite(val url: String) : MobileAction
     data class OpenSettings(val screen: SettingsScreen) : MobileAction
     data class Navigate(val destination: String) : MobileAction
+    /** Read-only screen snapshot; needs no session grant. */
+    data object ScreenObserve : MobileAction
+    /** Mutations require an admitted session grant plus a fresh observation token (M1c). */
+    data class ScreenTap(val targetId: String, val token: String) : MobileAction
+    data class ScreenScroll(
+        val targetId: String,
+        val direction: ScreenScrollDirection,
+        val token: String
+    ) : MobileAction
+    data class ScreenType(val targetId: String, val text: String, val token: String) : MobileAction
 }
 
 /** Verbs accepted by the media_control tool; skip maps to next/previous track. */
@@ -26,6 +36,16 @@ enum class MediaControlAction(val verb: String, val label: String) {
     companion object {
         fun fromVerb(verb: String): MediaControlAction? =
             entries.firstOrNull { it.verb == verb }
+    }
+}
+
+/** Verbs accepted by the screen_scroll tool. */
+enum class ScreenScrollDirection(val key: String) {
+    UP("up"),
+    DOWN("down");
+
+    companion object {
+        fun fromKey(key: String): ScreenScrollDirection? = entries.firstOrNull { it.key == key }
     }
 }
 
@@ -63,6 +83,9 @@ sealed interface ActionValidation {
 
 class MobileActionValidator {
     private val packageNamePattern = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+")
+    private val screenTargetPattern = Regex("^n[0-9]{1,4}$")
+    private val screenTokenPattern = Regex("^[0-9a-f]{16}$")
+    private val maxScreenTypeText = 200
 
     fun validate(request: ActionRequest): ActionValidation = when (request.name) {
         "read_battery" -> ActionValidation.Valid(MobileAction.ReadBattery)
@@ -99,7 +122,52 @@ class MobileActionValidator {
             if (destination.isNotBlank()) ActionValidation.Valid(MobileAction.Navigate(destination))
             else ActionValidation.Rejected("A destination is required.")
         }
+        "screen_observe" -> ActionValidation.Valid(MobileAction.ScreenObserve)
+        "screen_tap" -> screenTarget(request, "tap") { targetId, token ->
+            MobileAction.ScreenTap(targetId, token)
+        }
+        "screen_scroll" -> {
+            val direction = ScreenScrollDirection.fromKey(request.arguments["direction"]?.trim().orEmpty())
+                ?: return ActionValidation.Rejected("Scroll direction must be up or down.")
+            screenTarget(request, "scroll ${direction.key}") { targetId, token ->
+                MobileAction.ScreenScroll(targetId, direction, token)
+            }
+        }
+        "screen_type" -> {
+            val text = request.arguments["text"]?.trim().orEmpty()
+            if (text.isEmpty() || text.length > maxScreenTypeText) {
+                return ActionValidation.Rejected("Text to type must be 1 to $maxScreenTypeText characters.")
+            }
+            screenTarget(request, "type into") { targetId, token ->
+                MobileAction.ScreenType(targetId, text, token)
+            }
+        }
         else -> ActionValidation.Rejected("Unsupported action: ${request.name}")
+    }
+
+    /**
+     * Shape validation for screen-mutation targets. Freshness (token matches the
+     * latest observation, target still on screen) is enforced by
+     * [ScreenControlSession] at dispatch, not here: the validator is stateless.
+     */
+    private inline fun screenTarget(
+        request: ActionRequest,
+        verb: String,
+        build: (targetId: String, token: String) -> MobileAction
+    ): ActionValidation {
+        val targetId = request.arguments["target"]?.trim().orEmpty()
+        val token = request.arguments["token"]?.trim().orEmpty()
+        if (!targetId.matches(screenTargetPattern)) {
+            return ActionValidation.Rejected(
+                "A screen $verb target must be an element ID from screen_observe (e.g. n3)."
+            )
+        }
+        if (!token.matches(screenTokenPattern)) {
+            return ActionValidation.Rejected(
+                "A screen $verb needs the observation token from screen_observe."
+            )
+        }
+        return ActionValidation.Valid(build(targetId, token))
     }
 
     /** Normalize a user/model-supplied URL to an https URL, rejecting dangerous schemes. */

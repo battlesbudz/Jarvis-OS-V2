@@ -41,6 +41,10 @@
     "test37_openSettingsWifiShowsSettings",
     "test38_openWebsiteDispatchesHonestReceipt",
     "test39_navigateDispatchesHonestReceipt",
+    "test40_screenObservationExtractsCompactSnapshot",
+    "test41_screenTapNeedsVerifiedTarget",
+    "test42_touchPauseAndIdleResumeReobserves",
+    "test43_screenToolsReportHonestlyWhenServiceDisabled",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

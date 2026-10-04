@@ -28,7 +28,7 @@ class MobileToolCatalogTest {
                 parameter.pattern?.let { assertEquals(it, property.getString("pattern")) }
             }
         }
-        assertEquals(listOf("read_battery", "open_app", "set_volume", "media_control", "open_website", "open_settings", "navigate"), entries.map { it.name })
+        assertEquals(listOf("read_battery", "open_app", "set_volume", "media_control", "open_website", "open_settings", "navigate", "screen_observe", "screen_tap", "screen_scroll", "screen_type"), entries.map { it.name })
         assertTrue(entries.all { it.version == MobileToolCatalog.VERSION })
     }
 

@@ -47,7 +47,8 @@ sealed interface ActionTurnPlan {
                 ActionRequestText.mediaAction(clause) != null ||
                 ActionRequestText.settingsScreen(clause) != null ||
                 ActionRequestText.websiteTarget(clause) != null ||
-                ActionRequestText.navigationTarget(clause) != null
+                ActionRequestText.navigationTarget(clause) != null ||
+                ActionRequestText.screenObserveRequest(clause)
 
         private fun confirmation(text: String, history: List<ChatEntry>): ActionRequest? {
             val normalized = text.trim()
@@ -72,6 +73,9 @@ sealed interface ActionTurnPlan {
             if (ActionRequestText.batteryRequest(clause)) return ActionRequest("read_battery")
             ActionRequestText.mediaAction(clause)?.let { return ActionRequest("media_control", mapOf("action" to it)) }
             ActionRequestText.navigationTarget(clause)?.let { return ActionRequest("navigate", mapOf("destination" to it)) }
+            // Screen mutations stay on the model path: their targets must come
+            // from a fresh screen_observe result, which text cannot supply.
+            if (ActionRequestText.screenObserveRequest(clause)) return ActionRequest("screen_observe")
             return null
         }
 

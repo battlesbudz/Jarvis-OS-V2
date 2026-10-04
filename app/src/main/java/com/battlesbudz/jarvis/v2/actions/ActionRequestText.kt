@@ -96,6 +96,19 @@ internal object ActionRequestText {
                 .matchEntire(text)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
     }
 
+    /** Bounded natural-language forms for observing the phone screen. Mutations stay model-path only: targets must come from a fresh observation. */
+    fun screenObserveRequest(clause: String): Boolean {
+        val text = clause.lowercase().trim()
+        return listOf(
+            "what(?:'s| is) on (?:my |the )?screen",
+            "look at (?:my |the )?screen",
+            "read (?:my |the )?screen",
+            "describe (?:my |the )?screen",
+            "show me (?:my |the )?screen",
+            "tell me what(?:'s| is) on (?:my |the )?screen"
+        ).any { Regex("^$it$").matches(text) }
+    }
+
     fun appTarget(clause: String): String? {
         val target = Regex("""(?i)^(?:open|launch|start)\s+(?:up\s+)?(?:the\s+)?(.+)$""")
             .matchEntire(clause)?.groupValues?.get(1) ?: return null

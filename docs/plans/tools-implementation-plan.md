@@ -5,6 +5,59 @@ Follow-up source baseline: `feature-tools` at `bfeca6d06dc3dba583e0f92e812046e9e
 Created: September 24, 2026. Updated: September 30, 2026 (America/New_York). Owner: Justin Battles.
 Status: existing tools scope retained; September 29 autonomous messaging/warm-inference requirements integrated. New phases below are planned, not implemented or verified by this documentation update.
 
+## Implementation checkpoint — October 4, 2026 (M1c screen control)
+
+Four new catalog tools on `feature/muse-tools` (renamed from `muse/feature-tools`
+on 2026-10-04 so pushes trigger the Android CI workflow, whose push trigger
+covers `feature/**`), following the M1b conventions (catalog entry drives the
+LiteRT schema, strict decoder/validator, tolerant model-arg mapping, Android
+executor dispatch, honest receipts, JVM + emulator journey tests). No PR or merge.
+- `screen_observe` (no params): compact snapshot of the active window —
+  actionable/labeled nodes with IDs, roles, labels, bounds — plus a rotating
+  observation token. Read-only; needs no session grant.
+- `screen_tap` (`target`, `token`), `screen_scroll` (`target`, `direction`
+  up/down, `token`), `screen_type` (`target`, `text` 1–200 chars, `token`):
+  strict target (`n<index>`) and token (16 hex chars) shapes. Mutations require
+  an admitted session grant (D23) and a token matching the latest observation;
+  stale tokens/targets are rejected and never dispatch.
+- `ScreenControlSession` (JVM-pure): one grant per task group — a second group
+  is denied and never silently inherits the lease (D26); manual touch pauses
+  dispatch; after the configurable touch-idle interval (default 3s) the next
+  mutation re-observes the changed screen without a countdown (T06, D25); a
+  stop request blocks dispatch; release clears the lease.
+- `ScreenControlService` (new AccessibilityService, user-enabled in Android
+  settings per D09): tree-walk extraction, tap via ACTION_CLICK, scroll via
+  ACTION_SCROLL_FORWARD/BACKWARD, type via ACTION_FOCUS + ACTION_SET_TEXT —
+  each re-verified against a fresh tree walk before dispatch, so a stale target
+  can never dispatch at the Android layer either; touch-interaction events feed
+  the session; a floating Stop overlay button (TYPE_APPLICATION_OVERLAY,
+  best-effort) calls requestStop (D24). Until the service is enabled, every
+  screen tool answers honestly instead of claiming effects.
+- The text parser routes "what's on my screen" and similar forms to
+  `screen_observe`; screen mutations stay model-path only because their targets
+  must come from a fresh observation. `FinalVoiceToolGuard` untouched: the new
+  tools stay voice-denied by design.
+- JVM coverage in `M1cScreenControlTest` (catalog/validator/decoder/parser,
+  session grant/verify/pause/resume/stop/release, compact rendering,
+  voice-denied); `NativeToolJourneyTest` screen dispatch; release journeys
+  `test40` (real tree-walk extraction + manifest declaration), `test41`
+  (verified-target tap: unadmitted/stale/wrong-kind rejected, release hides the
+  overlay), `test42` (touch pause + idle resume re-observe), `test43` (honest
+  unavailability when the service is disabled). The named contract is now 44
+  methods.
+- Approval-UI wiring is M1d: until then, mutations require an explicit
+  `ScreenControlSession.admit(groupId, userApproved = true)`; the dispatch-time
+  gate rejects unadmitted mutations with a needs-approval receipt.
+
+M1c remaining: none — compact observation, verified tap/scroll/type, temporary
+touch takeover with pause/resume, session grant and floating Stop are
+implemented. M1d task/conversation scheduling, M1e device validation, M2–M8 and
+A0–A6 are still planned. Real-model selection of the new tools with actual
+weights and physical Fold 6 behavior (including the real accessibility-service
+enablement and overlay display) remain unverified, consistent with the existing
+coverage boundaries. audio-pr2 stays deliberately unimported per the earlier
+plan decision — recorded here so it is not re-litigated.
+
 ## Implementation checkpoint — October 4, 2026 (M1b destinations)
 
 Three new catalog tools on `muse/feature-tools`, following the media_control

@@ -12,7 +12,9 @@ import kotlin.math.round
 class AndroidMobileActionExecutor(
     private val context: Context,
     private val canLaunchDirectly: () -> Boolean = { false },
-    private val onDiagnostic: (String) -> Unit = {}
+    private val onDiagnostic: (String) -> Unit = {},
+    private val screenBridge: ScreenBridge = ScreenControlService.bridge(context),
+    val screenSession: ScreenControlSession = ScreenControlService.sharedSession
 ) : MobileActionExecutor {
     private val appResolver = InstalledAppResolver(context)
     override fun execute(action: MobileAction): ExecutionResult = when (action) {
@@ -143,6 +145,40 @@ class AndroidMobileActionExecutor(
             openedText = "Showing directions to",
             requestedText = "Requested directions to"
         )
+        MobileAction.ScreenObserve -> observeScreen()
+        is MobileAction.ScreenTap -> dispatchScreenMutation(
+            verb = "tap",
+            targetId = action.targetId,
+            token = action.token,
+            requireNode = { node ->
+                if (!node.clickable) "Target ${node.id} (\"${node.label}\") is not tappable. " +
+                    "Pick a button from the latest screen_observe result." else null
+            },
+            perform = { bridge, node -> bridge.tap(node) },
+            successText = { node -> "Tapped \"${node.label}\"." }
+        )
+        is MobileAction.ScreenScroll -> dispatchScreenMutation(
+            verb = "scroll ${action.direction.key}",
+            targetId = action.targetId,
+            token = action.token,
+            requireNode = { node ->
+                if (!node.scrollable) "Target ${node.id} (\"${node.label}\") is not scrollable. " +
+                    "Pick a list from the latest screen_observe result." else null
+            },
+            perform = { bridge, node -> bridge.scroll(node, action.direction) },
+            successText = { node -> "Scrolled \"${node.label}\" ${action.direction.key}." }
+        )
+        is MobileAction.ScreenType -> dispatchScreenMutation(
+            verb = "type into",
+            targetId = action.targetId,
+            token = action.token,
+            requireNode = { node ->
+                if (!node.editable) "Target ${node.id} (\"${node.label}\") is not an editable field. " +
+                    "Pick a field from the latest screen_observe result." else null
+            },
+            perform = { bridge, node -> bridge.type(node, action.text) },
+            successText = { node -> "Typed into \"${node.label}\"." }
+        )
     }
 
     /**
@@ -179,5 +215,96 @@ class AndroidMobileActionExecutor(
             onDiagnostic("View intent result=rejected type=SecurityException label=$label")
             ExecutionResult(false, "Could not open $label: ${error.message ?: "Android rejected the launch."}")
         }
+    }
+
+    /**
+     * M1c screen observation. Read-only: needs no session grant, but every
+     * observation rotates the token that later mutations must present.
+     */
+    private fun observeScreen(): ExecutionResult {
+        if (!screenBridge.isAvailable()) {
+            onDiagnostic("screen_observe result=unavailable")
+            return ExecutionResult(
+                false,
+                "Screen observation is not available. Enable Jarvis screen control " +
+                    "in Android Accessibility settings, then try again."
+            )
+        }
+        val observation = screenBridge.observe()
+        if (observation == null) {
+            onDiagnostic("screen_observe result=empty")
+            return ExecutionResult(false, "I could not read the current screen. Nothing was tapped or typed.")
+        }
+        val token = screenSession.recordObservation(observation)
+        onDiagnostic("screen_observe result=observed nodes=${observation.nodes.size} pkg=${observation.packageName}")
+        return ExecutionResult(true, observation.compactText(token))
+    }
+
+    /**
+     * M1c screen mutation with verified targets. The session gate enforces the
+     * grant (D23), user-touch pause with re-observe resume (T06), and the stop
+     * request; [ScreenControlSession.verifyTarget] rejects stale tokens/targets
+     * and the bridge re-verifies the live node before dispatching.
+     */
+    private fun dispatchScreenMutation(
+        verb: String,
+        targetId: String,
+        token: String,
+        requireNode: (ScreenNode) -> String?,
+        perform: (ScreenBridge, ScreenNode) -> Boolean,
+        successText: (ScreenNode) -> String
+    ): ExecutionResult {
+        when (screenSession.dispatchGate()) {
+            DispatchGate.Stopped ->
+                return ExecutionResult(false, "The screen task was stopped.")
+            DispatchGate.NeedsAdmission ->
+                return ExecutionResult(
+                    false,
+                    "Screen control needs your approval for this task before I can $verb. " +
+                        "Approve the screen task first."
+                )
+            DispatchGate.Paused ->
+                return ExecutionResult(
+                    false,
+                    "Paused while you are touching the screen. I will look at the screen " +
+                        "again and resume when you stop."
+                )
+            DispatchGate.ResumeReobserve -> {
+                // Idle resume re-observes the changed screen without a countdown
+                // (T06). The token rotates, so the caller's token is now stale by
+                // design and the mutation below is rejected as stale.
+                val fresh = screenBridge.observe()
+                if (fresh == null) {
+                    return ExecutionResult(false, "I could not read the current screen after you stopped touching it.")
+                }
+                screenSession.recordObservation(fresh)
+                onDiagnostic("screen_$verb result=reobserved nodes=${fresh.nodes.size} pkg=${fresh.packageName}")
+            }
+            DispatchGate.Allowed -> Unit
+        }
+        val node = when (val verified = screenSession.verifyTarget(targetId, token, requireNode)) {
+            is TargetVerification.Verified -> verified.node
+            is TargetVerification.Rejected -> {
+                onDiagnostic("screen_$verb result=rejected reason=${verified.reason.take(80)}")
+                return ExecutionResult(false, verified.reason)
+            }
+        }
+        onDiagnostic("screen_$verb target=$targetId label=\"${node.label}\"")
+        val completed = try {
+            perform(screenBridge, node)
+        } catch (_: SecurityException) {
+            return ExecutionResult(
+                ExecutionResult.Outcome.DENIED_PERMISSION,
+                "Android denied the screen $verb."
+            )
+        }
+        // performAction returns whether Android performed the action, so the
+        // receipt reports the real outcome instead of claiming success.
+        return if (completed) ExecutionResult(true, successText(node))
+        else ExecutionResult(
+            false,
+            "I could not $verb \"${node.label}\" — the screen may have changed. " +
+                "Call screen_observe again for fresh targets."
+        )
     }
 }

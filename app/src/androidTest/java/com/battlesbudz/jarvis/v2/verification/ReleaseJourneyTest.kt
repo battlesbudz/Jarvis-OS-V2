@@ -1328,6 +1328,182 @@ class ReleaseJourneyTest {
         assertFalse("blank destination must not dispatch", rejected.succeeded)
     }
 
+    // M1c screen control journeys.
+
+    private class FakeScreenBridge(
+        var observation: ScreenObservation? = null,
+        var available: Boolean = true
+    ) : ScreenBridge {
+        val tapped = mutableListOf<ScreenNode>()
+        val scrolled = mutableListOf<Pair<ScreenNode, ScreenScrollDirection>>()
+        val typed = mutableListOf<Pair<ScreenNode, String>>()
+        var overlayShown = false
+
+        override fun isAvailable(): Boolean = available
+        override fun observe(): ScreenObservation? = observation
+        override fun tap(node: ScreenNode): Boolean {
+            tapped += node
+            return true
+        }
+        override fun scroll(node: ScreenNode, direction: ScreenScrollDirection): Boolean {
+            scrolled += node to direction
+            return true
+        }
+        override fun type(node: ScreenNode, text: String): Boolean {
+            typed += node to text
+            return true
+        }
+        override fun showStopOverlay(taskLabel: String): Boolean {
+            overlayShown = true
+            return true
+        }
+        override fun hideStopOverlay() {
+            overlayShown = false
+        }
+    }
+
+    private fun screenFixtureNodes() = listOf(
+        ScreenNode("n0", "Search", "button", "10,20-100,80", clickable = true),
+        ScreenNode("n1", "Name", "field", "10,100-400,160", editable = true),
+        ScreenNode("n2", "Results", "list", "0,200-1080,1800", scrollable = true)
+    )
+
+    @Suppress("DEPRECATION")
+    @Test fun test40_screenObservationExtractsCompactSnapshot() {
+        // The real Android tree-walking logic against synthetic AccessibilityNodeInfo instances.
+        val root = android.view.accessibility.AccessibilityNodeInfo.obtain()
+        val button = android.view.accessibility.AccessibilityNodeInfo.obtain()
+        val field = android.view.accessibility.AccessibilityNodeInfo.obtain()
+        try {
+            root.className = "android.widget.FrameLayout"
+            button.className = "android.widget.Button"
+            button.text = "Search"
+            button.isClickable = true
+            button.setBoundsInScreen(android.graphics.Rect(10, 20, 100, 80))
+            field.className = "android.widget.EditText"
+            field.contentDescription = "Name"
+            field.isEditable = true
+            field.setBoundsInScreen(android.graphics.Rect(10, 100, 400, 160))
+            root.addChild(button)
+            root.addChild(field)
+            val nodes = extractScreenNodes(root)
+            assertEquals(
+                listOf(
+                    ScreenNode("n0", "Search", "button", "10,20-100,80", clickable = true),
+                    ScreenNode("n1", "Name", "field", "10,100-400,160", editable = true)
+                ),
+                nodes
+            )
+        } finally {
+            button.recycle()
+            field.recycle()
+            root.recycle()
+        }
+        // The service must be declared with the accessibility binding permission.
+        val info = context.packageManager.getServiceInfo(
+            android.content.ComponentName(context, ScreenControlService::class.java), 0
+        )
+        assertEquals("android.permission.BIND_ACCESSIBILITY_SERVICE", info.permission)
+    }
+
+    @Test fun test41_screenTapNeedsVerifiedTarget() {
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes()))
+        val session = ScreenControlSession()
+        val pipeline = MobileActionPipeline(
+            executor = AndroidMobileActionExecutor(context, screenBridge = bridge, screenSession = session)
+        )
+        // Mutations need an admitted session grant; without it nothing dispatches.
+        val denied = pipeline.execute(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to "abcdef1234567890")))
+        assertFalse("unadmitted tap must not dispatch: ${denied.message}", denied.succeeded)
+        assertTrue(denied.message.contains("approval"))
+        assertTrue(bridge.tapped.isEmpty())
+
+        assertEquals(AdmitResult.Admitted, session.admit("test-41", userApproved = true))
+        val observed = pipeline.execute(ActionRequest("screen_observe"))
+        assertTrue("observe must succeed: ${observed.message}", observed.succeeded)
+        val token = session.currentToken!!
+        assertTrue(observed.message.contains("observation token: $token"))
+
+        // A well-formed but stale token never dispatches.
+        val stale = pipeline.execute(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to "0000000000000000")))
+        assertFalse("stale token must not dispatch: ${stale.message}", stale.succeeded)
+        assertTrue(stale.message.contains("stale"))
+        assertTrue(bridge.tapped.isEmpty())
+
+        // Fresh token plus verified target dispatches with an honest receipt.
+        val tapped = pipeline.execute(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to token)))
+        assertTrue("verified tap must dispatch: ${tapped.message}", tapped.succeeded)
+        assertEquals(listOf("n0"), bridge.tapped.map { it.id })
+
+        // Wrong-kind target is rejected without dispatch.
+        val wrongKind = pipeline.execute(
+            ActionRequest("screen_type", mapOf("target" to "n0", "text" to "hi", "token" to token))
+        )
+        assertFalse("non-editable type target must not dispatch", wrongKind.succeeded)
+        assertTrue(bridge.typed.isEmpty())
+
+        // Release ends the grant; the overlay hides with it.
+        assertTrue(bridge.showStopOverlay("test-41"))
+        session.release()
+        bridge.hideStopOverlay()
+        assertFalse(session.isAdmitted)
+        assertFalse(bridge.overlayShown)
+    }
+
+    @Test fun test42_touchPauseAndIdleResumeReobserves() {
+        var now = 10_000L
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes()))
+        val session = ScreenControlSession(clock = { now }, touchIdleMs = 3_000L)
+        val pipeline = MobileActionPipeline(
+            executor = AndroidMobileActionExecutor(context, screenBridge = bridge, screenSession = session)
+        )
+        session.admit("test-42", userApproved = true)
+        assertTrue(pipeline.execute(ActionRequest("screen_observe")).succeeded)
+        val token = session.currentToken!!
+
+        // Manual touch pauses dispatch.
+        session.noteTouchStart()
+        val paused = pipeline.execute(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to token)))
+        assertFalse("tap during manual touch must pause: ${paused.message}", paused.succeeded)
+        assertTrue(paused.message.contains("touching the screen"))
+        assertTrue(bridge.tapped.isEmpty())
+
+        // After the touch-idle interval the executor re-observes the changed
+        // screen without a countdown; the pre-touch token is stale by design.
+        session.noteTouchEnd()
+        now += 3_000L
+        bridge.observation = ScreenObservation(
+            "com.example.other",
+            listOf(ScreenNode("n0", "Other", "button", "0,0-50,50", clickable = true))
+        )
+        val resumed = pipeline.execute(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to token)))
+        assertFalse("pre-touch token must be stale after resume: ${resumed.message}", resumed.succeeded)
+        assertTrue(resumed.message.contains("stale"))
+        assertTrue(bridge.tapped.isEmpty())
+
+        // The resume re-observed: a fresh observation token dispatches.
+        val token2 = session.currentToken!!
+        assertNotEquals(token, token2)
+        val retried = pipeline.execute(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to token2)))
+        assertTrue("fresh token must dispatch after resume: ${retried.message}", retried.succeeded)
+        assertEquals(listOf("n0"), bridge.tapped.map { it.id })
+    }
+
+    @Test fun test43_screenToolsReportHonestlyWhenServiceDisabled() {
+        // Real service bridge; the service is not enabled on the emulator, so
+        // every screen tool must answer honestly instead of claiming effects.
+        val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context))
+        val observed = pipeline.execute(ActionRequest("screen_observe"))
+        assertFalse("observe without the enabled service must not succeed", observed.succeeded)
+        assertTrue(
+            "receipt must name the missing Accessibility enablement, was: ${observed.message}",
+            observed.message.contains("Accessibility")
+        )
+        val tap = pipeline.execute(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to "abcdef1234567890")))
+        assertFalse("tap without a grant must not dispatch", tap.succeeded)
+        assertTrue(tap.message.contains("approval"))
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()
