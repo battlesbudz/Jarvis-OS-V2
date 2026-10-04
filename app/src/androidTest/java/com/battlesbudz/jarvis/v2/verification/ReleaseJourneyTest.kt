@@ -1504,6 +1504,7 @@ class ReleaseJourneyTest {
 
     // M1d task/conversation scheduling journeys.
 
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     @Test fun test45_panelApprovalAdmitsScreenSessionAndDispatchesExactly() {
         // M1d approval-UI wiring (T07): approving a screen task in the task
         // panel admits the screen-control session grant for its group, and the
