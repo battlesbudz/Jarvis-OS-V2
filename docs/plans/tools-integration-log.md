@@ -355,3 +355,15 @@ CI evidence:
 Unverified: real-model selection of the new tools (needs on-device Gemma); physical Fold 6
 behavior for website/settings/navigate (needs Battles on device); actual external-app
 launch confirmation beyond intent dispatch (startActivity returns void by design).
+
+## Release naming correction — 2026-10-04
+
+Battles: releases must be named for `muse/feature-tools`, not slice branches. New standing
+rule: no new branches, no commits to any branch other than `muse/feature-tools`. Slice
+branches `feature/tools-media-parser-fix`, `feature/tools-m1b-media`,
+`feature/tools-m1b-destinations` deleted (their commits are merged into `muse/feature-tools`).
+
+Release `v0.1.0-build.957` (M1b destinations, CI-green run 37192901766) renamed to
+"Jarvis OS V2 muse/feature-tools build 957 (M1b destinations)". The APKs were built from
+`8cf79e74b6`, which is on `muse/feature-tools` — no rebuild. Future slice releases publish
+from the `muse/feature-tools` tip per the normal per-slice cadence, named for the branch.
