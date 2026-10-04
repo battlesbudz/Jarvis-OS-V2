@@ -1275,6 +1275,24 @@ class ReleaseJourneyTest {
         }
     }
 
+    @Test fun test36_mediaTextRequestParsesAndDispatches() {
+        // Regression for the Fold 6 report (2026-10-04): text "pause music" must
+        // become a Ready media_control plan and dispatch through the real
+        // executor. A NotAction plan would fall through to chat and let the
+        // model hallucinate success, which is the bug being fixed.
+        val plan = ActionTurnPlan.parse("pause music")
+        assertTrue("text 'pause music' must parse as an action plan, was $plan",
+            plan is ActionTurnPlan.Ready)
+        val request = (plan as ActionTurnPlan.Ready).steps.single().request
+        assertEquals("media_control", request.name)
+        assertEquals("pause", request.arguments["action"])
+        val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context))
+        val result = pipeline.execute(request)
+        assertTrue("parsed media_control must dispatch: ${result.message}", result.succeeded)
+        assertTrue("receipt must describe the dispatch honestly, not claim a playback change",
+            result.message.contains("active media session"))
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()

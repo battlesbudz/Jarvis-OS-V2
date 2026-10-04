@@ -43,7 +43,8 @@ sealed interface ActionTurnPlan {
         private fun looksDirected(clause: String): Boolean =
             ActionRequestText.appTarget(clause) != null ||
                 Regex("""(?i)^(?:set|make|turn|adjust|change|raise|lower|increase|decrease)\b.*\bvolume\b""").containsMatchIn(clause) ||
-                ActionRequestText.batteryRequest(clause)
+                ActionRequestText.batteryRequest(clause) ||
+                ActionRequestText.mediaAction(clause) != null
 
         private fun confirmation(text: String, history: List<ChatEntry>): ActionRequest? {
             val normalized = text.trim()
@@ -62,6 +63,7 @@ sealed interface ActionTurnPlan {
                 .matchEntire(clause)?.groupValues?.get(1)
             if (volume != null) return parseExactVolume(volume)?.let { ActionRequest("set_volume", mapOf("level" to it.toString())) }
             if (ActionRequestText.batteryRequest(clause)) return ActionRequest("read_battery")
+            ActionRequestText.mediaAction(clause)?.let { return ActionRequest("media_control", mapOf("action" to it)) }
             return null
         }
 

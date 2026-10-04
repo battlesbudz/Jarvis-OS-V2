@@ -41,6 +41,22 @@ internal object ActionRequestText {
         ).any { Regex("^(?:$it)$").matches(text) }
     }
 
+    /** Bounded natural-language forms for media playback control. Returns the strict verb. */
+    fun mediaAction(clause: String): String? {
+        val text = clause.lowercase().trim()
+        // A media noun is required: bare verbs like "stop" or "next" are too
+        // ambiguous to become phone actions on their own.
+        val noun = """(?:music|media|songs?|tracks?|playback|tunes?)"""
+        return when {
+            Regex("""^(?:pause|stop)\b.*\b$noun\b""").containsMatchIn(text) -> "pause"
+            Regex("""^(?:play|resume)\b.*\b$noun\b""").containsMatchIn(text) -> "play"
+            Regex("""^toggle\b.*\b$noun\b""").containsMatchIn(text) -> "toggle"
+            Regex("""^(?:next|skip)\b.*\b$noun\b""").containsMatchIn(text) -> "next"
+            Regex("""^(?:previous|last|go\s+back)\b.*\b$noun\b""").containsMatchIn(text) -> "previous"
+            else -> null
+        }
+    }
+
     fun appTarget(clause: String): String? {
         val target = Regex("""(?i)^(?:open|launch|start)\s+(?:up\s+)?(?:the\s+)?(.+)$""")
             .matchEntire(clause)?.groupValues?.get(1) ?: return null

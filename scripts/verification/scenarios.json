@@ -37,6 +37,7 @@
     "test33_conditionalAndCommaPlansUseRealAndroidWithoutModelCalls",
     "test34_backgroundAssistantOpensAppAndFinishesOrderedPlanWithoutTap",
     "test35_mediaControlDispatchesViaAudioManager",
+    "test36_mediaTextRequestParsesAndDispatches",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

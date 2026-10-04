@@ -5,6 +5,43 @@ Follow-up source baseline: `feature-tools` at `bfeca6d06dc3dba583e0f92e812046e9e
 Created: September 24, 2026. Updated: September 30, 2026 (America/New_York). Owner: Justin Battles.
 Status: existing tools scope retained; September 29 autonomous messaging/warm-inference requirements integrated. New phases below are planned, not implemented or verified by this documentation update.
 
+## Implementation checkpoint — October 4, 2026 (media parser bugfix)
+
+Battles reported on his Fold 6 that typing "pause music" in text chat returned
+"Music paused." without dispatching anything. Root cause: the `media_control`
+tool was built end-to-end (catalog, strict decoder, validator, Android
+executor) but `ActionTurnPlan.parse()` — the deterministic front-door parser
+for text turns — only recognized open_app, set_volume and read_battery.
+"pause music" parsed as NotAction, fell through to ordinary chat, and Gemma
+confabulated success. Fix: `ActionRequestText.mediaAction()` recognizes media
+clauses (verbs play/pause/resume/stop/toggle/next/previous/skip/go-back
+combined with a required music/media/song/track/playback noun; resume->play,
+stop->pause, skip->next) and `ActionTurnPlan` routes them to `media_control`
+with strict verbs only. Bare verbs without a media noun stay NotAction;
+negated and hypothetical forms stay NotAction. `FinalVoiceToolGuard` is
+untouched: voice still denies media_control by design. JVM coverage in
+`MediaControlPlanTest` (accept/reject/combination/strict-decode); release
+journey `test36` proves a text "pause music" request parses Ready and
+dispatches through the real executor. The named contract is now 37 methods.
+
+**audio-pr2 refresh (deliberate no-import).** Fetched audio-pr2 @
+`51360da06a084c43a8a43cd6e45fd137e17f7117` (2026-10-04); compared against the
+tools head: merge base `4b4e6b94`, 125 commits ahead / 5 behind, 300 files
+changed — all voice/audio pipeline, benchmarks, UI, harness and docs. Zero
+changed files in the tools epic's owned surface (`actions/`, its tests); the
+media_control slice's code is already current. The tools tree's CI workflow and
+scripts are self-consistent and CI-proven, and GitHub runs the pushed branch's
+own workflow file, so the newer server-side workflow does not affect
+tools-branch CI. Importing the new harness would require porting thousands of
+lines of androidTest code against an older app, against the
+preserve-current-implementations rule. Decision: no import; recorded here.
+
+M1b remaining: website/settings/map destinations. M1c screen control, M1d
+task/conversation scheduling, M1e device validation, M2–M8 and A0–A6 are still
+planned. Real-model selection of `media_control` with actual weights and
+physical Fold 6 media behavior remain unverified, consistent with the existing
+coverage boundaries.
+
 ## Implementation checkpoint — October 4, 2026
 
 M1b media control slice is implemented on `muse/feature-tools`: the native tool
