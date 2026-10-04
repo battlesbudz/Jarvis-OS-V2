@@ -1909,13 +1909,29 @@ class ReleaseJourneyTest {
             dispatch = ::dispatchStep)
         assertTrue("routine occurrence completes under its grant", outcome is WorkflowRunOutcome.Completed)
         assertEquals(2, dispatched.get())
-        // The second occurrence reuses the same grant for identical limits.
-        val grant = checkNotNull(workflows.reusableGrant(saved.id, listOf(battery, volume20)))
+        // Each routine step ran under its own exact-limits grant (one grant
+        // per resolved request, so placeholder-resolved dispatches still
+        // match exactly). Those grants are reusable for identical limits —
+        // but never for changed limits, and a new tool can never broaden one.
+        val batteryGrant = checkNotNull(workflows.reusableGrant(saved.id, listOf(battery)))
+        val volumeGrant = checkNotNull(workflows.reusableGrant(saved.id, listOf(volume20)))
+        assertNotNull(volumeGrant)
         assertNull("changed limits must not reuse the grant",
             workflows.reusableGrant(saved.id, listOf(battery, ActionRequest("set_volume", mapOf("level" to "30")))))
+        // A second occurrence reuses the identical-limits grants; no new
+        // grants are minted for the same limits.
+        val grantsBefore = store.readJournal().grants.size
+        val occurrenceB = checkNotNull(workflows.scheduleOccurrence(saved.id, 0,
+            System.currentTimeMillis() - 1, System.currentTimeMillis() - 1, "t53-1b"))
+        val claimedB = checkNotNull(workflows.claimDueOccurrence(occurrenceB.id))
+        val outcomeB = WorkflowEngine().run(checkNotNull(workflows.definitionFor(claimedB)),
+            dispatch = ::dispatchStep)
+        assertTrue("second occurrence completes", outcomeB is WorkflowRunOutcome.Completed)
+        assertEquals("identical limits reuse the existing grants",
+            grantsBefore, store.readJournal().grants.size)
         try {
             tasks.admit(listOf(battery, ActionRequest("set_volume", mapOf("level" to "30"))),
-                "workflow:occ-x", authority = ToolAuthority.ROUTINE, grantId = grant.id)
+                "workflow:occ-x", authority = ToolAuthority.ROUTINE, grantId = batteryGrant.id)
             fail("admit must reject requests outside the grant's exact limits")
         } catch (_: IllegalArgumentException) { }
         // Approval waits block dependents only.
@@ -2078,7 +2094,9 @@ class ReleaseJourneyTest {
                 EffortBudget(3, 60_000, 2))),
             listOf(WorkflowTrigger.Manual), WorkflowOrigin.CONVERSATION, createdAtMs = 0, updatedAtMs = 0)
         val outcome = WorkflowEngine().run(adaptive, dispatch = { request ->
-            dispatched.incrementAndGet(); ExecutionResult(false, "denied")
+            dispatched.incrementAndGet()
+            if (request.name == "read_battery") ExecutionResult.battery(42)
+            else ExecutionResult(false, "denied")
         })
         assertTrue("budget exhaustion asks the user", outcome is WorkflowRunOutcome.NeedsUser)
         val asked = outcome as WorkflowRunOutcome.NeedsUser

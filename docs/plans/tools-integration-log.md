@@ -104,6 +104,19 @@ CI evidence:
   `WorkflowEngine.resolveArguments` updated), plus a JVM test locking the
   scanner's behavior. No regex remains in the workflow path except
   user-supplied condition patterns, which were already try/catch-guarded.
+- Run 37242048469 (M2 build, scanner commit): build + JVM tests green
+  (923 tests), regex crash gone — but 3 instrumentation failures remained:
+  test53 (`reusableGrant` for the combined 2-step list returned null —
+  correct behavior: the engine mints one exact-limits grant per resolved
+  step request, since `ToolTaskLedger.granted()` requires the admitted
+  (placeholder-resolved) request to be in the grant; test updated to
+  assert per-step reuse + second-occurrence reuse with no new grants);
+  test55 (`NoSuchMethodError: getMode()` — `WorkflowAlarmScheduler$Scheduled`
+  was obfuscated; the keep covered only the outer class); test56 (the
+  test's dispatch failed the leading `read_battery` step too, so the run
+  failed before reaching the adaptive step — dispatch now succeeds on
+  battery). ProGuard: added keeps for `WorkflowAlarmScheduler$Scheduled`
+  and `DisableResult` (test53 reads `pausedOccurrenceIds`).
 - Run <run-id>: <result>
 - Release: `v0.1.0-build.<NNN>` (published <date>) with app-release.apk +
   app-compact.apk, titled "Jarvis OS V2 feature/muse-tools build <NNN> (M2 workflows)".

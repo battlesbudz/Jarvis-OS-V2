@@ -66,6 +66,8 @@
 -keep class com.battlesbudz.jarvis.v2.actions.SourceAccessState { *; }
 # M2 workflows: release journeys drive the workflow ledger, scheduling
 # policy and engine directly from the instrumentation DEX.
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowAlarmScheduler$Scheduled { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.DisableResult { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.WorkflowDefinition { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.WorkflowStep** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.WorkflowTrigger** { *; }
