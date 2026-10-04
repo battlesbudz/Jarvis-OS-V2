@@ -183,3 +183,19 @@
 -keep class com.battlesbudz.jarvis.v2.actions.AdmitResult** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.DispatchGate** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.TargetVerification** { *; }
+
+# M1d task/conversation scheduling boundary exercised by the release
+# integration tests (test45-test48). The instrumentation DEX drives the
+# scheduler, the approval admission, the progress projector and the
+# notification poster directly; without these, R8 renames them and the tests
+# fail with IncompatibleClassChangeError/NoSuchMethodError.
+-keep class com.battlesbudz.jarvis.v2.actions.TaskScheduler { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TaskResource** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScheduleDecision** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TaskStopRouter { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TaskStopScope** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenApprovalAdmission { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TaskStatusProjection { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TaskProjectionState { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TaskProgressProjector { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TaskProgressNotification { *; }
