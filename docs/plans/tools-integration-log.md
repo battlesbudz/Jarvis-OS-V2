@@ -32,8 +32,17 @@ Acceptance: per `.agents/skills/jarvis-verify/SKILL.md` — observable checks st
 before implementation (JVM catalog/decoder/validator/pipeline; Android test35;
 existing test01–test34/test90 intact), failure case (unknown verb → rejected, no
 side effect), real-model selection and physical Fold 6 media behavior explicitly
-labeled unverified. Exact-revision hosted CI pending at commit time; run evidence to
-be recorded here after the gate completes.
+labeled unverified.
+
+Publish: local commit `2a4a46e` → GitHub `muse/feature-tools` at
+`90a53a8a99bbf0cf714dc19158f55c9740ffe99d` via the git-database API (16 files;
+`.github/workflows/android.yml` excluded from the pushed tree because the stored
+credential lacks the Workflows permission — 403 on any tree containing a workflow
+path. The `muse/feature-tools` opt-in is retained in the local commit only and
+needs a privileged push to land). CI verification runs on branch
+`feature/tools-m1b-media` (same commit), which matches the existing `feature/**`
+push trigger: run [37176105910](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37176105910).
+Exact-revision gate evidence to be recorded here on completion.
 
 M1b remaining: website/settings/map destinations. M1c/M1d/M1e, M2–M8, A0–A6 still open.
 
