@@ -44,7 +44,10 @@ sealed interface ActionTurnPlan {
             ActionRequestText.appTarget(clause) != null ||
                 Regex("""(?i)^(?:set|make|turn|adjust|change|raise|lower|increase|decrease)\b.*\bvolume\b""").containsMatchIn(clause) ||
                 ActionRequestText.batteryRequest(clause) ||
-                ActionRequestText.mediaAction(clause) != null
+                ActionRequestText.mediaAction(clause) != null ||
+                ActionRequestText.settingsScreen(clause) != null ||
+                ActionRequestText.websiteTarget(clause) != null ||
+                ActionRequestText.navigationTarget(clause) != null
 
         private fun confirmation(text: String, history: List<ChatEntry>): ActionRequest? {
             val normalized = text.trim()
@@ -58,12 +61,17 @@ sealed interface ActionTurnPlan {
         }
 
         private fun requestFor(clause: String): ActionRequest? {
+            // Settings screens and websites are checked before appTarget: "open wifi
+            // settings" and "open youtube.com" must not become open_app requests.
+            ActionRequestText.settingsScreen(clause)?.let { return ActionRequest("open_settings", mapOf("screen" to it)) }
+            ActionRequestText.websiteTarget(clause)?.let { return ActionRequest("open_website", mapOf("url" to it)) }
             ActionRequestText.appTarget(clause)?.let { return ActionRequest("open_app", mapOf("app" to it)) }
             val volume = Regex("""(?i)^(?:set|make|turn|adjust|change|raise|lower|increase|decrease)(?:\s+(?:the|my))?(?:\s+media)?\s+volume(?:\s+to)?\s+(.+)$""")
                 .matchEntire(clause)?.groupValues?.get(1)
             if (volume != null) return parseExactVolume(volume)?.let { ActionRequest("set_volume", mapOf("level" to it.toString())) }
             if (ActionRequestText.batteryRequest(clause)) return ActionRequest("read_battery")
             ActionRequestText.mediaAction(clause)?.let { return ActionRequest("media_control", mapOf("action" to it)) }
+            ActionRequestText.navigationTarget(clause)?.let { return ActionRequest("navigate", mapOf("destination" to it)) }
             return null
         }
 

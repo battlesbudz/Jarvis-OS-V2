@@ -1293,6 +1293,35 @@ class ReleaseJourneyTest {
             result.message.contains("active media session"))
     }
 
+    @Test fun test37_openSettingsWifiShowsSettings() {
+        val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true }))
+        val result = pipeline.execute(ActionRequest("open_settings", mapOf("screen" to "wifi")))
+        assertTrue(result.message, result.succeeded)
+        assertTrue("Wi-Fi settings must actually appear, not merely report success",
+            device.wait(Until.hasObject(By.pkg("com.android.settings").depth(0)), 15_000))
+        // @After captures the launched Settings screen before closing Jarvis's scenario.
+    }
+
+    @Test fun test38_openWebsiteDispatchesHonestReceipt() {
+        val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true }))
+        val result = pipeline.execute(ActionRequest("open_website", mapOf("url" to "example.com")))
+        assertTrue("open_website must dispatch: ${result.message}", result.succeeded)
+        assertTrue("receipt must name the normalized URL honestly",
+            result.message.contains("https://example.com"))
+        val rejected = pipeline.execute(ActionRequest("open_website", mapOf("url" to "javascript:alert(1)")))
+        assertFalse("dangerous URL scheme must not dispatch", rejected.succeeded)
+    }
+
+    @Test fun test39_navigateDispatchesHonestReceipt() {
+        val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true }))
+        val result = pipeline.execute(ActionRequest("navigate", mapOf("destination" to "1600 Amphitheatre Parkway")))
+        assertTrue("navigate must dispatch: ${result.message}", result.succeeded)
+        assertTrue("receipt must name the destination honestly",
+            result.message.contains("1600 Amphitheatre Parkway"))
+        val rejected = pipeline.execute(ActionRequest("navigate", mapOf("destination" to "   ")))
+        assertFalse("blank destination must not dispatch", rejected.succeeded)
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()

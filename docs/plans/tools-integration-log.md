@@ -271,3 +271,37 @@ and Python helper checks pass; hosted Android evidence is pending at commit inta
 
 PStack Work Port planning/evidence tools were used. Full Terra companion coordination
 is unavailable on this host, so no independent actor/model review receipt is claimed.
+
+## Item 1: media_control text-parser bugfix (Fold 6 "pause music" bug) — 2026-10-04
+
+Root cause: `ActionTurnPlan.parse()` only knew open_app/set_volume/read_battery. "pause music"
+matched nothing → NotAction → text went to Gemma as chat → confabulated "Music paused."
+without dispatch. FinalVoiceToolGuard untouched (voice still denies media_control by design).
+
+Changed files (commit `3608e7b`, server `03227504ff8b524c0a7a81c39c6bc49561802eda`):
+- `app/.../actions/ActionRequestText.kt`: new `mediaAction(clause)` — verbs
+  play/pause/resume/stop/toggle/next/previous/skip + required media noun
+  (music/media/song/track/playback); resume→play, stop→pause, skip→next; bare verbs stay NotAction.
+- `app/.../actions/ActionTurnPlan.kt`: looksDirected()/requestFor() route media clauses to
+  `ActionRequest("media_control", ...)` with strict verbs only.
+- `app/.../actions/MediaControlPlanTest.kt` (new JVM): accept/reject/combination/strict-decode.
+- `ReleaseJourneyTest.test36_mediaTextRequestParsesAndDispatches` (new emulator journey):
+  text "pause music" → parses → dispatches through real executor → honest receipt.
+- `scripts/verification/scenarios.json`: 37 tests. `docs/verification/features.md` updated.
+
+Acceptance: JVM parser tests green; release journey test36 passes on both emulator variants;
+text "pause music" now dispatches (no acknowledged-only completion).
+
+CI evidence:
+- Run 37185287275 (first attempt): build SUCCESS, API 30 SUCCESS, API 35 FAILED on
+  pre-existing test32 (`expected:<1> but was:<0>` — UI timing flake, unrelated to this change).
+- Run 37187008621 (retry 1): build SUCCESS, API 35 SUCCESS, API 30 FAILED on same test32 flake.
+- Run 37188621330 (retry 2): ALL GREEN — build + both emulators + receipt + publish.
+- Release: `v0.1.0-build.953` (published 2026-10-04T08:48Z) with app-release.apk + app-compact.apk.
+- Run URLs: https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37185287275,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37187008621,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37188621330
+
+Unverified: real-model selection of media_control from text (needs on-device Gemma);
+physical Fold 6 behavior (needs Battles on device). test32 flakiness is pre-existing and
+not caused by this change.

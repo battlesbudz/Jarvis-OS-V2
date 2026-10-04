@@ -10,6 +10,9 @@ sealed interface MobileAction {
     ) : MobileAction
     data class SetVolume(val level: Int) : MobileAction
     data class MediaControl(val action: MediaControlAction) : MobileAction
+    data class OpenWebsite(val url: String) : MobileAction
+    data class OpenSettings(val screen: SettingsScreen) : MobileAction
+    data class Navigate(val destination: String) : MobileAction
 }
 
 /** Verbs accepted by the media_control tool; skip maps to next/previous track. */
@@ -23,6 +26,28 @@ enum class MediaControlAction(val verb: String, val label: String) {
     companion object {
         fun fromVerb(verb: String): MediaControlAction? =
             entries.firstOrNull { it.verb == verb }
+    }
+}
+
+/**
+ * Android system settings screens. Intent actions are platform string literals
+ * (not android.provider.Settings constants) so the validator stays JVM-testable.
+ */
+enum class SettingsScreen(val key: String, val label: String, val intentAction: String) {
+    WIFI("wifi", "Wi-Fi", "android.settings.WIFI_SETTINGS"),
+    BLUETOOTH("bluetooth", "Bluetooth", "android.settings.BLUETOOTH_SETTINGS"),
+    DISPLAY("display", "Display", "android.settings.DISPLAY_SETTINGS"),
+    SOUND("sound", "Sound", "android.settings.SOUND_SETTINGS"),
+    APPS("apps", "Apps", "android.settings.APPLICATION_SETTINGS"),
+    BATTERY("battery", "Battery", "android.settings.BATTERY_SAVER_SETTINGS"),
+    LOCATION("location", "Location", "android.settings.LOCATION_SOURCE_SETTINGS"),
+    STORAGE("storage", "Storage", "android.settings.INTERNAL_STORAGE_SETTINGS"),
+    NETWORK("network", "Network", "android.settings.WIRELESS_SETTINGS"),
+    GENERAL("general", "Settings", "android.settings.SETTINGS");
+
+    companion object {
+        fun fromKey(key: String): SettingsScreen? = entries.firstOrNull { it.key == key }
+        fun keys(): String = entries.joinToString { it.key }
     }
 }
 
@@ -63,7 +88,33 @@ class MobileActionValidator {
         "media_control" -> MediaControlAction.fromVerb(request.arguments["action"]?.trim().orEmpty())
             ?.let { ActionValidation.Valid(MobileAction.MediaControl(it)) }
             ?: ActionValidation.Rejected("Media action must be one of play, pause, toggle, next, previous.")
+        "open_website" -> normalizeUrl(request.arguments["url"].orEmpty())
+            ?.let { ActionValidation.Valid(MobileAction.OpenWebsite(it)) }
+            ?: ActionValidation.Rejected("A valid http or https website URL is required.")
+        "open_settings" -> SettingsScreen.fromKey(request.arguments["screen"]?.trim().orEmpty().lowercase())
+            ?.let { ActionValidation.Valid(MobileAction.OpenSettings(it)) }
+            ?: ActionValidation.Rejected("Settings screen must be one of: ${SettingsScreen.keys()}.")
+        "navigate" -> {
+            val destination = request.arguments["destination"]?.trim().orEmpty()
+            if (destination.isNotBlank()) ActionValidation.Valid(MobileAction.Navigate(destination))
+            else ActionValidation.Rejected("A destination is required.")
+        }
         else -> ActionValidation.Rejected("Unsupported action: ${request.name}")
+    }
+
+    /** Normalize a user/model-supplied URL to an https URL, rejecting dangerous schemes. */
+    private fun normalizeUrl(raw: String): String? {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty() || trimmed.any { it.isWhitespace() }) return null
+        val lower = trimmed.lowercase()
+        if (lower.startsWith("javascript:") || lower.startsWith("file:") ||
+            lower.startsWith("data:") || lower.startsWith("intent:")
+        ) return null
+        val withScheme = if (lower.startsWith("http://") || lower.startsWith("https://")) trimmed
+        else "https://$trimmed"
+        val host = withScheme.substringAfter("://").substringBefore("/")
+        if ('.' !in host || host.startsWith(".") || host.endsWith(".")) return null
+        return withScheme
     }
 
     private fun parseVolumeLevel(raw: String): Int? {

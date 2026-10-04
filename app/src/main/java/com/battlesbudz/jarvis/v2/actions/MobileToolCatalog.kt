@@ -88,6 +88,37 @@ object MobileToolCatalog {
                 minLength = 1,
                 pattern = "^(play|pause|toggle|next|previous)$"
             ))
+        ),
+        Tool(
+            name = "open_website",
+            description = "Open a website URL in the phone browser.",
+            parameters = listOf(Parameter(
+                name = "url",
+                type = ParameterType.STRING,
+                description = "The website URL, e.g. https://example.com or example.com.",
+                minLength = 1
+            ))
+        ),
+        Tool(
+            name = "open_settings",
+            description = "Open an Android system settings screen.",
+            parameters = listOf(Parameter(
+                name = "screen",
+                type = ParameterType.STRING,
+                description = "The settings screen: one of wifi, bluetooth, display, sound, apps, battery, location, storage, network, general.",
+                minLength = 1,
+                pattern = "^(wifi|bluetooth|display|sound|apps|battery|location|storage|network|general)$"
+            ))
+        ),
+        Tool(
+            name = "navigate",
+            description = "Show map directions to a destination address or place name.",
+            parameters = listOf(Parameter(
+                name = "destination",
+                type = ParameterType.STRING,
+                description = "The destination address or place name.",
+                minLength = 1
+            ))
         )
     )
 

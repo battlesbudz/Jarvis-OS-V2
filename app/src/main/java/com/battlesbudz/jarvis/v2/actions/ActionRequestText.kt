@@ -57,6 +57,45 @@ internal object ActionRequestText {
         }
     }
 
+    /** Bounded natural-language forms for opening a website. Returns the raw URL-ish target. */
+    fun websiteTarget(clause: String): String? {
+        val text = clause.trim()
+        // A dot (or explicit scheme) distinguishes a website from an app name,
+        // so "open Chrome" still routes to open_app.
+        return Regex("""(?i)^(?:open|launch|visit|go\s+to)\s+(https?://\S+|\S*\.\S+.*)$""")
+            .matchEntire(text)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    /** Bounded natural-language forms for Android settings screens. Returns the screen key. */
+    fun settingsScreen(clause: String): String? {
+        val text = clause.lowercase().trim()
+        val name = Regex("""^(?:open|show|go\s+to)\s+(?:the\s+)?(wi-?fi|bluetooth|display|sound|apps?|battery|location|storage|network)\s+settings?$""")
+            .matchEntire(text)?.groupValues?.get(1) ?: return null
+        return when (name.replace("-", "").removeSuffix("s")) {
+            "wifi" -> "wifi"
+            "bluetooth" -> "bluetooth"
+            "display" -> "display"
+            "sound" -> "sound"
+            "app" -> "apps"
+            "battery" -> "battery"
+            "location" -> "location"
+            "storage" -> "storage"
+            "network" -> "network"
+            else -> null
+        }
+    }
+
+    /** Bounded natural-language forms for map directions. Returns the destination. */
+    fun navigationTarget(clause: String): String? {
+        val text = clause.trim()
+        return Regex("""(?i)^(?:navigate|drive)\s+to\s+(.+)$""")
+            .matchEntire(text)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
+            ?: Regex("""(?i)^(?:get|show(?: me)?)\s+directions\s+to\s+(.+)$""")
+                .matchEntire(text)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
+            ?: Regex("""(?i)^take\s+me\s+to\s+(.+)$""")
+                .matchEntire(text)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
     fun appTarget(clause: String): String? {
         val target = Regex("""(?i)^(?:open|launch|start)\s+(?:up\s+)?(?:the\s+)?(.+)$""")
             .matchEntire(clause)?.groupValues?.get(1) ?: return null

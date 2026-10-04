@@ -5,6 +5,36 @@ Follow-up source baseline: `feature-tools` at `bfeca6d06dc3dba583e0f92e812046e9e
 Created: September 24, 2026. Updated: September 30, 2026 (America/New_York). Owner: Justin Battles.
 Status: existing tools scope retained; September 29 autonomous messaging/warm-inference requirements integrated. New phases below are planned, not implemented or verified by this documentation update.
 
+## Implementation checkpoint — October 4, 2026 (M1b destinations)
+
+Three new catalog tools on `muse/feature-tools`, following the media_control
+conventions (catalog entry drives the LiteRT schema, strict decoder/validator,
+tolerant model-arg mapping, Android executor dispatch, honest receipts). No PR
+or merge.
+- `open_website` (single `url` param): normalizes bare domains to https,
+  rejects javascript:/file:/data:/intent: schemes; dispatches ACTION_VIEW.
+- `open_settings` (single strict `screen` param): ten screens (wifi,
+  bluetooth, display, sound, apps, battery, location, storage, network,
+  general) dispatched via platform Settings intents.
+- `navigate` (single `destination` param): shows Google Maps directions via the
+  universal maps URL; does not auto-start turn-by-turn navigation.
+The text parser routes "open youtube.com" (dot/scheme distinguishes websites
+from app names, so "open Chrome" still opens the app), "open wifi settings"
+(checked before appTarget), and "navigate to X" / "directions to X". Receipts
+report "Opening/Requested opening" honestly because startActivity returns
+void. `FinalVoiceToolGuard` untouched: the new tools stay voice-denied by
+design for now. JVM coverage in `M1bDestinationsTest`
+(catalog/validator/decoder/parser) plus `NativeToolJourneyTest`
+destination dispatch; release journeys `test37` (Wi-Fi settings appears),
+`test38` (website dispatch + scheme rejection), `test39` (navigate dispatch +
+blank rejection). The named contract is now 40 methods.
+
+M1b remaining: none — phone/media/website/settings/map destinations are now
+complete. M1c screen control, M1d task/conversation scheduling, M1e device
+validation, M2–M8 and A0–A6 are still planned. Real-model selection of the new
+tools with actual weights and physical Fold 6 behavior remain unverified,
+consistent with the existing coverage boundaries.
+
 ## Implementation checkpoint — October 4, 2026 (media parser bugfix)
 
 Battles reported on his Fold 6 that typing "pause music" in text chat returned

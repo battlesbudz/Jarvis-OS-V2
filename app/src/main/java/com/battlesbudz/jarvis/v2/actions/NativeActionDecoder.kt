@@ -38,6 +38,18 @@ object NativeActionDecoder {
                 name = call.name,
                 arguments = mapOf("action" to args.optString("action"))
             )
+            "open_website" -> ActionRequest(
+                name = call.name,
+                arguments = mapOf("url" to args.optString("url"))
+            )
+            "open_settings" -> ActionRequest(
+                name = call.name,
+                arguments = mapOf("screen" to args.optString("screen"))
+            )
+            "navigate" -> ActionRequest(
+                name = call.name,
+                arguments = mapOf("destination" to args.optString("destination"))
+            )
             else -> null
         }
     }

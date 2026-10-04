@@ -3,6 +3,7 @@ package com.battlesbudz.jarvis.v2.actions
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
+import android.net.Uri
 import android.os.BatteryManager
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -117,6 +118,66 @@ class AndroidMobileActionExecutor(
                     "Sent ${action.action.label} command to the active media session."
                 )
             }
+        }
+        is MobileAction.OpenWebsite -> dispatchViewIntent(
+            Intent(Intent.ACTION_VIEW, Uri.parse(action.url)),
+            label = action.url,
+            openedText = "Opening",
+            requestedText = "Requested opening"
+        )
+        is MobileAction.OpenSettings -> dispatchViewIntent(
+            Intent(action.screen.intentAction),
+            label = "${action.screen.label} settings",
+            openedText = "Opening",
+            requestedText = "Requested opening"
+        )
+        is MobileAction.Navigate -> dispatchViewIntent(
+            Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse(
+                    "https://www.google.com/maps/dir/?api=1&destination=" +
+                        Uri.encode(action.destination)
+                )
+            ),
+            label = action.destination,
+            openedText = "Showing directions to",
+            requestedText = "Requested directions to"
+        )
+    }
+
+    /**
+     * Dispatch a view intent through the same launch path as OpenApp: the
+     * assistant service when the activity is not visible, otherwise a direct
+     * startActivity. startActivity returns void and background denials may be
+     * silent, so a background submission is reported as requested, not verified.
+     */
+    private fun dispatchViewIntent(
+        intent: Intent,
+        label: String,
+        openedText: String,
+        requestedText: String
+    ): ExecutionResult {
+        val visible = canLaunchDirectly()
+        val assistantResult = if (!visible)
+            com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.launch(context, intent, label)
+        else null
+        if (assistantResult != null) {
+            onDiagnostic("View intent route=selected_assistant visible=$visible label=$label result=${assistantResult.succeeded}")
+            return assistantResult
+        }
+        return try {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            onDiagnostic("View intent route=${if (visible) "visible_activity" else "background_request"} visible=$visible label=$label result=submitted foregroundTransition=unobserved")
+            ExecutionResult(true, if (visible) "$openedText $label." else "$requestedText $label.")
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: android.content.ActivityNotFoundException) {
+            onDiagnostic("View intent result=rejected type=ActivityNotFoundException label=$label")
+            ExecutionResult(false, "Could not open $label: ${error.message ?: "Android rejected the launch."}")
+        } catch (error: SecurityException) {
+            onDiagnostic("View intent result=rejected type=SecurityException label=$label")
+            ExecutionResult(false, "Could not open $label: ${error.message ?: "Android rejected the launch."}")
         }
     }
 }
