@@ -605,6 +605,7 @@ class SoftwareSessionTest(unittest.TestCase):
             session.capture_graphics_backend()
             graphics = session.report["graphics"]
             self.assertEqual("swiftshader", graphics["requested_selector"])
+            self.assertEqual(["HVF", "Vulkan"], graphics["requested_disabled_features"])
             self.assertEqual("gfxstream", graphics["graphics_backend"])
             self.assertEqual("swiftshader", graphics["vulkan_mode"])
             self.assertEqual("swangle", graphics["gles_mode"])
@@ -839,7 +840,7 @@ class SoftwareSessionTest(unittest.TestCase):
     def test_launcher_disables_both_acceleration_paths_and_logs_from_startup(self):
         command = emulator_command(Path("/sdk"), Path("/evidence"))
         self.assertEqual("off", command[command.index("-accel") + 1])
-        self.assertEqual("-HVF", command[command.index("-feature") + 1])
+        self.assertEqual("-HVF,-Vulkan", command[command.index("-feature") + 1])
         self.assertEqual("*:V", command[command.index("-logcat") + 1])
         self.assertEqual("/evidence/guest-startup-logcat.txt", command[command.index("-logcat-output") + 1])
         self.assertEqual("swiftshader", command[command.index("-gpu") + 1])
@@ -874,6 +875,7 @@ class EmulatorPinTest(unittest.TestCase):
         self.version = "Android emulator version 37.2.6.0 (build_id 16138043) (CL:N/A)\n"
         self.installed_version = self.version
         self.gpu_help = reply("GPU modes: auto, host, swiftshader_indirect\n")
+        self.feature_help = reply("-feature -HVF -feature Wifi\n")
         for target, value in (("software_emulator.platform.system", "Darwin"),
                               ("software_emulator.platform.machine", "arm64")):
             patcher = patch(target, return_value=value)
@@ -910,6 +912,8 @@ class EmulatorPinTest(unittest.TestCase):
             return reply(self.installed_version if command[0] == str(self.original / "emulator") else self.version)
         elif command[-1] == "-help-gpu":
             return self.gpu_help
+        elif command[-1] == "-help-feature":
+            return self.feature_help
         elif "create" in command:
             config = self.session.avd_home / "jarvis-api29-software.avd/config.ini"
             config.parent.mkdir()
@@ -1017,12 +1021,13 @@ class EmulatorPinTest(unittest.TestCase):
             self.session.pin_emulator()
         self.assert_original_retained()
 
-    def test_native_gpu_help_is_a_bounded_receipt_not_an_exhaustive_capability_gate(self):
+    def test_native_help_is_a_bounded_receipt_not_an_exhaustive_capability_gate(self):
         for help_result in (reply("GPU modes: auto, host, swiftshader_indirect\n"),
                             reply("GPU modes: software, lavapipe, swangle\n", code=0),
                             reply("partial native help", code=124)):
             with self.subTest(code=help_result.returncode, output=help_result.stdout):
                 self.gpu_help = help_result
+                self.feature_help = reply("raw feature usage", code=help_result.returncode)
                 self.session.pin_emulator()
                 command, kwargs = next((command, kwargs) for command, kwargs in reversed(self.calls)
                                        if command[-1] == "-help-gpu")
@@ -1033,6 +1038,14 @@ class EmulatorPinTest(unittest.TestCase):
                 self.assertEqual(help_result.stderr, receipt["stderr"])
                 self.assertEqual(help_result.returncode, receipt["exit_code"])
                 self.assertEqual("software" in help_result.stdout, receipt["mentions_software"])
+                command, kwargs = next((command, kwargs) for command, kwargs in reversed(self.calls)
+                                       if command[-1] == "-help-feature")
+                self.assertEqual([str(self.original / "emulator"), "-help-feature"], command)
+                self.assertEqual({"deadline": 600, "timeout": 15, "check": False}, kwargs)
+                self.assertEqual({"stdout": self.feature_help.stdout,
+                                  "stderr": self.feature_help.stderr,
+                                  "exit_code": self.feature_help.returncode},
+                                 self.session.report["graphics"]["native_feature_help"])
                 self.assertTrue(self.session.report["emulator_pin"]["verified"])
                 self.assertFalse(self.session.report["passed"])
 
@@ -1043,6 +1056,23 @@ class EmulatorPinTest(unittest.TestCase):
             self.assertEqual(10, kwargs["deadline"])
             result = self.host_command(command, **kwargs)
             if command[-1] == "-help-gpu":
+                self.clock.pause(10)
+            return result
+
+        self.mock_run.side_effect = help_expires
+        with self.assertRaisesRegex(TimeoutError, "deadline expired"):
+            self.session.pin_emulator()
+        self.assertEqual(10, self.clock.now())
+        self.assert_original_retained()
+        self.assertFalse(any(command[-1] == "-help-feature" for command, _ in self.calls))
+
+    def test_native_feature_help_expiry_restores_original_without_renewing_pin_budget(self):
+        self.session.deadline = 10
+
+        def help_expires(command, **kwargs):
+            self.assertEqual(10, kwargs["deadline"])
+            result = self.host_command(command, **kwargs)
+            if command[-1] == "-help-feature":
                 self.clock.pause(10)
             return result
 

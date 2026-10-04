@@ -1096,6 +1096,10 @@ four recorded-speech cases, signed APK checks and both static native audits pass
 API 30, API 35 compact, API 36 phone and the genuine 16 KB profile pass all 49
 main journeys and every separate upgrade, restart, lifecycle, layout and native
 loading phase. Their APK and test hashes match this exact source and run.
+The true 16 KB run also records recovered off-app platform crashes, including
+a SystemUI clipboard overlay crash. Later required Jarvis assertions complete
+with no Jarvis fatal or ANR; profile success does not mean every platform
+process was crash-free.
 
 Fold artifact `11296544541`, ZIP SHA-256
 `ba9139ccd1bb65cc113fc3afc9b19b443f7bca2f6f926b24b025aa8a896a1946`,
@@ -1140,6 +1144,46 @@ The gesture correction changes no emulator provisioning or acceptance limits.
 Build 948's exact receipt is false, all three publishers skip, and its numbered
 release is absent. All six complete fresh profiles and the exact receipt must
 pass before a new numbered APK can be published.
+
+## Builds 947/948 Android 10 graphics compatibility trial
+
+Build 947's API 29 artifact `11297002373` has ZIP SHA-256
+`14c37aa2a67d6958aeee05a5fe35809e35da6c24846e1ac63f2617ab08ecaf0b`.
+The native current-PID BOOT_COMPLETED check and real replacement upgrade pass.
+The first-launch PNG nevertheless shows `System UI isn't responding` over
+Jarvis setup, and later journey images retain the same modal. The startup log
+records a KeyguardService execution timeout before unlock input, with SystemBars
+initialization taking 29,820 ms. Main setup lookups fail and instrumentation
+expires before test48. Dismissing that platform ANR is not a valid app pass.
+
+Build 948's API 29 artifact `11297103192` has ZIP SHA-256
+`aac01d43b81fbc29c7e6965226246dd9e35743aa869ce15bbbe8d75bcc2aca7f`.
+Its full native log contains no exact Posting or Finished BOOT_COMPLETED marker.
+There are 112 progress receipts and 28 distinct successful native snapshots.
+System-server PID 264 is killed by the UI watchdog; replacement PID 1445 is
+killed with foreground `Installer.migrateAppData` and UI
+`HardwareRenderer.nSetStopped` stacks. Replacement PID 2146 does not complete
+boot before the original 900-second deadline. No APK install, controller or
+test48 runs. Both candidates request SwiftShader and actually select Vulkan
+SwiftShader with GLES SwANGLE; the selector did not change that GLES backend.
+
+The next API 29-only launcher trial adds disabled Vulkan to the existing
+disabled HVF request: `-feature -HVF,-Vulkan`, keeping `-gpu swiftshader` and
+`-accel off`. The official
+[troubleshooting guide](https://developer.android.com/studio/run/emulator-troubleshooting)
+documents disabling Vulkan. The installed pin's raw `-help-feature` output is
+retained within the existing 600-second provisioning budget, with a 15-second
+command limit and no help-text capability gate. Requested disabled features
+are recorded separately from the observed backend. This qualified compatibility
+experiment does not establish a graphics cause, exact pinned CLI behavior or
+the absence of all host Vulkan use; foreground I/O and software-emulation
+slowness remain competing explanations.
+
+The exact emulator/image pin, native ARM64 execution without a bridge, resources,
+viewport, boot/current-PID/unlock/services checks, 900-second boot, 180-second
+install, 60-minute job, all required app/native phases and publication gates
+remain unchanged. Neither failed candidate has a clean numbered release. A
+fresh signed candidate must complete all six profiles and the consolidated gate.
 
 ## Build 900 Gemma audio submission review
 

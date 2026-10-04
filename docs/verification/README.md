@@ -31,7 +31,7 @@ commits. Do not create or merge another PR without Justin's permission.
    Google APIs and Play images contain no ARM64 bridge, so that profile uses
    the official AOSP `system-images;android-29;default;arm64-v8a` image on a
    standard `macos-15` ARM64 runner with explicit
-   software emulation (`-accel off -feature -HVF`). GitHub's M1 VMs do not
+   software emulation (`-accel off -feature -HVF,-Vulkan`). GitHub's M1 VMs do not
    support nested hardware virtualization. This profile alone uses the official
    [Emulator archive](https://developer.android.com/studio/emulator_archive)
    Canary 37.2.6 Apple Silicon package, build 16138043, as a controlled version
@@ -57,12 +57,20 @@ commits. Do not create or merge another PR without Justin's permission.
    authorize readiness. This avoids Build 944's repeatedly timed-out guest logcat
    dumps without extending a deadline. All readiness and unlock checks share the 15-minute boot budget;
    software rendering uses the supported `-gpu swiftshader` selector, with the
-   installed binary's supported modes and actual startup backend retained as
-   diagnostics. Build 946's `software` selector chose GLES SwANGLE and Vulkan
+   installed binary's raw GPU/feature help and actual startup backend retained as
+   diagnostics. Both help commands share the original provisioning budget and
+   are individually bounded by 15 seconds; help text does not authorize readiness.
+   Build 946's `software` selector chose GLES SwANGLE and Vulkan
    Lavapipe; Android's system process was killed twice before boot completion,
-   with UI and foreground handlers blocked. The explicit SwiftShader trial
-   tests a different supported GLES/Vulkan selection; it does not establish a
-   rendering cause or faster boot. Two vCPUs, 2 GiB RAM,
+   with UI and foreground handlers blocked. Builds 947/948 requested SwiftShader
+   and selected Vulkan SwiftShader while GLES remained SwANGLE; Android 10 still
+   suffered platform ANRs/watchdogs. The next API 29-only compatibility trial
+   disables the guest Vulkan feature using the documented `-feature -Vulkan`
+   option. It retains SwiftShader and disabled HVF. Requested features and the
+   actual backend are separate receipts: this does not prove Vulkan caused the
+   failure or that all host Vulkan use disappears. See the official
+   [troubleshooting guide](https://developer.android.com/studio/run/emulator-troubleshooting).
+   Two vCPUs, 2 GiB RAM,
    `vm.heapSize=256M` and a 540×960 framebuffer at 210 dpi preserve Pixel 2's exact
    Android dp viewport.
    Physical size/density are observed before ready; optional read-only host

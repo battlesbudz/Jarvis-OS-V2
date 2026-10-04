@@ -47,11 +47,11 @@ EMULATOR_PIN = {
 SOFTWARE_AVD_SETTINGS = {"hw.cpu.ncore": "2", "hw.ramSize": "2048M", "vm.heapSize": "256M",
                          "hw.lcd.width": "540", "hw.lcd.height": "960", "hw.lcd.density": "210",
                          "disk.dataPartition.size": "4096M"}
-# Build 946's software selector used GLES SwANGLE/Vulkan Lavapipe and still hit
-# framework watchdogs, including HardwareRenderer.nSetStopped. The pinned native
-# help and official docs support explicit SwiftShader for GLES/Vulkan. This is a
-# compatibility trial with unproven causality; retain actual backend receipts.
-# https://developer.android.com/studio/run/emulator-acceleration
+# Builds 947/948 requested SwiftShader but retained GLES SwANGLE, with SystemUI
+# ANRs/system-server watchdogs. Disable the guest Vulkan feature as a documented
+# compatibility trial; this does not prove a graphics cause or remove all host
+# Vulkan use. Keep the selector and record the actual backend independently.
+# https://developer.android.com/studio/run/emulator-troubleshooting
 SOFTWARE_GPU_SELECTOR = "swiftshader"
 
 
@@ -211,7 +211,7 @@ def emulator_command(sdk, diagnostics):
     return [str(sdk / "emulator/emulator"), "-port", "5554", "-avd", AVD_NAME,
             "-no-window", "-gpu", SOFTWARE_GPU_SELECTOR, "-noaudio", "-no-boot-anim", "-no-snapshot",
             "-timezone", "Etc/UTC",
-            "-accel", "off", "-feature", "-HVF", "-show-kernel", "-logcat", "*:V",
+            "-accel", "off", "-feature", "-HVF,-Vulkan", "-show-kernel", "-logcat", "*:V",
             "-logcat-output", str(diagnostics / "guest-startup-logcat.txt")]
 
 
@@ -368,7 +368,8 @@ class SoftwareSession:
         self.report = {"schema": 1, "passed": False, "profile": profile,
                        "acceleration": "software", "boot_timeout_seconds": profile["boot_timeout"],
                        "status": "provisioning", "errors": [],
-                       "graphics": {"requested_selector": SOFTWARE_GPU_SELECTOR}}
+                       "graphics": {"requested_selector": SOFTWARE_GPU_SELECTOR,
+                                    "requested_disabled_features": ["HVF", "Vulkan"]}}
 
     def run(self, command, *, deadline=None, timeout=60, check=True, input=None):
         deadline = self.deadline if deadline is None else min(deadline, self.deadline)
@@ -453,6 +454,12 @@ class SoftwareSession:
                     "exit_code": help_result.returncode, "stdout": help_result.stdout,
                     "stderr": help_result.stderr,
                     "mentions_software": bool(re.search(r"\bsoftware\b", help_result.stdout))}
+                remaining(deadline, self.now)
+                feature_help = self.run([str(original / "emulator"), "-help-feature"],
+                                        deadline=deadline, timeout=15, check=False)
+                self.report["graphics"]["native_feature_help"] = {
+                    "exit_code": feature_help.returncode, "stdout": feature_help.stdout,
+                    "stderr": feature_help.stderr}
                 remaining(deadline, self.now)
             except (OSError, ValueError, RuntimeError, TimeoutError):
                 if original.exists():
