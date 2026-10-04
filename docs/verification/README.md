@@ -35,8 +35,10 @@ commits. Do not create or merge another PR without Justin's permission.
    support nested hardware virtualization. This profile alone uses the official
    [Emulator archive](https://developer.android.com/studio/emulator_archive)
    Stable 32.1.15 Apple Silicon package, build 10696886, as a controlled
-   direct SwiftShader trial after Build 958's host GLES 2 context failed
-   SurfaceFlinger's GLES 3 initialization. Official indexed archive metadata
+   API 29 compatibility trial after Build 958's host GLES 2 context failed
+   SurfaceFlinger's GLES 3 initialization. Build 963 initialized guest GLES 3
+   through ANGLE/Vulkan SwiftShader; it did not establish a direct-only path
+   or complete boot. Official indexed archive metadata
    binds the version/build/filename, 265,751,100-byte size and SHA-256
    `f70d764fd756664bc782bb24f8da67cbaa51d7e5ffac732108b9e6545cd9faf4`;
    its size/hash are checked before safe staged extraction. Executable modes and
@@ -79,10 +81,15 @@ commits. Do not create or merge another PR without Justin's permission.
    heap request as zero and promoted it to its 512 MiB minimum; its generated
    hardware and kernel arguments record 512 MiB, not a verified 256 MiB guest
    heap. The next trial keeps the request unchanged. The framebuffer is
-   720×1280 at supported 280 dpi after Build 962 rejected 210 dpi before guest
-   startup. This preserves Pixel 2's exact Android dp viewport, with 16/9 as
-   many physical pixels as the previous 540×960 raster; it does not establish
-   a performance improvement.
+   360×640 at 140 dpi. The same pinned binary advertises 140 dpi; actual fresh
+   raster admission still needs observation. Build 962 rejected 210 dpi before
+   guest startup. This trial preserves the exact physical dp
+   extent and aspect ratio of Pixel 2 and Build 963's 720×1280 at 280 dpi,
+   with one-quarter of Build 963's pixels. Density-specific resources, pixel
+   rounding and window insets can still change layout, so the full layout gates
+   remain required. Build 963's first system_server fatal was a permission-policy
+   initialization timeout; this raster experiment does not establish its cause,
+   a performance improvement or a boot cure.
    Physical size/density are observed before ready; optional read-only host
    resource receipts consume the existing deadline. These provisioning settings
    are experiments pending a complete passing run, not evidence of a memory cause.

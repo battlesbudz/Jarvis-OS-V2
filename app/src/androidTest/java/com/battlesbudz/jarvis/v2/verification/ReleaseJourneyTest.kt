@@ -8,6 +8,10 @@ import android.app.ActivityManager
 import android.media.AudioManager
 import android.os.BatteryManager
 import android.os.SystemClock
+import android.system.ErrnoException
+import android.system.Os
+import android.system.OsConstants
+import android.system.StructPollfd
 import android.provider.MediaStore
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
@@ -61,6 +65,8 @@ import org.junit.rules.TestName
 import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
 import java.io.File
+import java.io.ByteArrayOutputStream
+import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -111,6 +117,10 @@ class ReleaseJourneyTest {
         val folder = InstrumentationRegistry.getArguments().getString("jarvisEvidenceDir")
             ?: error("The verification controller must supply a unique evidence directory")
         require(folder.matches(Regex("jarvis-verification-[0-9]+")))
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            exportCapturedEvidenceThroughShell(file, folder)
+            return
+        }
         // Android 11 blocks adb shell from app-specific external storage. Publish
         // these test-owned files through Downloads instead; no storage grant/root
         // is needed, and this export exists only in the instrumentation APK.
@@ -124,6 +134,89 @@ class ReleaseJourneyTest {
         checkNotNull(resolver.openOutputStream(uri)).use { output ->
             file.inputStream().use { input -> input.copyTo(output) }
         }
+    }
+
+
+    /** Delayed PACKAGE_DATA_CLEARED work can orphan newly inserted MediaStore rows.
+     * Transport the original capture through shell stdin, independent of that ownership. */
+    private fun exportCapturedEvidenceThroughShell(file: File, folder: String) {
+        require(file.name.matches(Regex("[A-Za-z0-9_]+\\.(png|xml)")))
+        val bytes = file.readBytes()
+        check(bytes.isNotEmpty()) { "Empty captured evidence: ${file.name}" }
+        val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") {
+            (it.toInt() and 255).toString(16).padStart(2, '0')
+        }
+        val target = "/sdcard/Download/$folder/${file.name}"
+        // Runtime.exec tokenizes whitespace. Keep this shell script one token;
+        // validated path components contain no whitespace or shell metacharacters.
+        val gap = "\${IFS}"
+        val script = "(mkdir${gap}-p${gap}/sdcard/Download/$folder&&" +
+            "test${gap}!${gap}-e${gap}$target&&cat>$target&&" +
+            "n=\$(wc${gap}-c<$target)&&h=\$(sha256sum${gap}$target)&&" +
+            "printf${gap}'JARVIS_EXPORT_1:0:%s:%s\\n'${gap}\$n${gap}" +
+            "\${h%%[!0123456789abcdef]*})2>&1||" +
+            "printf${gap}'JARVIS_EXPORT_1:%s\\n'${gap}\$?"
+        check(script.none { it.isWhitespace() })
+        val deadline = SystemClock.elapsedRealtime() + 30_000L
+        val pipes = instrumentation.uiAutomation.executeShellCommandRw("/system/bin/sh -c $script")
+        if (pipes.size != 2) {
+            val failure = IllegalStateException("Unexpected shell descriptor count: ${pipes.size}")
+            for (pipe in pipes) try { pipe.close() }
+            catch (error: java.io.IOException) { failure.addSuppressed(error) }
+            throw failure
+        }
+        pipes[0].use { output -> pipes[1].use { input ->
+            for (pipe in pipes) {
+                val flags = Os.fcntlInt(pipe.fileDescriptor, OsConstants.F_GETFL, 0)
+                Os.fcntlInt(pipe.fileDescriptor, OsConstants.F_SETFL, flags or OsConstants.O_NONBLOCK)
+            }
+            val response = ByteArrayOutputStream()
+            val buffer = ByteArray(1024)
+            var sent = 0
+            var inputOpen = true
+            while (true) {
+                check(SystemClock.elapsedRealtime() < deadline) { "Evidence export deadline: $target" }
+                var progressed = false
+                if (inputOpen) {
+                    try {
+                        val count = Os.write(input.fileDescriptor, bytes, sent, minOf(8192, bytes.size - sent))
+                        check(count > 0) { "Evidence export write made no progress" }
+                        sent += count
+                        progressed = true
+                    } catch (error: ErrnoException) {
+                        if (error.errno != OsConstants.EAGAIN && error.errno != OsConstants.EINTR) throw error
+                    }
+                    if (sent == bytes.size) { input.close(); inputOpen = false }
+                }
+                try {
+                    val count = Os.read(output.fileDescriptor, buffer, 0, buffer.size)
+                    if (count == 0) break
+                    check(response.size() + count <= 1024) { "Evidence export response exceeds 1 KiB" }
+                    response.write(buffer, 0, count)
+                    progressed = true
+                } catch (error: ErrnoException) {
+                    if (error.errno != OsConstants.EAGAIN && error.errno != OsConstants.EINTR) throw error
+                }
+                if (!progressed) {
+                    val watched = mutableListOf(StructPollfd().apply {
+                        fd = output.fileDescriptor; events = OsConstants.POLLIN.toShort()
+                    })
+                    if (inputOpen) watched.add(StructPollfd().apply {
+                        fd = input.fileDescriptor; events = OsConstants.POLLOUT.toShort()
+                    })
+                    val remaining = deadline - SystemClock.elapsedRealtime()
+                    check(remaining > 0) { "Evidence export deadline: $target" }
+                    try { Os.poll(watched.toTypedArray(), minOf(remaining, 1000L).toInt()) }
+                    catch (error: ErrnoException) { if (error.errno != OsConstants.EINTR) throw error }
+                }
+            }
+            check(!inputOpen && sent == bytes.size && SystemClock.elapsedRealtime() < deadline)
+            val receipt = response.toString("UTF-8")
+            check(receipt == "JARVIS_EXPORT_1:0:${bytes.size}:$hash\n") {
+                "Evidence export receipt mismatch for $target: $receipt"
+            }
+            android.util.Log.i("JarvisReleaseEvidence", "shellExport path=$target bytes=${bytes.size} sha256=$hash")
+        } }
     }
 
     private fun find(selector: BySelector): UiObject2 =
@@ -2530,7 +2623,8 @@ class ReleaseJourneyTest {
 
     private fun benchmarkFindVisible(selector: BySelector, towardTop: Boolean, inDialog: Boolean,
         deadline: Long, swipes: AtomicInteger, requireSafeTapBounds: Boolean = true,
-        holdTextDiscovery: Boolean = false, sparseHeldTextDiscovery: Boolean = false): UiObject2 {
+        holdTextDiscovery: Boolean = false, sparseHeldTextDiscovery: Boolean = false,
+        alignForTap: Boolean = false): UiObject2 {
         fun hasRequiredBounds(control: UiObject2): Boolean = if (requireSafeTapBounds)
             benchmarkHasSafeBounds(control) else benchmarkHasVisibleTextBounds(control)
         var direction = if (towardTop) Direction.UP else Direction.DOWN
@@ -2591,7 +2685,20 @@ class ReleaseJourneyTest {
                 val gap = if (knownBounds == null) 0 else if (direction == Direction.UP)
                     viewport.top + 24 - knownBounds.top else knownBounds.bottom - (viewport.bottom - 24)
                 val hold = (holdTextDiscovery || sparseHeldTextDiscovery) && !fine
-                val stroke = if (fine) (gap + 24).coerceIn(48.coerceAtMost(fineLimit), fineLimit)
+                // A small visible fragment at the scroll edge does not reveal the
+                // control's full vertical extent. For a pending physical tap, move
+                // it inward with the existing fine cap instead of trusting that
+                // clipped edge as the full target position. Read-only navigation
+                // and nonintersecting targets retain their original gestures.
+                val edgeFragmentForTap = android.os.Build.VERSION.SDK_INT >= 35 && alignForTap &&
+                    requireSafeTapBounds &&
+                    fine && knownBounds != null && knownBounds.height() < fineLimit &&
+                    android.graphics.Rect.intersects(viewport, knownBounds) &&
+                    knownBounds.left >= viewport.left && knownBounds.right <= viewport.right &&
+                    ((direction == Direction.UP && knownBounds.top <= viewport.top) ||
+                        (direction == Direction.DOWN && knownBounds.bottom >= viewport.bottom))
+                val stroke = if (edgeFragmentForTap) fineLimit
+                    else if (fine) (gap + 24).coerceIn(48.coerceAtMost(fineLimit), fineLimit)
                     else if (hold) viewport.height() / 2 else lowY - highY
                 val fromY = if (direction == Direction.DOWN) lowY else highY
                 val toY = fromY + if (direction == Direction.DOWN) -stroke else stroke
@@ -2665,7 +2772,8 @@ class ReleaseJourneyTest {
                 var ready: UiObject2? = null
                 try {
                     val control = benchmarkFindVisible(selector, towardTop, inDialog, deadline, swipes,
-                        holdTextDiscovery = holdDiscovery, sparseHeldTextDiscovery = sparseHeldDiscovery)
+                        holdTextDiscovery = holdDiscovery, sparseHeldTextDiscovery = sparseHeldDiscovery,
+                        alignForTap = true)
                     if (control.isEnabled) {
                         val before = control.visibleBounds
                         device.waitForIdle((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1))

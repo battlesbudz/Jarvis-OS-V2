@@ -41,19 +41,18 @@ EMULATOR_PIN = {
     "sha256": "f70d764fd756664bc782bb24f8da67cbaa51d7e5ffac732108b9e6545cd9faf4",
 }
 
-# Build 936 exhausted guest CPU during API 29 permission initialization. This
-# bounded headroom/raster experiment retains two vCPUs and the Pixel 2 dp viewport;
-# it does not establish host memory pressure as the cause or change any deadline.
-# Build 962's pinned QEMU rejects 210dpi before boot. The supported 280dpi
-# raster preserves that exact dp viewport, with 16/9 as many pixels as 540x960.
+# Build 963 initialized GLES 3 but failed API 29 boot. This supported 140dpi
+# raster keeps the exact physical dp extent of 720x1280@280 with one-quarter
+# of its pixels. Reduced pixel count is an experiment, not a measured cause or
+# cure for the permission-initialization timeout; all release gates remain required.
 # https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/vl.c
 SOFTWARE_AVD_SETTINGS = {"hw.cpu.ncore": "2", "hw.ramSize": "2048M", "vm.heapSize": "256M",
-                         "hw.lcd.width": "720", "hw.lcd.height": "1280", "hw.lcd.density": "280",
+                         "hw.lcd.width": "360", "hw.lcd.height": "640", "hw.lcd.density": "140",
                          "disk.dataPartition.size": "4096M"}
-# API 29-only compatibility trial of Emulator 32's direct SwiftShader path.
-# Its source selects swiftshader_indirect without the newer Mac SwANGLE redirect.
-# Actual GLES capability and any improvement remain unproven; retain requested
-# selector and actual backend separately and require the unchanged release gate.
+# Retain Build 963's requested selector. Its actual guest backend was
+# ANGLE/Vulkan SwiftShader with GLES 3, not a proven direct-only path.
+# Requested selector and fresh actual backend remain separate receipts;
+# no performance improvement or complete device pass has been established.
 # https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/android/android-emu/android/opengl/emugl_config.cpp
 SOFTWARE_GPU_SELECTOR = "swiftshader_indirect"
 
@@ -523,7 +522,7 @@ class SoftwareSession:
         # Verify physical framebuffer/density, including any SDK skin override.
         # An Android wm override would change logical layout without cutting the raster.
         display = {}
-        expected = {"size": "720x1280", "density": "280"}
+        expected = {"size": "360x640", "density": "140"}
         for field, value in expected.items():
             result = self.adb("shell", "wm", field, deadline=deadline, check=True)
             display[field] = {"stdout": result.stdout, "stderr": result.stderr}
@@ -531,7 +530,7 @@ class SoftwareSession:
             if result.stdout.strip() != f"Physical {field}: {value}":
                 raise RuntimeError(f"Software emulator physical {field} must be {value}: {result.stdout.strip()}")
         remaining(min(deadline, self.deadline), self.now)
-        self.report["display"] = {"width": 720, "height": 1280, "density_dpi": 280}
+        self.report["display"] = {"width": 360, "height": 640, "density_dpi": 140}
 
     def capture_graphics_backend(self):
         """Read bounded, already captured startup output; never start another probe."""

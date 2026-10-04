@@ -1443,6 +1443,93 @@ is false with exactly four admitted profiles. All three publishers skip;
 the numbered Build 962 release and tag are absent. The next changed revision
 must pass the complete signed host gate and all six fresh profiles.
 
+## Build 963 startup, export and Fold alignment evidence
+
+[Build 963](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37198084788)
+tests PR head `32f8e3d3345a35de35aa28c0f2967af6cf3e6e91`, merge
+`562259d9093428fc0d5d6c7d34385b777e853c47`, tree
+`22dd0720692937c314afb4e3a66fe92858de046f`. Signed normal/compact builds,
+1,005 JVM tests in 184 suites, 203 helper tests, native keyword/page-size
+checks and four recorded ASR checks pass. Same-run APK identities are normal
+`2c7a206892669e8f474ba678206fa1cefb1421cfcfb20c3e857cc3a5df340dd6`,
+compact `a3803a8d91916819f2f0589bc5ead42f33b4a1910ccc2486df3648867abb7111`
+and test `132c11a5b4105e37e862b8afc723185f4227d68f3876b1633d1822603c19a504`.
+
+API 30 normal and API 35 compact each pass all 49 main journeys, both actual
+Build 907 upgrades without clearing data during update, process restart,
+eight lifecycle phases, four layout methods and nine native loads. Compact's
+initial disabled Save is discovered with one actual held half-viewport
+gesture; its disabled, later physical Save and persistence checks pass.
+These are two full raw profile passes, not admitted consolidated variants.
+Test48 passes on all four profiles that reach main instrumentation; the
+controlled session/foreground-service result does not qualify physical audio.
+
+API 36 normal artifact `11302362080`, ZIP SHA-256
+`ff43ab245519f091f5dec825a1aaa5b0a94bcf14e005e09f8fe943bfdd5f8527`,
+passes both upgrades and 48 of 49 main cases, including test45 and test48.
+Only test09 fails, in its evidence export after the test body: delayed
+MediaProvider PACKAGE_DATA_CLEARED processing orphans the newly inserted
+Downloads row before openOutputStream, which rejects URI 41 with a
+SecurityException. Both operations use targetContext. There is no retained
+exported test09 PNG/XML; subsequent phases are unreached. Broadcast delivery
+or provider-thread idleness alone does not establish MediaService work-queue
+completion, so neither is substituted for successful evidence export.
+The next main-journey export trial uses public API 31 shell stdin to transport
+the original captured bytes into the unique Downloads folder, avoiding an
+app-owned MediaStore row on API 31+. A bounded nonblocking transfer requires
+a fresh path and an exact success/size/SHA-256 receipt; duplicate paths,
+missing bytes, timeouts and mismatches fail. Both descriptors close on exit.
+API 29/30 retain the existing MediaStore export. The per-file 30-second transfer
+cap remains inside the unchanged instrumentation/host deadlines. Actual
+Android shell transport and collector-readable PNG/XML still need fresh CI.
+
+Fold artifact `11302617151`, ZIP SHA-256
+`e7b80b47240db9dece531073cc35e2b8c67b91458bd98cd3ad9e665ee20b8305`,
+passes both upgrades and 48 of 49 main cases, including test48. Test45's Copy
+navigation exhausts its unchanged deadline. Four upward discovery strokes
+eventually expose Copy wholly above the viewport, followed by fine strokes
+that reveal 49-, 74- and 99-pixel edge fragments. The final full-height control
+still extends 27 pixels above its scroll viewport. No overshoot, stationary
+gesture, disabled control or overlay cause is established. The next bounded
+alignment trial uses the existing one-fifth fine cap for a positive small
+rectangle intersecting and touching the directional viewport edge, only for
+modern physical-tap navigation with horizontal containment. Unknown, distant,
+wholly outside, read-only and API 29/30 navigation retain their original
+gestures. Fresh safe/enabled bounds, 300 ms stability, one physical tap and
+15-second/14-gesture limits remain required; actual timing is unverified.
+
+True 16 KB fails before controller execution: emulator-runner observes the
+boot property, then input keyevent 82 fails with Broken pipe. The action
+terminates before app installation and produces no device artifact. Guest
+crash absence cannot be inferred from its stdout. The next revision streams
+INFO-and-above guest diagnostics only for this profile; this changes no wait,
+input retry, boot budget or gate and is not a startup cure.
+
+API 29 artifact `11301877291`, ZIP SHA-256
+`88ddc6a3e662c34b51c5e7843ecda60c21220f613673f0ca8d0ef75cf3c5aa20`,
+verifies the pinned 32.1.15 archive and accepts 720×1280 at 280 dpi. The kernel
+activates two CPUs. Guest rendering still initializes ANGLE with SwiftShader
+and reports GLES 3; the pin does not establish a direct-only renderer. A stock
+permission-service timeout is followed by system-server restarts, composer
+null dereferences, SurfaceFlinger aborts and SystemUI failures. BOOT_COMPLETED
+never arrives; Jarvis is never installed. Startup host memory reports 84%
+free and no swap, with no successful late sample; resource exhaustion is not
+established. Linux x64 emulator launcher source rejects API 28+ ARM64 guests;
+a bundled ARM64 QEMU binary does not establish supported wrapper admission.
+The next controlled trial changes only the physical raster to 360×640 at
+advertised 140 dpi, preserving the exact physical dp extent with one-quarter
+of Build 963's pixels. Density resources, rounding and insets still need the
+full layout gate. The first permission timeout may remain; no cause, speed
+gain or stable-boot cure is established. Pin, CPU/RAM/heap request, renderer,
+HVF/guest Vulkan exclusions, startup observation and all deadlines are retained.
+
+Final receipt artifact `11302072065`, ZIP SHA-256
+`bcfa20d8ce7d6e4a2b201c482e48300748932ba572df59e25d7ddaa6068a53f6`,
+is false with zero admitted profiles. Missing true-16-KB evidence aborts input
+selection, so downstream missing host/profile inputs do not contradict their
+raw passes. All publishers skip; no numbered Build 963 release or tag exists.
+The next changed revision must pass the full signed gate and all six profiles.
+
 ## Build 900 Gemma audio submission review
 
 The latest benchmark export contains counts and timing but excludes transcript,
