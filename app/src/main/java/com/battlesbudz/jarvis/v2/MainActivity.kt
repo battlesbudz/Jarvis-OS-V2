@@ -141,6 +141,9 @@ class MainActivity : ComponentActivity() {
                 phoneTasks = runtime.phoneTasks,
                 phoneTaskError = runtime.phoneTaskError,
                 onPhoneTaskAction = runtime::phoneTaskAction,
+                // M1d explicit silent work (D21/T05).
+                silentWork = runtime.silentWorkState,
+                onSilentWork = runtime::setSilentWork,
                 callState = voiceSessionController.state,
                 onSendChat = runtime::sendChat,
                 onSelectConversation = runtime::selectConversation,

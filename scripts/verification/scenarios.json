@@ -45,6 +45,10 @@
     "test41_screenTapNeedsVerifiedTarget",
     "test42_touchPauseAndIdleResumeReobserves",
     "test43_screenToolsReportHonestlyWhenServiceDisabled",
+    "test45_panelApprovalAdmitsScreenSessionAndDispatchesExactly",
+    "test46_conflictingScreenTaskQueuesBehindTheLease",
+    "test47_progressNotificationPostsSilentlyDuringDnd",
+    "test48_finishedScreenGroupReleasesLeaseNotifiesAndProjects",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

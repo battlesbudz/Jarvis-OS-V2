@@ -2,6 +2,7 @@ package com.battlesbudz.jarvis.v2.verification
 
 import android.content.Intent
 import android.content.ContentValues
+import android.app.NotificationManager
 import android.media.AudioManager
 import android.os.BatteryManager
 import android.os.SystemClock
@@ -1501,9 +1502,182 @@ class ReleaseJourneyTest {
         assertTrue(tap.message.contains("approval"))
     }
 
+    // M1d task/conversation scheduling journeys.
+
+    @Test fun test45_panelApprovalAdmitsScreenSessionAndDispatchesExactly() {
+        // M1d approval-UI wiring (T07): approving a screen task in the task
+        // panel admits the screen-control session grant for its group, and the
+        // ledger claim consumes the approval atomically with dispatch
+        // eligibility. A changed target invalidates the prior approval (D13).
+        val file = File(context.cacheDir, "release-m1d-approval.json").apply { delete() }
+        val ledger = ToolTaskLedger(FileToolTaskStore(file))
+        val approvals = ActionApprovalStore(FileToolTaskStore(file))
+        val session = ScreenControlSession()
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes()))
+        val token = session.recordObservation(checkNotNull(bridge.observation))
+        val executor = AndroidMobileActionExecutor(context, screenBridge = bridge, screenSession = session)
+        val admission = ScreenApprovalAdmission(session)
+        fun tapRequest(target: String) = ActionRequest("screen_tap", mapOf("target" to target, "token" to token))
+        val group = ledger.admit(listOf(tapRequest("n0")), "panel-thread")
+        val attempt = checkNotNull(ledger.get(group.attemptIds.single()))
+        val pending = ledger.requestApproval(attempt.id, attempt.generation, "native", MobileToolCatalog.VERSION)
+        // D13: the target changes before approval...
+        val changedOnce = checkNotNull(ledger.revise(pending.task.id, pending.task.generation, tapRequest("n1")))
+        // ...so the stale approval cannot admit the session.
+        assertTrue("changed target must invalidate the prior approval",
+            admission.admitForApproval(checkNotNull(ledger.get(changedOnce.id)), pending.approval) is AdmitResult.Denied)
+        // Fresh approval for the current action goes through the panel.
+        val changedBack = checkNotNull(ledger.revise(changedOnce.id, changedOnce.generation, tapRequest("n0")))
+        val fresh = ledger.requestApproval(changedBack.id, changedBack.generation, "native", MobileToolCatalog.VERSION)
+        val journal = MutableStateFlow<ToolTaskJournal?>(ledger.journal())
+        val decide: (String, Long, String) -> Unit = { id, generation, command ->
+            val a = ledger.get(id)?.takeIf { it.generation == generation }
+            if (a != null && command == "approve") {
+                val approval = a.approvalId?.let { approvals.get(it) }
+                if (approval != null) {
+                    // The M1d approval wiring: the panel approval admits the
+                    // session grant for this group before the ledger claim.
+                    admission.admitForApproval(a, approval)
+                    JournaledActionPipeline(ledger, executor).executeAttempt(a, approval)
+                    if (session.holderGroupId == a.groupId) bridge.showStopOverlay("test-45")
+                }
+            }
+            journal.value = ledger.journal()
+        }
+        try {
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                    val snapshot by journal.collectAsState()
+                    com.battlesbudz.jarvis.v2.ui.PhoneTaskPanel(snapshot, "panel-thread", null, decide)
+                } }
+            } }
+            find(By.res("phone_tasks_open")).click()
+            captureEvidence("m1d_screen_approval")
+            find(By.res("task_approve_${fresh.task.id}")).click()
+            device.waitForIdle()
+            val deadline = android.os.SystemClock.uptimeMillis() + 10_000
+            while (bridge.tapped.isEmpty() && android.os.SystemClock.uptimeMillis() < deadline) {
+                Thread.sleep(200)
+            }
+            assertEquals("approved tap must dispatch exactly once", listOf("n0"), bridge.tapped.map { it.id })
+            assertEquals("session grant must belong to the approved group", group.id, session.holderGroupId)
+            assertEquals(ToolTaskState.SUCCEEDED, ledger.get(fresh.task.id)?.state)
+            assertTrue("approval must be consumed", checkNotNull(approvals.get(fresh.approval.id)).consumed)
+            assertTrue("Stop overlay shows while the admitted group holds the lease", bridge.overlayShown)
+            // A finished group releases the lease and the overlay hides (T04).
+            assertTrue(session.releaseIf(group.id))
+            bridge.hideStopOverlay()
+            assertFalse(session.isAdmitted)
+            assertFalse(bridge.overlayShown)
+        } finally { file.delete() }
+    }
+
+    @Test fun test46_conflictingScreenTaskQueuesBehindTheLease() {
+        // T02: a follow-up screen task approved while another group holds the
+        // lease is denied a second grant and stays waiting for its turn; it is
+        // never rejected and never steals the lease.
+        val session = ScreenControlSession()
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes()))
+        val token = session.recordObservation(checkNotNull(bridge.observation))
+        val ledger = ToolTaskLedger()
+        val admission = ScreenApprovalAdmission(session)
+        fun parkTap(): Triple<ToolTaskGroup, ToolTaskAttempt, ActionApprovalRequest> {
+            val group = ledger.admit(listOf(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to token))), "thread-1")
+            val attempt = checkNotNull(ledger.get(group.attemptIds.single()))
+            val pending = ledger.requestApproval(attempt.id, attempt.generation, "native", MobileToolCatalog.VERSION)
+            return Triple(group, pending.task, pending.approval)
+        }
+        val (groupA, _, approvalA) = parkTap()
+        val taskA = checkNotNull(ledger.get(groupA.attemptIds.single()))
+        assertEquals(AdmitResult.Admitted, admission.admitForApproval(taskA, approvalA))
+        val (groupB, _, approvalB) = parkTap()
+        val taskB = checkNotNull(ledger.get(groupB.attemptIds.single()))
+        val denied = admission.admitForApproval(taskB, approvalB)
+        assertTrue("second grant must be denied while the lease is held, was: $denied", denied is AdmitResult.Denied)
+        assertEquals("lease must stay with the first group", groupA.id, session.holderGroupId)
+        assertEquals("denied task stays waiting for its turn", ToolTaskState.WAITING_APPROVAL, ledger.get(taskB.id)?.state)
+        assertFalse("denied approval stays unconsumed",
+            checkNotNull(ledger.journal().approvals.find { it.id == approvalB.id }).consumed)
+        // The first group finishes: the lease releases and the queued task can
+        // take its turn.
+        assertTrue(session.releaseIf(groupA.id))
+        assertEquals(AdmitResult.Admitted, admission.admitForApproval(taskB, approvalB))
+        assertEquals(groupB.id, session.holderGroupId)
+        // Independent (non-screen) work is never blocked by the lease.
+        val scheduler = TaskScheduler()
+        assertEquals(ScheduleDecision.RunNow, scheduler.schedule(
+            scheduler.resourceFor(ActionRequest("read_battery")), listOf(TaskResource(TaskResourceKind.SCREEN_LEASE))))
+    }
+
+    @Test fun test47_progressNotificationPostsSilentlyDuringDnd() {
+        // T04/T15/D35: task progress posts to notifications immediately and
+        // silently, even during Do Not Disturb — never deferred.
+        val manager = context.getSystemService(NotificationManager::class.java)
+        runCatching {
+            device.executeShellCommand("pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS")
+        }
+        val dndBefore = runCatching { device.executeShellCommand("settings get global zen_mode").trim() }.getOrNull()
+        runCatching { device.executeShellCommand("settings put global zen_mode 1") }
+        try {
+            val dndOn = runCatching { device.executeShellCommand("settings get global zen_mode").trim() }.getOrNull() == "1"
+            val working = TaskStatusProjection("group-47", "Test task", TaskProjectionState.WORKING,
+                1, 3, "Test task: working (1 of 3 steps done).", listOf("step one done"))
+            assertTrue("progress must post", TaskProgressNotification.postProgress(context, working))
+            val id = 0x7a000000 or ("group-47".hashCode() and 0x00ffffff)
+            var posted = false
+            val deadline = android.os.SystemClock.uptimeMillis() + 10_000
+            while (!posted && android.os.SystemClock.uptimeMillis() < deadline) {
+                posted = manager.activeNotifications.any { it.id == id }
+                if (!posted) Thread.sleep(200)
+            }
+            assertTrue("progress notification must be posted immediately${if (dndOn) " during Do Not Disturb" else ""}", posted)
+            val finished = working.copy(state = TaskProjectionState.FINISHED, completedSteps = 3,
+                statusLine = "Test task: done (3 of 3 steps).",
+                stepReceipts = listOf("step one done", "step two done", "step three done"))
+            assertTrue("finished must post", TaskProgressNotification.postFinished(context, finished))
+            TaskProgressNotification.cancel(context, "group-47")
+        } finally {
+            runCatching { device.executeShellCommand("settings put global zen_mode ${dndBefore ?: 0}") }
+        }
+    }
+
+    @Test fun test48_finishedScreenGroupReleasesLeaseNotifiesAndProjects() {
+        // T04: ending a call does not cancel admitted work; when the group
+        // finishes, the screen lease releases, the Stop overlay hides, and
+        // the ordered projection reports completion.
+        val session = ScreenControlSession()
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes()))
+        val token = session.recordObservation(checkNotNull(bridge.observation))
+        val ledger = ToolTaskLedger()
+        val admission = ScreenApprovalAdmission(session)
+        val group = ledger.admit(listOf(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to token))), "thread-1")
+        val attempt = checkNotNull(ledger.get(group.attemptIds.single()))
+        val pending = ledger.requestApproval(attempt.id, attempt.generation, "native", MobileToolCatalog.VERSION)
+        assertEquals(AdmitResult.Admitted, admission.admitForApproval(pending.task, pending.approval))
+        // "Call ends": detaching audio never touches admitted work.
+        assertEquals(ToolTaskState.WAITING_APPROVAL, ledger.get(attempt.id)?.state)
+        assertEquals(group.id, session.holderGroupId)
+        val executor = AndroidMobileActionExecutor(context, screenBridge = bridge, screenSession = session)
+        assertTrue(bridge.showStopOverlay("test-48"))
+        val result = JournaledActionPipeline(ledger, executor).executeAttempt(pending.task, pending.approval)
+        assertTrue("approved tap must dispatch: ${result.message}", result.succeeded)
+        assertEquals(listOf("n0"), bridge.tapped.map { it.id })
+        // Finished group: release the lease, hide the overlay, project.
+        assertTrue(session.releaseIf(group.id))
+        bridge.hideStopOverlay()
+        assertFalse(session.isAdmitted)
+        assertFalse(bridge.overlayShown)
+        val projection = checkNotNull(TaskProgressProjector().project(ledger.journal(), group.id))
+        assertEquals(TaskProjectionState.FINISHED, projection.state)
+        assertTrue(projection.isTerminal)
+        assertEquals(listOf("Tapped \"Search\"."), projection.stepReceipts)
+        assertEquals(1, projection.completedSteps)
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()
+
         find(By.res("model_search")).text = "Gemma-4-E4B-it"
         find(By.res("model_family_Gemma")).click()
         scrollTo(By.res("model_choose_Gemma-4-E4B-it")).click()

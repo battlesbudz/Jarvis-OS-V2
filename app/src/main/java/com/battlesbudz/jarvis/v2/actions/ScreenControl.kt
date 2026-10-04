@@ -98,6 +98,13 @@ class ScreenControlSession(
     val currentToken: String? get() = token
     val isStopRequested: Boolean get() = stopRequested
 
+    /**
+     * M1d: which task group holds the lease, if any. Lets the scheduling layer
+     * queue conflicting follow-ups behind the holder (T02) and release the
+     * lease exactly when the holding group finishes (T04, D26).
+     */
+    val holderGroupId: String? get() = groupId
+
     fun admit(groupId: String, userApproved: Boolean): AdmitResult {
         require(groupId.isNotBlank()) { "groupId must not be blank" }
         val current = this.groupId
@@ -183,5 +190,16 @@ class ScreenControlSession(
         touchActive = false
         pausedByTouch = false
         stopRequested = false
+    }
+
+    /**
+     * M1d: releases the lease only when [groupId] is the current holder.
+     * A finished task group releases control (T04); a group that never held
+     * the lease — or lost it — cannot release another group's grant.
+     */
+    fun releaseIf(groupId: String): Boolean {
+        if (this.groupId != groupId) return false
+        release()
+        return true
     }
 }

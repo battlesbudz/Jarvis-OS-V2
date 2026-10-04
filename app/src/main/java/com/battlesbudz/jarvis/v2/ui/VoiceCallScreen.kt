@@ -44,7 +44,10 @@ internal fun VoiceCallScreen(
     onStopWakeTest: () -> Unit,
     onEndVoiceCall: ((String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
-    onExportSpeechAudio: () -> Unit
+    onExportSpeechAudio: () -> Unit,
+    // M1d explicit silent work (D21/T05): toggle plus observable posture.
+    silentWork: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
+    onSilentWork: (Boolean) -> Unit = {}
 ) {
     val runtime = com.battlesbudz.jarvis.v2.voice.VoiceSessionUi
     val runtimePhase by runtime.phase.collectAsState()
@@ -53,6 +56,12 @@ internal fun VoiceCallScreen(
     val microphonePaused by runtime.paused.collectAsState()
     val microphoneLevel by runtime.level.collectAsState()
     val chatSending by chatBusy.collectAsState()
+    // M1d: explicit silent work. While on, ordinary speech is ignored until
+    // the wake phrase; admitted tasks keep running and stop controls work.
+    val silentWorkFlow = remember(silentWork) {
+        silentWork ?: kotlinx.coroutines.flow.MutableStateFlow(false)
+    }
+    val silentWorkActive by silentWorkFlow.collectAsState()
     var wakeTesting by remember { mutableStateOf(false) }
     var wakeTestStatus by remember { mutableStateOf("") }
     val wakeContext = androidx.compose.ui.platform.LocalContext.current
@@ -172,6 +181,17 @@ internal fun VoiceCallScreen(
                             else com.battlesbudz.jarvis.v2.voice.VoiceControl.PAUSE)
                     }, modifier = Modifier.fillMaxWidth()) {
                         Text(if (microphonePaused) "Resume microphone" else "Pause microphone")
+                    }
+                    // M1d explicit silent work (D21/T05): tasks continue while
+                    // ordinary speech is ignored until "hey jarvis" wakes back up.
+                    OutlinedButton(onClick = { onSilentWork(!silentWorkActive) },
+                        modifier = Modifier.fillMaxWidth().testTag("silent_work_toggle")) {
+                        Text(if (silentWorkActive) "Wake up — resume listening" else "Work silently")
+                    }
+                    if (silentWorkActive) {
+                        Text("Working silently · say \"hey jarvis\" to wake",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("silent_work_status"))
                     }
                 }
                 if (runtimeArmed) {

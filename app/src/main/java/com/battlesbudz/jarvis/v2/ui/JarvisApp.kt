@@ -67,6 +67,9 @@ fun JarvisApp(
     phoneTasks: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>? = null,
     phoneTaskError: kotlinx.coroutines.flow.StateFlow<String?>? = null,
     onPhoneTaskAction: (String, Long, String) -> Unit = { _, _, _ -> },
+    // M1d explicit silent work (D21/T05).
+    silentWork: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
+    onSilentWork: (Boolean) -> Unit = {},
 ) {
     var selectedModel by remember { mutableStateOf(store.selectedModel()) }
     var selectionError by remember { mutableStateOf<String?>(null) }
@@ -327,7 +330,9 @@ fun JarvisApp(
                         onStopWakeTest = onStopWakeTest,
                         onEndVoiceCall = onEndVoiceCall,
                         onCopyDiagnostics = onCopyDiagnostics,
-                        onExportSpeechAudio = onExportSpeechAudio
+                        onExportSpeechAudio = onExportSpeechAudio,
+                        silentWork = silentWork,
+                        onSilentWork = onSilentWork
                     ) }
                     }
                     }

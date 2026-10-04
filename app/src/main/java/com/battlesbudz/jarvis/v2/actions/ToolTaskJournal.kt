@@ -31,6 +31,9 @@ internal fun ToolTaskJournal.frozen() = copy(
     approvals = approvals.map { it.copy(action = it.action.frozen()) },
     grants = grants.map { it.copy(requests = it.requests.map { request -> request.frozen() }) }, events = events.toList())
 
+/** Screen mutations are never routine-eligible and never auto-dispatched (D23). */
+internal val SCREEN_MUTATION_TOOLS = setOf("screen_tap", "screen_scroll", "screen_type")
+
 /** No grant can expand these tools into arbitrary or consequential operations. */
 internal fun ActionRequest.isRoutineEligible() = when (name) {
     "read_battery" -> arguments.isEmpty()
@@ -38,4 +41,29 @@ internal fun ActionRequest.isRoutineEligible() = when (name) {
     "open_app" -> arguments.keys == setOf("app") && !arguments["app"].isNullOrBlank() && arguments.getValue("app").length <= 512
     "media_control" -> arguments.keys == setOf("action") && MediaControlAction.fromVerb(arguments.getValue("action")) != null
     else -> false
+}
+
+/**
+ * M1d dispatch eligibility for the approval path (D11/D23, T07).
+ *
+ * Screen mutations are never routine-eligible and never claimable on bare
+ * user-request authority: they become dispatch-eligible only under an exact
+ * approval, whose consumption commits atomically with the dispatch claim in
+ * [ToolTaskLedger.claim]. A changed target invalidates the prior approval via
+ * [ToolTaskLedger.revise], so a stale approval can never authorize a dispatch.
+ */
+internal fun ActionRequest.isDispatchEligible(authority: ToolAuthority): Boolean =
+    isRoutineEligible() || (authority == ToolAuthority.EXACT_APPROVAL && name in SCREEN_MUTATION_TOOLS)
+
+/** Human-readable label for the screen Stop overlay and approval prompts (M1d). */
+internal fun ActionRequest.describeForOverlay(): String = when (name) {
+    "screen_tap" -> "Tap ${arguments["target"] ?: "screen element"}"
+    "screen_scroll" -> "Scroll ${arguments["direction"] ?: ""}".trim()
+    "screen_type" -> "Type into ${arguments["target"] ?: "field"}"
+    "screen_observe" -> "Read the screen"
+    "read_battery" -> "Check battery"
+    "set_volume" -> "Set media volume to ${arguments["level"]}%"
+    "open_app" -> "Open ${arguments["app"] ?: arguments["package"]}"
+    "media_control" -> "Control media"
+    else -> name
 }

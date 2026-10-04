@@ -613,6 +613,13 @@ internal fun JarvisRuntime.runConversationInternal(
                                 generated = engine.sendToolResults(nativeResults, streamFilter::accept)
                                 recordInference("tool response", generated)
                                 generated.toolCalls
+                            },
+                            // M1d: model-proposed screen mutations never
+                            // auto-dispatch (D23); park them for approval.
+                            onNeedsApproval = { request ->
+                                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                    parkScreenTaskForApproval(request)
+                                }
                             }
                         )
                         actionName = actionPlan.steps.joinToString(",") { it.request.name }

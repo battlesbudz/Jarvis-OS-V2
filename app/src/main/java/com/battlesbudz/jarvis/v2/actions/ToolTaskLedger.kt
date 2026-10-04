@@ -66,7 +66,11 @@ class ToolTaskLedger(
     fun admit(requests: List<ActionRequest>, conversationId: String,
         authority: ToolAuthority = ToolAuthority.USER_REQUEST, grantId: String? = null,
         validForMs: Long = 120_000, resumeAfterRestart: Boolean = true): ToolTaskGroup {
-        require(requests.size in 1..3 && requests.all { it.isRoutineEligible() })
+        // M1d: screen mutations may be admitted for tracking (e.g. a
+        // model-proposed tap parked for approval), but they stay
+        // non-dispatchable until an exact approval authorizes them
+        // (isDispatchEligible); routine grants still cannot cover them.
+        require(requests.size in 1..3 && requests.all { it.isRoutineEligible() || it.name in SCREEN_MUTATION_TOOLS })
         require(conversationId.length in 1..256 && validForMs > 0)
         require(authority != ToolAuthority.ROUTINE || grantId != null)
         val at = now()
@@ -127,7 +131,10 @@ class ToolTaskLedger(
 
     /** An edited target invalidates the old choice; it cannot inherit routine or user authority. */
     fun revise(id: String, expectedGeneration: Long, request: ActionRequest): ToolTaskAttempt? {
-        require(request.isRoutineEligible())
+        // M1d: screen targets are the revisable case (a changed tap target
+        // invalidates the prior approval, D13); they still need a fresh exact
+        // approval to dispatch.
+        require(request.isRoutineEligible() || request.name in SCREEN_MUTATION_TOOLS)
         var revised: ToolTaskAttempt? = null
         store.updateJournal { j ->
             val a = j.attempts.find { it.id == id && it.generation == expectedGeneration &&
@@ -217,6 +224,33 @@ class ToolTaskLedger(
         return changed
     }
 
+    /**
+     * M1d task-targeted cancellation (D19/D24, T03): cancels exactly the task
+     * addressed by [id] — a group when the attempt belongs to one, otherwise
+     * the lone attempt. Running attempts are preserved (their synchronous
+     * effect may already have happened); completed effects are never replayed.
+     */
+    fun cancelTaskById(id: String): Boolean {
+        val attempt = store.readJournal().attempts.find { it.id == id } ?: return false
+        val groupId = attempt.groupId
+        return if (groupId != null) cancelGroup(groupId)
+        else cancelLegacyAttempt(attempt.id, attempt.generation)
+    }
+
+    /**
+     * M1d stop-all (D24, T03): cancels every remaining unfinished group and
+     * lone attempt. Terminal attempts keep their receipts; nothing replays.
+     */
+    fun cancelAllTasks(): Int {
+        val j = store.readJournal()
+        var cancelled = 0
+        j.groups.filter { !it.cancelled && j.attempts.any { a -> a.groupId == it.id && !a.state.isTerminal() } }
+            .forEach { if (cancelGroup(it.id)) cancelled++ }
+        j.attempts.filter { it.groupId == null && !it.state.isTerminal() && it.state != ToolTaskState.RUNNING }
+            .forEach { if (cancelLegacyAttempt(it.id, it.generation)) cancelled++ }
+        return cancelled
+    }
+
     /** Records a user's acknowledgement without converting an unknown effect into a retry. */
     fun reconcileUnknown(id: String, expectedGeneration: Long): Boolean {
         var changed = false
@@ -285,7 +319,7 @@ class ToolTaskLedger(
     }
 
     private fun eligible(a: ToolTaskAttempt, j: ToolTaskJournal, at: Long, checkDependencies: Boolean = true): Boolean {
-        if (a.provider != "native" || a.schemaVersion != MobileToolCatalog.VERSION || !a.request.isRoutineEligible()) return false
+        if (a.provider != "native" || a.schemaVersion != MobileToolCatalog.VERSION || !a.request.isDispatchEligible(a.authority)) return false
         if (a.authority == ToolAuthority.ROUTINE && !granted(a, j, at)) return false
         val group = a.groupId?.let { id -> j.groups.find { it.id == id } } ?: return a.groupId == null
         if (group.cancelled || at >= group.expiresAtMs || at < group.createdAtMs) return false

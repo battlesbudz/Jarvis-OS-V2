@@ -126,6 +126,18 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         try { phoneTasks.value = phoneActionLedger.journal() }
         catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
             phoneTaskError.value = "The action journal is unavailable. Phone actions are paused."
+            return
+        }
+        // M1d: a required question asked during silent work (D22) temporarily
+        // opens an answer window so the user can answer by voice; the mode
+        // returns to silence once the question resolves or the window lapses.
+        if (silentWork.isSilent && !silentWork.isAnswerWindowOpen()) {
+            val journal = phoneTasks.value
+            val question = journal?.attempts
+                ?.filter { it.state == com.battlesbudz.jarvis.v2.actions.ToolTaskState.WAITING_APPROVAL }
+                ?.mapNotNull { attempt -> attempt.approvalId?.let { id -> journal.approvals.find { it.id == id } } }
+                ?.lastOrNull { !it.consumed }
+            if (question != null) silentWork.requestAnswer(question.id)
         }
     }
 
@@ -195,8 +207,25 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         val receipts = attempts.mapNotNull { a -> a.result?.let {
             com.battlesbudz.jarvis.v2.chat.ActionReceipt(a.request.name, it, a.state == com.battlesbudz.jarvis.v2.actions.ToolTaskState.SUCCEEDED) } }
         val status = if (attempts.any { !it.state.isTerminalForUi() }) "Some steps are still waiting." else "Task finished."
+        // Ordered per-step receipts stay grouped under the logical task/turn (T04, T15).
         conversationHistory.updateReply(group.conversationId, "phone-task:$groupId",
             (if (recovered) "Recovered phone task. " else "Phone task. ") + status, true, receipts)
+        // M1d: one addressable task-status projection feeds chat, the panel and
+        // notifications alike. Progress continues into notifications after call
+        // end (T04); a finished group releases the screen lease and removes the
+        // Stop overlay (T04, D26).
+        val projection = com.battlesbudz.jarvis.v2.actions.TaskProgressProjector().project(j, groupId)
+        if (projection != null) {
+            if (projection.isTerminal) {
+                if (com.battlesbudz.jarvis.v2.actions.ScreenControlService.sharedSession.releaseIf(groupId)) {
+                    com.battlesbudz.jarvis.v2.actions.ScreenControlService.bridge(this).hideStopOverlay()
+                    diagnosticRecorder.recordImportant("Screen control released for finished task group $groupId.")
+                }
+                com.battlesbudz.jarvis.v2.actions.TaskProgressNotification.postFinished(this, projection)
+            } else {
+                com.battlesbudz.jarvis.v2.actions.TaskProgressNotification.postProgress(this, projection)
+            }
+        }
     }
 
     internal fun phoneTaskAction(id: String, generation: Long, command: String) {
@@ -210,12 +239,59 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     "approve" -> {
                         if (getSystemService(android.app.KeyguardManager::class.java)?.isDeviceLocked == true) return@launch
                         val approval = a.approvalId?.let { approvals.get(it) } ?: return@launch
+                        // M1d scheduling (T02): a follow-up runs independently when it
+                        // does not conflict; a conflicting task queues behind the
+                        // running work instead of racing it.
+                        val scheduler = com.battlesbudz.jarvis.v2.actions.TaskScheduler()
+                        when (val decision = scheduler.schedule(scheduler.resourceFor(a.request), runningTaskResources())) {
+                            is com.battlesbudz.jarvis.v2.actions.ScheduleDecision.Queue -> {
+                                phoneTaskError.value = decision.reason
+                                refreshPhoneTasks()
+                                return@launch
+                            }
+                            com.battlesbudz.jarvis.v2.actions.ScheduleDecision.RunNow -> Unit
+                        }
+                        // M1d: approving a screen task admits the screen-control
+                        // session grant for its group in the same approval
+                        // decision (D23). The ledger claim below still consumes
+                        // the approval atomically with dispatch eligibility; a
+                        // changed target invalidates the prior approval (D13),
+                        // so a stale panel approval can never admit the session.
+                        val screenSession = com.battlesbudz.jarvis.v2.actions.ScreenControlService.sharedSession
+                        val admission = com.battlesbudz.jarvis.v2.actions.ScreenApprovalAdmission(screenSession)
+                        val screenTask = admission.needsSession(a.request)
+                        val admittedHere = when (val verdict = admission.admitForApproval(a, approval)) {
+                            is com.battlesbudz.jarvis.v2.actions.AdmitResult.Admitted -> true
+                            is com.battlesbudz.jarvis.v2.actions.AdmitResult.AlreadyAdmitted,
+                            is com.battlesbudz.jarvis.v2.actions.AdmitResult.NeedsApproval -> false
+                            is com.battlesbudz.jarvis.v2.actions.AdmitResult.Denied -> {
+                                // Another task holds the screen lease (T02): keep
+                                // this task waiting for its turn. The approval
+                                // stays unconsumed so it can be approved again
+                                // once the lease releases.
+                                phoneTaskError.value = verdict.reason
+                                refreshPhoneTasks()
+                                return@launch
+                            }
+                        }
                         val result = com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline(phoneActionLedger,
                             com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor(this@JarvisRuntime,
                                 canLaunchDirectly = { activityVisible }, onDiagnostic = diagnosticRecorder::recordImportant)).executeAttempt(a, approval)
-                        if (!result.succeeded) phoneTaskError.value = result.message
+                        if (!result.succeeded) {
+                            phoneTaskError.value = result.message
+                            // The approval did not survive the claim: never
+                            // leave a lease behind for an undispatched task.
+                            if (screenTask && admittedHere) a.groupId?.let { screenSession.releaseIf(it) }
+                        } else {
+                            silentWork.onAnswerReceived(approval.id)
+                            if (screenTask && admittedHere) com.battlesbudz.jarvis.v2.actions.ScreenControlService.bridge(this@JarvisRuntime)
+                                .showStopOverlay(a.request.describeForOverlay())
+                        }
                     }
-                    "deny" -> a.approvalId?.let { approvals.deny(it) }
+                    "deny" -> a.approvalId?.let {
+                        approvals.deny(it)
+                        silentWork.onAnswerReceived(it)
+                    }
                     "cancel" -> if (a.groupId != null) phoneActionLedger.cancelGroup(a.groupId)
                         else phoneActionLedger.cancelLegacyAttempt(a.id, a.generation)
                     "checked" -> if (phoneActionLedger.reconcileUnknown(a.id, a.generation)) a.groupId?.let { phoneActionLedger.cancelGroup(it) }
@@ -225,6 +301,106 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
                 phoneTaskError.value = "I couldn't save that decision. Please try again."
             } finally { refreshPhoneTasks() }
+        }
+    }
+
+    /** Short label for the screen-control Stop overlay (D24). */
+    private fun com.battlesbudz.jarvis.v2.actions.ActionRequest.describeForOverlay(): String = when (name) {
+        "screen_tap" -> "Tap ${arguments["target"] ?: "screen element"}"
+        "screen_scroll" -> "Scroll ${arguments["direction"] ?: "screen"}"
+        "screen_type" -> "Type on screen"
+        "screen_observe" -> "Look at screen"
+        else -> name
+    }
+
+    /**
+     * M1d: a model-proposed screen mutation never auto-dispatches (D23). Park
+     * it in the ledger awaiting the user's explicit approval; the panel's
+     * Approve button then admits the session grant and dispatches it exactly
+     * (approval consumption and dispatch eligibility commit together in the
+     * ledger claim). Returns a truthful not-yet receipt, never a success.
+     */
+    internal fun parkScreenTaskForApproval(request: com.battlesbudz.jarvis.v2.actions.ActionRequest):
+        com.battlesbudz.jarvis.v2.actions.ExecutionResult {
+        return try {
+            val group = phoneActionLedger.admit(listOf(request), conversationHistory.current.value.id)
+            val attempt = phoneActionLedger.get(group.attemptIds.single())
+                ?: return com.battlesbudz.jarvis.v2.actions.ExecutionResult(false,
+                    "I couldn't save the screen action, so I didn't start it.")
+            phoneActionLedger.requestApproval(attempt.id, attempt.generation, "native",
+                com.battlesbudz.jarvis.v2.actions.MobileToolCatalog.VERSION)
+            refreshPhoneTasks()
+            diagnosticRecorder.recordImportant("Screen task parked for approval: ${request.name} group=${group.id}")
+            com.battlesbudz.jarvis.v2.actions.ExecutionResult(false,
+                "I need your approval before I control the screen. " +
+                    "Approve \"${request.describeForOverlay()}\" in the phone tasks panel to continue.")
+        } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+            com.battlesbudz.jarvis.v2.actions.ExecutionResult(false,
+                "I couldn't save the screen action, so I didn't start it.")
+        } catch (_: IllegalArgumentException) {
+            com.battlesbudz.jarvis.v2.actions.ExecutionResult(false,
+                "I couldn't verify the requested screen action.")
+        }
+    }
+
+    /** Resources currently held by running work, for the M1d scheduling policy (D18). */
+    private fun runningTaskResources(): List<com.battlesbudz.jarvis.v2.actions.TaskResource> {
+        val scheduler = com.battlesbudz.jarvis.v2.actions.TaskScheduler()
+        val out = mutableListOf<com.battlesbudz.jarvis.v2.actions.TaskResource>()
+        try {
+            if (com.battlesbudz.jarvis.v2.actions.ScreenControlService.sharedSession.holderGroupId != null) {
+                out += com.battlesbudz.jarvis.v2.actions.TaskResource(
+                    com.battlesbudz.jarvis.v2.actions.TaskResourceKind.SCREEN_LEASE)
+            }
+            phoneActionLedger.journal().attempts
+                .filter { it.state == com.battlesbudz.jarvis.v2.actions.ToolTaskState.RUNNING }
+                .forEach { out += scheduler.resourceFor(it.request) }
+        } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+            // Fail open to the session's atomic verdict below.
+        }
+        return out
+    }
+
+    /**
+     * M1d task-targeted cancellation (D19/D24, T03). A voice stop control that
+     * targets tasks also addresses the durable phone-task ledger: cancel
+     * exactly the addressed task by identity, or all remaining work for
+     * stop-all. Speech-only stop preserves work; completed effects are never
+     * replayed. The voice queue cancellation at the call site is unaffected.
+     */
+    private fun applyLedgerStopControl(control: com.battlesbudz.jarvis.v2.voice.VoiceActionControl) {
+        if (control == com.battlesbudz.jarvis.v2.voice.VoiceActionControl.SpeechOnly ||
+            control == com.battlesbudz.jarvis.v2.voice.VoiceActionControl.None) return
+        val journal = try { phoneActionLedger.journal() }
+        catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) { return }
+        val unfinished = journal.attempts.filter { !it.state.isTerminal() }
+        if (unfinished.isEmpty()) return
+        val router = com.battlesbudz.jarvis.v2.actions.TaskStopRouter()
+        val newestId = unfinished.maxByOrNull { it.createdAtMs }?.id
+        val currentId = unfinished.firstOrNull { it.state == com.battlesbudz.jarvis.v2.actions.ToolTaskState.RUNNING }?.id
+        var changed = false
+        try {
+            when (val scope = router.route(control, newestId, currentId)) {
+                null, com.battlesbudz.jarvis.v2.actions.TaskStopScope.SpeechOnly -> Unit
+                is com.battlesbudz.jarvis.v2.actions.TaskStopScope.SingleTask ->
+                    changed = phoneActionLedger.cancelTaskById(scope.taskId)
+                com.battlesbudz.jarvis.v2.actions.TaskStopScope.CurrentTask ->
+                    // A running attempt's synchronous effect is preserved; its
+                    // group is marked so no further step starts.
+                    changed = currentId?.let { phoneActionLedger.cancelTaskById(it) } == true
+                com.battlesbudz.jarvis.v2.actions.TaskStopScope.AllTasks ->
+                    changed = phoneActionLedger.cancelAllTasks() > 0
+                com.battlesbudz.jarvis.v2.actions.TaskStopScope.QueuedOnly ->
+                    unfinished.filter { it.state != com.battlesbudz.jarvis.v2.actions.ToolTaskState.RUNNING }
+                        .forEach { if (phoneActionLedger.cancelTaskById(it.id)) changed = true }
+            }
+        } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) {
+            phoneTaskError.value = "I couldn't save the cancellation. No further action will start."
+            return
+        }
+        if (changed) {
+            diagnosticRecorder.recordImportant("Voice stop control $control applied to durable phone tasks.")
+            refreshPhoneTasks()
         }
     }
 
@@ -252,6 +428,29 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.armed.value = value
         }
     @Volatile internal var sessionReport: (String) -> Unit = {}
+
+    /**
+     * M1d explicit silently-working mode (D21/D22, T05). The voice pump's
+     * [com.battlesbudz.jarvis.v2.voice.ContinuousActionSession] classifies
+     * final captures through this controller: ordinary speech is ignored
+     * while silent, the wake phrase reopens conversation, and a required
+     * question may temporarily open an answer window. Tasks continue
+     * unaffected in every case.
+     */
+    internal val silentWork = com.battlesbudz.jarvis.v2.voice.SilentWorkController()
+
+    /** Puts Jarvis into (or out of) explicit silent work. Returns true when the mode changed. */
+    fun setSilentWork(enabled: Boolean): Boolean {
+        val changed = if (enabled) silentWork.enterSilentWork() else silentWork.exitSilentWork()
+        if (changed) {
+            silentWorkState.value = silentWork.isSilent
+            diagnosticRecorder.recordImportant("Silent work ${if (enabled) "entered" else "exited"} by user request.")
+        }
+        return changed
+    }
+
+    /** Observable silent-work posture for the UI toggle. */
+    val silentWorkState = kotlinx.coroutines.flow.MutableStateFlow(false)
 
     @Volatile internal var activeVoiceOutput: PiperVoiceOutput? = null
     init {
@@ -308,15 +507,26 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                         com.battlesbudz.jarvis.v2.actions.AcceptedActionState.FAILED,
                         com.battlesbudz.jarvis.v2.actions.AcceptedActionState.CANCELLED,
                         com.battlesbudz.jarvis.v2.actions.AcceptedActionState.INTERRUPTED)) {
+                    // M1d call-end continuity (T04): when the call is already
+                    // over, the terminal result cannot be spoken, so it is
+                    // delivered as a notification. Chat already persists the
+                    // same text through the voice call store.
+                    val callOver = !voiceSessionArmed
                     runtimeScope.launch {
                         acceptedVoiceActions.awaitIdle()
+                        var eventText = ""
                         acceptedVoiceActions.tasks.value.forEach { terminal ->
                             if (terminal.state in setOf(com.battlesbudz.jarvis.v2.actions.AcceptedActionState.COMPLETED,
                                     com.battlesbudz.jarvis.v2.actions.AcceptedActionState.FAILED,
                                     com.battlesbudz.jarvis.v2.actions.AcceptedActionState.CANCELLED,
                                     com.battlesbudz.jarvis.v2.actions.AcceptedActionState.INTERRUPTED)) {
-                                persistTerminalActionReply(terminal)
+                                val text = persistTerminalActionReply(terminal)
+                                if (terminal.id == event.task.id) eventText = text
                             }
+                        }
+                        if (callOver && eventText.isNotBlank()) {
+                            com.battlesbudz.jarvis.v2.actions.TaskProgressNotification.postCallEndResult(
+                                this@JarvisRuntime, event.task.id, "Jarvis task finished", eventText)
                         }
                     }
                 }
@@ -1269,7 +1479,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                             true
                         } else retainAcceptedVoiceLease() != null
                     }
-                    val actionSession = com.battlesbudz.jarvis.v2.voice.ContinuousActionSession(acceptedVoiceActions)
+                    val actionSession = com.battlesbudz.jarvis.v2.voice.ContinuousActionSession(
+                        acceptedVoiceActions, silentWork = silentWork,
+                        onSilentWorkExit = { silentWorkState.value = false })
                     val actionInvocation = AcceptedVoiceInvocation(
                         expectedCallId, asrTurnId, correction?.utteranceId ?: asrTurnId, transcript, voiceHistory, initialActionPlan
                     )
@@ -1360,6 +1572,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                             stopListening = true
                                         } else if (control != com.battlesbudz.jarvis.v2.voice.VoiceActionControl.SpeechOnly) {
                                             acceptedVoiceActions.cancel(control) { it.value.callId == expectedCallId }
+                                            applyLedgerStopControl(control)
                                         }
                                     }) continue@actionPump
                                 activePumpTypedInput.compareAndSet(pausedControl, null)
@@ -1631,6 +1844,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                                             else -> diagnosticRecorder.recordImportant("Accepted action mode: speech delivery detached; work retained")
                                         }
                                     } else acceptedVoiceActions.cancel(captureOutcome.value) { it.value.callId == expectedCallId }
+                                    applyLedgerStopControl(captureOutcome.value)
                                 }
                                 is com.battlesbudz.jarvis.v2.voice.CaptureOutcome.AcceptedAction -> {
                                     val followPlan = plan as ActionTurnPlan.Ready
