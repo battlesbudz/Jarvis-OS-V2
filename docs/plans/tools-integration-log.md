@@ -42,7 +42,24 @@ path. The `muse/feature-tools` opt-in is retained in the local commit only and
 needs a privileged push to land). CI verification runs on branch
 `feature/tools-m1b-media` (same commit), which matches the existing `feature/**`
 push trigger: run [37176105910](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37176105910).
-Exact-revision gate evidence to be recorded here on completion.
+
+Retained failure: run 37176105910 failed `compileReleaseUnitTestKotlin` —
+`NativeToolJourneyTest`'s fixture executor `when` was not exhaustive for the new
+`MobileAction.MediaControl` subtype (missed in the pre-push scan). Fix commit
+`3ff0dd0` adds the missing branch plus a `media_control` journey test through
+decode/validate/execute; published to `muse/feature-tools` at `3f2544c2`, and
+`feature/tools-m1b-media` fast-forwarded to it.
+
+Re-run [37177084180](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37177084180)
+at `3f2544c2fc79` PASSED the full exact-revision gate: signed release build, both
+emulator variants (API 30 normal APK, API 35 compact APK), consolidated receipt and
+publication. The consolidated receipt (`jarvis-verification-receipt`, no errors)
+records 36/36 named tests passing on both variants — including the new `test35`
+media dispatch journey. APKs published in
+[v0.1.0-build.941](https://github.com/battlesbudz/Jarvis-OS-V2/releases/tag/v0.1.0-build.941).
+JVM unit tests (including the new catalog/validator/pipeline/eligibility coverage)
+passed in the build job. Real-model selection of `media_control` and physical Fold 6
+media behavior remain explicitly unverified, per the coverage boundaries.
 
 M1b remaining: website/settings/map destinations. M1c/M1d/M1e, M2–M8, A0–A6 still open.
 
