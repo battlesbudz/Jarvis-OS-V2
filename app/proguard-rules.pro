@@ -247,3 +247,7 @@
 -keep class com.battlesbudz.jarvis.v2.actions.Alias** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.Discovery** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.TypeConversion** { *; }
+# These two start with InMemory/UrlConnection so the Mcp** wildcard misses
+# them; the journeys instantiate both from the instrumentation DEX.
+-keep class com.battlesbudz.jarvis.v2.actions.InMemoryMcpCredentialStore { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.UrlConnectionMcpHttpClient { *; }
