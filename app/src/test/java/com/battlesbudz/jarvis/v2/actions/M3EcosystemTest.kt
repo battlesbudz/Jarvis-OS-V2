@@ -5,8 +5,9 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import java.io.File
-import java.net.InetSocketAddress
-import com.sun.net.httpserver.HttpServer
+import java.net.ServerSocket
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 
 /**
  * M3 ecosystem integrations (D05, D07, T16, T17, T08-for-providers).
@@ -658,27 +659,61 @@ class M3EcosystemTest {
     @Test fun realHttpNegotiationAgainstLoopbackServer() {
         // The real HttpURLConnection transport negotiates against a real
         // (local) HTTP server: this is transport evidence, not a fake.
-        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/") { exchange ->
-            val body = exchange.requestBody.readBytes().toString(Charsets.UTF_8)
-            val payload = JSONObject(body)
-            val response = when (payload.optString("method")) {
-                "initialize" -> initializeOk().body
-                "tools/list" -> stubToolsJson(stubTool("free_lookup", "free"))
-                else -> JSONObject().put("jsonrpc", "2.0").put("id", 1)
-                    .put("result", JSONObject()).toString()
+        // A raw ServerSocket stub is used because jdk.httpserver is not on
+        // the unit-test compile classpath.
+        val serverSocket = ServerSocket(0)
+        val port = serverSocket.localPort
+        val running = AtomicBoolean(true)
+        fun handle(sock: java.net.Socket) {
+            sock.use { s ->
+                val input = s.getInputStream().bufferedReader(Charsets.UTF_8)
+                val requestLine = input.readLine() ?: return
+                val headers = mutableMapOf<String, String>()
+                if (requestLine.startsWith("POST")) {
+                    while (true) {
+                        val line = input.readLine() ?: break
+                        if (line.isEmpty()) break
+                        val idx = line.indexOf(':')
+                        if (idx > 0) headers[line.substring(0, idx).trim().lowercase()] =
+                            line.substring(idx + 1).trim()
+                    }
+                }
+                val length = headers["content-length"]?.toIntOrNull() ?: 0
+                val chars = CharArray(length)
+                var read = 0
+                while (read < length) {
+                    val n = input.read(chars, read, length - read)
+                    if (n <= 0) break
+                    read += n
+                }
+                val body = String(chars, 0, read)
+                val method = try { JSONObject(body).optString("method") } catch (_: Exception) { "" }
+                val responseBody = when (method) {
+                    "initialize" -> initializeOk().body
+                    "tools/list" -> stubToolsJson(stubTool("free_lookup", "free"))
+                    else -> JSONObject().put("jsonrpc", "2.0").put("id", 1)
+                        .put("result", JSONObject()).toString()
+                }
+                val bytes = responseBody.toByteArray(Charsets.UTF_8)
+                val head = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" +
+                    "Content-Length: ${bytes.size}\r\nMcp-Session-Id: loopback-1\r\n" +
+                    "Connection: close\r\n\r\n"
+                val out = s.getOutputStream()
+                out.write(head.toByteArray(Charsets.UTF_8))
+                out.write(bytes)
+                out.flush()
             }
-            val bytes = response.toByteArray(Charsets.UTF_8)
-            exchange.responseHeaders.add("Content-Type", "application/json")
-            if (payload.optString("method") == "initialize") {
-                exchange.responseHeaders.add("Mcp-Session-Id", "loopback-1")
-            }
-            exchange.sendResponseHeaders(200, bytes.size.toLong())
-            exchange.responseBody.use { it.write(bytes) }
         }
-        server.start()
+        val worker = thread(isDaemon = true, name = "loopback-mcp") {
+            while (running.get()) {
+                try {
+                    handle(serverSocket.accept())
+                } catch (_: Exception) {
+                    if (!running.get()) return@thread
+                }
+            }
+        }
         try {
-            val port = server.address.port
             val credentials = InMemoryMcpCredentialStore()
             val flow = McpSetupFlow(UrlConnectionMcpHttpClient(), credentials)
             val result = flow.run("Loopback", "http://127.0.0.1:$port/", null)
@@ -687,7 +722,9 @@ class M3EcosystemTest {
             assertEquals("loopback-1", status.sessionId)
             assertEquals(setOf("free_lookup"), status.enabledTools)
         } finally {
-            server.stop(0)
+            running.set(false)
+            try { serverSocket.close() } catch (_: Exception) { }
+            worker.join(5000)
         }
     }
 
