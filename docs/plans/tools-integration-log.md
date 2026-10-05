@@ -124,11 +124,25 @@ CI evidence:
   Launcher isn't responding") — emulator infra flake, no app crash, no
   M2 code on the path. Re-running via a fresh push (API has no
   re-run permission).
-- Run <run-id>: <result>
-- Release: `v0.1.0-build.<NNN>` (published <date>) with app-release.apk +
-  app-compact.apk, titled "Jarvis OS V2 feature/muse-tools build <NNN> (M2 workflows)".
-- Run URLs: <urls>
-- Release: https://github.com/battlesbudz/Jarvis-OS-V2/releases/tag/v0.1.0-build.<NNN>
+- Run 37245598315 (M2 build, docs re-trigger): FULL GATE GREEN.
+  Build signed release APK: success. JVM unit tests: 923 passed, 0
+  failures (52 in `M2WorkflowsTest`, incl. the new placeholder-scanner
+  test). API 30 emulator: OK (56 tests). API 35 emulator: OK (56 tests)
+  — test53-56 pass on both variants. Consolidated verification evidence:
+  success. Publish job: success.
+- Release: `v0.1.0-build.992` (published 2026-10-04) with app-release.apk +
+  app-compact.apk, titled "Jarvis OS V2 feature/muse-tools build 992 (M2 workflows)".
+- Run URLs:
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37245598315
+  (green; earlier attempts 37233942959, 37235512906, 37236850780,
+  37238225177, 37240127232, 37242048469, 37243982784 failed as documented
+  above — all repaired, none bypassed)
+- Release: https://github.com/battlesbudz/Jarvis-OS-V2/releases/tag/v0.1.0-build.992
+
+Acceptance: per `.agents/skills/jarvis-verify/SKILL.md` — build + both
+emulator variants + consolidated receipt, all green on the final head
+(`49a79840`; release 992 cut from that tip). Named contract: 56/56 on
+API 30 and API 35, including new test53-56; 923 JVM unit tests green.
 
 Unverified: real-model proposal of workflow steps; physical Fold 6 alarm
 delivery while the app is closed; real notification/location trigger
