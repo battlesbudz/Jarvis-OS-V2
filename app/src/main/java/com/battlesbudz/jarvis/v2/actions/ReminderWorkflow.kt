@@ -95,7 +95,9 @@ private fun resolveClockTime(
         else -> if (hour == 12) 12 else hour + 12
     }
     val zone = ZoneId.systemDefault()
-    val today = LocalDate.now(zone)
+    // Anchor "today" to the caller's clock, not the wall clock: nowMs is the
+    // deterministic reference for both parsing and tests.
+    val today = Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
     val date = if (day.equals("tomorrow", ignoreCase = true)) today.plusDays(1) else today
     fun at(date: LocalDate): Long =
         ZonedDateTime.of(date, LocalTime.of(hour24, minute), zone).toInstant().toEpochMilli()
