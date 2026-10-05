@@ -251,3 +251,10 @@
 # them; the journeys instantiate both from the instrumentation DEX.
 -keep class com.battlesbudz.jarvis.v2.actions.InMemoryMcpCredentialStore { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.UrlConnectionMcpHttpClient { *; }
+# Reminder bug-fix slice: the release journeys drive the reminder coordinator
+# and the schedule/notification boundary from the instrumentation DEX.
+-keep class com.battlesbudz.jarvis.v2.actions.ReminderWorkflowKt { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ReminderSpec { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ReminderScheduling { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ReminderCoordinator { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ReminderNotification { *; }

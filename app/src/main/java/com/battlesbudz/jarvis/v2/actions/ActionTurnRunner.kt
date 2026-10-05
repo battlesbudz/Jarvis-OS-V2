@@ -91,6 +91,11 @@ class ActionTurnRunner(
         "open_app" -> left.arguments.keys == setOf("app") && right.arguments.keys == setOf("app") &&
             left.arguments["app"]?.trim()?.equals(right.arguments["app"]?.trim(), ignoreCase = true) == true
         "media_control" -> left.arguments["action"] == right.arguments["action"]
+        "show_schedule" -> left.arguments.isEmpty() && right.arguments.isEmpty()
+        "create_reminder" -> left.arguments["message"] == right.arguments["message"] &&
+            left.arguments["at_ms"] == right.arguments["at_ms"]
+        "post_notification" -> left.arguments["title"] == right.arguments["title"] &&
+            left.arguments["text"] == right.arguments["text"]
         else -> false
     }
 }

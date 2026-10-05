@@ -14,8 +14,16 @@ class AndroidMobileActionExecutor(
     private val canLaunchDirectly: () -> Boolean = { false },
     private val onDiagnostic: (String) -> Unit = {},
     private val screenBridge: ScreenBridge = ScreenControlService.bridge(context),
-    val screenSession: ScreenControlSession = ScreenControlService.sharedSession
+    val screenSession: ScreenControlSession = ScreenControlService.sharedSession,
+    /**
+     * Scheduling bridge behind create_reminder/show_schedule. Defaults to the
+     * context itself when it implements [ReminderScheduling] (JarvisRuntime
+     * does), so production call sites need no changes; journeys pass an
+     * explicit coordinator over a scratch store.
+     */
+    reminderScheduling: ReminderScheduling? = null
 ) : MobileActionExecutor {
+    private val scheduling: ReminderScheduling? = reminderScheduling ?: (context as? ReminderScheduling)
     private val appResolver = InstalledAppResolver(context)
     override fun execute(action: MobileAction): ExecutionResult = when (action) {
         MobileAction.ReadBattery -> {
@@ -179,6 +187,33 @@ class AndroidMobileActionExecutor(
             perform = { bridge, node -> bridge.type(node, action.text) },
             successText = { node -> "Typed into \"${node.label}\"." }
         )
+        is MobileAction.CreateReminder -> {
+            val bridge = scheduling
+            if (bridge == null) {
+                onDiagnostic("create_reminder result=unavailable reason=no_scheduling_bridge")
+                ExecutionResult(false, "Reminders are unavailable right now, so nothing was scheduled.")
+            } else {
+                val result = bridge.createReminder(action.message, action.atMs)
+                onDiagnostic("create_reminder result=${result.succeeded} message=${result.message.take(80)}")
+                result
+            }
+        }
+        is MobileAction.ShowSchedule -> {
+            val bridge = scheduling
+            if (bridge == null) {
+                onDiagnostic("show_schedule result=unavailable reason=no_scheduling_bridge")
+                ExecutionResult(false, "I couldn't read the schedule right now.")
+            } else {
+                bridge.describeSchedule()
+            }
+        }
+        is MobileAction.PostNotification -> {
+            val posted = ReminderNotification.post(context, action.title, action.text)
+            onDiagnostic("post_notification result=$posted title=${action.title.take(40)}")
+            if (posted) ExecutionResult(true, "Posted the reminder notification.")
+            else ExecutionResult(false,
+                "I couldn't post the reminder notification: notifications are disabled or permission was denied.")
+        }
     }
 
     /**

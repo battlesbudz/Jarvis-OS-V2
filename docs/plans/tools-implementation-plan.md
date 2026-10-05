@@ -5,6 +5,79 @@ Follow-up source baseline: `feature-tools` at `bfeca6d06dc3dba583e0f92e812046e9e
 Created: September 24, 2026. Updated: September 30, 2026 (America/New_York). Owner: Justin Battles.
 Status: existing tools scope retained; September 29 autonomous messaging/warm-inference requirements integrated. New phases below are planned, not implemented or verified by this documentation update.
 
+## Implementation checkpoint — October 5, 2026 (reminder bug-fix slice)
+
+Battles reported on his Fold 6 (build 1002) that voice "remind me to go door
+dashing tomorrow at 4" got back "I shall set a reminder for your door dashing
+tomorrow at four o'clock" with nothing scheduled, and follow-ups ("where did
+you set that reminder?", "what schedule", "how do I see it") looped "It is
+noted in your schedule" with no schedule in existence and no way to view one.
+Root cause, same shape as the media parser bugfix: the voice turn ran with
+tools disabled, `ActionTurnPlan.parse()` did not recognize reminder phrasings,
+the turn fell through to ordinary chat, and the model confabulated success;
+the follow-ups parsed as NotAction, so the model kept inventing a schedule.
+Fix, following the media_control precedent:
+
+- `ActionRequestText.reminderRequest()` recognizes bounded "remind me"
+  phrasings ("remind me to X at Y", "remind me to X tomorrow at 4", "in 30
+  minutes", "in 2 hours") and resolves them deterministically against a
+  clock (JVM-pure java.time, system zone). A time phrase is required: "remind
+  me to call mom" with no time stays NotAction rather than inventing one.
+  AM/PM convention: tools-interview-decisions.md has no AM/PM rule, so a bare
+  hour takes the plain PM reading ("tomorrow at 4" is next-day 16:00;
+  explicit am/pm wins; 13-23 reads as 24-hour). A clock time with no day that
+  already passed rolls to the next occurrence; the receipt always states the
+  exact scheduled time so a misread is immediately visible and correctable.
+  `ActionRequestText.scheduleRequest()` recognizes read-only schedule views,
+  including the exact follow-up phrasings from the report.
+- `ActionTurnPlan` routes reminder clauses to a new `create_reminder` tool
+  (message + absolute at_ms) and schedule-view turns to `show_schedule`;
+  schedule views are matched on the whole normalized turn because "how do I
+  see it" cannot survive clause splitting.
+- Real schedule creation through the M2 engine: `ReminderCoordinator`
+  builds a versioned `WorkflowDefinition` with a single `post_notification`
+  step and a `WorkflowTrigger.Reminder`, saves it as a draft and enables it
+  (the explicit "remind me" is the enable authority for a one-shot
+  reminder), then arms the occurrence with `WorkflowAlarmScheduler`.
+  `show_schedule` renders unfinished ledger occurrences with an honest
+  "Nothing is scheduled right now." empty state.
+- Receipt-gated replies: the deterministic turn path finishes with the
+  outcome message, so "Reminder set" is claimed only when the ledger write
+  and the occurrence both exist; every failure says plainly that nothing was
+  set. The confabulation loop is dead: the follow-ups now route
+  deterministically to real ledger data.
+- Voice path: `FinalVoiceToolGuard` allows `create_reminder` when the final
+  spoken clause re-parses to the same message and time (mirroring the
+  set_volume final-number discipline) and allows `show_schedule`
+  unconditionally. Product check against tools-interview-decisions.md: D32
+  agrees voice triggers, D34/D62 cover reminder scheduling, and D11's
+  confirmation list does not include reminders, so voice "remind me" works
+  with no separate confirmation.
+- New catalog tools `create_reminder` / `show_schedule` / `post_notification`
+  (new "reminders" T08 family: reminders.schedule/read/notify), validator,
+  routine eligibility, `AndroidMobileActionExecutor` dispatch (alarm-backed
+  creation, ledger-backed listing, IMPORTANCE_HIGH alert that follows phone
+  DND), and `JarvisRuntime` as the `ReminderScheduling` implementation.
+- Tests: `ReminderPlanTest` (JVM: parser accept/reject incl. relative times
+  and the PM convention, plan routing, strict-decode parity, reminder
+  definition validation, ledger write success/failure receipt-gating, honest
+  empty state); `FinalVoiceToolGuardTest` gains reminder allow/reject cases;
+  `MobileToolCatalogTest` lists the new tools; release journeys `test60`
+  (text reminder parses Ready, dispatches through the real executor, writes
+  a real ledger entry, show_schedule lists it) and `test61` (empty schedule
+  honest empty state). The named contract is now 61 methods.
+  `docs/verification/features.md` updated.
+
+Definition of done: a "remind me" turn can never again confirm a reminder
+that was not written to the ledger, and asking for the schedule always
+reports real ledger state. Explicitly unverified per the coverage
+boundaries: real-model selection of the new tools, physical Fold 6 alarm
+delivery while the app is closed, and on-device notification audibility.
+
+Remaining: M4–M8 and A0–A6 are still planned. Reminder cancellation ("cancel
+my reminder") is follow-up work; today it stays NotAction and the model
+answers from chat.
+
 ## Implementation checkpoint — October 4, 2026 (M3 ecosystem integrations)
 
 M3 is implemented on `feature/muse-tools` (no PR, no merge), building on the

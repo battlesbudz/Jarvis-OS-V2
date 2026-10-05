@@ -2528,6 +2528,67 @@ class ReleaseJourneyTest {
         assertEquals("provider rows reach the settings projection", rows, projection.providers)
     }
 
+    @Test fun test60_reminderTextRequestCreatesRealScheduleAndListsIt() {
+        // Regression for the Fold 6 report (build 1002): voice "remind me to
+        // go door dashing tomorrow at 4" produced a confabulated confirmation
+        // with nothing scheduled, and follow-ups looped "It is noted in your
+        // schedule" with no schedule in existence. A text "remind me" request
+        // must parse to a Ready create_reminder plan, write a real
+        // WorkflowLedger entry through the real Android executor, and
+        // show_schedule must list it.
+        val storeFile = File(context.cacheDir, "reminder-journey-${UUID.randomUUID()}.json")
+        try {
+            val ledger = WorkflowLedger(FileToolTaskStore(storeFile))
+            val coordinator = ReminderCoordinator(ledger, { occurrence ->
+                WorkflowAlarmScheduler(context).schedule(occurrence)
+            })
+            val plan = ActionTurnPlan.parse("remind me to go door dashing tomorrow at 4")
+            assertTrue("text reminder must parse as an action plan, was $plan",
+                plan is ActionTurnPlan.Ready)
+            val request = (plan as ActionTurnPlan.Ready).steps.single().request
+            assertEquals("create_reminder", request.name)
+            assertEquals("go door dashing", request.arguments["message"])
+            val pipeline = MobileActionPipeline(
+                executor = AndroidMobileActionExecutor(context, reminderScheduling = coordinator))
+            val created = pipeline.execute(request)
+            assertTrue("parsed create_reminder must dispatch: ${created.message}", created.succeeded)
+            assertTrue("receipt must claim the set honestly, not confabulate: ${created.message}",
+                created.message.startsWith("Reminder set for"))
+            assertTrue("receipt must name the requested time: ${created.message}",
+                created.message.contains("4:00 PM"))
+            assertFalse("receipt must not carry an alarm failure: ${created.message}",
+                created.message.contains("couldn't"))
+            val listed = pipeline.execute(ActionRequest("show_schedule"))
+            assertTrue("show_schedule must dispatch: ${listed.message}", listed.succeeded)
+            assertTrue("the schedule must list the reminder that was just set: ${listed.message}",
+                listed.message.contains("door dashing"))
+            assertFalse("the schedule must not claim emptiness after a reminder was set: ${listed.message}",
+                listed.message.contains("Nothing is scheduled"))
+        } finally {
+            storeFile.delete()
+        }
+    }
+
+    @Test fun test61_emptyScheduleRendersHonestEmptyState() {
+        // The other half of the build-1002 loop: with no reminders scheduled,
+        // asking for the schedule must say so plainly instead of inventing one.
+        val storeFile = File(context.cacheDir, "reminder-empty-${UUID.randomUUID()}.json")
+        try {
+            val ledger = WorkflowLedger(FileToolTaskStore(storeFile))
+            val coordinator = ReminderCoordinator(ledger, { occurrence ->
+                WorkflowAlarmScheduler(context).schedule(occurrence)
+            })
+            val pipeline = MobileActionPipeline(
+                executor = AndroidMobileActionExecutor(context, reminderScheduling = coordinator))
+            val result = pipeline.execute(ActionRequest("show_schedule"))
+            assertTrue("empty schedule read must succeed: ${result.message}", result.succeeded)
+            assertTrue("empty schedule must say so honestly: ${result.message}",
+                result.message.contains("Nothing is scheduled"))
+        } finally {
+            storeFile.delete()
+        }
+    }
+
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()

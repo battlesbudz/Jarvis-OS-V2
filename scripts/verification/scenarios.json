@@ -60,6 +60,8 @@
     "test57_appFunctionsDiscoveryAndControlledJourney",
     "test58_mcpGuidedSetupAndServerStates",
     "test59_providerGrantDisciplineAndExposureGate",
+    "test60_reminderTextRequestCreatesRealScheduleAndListsIt",
+    "test61_emptyScheduleRendersHonestEmptyState",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

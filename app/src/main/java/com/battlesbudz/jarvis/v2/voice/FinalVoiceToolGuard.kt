@@ -23,6 +23,20 @@ object FinalVoiceToolGuard {
                 Regex("(?<![a-z0-9])" + target.filterNot { it.isWhitespace() }.map { Regex.escape(it.toString()) }.joinToString("\\s*") + "(?![a-z0-9])").containsMatchIn(relevant)
             }
             "read_battery" -> true
+            "show_schedule" -> true
+            "create_reminder" -> {
+                // Reminders are voice-triggerable per D32 (triggers by
+                // voice/text) and need no separate confirmation (not a D11
+                // category). The guard re-parses the final spoken clause
+                // deterministically and requires the spoken message and time
+                // to match the planned arguments, mirroring the set_volume
+                // final-number discipline.
+                val spec = com.battlesbudz.jarvis.v2.actions.ActionRequestText
+                    .reminderRequest(text, System.currentTimeMillis()) ?: return false
+                val atMs = arguments["at_ms"]?.toLongOrNull() ?: return false
+                spec.message.equals(arguments["message"], ignoreCase = true) &&
+                    kotlin.math.abs(spec.atMs - atMs) <= 60_000
+            }
             else -> false
         }
     }

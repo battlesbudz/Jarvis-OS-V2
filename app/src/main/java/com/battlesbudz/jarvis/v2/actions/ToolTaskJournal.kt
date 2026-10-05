@@ -51,6 +51,16 @@ internal fun ActionRequest.isRoutineEligible() = when (name) {
     "set_volume" -> arguments.keys == setOf("level") && arguments["level"]?.toIntOrNull()?.let { it in 0..100 } == true
     "open_app" -> arguments.keys == setOf("app") && !arguments["app"].isNullOrBlank() && arguments.getValue("app").length <= 512
     "media_control" -> arguments.keys == setOf("action") && MediaControlAction.fromVerb(arguments.getValue("action")) != null
+    // Scheduling a user-requested one-shot reminder is not a D11
+    // confirmation category; it is routine-eligible so reminder occurrences
+    // and the deterministic turn path can run it.
+    "create_reminder" -> arguments.keys == setOf("message", "at_ms") &&
+        !arguments["message"].isNullOrBlank() && arguments.getValue("message").length <= MAX_REMINDER_MESSAGE &&
+        arguments["at_ms"]?.toLongOrNull()?.let { it > 0 } == true
+    "show_schedule" -> arguments.isEmpty()
+    "post_notification" -> arguments.keys == setOf("title", "text") &&
+        !arguments["title"].isNullOrBlank() && arguments.getValue("title").length <= 64 &&
+        !arguments["text"].isNullOrBlank() && arguments.getValue("text").length <= MAX_REMINDER_MESSAGE
     else -> false
 }
 
@@ -76,5 +86,8 @@ internal fun ActionRequest.describeForOverlay(): String = when (name) {
     "set_volume" -> "Set media volume to ${arguments["level"]}%"
     "open_app" -> "Open ${arguments["app"] ?: arguments["package"]}"
     "media_control" -> "Control media"
+    "create_reminder" -> "Set a reminder"
+    "show_schedule" -> "Show the schedule"
+    "post_notification" -> "Post a notification"
     else -> name
 }

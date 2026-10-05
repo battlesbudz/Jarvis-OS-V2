@@ -23,6 +23,12 @@ sealed interface MobileAction {
         val token: String
     ) : MobileAction
     data class ScreenType(val targetId: String, val text: String, val token: String) : MobileAction
+    /** Schedule a one-shot reminder; dispatch writes a real M2 ledger entry. */
+    data class CreateReminder(val message: String, val atMs: Long) : MobileAction
+    /** Read-only schedule view; the receipt lists what the ledger actually holds. */
+    data object ShowSchedule : MobileAction
+    /** Post a user-visible notification; the step a reminder occurrence runs at fire time. */
+    data class PostNotification(val title: String, val text: String) : MobileAction
 }
 
 /** Verbs accepted by the media_control tool; skip maps to next/previous track. */
@@ -140,6 +146,29 @@ class MobileActionValidator {
             }
             screenTarget(request, "type into") { targetId, token ->
                 MobileAction.ScreenType(targetId, text, token)
+            }
+        }
+        "create_reminder" -> {
+            val message = request.arguments["message"]?.trim().orEmpty()
+            val atMs = request.arguments["at_ms"]?.toLongOrNull()
+            when {
+                message.isEmpty() || message.length > MAX_REMINDER_MESSAGE ->
+                    ActionValidation.Rejected("A reminder message of 1 to $MAX_REMINDER_MESSAGE characters is required.")
+                atMs == null || atMs <= 0 ->
+                    ActionValidation.Rejected("A reminder needs a positive trigger time in epoch milliseconds.")
+                else -> ActionValidation.Valid(MobileAction.CreateReminder(message, atMs))
+            }
+        }
+        "show_schedule" -> ActionValidation.Valid(MobileAction.ShowSchedule)
+        "post_notification" -> {
+            val title = request.arguments["title"]?.trim().orEmpty()
+            val text = request.arguments["text"]?.trim().orEmpty()
+            when {
+                title.isEmpty() || title.length > 64 ->
+                    ActionValidation.Rejected("A notification title of 1 to 64 characters is required.")
+                text.isEmpty() || text.length > MAX_REMINDER_MESSAGE ->
+                    ActionValidation.Rejected("Notification text of 1 to $MAX_REMINDER_MESSAGE characters is required.")
+                else -> ActionValidation.Valid(MobileAction.PostNotification(title, text))
             }
         }
         else -> ActionValidation.Rejected("Unsupported action: ${request.name}")

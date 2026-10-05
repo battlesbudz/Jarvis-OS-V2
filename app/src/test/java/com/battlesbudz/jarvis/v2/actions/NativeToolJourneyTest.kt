@@ -35,6 +35,12 @@ class NativeToolJourneyTest {
                     ExecutionResult(true, "Scrolled \"${action.targetId}\" ${action.direction.key}.")
                 is MobileAction.ScreenType ->
                     ExecutionResult(true, "Typed into \"${action.targetId}\".")
+                is MobileAction.CreateReminder ->
+                    ExecutionResult(true, "Reminder scheduled.")
+                is MobileAction.ShowSchedule ->
+                    ExecutionResult(true, "Nothing is scheduled right now.")
+                is MobileAction.PostNotification ->
+                    ExecutionResult(true, "Posted the reminder notification.")
             }
         }
     }

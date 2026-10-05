@@ -411,6 +411,9 @@ fun WorkflowDefinition.previewText(): String {
                     "screen_tap" -> "Tap a screen element (asks you first)"
                     "screen_scroll" -> "Scroll the screen (asks you first)"
                     "screen_type" -> "Type on the screen (asks you first)"
+                    "create_reminder" -> "Set a reminder for ${step.request.arguments["message"]}"
+                    "show_schedule" -> "Show the schedule"
+                    "post_notification" -> "Show a notification: ${step.request.arguments["title"]}"
                     else -> step.request.name
                 }
                 lines += prefix + what

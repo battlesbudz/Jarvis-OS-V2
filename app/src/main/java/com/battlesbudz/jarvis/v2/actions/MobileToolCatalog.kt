@@ -196,6 +196,47 @@ object MobileToolCatalog {
                     pattern = "^[0-9a-f]{16}$"
                 )
             )
+        ),
+        Tool(
+            name = "create_reminder",
+            description = "Schedule a one-shot reminder that alerts the user at the requested time with the given message. Use when the user asks to be reminded of something at a specific time. The reminder is written to the workflow ledger and fires an Android alarm; the reply confirms only what was actually scheduled.",
+            parameters = listOf(
+                Parameter(
+                    name = "message",
+                    type = ParameterType.STRING,
+                    description = "The reminder message, 1 to 256 characters.",
+                    minLength = 1
+                ),
+                Parameter(
+                    name = "at_ms",
+                    type = ParameterType.STRING,
+                    description = "Absolute trigger time as epoch milliseconds, e.g. 1791230400000. Must be in the future.",
+                    minLength = 1,
+                    pattern = "^[0-9]+$"
+                )
+            )
+        ),
+        Tool(
+            name = "show_schedule",
+            description = "List the user's scheduled reminders and upcoming routine runs, or report honestly that nothing is scheduled. Use when the user asks what is scheduled or where a reminder went."
+        ),
+        Tool(
+            name = "post_notification",
+            description = "Post a notification to the user with a title and text. Used by scheduled reminders when they fire; not for ordinary chat.",
+            parameters = listOf(
+                Parameter(
+                    name = "title",
+                    type = ParameterType.STRING,
+                    description = "Notification title, 1 to 64 characters.",
+                    minLength = 1
+                ),
+                Parameter(
+                    name = "text",
+                    type = ParameterType.STRING,
+                    description = "Notification text, 1 to 256 characters.",
+                    minLength = 1
+                )
+            )
         )
     )
 

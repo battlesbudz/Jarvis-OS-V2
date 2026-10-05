@@ -33,6 +33,11 @@ class ActionIntentRouter {
             "open_app" -> expected.arguments["app"]?.let { requested ->
                 proposed.arguments["app"]?.trim()?.equals(requested.trim(), ignoreCase = true)
             } == true
+            "show_schedule" -> true
+            "create_reminder" -> expected.arguments["message"] == proposed.arguments["message"] &&
+                expected.arguments["at_ms"] == proposed.arguments["at_ms"]
+            "post_notification" -> expected.arguments["title"] == proposed.arguments["title"] &&
+                expected.arguments["text"] == proposed.arguments["text"]
             else -> false
         }
     }

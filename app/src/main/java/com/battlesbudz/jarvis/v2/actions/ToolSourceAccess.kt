@@ -35,6 +35,7 @@ object ToolSourcePolicy {
             "open_settings" -> "settings"
             "navigate" -> "map"
             "screen_observe", "screen_tap", "screen_scroll", "screen_type" -> "screen"
+            "create_reminder", "show_schedule", "post_notification" -> "reminders"
             else -> "unknown"
         }
     }
@@ -72,6 +73,7 @@ object ToolSourcePolicy {
             "settings" -> setOf("settings.open")
             "map" -> setOf("maps.directions")
             "screen" -> setOf("screen.read", "screen.control")
+            "reminders" -> setOf("reminders.schedule", "reminders.read", "reminders.notify")
             else -> emptySet()
         }
     }
@@ -88,6 +90,9 @@ object ToolSourcePolicy {
             "navigate" -> setOf("maps.directions")
             "screen_observe" -> setOf("screen.read")
             "screen_tap", "screen_scroll", "screen_type" -> setOf("screen.control")
+            "create_reminder" -> setOf("reminders.schedule")
+            "show_schedule" -> setOf("reminders.read")
+            "post_notification" -> setOf("reminders.notify")
             else -> emptySet()
         }
     }
@@ -106,6 +111,7 @@ object ToolSourcePolicy {
             "settings" -> "system settings"
             "map" -> "map directions"
             "screen" -> "screen control"
+            "reminders" -> "reminders and scheduled alerts"
             else -> "this phone feature"
         }
     }

@@ -5,6 +5,70 @@ Epic: [#8](https://github.com/battlesbudz/Jarvis-OS-V2/issues/8). Implementation
 workflow, whose push trigger covers `feature/**`; older entries below still say
 `muse/feature-tools`).
 
+## Item 8: reminder bug-fix slice (Fold 6 "remind me" confabulation) — 2026-10-05
+
+Root cause: voice "remind me to go door dashing tomorrow at 4" (build 1002) ran with
+tools disabled; `ActionTurnPlan.parse()` did not recognize reminder phrasings → NotAction →
+the model confabulated "I shall set a reminder" with nothing scheduled. Follow-ups
+("where did you set that reminder?", "what schedule", "how do I see it") also parsed as
+NotAction, so the model looped "It is noted in your schedule" with no schedule in existence
+and no way to view one. Same shape as the Item 1 media parser bugfix.
+
+Changed files (commit `<slice-sha>`, server `<tip-sha>`):
+- `app/.../actions/ReminderWorkflow.kt` (new): JVM-pure reminder plumbing — `ReminderSpec`,
+  bounded "remind me" grammar with deterministic clock resolution (bare hour takes the
+  plain PM reading; no AM/PM rule exists in tools-interview-decisions.md), `buildReminderWorkflow`
+  (one `post_notification` step + `WorkflowTrigger.Reminder`), `formatReminderTime`,
+  honest `renderSchedule` with a "Nothing is scheduled right now." empty state.
+- `app/.../actions/ReminderCoordinator.kt` (new): `ReminderScheduling` interface +
+  real schedule creation through the M2 `WorkflowLedger` (draft + enable + alarm arm).
+  Receipt-gated: success is reported only when the ledger write and occurrence exist.
+- `app/.../actions/ReminderNotification.kt` (new): IMPORTANCE_HIGH reminder alert that
+  follows phone DND; honest false when notifications are disabled/denied.
+- `app/.../actions/ActionRequestText.kt`: `reminderRequest()` (bounded forms; a time phrase
+  is required, never invented) and `scheduleRequest()` (read-only schedule views, incl. the
+  exact follow-up phrasings from the report).
+- `app/.../actions/ActionTurnPlan.kt`: routes reminder clauses to `create_reminder`
+  (message + absolute at_ms); schedule views match on the whole normalized turn ("how do I
+  see it" cannot survive clause splitting) → `show_schedule`.
+- `app/.../actions/MobileToolCatalog.kt`: `create_reminder` / `show_schedule` /
+  `post_notification` (at_ms is a string epoch-ms; JSON integers overflow Int).
+- `app/.../actions/MobileAction.kt`: the three action types + strict validator.
+- `app/.../actions/ToolTaskJournal.kt`: routine eligibility (scheduling a user-requested
+  reminder is not a D11 confirmation category) + overlay labels.
+- `app/.../actions/ToolSourceAccess.kt`: new "reminders" T08 family
+  (reminders.schedule/read/notify).
+- `app/.../actions/WorkflowDefinition.kt`: plain-language preview for the new steps.
+- `app/.../actions/AndroidMobileActionExecutor.kt`: dispatch for the three actions;
+  scheduling bridge defaults to the context when it implements `ReminderScheduling`.
+- `app/.../JarvisRuntime.kt`: implements `ReminderScheduling` over the shared workflow
+  ledger; existing executor call sites unchanged.
+- `app/.../voice/FinalVoiceToolGuard.kt`: allows `create_reminder` when the final spoken
+  clause re-parses to the same message and time (set_volume discipline); `show_schedule`
+  allowed. Product check: D32 agrees voice triggers, D34/D62 cover reminder scheduling,
+  D11 confirmations do not include reminders.
+- `app/.../actions/ActionTurnRunner.kt` (`same()`) and `ActionIntentRouter.kt`
+  (`toolMatchesUserIntent`): matching for the new tools.
+- Tests: `ReminderPlanTest` (new JVM), `FinalVoiceToolGuardTest` (reminder cases),
+  `MobileToolCatalogTest` (tool list), `NativeToolJourneyTest.World` (new action branches),
+  `ReleaseJourneyTest` test60 (text reminder → Ready → real executor → real ledger entry →
+  show_schedule lists it) and test61 (honest empty state); `scenarios.json` now lists
+  61 named methods; `app/proguard-rules.pro` keeps for the journey-driven classes.
+- Docs: checkpoint in `docs/plans/tools-implementation-plan.md`, this log entry,
+  `docs/verification/features.md` reminder row.
+
+Acceptance: JVM parser/ledger tests green; test60/test61 pass on both emulator variants;
+a "remind me" turn can no longer confirm a reminder that was not written to the ledger.
+
+CI evidence:
+- Run <run-id> (<attempt>): <results>
+- Run URLs: <urls>
+- Release: `v0.1.0-build.<NNN>` (<url>)
+
+Unverified: real-model selection of the new tools; physical Fold 6 alarm delivery while
+the app is closed; on-device notification audibility. Reminder cancellation ("cancel my
+reminder") is follow-up work — today it stays NotAction.
+
 ## Item 7: M3 ecosystem integrations — 2026-10-04
 
 Implements AppFunctions discovery and MCP server integrations (D05, D07,

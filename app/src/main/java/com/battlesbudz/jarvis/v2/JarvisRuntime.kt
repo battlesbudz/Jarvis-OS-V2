@@ -77,7 +77,8 @@ private data class AcceptedVoiceInvocation(
 )
 
 /** Application-context runtime. The foreground service owns voice execution; UI only observes. */
-internal class JarvisRuntime private constructor(context: android.content.Context) : android.content.ContextWrapper(context) {
+internal class JarvisRuntime private constructor(context: android.content.Context) : android.content.ContextWrapper(context),
+    com.battlesbudz.jarvis.v2.actions.ReminderScheduling {
     internal val mainHandler = Handler(Looper.getMainLooper())
     internal val runtimeScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     // This worker outlives a single TTS delivery/capture attempt. It is closed only with the
@@ -117,6 +118,21 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     private val workflowLedger by lazy {
         com.battlesbudz.jarvis.v2.actions.WorkflowLedger(phoneActionStore)
     }
+    /**
+     * One-shot reminder scheduling over the workflow ledger. The Android
+     * executor reaches this through the ReminderScheduling interface (the
+     * runtime is its own context), so the deterministic turn path's
+     * create_reminder/show_schedule requests land here.
+     */
+    private val reminderCoordinator by lazy {
+        com.battlesbudz.jarvis.v2.actions.ReminderCoordinator(workflowLedger) { occurrence ->
+            com.battlesbudz.jarvis.v2.actions.WorkflowAlarmScheduler(this).schedule(occurrence)
+        }
+    }
+    override fun createReminder(message: String, atMs: Long): com.battlesbudz.jarvis.v2.actions.ExecutionResult =
+        reminderCoordinator.createReminder(message, atMs)
+    override fun describeSchedule(): com.battlesbudz.jarvis.v2.actions.ExecutionResult =
+        reminderCoordinator.describeSchedule()
     internal val phoneTasks = kotlinx.coroutines.flow.MutableStateFlow<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>(null)
     internal val phoneTaskError = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 

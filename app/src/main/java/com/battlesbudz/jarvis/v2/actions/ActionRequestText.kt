@@ -122,6 +122,41 @@ internal object ActionRequestText {
         return cleanTarget(target)
     }
 
+    /**
+     * Bounded natural-language forms for one-shot reminders. Follows the
+     * media_control parser-fix precedent: a strict verb phrase plus an
+     * explicit time, resolved deterministically against [nowMs]. Returns the
+     * message and absolute trigger time, or null when the clause is not a
+     * recognizable reminder request (notably when no time is given: the
+     * parser never invents one).
+     */
+    fun reminderRequest(clause: String, nowMs: Long): ReminderSpec? =
+        parseReminderRequest(clause, nowMs)
+
+    /**
+     * Bounded natural-language forms for viewing the schedule. Read-only:
+     * these become `show_schedule`, which lists what the ledger actually
+     * holds and says honestly when nothing is scheduled.
+     */
+    fun scheduleRequest(clause: String): Boolean {
+        val text = clause.lowercase().trim().trimEnd('.', '!', '?').trim()
+        return SCHEDULE_VIEWS.any { it.matches(text) }
+    }
+
+    private val SCHEDULE_VIEWS = listOf(
+        "show (?:me )?(?:my |the )?schedule",
+        "(?:what(?:'s| is)|show) (?:my |the )?schedule",
+        "what schedule",
+        "(?:list|show)(?: me)? (?:my )?reminders?",
+        "what reminders? do i have",
+        "do i have any reminders?",
+        "any reminders?",
+        "where did you set that reminder",
+        "where is that reminder",
+        "how do i see (?:it|my reminders?|the schedule)",
+        "how can i see (?:it|my reminders?|the schedule)"
+    ).map { Regex("^${it.trimEnd('?')}$") }
+
     private fun cleanTarget(text: String): String? {
         val target = trailing.replace(text.trim(), "").trim()
         val words = target.lowercase(java.util.Locale.ROOT).split(Regex("\\s+"))

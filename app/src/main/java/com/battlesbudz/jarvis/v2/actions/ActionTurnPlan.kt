@@ -12,13 +12,20 @@ sealed interface ActionTurnPlan {
     data class Step(val request: ActionRequest, val sourceClause: String)
 
     companion object {
-        fun parse(text: String, history: List<ChatEntry> = emptyList()): ActionTurnPlan {
+        fun parse(text: String, history: List<ChatEntry> = emptyList(),
+            nowMs: Long = System.currentTimeMillis()
+        ): ActionTurnPlan {
             confirmation(text, history)?.let { request ->
                 return Ready(listOf(Step(request, "Open " + request.arguments.getValue("app"))))
             }
             val normalized = ActionRequestText.normalizedRequest(text)
             // Quoted/hypothetical/negated speech must never become unconditional actions.
             if (Regex("""(?i)\b(?:don't|do not|never)\b""").containsMatchIn(normalized)) return NotAction
+            // Read-only schedule views are matched on the whole normalized
+            // turn: "how do I see it" cannot survive clause splitting, so it
+            // never reaches the clause router below.
+            if (ActionRequestText.scheduleRequest(normalized))
+                return Ready(listOf(Step(ActionRequest("show_schedule"), normalized)))
             val conditional = BatteryCondition.split(normalized)
             if (conditional == null && Regex("""(?i)^(?:if|unless|when|after)\b.*\b(?:open|launch|start|set|read|check|tell)\b""")
                     .containsMatchIn(normalized))
@@ -28,11 +35,11 @@ sealed interface ActionTurnPlan {
             val clauses = ActionRequestText.actionClauses(conditional?.actions ?: text)
             if (clauses.isEmpty()) return NotAction
             // Do not apply action limits or condition rules to ordinary speech.
-            if (clauses.none(::looksDirected)) return NotAction
+            if (clauses.none { looksDirected(it, nowMs) }) return NotAction
             if (clauses.any { Regex("""(?i)\b(?:if|unless|after|when)\b""").containsMatchIn(it) })
                 return Rejected("Conditional phone actions need a separate request.")
             if (clauses.size > 3) return Rejected("I can complete up to three phone actions at a time.")
-            val parsed = clauses.map { it to requestFor(it) }
+            val parsed = clauses.map { it to requestFor(it, nowMs) }
             val steps = parsed.map { (clause, request) ->
                 request ?: return Rejected("I couldn't safely understand: $clause")
                 Step(request, clause)
@@ -40,7 +47,7 @@ sealed interface ActionTurnPlan {
             return Ready(steps, conditional?.condition)
         }
 
-        private fun looksDirected(clause: String): Boolean =
+        private fun looksDirected(clause: String, nowMs: Long): Boolean =
             ActionRequestText.appTarget(clause) != null ||
                 Regex("""(?i)^(?:set|make|turn|adjust|change|raise|lower|increase|decrease)\b.*\bvolume\b""").containsMatchIn(clause) ||
                 ActionRequestText.batteryRequest(clause) ||
@@ -48,7 +55,9 @@ sealed interface ActionTurnPlan {
                 ActionRequestText.settingsScreen(clause) != null ||
                 ActionRequestText.websiteTarget(clause) != null ||
                 ActionRequestText.navigationTarget(clause) != null ||
-                ActionRequestText.screenObserveRequest(clause)
+                ActionRequestText.screenObserveRequest(clause) ||
+                ActionRequestText.reminderRequest(clause, nowMs) != null ||
+                ActionRequestText.scheduleRequest(clause)
 
         private fun confirmation(text: String, history: List<ChatEntry>): ActionRequest? {
             val normalized = text.trim()
@@ -61,7 +70,14 @@ sealed interface ActionTurnPlan {
             return app?.let { ActionRequest("open_app", mapOf("app" to it)) }
         }
 
-        private fun requestFor(clause: String): ActionRequest? {
+        private fun requestFor(clause: String, nowMs: Long): ActionRequest? {
+            // Reminders are checked first: "remind me to open ..." is a
+            // reminder about opening, not an app launch.
+            ActionRequestText.reminderRequest(clause, nowMs)?.let { spec ->
+                return ActionRequest("create_reminder",
+                    mapOf("message" to spec.message, "at_ms" to spec.atMs.toString()))
+            }
+            if (ActionRequestText.scheduleRequest(clause)) return ActionRequest("show_schedule")
             // Settings screens and websites are checked before appTarget: "open wifi
             // settings" and "open youtube.com" must not become open_app requests.
             ActionRequestText.settingsScreen(clause)?.let { return ActionRequest("open_settings", mapOf("screen" to it)) }
