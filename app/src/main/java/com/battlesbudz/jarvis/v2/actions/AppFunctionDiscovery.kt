@@ -189,10 +189,24 @@ object AppFunctionTaskSelection {
     }
 
     private fun tokenize(text: String): Set<String> =
-        text.lowercase().split(Regex("[^a-z0-9]+")).filter { it.length >= 3 }.toSet()
+        text.lowercase().split(Regex("[^a-z0-9]+"))
+            .filter { it.length >= 3 && it !in STOPWORDS }.toSet()
 
     private fun compact(text: String): String =
         text.lowercase().filter { it.isLetterOrDigit() }
+
+    /**
+     * Noise tokens that would otherwise hand out spurious relevance
+     * points (a query's "the" matching every "the ..." description).
+     * Without this, "look up the user by id" ties `echo` ("Echoes the
+     * given text back") with `lookup_user` on one junk token each and the
+     * alphabetical tiebreak picks the wrong function.
+     */
+    private val STOPWORDS = setOf(
+        "the", "a", "an", "and", "or", "to", "of", "in", "on", "for",
+        "with", "by", "at", "from", "is", "are", "it", "this", "that",
+        "please", "my", "me", "you", "your", "we"
+    )
 }
 
 /**
