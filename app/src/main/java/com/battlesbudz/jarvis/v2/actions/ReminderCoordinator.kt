@@ -29,7 +29,7 @@ interface ReminderScheduling {
 class ReminderCoordinator(
     private val ledger: WorkflowLedger,
     private val alarmScheduler: (WorkflowOccurrence) -> WorkflowAlarmScheduler.Scheduled,
-    private val now: () -> Long = System.currentTimeMillis
+    private val now: () -> Long = { System.currentTimeMillis() }
 ) : ReminderScheduling {
 
     override fun createReminder(message: String, atMs: Long): ExecutionResult {

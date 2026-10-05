@@ -125,9 +125,12 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
      * create_reminder/show_schedule requests land here.
      */
     private val reminderCoordinator by lazy {
-        com.battlesbudz.jarvis.v2.actions.ReminderCoordinator(workflowLedger) { occurrence ->
-            com.battlesbudz.jarvis.v2.actions.WorkflowAlarmScheduler(this).schedule(occurrence)
-        }
+        com.battlesbudz.jarvis.v2.actions.ReminderCoordinator(
+            ledger = workflowLedger,
+            alarmScheduler = { occurrence ->
+                com.battlesbudz.jarvis.v2.actions.WorkflowAlarmScheduler(this).schedule(occurrence)
+            },
+        )
     }
     override fun createReminder(message: String, atMs: Long): com.battlesbudz.jarvis.v2.actions.ExecutionResult =
         reminderCoordinator.createReminder(message, atMs)
