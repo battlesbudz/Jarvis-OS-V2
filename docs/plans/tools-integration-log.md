@@ -1118,3 +1118,26 @@ Release `v0.1.0-build.957` (M1b destinations, CI-green run 37192901766) renamed 
 "Jarvis OS V2 muse/feature-tools build 957 (M1b destinations)". The APKs were built from
 `8cf79e74b6`, which is on `muse/feature-tools` — no rebuild. Future slice releases publish
 from the `muse/feature-tools` tip per the normal per-slice cadence, named for the branch.
+
+## Item 10 — Audio-pr2 UI verification and rebuild (2026-10-05)
+
+**Report:** Battles said build 1020 "looks like my old build" — the audio-pr2 UI/UX
+(single-screen voice call features) missing.
+
+**Investigation:**
+- Compared all UI files between `audio-pr2` (2d4fd6c) and `feature/muse-tools` (a943cf30).
+- `ui/VoiceCallScreen.kt`: tools version = audio-pr2 base + M1d/M2/M3 additions (correct direction).
+- `ui/JarvisApp.kt`: tools version = audio-pr2 base + M1d/M2/M3 additions (correct direction).
+- `MainActivity.kt`: tools version = audio-pr2 base + M1d/M2/M3 additions (correct direction).
+- `ui/ConversationScreen.kt`: identical on both branches (SHA 517de43d).
+- Full recursive tree comparison: 0 files on audio-pr2 missing from feature/muse-tools.
+  700 files on audio-pr2, all present on tools. 52 files differ (expected reconciliations).
+- audio-pr2 commits after the import base (fe0de66e → 2d4fd6cb): 4 files changed,
+  0 UI-related (all CI fixes).
+- AndroidManifest.xml: clean union, audio base intact.
+
+**Conclusion:** Source is correct. The import did not lose the UI. Build 1020's APKs
+are suspected stale/mismatched. Triggering fresh CI build and new release from
+verified source.
+
+**Reminder fix + M1c-M3:** Intact (no source changes in this commit).
