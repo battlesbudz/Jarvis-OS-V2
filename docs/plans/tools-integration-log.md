@@ -5,6 +5,129 @@ Epic: [#8](https://github.com/battlesbudz/Jarvis-OS-V2/issues/8). Implementation
 workflow, whose push trigger covers `feature/**`; older entries below still say
 `muse/feature-tools`).
 
+## Item 9: audio-pr2 import into feature/muse-tools — 2026-10-05
+
+Battles ordered the deferred audio-pr2 blend: 137 audio commits (125 at the
+original analysis, plus 12 more on audio-pr2 since) reconciled into
+`feature/muse-tools` at head `37f5f17` (post-reminder-fix). Re-partitioned at
+the current heads (merge-base `4b4e6b94`): 295 audio-only files, 69
+tools-only files, 11 both-divergent hotspots — the same 11 as the prior
+analysis, recomputed, not assumed.
+
+Import (commits `bc2efe88` bulk source, `8aa7963e` tests/fixtures/scripts/docs,
+`d4345436` hotspots):
+
+- Clean bulk: `conversation/*`, `runtime/*`, `runtime/turn/*`, `ai/*` (LiteRtLmEngine,
+  TurnOrchestrator), `memory/*` (SQLite Memory OS), `diagnostics/*`, `chat/*`,
+  `voice/*`, `presentation/*`, `work/*`, `JarvisAppComposition.kt`, UI + res + CMake,
+  66 JVM unit tests, 6 androidTest files, scripts, docs. Kotlin 2.3.0→2.3.21
+  (required by the audio tree), pdfbox, PolyForm-NC LICENSE.md. Kept the
+  tools-owned `voice/ContinuousActionSession.kt`, `voice/SilentWorkMode.kt`,
+  `voice/VoiceActionControl.kt`. `.github/workflows/*` deliberately left out:
+  the token lacks the workflows permission and CI already fires on
+  `feature/muse-tools`.
+- Hotspots: AGENTS.md / AndroidManifest.xml / proguard-rules.pro are clean
+  unions (manifest gains audio's benchmark FileProvider; proguard keeps both
+  sets). `scenarios.json` + `ReleaseJourneyTest.kt`: audio keeps test01–48;
+  tools' 26 unique journeys renumber test50–75 (tools test30–34 already live
+  in audio as test40–44 — kept as audio's adapted versions, not duplicated;
+  the plan's "27" was off by one: tools skips test44 in its numbering).
+  `features.md`: audio base + renumbered M1d/M1e/M2/M3/reminder rows,
+  eleven-tool Limits/multimodal paragraphs, merged 75-test contract.
+- `conversation/ConversationRuntime.kt`: audio's ConversationCoordinator base;
+  the M1d `onNeedsApproval` hook re-attached in `ConversationGeneration`
+  (optional ctor param, forwarded through `ConversationActions.runNative`).
+- `JarvisRuntime.kt`: audio's slim orchestrator base; every tools wiring block
+  ported to its owning collaborator — new `runtime/WorkflowCoordinator`
+  (workflow ledger, ReminderScheduling, provider/MCP registries, workflow
+  engine/settings/alarms; `onWorkflowAlarm` keeps its exact signature),
+  `PhoneTaskCoordinator` (screen-approval admission, task scheduler,
+  TaskProgressProjector, silent-work hooks, `parkScreenTaskForApproval`),
+  `AcceptedVoiceFollowupStage` (silent-work into ContinuousActionSession).
+  JarvisRuntime re-exposes ReminderScheduling, workflowSettings,
+  silentWorkState/setSilentWork for the executor cast and the UI.
+- `MainActivity.kt`, `ui/JarvisApp.kt`, `ui/VoiceCallScreen.kt`: audio bases
+  with the tools additive blocks (silent-work toggle, workflow settings
+  section, MCP setup) re-applied at the restructured anchors.
+- Reminder slice intact: `ReminderScheduling` wiring now lives in
+  WorkflowCoordinator and is re-exposed by JarvisRuntime, so the
+  `(context as? ReminderScheduling)` executor path and `WorkflowScheduleReceiver`
+  keep working; test74/test75 (renumbered test60/test61) cover it.
+
+What was left out and why:
+- `.github/workflows/*`: not imported — the token lacks the `workflows`
+  permission (pushing them via API is impossible) and CI already fires on
+  `feature/muse-tools`, which deliberately carries the tools workflow files.
+  Consequence, repaired in this item: two workflow-coupled scripts
+  (`scripts/verification/android.py`, `receipt.py`) had been taken from audio
+  wholesale, but their contract matches audio-pr2's workflow
+  (`--previous-apk/--previous-metadata/--profile` args; extra CI jobs and
+  artifacts; 6-profile matrix). Since the workflow files cannot change, the
+  scripts were restored to the branch's versions (byte-identical to the
+  pre-import tools tree) and audio's full verification architecture was
+  preserved in-tree as `android_full.py`/`receipt_full.py` with its unit
+  tests repointed (commit `8d0d831a`). No test added, removed or weakened.
+- `scripts/test_fold_sdk_workflow.py`: kept, but its class now skips
+  conditionally — it executes audio-pr2's `android-sandbox.yml` Pixel Fold
+  catalog steps, which this branch does not carry. The skip checks the same
+  workflow path the test uses and documents the reason; the test body is
+  byte-identical and revives automatically if the workflow file is adopted
+  (commit `4d5fed7a`).
+
+Import repairs (commits `4d5fed7a`, `06c85e10`, `550c62e7`, `8d0d831a`, `6e6f9e42`):
+- `4d5fed7a`: conditional skip for the workflow-coupled fold SDK test (above).
+- `06c85e10`: one-line fix — the hotspot reconciliation had left a
+  `WorkflowCoordinator(...)` reference in `JarvisRuntime.kt` without its
+  import, failing `:app:compileReleaseKotlin` (the earlier "compile green"
+  was the JVM unit-test compile; the release compile had never run because
+  the script step failed first).
+- `550c62e7`: test42's `JournaledActionPipeline(ledger) { ... }` trailing
+  lambda no longer binds `executor` (the merged M1e constructor appends three
+  optional gate params after it); the executor is now passed explicitly by
+  name — the only such call site in the tree.
+- `8d0d831a`: verification-script reconciliation (above).
+- `6e6f9e42`: test45's quality-save navigation on API 30 — the blind 12-step
+  swipe overshot the just-below-viewport control into the metrics section and
+  the 15 s budget expired before the reversal scrolled back (API 35's
+  controlled held swipe passed). The scrollTo now passes `holdDiscovery = true`
+  (the same controlled 51-step drag the FAIL-button navigation in the same test
+  already uses); API 35+ behavior unchanged, no assertion changed.
+
+Acceptance: full CI gate — build + both emulator variants green; reminder
+journeys green after renumber.
+
+CI evidence:
+- Run 37286824641 (hotspot commit d4345436): build FAILED at the
+  `test_fold_sdk_workflow` script step (5 errors) before the release compile.
+- Run 37288463079 (skip commit 4d5fed7a): script step skipped; build FAILED at
+  `:app:compileReleaseKotlin` — the missing `WorkflowCoordinator` import.
+- Run 37291042288 (import fix 06c85e10): build SUCCESS; androidTest compile
+  FAILED — test42's unbound `executor` lambda.
+- Run 37292882354 (test42 fix 550c62e7): build SUCCESS (1229 JVM tests,
+  90/90 script tests); both sandbox variants FAILED at
+  `android.py run` argument parsing (audio CLI vs tools workflow).
+- Run 37295871566 (script reconciliation 8d0d831a): build SUCCESS; API 35
+  variant green; API 30 variant FAILED — test45's quality-save navigation
+  overshoot (new distinct failure, diagnosed from the variant artifact's
+  logcat: blind swipe overshot the below-viewport control).
+- Run 37299076462 (test45 navigation fix 6e6f9e42): ALL GREEN — build + both
+  emulator variants (API 30/app-release, API 35/app-compact, all 75 release
+  journeys incl. renumbered reminder test74/test75) + receipt consolidation
+  + publish.
+- Run URLs: https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37286824641,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37288463079,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37291042288,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37292882354,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37295871566,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37299076462
+- Release: `v0.1.0-build.1020` (https://github.com/battlesbudz/Jarvis-OS-V2/releases/tag/v0.1.0-build.1020), published by the workflow's
+  publish job with app-release.apk (84,335,660 bytes) + app-compact.apk
+  (45,295,276 bytes).
+
+Unverified: real-model behavior on the merged tree; physical Fold 6 for the
+merged UI (silent-work toggle, workflow settings, MCP setup); reminder
+cancellation still NotAction (carried over).
+
 ## Item 8: reminder bug-fix slice (Fold 6 "remind me" confabulation) — 2026-10-05
 
 Root cause: voice "remind me to go door dashing tomorrow at 4" (build 1002) ran with
