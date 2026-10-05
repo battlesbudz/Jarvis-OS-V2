@@ -36,7 +36,16 @@ data class WorkflowOccurrence(
     val resumePath: List<Int> = emptyList(),
     val createdAtMs: Long,
     val updatedAtMs: Long,
-    val resultSummary: String? = null
+    val resultSummary: String? = null,
+    /**
+     * Finding 4 (timer continuation resume): fire time of a timer/until wait
+     * armed on this occurrence; null for event waits and non-waiting runs.
+     * A timer resume is only claimable from WAITING_EVENT while this is set.
+     */
+    val resumeAtMs: Long? = null,
+    /** Engine progress persisted at suspend so a resume continues without re-running steps. */
+    val completedStepIds: List<String> = emptyList(),
+    val stepResults: Map<String, Map<String, String>> = emptyMap()
 )
 
 enum class WorkflowReceiptKind {
@@ -224,7 +233,51 @@ class WorkflowLedger(
         return claimed
     }
 
-    fun markWaiting(id: String, state: WorkflowOccurrenceState, resumePath: List<Int>, note: String? = null): Boolean {
+    /**
+     * Finding 4 (timer continuation resume): atomically claim a timer-armed
+     * resume. Only a WAITING_EVENT occurrence with a due resumeAtMs is
+     * claimable here — event waits (resumeAtMs == null) resume through their
+     * listeners, never through an alarm. Idempotent: a second claim finds
+     * the occurrence RUNNING and does nothing.
+     */
+    fun claimResumeOccurrence(id: String): WorkflowOccurrence? {
+        val at = now()
+        var claimed: WorkflowOccurrence? = null
+        store.updateJournal { j ->
+            val occurrence = j.occurrences.find { it.id == id } ?: return@updateJournal j
+            val resumeAt = occurrence.resumeAtMs ?: return@updateJournal j
+            if (occurrence.state != WorkflowOccurrenceState.WAITING_EVENT || resumeAt > at)
+                return@updateJournal j
+            val definition = j.workflows.filter { it.id == occurrence.workflowId }
+                .maxByOrNull { it.version }
+            claimed = occurrence.copy(state = WorkflowOccurrenceState.RUNNING, updatedAtMs = at)
+            j.copy(occurrences = j.occurrences.map { if (it.id == id) checkNotNull(claimed) else it },
+                workflowReceipts = j.workflowReceipts + WorkflowReceipt(
+                    UUID.randomUUID().toString(), occurrence.workflowId, id,
+                    WorkflowReceiptKind.FIRED, "“${definition?.name ?: "routine"}” resumed after its timer.", at))
+        }
+        return claimed
+    }
+
+    /**
+     * Timer resumes currently waiting on their alarm: the schedule receiver
+     * re-arms future ones after a restart and reports past-due ones as
+     * missed instead of auto-running them.
+     */
+    fun timerResumes(): List<WorkflowOccurrence> =
+        journal().occurrences.filter {
+            it.state == WorkflowOccurrenceState.WAITING_EVENT && it.resumeAtMs != null
+        }
+
+    fun markWaiting(
+        id: String,
+        state: WorkflowOccurrenceState,
+        resumePath: List<Int>,
+        note: String? = null,
+        resumeAtMs: Long? = null,
+        completedStepIds: List<String> = emptyList(),
+        stepResults: Map<String, Map<String, String>> = emptyMap()
+    ): Boolean {
         require(state in setOf(WorkflowOccurrenceState.WAITING_EVENT, WorkflowOccurrenceState.WAITING_APPROVAL,
             WorkflowOccurrenceState.WAITING_USER)) { "markWaiting needs a waiting state." }
         val at = now()
@@ -235,7 +288,9 @@ class WorkflowLedger(
             changed = true
             j.copy(occurrences = j.occurrences.map {
                 if (it.id == id) it.copy(state = state, resumePath = resumePath.toList(), updatedAtMs = at,
-                    resultSummary = note ?: it.resultSummary) else it
+                    resultSummary = note ?: it.resultSummary, resumeAtMs = resumeAtMs,
+                    completedStepIds = completedStepIds.toList(),
+                    stepResults = stepResults.mapValues { (_, v) -> v.toMap() }) else it
             })
         }
         return changed
@@ -269,7 +324,12 @@ class WorkflowLedger(
         val at = now()
         var changed = false
         store.updateJournal { j ->
-            val occurrence = j.occurrences.find { it.id == id && it.state == WorkflowOccurrenceState.SCHEDULED }
+            // SCHEDULED occurrences, plus WAITING_EVENT timer resumes whose
+            // fire time passed (finding 4): a missed resume is reported with
+            // an honest receipt, never auto-run.
+            val occurrence = j.occurrences.find { it.id == id &&
+                (it.state == WorkflowOccurrenceState.SCHEDULED ||
+                    (it.state == WorkflowOccurrenceState.WAITING_EVENT && it.resumeAtMs != null)) }
                 ?: return@updateJournal j
             changed = true
             val definition = j.workflows.filter { it.id == occurrence.workflowId }.maxByOrNull { it.version }

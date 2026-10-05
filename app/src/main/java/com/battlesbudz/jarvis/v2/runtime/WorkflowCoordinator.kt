@@ -192,62 +192,110 @@ internal class WorkflowCoordinator(
         } finally { refreshWorkflowSettings() }
     }
 
-    /** Alarm fire: claim the occurrence atomically, then run it. Redeliveries find it claimed and stop. */
+    /**
+     * Alarm fire: claim the occurrence atomically, then run it. A fresh
+     * trigger claims from SCHEDULED; a timer-resume re-fire claims from
+     * WAITING_EVENT via [WorkflowLedger.claimResumeOccurrence] — event waits
+     * are never claimed here. Redeliveries find the occurrence already
+     * claimed and do nothing — triggers never double-fire.
+     */
     fun onWorkflowAlarm(occurrenceId: String, done: () -> Unit) {
         scope.launch(Dispatchers.Default) {
             try {
                 val claimed = try { workflowLedger.claimDueOccurrence(occurrenceId) }
                 catch (_: ToolTaskStorageException) { null }
-                if (claimed != null) runWorkflowOccurrence(claimed)
+                if (claimed != null) {
+                    runWorkflowOccurrence(claimed)
+                    return@launch
+                }
+                val resumed = try { workflowLedger.claimResumeOccurrence(occurrenceId) }
+                catch (_: ToolTaskStorageException) { null }
+                if (resumed != null) resumeWorkflowOccurrence(resumed)
             } finally { done() }
         }
     }
 
     fun runWorkflowOccurrence(occurrence: WorkflowOccurrence) {
         scope.launch(Dispatchers.Default) {
-            val definition = try { workflowLedger.definitionFor(occurrence) }
-            catch (_: ToolTaskStorageException) { null }
-            if (definition == null) {
-                try { workflowLedger.completeOccurrence(occurrence.id, false, "The routine's definition is gone.") }
-                catch (_: Exception) { }
-                return@launch
-            }
-            val outcome = try {
+            runOrResume(occurrence, resume = false)
+        }
+    }
+
+    /**
+     * Finding 4 (timer continuation resume): continue a run from its saved
+     * position with its saved progress. Completed steps are never re-run and
+     * their outputs stay available for argument bindings.
+     */
+    fun resumeWorkflowOccurrence(occurrence: WorkflowOccurrence) {
+        scope.launch(Dispatchers.Default) {
+            runOrResume(occurrence, resume = true)
+        }
+    }
+
+    private fun runOrResume(occurrence: WorkflowOccurrence, resume: Boolean) {
+        val definition = try { workflowLedger.definitionFor(occurrence) }
+        catch (_: ToolTaskStorageException) { null }
+        if (definition == null) {
+            try { workflowLedger.completeOccurrence(occurrence.id, false, "The routine's definition is gone.") }
+            catch (_: Exception) { }
+            return
+        }
+        val outcome = try {
+            if (resume) {
+                WorkflowEngine().run(definition,
+                    startPath = occurrence.resumePath,
+                    skipStepIds = occurrence.completedStepIds.toSet(),
+                    initialResults = occurrence.stepResults,
+                    initialCompleted = occurrence.completedStepIds.toSet(),
+                    dispatch = { request -> dispatchWorkflowStep(occurrence, request) })
+            } else {
                 WorkflowEngine()
                     .run(definition, dispatch = { request -> dispatchWorkflowStep(occurrence, request) })
-            } catch (e: Exception) {
-                WorkflowRunOutcome.Failed(
-                    "The routine stopped on an internal error: ${e.message}", emptyList())
             }
-            try {
-                when (outcome) {
-                    is WorkflowRunOutcome.Completed ->
-                        workflowLedger.completeOccurrence(occurrence.id, outcome.succeeded, outcome.summary)
-                    is WorkflowRunOutcome.Suspended -> {
-                        workflowLedger.markWaiting(occurrence.id,
-                            WorkflowOccurrenceState.WAITING_EVENT,
-                            outcome.resumePath, "Waiting: ${describeWorkflowWait(outcome.wait)}")
-                        scheduleWorkflowResume(occurrence.id, outcome.wait)
-                    }
-                    is WorkflowRunOutcome.NeedsApproval -> {
-                        workflowLedger.markWaiting(occurrence.id,
-                            WorkflowOccurrenceState.WAITING_APPROVAL,
-                            outcome.resumePath, "Needs your approval: ${outcome.request.describeForOverlay()}")
-                        // The chat layer picks up WAITING_APPROVAL occurrences
-                        // and asks through the exact-approval path; each
-                        // occurrence keeps its independent approval branch.
-                    }
-                    is WorkflowRunOutcome.NeedsUser -> {
-                        workflowLedger.markWaiting(occurrence.id,
-                            WorkflowOccurrenceState.WAITING_USER,
-                            outcome.resumePath, outcome.question)
-                    }
-                    is WorkflowRunOutcome.Failed ->
-                        workflowLedger.completeOccurrence(occurrence.id, false, outcome.reason)
-                }
-            } catch (_: ToolTaskStorageException) { }
-            refreshWorkflowSettings()
+        } catch (e: Exception) {
+            WorkflowRunOutcome.Failed(
+                "The routine stopped on an internal error: ${e.message}", emptyList())
         }
+        try {
+            when (outcome) {
+                is WorkflowRunOutcome.Completed ->
+                    workflowLedger.completeOccurrence(occurrence.id, outcome.succeeded, outcome.summary)
+                is WorkflowRunOutcome.Suspended -> {
+                    // Persist the engine's progress with the wait so the
+                    // resume continues exactly here. Timer/UntilTime waits
+                    // arm a resume alarm; event waits are picked up by the
+                    // notification/location listeners when they land.
+                    val resumeAt = when (val wait = outcome.wait) {
+                        is WorkflowWait.Timer -> System.currentTimeMillis() + wait.durationMs
+                        is WorkflowWait.UntilTime -> wait.epochMs
+                        is WorkflowWait.Event -> null
+                    }
+                    workflowLedger.markWaiting(occurrence.id,
+                        WorkflowOccurrenceState.WAITING_EVENT,
+                        outcome.resumePath, "Waiting: ${describeWorkflowWait(outcome.wait)}",
+                        resumeAtMs = resumeAt,
+                        completedStepIds = outcome.completedStepIds,
+                        stepResults = outcome.results)
+                    if (resumeAt != null) scheduleWorkflowResume(occurrence.id, resumeAt)
+                }
+                is WorkflowRunOutcome.NeedsApproval -> {
+                    workflowLedger.markWaiting(occurrence.id,
+                        WorkflowOccurrenceState.WAITING_APPROVAL,
+                        outcome.resumePath, "Needs your approval: ${outcome.request.describeForOverlay()}")
+                    // The chat layer picks up WAITING_APPROVAL occurrences
+                    // and asks through the exact-approval path; each
+                    // occurrence keeps its independent approval branch.
+                }
+                is WorkflowRunOutcome.NeedsUser -> {
+                    workflowLedger.markWaiting(occurrence.id,
+                        WorkflowOccurrenceState.WAITING_USER,
+                        outcome.resumePath, outcome.question)
+                }
+                is WorkflowRunOutcome.Failed ->
+                    workflowLedger.completeOccurrence(occurrence.id, false, outcome.reason)
+            }
+        } catch (_: ToolTaskStorageException) { }
+        refreshWorkflowSettings()
     }
 
     /**
@@ -298,14 +346,12 @@ internal class WorkflowCoordinator(
             lockGate = androidLockGate(appContext)
         )
 
-    private fun scheduleWorkflowResume(occurrenceId: String, wait: WorkflowWait) {
-        // Timer/UntilTime waits re-arm an alarm; event waits are picked up
-        // by the notification/location listeners when they land.
-        val fireAt = when (wait) {
-            is WorkflowWait.Timer -> System.currentTimeMillis() + wait.durationMs
-            is WorkflowWait.UntilTime -> wait.epochMs
-            is WorkflowWait.Event -> return
-        }
+    /**
+     * Re-arms the occurrence's own alarm slot for a timer resume. The resume
+     * time is already persisted on the occurrence (resumeAtMs); the alarm is
+     * only the wake-up — the claim is what authorizes the run.
+     */
+    private fun scheduleWorkflowResume(occurrenceId: String, fireAt: Long) {
         try {
             val scheduler = WorkflowAlarmScheduler(appContext)
             // Reuse the occurrence's own alarm slot for the resume.

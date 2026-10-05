@@ -556,6 +556,125 @@ class M2WorkflowsTest {
         assertEquals(listOf("read_battery", "set_volume"), dispatched)
     }
 
+    // -- Timer continuation resume (finding 4) ---------------------------------------
+
+    @Test fun timerResumeClaimIsArmedIdempotentAndDueOnly() {
+        val l = ledger()
+        val saved = l.saveDraft(definition())
+        l.enable(saved.id)
+        val occurrence = l.scheduleOccurrence(saved.id, 0, nowMs - 1_000, nowMs - 1_000, "resume-1")!!
+        l.claimDueOccurrence(occurrence.id)
+        val path = listOf(1)
+        // Armed one minute out: not claimable early.
+        assertTrue(l.markWaiting(occurrence.id, WorkflowOccurrenceState.WAITING_EVENT, path,
+            "Waiting: a timer", resumeAtMs = nowMs + 60_000))
+        assertNull("a timer resume must not be claimable early",
+            l.claimResumeOccurrence(occurrence.id))
+        nowMs += 61_000
+        val resumed = l.claimResumeOccurrence(occurrence.id)
+        assertNotNull(resumed)
+        assertEquals(WorkflowOccurrenceState.RUNNING, resumed!!.state)
+        assertEquals(path, resumed.resumePath)
+        assertNull("a second resume claim must not re-fire", l.claimResumeOccurrence(occurrence.id))
+    }
+
+    @Test fun eventWaitsAreNeverClaimedByATimerResume() {
+        val l = ledger()
+        val saved = l.saveDraft(definition())
+        l.enable(saved.id)
+        val occurrence = l.scheduleOccurrence(saved.id, 0, nowMs - 1_000, nowMs - 1_000, "resume-2")!!
+        l.claimDueOccurrence(occurrence.id)
+        // Event wait: no resume time armed.
+        assertTrue(l.markWaiting(occurrence.id, WorkflowOccurrenceState.WAITING_EVENT, listOf(1),
+            "Waiting: a notification"))
+        nowMs += 3_600_000
+        assertNull("an event wait must never be alarm-claimed",
+            l.claimResumeOccurrence(occurrence.id))
+    }
+
+    @Test fun suspendedRunResumesFromSavedProgressWithoutRerun() {
+        // Production-path regression test for finding 4: a suspend persists
+        // the engine's progress, and the resume continues from the saved
+        // position without re-running completed steps.
+        val waitId = uid()
+        val batteryId = uid()
+        val def = definition(steps = listOf(
+            batteryStep(batteryId),
+            WorkflowStep.Wait(waitId, WorkflowWait.Timer(60_000)),
+            volumeStep("20")))
+        val l = ledger()
+        val saved = l.saveDraft(def)
+        l.enable(saved.id)
+        val occurrence = l.scheduleOccurrence(saved.id, 0, nowMs - 1_000, nowMs - 1_000, "resume-3")!!
+        val claimed = l.claimDueOccurrence(occurrence.id)!!
+        val dispatched = mutableListOf<String>()
+        val suspended = WorkflowEngine(now).run(def,
+            dispatch = { request ->
+                dispatched += request.name
+                if (request.name == "read_battery") ExecutionResult.battery(42) else ok()
+            })
+        assertTrue(suspended is WorkflowRunOutcome.Suspended)
+        val progress = suspended as WorkflowRunOutcome.Suspended
+        assertEquals(listOf(batteryId), progress.completedStepIds)
+        assertEquals("42", progress.results[batteryId]?.get("battery_percent"))
+        // Persist the suspend exactly like the coordinator does.
+        assertTrue(l.markWaiting(claimed.id, WorkflowOccurrenceState.WAITING_EVENT,
+            progress.resumePath, "Waiting: a timer",
+            resumeAtMs = nowMs + 60_000,
+            completedStepIds = progress.completedStepIds,
+            stepResults = progress.results))
+        nowMs += 61_000
+        val resumed = l.claimResumeOccurrence(claimed.id)!!
+        // Resume from the saved position with the saved progress.
+        val outcome = WorkflowEngine(now).run(def,
+            startPath = resumed.resumePath,
+            skipStepIds = resumed.completedStepIds.toSet(),
+            initialResults = resumed.stepResults,
+            initialCompleted = resumed.completedStepIds.toSet(),
+            dispatch = { request -> dispatched += request.name; ok() })
+        assertTrue(outcome is WorkflowRunOutcome.Completed)
+        assertEquals("completed steps must not re-run",
+            listOf("read_battery", "set_volume"), dispatched)
+    }
+
+    @Test fun timerResumeProgressSurvivesFileRoundTrip() = withFile { file ->
+        val l = WorkflowLedger(FileToolTaskStore(file), now)
+        val saved = l.saveDraft(definition())
+        l.enable(saved.id)
+        val occurrence = l.scheduleOccurrence(saved.id, 0, nowMs - 1_000, nowMs - 1_000, "rt-resume")!!
+        l.claimDueOccurrence(occurrence.id)
+        val stepId = uid()
+        assertTrue(l.markWaiting(occurrence.id, WorkflowOccurrenceState.WAITING_EVENT, listOf(2),
+            "Waiting: a timer", resumeAtMs = nowMs + 60_000,
+            completedStepIds = listOf(stepId),
+            stepResults = mapOf(stepId to mapOf("message" to "done"))))
+        val reopened = WorkflowLedger(FileToolTaskStore(file), now)
+        val loaded = reopened.occurrence(occurrence.id)!!
+        assertEquals(WorkflowOccurrenceState.WAITING_EVENT, loaded.state)
+        assertEquals(nowMs + 60_000, loaded.resumeAtMs)
+        assertEquals(listOf(stepId), loaded.completedStepIds)
+        assertEquals("done", loaded.stepResults[stepId]?.get("message"))
+        // And the resume is still claimable after the round trip.
+        nowMs += 61_000
+        assertNotNull(reopened.claimResumeOccurrence(occurrence.id))
+    }
+
+    @Test fun pastDueTimerResumeIsReportedMissed() {
+        val l = ledger()
+        val saved = l.saveDraft(definition())
+        l.enable(saved.id)
+        val occurrence = l.scheduleOccurrence(saved.id, 0, nowMs - 1_000, nowMs - 1_000, "resume-4")!!
+        l.claimDueOccurrence(occurrence.id)
+        assertTrue(l.markWaiting(occurrence.id, WorkflowOccurrenceState.WAITING_EVENT, listOf(1),
+            "Waiting: a timer", resumeAtMs = nowMs + 60_000))
+        nowMs += 61_000
+        assertTrue(l.recordMissedEvaluation(occurrence.id,
+            MissedRunDecision.Irrelevant("The timer resume passed while the phone was off.")))
+        assertEquals(WorkflowOccurrenceState.MISSED, l.occurrence(occurrence.id)!!.state)
+        assertNull("a missed resume is terminal and never claimable",
+            l.claimResumeOccurrence(occurrence.id))
+    }
+
     @Test fun engineAsksForApprovalOnScreenStepsAndNeverDispatchesThem() {
         val def = definition(steps = listOf(batteryStep(),
             WorkflowStep.Tool(uid(), ActionRequest("screen_tap",

@@ -65,6 +65,23 @@ class WorkflowScheduleReceiver : BroadcastReceiver() {
             if (occurrence.scheduledForMs <= now) continue // left for missed-run evaluation
             try { scheduler.schedule(occurrence) } catch (_: Exception) { /* next launch retries */ }
         }
+        // Finding 4 (timer continuation resume): a WAITING_EVENT occurrence
+        // with an armed resume time lost its alarm on reboot. Future resumes
+        // are re-armed; a resume whose time already passed is reported missed
+        // with an honest receipt — never auto-run (no catch-up storm).
+        val timerResumes = try { ledger.timerResumes() } catch (_: Exception) { return }
+        for (resume in timerResumes) {
+            val fireAt = resume.resumeAtMs ?: continue
+            if (fireAt <= now) {
+                try {
+                    ledger.recordMissedEvaluation(resume.id, MissedRunDecision.Irrelevant(
+                        "The timer resume passed while the phone was off, so the routine did not continue."))
+                } catch (_: Exception) { }
+                continue
+            }
+            try { scheduler.schedule(resume.copy(scheduledForMs = fireAt, windowEndMs = fireAt)) }
+            catch (_: Exception) { /* next launch retries */ }
+        }
         if (recovered.isNotEmpty()) {
             // Receipts were already recorded by recoverAfterRestart.
         }

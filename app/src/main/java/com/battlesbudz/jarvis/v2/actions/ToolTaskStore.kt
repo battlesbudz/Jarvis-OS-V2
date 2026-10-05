@@ -112,7 +112,15 @@ class FileToolTaskStore(
                     o.getInt("triggerIndex"), o.getString("dedupKey"), o.strictLong("scheduledForMs"),
                     o.strictLong("windowEndMs"), WorkflowOccurrenceState.valueOf(o.getString("state")),
                     o.getJSONArray("resumePath").ints(), o.strictLong("createdAtMs"), o.strictLong("updatedAtMs"),
-                    o.nullString("resultSummary")) },
+                    o.nullString("resultSummary"),
+                    if (o.isNull("resumeAtMs")) null else o.strictLong("resumeAtMs"),
+                    o.optJSONArray("completedStepIds")?.strings() ?: emptyList(),
+                    o.optJSONObject("stepResults")?.let { sr ->
+                        sr.keys().asSequence().associateWith { k ->
+                            val inner = sr.getJSONObject(k)
+                            inner.keys().asSequence().associateWith { k2 -> inner.getString(k2) }
+                        }
+                    } ?: emptyMap()) },
                 workflowReceipts = if (version < 3) emptyList()
                     else root.getJSONArray("workflowReceipts").objects { r -> WorkflowReceipt(
                     r.getString("id"), r.getString("workflowId"), r.nullString("occurrenceId"),
@@ -213,6 +221,10 @@ class FileToolTaskStore(
             require(o.scheduledForMs > 0 && o.windowEndMs >= o.scheduledForMs)
             require(o.createdAtMs >= 0 && o.updatedAtMs >= o.createdAtMs)
             require(o.resumePath.size <= 8 && o.resumePath.all { it >= 0 })
+            require(o.resumeAtMs == null || o.resumeAtMs > 0)
+            require(o.completedStepIds.size <= 512 &&
+                o.stepResults.size <= 512 &&
+                o.stepResults.all { (k, v) -> k.length <= 128 && v.size <= 64 })
             require(o.resultSummary == null || o.resultSummary.length <= 512)
             require(j.workflows.any { it.id == o.workflowId && it.version == o.definitionVersion })
         }
@@ -254,7 +266,10 @@ class FileToolTaskStore(
             .put("scheduledForMs", o.scheduledForMs).put("windowEndMs", o.windowEndMs)
             .put("state", o.state.name).put("resumePath", JSONArray(o.resumePath))
             .put("createdAtMs", o.createdAtMs).put("updatedAtMs", o.updatedAtMs)
-            .put("resultSummary", o.resultSummary ?: JSONObject.NULL) }))
+            .put("resultSummary", o.resultSummary ?: JSONObject.NULL)
+            .put("resumeAtMs", o.resumeAtMs ?: JSONObject.NULL)
+            .put("completedStepIds", JSONArray(o.completedStepIds))
+            .put("stepResults", JSONObject(o.stepResults.mapValues { (_, m) -> JSONObject(m) })) }))
         .put("workflowReceipts", JSONArray(j.workflowReceipts.map { r -> JSONObject().put("id", r.id)
             .put("workflowId", r.workflowId).put("occurrenceId", r.occurrenceId ?: JSONObject.NULL)
             .put("kind", r.kind.name).put("message", r.message).put("atMs", r.atMs) }))

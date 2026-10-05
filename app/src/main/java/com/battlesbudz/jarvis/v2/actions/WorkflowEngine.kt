@@ -18,7 +18,14 @@ package com.battlesbudz.jarvis.v2.actions
 sealed interface WorkflowRunOutcome {
     data class Completed(val succeeded: Boolean, val summary: String,
         val results: Map<String, Map<String, String>>) : WorkflowRunOutcome
-    data class Suspended(val wait: WorkflowWait, val resumePath: List<Int>) : WorkflowRunOutcome
+    data class Suspended(
+        val wait: WorkflowWait,
+        val resumePath: List<Int>,
+        /** Steps already executed before the wait, so a resume never re-runs them. */
+        val completedStepIds: List<String>,
+        /** Step outputs available for argument bindings after the resume. */
+        val results: Map<String, Map<String, String>>
+    ) : WorkflowRunOutcome
     data class NeedsApproval(val stepId: String, val request: ActionRequest,
         val resumePath: List<Int>) : WorkflowRunOutcome
     data class NeedsUser(val question: String, val completedStepIds: List<String>,
@@ -58,7 +65,8 @@ class WorkflowEngine(private val now: () -> Long = System::currentTimeMillis) {
             is Flow.Continue -> WorkflowRunOutcome.Completed(true,
                 "Finished ${run.completedStepIds.size} step(s).",
                 run.results.mapValues { it.value.toMap() })
-            is Flow.Suspend -> WorkflowRunOutcome.Suspended(control.wait, control.path)
+            is Flow.Suspend -> WorkflowRunOutcome.Suspended(control.wait, control.path,
+                run.completedStepIds.toList(), run.results.mapValues { it.value.toMap() })
             is Flow.Approval -> WorkflowRunOutcome.NeedsApproval(control.stepId, control.request, control.path)
             is Flow.AskUser -> WorkflowRunOutcome.NeedsUser(control.question,
                 run.completedStepIds.toList(), control.path)

@@ -39,7 +39,9 @@ internal fun ToolTaskJournal.frozen() = copy(
     approvals = approvals.map { it.copy(action = it.action.frozen()) },
     grants = grants.map { it.copy(requests = it.requests.map { request -> request.frozen() }) }, events = events.toList(),
     sourceAccess = sourceAccess.map { it.copy(scopes = it.scopes.toSet()) },
-    occurrences = occurrences.map { it.copy(resumePath = it.resumePath.toList()) },
+    occurrences = occurrences.map { it.copy(resumePath = it.resumePath.toList(),
+        completedStepIds = it.completedStepIds.toList(),
+        stepResults = it.stepResults.mapValues { (_, v) -> v.toMap() }) },
     workflowReceipts = workflowReceipts.toList())
 
 /** Screen mutations are never routine-eligible and never auto-dispatched (D23). */
