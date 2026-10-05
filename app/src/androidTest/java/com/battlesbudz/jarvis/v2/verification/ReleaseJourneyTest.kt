@@ -2239,7 +2239,7 @@ class ReleaseJourneyTest {
             val a = ledger.get(id)?.takeIf { it.generation == generation }
             if (a != null) {
                 when (command) {
-                    "approve" -> JournaledActionPipeline(ledger) { effects.incrementAndGet(); ExecutionResult(true, "25%") }
+                    "approve" -> JournaledActionPipeline(ledger, executor = MobileActionExecutor { effects.incrementAndGet(); ExecutionResult(true, "25%") })
                         .executeAttempt(a, a.approvalId?.let { approvals.get(it) })
                     "deny" -> a.approvalId?.let { approvals.deny(it) }
                     "checked" -> ledger.reconcileUnknown(id, generation)
