@@ -77,6 +77,20 @@ untouched. Provider exposure to the model stays structurally disabled until M7.
   The named contract is now 59 methods. `docs/verification/features.md`
   updated.
 
+Repair-cycle refinements (8 pushes to a green gate; every cycle fixed a
+distinct diagnosed failure): task-relevant selection now filters a small
+stopword set and adds a separator-blind phrase signal, so a natural query
+like "look up the user by id" ranks `lookup_user` above `echo` instead of
+tying on the junk token "the"; a network security config permits cleartext
+HTTP to 127.0.0.1 only (matching `McpUrlPolicy`'s http-loopback-only rule)
+so guided MCP setup can reach on-device loopback servers; ProGuard keeps
+the journey-instantiated `InMemoryMcpCredentialStore` and
+`UrlConnectionMcpHttpClient` that the `Mcp**` wildcard missed. Verified on
+CI run 37264130765: 969 JVM tests green, 59/59 release journeys green on
+API 30 and API 35, consolidated receipt PASS; release v0.1.0-build.1001
+renamed "Jarvis OS V2 feature/muse-tools build 1001 (M3 ecosystem
+integrations)".
+
 M3 definition of done: the capability matrix has real evidence for each
 advertised operation — successful calls and negative cases — and the UI
 explains unavailable providers. Broad AppFunctions consumer access remains

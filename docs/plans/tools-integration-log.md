@@ -13,8 +13,10 @@ extended, never duplicated. Provider exposure to the model stays
 structurally disabled until M7 (`ProviderExposure.MODEL_EXPOSURE_ENABLED =
 false`; model-kind calls are rejected, not policy-gated).
 
-Changed files (commit pending; server head `5cd75a8a` on `feature/muse-tools`
-before this slice):
+Shipped as commit `ca78d565` (slice) plus repairs `803d86f7`,
+`86bb0bdb`, `75ee6ff6`, `f9811b97`, `364cc0ef`, `02e2895e`, `63ca6823`
+on `feature/muse-tools` (server head `5cd75a8a` before this slice; tip
+`63ca6823a57d363d2d0563bfb6c00998c71b1cd0`):
 - `actions/ProviderIdentity.kt` (new): provider kinds/ids, canonical wire
   names `provider:<kind>:<id>:<function>`, per-provider grant families,
   namespaced scopes, `ProviderPricing` (UNKNOWN is never "free").
@@ -61,12 +63,44 @@ before this slice):
   negotiation test); `ReleaseJourneyTest` test57 (T16), test58 (T17),
   test59 (T08 provider grants + exposure gate); `scenarios.json` now lists
   59 named methods.
+- `app/src/main/res/xml/network_security_config.xml` (new, from repairs):
+  cleartext permitted to 127.0.0.1 only, matching McpUrlPolicy's
+  http-loopback-only rule; `AndroidManifest.xml` references it.
 - Docs: M3 checkpoint in the implementation plan (T16/T17 annotated),
   this log entry, `docs/verification/features.md` M3 row.
 
-Evidence: exact-SHA CI (build-release JVM tests, API 30 + API 35 sandbox,
-consolidated receipt) pending after push; the release is published by the
-workflow's publish job and renamed per the slice convention.
+Evidence: exact-SHA CI run 37264130765
+(https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37264130765) —
+build-release JVM tests green (969 tests, 150 suites), API 30 + API 35
+sandbox release journeys green (59/59 named tests each, including
+test57/58/59), consolidated receipt PASS for commit `63ca6823`.
+Release v0.1.0-build.1001 published by the workflow's publish job; title
+renamed to "Jarvis OS V2 feature/muse-tools build 1001 (M3 ecosystem
+integrations)"
+(https://github.com/battlesbudz/Jarvis-OS-V2/releases/tag/v0.1.0-build.1001).
+
+Repair notes (8 pushes to green; the 3-attempt bounded-repair budget was
+exceeded — every cycle fixed a distinct, diagnosed failure, never the
+same one twice): (1) `McpRegistry` compile errors — this toolchain does
+not narrow a sealed-interface complement after an early return; replaced
+with an explicit `when`-bound `Negotiation.Ok`; also
+`McpServerState.DISCONNECTED` → `DISABLED`. (2) `com.sun.net.httpserver`
+is not on the unit-test compile classpath — the real-transport loopback
+negotiation test now uses a raw `ServerSocket` stub. (3)
+`File.createTempFile` creates an empty file the store reads as corrupt —
+the provider-grant tests use a temp dir + not-yet-created journal file.
+(4) R8 stripped `InMemoryMcpCredentialStore` and
+`UrlConnectionMcpHttpClient` (the `Mcp**` wildcard misses names not
+starting with "Mcp") — explicit ProGuard keeps; the sandbox had died with
+`NoClassDefFoundError`. (5) Android blocks cleartext HTTP by default, so
+guided MCP setup could never reach the on-device loopback stub — the new
+network security config permits cleartext to 127.0.0.1 only. (6) Task
+selection: "look up the user by id" tied `echo` with `lookup_user` on the
+junk token "the" and the alphabetical tiebreak picked wrong — a stopword
+filter plus a separator-blind phrase signal now rank content words first.
+(7) test57's update snapshot dropped the functions' descriptions, so the
+diff honestly reported them as updated too — the fixtures carry
+descriptions through the snapshot.
 
 ## Item 6: M2 reusable workflows and triggers — 2026-10-04
 
