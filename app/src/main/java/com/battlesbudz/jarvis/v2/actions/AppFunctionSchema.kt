@@ -104,6 +104,14 @@ object AppFunctionTypeConverter {
                 is TypeConversion.Ok -> converted[name] = result.value
             }
         }
+        // additionalProperties=true means undeclared keys are allowed: pass
+        // them through unchanged instead of silently dropping them. Strict
+        // schemas (additionalProperties=false) still reject unknown keys above.
+        if (schema.additionalProperties) {
+            for ((key, value) in args) {
+                if (key !in schema.properties) converted[key] = value
+            }
+        }
         return TypeConversion.Ok(converted)
     }
 
