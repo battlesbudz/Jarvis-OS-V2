@@ -8,7 +8,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
@@ -45,7 +44,11 @@ internal object VoiceCallOverlay {
     onToggleMicrophone: () -> Unit,
     onEndCall: () -> Unit,
     transcriptSpeaker: String = "",
-    transcript: String = ""
+    transcript: String = "",
+    // A call is in flight while the runtime is armed OR a voice turn is running.
+    // The end-call affordance must not depend on `active` alone: on device the
+    // armed flag can lag the turn, which left the bubble with no way to end it.
+    callInFlight: Boolean = active,
 ) {
     // Only the orb and its opaque control pill paint over the chat. The live
     // transcript belongs to the conversation, rather than a duplicate overlay.
@@ -61,20 +64,28 @@ internal object VoiceCallOverlay {
                     Text(phase, style = MaterialTheme.typography.labelSmall, maxLines = 1,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             .testTag("voice_call_status").semantics { contentDescription = status.ifBlank { phase } })
-                    Row(horizontalArrangement = Arrangement.Center) {
+                    if (callInFlight) {
+                        // The call button becomes the end-call button while a call
+                        // is in flight, so there is always a visible way to end it.
+                        TextButton(onClick = onEndCall,
+                            modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
+                                .testTag("voice_call_end")
+                                .semantics { contentDescription = "End call" }) {
+                            Text("End call", color = MaterialTheme.colorScheme.error)
+                        }
                         if (active) {
-                            IconButton(onClick = onToggleMicrophone,
-                                modifier = Modifier.size(48.dp).testTag("voice_call_pause").semantics {
-                                    contentDescription = if (microphonePaused) "Resume microphone" else "Pause microphone"
-                                }) { Text(if (microphonePaused) "▶" else "Ⅱ") }
-                            IconButton(onClick = onEndCall,
-                                modifier = Modifier.size(48.dp).testTag("voice_call_end").semantics { contentDescription = "End call" }) {
-                                Text("×", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.titleLarge)
+                            TextButton(onClick = onToggleMicrophone,
+                                modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
+                                    .testTag("voice_call_pause").semantics {
+                                        contentDescription = if (microphonePaused) "Resume microphone" else "Pause microphone"
+                                    }) {
+                                Text(if (microphonePaused) "Resume microphone" else "Pause microphone",
+                                    style = MaterialTheme.typography.labelSmall)
                             }
-                        } else if (canStart) {
-                            TextButton(onClick = onStart, modifier = Modifier.testTag("voice_start")) { Text("Start") }
-                        } else Text("…", modifier = Modifier.padding(12.dp))
-                    }
+                        }
+                    } else if (canStart) {
+                        TextButton(onClick = onStart, modifier = Modifier.testTag("voice_start")) { Text("Start") }
+                    } else Text("…", modifier = Modifier.padding(12.dp))
                     if (stopReplyAvailable) TextButton(onClick = onStopReply,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                         modifier = Modifier.testTag("voice_call_stop_reply")) { Text("Stop reply", style = MaterialTheme.typography.labelSmall) }
@@ -226,6 +237,9 @@ internal fun VoiceCallScreen(
                 if (runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING) playback.level else microphoneLevel
             } else 0f,
             active = runtimeArmed,
+            // A turn already counts as a call: the end-call button must appear
+            // even if the armed flag has not (or no longer) caught up on device.
+            callInFlight = runtimeArmed || turnInFlight,
             microphonePaused = microphonePaused,
             canStart = !runtimeArmed && !chatSending && !turnInFlight && !wakeTesting && !inputTesting && !audioPathTesting,
             stopReplyAvailable = runtimeArmed && (
