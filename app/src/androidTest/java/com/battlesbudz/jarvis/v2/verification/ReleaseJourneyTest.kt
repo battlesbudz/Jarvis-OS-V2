@@ -2184,7 +2184,9 @@ class ReleaseJourneyTest {
         val plain = (registry.aliasRegistry.resolve("echo") as AliasResolution.Resolved).binding
         assertEquals(pkgA, plain.identity.providerPackage)
 
-        // Task-relevant selection surfaces the calendar-ish function first.
+        // Task-relevant selection surfaces the user-lookup function first for
+        // the natural query, even though "look up" shares no whole token
+        // with the "lookup_user" alias.
         val selected = AppFunctionTaskSelection.select(
             "look up the user by id",
             registry.aliasRegistry.all(),

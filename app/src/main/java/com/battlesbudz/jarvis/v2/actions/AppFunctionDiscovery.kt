@@ -166,18 +166,33 @@ object AppFunctionTaskSelection {
         require(limit in 1..25)
         val queryTokens = tokenize(query)
         if (queryTokens.isEmpty()) return emptyList()
+        // A natural query like "look up the user by id" names the
+        // `lookup_user` function without sharing whole tokens with it
+        // ("look" vs "lookup"). The separator-blind phrase signal catches
+        // that: an alias whose name appears in the request, ignoring
+        // separators, outranks pure token overlap.
+        val compactQuery = compact(query)
         return bindings.mapNotNull { binding ->
             val metadata = metadataFor(binding) ?: return@mapNotNull null
             val haystack = tokenize("${binding.alias} ${binding.displayName} " +
                 "${metadata.functionId} ${metadata.description}")
             val overlap = queryTokens.intersect(haystack).size
-            if (overlap == 0) null else binding to overlap
-        }.sortedWith(compareByDescending<Pair<AliasBinding, Int>> { it.second }.thenBy { it.first.alias })
+            val phraseHit = compact(binding.alias).isNotEmpty() &&
+                compactQuery.contains(compact(binding.alias))
+            if (overlap == 0 && !phraseHit) null
+            else Triple(binding, if (phraseHit) 1 else 0, overlap)
+        }.sortedWith(
+            compareByDescending<Triple<AliasBinding, Int, Int>> { it.second }
+                .thenByDescending { it.third }
+                .thenBy { it.first.alias })
             .take(limit).map { it.first }
     }
 
     private fun tokenize(text: String): Set<String> =
         text.lowercase().split(Regex("[^a-z0-9]+")).filter { it.length >= 3 }.toSet()
+
+    private fun compact(text: String): String =
+        text.lowercase().filter { it.isLetterOrDigit() }
 }
 
 /**
