@@ -1,0 +1,368 @@
+package com.battlesbudz.jarvis.v2.runtime
+
+import android.content.Context
+import com.battlesbudz.jarvis.v2.actions.ActionRequest
+import com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor
+import com.battlesbudz.jarvis.v2.actions.AndroidToolCapabilityProbe
+import com.battlesbudz.jarvis.v2.actions.AppFunctionPlatformProbe
+import com.battlesbudz.jarvis.v2.actions.AppFunctionPlatformStatus
+import com.battlesbudz.jarvis.v2.actions.ExecutionResult
+import com.battlesbudz.jarvis.v2.actions.JournaledActionPipeline
+import com.battlesbudz.jarvis.v2.actions.McpRegistry
+import com.battlesbudz.jarvis.v2.actions.McpSetupFlow
+import com.battlesbudz.jarvis.v2.actions.MobileActionExecutor
+import com.battlesbudz.jarvis.v2.actions.ProviderKind
+import com.battlesbudz.jarvis.v2.actions.ProviderRegistry
+import com.battlesbudz.jarvis.v2.actions.ProviderSettings
+import com.battlesbudz.jarvis.v2.actions.ProviderWireNames
+import com.battlesbudz.jarvis.v2.actions.ReminderCoordinator
+import com.battlesbudz.jarvis.v2.actions.ReminderScheduling
+import com.battlesbudz.jarvis.v2.actions.ToolAuthority
+import com.battlesbudz.jarvis.v2.actions.ToolSourceAccess
+import com.battlesbudz.jarvis.v2.actions.ToolTaskLedger
+import com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException
+import com.battlesbudz.jarvis.v2.actions.ToolTaskStore
+import com.battlesbudz.jarvis.v2.actions.MissedRunDecision
+import com.battlesbudz.jarvis.v2.actions.UrlConnectionMcpHttpClient
+import com.battlesbudz.jarvis.v2.actions.WorkflowAlarmScheduler
+import com.battlesbudz.jarvis.v2.actions.WorkflowEngine
+import com.battlesbudz.jarvis.v2.actions.WorkflowEventKind
+import com.battlesbudz.jarvis.v2.actions.WorkflowLedger
+import com.battlesbudz.jarvis.v2.actions.WorkflowOccurrence
+import com.battlesbudz.jarvis.v2.actions.WorkflowOccurrenceState
+import com.battlesbudz.jarvis.v2.actions.WorkflowRunOutcome
+import com.battlesbudz.jarvis.v2.actions.WorkflowScheduling
+import com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection
+import com.battlesbudz.jarvis.v2.actions.WorkflowTrigger
+import com.battlesbudz.jarvis.v2.actions.WorkflowWait
+import com.battlesbudz.jarvis.v2.actions.androidLockGate
+import com.battlesbudz.jarvis.v2.actions.describeForOverlay
+import com.battlesbudz.jarvis.v2.actions.isRoutineEligible
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * Owns reusable-workflow (M2), ecosystem-provider (M3) and reminder wiring.
+ * The workflow ledger shares the phone-task journal's durable store file;
+ * alarms, provider grants and the reminder coordinator all enter through
+ * this component's explicit ports. Android execution reaches the reminder
+ * path through [ReminderScheduling], which the runtime re-exposes so the
+ * executor's context cast keeps working.
+ */
+internal class WorkflowCoordinator(
+    private val scope: CoroutineScope,
+    private val appContext: Context,
+    taskStore: ToolTaskStore,
+    private val isActivityVisible: () -> Boolean,
+    private val recordDiagnostic: (String) -> Unit,
+    private val reportError: (String) -> Unit,
+) : ReminderScheduling {
+    /** M2: the workflow ledger shares the task ledger's durable store. */
+    private val workflowLedger = WorkflowLedger(taskStore)
+    private val phoneActionLedger = ToolTaskLedger(taskStore)
+
+    /**
+     * One-shot reminder scheduling over the workflow ledger. The Android
+     * executor reaches this through the ReminderScheduling interface, so the
+     * deterministic turn path's create_reminder/show_schedule requests land here.
+     */
+    private val reminderCoordinator by lazy {
+        ReminderCoordinator(
+            ledger = workflowLedger,
+            alarmScheduler = { occurrence ->
+                WorkflowAlarmScheduler(appContext).schedule(occurrence)
+            },
+        )
+    }
+    override fun createReminder(message: String, atMs: Long): ExecutionResult =
+        reminderCoordinator.createReminder(message, atMs)
+    override fun describeSchedule(): ExecutionResult =
+        reminderCoordinator.describeSchedule()
+
+    // -- M3 ecosystem providers (D05/D07, T16/T17) ---------------------------
+
+    internal val providerRegistry = ProviderRegistry()
+    private val mcpHttpClient = UrlConnectionMcpHttpClient()
+    private val mcpCredentialStore =
+        com.battlesbudz.jarvis.v2.actions.AndroidKeystoreMcpCredentialStore(appContext)
+    /** Connected MCP servers: guided setup, refresh, enablement, disconnect. */
+    internal val mcpRegistry = McpRegistry(mcpHttpClient, mcpCredentialStore)
+    private val mcpSetupFlow = McpSetupFlow(mcpHttpClient, mcpCredentialStore)
+    /** Honest AppFunctions platform state (ordinary-app probe); null until the probe runs. */
+    internal var appFunctionPlatformStatus: AppFunctionPlatformStatus? = null
+        private set
+
+    /**
+     * M3 provider scope resolution for the T08 grant discipline: a provider
+     * wire name resolves to its declared scopes from the live registries.
+     * Secrets never pass through here — only scope names.
+     */
+    fun seedProviderScopeResolver() {
+        com.battlesbudz.jarvis.v2.actions.ToolSourcePolicy.setProviderScopeResolver { wireName ->
+            ProviderWireNames.parseToolName(wireName)?.let { parsed ->
+                when (parsed.provider.kind) {
+                    ProviderKind.APP_FUNCTIONS ->
+                        providerRegistry.metadataFor(parsed.provider, parsed.functionId)?.scopes.orEmpty()
+                    ProviderKind.MCP ->
+                        mcpRegistry.toolsFor(parsed.provider.id)
+                            .firstOrNull { it.name == parsed.functionId }
+                            ?.scopes?.map { scope ->
+                                ProviderWireNames.scopedName(parsed.provider, scope)
+                            }.orEmpty().toSet()
+                }
+            }.orEmpty()
+        }
+    }
+
+    /** Run the AppFunctions platform probe once (ordinary app access); refresh the settings rows after. */
+    fun probeAppFunctionPlatform() {
+        scope.launch(Dispatchers.IO) {
+            appFunctionPlatformStatus = try {
+                AppFunctionPlatformProbe(appContext).probe()
+            } catch (_: Exception) {
+                null
+            }
+            refreshWorkflowSettings()
+        }
+    }
+
+    /**
+     * Guided MCP setup from settings (D07): custom URL, staged negotiation
+     * and discovery, secret stored under an opaque reference. The result
+     * message is honest about which stage failed and why.
+     */
+    fun connectMcpServer(name: String, url: String, token: String, done: (String) -> Unit) {
+        scope.launch(Dispatchers.IO) {
+            val message = try {
+                when (val result = mcpSetupFlow.run(name, url, token.ifBlank { null })) {
+                    is McpSetupFlow.FlowResult.Connected -> {
+                        val placed = mcpRegistry.add(result.status)
+                        "Connected to ${placed.config.name}: ${placed.tools.size} tool(s) discovered, " +
+                            "${placed.enabledTools.size} free tool(s) enabled by default."
+                    }
+                    is McpSetupFlow.FlowResult.Failed ->
+                        "Could not connect (${result.stage.name.lowercase()}): ${result.reason}"
+                }
+            } catch (_: Exception) {
+                "Could not connect: an unexpected error stopped setup. Nothing was saved."
+            }
+            withContext(Dispatchers.Main) {
+                refreshWorkflowSettings()
+                done(message)
+            }
+        }
+    }
+
+    // -- M2 reusable workflows (D31–D36, T11–T14) ---------------------------
+
+    /** Settings projection: saved workflows plus connected tools. Chat stays the operating surface. */
+    internal val workflowSettings = MutableStateFlow<WorkflowSettingsProjection?>(null)
+
+    fun refreshWorkflowSettings() {
+        workflowSettings.value = try {
+            WorkflowSettingsProjection.from(
+                phoneActionLedger.journal(), System.currentTimeMillis(),
+                ProviderSettings.rows(providerRegistry, mcpRegistry, appFunctionPlatformStatus))
+        } catch (_: ToolTaskStorageException) { null }
+    }
+
+    /** Settings toggle: explicit enable/disable; disabling pauses affected unfinished work (D17). */
+    fun setWorkflowEnabled(id: String, enabled: Boolean) {
+        try {
+            if (enabled) {
+                val scheduled = workflowLedger.enable(id)
+                val scheduler = WorkflowAlarmScheduler(appContext)
+                for (occurrence in scheduled) {
+                    try { scheduler.schedule(occurrence) } catch (_: Exception) { /* receipt kept; retry on launch */ }
+                }
+            } else {
+                val result = workflowLedger.disable(id)
+                val scheduler = WorkflowAlarmScheduler(appContext)
+                for (occurrenceId in result.pausedOccurrenceIds) {
+                    try { scheduler.cancel(occurrenceId) } catch (_: Exception) { }
+                }
+            }
+        } catch (_: ToolTaskStorageException) {
+            reportError("The action journal is unavailable. The routine was not changed.")
+        } catch (_: IllegalArgumentException) {
+            reportError("I couldn't find that routine.")
+        } finally { refreshWorkflowSettings() }
+    }
+
+    /** Alarm fire: claim the occurrence atomically, then run it. Redeliveries find it claimed and stop. */
+    fun onWorkflowAlarm(occurrenceId: String, done: () -> Unit) {
+        scope.launch(Dispatchers.Default) {
+            try {
+                val claimed = try { workflowLedger.claimDueOccurrence(occurrenceId) }
+                catch (_: ToolTaskStorageException) { null }
+                if (claimed != null) runWorkflowOccurrence(claimed)
+            } finally { done() }
+        }
+    }
+
+    fun runWorkflowOccurrence(occurrence: WorkflowOccurrence) {
+        scope.launch(Dispatchers.Default) {
+            val definition = try { workflowLedger.definitionFor(occurrence) }
+            catch (_: ToolTaskStorageException) { null }
+            if (definition == null) {
+                try { workflowLedger.completeOccurrence(occurrence.id, false, "The routine's definition is gone.") }
+                catch (_: Exception) { }
+                return@launch
+            }
+            val outcome = try {
+                WorkflowEngine()
+                    .run(definition, dispatch = { request -> dispatchWorkflowStep(occurrence, request) })
+            } catch (e: Exception) {
+                WorkflowRunOutcome.Failed(
+                    "The routine stopped on an internal error: ${e.message}", emptyList())
+            }
+            try {
+                when (outcome) {
+                    is WorkflowRunOutcome.Completed ->
+                        workflowLedger.completeOccurrence(occurrence.id, outcome.succeeded, outcome.summary)
+                    is WorkflowRunOutcome.Suspended -> {
+                        workflowLedger.markWaiting(occurrence.id,
+                            WorkflowOccurrenceState.WAITING_EVENT,
+                            outcome.resumePath, "Waiting: ${describeWorkflowWait(outcome.wait)}")
+                        scheduleWorkflowResume(occurrence.id, outcome.wait)
+                    }
+                    is WorkflowRunOutcome.NeedsApproval -> {
+                        workflowLedger.markWaiting(occurrence.id,
+                            WorkflowOccurrenceState.WAITING_APPROVAL,
+                            outcome.resumePath, "Needs your approval: ${outcome.request.describeForOverlay()}")
+                        // The chat layer picks up WAITING_APPROVAL occurrences
+                        // and asks through the exact-approval path; each
+                        // occurrence keeps its independent approval branch.
+                    }
+                    is WorkflowRunOutcome.NeedsUser -> {
+                        workflowLedger.markWaiting(occurrence.id,
+                            WorkflowOccurrenceState.WAITING_USER,
+                            outcome.resumePath, outcome.question)
+                    }
+                    is WorkflowRunOutcome.Failed ->
+                        workflowLedger.completeOccurrence(occurrence.id, false, outcome.reason)
+                }
+            } catch (_: ToolTaskStorageException) { }
+            refreshWorkflowSettings()
+        }
+    }
+
+    /**
+     * Dispatch one routine-eligible step under the occurrence's routine
+     * grant. The grant is reused only when its exact request limits match
+     * (T11); a new tool can never broaden it. Each step is admitted as its
+     * own group so a failed step stops the run before later steps are
+     * admitted.
+     */
+    private fun dispatchWorkflowStep(
+        occurrence: WorkflowOccurrence,
+        request: ActionRequest
+    ): ExecutionResult {
+        fun refusal(message: String) = ExecutionResult(false, message)
+        if (!request.isRoutineEligible()) {
+            return refusal("The routine asked for an action outside its granted limits. It didn't run.")
+        }
+        val grant = try {
+            workflowLedger.reusableGrant(occurrence.workflowId, listOf(request))
+                ?: workflowLedger.createGrant(occurrence.workflowId, listOf(request))
+        } catch (_: Exception) { return refusal("I couldn't save this routine's permission, so it didn't run.") }
+        val group = try {
+            phoneActionLedger.admit(listOf(request), "workflow:${occurrence.id}",
+                authority = ToolAuthority.ROUTINE, grantId = grant.id)
+        } catch (_: Exception) { return refusal("The routine's actions weren't admitted.") }
+        val executor = AndroidMobileActionExecutor(appContext,
+            canLaunchDirectly = { isActivityVisible() }, onDiagnostic = recordDiagnostic)
+        val id = group.attemptIds.single()
+        val attempt = phoneActionLedger.get(id)
+            ?: return refusal("The routine's action disappeared before it could run.")
+        val claimed = phoneActionLedger.claim(attempt.id, attempt.generation)
+            ?: return refusal("The routine's action is no longer authorized.")
+        return try { phoneActionPipeline(executor).executeAttempt(claimed) }
+        catch (_: Exception) { ExecutionResult(
+            ExecutionResult.Outcome.UNKNOWN_COMPLETION,
+            "The routine's action may have run; its outcome is unknown and it won't be repeated.") }
+    }
+
+    private fun phoneActionPipeline(executor: MobileActionExecutor) =
+        JournaledActionPipeline(
+            phoneActionLedger,
+            executor,
+            sourceAccess = ToolSourceAccess(phoneActionLedger),
+            capabilityProbe = AndroidToolCapabilityProbe(appContext),
+            lockGate = androidLockGate(appContext)
+        )
+
+    private fun scheduleWorkflowResume(occurrenceId: String, wait: WorkflowWait) {
+        // Timer/UntilTime waits re-arm an alarm; event waits are picked up
+        // by the notification/location listeners when they land.
+        val fireAt = when (wait) {
+            is WorkflowWait.Timer -> System.currentTimeMillis() + wait.durationMs
+            is WorkflowWait.UntilTime -> wait.epochMs
+            is WorkflowWait.Event -> return
+        }
+        try {
+            val scheduler = WorkflowAlarmScheduler(appContext)
+            // Reuse the occurrence's own alarm slot for the resume.
+            val occurrence = workflowLedger.occurrence(occurrenceId) ?: return
+            scheduler.schedule(occurrence.copy(scheduledForMs = fireAt, windowEndMs = fireAt))
+        } catch (_: Exception) { }
+    }
+
+    private fun describeWorkflowWait(wait: WorkflowWait): String = when (wait) {
+        is WorkflowWait.Timer -> "a timer"
+        is WorkflowWait.UntilTime -> "a scheduled time"
+        is WorkflowWait.Event -> when (wait.kind) {
+            WorkflowEventKind.NOTIFICATION -> "a notification"
+            WorkflowEventKind.LOCATION -> "arriving at a location"
+        }
+    }
+
+    /**
+     * Evaluate past-due occurrences against current circumstances (D33,
+     * T14). Coalesces duplicate missed slots so there is no catch-up
+     * duplicate storm; relevant runs are claimed and run, the rest get an
+     * honest missed receipt.
+     */
+    fun evaluateMissedWorkflowRuns() {
+        scope.launch(Dispatchers.Default) {
+            try {
+                val at = System.currentTimeMillis()
+                val journal = phoneActionLedger.journal()
+                val pastDue = journal.occurrences.filter {
+                    it.state == WorkflowOccurrenceState.SCHEDULED && it.scheduledForMs <= at
+                }
+                if (pastDue.isEmpty()) return@launch
+                val (candidates, coalesced) = WorkflowScheduling.coalesceMissed(pastDue)
+                for (skipped in coalesced) {
+                    workflowLedger.recordMissedEvaluation(skipped.id,
+                        MissedRunDecision.Irrelevant(
+                            "A later occurrence of the same routine covers this time — skipped to avoid a duplicate run."))
+                }
+                for (occurrence in candidates) {
+                    val definition = workflowLedger.definitionFor(occurrence) ?: continue
+                    val trigger = definition.triggers.getOrNull(occurrence.triggerIndex)
+                    val decision = WorkflowScheduling.evaluateMissedRun(
+                        occurrence, definition,
+                        WorkflowScheduling.MissedRunCircumstances(
+                            triggerStillValid = trigger !is WorkflowTrigger.Deadline ||
+                                trigger.atMs >= at - 86_400_000,
+                            // Proxy: an unseen question is unlikely to be
+                            // answered while the app is in the background.
+                            userActiveRecently = isActivityVisible(),
+                            latenessMs = at - occurrence.scheduledForMs))
+                    when (decision) {
+                        is MissedRunDecision.Relevant -> {
+                            val claimed = workflowLedger.claimDueOccurrence(occurrence.id)
+                            if (claimed != null) runWorkflowOccurrence(claimed)
+                        }
+                        else -> workflowLedger.recordMissedEvaluation(occurrence.id, decision)
+                    }
+                }
+                refreshWorkflowSettings()
+            } catch (_: ToolTaskStorageException) { }
+        }
+    }
+}

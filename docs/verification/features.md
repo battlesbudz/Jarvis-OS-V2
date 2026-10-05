@@ -1,5 +1,1792 @@
 # Feature and acceptance map
 
+## API 29 graphics boot loop — October 5, 2026
+
+[Build 986](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37236069164)
+tested head `9d933b754f0e7124850bde5a289931b4cf9cadb3`. Its API 29 artifact
+`11316332939` (ZIP SHA-256
+`09f1b72bc51ef80f92c313571af24eab45215593d489ed80a6a845fd50ca98d0`)
+retains five matching native crashes: the guest graphics composer dereferences
+a null handle in `GoldfishGralloc::getHostHandle` from `EmuHWC2::Display::present`.
+Each is followed by a SurfaceFlinger abort and Android restart. The guest's
+extension strings lack `ANDROID_EMU_host_composition_v1/v2`; this is a concrete
+graphics failure before Jarvis installation, not merely slow app tests.
+
+The inspected API 29 revision 8 image declares `HostComposition = on`. Emulator 32's
+[API-level fallback](https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/android/android-emu/android/main-emugl.cpp)
+nevertheless disables it below API 32 unless explicitly overridden. Its
+[render-control implementation](https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/android/android-emugl/host/libs/libOpenglRender/RenderControl.cpp)
+advertises both host-composition extensions only when this feature is enabled.
+The narrow infrastructure correction requests `HostComposition,-HVF,-Vulkan`
+for API 29 only. The causal connection to the crash is an inference requiring
+fresh hosted validation; no successful boot or speed improvement is claimed yet.
+
+Acceptance: the genuine API 29 ARM64 image must finish boot, retain all four
+Binder services, execute input, unlock, deliver user0 BOOT_COMPLETED and pass
+the unchanged release controller within the existing 900-second boot and
+60-minute job limits. Missing services, crashes, failed journeys or incomplete
+same-run evidence must still block publication. Helper regressions preserve the
+feature request, disabled acceleration/Vulkan, original deadlines and the
+distinction between requested configuration and verified device success. All
+other profiles, APKs, watchdogs, app code and release dependencies are unchanged.
+
+### Build 1003 validation and boot-monitor overhead
+
+[Build 1003](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37271709675)
+tested head `6ef8a21996b51691b97da8acd7cb5dfae70d81db`, merge
+`2ba2ef6abba05265305d861d64266d69db2a88f1`. Both initial and retry API 29 logs
+advertise the two host-composition extensions and contain no native composer
+crash. Boot flag, all four services, input and unlock succeed. Final user0
+BOOT_COMPLETED delivery still misses the unchanged 900-second budget, so no
+Jarvis device tests run. Retained API 29 artifact IDs are `11329647808` and
+`11330521018`; the retry ZIP SHA-256 is
+`c5c46a77273d72611f772891192150ba7748e5cbfe5a27ff2d8b4f956ca63d09`.
+The first attempt had an early permission-initialization crash; the retry did
+not, yet still timed out during ordered boot delivery. The five other profiles
+pass across the latest successful producer attempts, with API 30's intermittent
+benchmark-navigation failure passing on its one unchanged-code retry. The
+consolidated receipt fails and publication remains blocked by API 29.
+
+The first attempt's boot-broadcast monitor launched 36 guest PID probes with
+286.7 seconds of combined command elapsed time despite no completion marker in
+the already-local log. This is waiting time, not a measured amount of recoverable
+CPU. The next correction scans the bounded native log first, avoiding guest
+queries until an exact completion candidate appears. It then performs the same
+fresh PID/log/PID validation for the current system_server. The candidate never
+authorizes readiness. Regressions reject missing, stale, wrong-user, wrong-tag,
+split-line and partial markers, failed reads/probes, process changes and expiry;
+the adb-logcat fallback and original deadlines remain unchanged. All 209 Python
+helper checks pass locally; a fresh exact-revision device run must measure the
+effect and complete the full gate before any APK is called verified.
+
+### Build 1004 CPU saturation and same-runner capacity trial
+
+[Build 1004](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37276324771)
+tested head `fe0de66e3fce6d22ca5655afd2c3fe08eb72ad0a`, merge
+`626f2349ccda4a155aa2860647175fbd3afc16db`. Native host composition remains
+advertised; no composer crash occurs. The monitor makes zero guest PID probes
+before a completion candidate. Boot/services/input/unlock succeed, but user0
+boot delivery still misses 900 seconds. API 29 artifact `11331751012`, ZIP SHA-256
+`aeea282b9fd2af3ec9d93cc41282956a83abb88cb0506ed946b8fecfd0386512`, retains
+the complete failed startup evidence.
+
+ANR samples report 98–100% guest CPU utilization with 53–69% kernel work.
+The phone service repeatedly ANRs/restarts; after BOOT_COMPLETED posts at
+07:36:26 UTC, its receiver times out after 60 seconds at 07:37:55. System-server
+work dominates, with sensor, UI and provider work competing for the two guest
+CPUs. Graphics compositor crashes and monitor PID polling are no longer the
+failure. Early host receipts show three CPUs and no swap; late host contention
+has not been measured.
+
+The next controlled trial changes only guest CPU count from two to three on
+the same macos-15 runner, using one shared setting for AVD configuration and
+the explicit QEMU SMP argument. This preserves API/ABI, image, renderer, RAM,
+watchdogs, all readiness checks and deadlines. The reported host count is not
+proof of idle headroom or that extra guest concurrency will outperform two cores while
+rendering and I/O share the host. Actual kernel CPU admission, complete startup
+and the full release controller must pass on the new revision.
+
+All 1,005 JVM tests, four recorded-speech checks, native audits and four other
+device profiles passed Build 1004. API 35 compact instead encountered a stock
+Pixel Launcher ANR dialog covering Jarvis setup; its unchanged test code failed
+to find the obscured model control. Its artifact `11331800414` retains the
+screenshot and raw results. Neither this unrelated platform failure nor the
+missing API 29 report is waived; the final receipt fails and publication skips.
+
+### Build 1007 three-vCPU outcome and single-vCPU trial
+
+[Build 1007](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37279904852)
+tests head `3cb77d9904fefe10a754219e64f2f58ada3e2a29`. API 29's kernel explicitly
+activates three processors. Its artifact `11332429923`, ZIP SHA-256
+`959957e785832dc64a72a27777ea6e88d200673d0629e0166ad638b5a670053d`, retains
+two system-server deaths in permission initialization and SurfaceFlinger boot
+completion at 546,330 ms. The corresponding two-vCPU Build 1004 reached that
+display milestone at 223,575 ms without those system-server crashes. Both
+ultimately fail the user0 boot-delivery barrier, so neither is a passing device.
+The comparison does not isolate host scheduling noise or prove a CPU-count cause,
+but it provides no evidence that three guest CPUs help.
+
+The next single-variable trial requests one guest CPU in both AVD and QEMU.
+This tests whether avoiding guest SMP and leaving more scheduling room for host
+rendering/I/O helps software emulation. It retains the same image/API/ABI,
+graphics path, memory, watchdogs, every readiness assertion, controller and
+all deadlines. No performance or startup success is claimed before exact-head CI.
+Four other profiles pass Build 1007; API 35 compact instead fails before device
+startup on invalid GitHub artifact-pagination metadata. That independent
+infrastructure result is not converted to a pass and publication remains blocked.
+
+## Spoken farewell returns to wake listening
+
+“Stop listening” and “Goodbye” end the current call segment while preserving the
+user-armed session and its foreground microphone service. Final transcript,
+playback interruption (including a verified control without PCM), accepted-action
+follow-up and final Gemma caption all use the call-ID-scoped return path. The exact
+turn finalizer closes old capture/speech children before the completion callback
+starts passive `Hey Jarvis` listening. Explicit End/Stop session still disarms
+and shuts down the service. Accepted phone work retains its existing bounded
+native-worker ownership; wake capture resumes after that worker drains.
+
+| Layer | Acceptance and failure case | Coverage |
+| --- | --- | --- |
+| JVM | A verified farewell interruption ends the call even with no PCM; failed recognition, quoted phrases, ordinary requests and stop-speaking keep the call. | `ReplyInterruptionTest`, `VoiceCallPolicyTest`, `CallLifetimePolicyTest` |
+| Android lifecycle | Farewell saves the ended call, drains old queued input, keeps the current turn and real foreground service alive, and permits a fresh call ID. A stale old-call farewell cannot end the new call. Explicit End disarms from an active or passive session. | Release `test48` passed Build 930 on API 30, API 35 compact/16 KB, API 36 phone and foldable; the full run was blocked by navigation/installation failures |
+| Physical audio/model | After saying “Stop listening”, wait for wake readiness, then say “Hey Jarvis” to start another call, including from a locked/background phone. | Device signoff pending; controlled lifecycle tests do not prove acoustic detection or model inference |
+
+During verification, the pre-fix API 29 job in
+[build 916](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37105130242/job/111154281024)
+failed before emulator launch: `setup-android@v3` requested its default retired
+`tools` package. The ARM64 setup now requests `platform-tools`; the emulator
+runner still installs the unchanged required image and executes the complete
+release gate. This is an infrastructure correction, not a passing API 29 result.
+
+## Expanded required release checks — verification for every build
+
+Every opted-in candidate must pass the recorded-audio, native-page-size and
+expanded Android profile jobs before the exact-run receipt permits publication.
+The authoritative device list is `scripts/verification/profiles.json`: minimum
+API 29, retained API 30/35, API 36 phone and foldable, and API 35 with 16 KB
+pages. Provisioning or ARM64 translation failures are failures, not skipped
+compatibility checks. All profiles reuse the signed release APKs.
+
+Observable acceptance:
+
+| Layer | Required behavior and failure case | Preserved behavior |
+| --- | --- | --- |
+| JVM/audio contracts | Actual recorded PCM retains opening, internal pauses and ending samples; original WAV reaches the native Gemma content DTO after its text instruction. Lost/reordered bytes fail. | Existing capture limits, decoding defaults and complete named regression suite. |
+| Real speech models | Pinned Whisper and Moonshine runtimes recognize a checked recording with baseline-scored first/last words and a quiet trailing ending. Missing model/runtime or wrong checksum fails; existing production no-speech policy regressions remain required. | Production model inputs and explicit host-versus-Android limits. |
+| Android upgrade | Install the previous published signed user candidate, seed device-local formats, install candidate with replacement, verify conversations, memory, settings, model bytes and durable receipts. Clearing data or losing any record fails. | Signing identity, device-local storage and no real user data. |
+| Android recovery/platform | External process death, permission denial/regrant/revocation, and foreground-service controls produce durable, honest, recoverable results; unknown action outcomes cannot become success or duplicate effects. | All existing release journeys and microphone/task ownership. |
+| Android UI | Large text retains usable labelled controls; actual fold/unfold changes display configuration and retains state. Missing labels, clipped controls or lost state fail. | Unified chat/call behavior. |
+| Native compatibility | Both APK forms have valid ELF load alignment, safe RELRO page protection, and correct direct-load ZIP alignment; a genuine 16 KB device must load shipping native libraries. | Distinct Sherpa/Moonshine native ABIs and compact payload equivalence. |
+| Evidence | Required profiles/phase outcomes, baseline/candidate hashes and raw test results agree with the same source/run. Missing, duplicate, failed or skipped checks block publication. | Existing provenance and failed-run evidence retention. |
+
+The upgrade baseline comes from the numbered `audio-pr2-pr6-build.` user
+distribution stream, selected below the current workflow build number and
+verified against its published asset digest. This is an actual APK update with
+inert fixtures; it is not inference from an installed multi-gigabyte model or a
+claim that the previous APK's UI created every fixture.
+
+The small recorded corpus establishes a reproducible regression baseline, not
+general-public recognition quality. Direct Gemma waveform delivery is checked;
+successful Gemma acoustic understanding with the exact model bundle, room echo,
+microphone effects, OEM firmware, Bluetooth and physical GPU/thermal performance
+remain separately unverified. All four exact-weight host recognition checks passed local calibration against
+independently verified OpenSLR recording 1089-134686-0000: Whisper 2/28 word
+errors and Moonshine 1/28, with correct first/last words before and after added
+trailing silence. Baseline thresholds permit one additional interior word error;
+the local measurement JSON explicitly identifies an uncommitted calibration
+harness, rather than claiming release verification. The existing PR validation section and exact-run receipt record hosted outcomes
+for each candidate, including failures and the source revision actually tested.
+
+## Expanded gate first hosted run and harness repair
+
+[Build 915](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37104292961)
+tested PR head `55094bc1d51b74aac8c9d0e8d3a03cd60082bbe4`, merge
+`e7d3a516c165655fcab01472812d1a0dbba7a93b`. The four real Whisper/Moonshine
+recognition cases passed with the same 2/28 and 1/28 word-error counts as local
+calibration. Recorded-audio artifact `11268035264` has ZIP SHA-256
+`835cf4d247c4466723dcdd3ea8725d1a8e3bf9d5edcc8c2ae4f2edcc1dd4f755`.
+The previous-release job verified published Build 907's normal APK, SHA-256
+`b399a97387e541822ede61b56e7282fafcd27b2782e6a790cf746f84450fcac0`.
+
+All 1,003 release JVM tests across 184 suites passed with no failures, errors or
+skips, including the three newly required recorded-capture/Gemma-content cases.
+JVM artifact `11268080636`, ZIP SHA-256
+`93fdeafb9993af800b70d9553c9e1413f20457532e7c5212b9ccf46ad8ac9c9a`,
+retains their raw XML.
+
+Release instrumentation compilation then failed at layout line 85's missing
+Compose experimental opt-in and upgrade fixture lines 66/69's heterogeneous
+SQL bind-array inference. The harness correction adds the explicit opt-in and
+`Array<Any>` bind types, retaining every scenario and assertion. The new upgrade
+test also makes `MemoryTombstone` an explicit shared release/test ABI boundary;
+a narrow keep rule preserves its getter for the independently shrunk test DEX. Android/native
+compatibility jobs did not run and publication was blocked. Failed receipt
+artifact `11267926618`, ZIP SHA-256
+`a81604e10c3d0a7121e577a827cf845f6eb604ab5a2a1c2ef10fbd69e2e8bc30`,
+retains the missing-upstream result. A fresh exact-revision full gate is required.
+
+API 29 provisioning was also corrected before device verification. Google's
+current API 29 Google APIs and Google Play x86_64 images declare only x86_64/x86,
+so they cannot install the shipping ARM64-only APK. The API 29 profile instead
+uses a standard Mac ARM runner, the genuine ARM64 API 29 image and explicit
+software emulation (`-accel off`), with a 900-second boot and 60-minute job ceiling.
+Official [TCG configuration](https://android.googlesource.com/platform/external/qemu/+/f0c183f1cc7456ecd6f3607f2f47893768ae4334/android-qemu2-glue/config/darwin-aarch64/config-host.h)
+and [acceleration selection](https://android.googlesource.com/platform/external/qemu/+/f0c183f1cc7456ecd6f3607f2f47893768ae4334/android/android-emu/android/main-common.c)
+include this software path; successful boot and release
+journeys remain unverified until the next hosted run. The actual device API,
+ARM64 ABI, page size and original signed-APK checks remain mandatory. The other
+five profiles retain accelerated Linux provisioning; the actual 16 KB image
+advertises ARM64 translation.
+
+## Expanded gate second hosted run and provisioning repair
+
+[Build 916](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37105130242)
+tested head `24d408a89ecf6739faf0220bb0bbc5bca57d7e44`, merge
+`4c7f0ec18f50ca4a11285ea501728da00279225b`. Signed normal and compact APK
+production, all 1,003 release JVM tests, real recorded speech and both static
+native 16 KB audits passed. Independent comparison of the final release/test
+DEX confirmed 111 selected production method and 9 field references match the
+shipping APK. The broader Compose boundary audit then identified the Dp method
+described below. Actual APK hashes are:
+
+- Normal: `eb1a845b5fbf34b178c686f1ffd1179d2dda74fd4547b5a657ddf9c08c6e1d5c`.
+- Compact: `46d43a41c513dad5434a72bc1cfcaf012a392a0c9b253a5de00155cc8852d44a`.
+
+Two profiles stopped before boot on concrete SDK provisioning defects. API 29
+job `111154281024` requested the retired `tools` package through setup-android's
+default; the correction explicitly installs only `platform-tools`, with the
+emulator action owning its emulator/image installation. Foldable job
+`111154281037` requested `pixel_fold`, absent from the hosted Tools 12.0 device
+registry. Its replacement is that SDK's exact `7.6in Foldable` ID, an official
+fold-in/outer-display definition with a 1768 by 2208 inner display, 884 by 2208
+folded region and 0–180-degree hinge. Arbitrary spaced or shell-like identifiers
+remain rejected. Actual fold/unfold, changed dimensions and retained state
+remain required. API 30, API 36 phone and API 35 with 16 KB pages then passed the actual
+previous-APK upgrade, all 48 existing journeys and separate-process selection
+check. Native loading passed all nine libraries at actual 16 KB page size.
+Layout tests failed because the helper ignored names on a control's own
+noninteractive children, and the independently shrunk test DEX invoked the
+R8-removed `Dp.constructor-impl(F)F` ABI. The correction resolves names only
+within the action's own subtree and preserves the narrow Dp API; enablement,
+clickability, expected labels, 48 dp targets and visibility remain required.
+Supplemental lifecycle checks now run before layout so a layout crash cannot
+hide their diagnostic evidence; every phase and the final all-pass requirement
+remain mandatory. This run is not a full release pass and publication remains
+blocked. Fresh current-head verification must include the concurrent farewell
+lifecycle changes retained from the branch.
+
+## Expanded gate Build 920 and SDK diagnostic repair
+
+[Build 920](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37106704224)
+tested head `aaf630119260dee0dbccdc522e249bce549fed40`, merge
+`849ba56149151a5d603e75c45e2a1add1a672531`. Both signed APK builds,
+all 1,005 JVM tests across 184 suites (zero failures, errors or skips), the four
+real recorded-speech cases, previous-release preparation and the static 16 KB
+native audit passed. All five Linux profiles stopped before emulator startup:
+the newly added optional `avdmanager list device` diagnostic assumed the SDK
+command was already on PATH. The concurrent SDK-path repair is preserved: it
+resolves the command through PATH or the current SDK absolute path. Every
+required device test and receipt assertion remains unchanged. API 29
+software boot is still unconfirmed. Its intended software mode now also uses
+`-feature -HVF`: the official ARM launcher can request HVF despite `-accel off`,
+while the Apple Silicon capability probe does not check nested virtualization.
+Disabling that feature makes the ARM launcher use the declared TCG path. See the
+[feature-gated probe](https://android.googlesource.com/platform/external/qemu/+/f0c183f1cc7456ecd6f3607f2f47893768ae4334/android/emu/feature/src/android/emulation/CpuAccelerator.cpp)
+and [ARM launcher](https://android.googlesource.com/platform/external/qemu/+/f0c183f1cc7456ecd6f3607f2f47893768ae4334/android-qemu2-glue/main.cpp).
+Successful boot and journeys remain required. This run is not a complete release
+pass; publication remains blocked until a fresh exact revision passes every profile.
+
+## Expanded gate Build 922 and readiness repair
+
+[Build 922](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37107489331)
+tested head `4a4d9396064e9860b0433bf40a3d31399fcb1968`, merge
+`7909b916dc2b0b0b3fd4f6c97b3f8d893d0fb148`. Both signed APK builds,
+all 1,005 JVM tests (184 suites, no failures/errors/skips), the four recorded
+speech cases and both static native audits passed. API 30, API 35 compact,
+API 36 phone and API 35 with 16 KB pages passed all 48 existing journeys,
+fresh-process selection, the real 907-to-922 update and every lifecycle phase.
+Independent raw-evidence review confirmed the external unrecorded-effect kill,
+no-repeat recovery, live microphone revoke/service death, denial/regrant and
+notification controls. All nine current shipping ARM64 libraries loaded at an
+actual 16,384-byte page size.
+
+The supplemental layout failures are observed test-driver races and semantic
+extraction defects. A control's explicit description child already says
+`Pause microphone`; the helper incorrectly appended the decorative `Ⅱ` text.
+The 200% font screenshot still shows the placeholder, while the following XML
+shows the exact entered draft and enabled Send control. The correction prioritizes
+explicit descriptions within the same action subtree, waits for the exact draft
+and enabled Send, and observes completed callbacks/overlay dismissal before
+asserting exact counts. Every expected label, 48 dp target, visible bound,
+200% font, saved draft, conversation/call identity and dimension-change assertion
+remains mandatory.
+
+The generic foldable image booted with the expected API, ARM64 bridge and page
+size, and passed the real upgrade. Two existing selection journeys stopped on
+the family chooser after an unsettled search/tap (`test12` and fresh-process
+`test90`); their retained PNG/XML show no model-list transition. They now reuse
+the existing settled text and enabled-tap helpers and require the model-list
+boundary before scrolling to the same exact model. Actual fold/unfold and its
+state-retention checks did not run in this failed candidate.
+
+API 29's explicit HVF disable overcame the previous launcher error: its genuine
+ARM64 image reached the boot-completed flag under TCG in 535 seconds. The action
+then failed before our controller at unlock with `ServiceNotFoundException: No
+service published for: input`. A boot property alone is not usable Android
+verification. A software-specific launcher must retain emulator/guest logs and
+require bounded input/activity/package/window readiness plus successful unlock
+before invoking the unchanged full controller; the 900-second boot and 60-minute
+job limits remain. Missing services or a failed controller remain failures.
+
+The consolidated receipt correctly rejected this run and all publication jobs
+were skipped. Failed receipt artifact `11268648681`, ZIP SHA-256
+`c58a1b525b01b9be4d36ef8d5c90b3e247f33adc7962efd0e984739e9e86ea77`,
+retains the failed upstream/missing API 29 evidence result. The next revision
+requires a fresh complete release gate; no partial pass authorizes publication.
+
+## Expanded gate Build 923 and fold journey repair
+
+[Build 923](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37109843675)
+tested head `3c1fa2ee74470f21072d800f91be8493ec717ac2`, merge
+`658be06b4091b09f77eebc258cd5b6c97363cd4c`. Both signed APKs, all 1,005 JVM
+tests across 184 suites with no failures/errors/skips, all 136 helper tests,
+the four pinned recorded-speech cases and both static native audits passed.
+Independent final-APK DEX review resolved all 173 selected methods and 11
+fields. The normal APK SHA-256 is
+`3fefb43c0b7f061eb4dd761a326bbc6ffdd99b0fa06e7bb2e62321f4b9943010`;
+compact is `a9e99ef8f2e208f9cbf454716626c591373a3d9317acba1dae643ec0e9577b76`.
+
+API 30 normal, API 35 compact and API 36 phone independently passed the full
+profile: all 48 required journeys and fresh-process selection, actual
+907-to-923 update, all eight external lifecycle phases, all four layout cases
+and all nine shipping native-library loads. Current 200% font/320 dp and
+rotation screenshots were inspected. Their controls remain visible and usable;
+header and placeholder text wrap heavily at this font scale. This verifies the
+tested semantics, target sizes, callbacks and state continuity, not a complete
+TalkBack, contrast or visual-design audit.
+
+The fold profile passed the upgrade and 46 of 49 main instrumentation cases.
+Its `test11` still tapped the model family before the search/UI transition
+settled; PNG/XML show the family chooser. In `test12`, the correct last-model
+Choose button was clipped to 104 pixels by the list viewport while the full
+48 dp target is 126 pixels. `test24` sought a reopened erase confirmation
+before the dialog appeared, and its page-seeking gestures dismissed it. The
+narrow repair settles the exact family/list boundary, physically scrolls inside
+the list until a freshly acquired full 48 dp target is visible above navigation,
+and waits for the exact modal before a single non-scrolling confirmation tap.
+Actual selected/restored model IDs are additionally checked in durable
+preferences after browser dismissal. The navigation inset uses the API 29
+legacy fallback below API 30. All original model, erase and history assertions
+remain; real fold/unfold still requires a new successful run.
+
+The 16 KB guest passed the real upgrade and the first 18 main cases, then
+Android `system_server` crashed in platform
+`AppIdleHistory.getPackageHistory` with SIGSEGV. Its unchanged 4 GB emulator
+configuration and identical image fingerprint passed Build 922. No Jarvis
+assertion preceded the guest crash, and no evidence supports a production or
+RAM change. Failed artifact `11269382996` is retained; actual 16 KB loading
+must pass again on the new revision.
+
+The API 29 launcher retained its failed startup evidence for the first time
+(`11269778165`, ZIP SHA-256
+`b1eb288bf18442f1ac5a24adce7923b091dcb01a675ecab7544dabafbcdcbf24`).
+The Google APIs guest failed `PermissionPolicyService` permission initialization,
+then a replacement `system_server` was watchdog-killed while waiting on
+`installd.createAppData`. Binder services disappeared and reappeared. Although
+all four eventually answered, cold input exhausted the remaining boot budget;
+there was no observed unlock or controller result. The next profile uses the
+official stable AOSP API 29 ARM64 image (`default`, revision 8) instead of the
+Google APIs bundle. It still requires actual API 29/native ARM64/4 KB pages,
+all services, successful cold input, observed unlock and the unchanged complete
+controller within the same 900-second boot and 60-minute job limits. Reduced
+startup load is an inference, not verified compatibility or a passing result.
+
+The consolidated receipt validated the three complete phone profiles and
+rejected missing API 29/controller evidence, fold failures and the 16 KB crash.
+Receipt artifact `11269618551` has `passed: false` and
+`release_approved: false`; all publication jobs were skipped. The repaired
+revision must complete a fresh full gate before any new APK can be published.
+
+## Expanded gate Build 924 and off-hinge chooser diagnostics
+
+[Build 924](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37111983640)
+tested head `ba83b55e6f4b4f3072ba3459d4e95c877f23ef81`, merge
+`c558e6502b816716221f7578cdf58f5f04edc3b3`. Signed builds, all 1,005 JVM
+tests across 184 suites, all 138 helper checks, the four recorded-speech cases,
+static native audits and final-APK ABI checks passed. API 30 normal, API 35
+compact, API 36 phone and the true 16 KB profile independently passed their
+complete upgrade/main/lifecycle/layout/native checks. All nine shipping native
+libraries loaded at actual 16,384-byte pages. Current 200% font screenshots were
+inspected. Their tested controls remain usable, with heavy header/placeholder
+wrapping at this scale.
+
+The fold profile passed its real upgrade and 48 of 49 main cases. The settled
+family and non-scrolling erase-modal repairs passed. The last CodeGemma Choose
+target still had only 104 visible pixels instead of its full 126-pixel/48 dp
+height, ending at the model-list viewport bottom. Five physical gestures and
+two stationary content observations did not expose it. This correctly remains
+a failure; lifecycle and actual fold/unfold phases could not follow it.
+
+The official SDK Tools 12 `7.6in Foldable` definition declares a
+`884-0-1-2208` hinge area on the 1768-pixel-wide inner display. The test used
+exactly `viewport.centerX() == 884` for its swipes. This establishes an avoidable
+gesture-coordinate ambiguity, not proven hinge causality or a production
+padding defect. Source inspection confirms the bounded weighted model list
+already has 32 dp bottom content padding plus final-card padding and safe
+drawing/IME insets.
+
+The next repair physically swipes at the quarter-width of the actual list,
+away from the declared center hinge, and records bounded before/after
+viewport/target geometry and observed movement in logcat and raw instrumentation.
+Independent insertion of these non-reserved diagnostic status bundles into
+actual passing output preserves all 49 parsed test results. Full 48 dp width
+and height, containment, navigation clearance, stable reacquisition, durable
+selected/restored model IDs, stationary failure, gesture cap and the 15-second
+deadline remain mandatory. A fresh runtime must determine whether off-hinge
+scrolling exposes the target; actual end clipping would require a separately
+evidenced production fix. API 29's AOSP startup/controller result is assessed
+independently by the same run. The fold failure already prevents publication.
+Live current-head status and its consolidated receipt remain authoritative.
+
+## Expanded gate Build 925 and dialog-window sizing
+
+[Build 925](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37113785620)
+tested head `204b222fbfafd4ac857b8444b0092df2e5bef2c6`, merge
+`060aecc3ac97c90702b77831cb31867cac764fff`. Signed builds and static native
+audits passed. API 30 normal, API 35 compact, API 36 phone and the true 16 KB
+profile completed their full required checks. The 16 KB guest reported actual
+16,384-byte pages and loaded all nine shipping native libraries. Both APKs'
+native audit was independently recomputed from the same-run signed bytes.
+
+The generic foldable again passed its real upgrade and 48 of 49 main cases;
+test12 retained its strict full 48 dp failure. Quarter-width gestures at x=442
+actually moved the model list, then two stationary observations left the last
+Choose target at `[1434,2020][1685,2124]`: 104 visible pixels instead of 126.
+The list and every dialog/content ancestor ended at y=2124. An adjacent Choose
+exposed the full 126-pixel target around its normal 105-pixel painted button.
+The final target therefore loses 22 pixels to the window boundary; its painted
+40 dp appearance does not establish a complete accessible touch target. The
+retained PNG/XML and bounded raw geometry distinguish this crop from the
+earlier center-hinge gesture ambiguity. Artifact `11271014252` retains the
+failure; actual fold/unfold, layout and lifecycle phases were not reached.
+
+The pinned Compose UI 1.7.6 `DialogLayout` ignores ViewRoot measure constraints
+when `usePlatformDefaultWidth=false`, substitutes configuration display width
+and height, then fixes the native window to the measured child. Its true branch
+honors the received window constraints. The narrow production repair enables
+that branch and explicitly sets the dialog window to `MATCH_PARENT` width and
+height through `DialogWindowProvider`, preserving the full browser width. An
+idempotent composition effect avoids redundant window resizing. Safe drawing
+and IME insets, list/card padding, all 48 dp/navigation/selection assertions and
+the bounded physical gestures remain unchanged. No extra padding or dependency
+upgrade is used. A fresh exact-revision full gate must establish that the final
+target is complete and that real folded/unfolded controls remain usable; these
+generic-foldable results are pending. Build 925's failed receipt continues to
+block publication. API 29's framework watchdog killed `system_server`; the
+package service then vanished and installation of the prior Build 907 APK
+failed with exit 1 after 10.61 seconds. No app instrumentation started, and the
+retained screenshot is black. Artifact `11271395102` retains that separate
+platform failure; it supplies no app/controller pass.
+
+## Expanded gate Build 926 and foldable display backend
+
+[Build 926](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37115654938)
+tested head `d708138c32f1cd389fd50d43e5e09e90eac5d880`, merge
+`2e43bc690f953f9cf5518ab42ebdce548158f73e`. The dialog-window repair passed
+all 49 main cases on the generic foldable, including durable selection and
+restoration. Its last Choose target now exposes `[1433,1873][1684,1999]`, the
+full 126-pixel/48 dp height above navigation, within the unchanged full-width
+list. Actual PNG/XML confirm the crop is fixed. The fold profile also passed
+its previous-APK upgrade, all lifecycle phases, the other three layout cases
+and all nine native loads. API 30/35/36 phones and the true 16 KB profile passed
+their full required phases; actual 16,384-byte native loading was retained.
+Current 200% font screenshots were inspected for all five Linux profiles.
+
+The actual fold/unfold case still failed. Console fold returned success and
+Android logged device-state transition 3→1, but LogicalDisplayMapper applied
+an identical display layout. Both baseline and failed app content remained
+`[0,0][1768,2208]`; the strict 45-second dimension-change assertion failed.
+Artifact `11271976850` retains that failure. Console acknowledgement and a
+closed posture alone do not establish resizing or continuity across a fold.
+
+Public emulator source at `ae9d18d2b6261179fbd57fffec720a04f7bfb053`
+(35.6.3 Canary, March 27, 2025) has empty headless display-region/posture UI
+callbacks, while its Qt backend propagates the configured folded area and
+lid event. An older source revision has the same distinction. These sources
+are not the exact 37.2.12 release used in Build 926; together with the observed
+unchanged window they support an infrastructure repair to verify. Only the
+fold profile now starts an owned Xvfb display and uses the windowed Qt emulator.
+Only `x11-utils` is installed for the missing `xdpyinfo` probe, with bounded
+package update/install commands; SDK 37.2.12 bundles the inspected XCB/cursor/xkb
+helper libraries, and that plugin's inspected system libraries are already
+present. This dependency audit did not cover the separate GUI emulator executable;
+Build 927 below records that gap.
+Readiness is bounded to 15 seconds, cleanup checks PID ownership, and logs are
+attached after the controller. Other emulator options/profiles, all physical
+dimension/continuity assertions, insets, padding and deadlines remain intact;
+the controller does not substitute a direct window-size override. A new
+exact-revision runtime must prove real folded/unfolded geometry and all tests.
+That result is pending, and publication remains blocked.
+
+API 29 reached core-service readiness, then cold input took 56.979 seconds and
+an unlocked keyguard was observed. Installation of the prior Build 907 APK
+exhausted its 180-second timeout; no successful install was observed and the
+Jarvis package remained unavailable. Earlier boot logs contain
+a fatal `PermissionPolicyService` exception and `system_server` PID 296 ending
+with signal 9; SystemUI and phone/dialer ANRs followed during installation.
+No later watchdog kill was found in this run. No instrumentation or current
+APK installation started. Screenshot and logcat collection also timed out
+(60 and 30 seconds); no PNG exists. Artifact `11271673105` retains this
+platform failure. Readiness and unlock do not supply a controller pass, and
+the strict API 29 requirement remains unchanged.
+
+## Expanded gate Build 927 and GUI emulator dependency failure
+
+[Build 927](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37118011588)
+tested head `5b318fa060b19ce33b0549e71715bede5868fe1d`, merge
+`f6e243cce9a859703542f6a7acc1e2260f251d78`. The signed producer and static
+native gate passed. All four phone profiles completed all 49 main cases, four
+layout cases, the actual 907→927 upgrade, process restart and all eight lifecycle
+phases. Their source/APK hashes and raw instrumentation agree. All nine shipped
+libraries loaded in each profile, including actual 16,384-byte pages in the
+true 16 KB profile. The four current 200% font PNGs were inspected; artifact
+`11273280050` retains the passing 16 KB profile.
+
+The fold profile's bounded
+`x11-utils` installation, owned Xvfb startup and `xdpyinfo` readiness passed.
+Its retained display is 1920×2400, and cleanup confirmed the owned server was
+gone, a zombie, or no longer the recorded PID owner. These are host setup
+outcomes, not app or fold-test passes.
+
+At 11:09:03 the actual SDK 37.2.12 GUI `qemu-system-x86_64` loader failed:
+`libpulse.so.0` was unavailable. No guest boot, controller, current-APK
+installation or app instrumentation followed; the unchanged 300-second boot
+limit expired. Artifact `11272701104` (ZIP SHA-256
+`93d8572ae63c88e94d69a831c268537a435c2f4fc480a69f876b273763d3c800`)
+retains apt, Xvfb, display and cleanup diagnostics. There is no app report or
+folded/unfolded PNG/XML. The failure remains required evidence and blocks
+publication. The Qt plugin audit had missed the GUI executable's separate
+dependency chain. A complete recursive audit of 53 actual SDK 37.2.12 ELF files
+and 29 external SONAMEs against the runner inventory identified `libpulse0` as
+the only missing runtime package. The next fold-only repair installs it beside
+`x11-utils`; apt resolves its required dependencies. A fold-only pre-launch hook
+also retains the installed emulator version and GUI executable/XCB plugin `ldd`
+receipts using the SDK's bundled library paths. It runs after the action updates
+the emulator, has a 15-second timeout plus a two-second kill grace, and fails
+on missing files, unsuccessful commands or unresolved libraries. The action
+marks a failed hook red but still attempts boot; this is a loader receipt, not
+an early boot abort. All controller
+assertions, other profiles, emulator options and time limits remain unchanged.
+Actual fold resizing and continuity still require a fresh full run.
+
+API 29 never handed control to the app verifier. Four core-service binders
+were observed, cold input succeeded in 102.726 seconds, and the three scoped
+keyguard flags were false. The third animation-setting command then exhausted
+its existing 30-second command cap (30.012 seconds, exit 124); the shared
+900-second startup budget was not exhausted. Earlier boot logs contain a fatal
+`PermissionPolicyService` exception, `system_server` PID 235 ending with signal
+9, and a SystemUI `KeyguardService` ANR. No later watchdog kill was found.
+There was no prior-907 installation, current-APK installation, controller
+report or instrumentation. The required API 29 gate remains failed, and its
+configuration and thresholds are unchanged. The final receipt is false;
+publication was skipped.
+
+## Expanded gate Build 929 and navigation observation repair
+
+[Build 929](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37119723759)
+tested head `05fee0be5e4b87c279c872f34fc4fc219a4a7660`, merge
+`e43bcc21d1fd385635a727d6ac7b24783206a9f9`. The signed producer and static
+native gate passed. All four phone profiles passed their raw 49 main cases,
+four layout cases, actual 907→929 upgrade, process restart and eight lifecycle
+phases. Their exact APK/test hashes agree with the producer. All nine shipped
+native libraries loaded in each phone profile, including actual 16,384-byte
+pages in artifact `11273765024`. The four current 200% font PNGs were inspected.
+
+The fold host now successfully installed `libpulse0`, started its owned Xvfb
+display, and retained successful SDK 37.2.12/build 16428233 GUI executable and
+XCB plugin loader receipts with no unresolved libraries. Display readiness and
+ownership-aware cleanup passed. The actual 907→929 upgrade passed, but the main
+suite finished with 47 passes and two failures: test 12 exhausted its unchanged
+15-second navigation limit after three moving swipes while the accessibility
+target remained missing; test 45 exhausted that limit while revealing Copy
+JSON. The final test 12 PNG paints the full CodeGemma Choose above navigation,
+while the subsequently collected XML still represents an earlier list position
+and omits that control. Test 45's final XML exposes an enabled, clickable Copy
+JSON at `[42,663][293,789]`, a full 126-pixel target. These observations support
+lagging accessibility discovery; they do not prove a renewed production
+clipping defect. Artifact `11272859460` (ZIP SHA-256
+`27d59b699357832c1dd8dedb50c1d18a28b18aa74f24ec0ba36c7326c657a947`)
+retains those failures and GUI diagnostics. Restart, lifecycle and supplemental
+layout/native tests did not run after the main failure. No fold/unfold command
+or folded/unfolded PNG/XML proves posture coverage in this run.
+
+The pinned [UiAutomator 2.3.0 sources](https://dl.google.com/dl/android/maven2/androidx/test/uiautomator/uiautomator/2.3.0/uiautomator-2.3.0-sources.jar)
+show that queries wait for accessibility
+quiet and every `UiObject2` getter waits and refreshes its node. The helper's
+paired recursive signatures repeat these operations hundreds of times per
+swipe. The 500-millisecond quiet criterion is not a fixed delay per accessor,
+and the source cannot assign all observed elapsed time to those calls. Found
+nodes are refreshed, but child discovery still uses the accessibility cache.
+
+The next revision limits its repair to these navigation observations on API
+34 and newer: it saves the configured implicit idle timeout, sets it to zero
+inside read/readiness scopes, and restores it in `finally`. Each independent
+discovery or viewport-signature sample requires successful public
+[`UiAutomation.clearCache()`](https://developer.android.com/reference/android/app/UiAutomation#clearCache()),
+available from API 34 and returning whether the cache was cleared. Explicit
+settlement waits remain active. The fresh
+second model observation reacquires the actual list and navigation bounds;
+benchmark configuration is restored before the single physical click and its
+original post-click idle wait. API levels below 34 retain their original
+behavior. All 15-second deadlines, gesture/stationary limits, stable geometry,
+full 48dp targets, viewport/navigation bounds and exact durable selections
+remain required. These sequential observations are not an atomic snapshot.
+There is no workflow, production UI or API 29 configuration change. API 29 also
+failed before current-app instrumentation after a framework watchdog failure
+blocked baseline installation. The final receipt is false and publication was
+skipped. A fresh exact-revision runtime must still pass all profiles and prove
+actual folded/unfolded dimensions and continuity.
+
+## Build 930 installation and navigation repair
+
+[Build 930](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37122256536)
+tested head `f82ee6af7031d1a49b43a0e731135fb0020a89ae`, merge
+`ca4930cae001e77b9932c723d7e857c5504a09bf`. Signed APK production,
+all 1,005 release JVM tests, recorded speech, native page-size audits and the
+four ordinary phone profiles passed. The foldable passed the farewell/wake
+session test48, but failed the same two navigation cases, test12 and test45,
+within their unchanged 15-second limits. Main-suite failure correctly prevented
+the subsequent actual fold/unfold phases. The required API 29 and foldable
+results remain failed, the receipt is false, and publication was skipped.
+
+Foldable artifact `11274123162`, ZIP SHA-256
+`e88ecc69d6c61552f8545632712df2b733b48a7c684cacbe4d1ee31f2396ec96`,
+retains 47 successful main cases and two failures. Its inspected test12 PNG/XML
+shows the full 48dp Choose target finally exposed after the navigation deadline.
+The before/after accessibility observations took roughly 80–320 milliseconds,
+while each model swipe took 5.6–6.9 seconds and benchmark swipes took roughly
+4.1–4.3 seconds. This narrows the dominant cost to gesture delivery/settlement;
+the pinned UiAutomator 2.3.0 controller synchronously injects each swipe step.
+The harness now uses twelve steps instead of thirty-five and strokes from 15%
+to 85% of the actual viewport, with the benchmark path in its left quarter to
+avoid the hinge. Fresh accessibility discovery, explicit settlement, stable
+second bounds, full 48dp controls, one physical tap, the 15-second deadline,
+fourteen-gesture cap and stationary-edge checks remain required. The complete
+journey matrix must still establish that intermediate controls remain reachable.
+
+API 29 artifact `11274417685`, ZIP SHA-256
+`5d056e8c19316ebc541b928b35dc96c7b9bfb3d4b6b9507bbcd03766995d8499`,
+booted and unlocked but timed out installing the actual previous APK after
+180 seconds; candidate instrumentation never began. Guest SDK setup crashes
+show the invalid autodetected timezone `Unknown/Unknown`. The software launcher
+now supplies `-timezone Etc/UTC`. Its profile uses non-streaming APK installation
+to separate file transfer from the package-manager command; this transport
+experiment is not a proven explanation of the stall. It preserves the same
+signed APKs, replacement upgrade, 180-second install deadline and full checks.
+Accelerated profiles retain their existing installation transport. No product
+audio behavior, release gate assertion or publication dependency is changed.
+A fresh exact-revision full gate is required before handing out a newest APK.
+
+The next head `9a2c3e2c6848fe4d4ee8be9ad0bdc9cb48a4b4cb` passed local
+architecture and all 143 Python helper tests, but GitHub could not create a PR
+merge candidate after `main` diverged. Its eight incoming commits through
+`37f037e384db4c1cefaa7e2c738ef226ae2c0cf5` add the license/demo and change
+README and the old foundational workflow. Branch reconciliation retains the
+complete audio workflow unchanged, including every expanded gate and PR6
+candidate publisher; adopting the older workflow would remove required checks
+and require a PR merge that has not been authorized. The incoming license/demo
+assets and current documentation are retained. This is a branch merge, not a
+merge of PR6 into main. All production, harness and regression blobs from
+`9a2c3e2c` remain unchanged; a fresh combined candidate still requires CI.
+
+## Build 936 clipboard-preview navigation repair
+
+[Build 936](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37172234250)
+tests head `4f427ed6da260d8ecbca31f2a6364b8568aba93d`, actual merge
+`e5a0a76026a5acbee4eb7e898f9ac1bc97ff5570`. The initially reported PR merge
+`ed5b40c0fc4d927481bdeb61ed2e7ee98a888458` has the same parents and tree;
+the run's workflow and artifact source fields identify the actual tested merge.
+Both signed APKs, all 1,005 JVM cases, recorded speech and native 16 KB audits
+passed. API 30 passed its complete device gate; the other five device profiles
+failed. These results do not establish a clean APK.
+
+API 36 phone artifact `11292107914`, ZIP SHA-256
+`24256e51b498efce1141811b5de312abb2e849e47edc339799947b38d779ceb5`,
+passed the actual upgrade and 48 of 49 main cases, including test12 and test48.
+Test45 failed revealing the completed sample after Copy JSON and store reload.
+The inspected PNG still shows Android's clipboard preview at the lower left,
+including its dismiss circle near `[273,1598]`. The actual viewport is
+`[42,231][1038,1815]`; both physical DOWN strokes start at `[291,1577]`,
+inside that visible overlay. Their fresh viewport signatures are stationary.
+Before copying, the same sample's navigation succeeded. Clipboard interception
+is the evidence-supported explanation; no fling overshoot is demonstrated and
+no input-dispatch trace proves exclusive causality. The benchmark path now uses
+the right quarter of the actual viewport (`x=789` on this phone, `x=1305` on
+Build 936's legacy unfolded profile), avoiding the observed clipboard preview
+and central hinge. The new Pixel Fold uses its own observed viewport.
+Model-list gestures retain their left-quarter path. At that revision, twelve
+steps and a 15–85% stroke,
+all deadlines, full/safe/stable bounds, gesture limits and single-tap checks stay
+unchanged. Actual folded clipboard geometry is not inferred from this phone PNG;
+the main foldable benchmark journey runs unfolded. A full fresh matrix is required.
+
+API 35 true 16 KB artifact `11291824807`, ZIP SHA-256
+`e27eecdde5318331400b5043043710cc6ba1c3eb50130e16780fcdf11ab7269b`,
+passed the upgrade and main cases01–19 before Android's `system_server` crashed
+in the next case's setup. Its native trace shows an ART null-pointer dereference
+in `NterpGetStaticField`, through `PackageDexUseProto.dynamicMethod` and
+`DexUseManagerLocal.save`; all 38 frames are platform/runtime frames. Subsequent
+UiAutomator binder and device I/O failures follow that crash. This supports an
+infrastructure classification, with the failed evidence retained. No check or
+system-image requirement is removed; the next candidate must pass this profile.
+
+The completed receipt is false and all publishers are skipped. API 35 compact
+artifact `11292018480`, ZIP SHA-256
+`fb4765c8864bcc58a90290e7a738fd15da85ba034a18563f6cbfeed61ad330c3`,
+passed the upgrade, but a Pixel Launcher ANR dialog covered Jarvis throughout
+all 49 main-test setup failures. Their test bodies, including test48, never ran.
+The inspected first-launch PNG/XML show the same platform modal over the app;
+the retained post-upgrade log does not contain the originating ANR stack.
+This warrants re-exercising the unchanged compact profile in the next full run.
+
+API 29 artifact `11291878809`, ZIP SHA-256
+`f8e9fc3b52b5fc12b209a4d7a0e30e18ee4e4469cf5e3ae57c2e034c3c1f9cf1`,
+never reached installation. UTC is correct in the actual command and guest
+properties, with no former `Unknown/Unknown` setup crash. Android's default
+permission-grant request timed out after its internal 30-second limit, causing
+`PermissionPolicyService` to kill `system_server` and restart it. Cold input then
+took 127 seconds and the second animation-setting command exceeded its existing
+30-second limit. Guest ANR evidence reports high CPU load, including long GC,
+without an OOM or disk error. Any host/AVD resource correction still needs actual
+boot, installation and the full unchanged controller; a boot flag is insufficient.
+The next software launch retains two vCPUs, the same API 29 default ARM64 image,
+UTC, renderer and deadlines. It uses 2 GiB guest RAM and the recognized
+`vm.heapSize=256M` property instead of the unrecognized `hw.heapSize`, with a
+540×960 framebuffer at 210 dpi. This preserves the exact 411.43×731.43 dp
+Pixel 2 viewport while reducing raster pixels fourfold. RAM headroom and lower
+CPU graphics load are bounded provisioning experiments, not proven fixes or
+evidence of memory exhaustion. Read-only host CPU/memory/process receipts have
+at most two seconds per command and consume the existing boot/job budget;
+receipt failures cannot replace the original boot failure.
+
+Foldable artifact `11291729306`, ZIP SHA-256
+`4f655d1c570caa710fbd162de015868ef13c25e92091d57a5bfe11b1ea2a32f7`,
+passed all 49 main journeys, both upgrade phases and all eight lifecycle phases.
+The new gesture work reaches the valid Choose target with almost ten seconds
+remaining, and Copy JSON gestures take roughly 1.6–1.7 seconds. Three layout
+tests pass, including the visually inspected 200% font controls and all nine
+native library loads. The actual fold command succeeds, but display dimensions
+stay `1768x2208` throughout the unchanged 45-second wait; unfold is not reached.
+No folded screenshot proves posture coverage. The generic hardware path requires
+provisioning investigation, with genuine folded/unfolded dimension changes and
+continuity still mandatory.
+The next candidate replaces that generic profile with the genuine `pixel_fold`
+definition from official command-line tools 23.0/build 16111833. Its catalog
+declares a 2208×1840 inner display and 1080×2092 cover display. The fold-only
+SDK step verifies the selected version and `pixel_fold` catalog entry and makes
+it the runner's `cmdline-tools/latest`; merely adding a versioned SDK directory
+would leave emulator-runner using the old catalog. The owned X display, GUI
+loader receipts, true fold/unfold commands, 45-second dimension waits, active
+call and draft continuity, all six profiles and all other checks remain required.
+This is a provisioning correction pending actual folded/unfolded evidence.
+Official catalog: https://dl.google.com/android/repository/repository2-3.xml
+
+## Build 937 known-control navigation alignment
+
+[Build 937](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37174425659)
+tests head `b54087e327f8bb16569cbff2eda63e05e8ef9b09`, merge
+`4cb20365f4d34c5d5ee9be72b16b48ecd58fb024`, tree
+`7a625816d662426a6eecd8f205b961fc2e4d0319`. Both signed APKs, all 1,005 JVM
+cases, all four recorded-speech checks and both nine-library native 16 KB
+audits pass. API 30 passes its complete device gate; the other five profiles
+fail. Receipt `11293146777`, ZIP SHA-256
+`a70b729a17de1b0491112d5b2fa2da2d040d252bcb05762af40612f3612c8e16`,
+is false and all publishers are skipped. No clean APK is established.
+
+API 35 compact artifact `11293740180`, ZIP SHA-256
+`cf51a064453202ac781998ed4ffa52df1a7f8d408772e3dacc72064b845ab34c`,
+passes the actual upgrade and 48 of 49 main cases, including test12 and test48.
+Test45 fails at line2578 revealing `pipeline_benchmark_reference` after the
+completed sample is reopened from the restored store. The control briefly
+appears after DOWN, then the helper sends a full UP stroke, reaches a stationary
+top edge, reverses once and reaches the bottom with 4.875 seconds still left.
+The inspected PNG shows lower expanded metrics and the cancelled sample, with
+the reference above the viewport; no clipboard overlay or platform modal appears.
+There is no retained fatal/ANR marker. Lifecycle/layout phases do not run after
+this main failure. The extra missing layout evidence error is a consequence of
+the controller's failed main phase, not a completed layout pass.
+
+API 36 phone artifact `11293530650`, ZIP SHA-256
+`259284c095b0e9437cdce49c3960c2313eaf0b3eba2cb6a60a21dff7a8b70aab`,
+also passes the upgrade and 48 of 49 main cases, including test12 and test48.
+Its test45 fails at line2511 on the reference control before scoring, after
+opening the completed sample and selecting NOISY. The target exists before a
+full 1,109-pixel DOWN stroke sends it out of the visible hierarchy. Later UP
+strokes find it again, but another full DOWN stroke loses it; the helper reaches
+the second stationary bottom with 4.675 seconds still left. The inspected PNG
+shows the expanded card's lower metrics and cancelled sample without a clipboard
+overlay. The XML reflects teardown and does not prove failure-time bounds.
+
+These failures support a known-control alignment defect in the harness, rather
+than a failed scoring/privacy assertion or a platform retry. Exact target bounds
+were not logged, so a specific zero rectangle or exclusive fling cause is not
+proven. The correction ignores empty rectangles when choosing direction and
+uses a shorter, slower physical adjustment when a positive-size target overlaps
+the viewport: at most one fifth of the viewport, 24 injection steps and observed
+edge distance plus room inside it. Absent or wholly off-viewport targets retain
+the 15–85% search stroke and 12 steps in the same right-quarter path. All full/safe bounds, the 15-second
+and 14-gesture ceilings, two stationary observations, one edge reversal,
+300-ms stable enabled observation, single tap and test-body assertions remain
+required. Navigation receipts now retain before/after geometry and adjustment
+mode. The next complete matrix must establish that this correction works.
+
+API 35 true 16 KB artifact `11293031512`, ZIP SHA-256
+`5aa148bc6dd3d7638f3c63f3f7045db09a03131e0e3982eca39a891163bf6c35`,
+passes the actual 16,384-byte page/ARM64-bridge check, upgrade and 48 of 49 main
+cases, including test48. This time there is no retained platform crash/ANR marker.
+Test45 passes the restored reference check and reaches reset, then fails its
+plain empty-state text lookup at line2582. The inspected PNG and XML show
+"Retained benchmarks reset." and zero retained attempts; the Recent samples
+header is clipped at viewport bottom1815 and the expected next lazy item is
+below it. Reset succeeded; the lookup did not scroll. A bounded read-only reveal
+keeps that exact text-presence assertion and the later flush/reload-empty check.
+Existing controls retain all tap visibility margins; the final unpadded text
+item is read without imposing a click-only inset that it cannot satisfy.
+
+API 29 artifact `11292887329`, ZIP SHA-256
+`93cafec1fcc7782fad4bf2649237bc710e1a48397f7130c12347477bff9f3e44`,
+confirms physical 540×960 at 210 dpi, the intended RAM/heap/two-vCPU settings,
+UTC, native ARM64/API 29, all services and observed unlock. The controller runs,
+but the previous Build 907 APK installation exceeds its unchanged 180-second
+limit before any journey executes. Guest logs show its speed-profile dexopt
+competing with BOOT_COMPLETED receivers; the actual user0 broadcast finishes
+well after the earlier boot flag/services observation. Host receipts show no
+swap traffic and substantial free memory, so memory exhaustion is not supported.
+The API 29-only launcher also retains the version experiment added on head
+`082e3e683c30c49c03bc889787ad193184f4cb90`: official Apple Silicon Emulator
+37.2.6/build16138043, ZIP 419,847,722 bytes, SHA-256
+`ca9eeb7857771de6219591a70b39342ac2d056b7701d1df0d0c719f41260f4a5`.
+Its download, checksum/size, safe staged extraction, package metadata and staged/
+installed binary version checks share one 600-second provisioning budget. A
+failed replacement restores the previous emulator. This preserves the same
+guest image, software renderer, resources, real API/ABI/page-size observations,
+900-second boot and 180-second install limits and complete controller. It is a
+controlled version experiment; Build 937 does not prove that an emulator-version
+regression caused its installation failure. Other profiles retain their emulator
+provisioning. [Build 939](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37176281538)
+tests that head's first navigation, fold-unlock, screenshot and version-pin repairs;
+it is not yet a verified APK.
+
+The next launch requires actual BOOT_COMPLETED delivery to user0 for the current
+system_server, using filtered current-session logcat and matching process IDs,
+before the existing animation settings and final service/display checks. Every
+probe consumes the same 900-second boot deadline; install and job limits remain
+unchanged. This stronger startup barrier is a contention experiment, not proof
+that either installation will finish within 180 seconds.
+
+Pixel Fold artifact `11293521290`, ZIP SHA-256
+`f308900af5564eeddbb8c86ba8a80948aec250faaae3a97d363c90b9a21e00f3`,
+passes all 49 main journeys, both upgrade phases and all eight lifecycle phases.
+The pinned catalog and GUI loader receipts pass. The real fold switches default
+display0 from 2208×1840 to the 1080×2092 cover; platform fold policy then shows
+dismissible keyguard. The inspected test03 PNG/XML show the lockscreen, and its
+composer lookup fails before call/draft continuity assertions. The same activity
+instance stops at this point, with destruction only during teardown; fixture
+recreation is not established as the cause. The sleeping device then causes the
+other three layout setup failures. Folded continuity and subsequent unfold remain
+unverified. The next transition wakes and dismisses the disposable keyguard after
+the genuine dimension change, observes actual dismissal, and retains all original
+continuity assertions within the same transition deadline. No activity relaunch
+or fixture reset substitutes for continuity.
+
+The fold's host baseline screencap also carries a multi-display diagnostic prefix
+before its PNG signature, while per-test UiDevice PNGs are valid. Host snapshots
+now remove the previous remote PNG, write a fresh remote PNG and pull its bytes
+separately, retaining command warnings in receipts and rejecting invalid images
+or failed commands. The shared 60-second snapshot budget is not renewed between
+commands. Positive dimensions, complete PNG chunks/CRCs and a parsed XML hierarchy
+remain required. Actual posture proof
+continues to use the per-test folded/unfolded snapshots.
+
+## Build 940 metric discovery and fresh hierarchy evidence
+
+[Build 940](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37176861888)
+tests head `bea2456b8ca7822d4260dda8230641079d94aa00`, actual checkout
+`2a5e594722fe95cdbfa246fe4d6b6c9fea24c036`. The signed producer, 1,005 JVM
+cases, recorded speech and native packaging audits pass. API 35 compact, API 36
+phone, true 16 KB and Pixel Fold each pass all 49 main cases, restart, both
+published-907 upgrade phases, eight lifecycle phases, four layout cases and nine
+native-loading checks. Pixel Fold changes 2208×1840 to 1080×2092 and back,
+retaining the same conversation, unsent draft and armed controlled call. Its
+transition receipts observe dimension change before wake/unlock/composer readiness,
+within the original 45-second deadline. This does not establish physical audio or
+real Android language-model inference.
+
+API 30 passes its upgrade and 48 of 49 main cases. Test45 fails while searching
+for the exact read-only `tts_load_ms: unavailable` label after scoring and human
+review. The target is absent from every observed query: six full discovery strokes
+reach the lower edge, followed by five strokes back to the upper edge. Fine target
+alignment never runs. The PNG shows two attempts and the reviewed ASR score; XML
+was captured after fixture cleanup and cannot establish search-time expansion.
+No app fatal or ANR is present. Other profiles and the earlier passing API 30 run
+show the same literal label; production metric rendering is unchanged.
+
+The explicit API 30 metric-search correction uses overlapping half-viewport
+discovery gestures with a stationary endpoint, retaining real injection success,
+fresh viewport observations and the same 15-second/14-gesture/edge bounds.
+UiAutomator 2.3.0's own scroll gesture holds its endpoint for 250 ms; the public
+point-path swipe provides that hold without requiring a Compose scroll event.
+Compose 1.7.6's velocity tracker resets when pointer-up is more than 40 ms after
+the last tracked movement. This supports a nonflinging search; it does not prove
+that the failed run flung past the label. Only this API 30 text assertion opts in;
+interactive controls and other profiles retain their existing paths. Every literal
+metric, privacy, export, durable score and empty-store assertion remains required.
+Primary source archives:
+[UiAutomator 2.3.0](https://dl.google.com/dl/android/maven2/androidx/test/uiautomator/uiautomator/2.3.0/uiautomator-2.3.0-sources.jar),
+[Compose foundation 1.7.6](https://dl.google.com/dl/android/maven2/androidx/compose/foundation/foundation/1.7.6/foundation-1.7.6-sources.jar),
+and [Compose UI 1.7.6](https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui/1.7.6/ui-1.7.6-sources.jar).
+
+Host hierarchy capture also removes both previous local and remote XML before
+dumping. AOSP's dump command can exit successfully without producing a hierarchy;
+accepting an old file would make a snapshot's evidence stale. A fresh well-formed
+hierarchy, valid PNG bytes and the existing shared 60-second budget remain required.
+This closes a demonstrated command/evidence failure case; stale XML was not
+established in Build 940. Fresh full verification remains necessary before release.
+
+API 29 exhausts the original 900-second boot budget while trying to observe
+user0 boot-delivery completion for the current system server. The final filtered
+logcat read times out; no controller phase starts. A display-read retry cannot
+repair this earlier failure and is not included. The exact-build receipt fails,
+and all publication jobs are skipped. API 29 remains required in the next full
+run; none of the successful profiles can substitute for it.
+
+## Build 940 legacy observation and API 29 renderer follow-up
+
+The final exact-build receipt, artifact `11292929950`, ZIP SHA-256
+`771b31d098f5c11d71e3acc8e116c82d7e36748660cbc49e8d4e25c277ca0050`,
+rejects Build 940: four of six required profiles are admitted, API 30 has the
+failed metric lookup described above, and API 29 never reaches the controller.
+All three publication jobs are skipped. The passing profiles do not establish a
+clean APK for this revision. External head
+`ee65bd8e4e1c43feef0e3e07ba22ce130bdd61b9` preserves these failures and adds
+the narrow held metric discovery and fresh hierarchy checks described above;
+its Build 942 run remains separate evidence.
+
+API 29 startup artifact `11294101256`, ZIP SHA-256
+`b32034c457bc18866947885b6feb1fbff507f44aad38a84af73c0b09606a6815`,
+verifies the complete pinned emulator and intended resources. The native guest
+stream shows system_server PID 259 killed by the watchdog at 04:45:28 UTC,
+blocked in `HardwareRenderer.nSetStopped` on `android.ui`; replacement PID 1506
+has the same blocked stack. Neither process emits the actual user0 boot-delivery
+completion marker. The final ADB timeout is therefore not evidence of a timely
+completion missed by the probe. The current-PID barrier correctly fails. No
+installation, call-rearm journey or other controller phase runs on this profile.
+
+The retained renderer selection is GLES `swangle` over Vulkan `swiftshader`,
+with ANGLE reporting SwiftShader LLVM 10 and the guest using `skiagl`. The next
+API 29-only compatibility trial replaces deprecated `-gpu swiftshader_indirect`
+with the documented `-gpu software` selector. Android Emulator release notes
+introduce that selector in 36.4.9, before the pinned 37.2.6 version. It selects the
+available software backends; actual startup selection remains evidence to inspect,
+not an assumed Lavapipe result. The image, emulator pin, native ARM64 execution,
+two vCPUs, RAM/heap, physical viewport, stable-PID boot barrier, 900-second boot,
+180-second installation, 60-minute job and complete controller remain required.
+The blocked render stack motivates this experiment but does not prove backend
+causality or a successful boot. Primary references:
+[graphics acceleration options](https://developer.android.com/studio/run/emulator-acceleration#accel-graphics)
+and [Emulator release notes](https://developer.android.com/studio/releases/emulator#36-4-9).
+
+Benchmark discovery also refreshes the legacy accessibility cache through the
+public `UiAutomation.setServiceInfo` API, reapplying the existing service info
+unchanged; API 34 and newer retain public `clearCache`. Android 10/11 framework
+source clears the client cache before applying that info. This establishes the
+mechanism, not that cached nodes caused Build 940's missing metric. Benchmark
+observations use zero implicit getter idle with guaranteed restoration, retain
+explicit settlement, and may re-observe a missing target once after at most
+100 ms within the same 15-second deadline. Before/after discovery receipts
+expose bounded semantic row identities, counts and geometry; private text and
+metric values are not logged. A ready target returns before unrelated diagnostic
+traversal. Full tap bounds, stable enabled observation, one actual tap, gesture
+count, stationary-edge/reversal limits, all exact metric/export/privacy/persistence
+assertions and test48 remain required. Primary source:
+[Android 11 UiAutomation](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-11.0.0_r1/core/java/android/app/UiAutomation.java).
+
+## Build 943 shared navigation helper correction
+
+[Build 943](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37178650021)
+tests head `74f48b0404499530139b9e495cf21f0c84bbf149`, actual checkout
+`dde2d7715d80772bc3969984fcf305fd3d597111`, tree
+`10c8e01a444b2ecaef180dbe60aa109d7d351ece`. All 1,005 JVM cases and four
+recorded-speech checks pass, but release instrumentation compilation fails:
+model-list navigation still references `benchmarkViewportSignature` at lines
+320 and 340 after the benchmark helper was renamed. No device profile or native
+APK audit runs, the exact-build receipt fails, and publication is skipped. This
+run provides no result for the API 29 renderer trial or API 30 cache correction.
+
+The correction restores the original signature helper byte-for-byte from head
+`ee65bd8e4e1c43feef0e3e07ba22ce130bdd61b9`. Its two model-list callers retain
+the original cache and bounded traversal behavior. The new observation helper
+remains used only by benchmark navigation. All test bodies, model navigation,
+assertions and acceptance limits remain unchanged. Shared definitions and every
+benchmark-prefixed caller are checked together; the next hosted instrumentation
+compilation and complete release gate remain required.
+
+## Build 942 asynchronous copy-status observation
+
+[Build 942](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37178356592)
+API 30 artifact `11295095234`, ZIP SHA-256
+`a7c4fa53e0f08ca484c158c0e85062dbbbef43e05c6c459a3761b392928c81d5`,
+tests head `ee65bd8e4e1c43feef0e3e07ba22ce130bdd61b9`, actual checkout
+`052ef3fe24e7d159d6a286df2da1d42a8eecd2f6`. The upgrade passes and 48 of
+49 main cases pass, including test48. Test45 successfully finds the held TTS
+metric, then fails the exact post-copy status assertion at line2606. The single
+actual copy tap is recorded at 05:11:34.194 UTC; the failure PNG at 05:11:34.257
+shows export controls disabled and the earlier scored-reference status. The
+hierarchy dump begun at 05:11:34.455 already contains the exact copied status
+and enabled controls. Those are successive observations, not simultaneous state.
+
+Production export launches a coroutine and computes its payload on
+`Dispatchers.Default` before updating the clipboard and terminal status. UI idle
+does not join that work. The narrow harness correction includes the same exact
+`Redacted JSON report copied.` text in the existing status selector, so its
+bounded navigation observes completion before the unchanged literal equality
+assertion. The same 15-second deadline, full visibility bounds, gesture/edge
+limits and one actual copy tap remain; no export retry or mutation is added.
+Clipboard JSON, privacy, original/reference exclusion, counts, durable scoring
+and subsequent reset/reload assertions remain required. The later missing layout
+snapshot is collection fallout after main failure, not the earliest failure.
+Fresh complete verification is still required.
+
+The separate true 16 KB artifact `11294615919`, ZIP SHA-256
+`a9add239d8208ff9662bf7072966f83b24328848c1dda42d3db33aed9fe46e51`,
+also passes upgrade and 48 of 49 main cases, including test27 and test48. Its
+only failure is earlier in test45, seeking `benchmark_quality_task_FAIL` before
+review, TTS and copy. The target is absent through all eleven blind discovery
+strokes, with two stationary edges and one reversal; fine alignment never runs.
+The lookup exits with 5.661 seconds remaining. No fatal/ANR is retained. The
+inspected final PNG shows the scored dashboard and two unreviewed attempts;
+subsequent teardown XML does not prove search-time expansion or bounds. This
+is not the Build 939 EmojiCompat abort, and neither overshoot nor cache causality
+is established. The next candidate retains full acceptance and bounded
+before/after row receipts for diagnosis; no tap margin or assertion is relaxed.
+
+## Build 944 bounded quality-control discovery
+
+[Build 944](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37179672067)
+tests head `9beef0b0b7ee37227bce5dd1819fceaf6cf2cf26`, actual checkout
+`fcf6deeb790a344e579132f04df14001a17cfc09`, tree
+`9e4868721dff433da7ba8e44d1871377a0bffa8a`. Release instrumentation compiles;
+all 1,005 JVM cases, 187 Python helpers, four recorded-speech checks, both signed
+APK builds and native 16 KB audits pass. API 30 and the API 35 compact/API 36
+normal phone jobs pass. The full gate remains blocked by the true 16 KB profile;
+API 29 and Fold are still running at this checkpoint.
+
+The true 16 KB artifact `11295260609`, ZIP SHA-256
+`99d7949ac8a9e2f4a3e7522505012c5be15554135e3917c7285d3f05e7158b66`,
+passes upgrade from Build 907 and completes all 49 main cases. Only test45 fails
+at the first `benchmark_quality_task_FAIL` lookup; test27 and the spoken-stop
+test48 pass. Main failure prevents restart, lifecycle, layout and native-loading
+phases, so their missing evidence is secondary fallout, not passing coverage.
+
+Fresh navigation receipts show ten 1,109-pixel/12-step blind gestures in a
+1,584-pixel viewport: three downward moves reach expanded metrics, two stationary
+observations cause one reversal, and three upward moves return to the summary
+before two stationary observations end lookup with 5.115 seconds left. The
+second and seventh gestures lack after-observation receipts after stale-node
+refresh. Sampled content skips the quality region before metrics; production
+places human review before metrics in the same expanded sample. A transient
+ByMatcher warning names the correct Task FAIL tag with bounds crossing the
+viewport's top edge, followed by failed refresh and null lookup. The inspected
+final PNG shows scored recognition and two unreviewed attempts. Teardown XML
+does not establish search-time bounds. These observations support a discovery
+sampling correction; they do not prove a fling, cache or product cause.
+
+The next candidate opts only the first Task FAIL search into the existing
+half-viewport, repeated-endpoint physical gesture. Known-bounds fine alignment,
+full safe-tap bounds, 300-millisecond stable enabled observation, successful
+injection and exactly one tap remain required. The same 15-second deadline,
+14-gesture cap, two stationary observations and one reversal remain. Other
+controls and the API 30 read-only TTS opt-in retain their existing behavior.
+All scoring, clipboard privacy, export, persistence and reset assertions remain;
+fresh full exact-candidate verification is required before publication.
+
+## Build 944 live API 29 boot-completion observation
+
+Build 944's API 29 startup artifact `11295276480`, ZIP SHA-256
+`0a16bd2ec467731860270645064faa9feb620d139652fb8be2678e47ca62ae08`,
+binds the same `fcf6deeb790a344e579132f04df14001a17cfc09` source and verified
+37.2.6/build 16138043 emulator pin. Requested `software` selects Vulkan Lavapipe
+(llvmpipe LLVM 21.1.4) and GLES SwANGLE over SwiftShader; the actual backend is
+retained independently of the requested selector. Unlike the previous failures,
+the native guest stream contains PID 277's exact user0 boot-completion message
+at guest time 05:48:53.388, with no watchdog kill. Unlock evidence observes
+keyguard dismissal. All fifteen filtered adb logcat dumps time out, consuming
+210.721 seconds, while single PID probes continue succeeding. The host reports
+the unchanged 900-second boot deadline expired at 05:49:09.488. Retained guest
+timestamps do not prove when the host received the marker or sufficient time for
+the remaining checks, so no completed startup, install or device pass is claimed.
+
+The correction reads the fresh launch's native guest log live between the same
+current PID-before/PID-after probes. A maximum 256 KiB tail excludes incomplete
+first/last lines; absent, malformed, truncated, replaced or unreadable input
+cannot authorize readiness. Exact INFO ActivityManager user0 completion for the
+same single successful PID, a still-running emulator and remaining original
+deadline are required. Source, byte bounds and monotonic observation/deadline
+receipts are retained. No guest clock or archived marker independently grants a
+pass. The renderer, resources, unlock order, final service/display checks,
+900-second boot, 180-second install and 60-minute job limits remain unchanged.
+The default helper's adb read path is preserved for existing callers; the active
+software session uses its owned native capture. Fresh full hosted verification
+is required, including actual installation and every named release phase.
+
+Build 944 finishes failed with four fully admitted phone/Fold profiles; API 29
+never invokes the controller and true 16 KB fails benchmark discovery. The failed
+receipt and skipped publishers prevent a numbered APK release. Build 945 tests
+the narrow quality-control search correction but retains the earlier adb boot
+read path; its results cannot qualify this subsequent boot-observation change.
+
+## Build 946 explicit API 29 renderer trial
+
+[Build 946](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37181469100)
+tests source `51d8ad11f93ffe3b77a3a64de7e2b519c8566a16` from PR head
+`011e24715744cf87859c77112866b742e89ab2d1`. API 29 artifact `11296330808`,
+ZIP SHA-256 `b4024debb3d1d1738dc6e008a9a8a04e6d0547e93427f2df54bd34fb9b3ba98e`,
+contains 136 progress receipts with 34 distinct successful native observations,
+and no exact Posting or Finished BOOT_COMPLETED marker in the full native log.
+The reader never accepts completion. System process PID 257 is killed by the UI
+watchdog; replacement PID 1512 is later killed with foreground and UI handlers
+blocked. The latter stacks include user-unlock `IInstalld.createAppData` and
+`HardwareRenderer.nSetStopped`. Replacement PID 2348 does not finish boot before
+the original 900-second deadline. No install or release controller runs.
+
+The installed 37.2.6 binary's help and the official
+[graphics configuration guide](https://developer.android.com/studio/run/emulator-acceleration)
+support `swiftshader` for GLES and Vulkan separately from `swangle`, which uses
+ANGLE with SwiftShader. The failed launch's `software` selection actually uses
+GLES SwANGLE and Vulkan Lavapipe. The next API 29-only trial selects
+`-gpu swiftshader` explicitly and retains actual backend receipts. This is a
+one-variable compatibility trial; the stacks do not establish graphics as the
+sole cause, and startup host receipts do not establish memory pressure. The
+image and emulator pin, native ARM64 execution, resources, physical display,
+live completion/PID guards, final services, 900-second boot, 180-second install,
+60-minute job and full release/publication gates remain unchanged. A fresh
+complete signed candidate must pass; no clean APK is claimed for Build 946.
+
+The four completed phone/true 16 KB profiles pass all required phases, including
+test48. Fold artifact `11295493528`, ZIP SHA-256
+`6f442a809acbc600399546a82b92f9ff9f896d3cb57c0d4c12aaf3f62105a7b7`,
+instead retains a System UI ANR modal in the first-launch and later screenshots,
+with Jarvis setup behind it. Upgrade passes, but 46 main tests fail their setup
+lookup and instrumentation expires while test47 starts; test48, lifecycle,
+layout/fold transitions and native loading are not reached. The retained app log
+starts after clearing logcat and does not establish the Android ANR's cause.
+No Fold/product repair or ANR dismissal is inferred. The next exact candidate
+must run the full fresh Fold gate. Build 946's failed consolidated receipt and
+all three skipped publishers prevent a numbered release.
+
+## Build 947 compact metric observation correction
+
+[Build 947](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37183356238)
+tests source `95e482bba64610afb31e6b88ac61913f7d36b547` from PR head
+`3561e46a04441f80bbf31b7a08d8543aa589f1a7`. API 35 compact artifact `11296456202`
+has ZIP SHA-256 `6c85929bbd7e47bd09aa10dddce09f31add97b675bbeb53e6314858bcd1f1974`.
+The API 35 compact profile runs all
+49 main journeys: 48 pass and test45 fails to reveal the exact text
+`tts_load_ms: unavailable`. Its real Build 907 upgrade passes. The metric search
+performs ten 1,109-pixel, 12-step blind strokes, reverses after two stationary
+lower observations, and stops after two stationary upper observations with
+4,772 ms of its original 15-second budget remaining. This is not deadline or
+14-gesture exhaustion.
+
+Fresh row receipts show the first stroke crossing from early metrics ending at
+`gemma_final_caption_ms` at y=1,798–1,815 to later TTS metrics beginning with
+`tts_playback_starvation_ms` at y=231–246. On reversal, the next retained
+pre-stroke receipt already shows the earlier process, Gemma and endpoint rows;
+the intervening post-stroke observation was interrupted by a stale node. The
+source's fixed metric order places `tts_load_ms` between these observed regions.
+The completed fixture has no TTS measurement, so its value remains the literal
+`unavailable`. Selection state belongs to the screen outside the lazy item, and
+later TTS rows demonstrate that the sample remains expanded. The final PNG shows
+two retained attempts and the saved failed quality review; the subsequent XML
+reflects the test's `finally` cleanup and does not prove earlier data loss.
+
+This correction opts only the non-API-30 exact TTS text lookup into the
+existing overlapping half-viewport discovery gesture with its 250 ms endpoint
+hold. API 30 keeps its existing text observation path. All non-API-30 safe bounds,
+cache refresh, explicit idle settlement, 15-second/14-gesture limits and edge
+reversal rules remain unchanged. All clickable controls retain their enabled,
+stable-geometry and single-tap checks. No production UI, scoring, export,
+persistence, profile or publication gate changes. The receipts support a skipped
+metric region; they do not isolate fling or cache behavior as its sole mechanism.
+The correction is not a passing result. A fresh exact signed candidate
+must pass all six complete profiles and the consolidated receipt.
+
+## Build 948 held metric gesture correction
+
+[Build 948](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37184660957)
+tests merge `47c9d9cb126e0fbc065df0aa9085f3f31c72f852` from PR head
+`51360da06a084c43a8a43cd6e45fd137e17f7117`. All 1,005 release JVM cases,
+four recorded-speech cases, signed APK checks and both static native audits pass.
+API 30, API 35 compact, API 36 phone and the genuine 16 KB profile pass all 49
+main journeys and every separate upgrade, restart, lifecycle, layout and native
+loading phase. Their APK and test hashes match this exact source and run.
+The true 16 KB run also records recovered off-app platform crashes, including
+a SystemUI clipboard overlay crash. Later required Jarvis assertions complete
+with no Jarvis fatal or ANR; profile success does not mean every platform
+process was crash-free.
+
+Fold artifact `11296544541`, ZIP SHA-256
+`ba9139ccd1bb65cc113fc3afc9b19b443f7bca2f6f926b24b025aa8a896a1946`,
+passes the real Build 907 upgrade and 48 of 49 main methods. Test45 fails its
+exact `tts_load_ms: unavailable` visibility assertion. Two 736-pixel held
+discovery strokes move the content but consume 7,033 and 6,937 ms, leaving
+36 ms in the unchanged 15-second budget. The target is still below the viewport;
+no stationary edge, reversal or target safe-bound rejection occurs. The actual
+DOWN-to-UP event-time spans are 6,583 and 6,496 ms. Fresh target queries begin
+244 and 246 ms after UP, so the retained trace identifies gesture dispatch as
+the main cost of these cycles. It does not isolate the host or platform cause
+of each synchronous injection's latency.
+
+UiAutomator 2.3.0 interprets Point-array steps per segment. The three-point
+51-step path injects 100 MOVE events, including 50 repeated endpoint events.
+The focused correction uses sparse real motion and an explicit 250 ms endpoint
+hold for only the non-API-30 exact TTS lookup. Every gesture event must succeed;
+deadline expiry or an injection failure rejects the gesture and attempts CANCEL
+cleanup for any possibly held pointer. Synchronous Binder injection can return
+after expiry; that late result cannot qualify the stroke. API 30 and the existing Task FAIL held gesture retain
+their original path. Half-viewport overlap, cache refresh, idle settlement,
+safe bounds, the 15-second/14-gesture limits, edge detection and all scoring,
+export and persistence assertions remain required. This further focused repair
+extends the default benchmark repair budget because the new raw trace identifies
+redundant physical input work. Android compilation and full fresh device
+verification remain required for the correction.
+
+The inspected failure PNG shows expanded metrics without a platform modal.
+Test45 clears its fixture store in `finally`; the subsequent PNG and XML captures
+start at 07:32:19.496 and 07:32:19.797 and show different observations. The later
+empty-store XML does not prove data loss during navigation. Fold restart,
+lifecycle, measured posture and native-loading phases are unreached.
+
+API 29 artifact `11297103192`, ZIP SHA-256
+`aac01d43b81fbc29c7e6965226246dd9e35743aa869ce15bbbe8d75bcc2aca7f`,
+retains two system-server Watchdog deaths. Final PID 2146 has no observed user0
+completion within the original 900-second boot deadline. No APK installation
+or app controller runs. Actual Vulkan SwiftShader/GLES SwANGLE matches Build
+947's trial, whose real upgrade passed but main suite was blocked by System UI's
+ANR modal. A new run must establish a healthy API 29 environment independently.
+The gesture correction changes no emulator provisioning or acceptance limits.
+Build 948's exact receipt is false, all three publishers skip, and its numbered
+release is absent. All six complete fresh profiles and the exact receipt must
+pass before a new numbered APK can be published.
+
+## Builds 947/948 Android 10 graphics compatibility trial
+
+Build 947's API 29 artifact `11297002373` has ZIP SHA-256
+`14c37aa2a67d6958aeee05a5fe35809e35da6c24846e1ac63f2617ab08ecaf0b`.
+The native current-PID BOOT_COMPLETED check and real replacement upgrade pass.
+The first-launch PNG nevertheless shows `System UI isn't responding` over
+Jarvis setup, and later journey images retain the same modal. The startup log
+records a KeyguardService execution timeout before unlock input, with SystemBars
+initialization taking 29,820 ms. Main setup lookups fail and instrumentation
+expires before test48. Dismissing that platform ANR is not a valid app pass.
+
+Build 948's API 29 artifact `11297103192` has ZIP SHA-256
+`aac01d43b81fbc29c7e6965226246dd9e35743aa869ce15bbbe8d75bcc2aca7f`.
+Its full native log contains no exact Posting or Finished BOOT_COMPLETED marker.
+There are 112 progress receipts and 28 distinct successful native snapshots.
+System-server PID 264 is killed by the UI watchdog; replacement PID 1445 is
+killed with foreground `Installer.migrateAppData` and UI
+`HardwareRenderer.nSetStopped` stacks. Replacement PID 2146 does not complete
+boot before the original 900-second deadline. No APK install, controller or
+test48 runs. Both candidates request SwiftShader and actually select Vulkan
+SwiftShader with GLES SwANGLE; the selector did not change that GLES backend.
+
+The next API 29-only launcher trial adds disabled Vulkan to the existing
+disabled HVF request: `-feature -HVF,-Vulkan`, keeping `-gpu swiftshader` and
+`-accel off`. The official
+[troubleshooting guide](https://developer.android.com/studio/run/emulator-troubleshooting)
+documents disabling Vulkan. The installed pin's raw `-help-feature` output is
+retained within the existing 600-second provisioning budget, with a 15-second
+command limit and no help-text capability gate. Requested disabled features
+are recorded separately from the observed backend. This qualified compatibility
+experiment does not establish a graphics cause, exact pinned CLI behavior or
+the absence of all host Vulkan use; foreground I/O and software-emulation
+slowness remain competing explanations.
+
+The exact emulator/image pin, native ARM64 execution without a bridge, resources,
+viewport, boot/current-PID/unlock/services checks, 900-second boot, 180-second
+install, 60-minute job, all required app/native phases and publication gates
+remain unchanged. Neither failed candidate has a clean numbered release. A
+fresh signed candidate must complete all six profiles and the consolidated gate.
+
+## Build 952 interactive held discovery correction
+
+[Build 952](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37187161071)
+tests merge `77b1d8df8785159a22fbadee1a2e9bb12f562d89` from PR head
+`2ca8d324de5cc1ac3a561d5048d7f3b1a581cbab`. Signed normal/compact packaging,
+all 1,005 release JVM cases, 197 Python helper cases, four recorded-speech cases
+and both static native audits pass. API 30 normal, API 35 compact and API 36
+normal each pass all 49 main journeys, both actual Build 907 upgrade phases,
+restart, eight lifecycle phases, four layout cases and nine native loads.
+The consolidated receipt is false with three admitted profiles; all three
+publishers skip and the numbered release is absent.
+
+Fold artifact `11297729163`, ZIP SHA-256
+`4954d124fc6ceea7f5e6ae0333ad8e591826c13ae19eceda2e02221d63bc09b8`,
+passes the actual replacement upgrade and 48 of 49 main methods, including
+test48. Test45 fails while revealing Task FAIL, before reaching the sparse TTS
+gesture added previously. Its initial held 736-pixel Point-array swipe takes
+7,726 ms; two subsequent 48-pixel, 24-step fine adjustment cycles take 2,318 and
+2,385 ms. The last observed target bottom is 1714, outside the unchanged safe
+bottom of 1702. The next adjustment starts with 1,896 ms remaining and cannot
+authorize a stable enabled tap before expiry. The inspected PNG shows the
+review row at the viewport bottom without an ANR modal. The later XML reflects
+fixture cleanup and does not establish the same review geometry. Later restart,
+lifecycle, layout, real posture and native phases remain unreached.
+
+The focused correction gives `benchmarkClickEnabled` a default-false sparse
+held discovery option and enables it only for Task FAIL on API 35 and newer.
+It uses the existing successful real 12-MOVE gesture and explicit 250 ms hold;
+API 29/30 retain their prior path. Known-target fine adjustments, safe margins,
+fresh enabled/stable bounds, exactly one tap, the original shared 15-second and
+14-gesture limits, cache/idle handling, edge rules and every test assertion
+remain unchanged. Reducing the first gesture's redundant input work can leave
+time for fine alignment; only the next complete run can establish a pass.
+
+API 29 artifact `11297928957`, ZIP SHA-256
+`c0de7b4f08d3ce41feedacbc4cd5f11a5b64c0f2b6ac72302e614910392f86f5`,
+confirms that the exact pinned emulator applies the disabled guest Vulkan
+feature. The host GLES backend remains SwANGLE over SwiftShader Vulkan.
+Initial system-server PID 266 dies after the stock runtime-permission grant
+request times out. Replacement PID 726 posts user0 BOOT_COMPLETED, but no
+Finished marker exists in the full native stream or 18 distinct timely native
+reads. Cold receivers keep advancing near and after the original 900-second
+deadline; the logs do not identify one uniquely stuck receiver. SystemUI and
+other platform ANRs remain retained. No APK installation, controller or test48
+runs. The graphics trial applied but did not establish timely healthy startup.
+
+True 16 KB artifact `11298331230`, ZIP SHA-256
+`57031e7d31be9f1a1015b070e54f6986a1c2f9f66b629c3cdf34ae0eddf5d16e`,
+confirms API 35, 16,384-byte pages and the ARM64 bridge, and passes both upgrade
+phases and test01. The Jarvis process crashes during test02 evidence capture:
+its JIT thread receives SIGSEGV, with retained x86-64 libart frames through
+Class::GetDescriptor, ResolveMethod and JitCompile. This is an app process
+crash, unlike Build 948's recovered off-app crashes. Test02 does not complete,
+the other 47 main methods and all later phases remain unreached. The trigger
+is unresolved; native packaging checks do not exclude generated code,
+dependencies or earlier native corruption. No JIT/GC override conceals it.
+The next fresh signed candidate repeats all six profiles and every release gate.
+
+## Build 954 API 29 host graphics compatibility trial
+
+[Build 954](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37189376357)
+tests merge `d669bd4969b3b68990cee288ca0c2f1476a1a118` from PR head
+`b84e0b562040a468d67e595c563815de9a8317d2`. Signed normal/compact packaging,
+all 1,005 release JVM cases, 197 Python helper cases, four recorded-speech cases
+and both static native audits pass. API 30 normal, API 35 compact, API 36
+normal, Fold compact and true 16 KB normal each complete all 49 main journeys,
+including test48, both actual Build 907 upgrade phases, restart, eight lifecycle
+phases, four layout cases and nine native loads. Fold also completes actual
+fold/unfold transitions. The earlier sparse Task FAIL correction passes under
+the original navigation limits. The true 16 KB profile retains two positively
+attributed Google Play services native crashes; no Jarvis fatal or ANR is retained.
+
+API 29 first-attempt artifact `11299282453`, ZIP SHA-256
+`ad384b3a00d6d656d550aeafdfbca4c2894fee77b809d4f504ea118c0ac4cc50`,
+passes the complete boot barrier and both upgrade phases. A cold stock SystemUI
+service ANR precedes Jarvis installation. The retained first-launch and main
+screenshots show its blocking "System UI isn't responding" dialog. Main methods
+01 through 20 fail in setup; method21 starts but reaches the unchanged
+900-second instrumentation timeout without a terminal result. The 20 failed
+test bodies and test48 do not run. This failure is not the missing
+BOOT_COMPLETED delivery seen in Build 952.
+
+One unchanged infrastructure retry is accepted. Fresh API 29 job `111406997721`
+produces artifact `11299493564`, ZIP SHA-256
+`30d0fac7e9e75f4fbb9bb34f91e362475171cecc04831b03bbf73a410bd2ac0f`.
+Two system-server processes die after stock runtime-permission grant requests
+time out at 30 seconds. A third is killed by the actual platform watchdog with
+its UI thread in `HardwareRenderer.nSetStopped` through `performDraw`.
+SystemUI service initialization and ANR remain retained. The full native stream
+contains neither Posting nor Finished user0 BOOT_COMPLETED markers; cached boot
+properties do not satisfy the unchanged 900-second delivery barrier. No APK
+installation, controller or app tests run. The retry carries the five original
+same-revision successes; those profiles are not five new executions.
+
+The final receipt artifact `11299069001`, ZIP SHA-256
+`504dd5b733a0dc039be85836c60dc5979155b7d798920e4646e8c141440ba733`,
+is false with five admitted profiles. The eligible signed publisher skips;
+the other two publishers are ineligible for this PR and also skip. Neither
+attempt produces a numbered Build 954 release.
+
+The next isolated compatibility trial changes only API 29's requested GPU
+selector from `swiftshader` to `host`. The exact pinned emulator's native help
+advertises `host`; a usable host OpenGL context, its actual backend and any
+improvement remain unproven. The observed prior GLES backend is SwANGLE over
+SwiftShader. Render/UI stalls support investigating graphics, but the grant
+timeouts mean graphics is not an established sole cause. Requested and observed
+backends remain separate receipts. The emulator/image pin, native ARM64 CPU
+emulation, disabled HVF/guest Vulkan, resources, viewport, every readiness check,
+all deadlines and every release assertion remain unchanged. No JIT, GC or
+watchdog override hides a failure. A fresh signed candidate must rerun all six
+profiles and pass consolidation before publication; Build 954 results do not
+credit the changed revision. Physical wake-word/audio behavior still needs final
+phone signoff.
+
+## Build 958 graphics capability and capture evidence
+
+[Build 958](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37193671520)
+tests merge `5f275f9ad3414a0b0d90f9bbf2ea99bf8fce4a92` from PR head
+`222ab4f0fdeea69ecb6ab6ecdade21410ff06bed`. Signed normal/compact packaging,
+all 1,005 release JVM cases, 197 Python helper cases, four recorded-speech cases
+and both static native audits pass. Fresh API 30 normal and API 35 compact
+complete all 49 main journeys including test48, both actual Build 907 upgrade
+phases without clearing data, restart, eight lifecycle phases, four layout cases
+and nine native loads. Their 85 PNG/XML pairs are independently validated.
+
+API 36 normal artifact `11300049235`, ZIP SHA-256
+`7684d926764390c25c0fdb50346a543193dcb28a6981abc45dde7bc9155043f6`,
+passes both upgrade phases and 48 of 49 main methods, including test48. Test45
+fails finding Intent PASS after successfully reviewing Task FAIL. Its fresh
+positive target rectangle is only 35 pixels below the viewport, but the
+intersection-only alignment decision chooses a 1,109-pixel search stroke.
+Subsequent observations show lower metric rows; the bounded search reaches an
+edge, reverses once and ends without authorizing a tap. No fatal/ANR header is
+retained. The failure PNG is a later summary state, not the initial geometry.
+Restart, lifecycle and layout phases remain unreached.
+
+True 16 KB job `111412924858` fails before the controller or APK installation:
+the emulator runner's physical unlock command receives input-service
+`Broken pipe (32)`. No device artifact is created. The retained completed job
+log is 51,901 bytes, SHA-256
+`4d2ea83d504c5a3c0f50f62db1a55003cf4d0a19531effe6932d64fb6357cd26`.
+This supplies no app, native-loading or test48 coverage; the underlying guest
+cause remains unresolved without guest logs.
+
+Fold artifact `11300004844`, ZIP SHA-256
+`33b2dc88de754320dfd2d11bf93da3b4c7238fcfaed9e4add48a3ff9433cb906`,
+passes all main, upgrade, restart, lifecycle, layout and native-loading phases,
+including actual fold/unfold transitions and test48. Final capture overlaps
+normal instrumentation teardown and an EmptyActivity closing transition. Its
+fresh PNG is a blank white surface with a navigation handle. `uiautomator dump`
+exits zero while reporting a null root; the fresh hierarchy file is absent and
+the subsequent cat fails. The report correctly remains false. No fatal/ANR
+header is retained; this is not another benchmark navigation failure.
+
+API 29 artifact `11301125436`, ZIP SHA-256
+`dacfb757b0a65704d879a3fe0d11f4a47000ae74756f62c1c72da841f38d3b07`,
+verifies the exact emulator pin and observes the requested host/host backend:
+Apple Software Renderer, GLES 2.0. Stock SurfaceFlinger requests GLES 3 and
+encounters 13 `EGL_BAD_CONFIG: no ES 3 support` failures and 13 native SIGABRTs.
+Initial boot and all four services remain unavailable at the original
+900-second deadline. No unlock, broadcast barrier, controller, installation or
+app tests run. This is a concrete host graphics capability failure; advertising
+the host selector did not establish a suitable GLES context.
+
+Final receipt artifact `11300184994`, ZIP SHA-256
+`4d44cc263af2fd0673a8f6afc4bf4c4ae9c9f7b03d24409bc0fbd7a1998fcfad`,
+is false with zero admitted variants: the missing true 16 KB artifact prevents
+input selection/download. The separate raw API 30/35 passes are retained, but
+are not admitted variants in that receipt. The eligible signed publisher skips;
+the other two publishers remain ineligible for this PR and also skip. No
+numbered Build 958 release exists. Every deadline and release assertion remains
+in force; a changed revision requires a fresh signed build and all six profiles.
+
+The then-next controlled harness correction aligns a fresh known target at most
+one fine-stroke limit outside a modern Android viewport with the existing
+bounded fine gesture. Unknown/distant targets retain discovery; fresh safe
+bounds, 300-millisecond stability and the single physical tap remain required.
+Final snapshots admit one additional fresh PNG/XML observation only for the
+exact zero-exit null-root diagnostic, retaining first-attempt pixels and both
+diagnostics inside the original 60-second budget. Other errors, invalid
+captures and a second null root still fail.
+
+That successor separately trials official Stable 32.1.15/build 10696886 with
+`swiftshader_indirect`. The official archive's indexed version/size/checksum
+and adjacent AOSP renderer/CLI/ARM64 TCG sources qualify this candidate; no
+local binary or successful runtime is claimed. Staged/installed identity must
+still pass the unchanged pin checks. Trailing `-qemu -smp 2` preserves the
+requested two CPUs in the older off-HVF path. Memory, raster, CPU emulation,
+HVF/guest Vulkan exclusions, native startup-log ownership, boot barrier and
+all acceptance deadlines remain unchanged. Actual GLES support, two CPUs,
+BOOT_COMPLETED and all app phases must be observed in the fresh run.
+
+## Build 962 supported density and disabled Save discovery
+
+[Build 962](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37196250299)
+tests PR head `40b4de5a013605f87a92830b788da327c96fac73`, merge
+`5c972bef6f7c651cc9b445232f2997acd7fecba7`, tree
+`9e282a2b8a8690ccdc2abd314b4633221fd861c5`. Signed normal/compact builds,
+1,005 JVM tests in 184 suites, 203 helper tests, native keyword/page-size
+checks and four recorded ASR checks pass. Same-run shipping identities are
+normal `b29843cab2efc8431e5bdde3d9c2a23113b39c5fe97c0ea36c2d7174da9932af`,
+compact `9895b34afebbbadbb8706076ea45e261939dcd9d03bad8814103d63854d703f0`
+and test `75d30d45787bda0cee734cbfed94b8b6ba13b7081e5431e8cab302b776369666`.
+
+API 30 normal, API 36 normal, true 16 KB normal and Fold compact pass all
+49 main journeys, two actual Build 907 upgrades without a data clear,
+process restart, eight lifecycle phases, four layout methods and nine native
+loads. Fold includes actual fold/unfold transitions and retained call/draft
+continuity. True 16 KB observes 16,384-byte pages. Its retained log contains
+one GMS ReferenceQueueDaemon crash reported twice, not a Jarvis fatal or ANR;
+main, layout and lifecycle complete afterward; upgrades had already passed.
+Test48 passes on all five profiles
+that reach main instrumentation, including the otherwise-failing compact
+phone. This proves controlled foreground-service/session contracts; physical
+microphone, wake-word inference and real-model behavior still require signoff.
+
+API 35 compact artifact `11301049442`, ZIP SHA-256
+`c9e8bd5ecd6e9ca6a890873ebb47f8af2e8f2e8f3851efcb18eb02772ddeba46`,
+passes both upgrades and 48 of 49 main cases. Test45 cannot discover the
+initial disabled Save-review control before evaluating `isEnabled`. Product
+source unconditionally tags the button immediately below the review checkbox.
+The fresh checkbox starts clipped at the viewport bottom; the first 1,109-pixel
+blind stroke samples below the controls in the metrics, and subsequent search
+never observes Save. The retained test45 PNG is the dashboard top after edge
+reversal, not an atomic observation of the initial Save target. Later restart,
+lifecycle, layout and native phases are unreached. The correction changes only
+that initial discovery call on API 35+ to the existing half-viewport physical
+held gesture (12 MOVE events, 250 ms); the disabled assertion, later checkbox
+and Save taps, fresh safe bounds, 300 ms stability, 15-second/14-gesture limits
+and all 49 named cases remain unchanged. This is a bounded discovery trial,
+not proof of stale-node or inertia causality.
+
+API 29 artifact `11300944065`, ZIP SHA-256
+`bcb560c322912a42e7be321747062314d3ae736fea6f71aa0f7a4d3639da0612`,
+verifies the complete pinned 32.1.15/build 10696886 archive, staged/installed
+versions and successful GPU/feature help. Native QEMU then rejects LCD density
+210 before guest startup. There is no guest BOOT_COMPLETED, installed app,
+test48 or actual initialized GLES identity. The wrapper advertises GLES 3 in
+kernel arguments; that is not a renderer capability receipt. Its unchanged
+`vm.heapSize=256M` request is interpreted as zero and promoted to a 512 MiB
+minimum in generated hardware/kernel arguments. Actual guest heap/CPU/runtime
+coverage is not established by this failed startup.
+
+The API 29 correction uses supported 280 dpi with 720×1280 physical pixels,
+preserving the exact Pixel 2 dp viewport. The unchanged strict physical
+size/density receipt rejects the old raster, skin mismatches and any wm
+override. This increases pixel count by 16/9 from the prior raster; no speed
+gain is claimed. Pin verification, two requested CPUs, RAM/heap request,
+SwiftShader, HVF/guest Vulkan exclusions, native log ownership, current-PID
+boot barrier and every deadline remain unchanged. Fresh complete execution
+must qualify the density and renderer before app coverage can count.
+
+Final receipt artifact `11300724529`, ZIP SHA-256
+`c2ebb6321bbd0d0f8ca4be2afee0c5ee6925e28f86d68beed615fb1504fcfc0a`,
+is false with exactly four admitted profiles. All three publishers skip;
+the numbered Build 962 release and tag are absent. The next changed revision
+must pass the complete signed host gate and all six fresh profiles.
+
+## Build 963 startup, export and Fold alignment evidence
+
+[Build 963](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37198084788)
+tests PR head `32f8e3d3345a35de35aa28c0f2967af6cf3e6e91`, merge
+`562259d9093428fc0d5d6c7d34385b777e853c47`, tree
+`22dd0720692937c314afb4e3a66fe92858de046f`. Signed normal/compact builds,
+1,005 JVM tests in 184 suites, 203 helper tests, native keyword/page-size
+checks and four recorded ASR checks pass. Same-run APK identities are normal
+`2c7a206892669e8f474ba678206fa1cefb1421cfcfb20c3e857cc3a5df340dd6`,
+compact `a3803a8d91916819f2f0589bc5ead42f33b4a1910ccc2486df3648867abb7111`
+and test `132c11a5b4105e37e862b8afc723185f4227d68f3876b1633d1822603c19a504`.
+
+API 30 normal and API 35 compact each pass all 49 main journeys, both actual
+Build 907 upgrades without clearing data during update, process restart,
+eight lifecycle phases, four layout methods and nine native loads. Compact's
+initial disabled Save is discovered with one actual held half-viewport
+gesture; its disabled, later physical Save and persistence checks pass.
+These are two full raw profile passes, not admitted consolidated variants.
+Test48 passes on all four profiles that reach main instrumentation; the
+controlled session/foreground-service result does not qualify physical audio.
+
+API 36 normal artifact `11302362080`, ZIP SHA-256
+`ff43ab245519f091f5dec825a1aaa5b0a94bcf14e005e09f8fe943bfdd5f8527`,
+passes both upgrades and 48 of 49 main cases, including test45 and test48.
+Only test09 fails, in its evidence export after the test body: delayed
+MediaProvider PACKAGE_DATA_CLEARED processing orphans the newly inserted
+Downloads row before openOutputStream, which rejects URI 41 with a
+SecurityException. Both operations use targetContext. There is no retained
+exported test09 PNG/XML; subsequent phases are unreached. Broadcast delivery
+or provider-thread idleness alone does not establish MediaService work-queue
+completion, so neither is substituted for successful evidence export.
+The next main-journey export trial uses public API 31 shell stdin to transport
+the original captured bytes into the unique Downloads folder, avoiding an
+app-owned MediaStore row on API 31+. A bounded nonblocking transfer requires
+a fresh path and an exact success/size/SHA-256 receipt; duplicate paths,
+missing bytes, timeouts and mismatches fail. Both descriptors close on exit.
+API 29/30 retain the existing MediaStore export. The per-file 30-second transfer
+cap remains inside the unchanged instrumentation/host deadlines. Actual
+Android shell transport and collector-readable PNG/XML still need fresh CI.
+
+Fold artifact `11302617151`, ZIP SHA-256
+`e7b80b47240db9dece531073cc35e2b8c67b91458bd98cd3ad9e665ee20b8305`,
+passes both upgrades and 48 of 49 main cases, including test48. Test45's Copy
+navigation exhausts its unchanged deadline. Four upward discovery strokes
+eventually expose Copy wholly above the viewport, followed by fine strokes
+that reveal 49-, 74- and 99-pixel edge fragments. The final full-height control
+still extends 27 pixels above its scroll viewport. No overshoot, stationary
+gesture, disabled control or overlay cause is established. The next bounded
+alignment trial uses the existing one-fifth fine cap for a positive small
+rectangle intersecting and touching the directional viewport edge, only for
+modern physical-tap navigation with horizontal containment. Unknown, distant,
+wholly outside, read-only and API 29/30 navigation retain their original
+gestures. Fresh safe/enabled bounds, 300 ms stability, one physical tap and
+15-second/14-gesture limits remain required; actual timing is unverified.
+
+True 16 KB fails before controller execution: emulator-runner observes the
+boot property, then input keyevent 82 fails with Broken pipe. The action
+terminates before app installation and produces no device artifact. Guest
+crash absence cannot be inferred from its stdout. The next revision streams
+INFO-and-above guest diagnostics only for this profile; this changes no wait,
+input retry, boot budget or gate and is not a startup cure.
+
+API 29 artifact `11301877291`, ZIP SHA-256
+`88ddc6a3e662c34b51c5e7843ecda60c21220f613673f0ca8d0ef75cf3c5aa20`,
+verifies the pinned 32.1.15 archive and accepts 720×1280 at 280 dpi. The kernel
+activates two CPUs. Guest rendering still initializes ANGLE with SwiftShader
+and reports GLES 3; the pin does not establish a direct-only renderer. A stock
+permission-service timeout is followed by system-server restarts, composer
+null dereferences, SurfaceFlinger aborts and SystemUI failures. BOOT_COMPLETED
+never arrives; Jarvis is never installed. Startup host memory reports 84%
+free and no swap, with no successful late sample; resource exhaustion is not
+established. Linux x64 emulator launcher source rejects API 28+ ARM64 guests;
+a bundled ARM64 QEMU binary does not establish supported wrapper admission.
+The next controlled trial changes only the physical raster to 360×640 at
+advertised 140 dpi, preserving the exact physical dp extent with one-quarter
+of Build 963's pixels. Density resources, rounding and insets still need the
+full layout gate. The first permission timeout may remain; no cause, speed
+gain or stable-boot cure is established. Pin, CPU/RAM/heap request, renderer,
+HVF/guest Vulkan exclusions, startup observation and all deadlines are retained.
+
+Final receipt artifact `11302072065`, ZIP SHA-256
+`bcfa20d8ce7d6e4a2b201c482e48300748932ba572df59e25d7ddaa6068a53f6`,
+is false with zero admitted profiles. Missing true-16-KB evidence aborts input
+selection, so downstream missing host/profile inputs do not contradict their
+raw passes. All publishers skip; no numbered Build 963 release or tag exists.
+The next changed revision must pass the full signed gate and all six profiles.
+
+## Build 900 Gemma audio submission review
+
+The latest benchmark export contains counts and timing but excludes transcript,
+reply, prompt and PCM text/data. The supplied Voice Call diagnostics for
+`21c42f96-44e0-4197-91b2-a87e547b85ba` show Whisper recognized
+“Tell me about our solar system.” Gemma received 102444 retained WAV bytes in
+both answer and isolated caption submissions, but its answer denied audio
+capability. Native encoder timing is unavailable; these logs prove submission,
+not successful acoustic understanding. A prior caption refusal was also present
+as a user statement in history, so historical context can reinforce the failure.
+
+`audioMessageContents` now sends text followed by original audio in one message,
+matching Gemma 4's model-specific modality order:
+https://ai.google.dev/gemma/docs/core/model_card_4#4-modality-order.
+The JVM acceptance test checks the order and byte-exact WAV retention and rejects
+empty audio. Both answer and isolated caption paths use this helper. No sampling,
+personal vocabulary or decoding settings are changed. Actual E2B audio encoding,
+recognition and absence of refusals remain physical-device/real-model checks;
+this change is not proof of the root cause or an accuracy gain.
+
+Moonshine CALL_FILTERED now uses the same 1200 ms onset and contiguous phrase
+policy as Whisper, retaining internal pauses and all PCM until turn finalization.
+RAW_DIAGNOSTIC continues to bypass the external filter and uses native VAD.
+The shared gate's byte-order/reset/final-only tests cover input preservation;
+native Moonshine word accuracy and added decoder work need device measurement.
+The reviewed microphone profiles retain their general-purpose PCM16 mono 16 kHz,
+AEC and explicit noise-suppression policy; no user-specific tuning is introduced.
+
+## Initial Whisper complete-phrase capture checkpoint
+
+Whisper base.en keeps 1200 ms of idle pre-roll, then every PCM sample from
+confirmed onset through endpoint/finalization. This replaces Whisper's 240 ms
+pre-roll and 320 ms tail gate, which removed longer internal pauses and quiet
+ending sounds. Live/background and final-only Whisper share the phrase policy;
+At this initial checkpoint Moonshine retained its existing gate; the Build 900
+review above extends the same policy to its call path. Model, quantization, decoding, capture
+profile preference, endpoint timing, segmented long-turn bounds and microphone
+lease/cancellation contracts are unchanged.
+
+JVM acceptance: `ExternalSpeechGateTest` checks byte-exact opening/internal
+pause/ending order, exclusion of long idle audio and reset behavior;
+`AsyncWhisperSessionTest` checks final decoding includes audio arriving while a
+partial decode is busy. Existing default-gate, idle-no-inference, worker cleanup
+and segmented-transcriber regressions remain required. Android integration uses
+the existing exact-revision release sandbox; no new UI journey is introduced.
+
+Microphone review: both profiles request PCM16 mono at 16 kHz, session-bound
+AEC for call echo requests and explicit NS enable/disable with actual enabled,
+control and status diagnostics. Speech clarity uses VOICE_RECOGNITION/NS off;
+Call noise reduction uses VOICE_COMMUNICATION/NS on. Existing profile choices
+are preserved. Device processing can still differ from requests; code review
+does not establish acoustic superiority of either profile. Real Fold 6 beginning/
+ending-word accuracy and latency require phone comparison before claiming an
+improvement. Exact release CI is pending for this change.
+
+Build 902 (PR head `62008b1`) retained a compile failure for an Int/Long
+pre-roll duration mismatch; `9375faa` corrects the type. Build 903
+[run 37089409509](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37089409509)
+compiled and ran 1000 JVM tests with one stale telemetry-fixture failure:
+`finalAndRecoveryMeasureTheirOwnInputWithoutIdleCaptureAudio` expected 13760
+submitted samples from the old gate, while the new contiguous input correctly
+submitted 56000 (1200 ms pre-roll + 100 ms speech + 2000 ms ending + 200 ms
+independent recovery). All 14 phrase/gate worker tests passed. The telemetry
+fixture now requires the exact 56000 samples/3500 ms denominator, preserving
+work-time assertions and idle exclusion. No production change or relaxed
+acceptance was made for this repair. Failed unit artifact `11261513405`, ZIP
+SHA-256 `0d87c8eb5ddd703b74b4310ef431fdebb3a414c4c8664c45497a934e1f3ba0e0`,
+retains the raw XML failure; Android/publication was correctly skipped.
+
+## Repository maintainability refactor
+
+The repo-wide maintainability work preserves the published Build 885 behavior
+baseline. `ed30650` is the initial collaborator extraction checkpoint; completion
+requires typed voice/conversation stages, a composition facade with narrow ports,
+an audited whole-repository boundary map with justified exceptions, accurate
+newcomer setup/navigation/test guidance, and the exact final revision's full
+release gate. See [modular-refactor.md](modular-refactor.md) for the explicit
+A1–A8 criteria and [architecture](../architecture/README.md) for current owners.
+
+Smaller files or passing baseline evidence do not establish completion. Preserve
+all behavioral, persistence, native and release-test contracts and every named
+journey. Remaining real-model/physical-device coverage is reported separately from
+architectural acceptance; no voice-quality or latency improvement is implied.
+
+The current combined checkpoint is documented in [combined-audio.md](combined-audio.md). It supersedes the historical candidate/count statements below. The executable contract now preserves **48** named journeys: common test01–29, Audio test30–33, Memory test34–39, Tools test40–44, pipeline benchmark test45, conversation export test46, audio settings test47 and test90. Combined release verification is required; standalone Build 861/863 receipts do not validate this tree.
+
+## Hosted build performance repair
+
+Build 879's two attempts exhausted the 45-minute job limit. The first diagnostic repair in [Build 880](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36953091161) completed both signed APKs after providing a 60-minute investigation ceiling, explicit 4-GiB Kotlin heap, two Gradle workers, task caching, and trusted PR cache writes. It did **not** improve cold compilation: release assembly/tests took 44m 01s. Both emulator jobs subsequently failed test47 before settings rendered: the independent test DEX called a reshaped LazyColumn method (NoSuchMethodError). The prior 46 journeys passed; the crashed process did not run test90. Publication was correctly skipped.
+
+Retained artifact `11205369238`, SHA-256 `4ee00583fcda10e60de938e1528508f213c5f6e885cc5436c4d09c78fa9ccc0d`, supplies the actual breakdown: main Kotlin compilation 2,095.178 s; JVM backend 2,004.688 s; analysis 57.335 s; GC 24.193 s. The JVM test task took only 20.724 s, R8 took 150.303 s, native Sherpa 229.317 s, and compact assembly 48 s. The four-core/16-GiB host had no reported swapping. This establishes backend code generation as the dominant bottleneck; it does not yet isolate an individual Kotlin optimizer.
+
+The second repair tests `-Xno-optimize` on the production release Kotlin task alone, bypassing optional compiler bytecode optimization while retaining R8 optimization/minification, native Release builds, and every validation task. The large voice coroutine is a suspected contributor; actual measured reduction is required before calling this a speed fix. Bounded compiler thread/heap samples help isolate any remaining slow backend work.
+
+The trusted PR job also preserves Gradle execution history and production Kotlin incremental state/outputs under a branch-and-build-configuration cache key. It excludes APKs, test reports, signing material and configuration-cache state. Gradle still validates current source/classpath inputs, regenerates build metadata, and reruns missing test outputs; the same-run APK digest/receipt gates remain required. Missing state or changed build configuration starts a cold compile. Cold and incremental timings must be distinguished.
+
+[Build 881](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36957056657) completed signed assembly and JVM checks in 27m 58s (compact 31s), versus 44m 01s in Build 880. Performance artifact `11207481872`, SHA-256 `0d65d6f1227bbacffd15809b124420917cd68b403de1530ae3ec19a7be376273`, records a cold main compile of 1,318.261s, backend 1,291.337s, JVM test task 14.815s, R8 100.055s and Sherpa 164.563s. All sampled busy compiler stacks repeatedly show `performUninitializedAfterResumeVariablesAnalysis` / `ResumeDependentFrame.merge`: mandatory coroutine state analysis remains dominant despite disabling optional optimization. Runner/caching differences also affect the comparison, so the elapsed reduction is not attributed to the flag alone. The first incremental-state cache was saved after this run; a subsequent exact-head run must establish whether that state avoids recompiling unchanged Kotlin. Build 881 predates the lazy-layout ABI repair and is not the verified release candidate.
+
+The release/test ABI repair preserves the two lazy-layout owners directly referenced by the test DEX: `androidx.compose.foundation.lazy.LazyDslKt` and `LazyListScope`. This is a build/test compatibility repair, with the original test47 rendering path and every assertion unchanged. API 30 evidence `11207155078` SHA-256 `ead2bbba776d4f45ddbdda8ca15a156384800aa88e24e98ff7d723e2e17add4e` and API 35 evidence `11205499932` SHA-256 `4b26422666b8a89ce900a534125dc57acd9ad2c238cc52b0183df82f70855a5e` retain the failed stack. No settings screenshot was produced because rendering crashed; the screenshot-collection error is a consequence, not an independent failure.
+
+The profiler's busy stack matches upstream Kotlin issue [KT-83372](https://youtrack.jetbrains.com/issue/KT-83372), fixed by [JetBrains commit 4c2db10](https://github.com/JetBrains/kotlin/commit/4c2db10f09cfac89d9e6ad1472982b1c311539c1): coroutine resume-state analysis scales poorly with many suspension points. The project pinned Kotlin/Compose compiler 2.3.0; stable 2.3.21 contains the corrected analysis and DFS implementation (verified in its source). The targeted repair updates both compiler plugins to 2.3.21, removes the inconclusive `-Xno-optimize` experiment, and restores the original 45-minute job ceiling. Ordinary Kotlin/R8 optimization and all release gates remain enabled. This build-configuration change intentionally selects a new cache key and requires a fresh cold compile plus the full exact-head gate; timing and clean APK publication remain pending. No voice-state-machine refactor or acceptance relaxation is part of this repair.
+
+[Build 884](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36960452654) proves the compiler repair on a cold compile: main Kotlin task 130.006s, backend 19.867s (versus 2,004.688s in Build 880), analysis 74.053s, JVM tests completed. Artifact `11207788210`, SHA-256 `0ae813e886d99fb20ce19b7370929de06e613e1b45b9bef0a2bc6b48261a862c`, retains the phase report. The build then failed R8 parsing at the new lazy-layout rules because their explanatory comments mistakenly used `//` instead of ProGuard's `#`. This separate syntax repair changes only those three comment prefixes; the two keep rules and all acceptance checks remain unchanged. Build 884 produced no verified APK and publication was blocked. A fresh exact-head full gate remains required.
+
+Acceptance remains all release JVM/native/helper checks, both signed APK variants, all 48 journeys per emulator and the exact-build receipt before publication. No assertions, scenarios or release dependencies are relaxed. Physical voice, real model inference and Fold 6 performance still require phone validation.
+
+## Build 874 follow-up: voice reliability, direct audio and conversation metrics
+
+Source changes add unfinished single-word/phrase-loop detection before Piper receives a runaway suffix. One bounded repair retains a valid opening and reports a repeated repair loop without continuing speech. Pure JVM cases cover token-boundary splits, interrupted valid openings, late callback fencing, ordinary repetitions, long prose and formatted code. Capture resources reopen for a changed Speech clarity/Call noise reduction profile; a bounded playback-reference tail protects ordinary command handoff from echo-only text. This is conservative lexical rejection plus existing device AEC, not demonstrated acoustic cancellation or improved Fold 6 WER. Genuine distinct interruption words remain eligible.
+
+Voice input settings add **Gemma audio understanding** and optional **Whisper live captions**. The same recording feeds Gemma directly; captions cannot replace its input or authorize phone actions. Final Gemma transcription runs after answer generation and replaces the paired saved user message. Caption failures do not invalidate complete audio. Unsupported models and recordings exceeding the explicit 28-second capture safety limit reject with a visible explanation, never silently truncate. This experimental mode currently answers questions; phone actions remain in speech-recognition mode. Piper continues producing the spoken answer.
+
+Benchmarks now retain conversation linkage, full metric/status definitions, native SDK telemetry when exposed, resource snapshots and explicit capacity/disk failure status. Atomic per-attempt storage retains 90 days, up to128 MiB/100,000 attempts, and migrates v1 without silent rolling eviction. Reply-footers open conversation-scoped JSON/CSV copy/save/share; call details open call-scoped observations. `test46` checks reply navigation, persisted scope and redacted export; `test47` checks persisted audio mode/caption toggle without model loading. Both are registered with all previous release journeys. JVM storage cases cover more than500 records, capacity refusal, migration, expiry, partial-write/reset durability and missing values.
+
+Build 875 (run 36923978989, PR head 4e4c841) failed release compilation at `AudioTurnCapture.kt:45`: the configurable `Int` capture limit was passed to a `Long` buffer parameter. This is a product compilation defect; it is corrected with an explicit widening conversion, without changing the limit or acceptance checks. No JVM/emulator pass or APK publication is claimed for that run. Exact revised CI is required before publication. Emulator results establish UI/storage/routing contracts only. Live Gemma/Whisper inference, physical self-echo, barge-in, capture accuracy, longer-request handling and speed differences require actual model weights and phone testing. See [voice-audio-and-metrics.md](voice-audio-and-metrics.md) and [pipeline-benchmarks.md](pipeline-benchmarks.md).
+
+## Build 866 noisy input repair and pipeline benchmarks — exact CI pending
+
+The supplied restaurant call proves literal Moonshine errors, unrelated reference selection, failed correction/source follow-ups and unsupported Gemma claims. It does not include Whisper acoustic ground truth or establish a measured 40% WER. Both recognizers shared forced communication-source/noise-suppression requests. The new default requests VOICE_RECOGNITION and explicitly disables controllable noise suppression while retaining the duplex speaker route and AEC request; the prior communication/noise-filtered profile remains selectable for a paired phone comparison. Actual source, client/device format, effect support/control/enable result and implementation are logged. Device preprocessing can remain outside app control; lower WER is a phone acceptance check, not a unit-test conclusion.
+
+Whisper now bounds decoder background using the same acoustic window as Moonshine. Already-classified queued silence no longer defers finalization; weak or unclassified potential speech still does. Acoustic sample levels, clipping, near-silence, VAD energy contrast, worker work, submitted samples and backlog are observed without claiming speaker identity, confidence or true SNR. Exact work scopes distinguish asynchronous Whisper batch decoding from Moonshine native API wall time, exclude queue waits/model loading and count overlapping/recovery input per actual submission.
+
+Corrections replace a subject while retaining its substantive question; pronouns and source-only requests retain that question. Explicit year retraction removes the ASR year. Full-subject/question relevance rejects the murderer/comedy/partial-name sources in the log. Malformed speech with no relevant evidence uses the existing factual failure response instead of supplying unrelated quotations to Gemma. No Taco Bell alias, answer or acoustic word substitution is hardcoded.
+
+Pipeline benchmarks cover capture, acoustic/ASR worker phases, endpoint delay, context/memory/reference work, attachments, model setup, each native submission/prefill/retry/transcription/tool pass, visible text readiness, Piper synthesis and playback proxies, executor receipts and process/device resources. Outcomes retain cancellation/errors/rejections/no speech; native callbacks remain separate from tokens. Exported JSON/CSV includes build/source/device/model/configuration provenance, comparable groups, missing-aware distributions and small-sample labels. Verified original-ASR WER/CER and independent human task/intent/factuality verdicts are explicit review steps. The 500-record/2-MiB atomic archive excludes prompt/transcript/reference text and PCM. Temporary hypotheses are generation-fenced on erasure; scoring runs off the UI thread.
+
+New controlled release `test45_pipelineBenchmarksScoreOriginalAsrPersistAndExportRedactedEvidence` verifies reference consent/scoring, independent quality, missing/native-token gaps, environment labels, redaction, persisted cancellation/scoring and reset. JVM coverage includes reference-follow-up regressions, capture/background/finalization policies, actual worker accounting, scorer alignment, schema/statistics, atomic byte bounds, captured observer ownership and terminal collector fencing. All existing 45 journeys remain required. Read [pipeline-benchmarks.md](pipeline-benchmarks.md) for metric definitions and reproducible phone/resume criteria.
+
+Limits: no installed real-model inference, physical mic/effects/restaurant improvement or Fold 6 performance is qualified by local JVM/emulator fixtures. Accepted executor tasks, follow-up/interruption capture and report audio have separately owned, linked receipts; they remain outside the main command's ASR/TTS receipt. Follow-up ASR fields describe the final capture attempt; retry/readiness observations remain separate. Preconfirmation keyword/natural probe work stays in interruption diagnostics and is excluded from the final-ASR work counter. Native exact token IDs, native multimodal encoder timing and acoustic audibility remain unavailable. PStack Work Port planning was applied; the requested Terra route is unavailable in this host. Actual inherited agents implemented and independently reviewed the work; no provider-billing or fully coordinated PStack receipt is claimed.
+
+Build 867 run https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36810059233 compiled production and JVM test sources, passed native keyword/helper checks, then rejected test45's missing experimental Compose semantics opt-in at line 2131. JVM execution, signed APK completion, emulators and publication did not pass. Repair 1 adds the same narrow API opt-in used by existing journeys; no assertion or acceptance criterion changes. Failed receipt artifact `11140425993`, SHA-256 `dd018531fd613a276815c8c7bb55d6aa8428c5b9ec8eb71682606e0eec536f6f`, remains retained. Exact repaired-revision release verification is required.
+
+Build 868 run https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36812658278 passed all 894 JVM tests, native/helper checks, signing and normal/compact APK assembly. API 30 passed all 45 existing journeys but test45 could not find the visible reference dialog's `pipeline_benchmark_reference_score` resource ID: a separate dialog semantics root did not inherit the activity's resource-tag setting. Repair 2 enables resource-tag semantics on the benchmark screen and both dialogs, matching the existing Memory UI pattern; all test45 selectors and assertions remain intact. API 30 evidence artifact `11141255299`, SHA-256 `6e0610da1130ebd98b1ea2d016acd1b594ba82156f8fc12fca7d58038d0e5c8b`, remains retained. These results do not qualify the repaired revision; the complete exact-head gate must pass again.
+
+Build 869 run https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36815009876 passed all 894 JVM tests and signed normal/compact build checks. Both emulators passed all 45 existing journeys; test45 passed reference scoring, independent quality, redacted export, and durable-score assertions, then failed at the restored-screen reference control. Its screenshot still displayed the previous composition's copy status: `setContent` reused the original remembered selection, so the fixture's next click collapsed the already-expanded sample. Repair 3 is an explicit harness correction: key the rendered composition by store identity to model fresh process UI state, while preserving every assertion, including unavailable restored transcript and durable reset. API 30 artifact `11142001356` SHA-256 `d2e2ee8f10b29aefa5277fbc0c9cd1767079921ed6e34e1209175c49e2bb17a5`, API 35 artifact `11142006308` SHA-256 `aab354ce42713d450dcad6d295864a968be6f6d71c8894df8116cbf51d594c44`, and failed receipt `11141608357` SHA-256 `32074330ecd4e3fc82ec7e6d33ae65f6c5c1bfe21df1f5bb937298f0deeb1622` remain retained. Publication was correctly skipped. This is not a pass for the repaired revision; exact full CI must run again.
+
+Build 870 run https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36817635224 again passed 894 JVM tests, signed build checks, and all 45 existing journeys on both variants. The new journey exposed two specific test-driver defects: API 35 accepted a Save-review node completely outside its scroll viewport and tapped Android navigation; API 30 searched downward for an export control above the current view until its enabled-control deadline expired. Retained logcat records prove the misplaced tap and unsuccessful search; they do not show an application save/export failure. One additional bounded harness correction is scoped to the benchmark journey: intersect scroll-parent viewports, reveal controls before a single stable tap, seek header controls from the top, and await the actual quality update before reading it. Existing global helpers, all expected results, and production behavior remain unchanged. This narrowly justified correction extends the default three-attempt repair budget for an independently diagnosed harness defect; exact full verification remains required. API 30 artifact `11143810511` SHA-256 `fe7ed9e8ad5b1f1dc2fbc0fe3ec874cf6c1ea50fbcc65d10d263e30366a19d5e`, API 35 artifact `11143540934` SHA-256 `10e83722a031519bee5ca72a602ca5ce5e2f5b84e02aeaa5fdc2c98fc8af0ef6`, and failed receipt `11143165927` SHA-256 `951f75be58ba50070428e8bf88687f2fbfc01311b93ff9d848138a33fc4c4b71` remain retained. Tested merge `1549bc095a79e1f8d1f910db7b537ceb6753c75d`, PR head `3bd86181233b673bb785f3078201d46c92cc1d32`; publication was correctly skipped.
+
+Build 871 run https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36821931028 passed 894 JVM tests, both signed variants, and every one of the 46 API 30 journeys. API 35 passed the 45 existing journeys and the new reference/quality assertions, then failed when the benchmark-only helper could not find `tts_load_ms: unavailable`. Its populated screenshot ends below that row, while logcat records 14 forward gestures without edge recovery. The subsequent XML reflects fixture cleanup, so it does not establish metric omission. Two independent reviews classified the remaining failure as the same navigation defect: use controlled overlapping scrolls, observe the scroll container's boundary result, and reverse once when necessary. One final full run is permitted to complete this narrowly established harness correction, with the original 15-second/14-gesture limits, visibility checks and every expected result preserved; another failure requires a bounded handoff rather than further automatic repair. API 30 artifact `11144698426` SHA-256 `175a35f59737adfd13959c0a50287edbbf562d534db2e4217fdaf49479bf9982`, API 35 artifact `11144422576` SHA-256 `650db25578c62e6a7152528b08cef54bef1e5baf98f7ec368802431370762d54`, and failed receipt `11144399186` SHA-256 `6b3ef4935fae69ba71a30cfb43f1f5e8af786a2e023f24c4eadd788aedbbfa6f` remain retained. Tested merge `c65e39c67c2104a348064544829c359a957f3c60`, PR head `bd470cf178ba1a6d401b11101c432eb6c83c17ae`; publication was correctly skipped. This does not verify the next revision or physical noisy speech.
+
+The production-parent test27 verifies Memory-to-Chat/Voice navigation and exact Tools approval UI while the single chat and active voice overlay remain alive. The source-branch original test names below map by suffix to their renumbered combined methods. Historical failed-run evidence and device/model limitations remain applicable.
+
 Update this file when adding a feature or learning a reproducible regression. A listed gap is not passing coverage.
 
 ## APK publication
@@ -140,16 +1927,22 @@ coverage remain pending.
 | Tool calling | ActionIntentRouter, NativeToolJourney, MobileActionValidator, MobileActionPipeline and ActionTurnRunner JVM tests (strict intent/argument validation, ordered batches, failure boundaries, explicit repeats, replay deduplication, permission/service failure results, no automatic retry, preserved cancellation/programming errors) | Battery equals Android state; valid volume changes Android; invalid input preserves volume; missing app reports failure; Settings opens on screen; malformed/unsupported requests preserve Android volume; repeated volume requests preserve target state; three-action turn runs battery → volume → Settings; invalid plan has no Android effects; partial failure retains completed executor receipt/effect; duplicate model pass does not replay volume; natural Settings → battery request bypasses lookup; literal unknown retry app fails before battery and rejects Facebook substitution | Real model emits correct calls; end-to-end text/voice model integration; physical voice behavior; background launch/notification flow; ambiguous apps/actual permission combinations |
 | Continuous accepted-action voice | Pinned Build 761 `AcceptedActionQueue`, `ContinuousActionSession`, `VoiceActionControl`, `VoiceCallStore` and runtime ownership checks | `test20` FIFO follow-up while action runs; `test21` speech interruption preserves tasks; `test22` scoped cancellation preserves completed receipts; `test23` end-call retains unspoken results | Intended acceptance is bounded FIFO work and typed/voice follow-ups; build 768 passed its exact Android CI; the merged revision requires fresh CI. Real weights, microphone/ASR/TTS/acoustic behavior and physical Fold 6 behavior remain unverified |
 | Conversations | ConversationHistory, context/policy and prompt-builder JVM checks; controlled `ConversationScreen` surface check | `test27` keeps an active call across Voice/Chat/Memory navigation and ends only through explicit End, goodbye, or stop-listening; quiet captures retain the call, typed follow-up is bounded, and queue-full is explicit | Acceptance requires exact-run receipt review. Real weights, generated replies, microphone/ASR/TTS and physical behavior remain unverified |
-| Native MemoryOS manager | `MemoryPolicyTest`, `MemoryStoreTest`, `MemoryOsTest`, `MemoryRetrievalTest` plus finalized text/voice bridge checks cover bounds, restricted-content exclusion, pending review, correction lineage, deletion, corruption and quoted packets | `test24` manager lifecycle; `test25` finalized text/voice proposals remain pending until approval and approved quoted context reaches the prompt builder; `test26` correction/erase refreshes local approved context | Intended acceptance is conservative proposal/review and local recall only. Memory packets are historical, quoted and never tool authority; expiry/correction/erase fences, runtime integration, process death, real weights and physical behavior remain pending |
+| Native MemoryOS wiki | `MemoryPolicyTest`, `MemoryStoreTest`, `MemoryOsTest`, `MemoryRetrievalTest`, and bridge checks cover bounds, restricted-content exclusion, review state, lineage, deletion, persistence and quoted packets | `test24` drives the production Memory modal, Review approval, Wiki search/page/source, organization, links/backlinks, correction, deletion and recreation; `test25` proves finalized text/voice proposals stay pending until approval and approved quoted context reaches the prompt builder; `test26` refreshes approved context after correction/erase | Pending, rejected, superseded, deleted, and expired records never enter the wiki. Recall is conservative local history only; real weights, ASR, microphone, cloud retrieval and physical behavior remain unverified |
 | Voice lifecycle and reply metrics | VoiceSessionController, ConversationHistory, LiteRtVoicePrefillSession, BargeInGate/NaturalBargeIn, PiperTextStream and ReplyMetrics checks cover per-reply JSON persistence, late playback after the next turn/restart, raw native timing before hidden-channel filtering, ASR interruption and sentence-first Piper submission | `test29` renders two distinct per-message metric footers and reloads persisted history | Physical Fold 6 route selection, Bluetooth, acoustic behavior, real-model timing and thermal behavior remain unverified. TTF-SW uses AudioTrack head progress as a playback proxy, not microphone acoustics. |
-| M1d task/conversation scheduling | `SilentWorkModeTest` (silent-work enter/exit, wake phrase, answer window, control passthrough, session gate) and `M1dTaskSchedulingTest` (scheduling policy, D24 stop phrases, stop router, approval→session admission, changed-target invalidation, dispatch eligibility, cancellation by identity, status projection, model-proposal parking) | `test45` panel approval admits the screen session and dispatches exactly (stale approval denied, finished group releases the lease and hides the overlay); `test46` conflicting screen task queues behind the lease instead of stealing it; `test47` progress notification posts immediately and silently during Do Not Disturb; `test48` admitted work survives call end and the finished group releases the lease, hides the overlay and projects completion | Real-model proposal of screen mutations, physical Fold 6 screen behavior, real accessibility-service enablement, microphone/wake-word acoustics and on-device approval UX remain unverified |
-| M1e device validation (permission/lock handling, regression) | `M1eDeviceValidationTest` (first-source access remembered, within-family auto-exposure, denial/revocation blocks dispatch and approval claim, dispatch never overwrites denial, out-of-family scope refused at admission and by the file store, source-access file round-trip, capability denial at admission and mid-flight, lock classification, gated owner recognition, NEEDS_UNLOCK without effects, stale-callback rejection, crash-before/after-dispatch reconciliation without repeat) | `test49` source-access denial/revocation blocks dispatch on every adapter with a truthful receipt (approval claim blocked too; tampered cross-family scope refused); `test50` locked device hands sensitive actions off to unlock while the non-sensitive battery read dispatches through the real Android adapter (owner recognition gated; real keyguard state); `test51` cross-family T01 regression: invalid args for every M1 tool family are rejected before any adapter runs (volume unchanged, no screen effects); `test52` crash before/after dispatch recovers to an unknown outcome, stale callbacks are rejected and unknown mutations are never repeated | Physical Fold 6 lock behavior, real permission-revocation UX, on-device speaker-verification measurement (owner recognition stays gated until measured), real-model tool selection and physical-device performance remain unverified |
-| M2 reusable workflows and triggers | `M2WorkflowsTest` (versioned step-graph validation, typed result bindings, deterministic conditions, waits, bounded adaptive steps, plain-language preview, draft/enable/revise lifecycle, routine-grant exact-limit reuse, disable pauses affected work, conversation capture, restart dedup, daily/DST scheduling, exact-alarm honesty, missed-run relevant/irrelevant/uncertain evaluation with receipts, coalescing, engine suspend/approval/user-question outcomes, effort budgets, schema-3 file round-trip and tamper refusal, settings projection) | `test53` routine occurrence completes under a reusable routine grant with exact limits (changed limits rejected at reuse and at admission; approval waits block dependents only; disable pauses the routine's unfinished work while unrelated waits are untouched); `test54` conversation-created workflow shows its plain-language summary and cannot schedule until explicitly enabled, captured drafts start disabled, and a revision never mutates the running occurrence's pinned version; `test55` reminders target the requested time, flexible routines use windows, exact-alarm mode is reported honestly against the real Android alarm service, daily triggers resolve forward across the spring-forward DST gap, and reboot recovery never replays a trigger or duplicates an occurrence (redelivered claims cannot double-fire); `test56` missed runs evaluate to relevant/irrelevant/uncertain with persisted decision receipts, duplicate missed slots coalesce to the latest, and bounded adaptive effort asks the user instead of repeating completed work | Real-model proposal of workflow steps, physical Fold 6 alarm delivery while the app is closed, real notification/location trigger listeners, on-device approval UX for screen-step branches, and physical-device timing remain unverified |
-| M3 ecosystem integrations (AppFunctions discovery, MCP) | `M3EcosystemTest` (provider identity/wire names/families/scope caps; strict nested type conversion with no coercion and exact error paths; discovery diff and alias invalidation on update/uninstall; collision-safe aliases; task-relevant selection; dispatcher grant recording, typed results, paid purchase confirmation, model-exposure gate, dependent journeys with output bindings; MCP URL policy, protocol parsing incl. SSE tolerance, guided setup against fakes and a real loopback HTTP server, free-only default enablement, schema-change blocking, disconnect, auth-failure states, credential hygiene with secrets never in configs; provider-grant file round-trip and tampered cross-provider scope refusal; honest settings rows) | `test57` runs the real AppFunctions platform probe with ordinary app access (access method labeled, honest empty-state note), validates the controlled dependent-function journey with output bindings, collision-safe aliases, strict nested argument conversion with zero dispatch on invalid input, and update/uninstall invalidation, and proves the T08 provider-grant discipline (first-source grant remembered per provider family, revocation blocks every adapter, an independent provider keeps working); `test58` runs guided MCP setup with a custom URL against a real loopback HTTP server through the real transport (free-only default enablement, secret never in the config), proves paid tools need explicit enablement and still return purchase confirmation instead of dispatching, and exercises schema-change blocking with re-review, auth-failure denied state and explicit disconnect with honestly unavailable calls; `test59` proves provider grants can never broaden (out-of-namespace scopes dropped), denial blocks the adapter with a truthful receipt, the model-exposure gate stays structurally shut until M7, and the settings projection carries honest provider rows | Real third-party AppFunctions providers on a physical device (broad consumer access is platform-gated; the probe reports this honestly), real remote MCP servers over the network, on-device Android Keystore credential behavior, and physical-device timing remain unverified |
-| Reminder bug-fix slice (voice/text remind me, schedule view, receipt-gated replies) | `ReminderPlanTest` (bounded reminder grammar incl. relative times and the documented bare-hour PM convention, accept/reject routing, strict-decode parity, reminder workflow definition validation, ledger write success/failure receipt-gating, honest empty state, past-time rejection before any write) and `FinalVoiceToolGuardTest` (spoken reminder allows matching message/time, rejects mismatches; schedule view allowed) | `test60` proves a text remind-me request parses to a Ready create_reminder plan, dispatches through the real Android executor, writes a real ledger entry with an armed alarm, and show_schedule lists it; `test61` proves an empty schedule renders the honest empty state | Real-model selection of the new tools, physical Fold 6 alarm delivery while the app is closed, and on-device notification audibility remain unverified |
+| M1d task/conversation scheduling | `SilentWorkModeTest` (silent-work enter/exit, wake phrase, answer window, control passthrough, session gate) and `M1dTaskSchedulingTest` (scheduling policy, D24 stop phrases, stop router, approval→session admission, changed-target invalidation, dispatch eligibility, cancellation by identity, status projection, model-proposal parking) | `test59` panel approval admits the screen session and dispatches exactly (stale approval denied, finished group releases the lease and hides the overlay); `test60` conflicting screen task queues behind the lease instead of stealing it; `test61` progress notification posts immediately and silently during Do Not Disturb; `test62` admitted work survives call end and the finished group releases the lease, hides the overlay and projects completion | Real-model proposal of screen mutations, physical Fold 6 screen behavior, real accessibility-service enablement, microphone/wake-word acoustics and on-device approval UX remain unverified |
+| M1e device validation (permission/lock handling, regression) | `M1eDeviceValidationTest` (first-source access remembered, within-family auto-exposure, denial/revocation blocks dispatch and approval claim, dispatch never overwrites denial, out-of-family scope refused at admission and by the file store, source-access file round-trip, capability denial at admission and mid-flight, lock classification, gated owner recognition, NEEDS_UNLOCK without effects, stale-callback rejection, crash-before/after-dispatch reconciliation without repeat) | `test63` source-access denial/revocation blocks dispatch on every adapter with a truthful receipt (approval claim blocked too; tampered cross-family scope refused); `test64` locked device hands sensitive actions off to unlock while the non-sensitive battery read dispatches through the real Android adapter (owner recognition gated; real keyguard state); `test65` cross-family T01 regression: invalid args for every M1 tool family are rejected before any adapter runs (volume unchanged, no screen effects); `test66` crash before/after dispatch recovers to an unknown outcome, stale callbacks are rejected and unknown mutations are never repeated | Physical Fold 6 lock behavior, real permission-revocation UX, on-device speaker-verification measurement (owner recognition stays gated until measured), real-model tool selection and physical-device performance remain unverified |
+| M2 reusable workflows and triggers | `M2WorkflowsTest` (versioned step-graph validation, typed result bindings, deterministic conditions, waits, bounded adaptive steps, plain-language preview, draft/enable/revise lifecycle, routine-grant exact-limit reuse, disable pauses affected work, conversation capture, restart dedup, daily/DST scheduling, exact-alarm honesty, missed-run relevant/irrelevant/uncertain evaluation with receipts, coalescing, engine suspend/approval/user-question outcomes, effort budgets, schema-3 file round-trip and tamper refusal, settings projection) | `test67` routine occurrence completes under a reusable routine grant with exact limits (changed limits rejected at reuse and at admission; approval waits block dependents only; disable pauses the routine's unfinished work while unrelated waits are untouched); `test68` conversation-created workflow shows its plain-language summary and cannot schedule until explicitly enabled, captured drafts start disabled, and a revision never mutates the running occurrence's pinned version; `test69` reminders target the requested time, flexible routines use windows, exact-alarm mode is reported honestly against the real Android alarm service, daily triggers resolve forward across the spring-forward DST gap, and reboot recovery never replays a trigger or duplicates an occurrence (redelivered claims cannot double-fire); `test70` missed runs evaluate to relevant/irrelevant/uncertain with persisted decision receipts, duplicate missed slots coalesce to the latest, and bounded adaptive effort asks the user instead of repeating completed work | Real-model proposal of workflow steps, physical Fold 6 alarm delivery while the app is closed, real notification/location trigger listeners, on-device approval UX for screen-step branches, and physical-device timing remain unverified |
+| M3 ecosystem integrations (AppFunctions discovery, MCP) | `M3EcosystemTest` (provider identity/wire names/families/scope caps; strict nested type conversion with no coercion and exact error paths; discovery diff and alias invalidation on update/uninstall; collision-safe aliases; task-relevant selection; dispatcher grant recording, typed results, paid purchase confirmation, model-exposure gate, dependent journeys with output bindings; MCP URL policy, protocol parsing incl. SSE tolerance, guided setup against fakes and a real loopback HTTP server, free-only default enablement, schema-change blocking, disconnect, auth-failure states, credential hygiene with secrets never in configs; provider-grant file round-trip and tampered cross-provider scope refusal; honest settings rows) | `test71` runs the real AppFunctions platform probe with ordinary app access (access method labeled, honest empty-state note), validates the controlled dependent-function journey with output bindings, collision-safe aliases, strict nested argument conversion with zero dispatch on invalid input, and update/uninstall invalidation, and proves the T08 provider-grant discipline (first-source grant remembered per provider family, revocation blocks every adapter, an independent provider keeps working); `test72` runs guided MCP setup with a custom URL against a real loopback HTTP server through the real transport (free-only default enablement, secret never in the config), proves paid tools need explicit enablement and still return purchase confirmation instead of dispatching, and exercises schema-change blocking with re-review, auth-failure denied state and explicit disconnect with honestly unavailable calls; `test73` proves provider grants can never broaden (out-of-namespace scopes dropped), denial blocks the adapter with a truthful receipt, the model-exposure gate stays structurally shut until M7, and the settings projection carries honest provider rows | Real third-party AppFunctions providers on a physical device (broad consumer access is platform-gated; the probe reports this honestly), real remote MCP servers over the network, on-device Android Keystore credential behavior, and physical-device timing remain unverified |
+| Reminder bug-fix slice (voice/text remind me, schedule view, receipt-gated replies) | `ReminderPlanTest` (bounded reminder grammar incl. relative times and the documented bare-hour PM convention, accept/reject routing, strict-decode parity, reminder workflow definition validation, ledger write success/failure receipt-gating, honest empty state, past-time rejection before any write) and `FinalVoiceToolGuardTest` (spoken reminder allows matching message/time, rejects mismatches; schedule view allowed) | `test74` proves a text remind-me request parses to a Ready create_reminder plan, dispatches through the real Android executor, writes a real ledger entry with an armed alarm, and show_schedule lists it; `test75` proves an empty schedule renders the honest empty state | Real-model selection of the new tools, physical Fold 6 alarm delivery while the app is closed, and on-device notification audibility remain unverified |
 | Packaging | Native ABI, Piper callback, compact APK equivalence checks | Signed normal and compact variants installed/launched | Device GPU/NPU compatibility and resource limits |
 
-The executable device contract is `scripts/verification/scenarios.json`, backed by `app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt`. All sixty-one named methods must finish successfully; skipped methods are failures. `test01`–`test24` remain the existing setup, tool, multi-action, and manager journeys; `test25` covers finalized text/voice memory approval and prompt context, `test26` correction/erase refresh, and `test27` the controlled production ConversationScreen state contract; `test25`–`test27` are controlled UI/memory-prompt checks, not microphone or model end-to-end tests. `test28` retains the existing VoiceNavigationPolicy call-ID contract, and `test29` verifies two distinct assistant-message metric footers and persisted reload. `test30`–`test34` cover the durable phone-action journal, task recovery/exact approval, panel reconciliation, conditional/comma plans and background-assistant app launch; `test35` dispatches the `media_control` verbs through the real Android executor; `test36` proves a text "pause music" request parses to a Ready `media_control` plan and dispatches (regression for the Fold 6 hallucinated-success report); `test37` opens the Wi-Fi settings screen and verifies it appears; `test38` dispatches `open_website` with an honest receipt and rejects dangerous URL schemes; `test39` dispatches `navigate` with an honest receipt and rejects blank destinations. `test40` proves the real Android tree-walking extraction against synthetic `AccessibilityNodeInfo` instances and the service's manifest declaration; `test41` proves verified-target tap dispatch (unadmitted and stale tokens never dispatch, wrong-kind targets rejected, release hides the overlay); `test42` proves manual-touch pause and idle resume re-observing the changed screen without a countdown; `test43` proves honest unavailability receipts when the accessibility service is not enabled. `test45` proves the M1d approval-UI wiring: panel approval of a screen task admits the screen-control session grant for its group, the ledger claim consumes the approval atomically with dispatch eligibility, a changed target invalidates the prior approval, and a finished group releases the lease and hides the Stop overlay. `test46` proves a conflicting screen task queues behind the lease instead of stealing it while independent work runs. `test47` proves task progress notifications post immediately and silently during Do Not Disturb. `test48` proves admitted work survives call end and the finished group releases the lease, hides the overlay and projects completion with ordered receipts. `test49` proves source-access denial/revocation blocks dispatch on every adapter with a truthful receipt (the approval claim path is blocked too; first-source access is remembered; a tampered cross-family scope is refused). `test50` proves a locked device hands sensitive actions off to unlock while the non-sensitive battery read dispatches through the real Android adapter, against the real keyguard state, with owner recognition gated. `test51` is the cross-family T01 regression: invalid args for every M1 tool family are rejected before any adapter runs, with volume unchanged and no screen effects. `test52` proves crash before/after dispatch recovers to an unknown outcome, stale callbacks are rejected and unknown mutations are never repeated. `test53` proves a routine occurrence completes under a reusable routine grant with exact limits (changed limits rejected at reuse and at admission; approval waits block dependents only; disable pauses the routine's unfinished work while unrelated waits are untouched). `test54` proves a conversation-created workflow shows its plain-language summary and cannot schedule until explicitly enabled, captured drafts start disabled, and a revision never mutates the running occurrence's pinned version. `test55` proves reminders target the requested time, flexible routines use windows, exact-alarm mode is reported honestly against the real Android alarm service, daily triggers resolve forward across the spring-forward DST gap, and reboot recovery never replays a trigger or duplicates an occurrence (redelivered claims cannot double-fire). `test56` proves missed runs evaluate to relevant/irrelevant/uncertain with persisted decision receipts, duplicate missed slots coalesce to the latest, and bounded adaptive effort asks the user instead of repeating completed work. `test57` proves AppFunctions discovery with the real ordinary-app platform probe (access method labeled, honest empty-state note), the controlled dependent-function journey with typed output bindings, collision-safe aliases, strict nested argument conversion with zero dispatch on invalid input, update/uninstall invalidation of exactly the affected aliases, and the T08 provider-grant discipline (first-source grant per provider family, revocation blocking every adapter while an independent provider keeps working). `test58` proves guided MCP setup with a custom URL against a real loopback HTTP server through the real transport — free-only default enablement, the secret never in the config — plus paid tools requiring explicit enablement and still returning purchase confirmation instead of dispatching, schema-change blocking until re-reviewed, an explicit auth-failure denied state, and explicit disconnect making calls honestly unavailable. `test59` proves provider grants can never broaden (out-of-namespace scopes are dropped at record time), denial blocks the provider adapter with a truthful receipt, the model-exposure gate stays structurally shut until M7, and the settings projection carries honest provider rows with labeled access. `test60` proves a text "remind me to go door dashing tomorrow at 4" parses to a Ready create_reminder plan and dispatches through the real executor into a real ledger entry that show_schedule lists; `test61` proves the empty schedule renders its honest empty state. `test90` remains the process-restart selection check and intentionally leaves the selected model for the controller's process-restart check. The exact combined revision requires fresh Android CI; APK/build status comes from its exact run receipt. JVM/native tests run independently in the build job.
+The executable device contract is `scripts/verification/scenarios.json`, backed by `app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt`. All thirty-three named methods must finish successfully; skipped methods are failures. `test01`–`test24` remain the existing setup, tool, multi-action, and manager journeys; `test25` covers finalized text/voice memory approval and prompt context, `test26` correction/erase refresh, and `test27` the controlled production ConversationScreen state contract; `test25`–`test27` are controlled UI/memory-prompt checks, not microphone or model end-to-end tests. `test28` retains the existing VoiceNavigationPolicy call-ID contract, `test29` verifies two distinct assistant-message metric footers and persisted reload, `test30` checks the separate call action, unified chat and retained dictation mic, and `test31` checks dictation. `test90` remains the process-restart selection check. The exact combined revision requires fresh Android CI; APK/build status comes from its exact run receipt. JVM/native tests run independently in the build job.
+
+The executable device contract is `scripts/verification/scenarios.json`, backed by `app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt`. All thirty-six named methods must finish successfully; skipped methods are failures. `test01`–`test23` retain setup, tool, and multi-action acceptance. `test24` is the complete production Memory wiki journey: Add modal rejection, controlled finalized capture, actual Review approval, Wiki page/search/source, organization, linked pages/backlinks, correction/deletion, pending/rejected exclusion, erase confirmation, and recreation persistence. `test25` covers finalized text/voice memory approval and prompt context, `test26` correction/erase refresh, and `test27` the controlled production ConversationScreen state contract; `test24`–`test27` use controlled capture/model inputs where required and are not microphone or real-model end-to-end tests. `test28` retains the existing VoiceNavigationPolicy call-ID contract, and `test29` verifies two distinct assistant-message metric footers and persisted reload. `test90` remains the process-restart selection check and intentionally leaves the selected model for the controller's process-restart check. The exact combined revision requires fresh Android CI; APK/build status comes from its exact run receipt. JVM/native tests run independently in the build job.
+
+The executable device contract is `scripts/verification/scenarios.json`, backed by `app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt`. All thirty-five named methods must finish successfully; skipped methods are failures. `test01`–`test24` remain the existing setup, tool, multi-action, and manager journeys; `test25` covers finalized text/voice memory approval and prompt context, `test26` correction/erase refresh, and `test27` the controlled production ConversationScreen state contract; `test25`–`test27` are controlled UI/memory-prompt checks, not microphone or model end-to-end tests. `test28` retains the existing VoiceNavigationPolicy call-ID contract, and `test29` verifies two distinct assistant-message metric footers and persisted reload. `test90` remains the process-restart selection check and intentionally leaves the selected model for the controller's process-restart check. The exact combined revision requires fresh Android CI; APK/build status comes from its exact run receipt. JVM/native tests run independently in the build job.
+
+The merged audio-pr2/tools contract (audio-pr2 import, October 2026) is `scripts/verification/scenarios.json`, backed by `app/src/androidTest/java/com/battlesbudz/jarvis/v2/verification/ReleaseJourneyTest.kt`. All seventy-five named methods must finish successfully; skipped methods are failures. `test01`–`test24` remain the existing setup, tool, multi-action, and manager journeys; `test25` covers finalized text/voice memory approval and prompt context, `test26` correction/erase refresh, and `test27` the controlled production ConversationScreen state contract; `test25`–`test27` are controlled UI/memory-prompt checks, not microphone or model end-to-end tests. `test28` retains the existing VoiceNavigationPolicy call-ID contract, and `test29` verifies two distinct assistant-message metric footers and persisted reload. `test30` checks the separate call action, unified chat and retained dictation mic, and `test31` checks dictation review with draft preservation on cancel. `test32` proves an installed model and a completed download survive store recreation; `test33` proves downloading does not select or dismiss the current model. `test34`–`test36` cover the SQLite migration (history preserved and erase across reopen, corrupt-migration and failed-erase data safety, legacy byte-limit and serialized separate writers). `test37`–`test38` cover the source archive (explicit history retained with expiry without fact loss; V1 upgrade rejects secrets and rolls back failure). `test39` proves reference PDF extraction and the pending acknowledgment use release code. `test40`–`test44` are the tools M1b/M1d journeys already absorbed by audio-pr2: the durable phone-action journal, task recovery/exact approval, panel reconciliation, conditional/comma plans and background-assistant app launch. `test45` proves pipeline benchmarks score the original ASR, persist and export redacted evidence; `test46` proves reply-metrics exports cover only their own conversation across reload; `test47` proves the audio-input choice and display-caption toggle persist without loading models; `test48` proves a spoken call end retains the wake session and an explicit stop disarms. `test50` dispatches the `media_control` verbs through the real Android executor; `test51` proves a text "pause music" request parses to a Ready `media_control` plan and dispatches (regression for the Fold 6 hallucinated-success report); `test52` opens the Wi-Fi settings screen and verifies it appears; `test53` dispatches `open_website` with an honest receipt and rejects dangerous URL schemes; `test54` dispatches `navigate` with an honest receipt and rejects blank destinations. `test55` proves the real Android tree-walking extraction against synthetic `AccessibilityNodeInfo` instances and the service's manifest declaration; `test56` proves verified-target tap dispatch (unadmitted and stale tokens never dispatch, wrong-kind targets rejected, release hides the overlay); `test57` proves manual-touch pause and idle resume re-observing the changed screen without a countdown; `test58` proves honest unavailability receipts when the accessibility service is not enabled. `test59` proves the M1d approval-UI wiring: panel approval of a screen task admits the screen-control session grant for its group, the ledger claim consumes the approval atomically with dispatch eligibility, a changed target invalidates the prior approval, and a finished group releases the lease and hides the Stop overlay. `test60` proves a conflicting screen task queues behind the lease instead of stealing it while independent work runs. `test61` proves task progress notifications post immediately and silently during Do Not Disturb. `test62` proves admitted work survives call end and the finished group releases the lease, hides the overlay and projects completion with ordered receipts. `test63` proves source-access denial/revocation blocks dispatch on every adapter with a truthful receipt (the approval claim path is blocked too; first-source access is remembered; a tampered cross-family scope is refused). `test64` proves a locked device hands sensitive actions off to unlock while the non-sensitive battery read dispatches through the real Android adapter, against the real keyguard state, with owner recognition gated. `test65` is the cross-family T01 regression: invalid args for every M1 tool family are rejected before any adapter runs, with volume unchanged and no screen effects. `test66` proves crash before/after dispatch recovers to an unknown outcome, stale callbacks are rejected and unknown mutations are never repeated. `test67` proves a routine occurrence completes under a reusable routine grant with exact limits (changed limits rejected at reuse and at admission; approval waits block dependents only; disable pauses the routine's unfinished work while unrelated waits are untouched). `test68` proves a conversation-created workflow shows its plain-language summary and cannot schedule until explicitly enabled, captured drafts start disabled, and a revision never mutates the running occurrence's pinned version. `test69` proves reminders target the requested time, flexible routines use windows, exact-alarm mode is reported honestly against the real Android alarm service, daily triggers resolve forward across the spring-forward DST gap, and reboot recovery never replays a trigger or duplicates an occurrence (redelivered claims cannot double-fire). `test70` proves missed runs evaluate to relevant/irrelevant/uncertain with persisted decision receipts, duplicate missed slots coalesce to the latest, and bounded adaptive effort asks the user instead of repeating completed work. `test71` proves AppFunctions discovery with the real ordinary-app platform probe (access method labeled, honest empty-state note), the controlled dependent-function journey with typed output bindings, collision-safe aliases, strict nested argument conversion with zero dispatch on invalid input, update/uninstall invalidation of exactly the affected aliases, and the T08 provider-grant discipline (first-source grant per provider family, revocation blocking every adapter while an independent provider keeps working). `test72` proves guided MCP setup with a custom URL against a real loopback HTTP server through the real transport — free-only default enablement, the secret never in the config — plus paid tools requiring explicit enablement and still returning purchase confirmation instead of dispatching, schema-change blocking until re-reviewed, an explicit auth-failure denied state, and explicit disconnect making calls honestly unavailable. `test73` proves provider grants can never broaden (out-of-namespace scopes are dropped at record time), denial blocks the provider adapter with a truthful receipt, the model-exposure gate stays structurally shut until M7, and the settings projection carries honest provider rows with labeled access. `test74` proves a text "remind me" request parses to a Ready create_reminder plan and dispatches through the real executor into a real ledger entry that show_schedule lists; `test75` proves the empty schedule renders its honest empty state. `test90` remains the process-restart selection check and intentionally leaves the selected model for the controller's process-restart check. The exact combined revision requires fresh Android CI; APK/build status comes from its exact run receipt. JVM/native tests run independently in the build job.
 
 Artifact consumers share the retry-safe selector and direct-ID downloader in `scripts/verification/artifacts.py`. For each requirement it binds run and SHA, selects the latest completed producer attempt, filters to artifacts in that producer's created-time window, and fails closed unless exactly one newest candidate remains. The downloader verifies the selected ZIP's declared size/digest and safely restores the expected flat or artifact-namespaced layout without forwarding the GitHub token to storage. Prior failed-attempt artifacts stay available for diagnosis. Run 751 replay reproduces the lower-ID case and selects artifact `10707864350`; focused helper and receipt checks cover the plumbing, while a new CI run is still pending. This is verification plumbing evidence and does not change the app or establish a green run 751.
 
@@ -167,12 +1960,138 @@ Model-picker usability repair: compact summaries keep reported issue warnings an
 
 Multimodal/tool access: chat accepts one locally retained image or short WAV attachment per message according to the exact catalog bundle flags. Images are bounded-read, normalized to at most 1536 px and stripped of original metadata; audio is validated as up to 30 seconds of 16 kHz mono PCM WAV. Attachments survive conversation reload and never enter action routing as instructions. Text-only conversions stay text-only. FastVLM's existing vision bundle is enabled. All catalog models are offered Jarvis's existing eleven phone tools on explicitly authorized action turns using the bundle's native LiteRT template; automatic SDK execution stays disabled. Tool availability is not a model training or reliability certification. JVM tests cover input rejection, persistence and community-model tool configuration; release `test13` exercises real Android image preparation, resizing and corrupt-file rejection. Full chat picker/send, real image/audio understanding and model-generated tool calls still require installed weights/device testing. Current LiteRT API guidance: https://github.com/google-ai-edge/LiteRT-LM/blob/main/docs/api/kotlin/getting_started.md. Screen control (`screen_observe`/`screen_tap`/`screen_scroll`/`screen_type`) is implemented behind the accessibility-service grant with verified targets and a session-scoped grant; no live video or new tool installation is implied.
 
-MemoryOS acceptance: the Memory screen is reachable from setup/model selection and clearly distinguishes finalized text/voice capture from approval. Each finalized proposal enters Pending; approval makes it searchable, rejection keeps it out of approved retrieval, and a correction records a superseding approved record only after review. Erase-all requires confirmation, cancellation leaves records visible, and Activity recreation reloads the saved local ledger. Restricted financial/identity examples are rejected with an error, while corrupt/unavailable storage is surfaced as an error rather than an empty history. `test24`–`test27` are release journeys; focused JVM/controlled tests are logic and UI-contract coverage. Runtime fence, expiry, and delivery correctness require exact combined-tree tests and receipt evidence; Android process death, model-generated recall, semantic retrieval, network/cloud backends and physical-device/model checks remain outside these journeys. The finite caps, lexical matching and conservative restricted-content checks are bounded implementation behavior, not a general safety proof.
+MemoryOS acceptance: the Memory screen is reachable from setup/model selection and its Add control opens a modal. Each finalized proposal enters Pending; pending and rejected records are absent from Wiki/search until an actual Review approval. Approval creates category/topic pages with inspectable sources; manual organization persists and `[[Topic]]` links create backlinks. A correction records a superseding approved record only after review, and correction/erase refresh the index. Erase-all requires confirmation, cancellation leaves records visible, and Activity recreation reloads the saved local ledger. Restricted financial/identity examples are rejected with an error, while corrupt/unavailable storage is surfaced as an error rather than an empty history. `test24`–`test27` are release journeys; focused JVM/controlled tests are logic and UI-contract coverage. Runtime fence, expiry, and delivery correctness require exact combined-tree tests and receipt evidence; Android process death, model-generated recall, semantic retrieval, network/cloud backends and physical-device/model checks remain outside these journeys. The finite caps, lexical matching and conservative restricted-content checks are bounded implementation behavior, not a general safety proof.
 
 Build 767 API 30 retained a `test24` failure after one reject tap: the log records a scroll at 09:42:41.645, then `memory_reject` found at 09:42:42.326 and a tap at `(368,869)` at 09:42:42.447; the retained screenshot still shows the pending row. That does not establish a clipped target or a MemoryOS defect. The release harness now requires two fresh, safe, unchanged accessibility-bounds samples before one mutation tap, without replaying a mutation. Build 768 passed both emulator variants with this harness repair; the merged revision must rerun both.
 
 ## Combined MemoryOS acceptance
 
-Build 768 (`649f58c`) passed 685 JVM tests and all 28 named journeys on API 30 normal and API 35 compact, with a passing consolidated receipt. It is historical parent evidence. This integration retains the original navigation-policy journey as `test28`, bringing the merged contract to 29 journeys per variant, and adds a focused approved-memory/reference-routing regression. CI must verify the exact merge commit before handoff. Only `feature/memory-os-v2` is advanced.
+Build 768 (`649f58c`) passed 685 JVM tests and all 28 named journeys on API 30 normal and API 35 compact, with a passing consolidated receipt. It is historical parent evidence. This integration retains the original navigation-policy journey as `test28`, bringing the merged contract to 30 journeys per variant, and adds a focused approved-memory/reference-routing regression. CI must verify the exact merge commit before handoff. Only `feature/memory-os-v2` is advanced.
 
 Conflict resolution uses the build-768 persistent-call, input ownership, delivery-fence, release ABI, and stable-tap implementations. Existing memory review/correction/erase and accepted-action journeys remain. Approved matching personal recall suppresses automatic factual lookup and retries, but explicit lookup/confirmation still wins; memory never changes phone-action authorization. A revoked native prefill is excluded rather than intentionally taking an exception fallback. Physical-model/audio/Fold 6 checks remain outstanding.
+
+Unified chat and floating voice call: the composer keeps its dictation microphone and adds a separate phone action. Tapping the phone action starts a voice session and opens the waveform call surface as a dismissible overlay over the same chat. Minimize, Back, and outside dismissal hide the overlay without ending the call; the active call can be reopened, while End call remains explicit. The text composer and message history remain the same conversation. Release `test27` and `test30` cover controlled UI state, busy gating, opening/minimizing/reopening and retained microphone affordance. Physical-device overlay feel, real audio and model behavior remain unverified until device signoff.
+
+Chat voice input replaces the WAV file picker with a local recorder for every chat model. **Stop** transcribes through the selected Moonshine/Whisper engine and appends editable text to the draft without sending. **Send** transcribes for chat and submits that text together with the original PCM as a validated WAV audio attachment through the existing chat path. Raw-audio Send requires a model with audio support and no other attached file; text-only models still support Stop-to-text. Recordings are bounded to the existing 30-second audio-message limit, then await the user's Stop/Send choice. Cancel/Back/backgrounding discard unfinished recording; microphone cleanup runs on success, failure and cancellation. Navigation/send/attachments are locked during recording, and voice input is disabled during active calls. `test31` uses a controlled recorder with Compose/permission integration to check Stop, draft append, Cancel, recognition failure, explicit text send, audio capability guards, audio plus transcript send, persisted paired history, failed-Send draft retention and exact WAV payload preservation. Real microphone and ASR/model behavior remain physical-device checks. Both Stop and Send may download the selected ASR model on first use.
+
+Build 778 retained a test-harness failure in `test30` on both API variants: an unconditional Back after UiObject2 text entry finished the activity when no keyboard was open. The API 30 failure screenshot shows Android Settings, and the trace fails before the first swipe while looking for `conversation_swipe_area`. All other 30 journeys passed. The two new composer journeys now dismiss the IME through InputMethodManager without navigating Back; gesture assertions are unchanged. Build 778 evidence: https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36078314962 (API 30 artifact 10841862135, SHA-256 e60511efbf2138ab0bf31d41851fd8e41508568d5670b75d640283043acff56a). Exact revised CI is required.
+
+Build 779's controlled dictation fixture crashed before user interaction because the separately shrunk test DEX called a removed `androidx.compose.runtime.SnapshotStateKt` facade (API 30 artifact 10841328634, SHA-256 c75563e74769f60fdd3b3304da9735df36d7227dc2cbacd3260a71efd89977e7; run https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36078916045). The fixture now renders the text-only and audio-capable model cases directly instead of collecting a test-owned StateFlow inside the test DEX. All draft/cancel/error/capability/audio-payload assertions remain; no shipping Compose keep rules are broadened for this fixture.
+The same ABI audit of build 780's R8 mapping showed `AttachmentPolicy` merged away while the new test DEX directly invokes `validateAudio`. A narrow keep preserves that existing validator boundary; it does not disable shrinking or alter WAV validation. Mapping artifact 10841559561 has SHA-256 30b20ba1de4cb1f1c66228d7c09ca96a5443773d7f8cec1a682615c609fc716a.
+
+Build 781's swipe fixture then reached its first state assertion: the screenshot shows Chat active and the UI XML exposes `chat_tab` as `checkable=true, checked=true, selected=false`. Material segmented buttons expose checked state to UiAutomator. The test now checks `isChecked` for each unchanged tab-state assertion, rather than the unrelated `isSelected` field. API 30 artifact 10842780320 has SHA-256 c1e55538c67c79fbec9989092b2bc27beeeb3efd47e844bb8babec9349ad717a; run https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36080730026.
+
+Build 784 passed all 32 journeys on API 35, including both new features. API 30 passed the recorder journey but read the tab immediately after changing the fixture's busy StateFlow, before Compose applied it. Its retained XML already shows `voice_tab enabled=false` by screenshot capture. The test now waits for that same disabled condition before swiping; it retains the rejection assertion and does not retry the mutation. API 30 artifact 10843531357 has SHA-256 e7b1ae32789b78c3dce806bfe7930f17e7ece25c59c28e074946e2a782f5fef3; run https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36082407330.
+
+Build 785 phone feedback: Stop worked, but an audio-only Send received a model refusal and had no chat transcript. The retained voice call itself was recorded on build 774; the later audio-file submission is the relevant new evidence. Its `audioBytes=0` field was a diagnostic defect: attachedAudio was passed to generateAudio but omitted from that summary. The revised Send submits recognized text and the original WAV as one message, saves the transcript with the playable attachment, and labels memory capture as voice. Empty/failed recognition sends nothing and preserves the existing draft. The composer has one mic icon and replaces text controls with Cancel/Stop/Send while recording. `test31` covers UI/persistence/errors; AudioMessageInputTest checks the actual SDK multipart contents (original WAV plus accompanying text), not model inference. New exact CI and physical-model verification are required; build 785's green fixture checks did not establish real model audio understanding.
+
+Model download/detection repair: installed bytes and verified usability are distinct. Setup labels app-owned files as installed even if metadata needs recovery, re-verifies the selected file off the UI thread, and retains hash enforcement. Publisher-specific filenames are accepted for explicit import only when they match the selected catalog hash; exact non-generic aliases are also considered in Downloads. Android scoped storage can still require the system picker for files the app cannot access. `test32` uses tiny controlled files to cover import, new-store detection, metadata recovery, offline reuse, corrupt-file rejection and installation of a complete checkpoint without contacting the host. It does not establish real-model inference or multi-gigabyte physical-device behavior.
+
+JVM `ModelDownloadRecoveryTest` covers interrupted parallel checkpoint retention/resumption, reuse of completed ranges, a final one-byte append, complete assembled-file reuse, wrong Content-Range rejection, truncated sequential transfer/resume, non-range fallback and stale checkpoint identity. Transfers validate ranges and exact size, preserve checkpoints on failure/cancellation and check cancellation while copying. The worker preserves download/assembly/verification phase names rather than labeling the hash pass as a repeated download, throttles persisted progress and observes the current unique-work request rather than an older terminal result. Newly installed download metadata is committed before completion is reported. Exact signed-release CI is required for this revision.
+
+Background download acceptance: Download leaves the selected model unchanged; an installed current model remains available to text and voice while a different model transfers. Choose is a separate explicit action. Only one unique setup worker runs at a time, with visible progress/cancellation; a second request does not silently observe another model's result. Transfers own their model's file rather than the global native-runtime lease, and their failure/completion/cancellation cannot release a voice owner's lease. Selection of an installed alternative is allowed while a previous selection downloads; using/deleting a file that is currently transferring remains blocked. Background downloads skip voice-resource preparation and never initialize or test the current engine. `ModelOperationGateTest`, the extended real-storage `test32`, and separate Download/Choose `test33` cover these controlled contracts. The stalled-network JVM test requires cancellation to finish within ten seconds and retain resumable bytes. It is not real-model concurrent inference or physical acoustic coverage.
+
+Floating voice acceptance: a 100 dp waveform orb and opaque compact phase/pause/end controls occupy less than half the chat width. Contour strokes scale with the rendered diameter. Live user recognition appears inline in the conversation, and completed turns remain in the existing history; the composer retains its draft and dictation affordance. `test30` now observes armed state reactively and checks active controls, bounded overlay width and non-overlapping live transcript bounds. The fixture uses the app's dark palette, and screenshots require visual inspection on both API variants. These checks preserve existing busy/start/draft/call-lifetime assertions. The independently shrunk test DEX preserves the narrow StateFlow Compose facade and browser/profile contracts it calls. Exact new signed-release CI and device signoff remain required.
+
+Build 838 retained a compilation failure before producing an APK: the stroke-scaling edit malformed the 1.3 dp ribbon expression in `VoiceOrb.kt:95`. The compiler rejected it in `compileReleaseKotlin`; native keyword/helper checks passed and Android journeys/publication were skipped. Evidence: https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36646700422, build job 109671224341, PR head `67a602e`, tested merge `36d311f`. The expression is corrected without changing waveform geometry or acceptance checks. Build 839 had already started with the same defect; the corrected revision requires a new exact release run.
+
+Build 840 compiled the app and both test sources, then passed 714/715 JVM tests. The stalled-transfer fixture failed its checkpoint assertion at line 148 after only 22 ms: it cancelled when the server had sent bytes, before the client necessarily persisted them. This is a test synchronization defect, not lost saved download bytes. The fixture now waits for the downloader's positive persisted-progress callback before cancellation. The ten-second cancellation deadline, nonempty checkpoint, exact resumed payload and all other checks remain. Retained evidence: https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36647730261, unit artifact `11070042120`, SHA-256 `7bc71bd9acf83b648d318f6bfc151d2baa5310eeba715d72ad95a0553379cd91`, PR head `36762a2`, tested merge `6fc5e35`. Android/publication were skipped; the corrected fixture and gate/recovery suite pass all 11 tests locally on both Java 17 and Java 21. The corrected harness requires exact signed-release CI.
+
+## Memory wiki repair recovery
+
+Recovered the final wiki repairs from the interrupted compilation workspace: preserve legacy event fingerprints through organization and erasure, keep all topic links, retain erase-all for pending/rejected-only ledgers, and explicitly return Memory to Chat or Voice without ending a call. Existing release journeys now exercise these navigation and ledger paths. JVM regressions cover legacy replay/tombstones, placement suggestions, and search beyond 50 memories. No local tests were run during recovery; the exact pushed revision requires the GitHub Android APK workflow and both emulator variants before it can be called verified.
+
+## Build 775 verification repair
+
+Run https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36074570506 at `5211b8f246c6bd441c08499f68320d013d8f88bd` passed 713 JVM tests and both signed APK builds. Both emulator variants ran all 30 journeys; test24 and test27 failed. Retained artifacts: API 30 `10839224113`, API 35 `10840760161`, JVM `10840500290`.
+
+The test24 screenshot shows an open Add-memory dialog, while its XML has no exported resource IDs for its controls. Dialogs use a separate semantics root, so every Memory dialog now exports its existing test tags at that root. The test and its assertions are unchanged. Test27 failed at `mutableStateOf(false)` with `NoClassDefFoundError: androidx.compose.runtime.SnapshotStateKt`; the release mapping/test DEX confirm that its facade was removed while the test still invokes it. A narrow keep preserves the facade and inherited mutable-state factory ABI. This is verification accessibility/release-harness repair, not a relaxed acceptance gate. Both complete emulator suites must rerun on the new exact revision.
+
+## SQLite Memory OS checkpoint (2026-09-30)
+
+The production Android singleton now opens `noBackupFilesDir/memory-os.db` through `SQLiteMemoryStore`. Migration imports validated schema-1/schema-2 JSON records, revisions, source keys, review states, correction lineages, wiki placement, generation and tombstones in one transaction. It validates the imported snapshot before retiring the legacy JSON and its owned temporary files. A durable marker prevents stale legacy data from being re-imported after erase. Unsupported/corrupt data fails closed. Updates persist only changed rows and generation together; SQLite secure-delete and rollback-journal mode avoid a long-lived WAL copy of deleted payloads. This is logical app erasure, not a forensic storage guarantee.
+
+`test24` now mounts the real Memory screen against SQLite and retains every prior UI assertion. New named release scenarios `test30` verify migration, correction selection, reopen and stale-source suppression; `test31` verifies corrupt migration rollback, injected SQLite erase-write failure with unchanged rows/generation, successful erase replay suppression, and unsupported schema rejection; `test32` verifies payloads exceeding the old 1 MiB ceiling and concurrent independent writers. All 33 methods per emulator variant are required. Existing JVM store tests remain the legacy codec/lifecycle regression suite.
+
+The implementation keeps the current 500-record/2,000 combined record-and-tombstone safety caps and snapshot-based lifecycle API. It does not claim unbounded scale, semantic recall, automatic extraction, source-archive retention, Android process-death memory UI coverage, or real-model/Fold 6 validation. Exact candidate status comes from the fresh signed build, both sandbox jobs and consolidated receipt.
+
+
+Build 842 at `10e1d7875776e4374f3b6de660fb0562711e6a53` retained failures in test24 and test27 on both variants. API 30 original artifact `11073298861` and R8 mapping `11073436799` were inspected. Test24 reaches the text editor, then the harness sends Escape even when ACTION_SET_TEXT has not opened an IME; the retained hierarchy/screenshot shows the dialog has closed before finding `memory_propose`. The helper now dismisses only a visible input-method window. Assertions, tap stability and deadlines remain intact. Test27 reports the removed ModelStore `isUsable$default` ABI; mapping also shows reshaped JarvisApp and VoicePlaybackFrame signatures used later by the same fixture. Narrow keeps preserve those shared methods/constructors. This is an explicit harness/shared release-ABI correction, not reduced acceptance. Fresh complete verification remains required.
+
+
+Build 844 passed 713 JVM tests, native/helper checks and both signed builds. Retained API 35 artifact `11074610392` (original ZIP SHA-256 `c4af585354dad3b415a8981854a6a314ea596dc1aa89056a2255ccbc8c1c9626`) shows SQLiteException during database initialization, causing test24/test30/test31/test32 to fail; test27 retains the older shared-ABI failure. SQLite's `secure_delete=ON` returns a result row, whereas Android `execSQL` accepts only statements without results. The production fix uses `rawQuery` and verifies that secure-delete actually became enabled. The rollback/migration/capacity assertions and all 33 named tests remain required. References: https://developer.android.com/reference/android/database/sqlite/SQLiteDatabase and https://www.sqlite.org/pragma.html#pragma_secure_delete . Fresh complete release gates are required for the corrected candidate.
+
+
+Build 846's retained API 35 artifact `11074632660` (original ZIP SHA-256 `905ca97407faab71bf15287db86a3a72711e8653bfb72e3c451fce69d8a94f19`) confirms the default-method repair advanced test27 to composition. It then crashed on removed `ModelStore.$stable`; the test DEX field table also references `TtsModelStore.$stable`. Both generated integer fields are now explicitly retained. The audit covers the test DEX's external app stability-field owners; the other referenced owners already have full class keeps. All assertions and 33 named tests remain intact. This final shared-ABI repair accompanies the secure-delete production fix; exact new CI evidence is required.
+
+Build 847 at `cbc207d0d6588be0d76f18755a99d8408ff1da1b` passed the signed build; retained API 35 artifact `11075080949` (original ZIP SHA-256 `b85d6747fead2a16849be4c2056ad6536ed89c83cc7b42637556ea6fcb8b9e38`) confirms test24 now creates and approves SQLite-backed memories. Its next failure is the Wiki tab's edge-touching bounds (`[0,441][360,567]`), rejected by the unchanged 24-pixel safe-bound requirement. The inspected screenshot/XML shows an enabled Wiki tab and Review (0). The production tab row now follows the same 16-dp horizontal gutter as the search field/content. Test27 still crashes on the stability field described above, preventing later storage tests from running. These two explicit repairs are the third repair candidate; full fresh verification remains required.
+
+
+## Source archive acceptance checkpoint
+
+SQLite schema 2 adds a protected, explicit-history-only source archive on the existing canonical database. `MemoryArchivePolicyTest` covers short/late secrets, useful health/financial/family text, finalized-input bounds, original retention time, opaque IDs/fingerprints and capture failure. `test33_sourceArchiveRetainsExplicitHistoryAndExpiresWithoutFactLoss` proves that ordinary context excludes episode text, erased facts remain suppressed while explicit source history remains until 90 days, lock prevents source disclosure, expiry purges text without deleting approved facts, and reopen/replay cannot renew retention. `test34_sourceArchiveUpgradesV1RejectsSecretsAndRollsBackFailure` verifies additive v1 migration, secret exclusion before writes, duplicate/conflict handling, archive-write rollback, default-deny access and a lock change during search. All 35 journeys on both variants and the complete signed JVM/native/receipt gate must pass for this addition.
+
+Production finalized Chat/Voice capture is connected to this archive boundary; it still uses deterministic proposals and manual approval for facts. No source text enters ordinary recall or model context. The explicit history API has no user-facing search screen yet. The existing separate ConversationHistory copies have not yet received the new retention/secret policy. Full app-wide privacy, source-badge/output invalidation, extraction, duplicate-source deletion suppression, encryption qualification, external adapters and real-device/background scheduling remain unverified or unimplemented; archive policy fixtures do not establish those capabilities.
+
+
+Build 850 at `90a83a8e6f4a2c96936965dbb3e05e6bb724be5f` passed its signed build. Retained API 35 artifact `11077508561`, original ZIP SHA-256 `8d80a5914be00a5ee051c71b885fede00d1b91baa193b4faf797a5ef8d89ac17`, ran all 33 tests: migration/reopen and corrupt migration/failed erase tests passed; test24 failed on a stale node during consecutive search-to-article/detail taps, test27 rejected edge-touching Memory navigation bounds, and test32 failed on `SQLiteDatabaseLockedException` during `PRAGMA journal_mode` at database open. Inspected screenshots/XML show the approved correction article and an enabled Memory navigation item at the screen edge.
+
+The follow-on archive candidate keeps all assertions and stable-tap thresholds: wait for the article boundary and use the existing stable tap helper for the two correction taps; align both bottom navigation bars with the content gutter. Canonical-path locks serialize opening, configuration, transactions and close across store instances in the app process, while SQLite remains the transaction boundary. This specifically addresses journal configuration happening before transactions. Cross-process writers are not qualified. The user explicitly requested continuing the next memory implementation while CI ran; this follow-on source-archive candidate gets a fresh bounded verification cycle rather than claiming the failed SQLite-only release passed. No failed APK is published.
+
+Build 852 at `8cc837d272fe63ecf9ff5a4964fae07f73079034` passed all 719 release JVM tests (including six archive tests), native/helper checks and signed builds. Retained API 35 artifact `11078878440`, original ZIP SHA-256 `8e2c477add6831cc0bc871d96845b23b4c8f9b9bba977fa521c53f1709359300`, ran all 35 journeys: 34 passed, including test27 and all five SQLite/archive integration cases. Test24 reached its last pending/rejected-only erase case but remounting retained the nonblank `persistent amber tea` search. The inspected screenshot/XML shows the expected empty search state, which intentionally has no top History tab. The fixture now explicitly clears the search before its final remount, as it does for earlier tab transitions. Every assertion and safe-tap bound remains intact. This is archive-cycle repair attempt 1; a fresh complete signed gate is required.
+
+
+Build 852 API 30 artifact `11079367702`, original ZIP SHA-256 `a1eb23979ac2f7439a792c0318dced162932a7888ab1b8ead742b33fbc73d3c4`, ran all 35 journeys. It shares the final search-state test24 failure and passes both new archive scenarios, but test32 times out at its unchanged 60-second future deadline. The earlier open-lock exception is gone. Validation currently recompiles the same identifier, metadata and restricted-content regexes for each field of each record; cache these immutable patterns once without changing their contents, options or 2,000-character bound. Use a fair reentrant lock per canonical database path to prevent queued writers from being overtaken, preserving opening/configuration/transaction/close serialization. These production efficiency changes accompany the explicit test24 state correction. All eight writers, generation/count assertions, 60-second deadline and 35 named journeys remain required. Emulator timeout clearance is not a physical-device latency qualification.
+
+
+Build 856 at `5017f8728346a5e84912bc2e0ab49f151ca48a8f` passed all 719 JVM tests, native/helper checks, signed builds, and every API 30 journey plus separate-process restart. API 30 artifact `11080756839`, original ZIP SHA-256 `41764041731f51f70df9875be53b5c67dcd13d38b7b2edaa6e973f09f4d4a119`, confirms the unchanged large-payload/eight-writer 60-second check passed. API 35 artifact `11080382797`, original ZIP SHA-256 `d67548fde7f6621ff4a7b552c6d816aa781328bf98eb28cb95416db4fa2049d3`, ran all 35 journeys: only test24 failed, with `StaleObjectException` at the second Atlas tap (line 871). The retained screenshot/XML shows the correctly opened Atlas article and enabled fact card; it is the same rapid search-to-article/detail harness issue previously repaired for Indigo. All five SQLite/archive integration tests passed on both variants. The failed consolidated receipt blocked publication.
+
+Archive-cycle repair attempt 2 applies the existing stable physical-tap helper to the remaining direct Wiki journey navigation taps, with an explicit article boundary between the two Atlas and Sapphire taps. Article navigation and tabs use the existing 16-dp content gutter so the unchanged safe-bound checks can exercise them. All assertions, two-sample settling, deadlines and 35 named journeys remain required; no mutation is retried and no API 35 failure is treated as a pass. Fresh full signed verification is required. The next privacy integration must cover ConversationHistory, saved VoiceCallStore transcripts/titles, and stored diagnostic prompts/evidence as well as the new archive.
+
+
+### Conversation reliability repair (candidate)
+
+The bounded post-memory-cutoff dialogue window now retains up to 128 entries. A separately budgeted capsule quotes recent user assertions and requests in both initial and repair prompts, including after compaction. It is conversation context, not approved memory. Memory mutation/erase boundaries still exclude the old transcript and clear summaries and capture receipts.
+
+Finalized capture completes before typed generation. Explicit remember acknowledgments use the actual capture receipt and distinguish pending, approved, excluded, conflicted and failed capture. Pending facts remain excluded from approved packets. Natural category recall (for example, “what fruit do I like?”) stays local and retrieves approved preferences when needed. Capture outcomes and exact text prompt submissions are recorded in diagnostics.
+
+Factual recipe requests retrieve evidence before generation. Short acronyms retain a declared user domain, negative corrections recheck the preceding factual question, and title/body relevance is required before a source is included. Full article passages can be selected beyond the introduction. Public user-supplied HTTPS HTML/PDF references are byte-bounded, redirect-checked and parsed as untrusted quotations. General live business/promotion discovery remains unavailable; a relevant result does not establish current hours or offer eligibility.
+
+Text and speech share sentence-level repetition and conservative evasive-answer checks, including a single bounded read-only repair. These checks cover known wording patterns, not arbitrary semantic equivalence or all model hallucinations. Existing tools remain authorized only by the final current request.
+
+New JVM regressions: TurnContinuityTest, AnswerQualityPolicyTest, ReferenceEvidencePolicyTest, MemoryCaptureAcknowledgmentTest, plus additions to TurnOrchestratorTest, ConversationPromptBuilderTest and ConversationHistoryTest. Existing memory/privacy/repetition/action cases remain required. New device `test35_referencePdfExtractionAndPendingAcknowledgmentUseReleaseCode` verifies PDFBox assets/text extraction through the signed shrunk app, malformed-document rejection, and the storage-backed pending acknowledgment. All 36 named journeys remain required on both variants.
+
+Phone acceptance: start an empty thread, state a fruit preference, continue for 30 exchanges, ask several category-recall variants; confirm any pending proposal separately. Repeat the KNF/FPJ/WCA exchange, including a supplied official PDF and negative corrections. Repeat the coffee follow-ups at 11 p.m.; no business, offer or hours should be invented. Compare typed and spoken answers and verify diagnostics distinguish capture, evidence selection and repair outcomes. Erase memories and confirm pre-erasure context is not recalled. Actual Gemma inference, public network/PDF retrieval and acoustic delivery require phone testing; controlled JVM/emulator fixtures do not qualify them.
+
+PStack public planning and pinned companion 0.10.0 are used with the available Astra High independent review route. Its requested Terra implementation route is unavailable in this host; root implementation is untracked and no fully coordinated/provider-authenticated receipt is claimed. No PR creation or merge is part of this repair.
+
+
+The first independent review (6c3ba83) requested five concrete repairs: preserve typed formatting, resolve URL-only references using the preceding post-cutoff question, prefer substantive correction questions, stop domain inheritance at explicit topic changes, and allow uncertainty when a requested personal attribute is absent. The follow-up preserves exact typed separators/indentation and fenced code, adds orchestrator-to-supplied-PDF fixture coverage, bounds domain inheritance to the current topic span, and removes the overbroad personal-evidence rejection. Capture receipts now carry event/epoch provenance, are consumed once per conversation, and reject late insertion or consumption across approval/erase barriers. The memory delivery fence still governs publication after receipt selection. Root implementation remains untracked by PStack; independent review records findings without claiming provider-token billing data.
+
+Build 860 (`dc222f62d9d24d6b11f784d16d2be8c2015439f9`, Actions run `36766948917`) failed release shrinking on PDFBox's absent optional `com.gemalto.jp2.JP2Decoder`; emulator and publication jobs did not run. The repair suppresses only that optional class warning, as documented by [PDFBox Android](https://github.com/TomRoush/PdfBox-Android#reading-jpx-images). Reference extraction reads embedded text, with no image rendering or OCR. All JVM tests and 36 named journeys remain required; the new signed-release PDF extraction scenario is unchanged. A fresh exact-head full gate is required.
+
+
+Build 872 (run https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36826577446, PR head `61764d2deb1323418c575c6c398c6a61d20ec5e9`, tested merge `82ecb6a9a246d4995acf92cc5c97490efb42dc10`) passed 894 JVM tests, signed normal/compact builds and all 45 existing journeys on both emulator variants. The new benchmark journey failed before its first sample tap: UiObject2.scroll produced no accessibility event, returned false, and the helper prematurely treated two unsuccessful gestures as both list boundaries. Both screenshots remained at the dashboard summary. The failed receipt blocked publication. Justin explicitly requested fixing this blocker and delivering a test APK on October 1, renewing the bounded repair cycle. The benchmark-only helper now uses physical swipes, fresh visible-content signatures, and two observed stationary gestures before one reversal. All 15-second/14-gesture limits, viewport/stability checks, single-tap behavior and scoring/export/persistence assertions remain required. Exact new hosted release checks must pass; no noisy-phone accuracy improvement is claimed. The local command service disconnected during this repair, so source changes use the connected GitHub API and validation uses the existing hosted pipeline.
+
+
+Build 873 (run https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/36835285342, PR head `08e054e02318e99441ad18d65d5d48fc9226d296`, tested merge `78725d4dc3b5afcc8e729bc96a8a9e8468db3f3a`) passed 894 JVM tests, native/helper/signing checks and both APK builds. API 30 passed all 46 journeys and restart; artifact `11150292570`, ZIP SHA-256 `8ab8e0ddb6e2bea6e708384431f0d3c52e3bc35eed9f15a5b85deb5b60290095`. API 35 attempt 1 was covered from its first test by a Pixel Launcher ANR; screenshot/hierarchy show the launcher dialog over the correctly rendered Jarvis setup. The permitted same-revision infrastructure retry passed test45 and 43 other journeys, but exposed two older test-driver races: test24 immediately called the scroll-capable confirmation helper before its reopened erase modal appeared, then those gestures dismissed it; test42 checked the effect counter less than 5 ms after a busy-device tap. Retained attempt-2 artifact `11151495770`, ZIP SHA-256 `3d9110e68b395f54bb7864091aad3c729a7996e6296f1abdaf1571ea463f647c`. All reports/raw instrumentation and relevant screenshots/logcat were read. Candidate 2 in the renewed cycle adds explicit modal closure/arrival boundaries to test24 and existing stable single taps plus completion-node disappearance to test42, with unchanged 15-second limits and all effect-count, persisted-state and no-retry assertions. No production behavior or acceptance criteria are removed. A fresh full signed gate is required; the requested APK handoff remains pending. CI waits dominate elapsed time; the specific newly evidenced harness correction continues within the authorized phone-test task.
+
+## Conversation metrics access and token totals — October 2, 2026
+
+| Acceptance | Evidence boundary | Failure case / preserved behavior |
+|---|---|---|
+| Copy metrics exports every retained attempt for the chosen conversation and redacted saved reply totals | JVM export tests; existing release test46 extended | Another thread leaks, absent timing becomes zero, transcript is copied |
+| Metrics opens export viewer after a voice call ends; reply footer still works | Release test46 | Hidden diagnostics-only entry or stopped call clears access |
+| Visible response token totals persist through text replacement and call receipts | JVM history/controller and codec tests | Old total survives a replacement or estimate is called exact |
+| Large copy reports stay complete | UI size guard; save/share existing journey | Silent clipboard truncation |
+| Screenshot baseline is attributable | Original files, hashes and seven-row CSV | Duplicate rows or claimed build/model provenance not shown |
+
+Exact-revision signed JVM/native/build and both emulator gates are required before claiming a verified APK. Phone performance and acoustic onset remain outside emulator coverage.
+
+Pre-existing build 891 (run 37084878313, head `03a6147494a3685a5e309ae34de5d8e7e1c493c8`) failed Kotlin compilation at JarvisRuntime line 601: inferred `runVoiceTurn`/lazy `voiceTurns` types formed a recursive cycle through the restart callback. The metrics change inherited this source. Explicit `VoiceTurnRunner` property and `Unit` function types break inference without changing runtime behavior. Failed logs remain in Actions; a fresh full gate is required.
+
+Build 893 (run 37085585128, head `60d8d6d48e28c5a131b8c1acd290ccea99b27e07`) compiled and ran 998 JVM tests. Only `AcceptedReportPlaybackTest.releaseFailurePropagatesAfterJoiningButCannotSkipDetachOrRepeatCleanup` failed: XML records `expected same IllegalStateException` versus a same-message coroutine stacktrace-recovered exception at line 102. This is a harness identity assumption, not a failed cleanup assertion. The test now requires matching message and the exact original failure anywhere in the cause chain; writer-joined, release-once, detach and repeated-close assertions are unchanged. Native and helper checks passed; APK/Android publication was blocked. Retained unit-test artifact 11260279745, SHA-256 `49e9a2e33506c7605b4752b56b2b70c84a352cf799d138c9a7d6e08e607f4a89`. A fresh full gate remains required.
+
+Build 896 (run 37086240616, head `e977b5726e6400f8e39fbc6cd73128257435fe63`, tested merge `40427fdf763965329f938c1b2eb8f8eeb4c94599`) passed 998 JVM tests, native/helper checks and both signed APK builds. API 35 passed all 48 journeys; API 30 passed 47, including the extended metrics export journey, but test24 failed its category/topic persistence assertion. Retained API 30 artifact 11259839816, ZIP SHA-256 `4d26838008a7eb983ea8e81ac641a6d237a42d172414afd1ac3b6262fc18ae88`. The organize-dialog screenshot/hierarchy shows Projects still checked and Knowledge unchecked after the helper returned. Knowledge bounds `[750,776][960,902]` extend beyond the horizontal row `[183,776][897,902]`; the helper checked only screen bounds and returned after dispatch, without confirming selection. The third bounded repair reveals the entire category chip within its row and requires its checked state before returning. No product changes or persistence assertions are removed. Publication remains blocked until a fresh full gate passes.
+
+Review of that third harness repair found that `BySelector.checked(true)` mutates its receiver. The selected-state query uses `By.copy(target).checked(true)` so a timed-out tap does not change the selector needed to find an unchecked chip on the next attempt. The eight-attempt limit, checked-state requirement and every persistence assertion remain intact. This is a refinement of the same category-selection repair; the final combined revision still requires its full gate.
