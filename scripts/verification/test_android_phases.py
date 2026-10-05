@@ -16,7 +16,7 @@ from unittest.mock import Mock, patch
 from xml.etree.ElementTree import ParseError
 import zlib
 
-from android import Device, PACKAGE, instrumentation_results, interrupted_results, sha256, verify
+from android_full import Device, PACKAGE, instrumentation_results, interrupted_results, sha256, verify
 from profiles import load_profiles
 
 

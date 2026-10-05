@@ -17,7 +17,7 @@ for key in ("JARVIS_PREVIOUS_APK", "JARVIS_PREVIOUS_METADATA", "JARVIS_EMULATOR_
         sys.exit(f"Missing {key}; the complete gate requires a published upgrade baseline and emulator profile")
 subprocess.run(["gradle", "--no-daemon", "testReleaseUnitTest", "assembleRelease", "assembleReleaseAndroidTest"],
                cwd=root, env=env, check=True)
-subprocess.run([sys.executable, "scripts/verification/android.py", "--serial", os.getenv("ANDROID_SERIAL", "emulator-5554"),
+subprocess.run([sys.executable, "scripts/verification/android_full.py", "--serial", os.getenv("ANDROID_SERIAL", "emulator-5554"),
                 "run", "--apk", "app/build/outputs/apk/release/app-release.apk", "--test-apk",
                 "app/build/outputs/apk/androidTest/release/app-release-androidTest.apk", "--out", str(out / "device"),
                 "--source-commit", source, "--previous-apk", env["JARVIS_PREVIOUS_APK"],

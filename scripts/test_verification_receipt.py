@@ -9,8 +9,8 @@ import subprocess
 import sys
 from check_page_sizes import audit_apk
 from test_page_sizes import elf
-from verification.receipt import consolidate, junit_results, SCENARIOS
-from verification.android import sha256, instrumentation_results, interrupted_results, LIFECYCLE_SCENARIOS, LAYOUT_SCENARIOS
+from verification.receipt_full import consolidate, junit_results, SCENARIOS
+from verification.android_full import sha256, instrumentation_results, interrupted_results, LIFECYCLE_SCENARIOS, LAYOUT_SCENARIOS
 from verification.profiles import artifact_name, load_profiles
 import check_recorded_audio as acoustic
 
