@@ -1,66 +1,105 @@
-# App modularization and review map
+# App modularization and handoff map
 
-First pass on `audio-pr2` / existing PR #6, 16 September 2026. This is a staged
-refactor of the current app, not a claim that every monolithic workflow is solved.
-The app remains one Gradle application module. Focused Kotlin components establish
-boundaries before introducing independently built libraries or changing lifecycle.
+Current maintainability pass: `audio-pr2`, started 2026-10-02; finalization 2026-10-03. The app remains one Gradle
+application module with responsibility-focused packages and explicit collaborators;
+see [ADR 001](architecture/adr-001-package-boundaries.md). Start with the
+[architecture](architecture/README.md), [change guide](architecture/change-guide.md),
+and [development setup](architecture/development.md) for newcomer navigation.
 
-## Component ownership
+## Current owners
 
-| Area | Owner / files | Boundary |
+Paths are relative to `app/src/main/java/com/battlesbudz/jarvis/v2/`.
+
+| Area | Owner | Boundary |
 | --- | --- | --- |
-| Android activity | `MainActivity.kt` | Activity results, permissions, setup actions and UI attachment |
-| Application runtime | `JarvisRuntime.kt` | Foreground voice session lifecycle and turn coordination |
-| App navigation/setup state | `ui/JarvisApp.kt` | Model selection and choosing setup, call or history screen |
-| Active call UI | `ui/VoiceCallScreen.kt` | Observe runtime state, issue user controls, show settings |
-| Setup and history UI | `ui/ModelSetup.kt`, `VoiceCallsScreen.kt`, `VoiceCallDetailScreen.kt` | One screen responsibility per file; callbacks own actions |
-| Model repository | `ai/ModelStore.kt` | Selection, exclusive setup ownership, integrity state and atomic installation |
-| Model transfer | `ai/storage/ModelDownloader.kt` | HTTP ranges, temporary chunks and byte progress; no preferences or UI |
-| Downloads lookup | `ai/storage/DownloadedModelLookup.kt` | Android exact-filename provider queries; no model installation |
-| Model hashing | `ai/storage/ModelFileHash.kt` | Streaming SHA-256 and bounded progress callbacks |
-| Call audio resources | `voice/VoiceCallResources.kt` | Serialized microphone ownership, replay boundary and resident model identity |
-| Native resource leases | `voice/VoiceModelSession.kt`, `CallModelSlot.kt` | Native borrowers, owner dispatchers and release after borrowers join |
-| Incremental voice input | `voice/IncrementalVoiceInput.kt`, `ai/LiteRtVoicePrefillSession.kt`, `ai/GemmaSessionText.kt` | ASR text stability, native prefill/decode lifecycle and raw-channel filtering; no tool execution or playback permission |
-| Conversation admission and policy | `conversation/ConversationWork.kt`, `ConversationPolicy.kt` | Shared job admission and budgets; no dependency on the activity |
-| Shared transcript / formatting | `ChatEntry.kt`, `chat/AssistantText.kt` | Transcript value type and display/speech formatting, independent of Android activity |
-| Playback | `voice/PiperVoiceOutput.kt` and existing queue/ledger/clock helpers | PCM generation, delivery, cancellation and playback evidence |
-| Diagnostics | `diagnostics/`, ASR/TTS stores and size-report scripts | Evidence collection; does not choose runtime behavior |
+| Android entry points | `MainActivity`, `voice/VoiceCallService`, `assistant/` services | Permissions/results, UI attachment, service eligibility and platform lifecycle |
+| App composition | `ui/JarvisApp`, `JarvisAppComposition`, screen files | Routing and retained conversation/voice/memory surfaces; composition supplies narrow benchmark/evidence dependencies; public Compose/test boundary preserved |
+| Shared admission | `work/ProcessConversationAdmission`, `conversation/ConversationWork` compatibility view | One shared atomic owner for model-file operations and conversation work; storage receives whether a conversation is active |
+| Setup operations | `presentation/ModelSetupOperations`, `ModelSetupContract` | Activity-scoped select/delete/import/smoke work via a narrow session port; download lifetime in WorkManager |
+| Setup presentation | `ui/ModelSetupState`, `ModelSelectionSection` | Observed readiness/work identity, explicit setup callbacks and shared browser/storage/access controls |
+| Process composition | `JarvisRuntime` | Wires typed owners/ports and retains compatibility entry/session adapters; voice and conversation work delegate to their coordinators |
+| Voice stage runner | `runtime/turn/VoiceTurnRunner`, `VoiceTurnStages` | Admits/sequences prepared → finalized → accepted or ordinary reply stages; typed request/resource/result values and rearm/error policy |
+| Voice lifetime/ports | `runtime/turn/VoiceCallState`, `VoiceTurnLifetime`, `VoiceTurnPorts`, `VoiceConversationAccess` | Shared call state/events, exact per-turn child handles and narrow dispatch/current-child/reset/memory authority |
+| Voice preparation/recognition | `runtime/turn/VoiceTurnPreparation`, `VoiceTurnRecognition` | Native/model/mic/output/prefill/capture acquisition; endpoint/echo/caption/control evidence becomes final typed input |
+| Typed call input | `runtime/turn/TypedVoiceInputStage`, `VoiceTypedInputOwnership` | Final queued-message ownership and exact native-child join before release; no draft action authority |
+| Voice reply stages | `runtime/turn/OrdinaryVoiceReplyStage`, `AcceptedVoiceFollowupStage` | Frozen ordinary answer/memory/TTS/direct-audio captions, or bounded accepted-follow-up capture/report state machine |
+| Accepted pump resources | `AcceptedFollowupLifetime`, `AcceptedReportPlayback` in `runtime/turn/AcceptedFollowupLifetime` | Exact listener/selectors/report children join under NonCancellable; report stop → join → release → identity detach precedes outer mic/model finalization; process phone worker retained |
+| Voice cleanup/observation | `runtime/turn/VoiceTurnFinalizer`, `VoiceTurnObservation`, `VoiceTurnModelLease`, `VoiceMemoryDeliveryOwner` | NonCancellable exact child/resource cleanup, benchmark evidence, lease transfer without double release and CAS-bound memory delivery |
+| Phone task coordinator | `runtime/PhoneTaskCoordinator` | Durable journal admission, execution, decisions, unlock/restart recovery and conversation receipt projection |
+| Memory coordinator | `runtime/RuntimeMemoryCoordinator` | Epoch/cutoff/token ordering, fresh context and one-use capture receipts; native reset remains runtime-owned |
+| Accepted action coordinator | `runtime/AcceptedVoiceActionCoordinator` | Process-lifetime serial queue, generation-safe model lease and saved-ID terminal reporting |
+| Runtime audio assembly | `runtime/RuntimeVoiceResources`, `VoiceTurnCaptureFactory`, `VoiceTurnOutputFactory` | Routing/capture/model assembly, frozen capture configuration, output/echo/evidence callbacks |
+| Final voice interpretation | `runtime/FinalVoiceInputResolver` | Final ASR and bounded, tool-disabled Gemma audio fallback |
+| Voice turn evidence | `runtime/VoiceTurnTelemetry` | Capture, synthesis, actual playback and live measurement projection |
+| Conversation coordinator | `ConversationCoordinator` in `conversation/ConversationRuntime` | Shared admission/job lifetime, ordered typed stages, final assembly and native callback/cancellation cleanup |
+| Conversation contracts | `conversation/ConversationContracts`, `ConversationBackend` | Typed invocation/callbacks, memory/reference ports, diagnostics callbacks and resident LiteRT backend adapter |
+| Turn routing/context | `conversation/ConversationRouting`, `ConversationContextPreparation` in `ConversationContext` | Complete action/status/integrity routing before memory; approved snapshot, cutoff/recall/capture and reference context |
+| Prompt/model ownership | `conversation/ConversationPrompt`, `ConversationModelSession`, `ConversationSessionState` | Prompt budgets/compaction and explicit shared native conversation reuse/capability/summary state |
+| Generation/recovery/final text | `conversation/ConversationGeneration`, `ConversationRecovery`, `ConversationFinalizer`, `ConversationAnswer` | Bounded streaming/input selection and receipt-compatible tools, read-only factuality/reference/repetition recovery, pure final text policy |
+| Inference observation | `conversation/ConversationInferenceTelemetry` | Per-invocation native progress, exact prompt submissions and metrics; no action authority |
+| Turn input | `conversation/ConversationInput` | Typed multimodal generation selection, attachment reads and incremental fallback |
+| Turn action bridge | `conversation/ConversationActions` | One turn's journal group and Android receipt callbacks through explicit executor/journal ports |
+| Turn reply | `conversation/ConversationReply` | Memory-valid publication, latency and benchmark finalization |
+| Model repository | `ai/ModelStore`, `ai/storage/` | Catalog selection/install/integrity; transport/provider lookup/hashing have independent owners |
+| Call audio resources | `voice/VoiceCallResources`, `VoiceModelSession`, `CallModelSlot` | Serialized microphone handoff, replay boundaries and native borrowers/owner dispatchers |
+| Incremental input | `voice/IncrementalVoiceInput`, `ai/LiteRtVoicePrefillSession`, `GemmaSessionText` | Stable text, prefill/decode lifetime and native channel filtering; no action authority |
+| Piper producer/playback | `voice/PiperVoiceOutput`, `PiperSpeechSynthesizer`, `SynthesizedSpeechPcm`, `SpeechAudioTrackFactory` | Output coordinates the existing bounded queue/ledger; helpers own native synthesis, PCM validation and track construction/release |
+| Transcript/formatting | `ChatEntry`, `chat/` | Persistent threads, delivered context and shared display/speech formatting |
+| Pipeline evidence assembly | `diagnostics/PipelineBenchmarks`, `PipelineBenchmarkInput`, `PipelineBenchmarkResources`, `ReplyCaptureBenchmark` | Model/conversation snapshots and resource observations; independent capture observer with injected dependencies and no runtime lookup |
+| Feature contracts/storage | `actions/`, `memory/`, `diagnostics/` | Typed authority, memory/source storage, benchmark evidence; no activity ownership |
 
-## Completed in this pass
+## What this pass preserves
 
-- Replaced the 793-line `JarvisScreens.kt` with five focused screen files.
-- Reduced `ModelStore.kt` from 712 to 350 lines by extracting transport, provider
-  lookup and hashing. Existing filenames, preference keys, catalog validation,
-  import rules and setup ownership remain unchanged.
-- Encapsulated microphone/model ownership and the follow-up replay boundary in
-  `VoiceCallResources`; kept the same serialized close/borrow behavior and native
-  cleanup ordering.
-- Moved shared transcript data, conversation admission and budget constants out
-  of `MainActivity`. Conversation processing no longer reaches into the activity
-  for its runtime policy or active-job counter.
-- Consolidated duplicated display/speech text filters into `AssistantText`.
-- Added HTTP resume/fallback and hash checks alongside existing voice regression
-  coverage. UI extraction is verified by the Android release compilation gate.
+Single conversation admission, native lease/join ordering, microphone handoff,
+accepted action lifetime, strict receipt-based action reporting, memory mutation
+fences, persisted identities/schemas and the public UI/test ABI remain the contracts.
+No alternate action executor, model backend, voice tuning, storage migration or
+retired-voice revival is introduced by decomposition.
 
-## Remaining app-wide sequence
+The entry point delegates setup operations through a small session interface.
+UI diagnostics receive explicit store/evidence dependencies from composition;
+benchmark assembly uses typed model/conversation snapshots and resource ports.
+Shared work admission no longer makes model storage depend on conversation
+implementation state.
+Conversation work names its routing, context, prompt, model, input, actions and
+reply phases. Runtime journal/memory/accepted-action state belongs to focused
+collaborators. Piper retains native ownership and delivery ordering while extracting
+synthesis/PCM/track responsibilities. README, contribution guidance, architecture,
+source map and environment/helper commands supply the handoff path.
 
-1. **Turn orchestration:** `JarvisRuntime.runVoiceTurn` still coordinates too many
-   steps. Extract capture/recognition results, reply execution and finalization
-   using typed inputs/results. Preserve cancellation propagation and microphone
-   handoff; avoid exporting all runtime internals to extension files.
-2. **Conversation execution:** split `ConversationRuntime.kt` into prompt/context
-   preparation, model execution and validated tool dispatch. Keep one admission
-   owner and one place that commits transcript/context.
-3. **Piper output:** separate the native producer and AudioTrack consumer behind
-   the existing bounded queue, delivery ledger and cancellation contract. Keep
-   the callback on its native owner; test stop/drain/acknowledgement ordering.
-4. **Activity setup:** move model download/import/smoke-test orchestration into a
-   lifecycle-aware setup controller. Activity-result launchers stay in the activity.
-5. **Build modules:** once dependencies are acyclic, consider JVM libraries for
-   pure policy/context and Android libraries for model storage and audio adapters.
-   Merely creating Gradle modules does not shrink the APK.
+Verification and current acceptance are recorded in
+[the refactor contract](verification/modular-refactor.md) and
+[the feature map](verification/features.md). A code extraction or historical pass
+is not evidence that the new combined APK passed its exact-revision gate.
 
-For each step, make a reviewable change, run affected behavioral tests and release
-compilation, update this map, and use real phone diagnostics before claiming voice
-quality or latency improvement. Do not create a new PR or merge without Justin's
-explicit permission.
+## Retained cohesive owners
+
+The process facade no longer owns the integrated voice workflow and conversation
+phases no longer extend the process runtime. Named typed stage objects retain
+ordering through narrow ports. `ConversationCoordinator` owns admission and its
+returned job; `VoiceTurnRunner` owns turn sequencing, while `VoiceTurnFinalizer`
+joins exact children before resource/model-lease release and rearm.
+
+Some components remain substantial for a specific responsibility:
+`AcceptedVoiceFollowupStage` coordinates the bounded follow-up/report pump,
+`AudioTurnCapture` owns its acoustic state machine, `PiperVoiceOutput` owns bounded
+PCM queue/drain ordering, `LiteRtLmEngine` owns a native session, and
+`SQLiteMemoryStore` owns canonical transactions. Their explicit seams, tests and
+justification are recorded in the [whole-repository audit](architecture/repository-audit.md).
+A large cohesive owner is not an unfinished extraction solely because of its size.
+
+Structural source review and the [A1–A8 completion contract](verification/modular-refactor.md)
+cover the facade, stages, whole-repo audit and handoff. Exact combined-revision
+release verification comes from its same-run receipt and numbered GitHub Release;
+physical audio/model/performance acceptance remains separately disclosed.
+Independent JVM/Android libraries require the separate benefit and ABI migration
+criteria in [ADR 001](architecture/adr-001-package-boundaries.md).
+
+## Earlier refactor checkpoint: 2026-09-16
+
+The preceding pass replaced `JarvisScreens.kt` with focused screens, extracted
+model transport/provider lookup/hashing, encapsulated microphone/model/replay
+ownership in `VoiceCallResources`, moved shared transcript/admission policy out
+of the activity, and consolidated display/speech filters in `AssistantText`.
+That checkpoint's line counts and earlier test/build evidence described its
+revision; the map above describes the current owners.

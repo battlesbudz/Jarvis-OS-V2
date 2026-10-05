@@ -13,6 +13,106 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 
 class CaptureSpeechQueueTest {
+    @Test fun queuedWeakWhisperEvidenceMustBeConsumedBeforeSealingEvenAfterNewSilence() = runBlocking {
+        val input = Input()
+        val detector = object : SpeechDetector {
+            override fun accept(pcm: ByteArray) = when (pcm[0].toInt()) {
+                1 -> SpeechDecision(true, .95f)
+                2 -> SpeechDecision(false, .25f)
+                else -> SpeechDecision(false, .01f)
+            }
+            override fun close() {}
+        }
+        val queue = CaptureSpeechQueue(input, detector, { 0 }, {}, dispatcher = Dispatchers.Unconfined)
+        input.send(100, 1); input.send(200, 2); input.send(400, 0); input.stop()
+        queue.frames().collect { /* Simulate VAD prefetch during a blocked final decoder. */ }
+        assertTrue(queue.requiresEndpointDrain(100))
+        assertFalse(queue.requiresEndpointDrain(400))
+    }
+
+    @Test fun classifiedSilenceDuringFinalizationDoesNotDelayACompleteTurn() = runBlocking {
+        val input = Input()
+        val clock = AtomicLong(0)
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val silenceClassified = CountDownLatch(1)
+        val events = Collections.synchronizedList(mutableListOf<String>())
+        val asr = object : StreamingTranscriber {
+            override fun accept(pcm: ByteArray) = "Where was the first restaurant?"
+            override fun finish(): String {
+                entered.countDown(); check(release.await(5, TimeUnit.SECONDS))
+                return "Where was the first restaurant?"
+            }
+            override fun close() {}
+        }
+        val detector = object : SpeechDetector {
+            override fun accept(pcm: ByteArray) =
+                SpeechDecision(pcm[0] != 0.toByte(), if (pcm[0] != 0.toByte()) .95f else .01f)
+            override fun close() {}
+        }
+        val capture = AudioTurnCapture(input, CoroutineScope(Dispatchers.Default),
+            createDetector = { detector }, createTranscriber = { asr }, nowMs = clock::get,
+            trailingSilenceMs = 1200, log = events::add,
+            onAcousticDecision = { _, _, _, _ -> if (input.lastChunkCaptureTimeMs == 1500L) silenceClassified.countDown() })
+        try {
+            capture.start()
+            clock.set(100); input.send(100, 1)
+            clock.set(1400); input.send(1400, 0)
+            assertTrue(withContext(Dispatchers.IO) { entered.await(3, TimeUnit.SECONDS) })
+            clock.set(1500); input.send(1500, 0)
+            assertTrue("VAD must classify new silence while finalization is blocked",
+                withContext(Dispatchers.IO) { silenceClassified.await(3, TimeUnit.SECONDS) })
+            release.countDown()
+            // No further input is sent. Old logic waited indefinitely for another
+            // microphone frame after seeing this already-classified silence.
+            assertTrue(withTimeout(3000) { capture.awaitTurnCompletion() })
+            assertFalse(events.any { it.startsWith("turn_endpoint_deferred") })
+        } finally { release.countDown(); capture.stop() }
+    }
+
+    @Test fun confirmedSpeechDuringFinalizationStillReopensTheUtterance() = runBlocking {
+        val input = Input()
+        val clock = AtomicLong(0)
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val continuationClassified = CountDownLatch(1)
+        val events = Collections.synchronizedList(mutableListOf<String>())
+        var loads = 0
+        val first = object : StreamingTranscriber {
+            override fun accept(pcm: ByteArray) = "Open Settings"
+            override fun finish(): String {
+                entered.countDown(); check(release.await(5, TimeUnit.SECONDS)); return "Open Settings"
+            }
+            override fun close() {}
+        }
+        val continuation = object : StreamingTranscriber {
+            override fun accept(pcm: ByteArray) = "actually battery"
+            override fun finish() = "actually battery"
+            override fun close() {}
+        }
+        val detector = object : SpeechDetector {
+            override fun accept(pcm: ByteArray) =
+                SpeechDecision(pcm[0] != 0.toByte(), if (pcm[0] != 0.toByte()) .95f else .01f)
+            override fun close() {}
+        }
+        val capture = AudioTurnCapture(input, CoroutineScope(Dispatchers.Default),
+            createDetector = { detector }, createTranscriber = { if (loads++ == 0) first else continuation },
+            nowMs = clock::get, trailingSilenceMs = 1200, log = events::add,
+            onAcousticDecision = { _, _, _, _ -> if (input.lastChunkCaptureTimeMs == 1500L) continuationClassified.countDown() })
+        try {
+            capture.start(); clock.set(100); input.send(100, 1)
+            clock.set(1400); input.send(1400, 0)
+            assertTrue(withContext(Dispatchers.IO) { entered.await(3, TimeUnit.SECONDS) })
+            clock.set(1500); input.send(1500, 2)
+            assertTrue(withContext(Dispatchers.IO) { continuationClassified.await(3, TimeUnit.SECONDS) })
+            release.countDown()
+            clock.set(2800); input.send(2800, 0)
+            assertTrue(withTimeout(3000) { capture.awaitTurnCompletion() })
+            assertEquals("Open Settings actually battery", capture.finalTranscript)
+            assertTrue(events.any { it.startsWith("turn_endpoint_invalidated") })
+        } finally { release.countDown(); capture.stop() }
+    }
+
     @Test fun cancellationWaitsForNativeWorkAndDoesNotPublishItsLateWords() = runBlocking {
         val input = Input()
         val entered = CountDownLatch(1)

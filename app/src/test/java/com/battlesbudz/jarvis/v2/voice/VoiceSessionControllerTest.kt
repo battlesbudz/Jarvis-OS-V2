@@ -6,6 +6,38 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VoiceSessionControllerTest {
+    @Test fun finalGemmaCaptionReplacesOnlyItsPairedUserEntry() {
+        val controller = VoiceSessionController(MemoryStore())
+        val call = controller.beginCall()
+        controller.appendTranscript("You", "What do you think of thinking?")
+        controller.beginReply(call.id, "audio-reply")
+        controller.updateReplyText(call.id, "audio-reply", "An answer", finished = true)
+        controller.appendTranscript("You", "A newer request")
+        assertTrue(controller.updateUserTranscriptForReply(call.id, "audio-reply", "What do you think of vaping?"))
+        assertEquals(3, controller.currentTranscript().size)
+        assertEquals("What do you think of vaping?", controller.currentTranscript()[0].text)
+        assertEquals("A newer request", controller.currentTranscript()[2].text)
+        assertFalse(controller.updateUserTranscriptForReply(call.id, "audio-reply", VoiceTranscriptResolver.UNTRANSCRIBED,
+            expectedText = GemmaAudioInputPolicy.PENDING_TRANSCRIPT))
+        assertEquals("What do you think of vaping?", controller.currentTranscript()[0].text)
+        assertFalse(controller.updateUserTranscriptForReply("wrong-call", "audio-reply", "wrong"))
+        assertFalse(controller.updateUserTranscriptForReply(call.id, "wrong-reply", "wrong"))
+        controller.end()
+        assertFalse(controller.updateUserTranscriptForReply(call.id, "audio-reply", "late"))
+    }
+
+    @Test fun unavailableCaptionReplacesOnlyStillPendingPairedMessage() {
+        val controller = VoiceSessionController(MemoryStore())
+        val call = controller.beginCall()
+        controller.appendTranscript("You", GemmaAudioInputPolicy.PENDING_TRANSCRIPT)
+        controller.beginReply(call.id, "pending-audio-reply")
+        assertTrue(controller.updateUserTranscriptForReply(call.id, "pending-audio-reply", VoiceTranscriptResolver.UNTRANSCRIBED,
+            expectedText = GemmaAudioInputPolicy.PENDING_TRANSCRIPT))
+        assertEquals(VoiceTranscriptResolver.UNTRANSCRIBED, controller.currentTranscript().first().text)
+        assertFalse(controller.updateUserTranscriptForReply(call.id, "pending-audio-reply", "late failure",
+            expectedText = GemmaAudioInputPolicy.PENDING_TRANSCRIPT))
+    }
+
     @Test fun lateModelLoadCannotReviveAnEndedOrReplacementCall() {
         val controller = VoiceSessionController(MemoryStore())
         val first = controller.beginCall()

@@ -13,6 +13,51 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioTurnCaptureTest {
+    @Test fun nonverbalWhisperCaptionCannotDiscardConfirmedNativeAudio() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, FakeTranscriber("[music]", "[music]"),
+            allowAudioOnlyTurns = true, captionOnly = true)
+        fixture.capture.start()
+        try {
+            fixture.emit(100, 1800, speech = true, samples = 1600)
+            fixture.emit(1400, 0, samples = 1600)
+            assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+            assertTrue(fixture.capture.hasSpeech)
+            assertTrue(fixture.capture.audioIsComplete)
+            assertEquals("", fixture.capture.finalTranscript)
+            assertEquals(44 + 6400, fixture.capture.stop().size)
+            assertFalse(fixture.events.any { it.startsWith("empty_speech_candidate") })
+        } finally { fixture.capture.stop() }
+    }
+
+    @Test fun nativeAudioLimitRejectsWholeRequestInsteadOfAnsweringPrefix() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, FakeTranscriber("open settings", "open settings"),
+            allowAudioOnlyTurns = true, maxAudioDurationMs = 200, rejectAtAudioLimit = true)
+        fixture.capture.start()
+        try {
+            fixture.emit(100, 1800, speech = true, samples = 1600)
+            fixture.emit(200, 1800, speech = true, samples = 1600)
+            assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+            assertEquals("gemma_audio_request_exceeds_limit", fixture.capture.recognitionIssue)
+            assertEquals("gemma_audio_request_exceeds_limit", GemmaAudioInputPolicy.retainedAudioIssue(
+                fixture.capture.recognitionIssue, true, fixture.capture.audioIsComplete, fixture.capture.stop().size))
+            assertEquals(100L, fixture.capture.firstSpeechCaptureAtMs)
+        } finally { fixture.capture.stop() }
+    }
+    @Test fun shortNativeAudioNeedsNoCaptionRecognizerOrThirtySecondWait() = runBlocking<Unit> {
+        val fixture = CaptureFixture(this, factory = null, allowAudioOnlyTurns = true,
+            maxAudioDurationMs = 28000, rejectAtAudioLimit = true)
+        fixture.capture.start()
+        try {
+            fixture.emit(100, 1800, speech = true, samples = 1600)
+            fixture.emit(1400, 0, samples = 1600)
+            assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+            assertEquals("", fixture.capture.finalTranscript)
+            assertTrue(fixture.capture.audioIsComplete)
+            assertEquals(null, fixture.capture.recognitionIssue)
+            assertEquals(44 + 6400, fixture.capture.stop().size)
+        } finally { fixture.capture.stop() }
+    }
+
     @Test fun acousticallyConfirmedShortCorrectionSurvivesFinalOnlyRecognition() = runBlocking<Unit> {
         val fixture = CaptureFixture(this, FakeTranscriber("", "No"), allowAudioOnlyTurns = true,
             guardFollowupSpeech = true, initialConfirmedSpeech = { "No" })
@@ -857,6 +902,9 @@ class AudioTurnCaptureTest {
         trailingSilenceMs: Long? = 1200L,
         allowAudioOnlyTurns: Boolean = false,
         guardFollowupSpeech: Boolean = false,
+        maxAudioDurationMs: Int = 25000,
+        rejectAtAudioLimit: Boolean = false,
+        captionOnly: Boolean = false,
         initialConfirmedSpeech: () -> String = { "" }
     ) {
         var microphoneStarts = 0
@@ -883,6 +931,7 @@ class AudioTurnCaptureTest {
             createTranscriber = factory, onPartialTranscript = { text -> partials.add(text) },
             onMetrics = { stats, text -> metrics.add(stats to text) }, trailingSilenceMs = trailingSilenceMs,
             onRecognitionRecovery = recoveryStates::add, allowAudioOnlyTurns = allowAudioOnlyTurns,
+            maxAudioDurationMs = maxAudioDurationMs, rejectAtAudioLimit = rejectAtAudioLimit, captionOnly = captionOnly,
             guardFollowupSpeech = guardFollowupSpeech, initialConfirmedSpeech = initialConfirmedSpeech, onSpeechResumed = { resumed++ })
 
         suspend fun emit(atMs: Long, sample: Int, speech: Boolean = false, samples: Int = 1, probability: Float = if (speech) 0.95f else 0.01f) {

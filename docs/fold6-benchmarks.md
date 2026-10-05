@@ -15,3 +15,7 @@ tool calls for phone actions, which Kotlin validates before execution.
 These measurements prove model feasibility on the target phone; the complete
 assistant loop still requires end-to-end validation once the runtime adapters
 are added.
+
+## Voice pipeline observations
+
+See the [October 2 screenshot baseline](benchmarks/2026-10-02/README.md) for seven phone-observed reply timings, original screenshots, estimates and missing provenance. See [pipeline benchmark definitions and export](verification/pipeline-benchmarks.md) for the reproducible report format.

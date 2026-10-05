@@ -1,125 +1,253 @@
-# Jarvis development sandbox
+# Release verification runbook
 
-This implements phases 1–5 of the development workflow: persistent Codex instructions, disposable Android execution, app controls and evidence, regression scenarios, and bounded repair/retest. It runs outside Jarvis. The release artifact remains the existing signed ARM64 app.
+Start with [CONTRIBUTING](../../CONTRIBUTING.md), [the architecture map](../architecture/README.md)
+and [the feature acceptance map](features.md). Agent changes also follow
+[the repository verification skill](../../.agents/skills/jarvis-verify/SKILL.md)
+and [AGENTS.md](../../AGENTS.md).
 
-## What runs automatically
+## Authoritative release gate
 
-Each same-repository PR update and push to `feature/**` triggers the existing `Android APK` workflow (alongside the existing `main` and `PR1` push routes):
+`.github/workflows/android.yml` defines the gate. Same-repository PR updates and
+pushes to `main`, `PR1`, `feature-tools` and `feature/**` are opted in. Work on
+`audio-pr2` uses existing PR #6. A feature with an open PR can trigger both a
+branch-head build and a separate PR merge-candidate build; they test different
+commits. Do not create or merge another PR without Justin's permission.
 
-1. Build native keyword checks, Python harness checks, all release JVM tests, the signed/minified release APK and its instrumentation APK.
-2. Build the compact release APK and compare native/DEX/assets with the normal variant.
-3. Run `android-sandbox.yml` on fresh GitHub Ubuntu runners with KVM. API 30 tests the normal APK; API 35 tests the compact APK. Google APIs x86_64 images supply ARM translation; the controller requires `arm64-v8a` in the runtime ABI list and fails if the image cannot run the shipping APK.
-4. Execute all thirty-four named release instrumentation scenarios, then kill/relaunch Jarvis in a separate process to check persisted selection. Retain screenshots, UI hierarchy, Android logs, test output, package metadata, APK hashes, source SHA and PR head.
-5. Allow the existing publication jobs only after the build and both sandbox jobs pass. This creates a candidate for Justin's signoff; passing automation does not merge the PR or constitute product acceptance.
+1. Check native keyword models and Python helpers, run all release JVM tests,
+   and build the signed/minified production APK and release instrumentation APK.
+2. Build the compact APK; verify native/DEX/asset equivalence, speech packaging,
+   Piper callback ABI and signatures. Both variants have increasing build codes
+   and use the existing signing identity.
+3. Run `.github/workflows/android-sandbox.yml` on disposable Android
+   emulators from `scripts/verification/profiles.json`: API 29/30/35/36,
+   an API 36 foldable and a true 16 KB system image. The foldable uses the SDK's
+   genuine `pixel_fold` hardware definition from pinned command-line tools
+   23.0, build 16111833: a 2208×1840 inner screen, a 1080×2092 cover display and
+   a 0–180° hinge. The fold job promotes the verified pinned tools directory to
+   `cmdline-tools/latest`, which emulator-runner actually consumes, and retains
+   its catalog receipt. The controller still requires real fold/unfold commands and
+   actual display-size changes. API 30 and newer use
+   accelerated x86-64 images with ARM64 translation. The current API 29 x86
+   Google APIs and Play images contain no ARM64 bridge, so that profile uses
+   the official AOSP `system-images;android-29;default;arm64-v8a` image on a
+   standard `macos-15` ARM64 runner with explicit
+   software emulation (`-accel off -feature HostComposition,-HVF,-Vulkan`). GitHub's M1 VMs do not
+   support nested hardware virtualization. This profile alone uses the official
+   [Emulator archive](https://developer.android.com/studio/emulator_archive)
+   Stable 32.1.15 Apple Silicon package, build 10696886, as a controlled
+   API 29 compatibility trial after Build 958's host GLES 2 context failed
+   SurfaceFlinger's GLES 3 initialization. Build 963 initialized guest GLES 3
+   through ANGLE/Vulkan SwiftShader; it did not establish a direct-only path
+   or complete boot. Official indexed archive metadata
+   binds the version/build/filename, 265,751,100-byte size and SHA-256
+   `f70d764fd756664bc782bb24f8da67cbaa51d7e5ffac732108b9e6545cd9faf4`;
+   its size/hash are checked before safe staged extraction. Executable modes and
+   SDK package metadata are preserved, `source.properties` must match, and both
+   staged and installed binaries must report version 32.1.15/build 10696886 before
+   boot. Invalid input retains the previous emulator; a failed installed-version
+   check restores it. Download, verification and replacement share one 600-second
+   provisioning budget within the existing 60-minute job limit. This is a
+   hypothesis requiring a complete device pass, not evidence that the emulator
+   version caused or repairs the failure. The software-specific launcher
+   `scripts/verification/software_emulator.py` retains provisioning/emulator
+   output and guest logcat, and requires the boot flag, input/activity/package/
+   window services, successful unlock and actual user0 BOOT_COMPLETED delivery
+   for the current system_server before invoking the same full release
+   controller. Completion is read live from a bounded 256 KiB complete-line tail
+   of that launch's native guest log. A local candidate scan avoids repeatedly
+   launching guest PID probes while that completion marker is absent. A candidate
+   alone cannot authorize readiness: the log is read again between fresh matching
+   system_server PID probes. The exact user0 completion marker, a running emulator and observation
+   before the original deadline remain required; a retained artifact alone cannot
+   authorize readiness. This avoids Build 944's repeatedly timed-out guest logcat
+   dumps without extending a deadline. All readiness and unlock checks share the 15-minute boot budget;
+   the API 29 launcher explicitly adds `HostComposition` to its feature request.
+   Emulator 32 disables that capability by default below API 32, although the
+   inspected API 29 revision 8 image's `advancedFeatures.ini` declares it supported. Build 986
+   lacked the host-composition extensions and repeatedly crashed the guest
+   composer in `GoldfishGralloc::getHostHandle`, then lost SurfaceFlinger and
+   restarted Android. Build 1003 and its unchanged-code retry advertised both
+   host-composition extensions and no longer hit that native crash loop; services,
+   input and unlock succeeded, but final user0 boot delivery still timed out.
+   Complete startup and release-controller coverage remain unverified. The requested
+   enabled and disabled features are retained separately from actual startup
+   output. It does not disable watchdogs or change any readiness/test deadline.
+   Software rendering requests `-gpu swiftshader_indirect`, with the
+   installed binary's raw GPU/feature help and actual startup backend retained as
+   diagnostics. Both help commands share the original provisioning budget and
+   are individually bounded by 15 seconds; help text does not authorize readiness.
+   Build 946's `software` selector chose GLES SwANGLE and Vulkan
+   Lavapipe; Android's system process was killed twice before boot completion,
+   with UI and foreground handlers blocked. Builds 947/948 requested SwiftShader
+   and selected Vulkan SwiftShader while GLES remained SwANGLE; Android 10 still
+   suffered platform ANRs/watchdogs. The next API 29-only compatibility trial
+   disables the guest Vulkan feature using the documented `-feature -Vulkan`
+   option. It retains SwiftShader and disabled HVF. Requested features and the
+   actual backend are separate receipts: this does not prove Vulkan caused the
+   failure or that all host Vulkan use disappears. See the official
+   [troubleshooting guide](https://developer.android.com/studio/run/emulator-troubleshooting).
+   The older ARM64 TCG source omits its generated SMP argument when HVF is
+   disabled; trailing `-qemu -smp 1` preserves the requested single-vCPU setting.
+   Actual installed execution, backend/GLES capability, CPU count and complete
+   device coverage remain fresh-run requirements. The AVD now requests one vCPU.
+   Build 1004's two-vCPU guest remained saturated; Build 1007's three-vCPU trial
+   instead restarted system_server twice and delayed display startup to 546s.
+   A single-vCPU trial tests TCG/SMP and host-renderer contention on the same
+   three-core hosted runner. Speedup is not established; the full gate remains
+   required. No larger runner, hardware acceleration or relaxed deadline is used.
+   The unchanged memory requests are
+   2 GiB RAM and `vm.heapSize=256M`. Build 962's older wrapper interpreted that
+   heap request as zero and promoted it to its 512 MiB minimum; its generated
+   hardware and kernel arguments record 512 MiB, not a verified 256 MiB guest
+   heap. The next trial keeps the request unchanged. The framebuffer is
+   360×640 at 140 dpi. The same pinned binary advertises 140 dpi; actual fresh
+   raster admission still needs observation. Build 962 rejected 210 dpi before
+   guest startup. This trial preserves the exact physical dp
+   extent and aspect ratio of Pixel 2 and Build 963's 720×1280 at 280 dpi,
+   with one-quarter of Build 963's pixels. Density-specific resources, pixel
+   rounding and window insets can still change layout, so the full layout gates
+   remain required. Build 963's first system_server fatal was a permission-policy
+   initialization timeout; this raster experiment does not establish its cause,
+   a performance improvement or a boot cure.
+   Physical size/density are observed before ready; optional read-only host
+   resource receipts consume the existing deadline. These provisioning settings
+   are experiments pending a complete passing run, not evidence of a memory cause.
+   The job remains bounded by 60 minutes, with the existing 180-second APK install
+   limit. A boot flag alone is not a passing
+   device result. Missing services, ABI/page-size compatibility, a failed test
+   or a timeout fails rather than skips. Linux profiles retain emulator-runner.
+   The API 29 target is AOSP `default`; the other five image targets remain
+   unchanged. Google's official Android system-image catalog currently lists
+   stable revision 8 (`arm64-v8a-29_r08.zip`, 498,049,256 bytes, SHA-1
+   `fa0d67d7430fcc84b2fe2508ea81e92ac644e264`). This avoids the Google APIs
+   bundle whose framework permission initialization and watchdog failed under
+   software emulation in Build 923. Faster usable startup is an inference to
+   verify in a fresh run; the actual API, ARM64 ABI, services, cold input,
+   observed unlock, full controller and both time limits remain required.
+   Catalog: https://dl.google.com/android/repository/sys-img/android/sys-img2-1.xml
+   Genuine Pixel Fold transitions may show the disposable keyguard. After the
+   actual display-size change, the layout journey wakes the device and observes
+   keyguard dismissal within the same transition deadline before checking call
+   and draft continuity. It never relaunches the activity to restore those states.
+4. Run every named method in `scripts/verification/scenarios.json`, retain a
+   screenshot and UI hierarchy per scenario, then run the separately retained
+   external process-loss, upgrade, platform and layout phases. The previous
+   numbered user APK is installed and populated before replacement without
+   clearing its data; ordinary isolated journeys still use disposable resets. That JSON is the current test contract;
+   historical test counts in old reports are not current requirements.
+5. Run real recorded-speech inference with pinned Whisper/Moonshine host runtimes,
+   audit both APKs for native 16 KB compatibility, and exercise actual prior-APK
+   upgrades and platform/lifecycle/layout phases on every required profile.
+6. Consolidate exact same-run JVM, APK and emulator evidence, rehash artifact
+   bytes, reject failed/skipped/missing/duplicate outcomes, then publish both
+   APKs in a numbered GitHub Release. Publication depends on all prior gates.
 
-No production signing secrets are passed to the emulator job. It consumes already signed artifacts. Evidence expires after 14 days; download it from the run when keeping a long-lived investigation. Test reports and APKs are associated with the same workflow run. On a PR run, `source_commit` is GitHub's tested PR merge commit and `pr_head` identifies the contributor branch revision. On a feature-branch push, `source_commit` is the exact pushed commit and `pr_head` is empty. Both conventions are intentional; do not substitute a branch-head pass for a combined merge-candidate pass.
+The independent release test DEX shares the app's class loader.
+`app/proguard-rules.pro` therefore preserves the runtime/framework interfaces
+referenced by instrumentation, including lazy-layout methods. Recheck this ABI
+boundary when moving classes or changing test dependencies. Do not substitute
+an unshrunk/debug build for release verification.
 
-The release runner shares the app's class loader. `app/proguard-rules.pro` preserves the shared Kotlin/coroutine runtime, Lifecycle, tracing, futures, annotation interfaces and the action contract used by the integration tests. These shared dependencies were audited against the release test DEX's external method/field owners. Without these rules, separate shrinking can remove methods needed only by the runner and crash before tests start. The same rules apply to the shipped APK; ordinary app optimization remains enabled and the existing size reports record the tradeoff. Recheck this boundary when changing test dependencies.
+## Run identity and evidence
 
-## Persistent agent workflow
+Find the run for the exact changed branch head. Record its URL, job conclusions,
+`pr_head`, tested `source_commit`, APK SHA-256 values and receipt. On a PR event,
+`source_commit` is GitHub's tested merge commit and `pr_head` is the branch revision;
+on a push, `source_commit` is the pushed commit and `pr_head` is empty.
 
-The repository skill is `.agents/skills/jarvis-verify/SKILL.md`; `AGENTS.md` points agents to it. Codex can invoke `$jarvis-verify`. In a Work session using a connected repository, ask it to read that skill and the current PR before implementing a feature. This repository skill is not a globally installed personal Work plugin.
+`scripts/verification/artifacts.py` selects artifacts using the current run,
+source SHA and latest completed logical producer attempt, with timestamp-window
+checks. It downloads by artifact ID, validates metadata and safely extracts ZIPs.
+Numeric artifact ordering is not provenance. Old failed-attempt artifacts remain
+evidence and are never substituted for the current result.
 
-The feature map describes coverage and gaps. Future features extend that map and add executable acceptance scenarios. No test-only menu, fake-model mode or remote command endpoint is added to the shipping app. Compose resource tags expose stable UI selectors without changing visible text.
+The `jarvis-verification-receipt` artifact contains `receipt.json` and a readable
+summary. Emulator evidence includes `report.json`, `instrumentation.txt`, logs,
+screenshots and UI XML. Verification artifacts are retained for 14 days; save
+needed failure evidence before it expires. APK releases remain the phone handoff.
+A prior green run or a successful build alone does not verify a new revision.
 
-## Local device control
+## Local checks and device exploration
 
-Prerequisites: Python 3.10+, Java 21, Gradle 8.10.2, Android SDK/platform 35, NDK 27.2.12479018, CMake 3.22.1, adb, a compatible disposable emulator, and the existing release-signing environment. This Work container may lack SDK/KVM; the hosted runner is the default execution path.
+Python 3.10+ runs the dependency/helper and harness logic suites:
+
+```bash
+python3 -m unittest discover -s scripts -p 'test_*.py'
+python3 -m unittest discover -s scripts/verification -p 'test_*.py'
+```
+
+A full local Android build needs JDK 21, Gradle 8.10.2, SDK/platform 35,
+NDK 27.2.12479018, CMake 3.22.1, adb, a compatible disposable emulator and the
+existing signing environment. Android app bytecode targets Java 17; LiteRT host
+tests require JDK 21. Hosted CI is the default when local SDK/KVM is unavailable.
+Do not commit signing material, print credentials or copy CI signing secrets to
+another environment.
+
+Explore an already booted disposable emulator with:
 
 ```bash
 python3 scripts/verification/android.py --serial emulator-5554 control launch --out verification-runs/explore
 python3 scripts/verification/android.py --serial emulator-5554 control snapshot --out verification-runs/explore
 python3 scripts/verification/android.py --serial emulator-5554 control tap 250 400 --out verification-runs/explore
-python3 scripts/verification/android.py --serial emulator-5554 control swipe 250 800 250 300 400 --out verification-runs/explore
-python3 scripts/verification/android.py --serial emulator-5554 control text 'Gemma' --out verification-runs/explore
 python3 scripts/verification/android.py --serial emulator-5554 control back --out verification-runs/explore
 ```
 
-For a full run, supply the two APK paths and a new evidence directory:
+Run the full local device gate using new output directories:
 
 ```bash
-python3 scripts/verification/android.py run \
+python3 scripts/verification/android.py --serial emulator-5554 run \
   --apk app/build/outputs/apk/release/app-release.apk \
   --test-apk app/build/outputs/apk/androidTest/release/app-release-androidTest.apk \
+  --previous-apk verification-inputs/jarvis-previous-release/app-release.apk \
+  --previous-metadata verification-inputs/jarvis-previous-release/previous-release.json \
+  --profile 30-phone-normal \
   --out verification-runs/manual/device \
   --source-commit "$(git rev-parse HEAD)" --allow-emulator-reset
 ```
 
-The full run clears Jarvis data and refuses non-emulators. Never point this workflow at a personal phone with conversations/models. Interactive control does not clear data. Each run requires a new directory so failures are not overwritten by later success.
+The full gate performs a previous-APK upgrade before clearing disposable fixture
+data for its isolated regression suite, and refuses non-emulators. Its previous
+APK and metadata must come from the checksum-verified release helper.
+`local_gate.py` requires `JARVIS_PREVIOUS_APK`, `JARVIS_PREVIOUS_METADATA` and
+`JARVIS_EMULATOR_PROFILE` in addition to its existing signing/device environment. Never target a personal
+phone with stored conversations/models. Interactive control does not clear data.
+Preserve evidence before resetting or stopping the device.
 
-Instrumentation exports its screenshots and UI XML through Android's Downloads API into a unique `Download/jarvis-verification-<run>` directory. This works with Android 11 scoped storage without rooting the emulator or changing app permissions. The controller requires one valid PNG and XML per scenario before reporting success. These exports live only in the disposable test device and its retained evidence artifact.
+## Diagnose and repair
 
-## Bounded local repair loop
+Classify each failure first: product regression, harness defect or infrastructure.
+Read the raw report/logs and inspect screenshots for layout claims. Fix product
+regressions in the app; explain harness corrections explicitly and retain every
+acceptance assertion. Retry a transient infrastructure failure once when justified.
+Do not cancel unrelated runs, weaken a gate or use application changes to hide
+missing SDK/ABI/credentials.
 
-With an emulator already booted and the signing variables configured, this runs the release gate. If it fails, an already installed/authenticated Codex CLI can diagnose evidence, edit application code and trigger another full gate:
+The verification skill sets a default budget of three repairs and 60 minutes per
+feature investigation. `scripts/verification/repair.py` and `local_gate.py` support
+bounded local repair with an installed/authenticated coding CLI and existing
+signing/emulator environment. Commands are argv arrays, not shell expressions;
+the loop records attempts and stops automatic repairs that modify acceptance
+infrastructure. See `python3 scripts/verification/repair.py --help` for options.
+Hosted diagnosis and repair are performed by the active Work/Codex session;
+GitHub Actions does not continue autonomous coding after that session ends.
 
-```bash
-python3 scripts/verification/repair.py \
-  --out verification-runs/feature-001 \
-  --gate-command '["python3","scripts/verification/local_gate.py"]' \
-  --repair-command '["codex","exec","--sandbox","workspace-write","Read AGENTS.md and the file named by JARVIS_FAILURE_REPORT. Diagnose gate.log and evidence, fix application code only, and preserve all acceptance criteria. Do not publish, push or merge."]'
-```
+For new Android journeys, update `ReleaseJourneyTest.kt` and `scenarios.json`
+together. Keep failure cases and preserved behavior explicit in `features.md`.
+[Modular-refactor acceptance](modular-refactor.md) describes structural changes.
 
-Commands are argv arrays, not shell expressions. `JARVIS_ATTEMPT_DIR`, `JARVIS_SOURCE_COMMIT` and `JARVIS_FAILURE_REPORT` are supplied to the subprocess. Default limits are three attempts, 60 minutes overall, and 20 minutes per command. Both a successful exit and a fresh report for the source commit are required. The source digest records uncommitted repairs and detects source changes during verification. A repair that changes tests, workflows, harnesses, build configuration or agent instructions stops for review; changes are left visible for diagnosis, not silently reverted. Missing reports, skipped tests, crashes and no-progress repairs fail closed. Time limits terminate the subprocess group.
+## Coverage and handoff
 
-For hosted CI, the same bounded policy is followed by the active Codex/Work session using GitHub run logs and artifacts. There is no always-on paid AI service or new credential dependency. Finishing a conversation does not leave an autonomous repair agent running in Actions.
+The emulator checks production UI, storage and real Android action executors.
+Controlled model responses and fake backends test logic, not actual weights.
+It does not verify real-model inference/tool selection/approved-memory use,
+physical microphone/speaker/Bluetooth/echo/interruption behavior, large real
+model transfers or Fold 6 GPU/thermal/latency performance. These remain phone
+checks and appear in the receipt's `not_covered` list.
 
-## Short multi-action phone turns
+Return the verified branch/commit/run, concise changes, passed checks, remaining
+coverage gaps and GitHub Release link. Passing the gate produces a release
+candidate for Justin's product signoff; it does not authorize merging a PR.
 
-A final text or voice request may contain one to three explicit, ordered phone actions from the existing battery, media-volume, and installed-app contracts. Media-volume requests accept a bounded level from 0 through 100 with either plain numeric units or an explicit percent form. `ActionTurnPlan` parses and validates the complete plan before dispatch. One current battery condition may wrap the entire plan using if/unless and a bounded 0–100 percentage comparison. The validated plan reads the actual Android battery once, skips all requested steps when false, and reports unavailable readings honestly. Deferred/other conditions, more than three actions, unsupported clauses, and invalid volume values are rejected before a requested Android side effect. Native tool calls must strictly match the next planned request; malformed arguments, extra keys, wrong order, and unknown tools produce no dispatch.
-
-`ActionTurnRunner` records an executor receipt for each dispatched request and advances only after that receipt. The receipt carries the executor result, so a success message is never synthesized without an executor response. A failed result stops the remaining steps and retains the receipts already produced in the coordinator outcome. A model replay of a completed request is acknowledged from its existing receipt and is not dispatched again; an explicitly repeated user step remains executable. Cancellation is rethrown by the pipeline/runner boundary, stops later actions, and leaves completed executor receipts durable and visible through the conversation history record. The historical Build 760 evidence covered the earlier executor path; the pinned Build 761 accepted-action queue is the reuse target. The exact combined-tree run receipt is required for current acceptance.
-
-Text and final voice conversations execute the same fully validated literal plan and Android executor directly, without relying on generated tool calls. Commas, and, and then separate directed clauses. The legacy model-call coordinator remains strict and cannot dispatch a conditional plan without its Android reading. Conditional groups pause after restart so a stale battery result cannot authorize unfinished effects. Immediate confirmations such as “Yes” or “open it” resolve only a specific app offer/request in the latest turn; stale history does not authorize an action. Voice adds a final-transcript guard that must agree with the confirmed request. The earlier Android journeys use simulated model tool-call objects with the real Android executor. Test33 executes the validated conditional/comma path against actual Android battery, volume and Settings. Neither demonstrates real model weights selecting calls or physical voice behavior.
-
-The natural-action repair makes the shared action plan authoritative before factual lookup. It covers requests such as “Can you open up Settings and tell me what my battery percentage is?” and the retry-prefixed literal “I said, can you open up the fistbook and tell me what my battery percentage is?”. The first routes to `open_app(Settings)` then `read_battery` without Wikipedia lookup. The second keeps `fistbook` literal; a model call substituting Facebook is rejected before dispatch, while the literal missing-app result stops before battery. The repair does not promise fuzzy ASR or a `fistbook` → Facebook alias.
-
-The observed Build 753 phone failure had three separate routing boundaries: the original battery grammar rejected “tell me what my battery percentage is”; the retry prefix “I said, can you …” prevented the app clause from being recognized; and the factual lookup detector treated the substring “book” inside both `Facebook` and `fistbook` as a Wikipedia trigger. The repair uses one bounded battery grammar, an anchored retry-prefix normalization, and action-plan precedence before lookup, rather than an app-specific alias.
-
-Build 760 evidence is historical and must remain labeled historical; it is not evidence for the current `feature/memory-conversations` candidate. The pinned Build 761 accepted-action queue is reused here. APK/build status is established only by the exact combined-tree run receipt.
-
-Continuous accepted-action voice is a bounded workstream whose exact acceptance is judged from the combined-tree run receipt. The intake can hold four pending typed messages plus one bounded control slot. The accepted worker/report path has at most three outstanding requests (running, queued, or awaiting result reporting), each with one to three existing actions, and serializes native work through the existing `ConversationRuntime`/`ActionTurnRunner` path. The accepted follow-up forms include “But actually can you open up youtube for me” and “And then open up Facebook after that”. Conditions such as “after the download finishes” remain rejected, and overflow receives an explicit not-accepted response. Ordinary barge-in, `stop`, and `stop speaking` silence the current TTS attempt while preserving accepted work. Quiet captures do not end the call. Only explicit End, goodbye, or stop-listening ends it. Explicit scoped cancellation targets unfinished work by task/call ID; it may prevent later steps but cannot undo a synchronous Android operation already begun. A full composer keeps its draft, and End makes any unprocessed input visibly cancelled. Completed Android receipts remain durable, FIFO reports are retained, duplicate utterance IDs do not execute twice, and only `read_battery`, `set_volume`, and `open_app` are supported.
-
-`test20`–`test23` use controlled native `ToolCall` outputs with the real Android executor and remain pending exact CI; they are not real weights, ASR, microphone, TTS, acoustic, or physical-device evidence. `test25`–`test27` cover intended finalized-memory approval, correction/erase invalidation, and controlled ConversationScreen state. APK/build status must come from the exact run receipt; existing model support and the noFunctionGemma boundary remain preserved.
-
-## Coverage boundaries
-
-The emulator exercises the actual release UI and Android action executor. It does not download gigabytes of model weights, invoke the real language model, or test acoustic behavior. Existing JVM tests use deliberate fake backends for many conversation/audio state machines. Those are logic coverage, not device evidence. Future real-model/GPU/audio tests need a separately provisioned suitable device runner and explicit scenarios; their absence is reported in every sandbox result.
-
-The harness's own failure-injection tests run with:
-
-```bash
-python3 -m unittest discover -s scripts -p 'test_*.py'
-```
-
-They demonstrate broken → repaired → retested, reject skipped/crashed/missing/duplicate instrumentation results, and stop attempts to weaken the gate or change source during a run.
-
-## Design references
-
-This is an original Jarvis-specific implementation of the persistent verification workflow described by [pstack](https://github.com/cursor/plugins/tree/main/pstack), adapted to Codex and Android. It does not require Cursor or copy the plugin's source. It uses [UI Automator](https://developer.android.com/training/testing/other-components/ui-automator), Android's [release test variant support](https://developer.android.com/studio/test/advanced-test-setup), and the [Android emulator runner](https://github.com/ReactiveCircus/android-emulator-runner). ARM translation is documented by [Android](https://android-developers.googleblog.com/2020/03/run-arm-apps-on-android-emulator.html); physical-device performance still needs its own measurement.
-
-## Consolidated CI receipt
-
-`Android APK` now includes **Consolidate exact-build verification evidence** after both emulator jobs. Every sandbox, receipt, and publication consumer uses `scripts/verification/artifacts.py`: it binds each named artifact to the current run and source SHA, chooses the latest completed logical producer attempt, and then chooses the unique artifact created inside that attempt's producer start/completion window (with the helper's small upload clock allowance). Its direct artifact-ID downloader checks ZIP size and SHA-256 metadata before safely extracting the selected archive; GitHub credentials are used only for the API request and are not sent to the redirected storage host. It never orders by numeric artifact ID. Older failed-attempt artifacts remain retained as evidence, while consumers use only the selected current-attempt artifacts. The receipt job rehashes the normal, compact and instrumentation APKs, reparses all named instrumentation outcomes and JVM XML, and checks screenshot/hierarchy presence and persisted model selection. Both publication jobs require this gate. The `jarvis-verification-receipt` artifact contains `receipt.json` and a human-readable summary, retained for 14 days including failed validation.
-
-The retry regression from run 751 is covered by the replay helper: the newer artifact had the lower ID `10707864350`, and timestamp/producer-attempt selection correctly selects `10707864350` instead of the older failed evidence. Ten focused helper tests and the existing eight receipt tests passed; a new full CI run is still pending. This documents workflow/helper behavior only; it does not claim an app change, a green run 751, or completed full CI.
-
-Use the receipt's `pr_head` for the candidate branch and `source_commit` for the tested merge. Refresh the current branch before presenting a candidate: the receipt is historical evidence, not release authorization. The active Work session handles diagnosis/repair using existing connected GitHub access; no separate worker credentials, database or paid host are needed. Closing the session does not stop GitHub CI, but autonomous coding does not continue. Existing inference, physical audio and performance limitations remain.
-
-Host test runtime: LiteRT-LM 0.16.0 ships Java 21 class files. CI uses Java 21 so tests can inspect its actual tool/config API. App Java/Kotlin output remains targeted at Java 17 and is desugared for Android. Build 747 retained the `UnsupportedClassVersionError` evidence that exposed this mismatch; no test was removed or weakened.
-
-## Parallel feature branches
-
-Create a separate branch such as `feature/memory-os` from the latest agreed `audio-pr2` base **containing this workflow update**. Use a separate checkout/worktree and an explicit file scope per chat. Pushes to `feature/**` run the same signed normal/compact APK build, JVM/native/helper checks, API 30/API 35 emulator journeys, and consolidated receipt. Other new branch names are not opted in. No new PR is needed to test a feature branch.
-
-Every successful opted-in branch build publishes `app-release.apk` and `app-compact.apk` in a numbered GitHub Release after the build, both Android sandbox jobs and consolidated receipt pass. This includes `feature-tools` and `feature/**` pushes; a PR or merge into `main` is unnecessary. The release name identifies the source branch and the tag identifies the build number. The exact-run APK and verification artifacts remain available as evidence. Distinct runs use disposable hosted runners; GitHub's available concurrency may queue them. Do not cancel unrelated runs.
-
-When an approved PR exists, a feature update can produce both a branch-head run and a PR merge-candidate run. These test different commits and both consume CI time. No automatic cancellation or cross-chat locking is added here. Keep publication and integration assigned to one chat; refresh the destination head and resolve conflicts rather than force-pushing over another chat's work.
-
-For a large feature such as MemoryOS, keep an independent branch through small, tested milestones. Regularly incorporate agreed base updates into the feature branch and rerun its checks. Integrate a useful milestone only after the combined revision passes review and tests. Opening a PR proposes that integration; it does not merge automatically. Justin's explicit permission is still required to create a new PR or merge one. Preserve reserved PR #7 and its branch unless Justin specifically chooses to reuse it.
-
-Branches created from an older base must first receive the workflow update to opt into testing. This is push-triggered support, not a manual-dispatch service or a guarantee that the default branch already contains the update. APK/emulator success does not verify real model inference, physical audio or device performance.
-
-## Memory Conversations merge verification
-
-The MemoryOS integration combines `7a72dfe` and build-768 `649f58c` on `feature/memory-os-v2`. The named contract now has 29 methods including the separate-process setup check. Build 768 passed 685 JVM tests and both 28-method emulator variants; those results do not verify this merge. Follow the exact merge commit's new Actions run through build, both emulator variants, and consolidated receipt. Publication follows the same verification gates on feature pushes. The merge retains all build-768 acceptance and restores the destination navigation policy journey as `test28`.
+Historical implementation and failure records remain in [features.md](features.md),
+[combined-audio.md](combined-audio.md) and the linked plans/diagnostics. Current
+workflow code and scenario JSON take precedence over those historical snapshots.

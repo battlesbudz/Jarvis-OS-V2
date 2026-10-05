@@ -99,4 +99,70 @@ class VoiceRepetitionGuardTest {
         }
     }
 
+    @Test fun nicotineLoopStopsAcrossEveryTokenSplitWithValidOpening() {
+        val answer = "Vaping has several considerations. It involves nicotine- " + "nicotine- ".repeat(1000)
+        for (split in listOf(1, 2, 7, 31, answer.length)) {
+            val spoken = StringBuilder()
+            val guard = VoiceRepetitionGuard("Opinion?", null, spoken::append)
+            try { answer.chunked(split).forEach(guard::accept); fail("Loop must cancel native stream") }
+            catch (_: VoiceRepetitionGuard.RunawayLoop) {}
+            assertTrue(guard.loopDetected)
+            assertTrue(guard.needsRepair)
+            assertEquals("Vaping has several considerations.", guard.finish())
+            assertEquals(guard.text, spoken.toString())
+            try { guard.accept("Leaked late sentence."); fail("Late broken generation is sealed") }
+            catch (_: VoiceRepetitionGuard.RunawayLoop) {}
+            guard.beginRepair()
+            guard.accept("It is sensible to understand its risks.")
+            assertFalse(guard.needsRepair)
+            assertEquals("Vaping has several considerations. It is sensible to understand its risks.", guard.finish())
+        }
+    }
+
+    @Test fun repeatedUnfinishedMultiwordPhraseCannotReachSpeech() {
+        val spoken = StringBuilder()
+        val guard = VoiceRepetitionGuard("Continue", null, spoken::append)
+        try {
+            ("Here is a detail " + "heated tobacco and nicotine ".repeat(20)).chunked(3).forEach(guard::accept)
+            fail("Repeated phrase must cancel")
+        } catch (_: VoiceRepetitionGuard.RunawayLoop) {}
+        assertTrue(guard.loopDetected)
+        assertTrue(spoken.isEmpty())
+        assertEquals("", guard.finish())
+    }
+
+    @Test fun legitimateRepetitionListsMathAndLongStoryRemainIntact() {
+        val samples = listOf(
+            "Very, very, very good. The bell rang again, and again, and again.",
+            "First: 1 1 1 1 1 1 1 1. Second: 2 2 2 2 2 2 2 2.",
+            "The value is 2.5. Add 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1.",
+            (1..200).joinToString(" ") { "At mile $it the traveller found a different landmark." }
+        )
+        for (sample in samples) {
+            val guard = VoiceRepetitionGuard("Explain", null) {}
+            sample.chunked(2).forEach(guard::accept)
+            assertEquals(sample, guard.finish())
+            assertFalse(guard.loopDetected)
+        }
+    }
+
+    @Test fun formattingPreservingCodeAndDataBypassSpeechLoopHeuristic() {
+        val sample = "```kotlin\n" + "println(\"nicotine\")\n".repeat(10) + "```\n" +
+            "nicotine- ".repeat(10)
+        val guard = VoiceRepetitionGuard("Show code", null) {}
+        guard.preserveFormatting = true
+        sample.chunked(3).forEach(guard::accept)
+        assertEquals(sample, guard.finish())
+        assertFalse(guard.loopDetected)
+    }
+
+    @Test fun finalUndelimitedLoopWordIsCheckedBeforeFinishPublishes() {
+        val guard = VoiceRepetitionGuard("Explain", null) {}
+        guard.accept(List(8) { "nicotine" }.joinToString("-"))
+        try { guard.finish(); fail("Final undelimited word completes the loop") }
+        catch (_: VoiceRepetitionGuard.RunawayLoop) {}
+        assertTrue(guard.loopDetected)
+        assertEquals("", guard.text)
+    }
+
 }

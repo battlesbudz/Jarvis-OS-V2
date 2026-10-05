@@ -103,16 +103,14 @@ class ArtifactSelectionTest(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ArtifactError):
                 self.choose(wrong)
 
-    def test_replay_saved_metadata_uses_new_api35_artifact(self):
-        source = Path('/workspace/scratch/373244f92994/retry-repair/run751-metadata.json')
-        if not source.exists():
-            self.skipTest('run 751 replay metadata is not available')
-        captured = json.loads(source.read_text())
+    def test_run751_retry_regression_from_portable_synthetic_metadata(self):
+        source = Path(__file__).with_name('fixtures') / 'run751-retry-metadata.json'
+        fixture = json.loads(source.read_text())
         data = {'schema': 1, 'repository': 'battlesbudz/Jarvis-OS-V2',
-                'run': {'id': captured['run']['id'], 'head_sha': captured['run']['head_sha'], 'attempt': 2},
+                'run': {'id': fixture['run']['id'], 'head_sha': fixture['run']['head_sha'], 'attempt': 2},
                 'artifacts': [], 'jobs': []}
-        data['artifacts'] = copy.deepcopy(captured['artifacts']['artifacts'])
-        for item in captured['jobs']['jobs']:
+        data['artifacts'] = copy.deepcopy(fixture['artifacts']['artifacts'])
+        for item in fixture['jobs']['jobs']:
             item = copy.deepcopy(item)
             item['attempt'] = item['run_attempt']
             data['jobs'].append(item)

@@ -1,3 +1,12 @@
+> **Historical UI checkpoint.** Earlier “no image attachment,” “no live transcript,”
+> and Chat/Back-ends-call instructions below are superseded. The current conversation
+> surface supports compatible attachments and live transcript with a voice overlay;
+> display/navigation changes retain the call, and explicit End terminates it.
+> See [`ConversationScreen`](../app/src/main/java/com/battlesbudz/jarvis/v2/ui/ConversationScreen.kt),
+> [`VoiceNavigationPolicy`](../app/src/main/java/com/battlesbudz/jarvis/v2/voice/VoiceNavigationPolicy.kt)
+> and the [current change guide](architecture/change-guide.md). Historical acceptance
+> steps below are retained as evidence, not the current phone test procedure.
+
 # Shared chat, voice and model selection
 
 Chat and Voice call are two modes of one conversation surface, with one app-private conversation history. The application runtime owns generation and persistence, so folding/rotating the phone or backgrounding the Activity does not make UI callbacks the sole copy of a message.

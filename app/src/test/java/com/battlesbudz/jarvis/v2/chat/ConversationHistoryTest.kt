@@ -8,6 +8,20 @@ import org.junit.Test
 import java.lang.reflect.Proxy
 
 class ConversationHistoryTest {
+    @Test fun personalStatementSurvivesThirtyTurnsButEraseBoundaryStillWins() {
+        val history = ConversationHistory(preferences())
+        history.appendUser("I like apricots")
+        repeat(30) { index ->
+            history.appendUser("Question $index")
+            history.updateReply(history.current.value.id, "reply-$index", "Answer $index", true)
+        }
+        assertTrue(history.contextAfterMemoryCutoff().any { it.text == "I like apricots" })
+        assertTrue(history.markMemoryContextCutoff(durable = true))
+        assertTrue(history.contextAfterMemoryCutoff().isEmpty())
+        history.appendUser("Fresh topic")
+        assertEquals(listOf("Fresh topic"), history.contextAfterMemoryCutoff().map { it.text })
+    }
+
     @Test fun textVoiceTextPersistsInOneThreadWithoutDuplicateCallSnapshots() {
         val prefs = preferences()
         val history = ConversationHistory(prefs)
@@ -47,6 +61,7 @@ class ConversationHistoryTest {
         history.updateReply(thread, "text", "draft", false)
         history.updateReplyMetrics(thread, "text") { it.submitted(100).firstRawToken(220).copy(estimatedTokensPerSecond = 9.5) }
         history.updateReply(thread, "text", "final", true)
+        assertEquals(2, history.current.value.messages.single().metrics?.estimatedOutputTokens)
         assertEquals(9.5, history.current.value.messages.single().metrics?.estimatedTokensPerSecond)
         val call = VoiceCallRecord("call", 1, conversationId = thread, transcript = listOf(
             TranscriptEntry("Jarvis", "call reply", replyId = "reply", metrics = ReplyMetrics().submitted(400).firstRawToken(650))))
@@ -56,7 +71,9 @@ class ConversationHistoryTest {
             metrics = call.transcript.single().metrics!!.firstActualPlayback(900)))))
         val restored = ConversationHistory(prefs).current.value.messages
         assertEquals(9.5, restored.first { it.id == "text" }.metrics?.estimatedTokensPerSecond)
+        assertEquals(2, restored.first { it.id == "text" }.metrics?.estimatedOutputTokens)
         assertEquals(900L, restored.first { it.callId == "call" }.metrics?.firstReplyPlaybackAtMs)
+        assertEquals("reply", restored.first { it.callId == "call" }.sourceReplyId)
         assertEquals("next turn", restored.last().text)
     }
 

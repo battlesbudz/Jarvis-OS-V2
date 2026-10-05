@@ -62,4 +62,19 @@ class RoutedAudioInputTest {
             assertEquals(listOf(false, true), created)
         } finally { resources.closeMicrophone() }
     }
+    @Test fun profileChangesReplaceRecorderWithoutChangingDuplexRoute() = runBlocking {
+        var profile = "speech_preserving"
+        val created = mutableListOf<String>()
+        val resources = VoiceCallResources(createAudio = {
+            created += profile
+            VoiceAudioSession(Source(mutableListOf()), this)
+        }, createModels = { error("Unused") }, captureIdentity = { profile })
+        try {
+            resources.borrowMicrophone("command", communication = true).let { it.start(); it.stop() }
+            profile = "communication_noise_filtered"
+            resources.borrowMicrophone("command", communication = true).let { it.start(); it.stop() }
+            resources.borrowMicrophone("reply", communication = true).let { it.start(); it.stop() }
+            assertEquals(listOf("speech_preserving", "communication_noise_filtered"), created)
+        } finally { resources.closeMicrophone() }
+    }
 }

@@ -5,6 +5,33 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ReplyInterruptionTest {
+    @Test fun verifiedFarewellDuringPlaybackEndsCallEvenWithoutAudio() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        var stopped = 0
+        val outcome = withTimeout(2000) {
+            runInterruptibleReply(
+                reply = { started.complete(Unit); awaitCancellation() },
+                listen = { confirmed ->
+                    started.await(); confirmed()
+                    CapturedVoiceTurn("Stop listening.", byteArrayOf())
+                }, stopReply = { stopped++ })
+        }
+        assertEquals(1, stopped)
+        val interrupted = outcome as ReplyOutcome.Interrupted
+        assertTrue(interrupted.correction.wav.isEmpty())
+        assertTrue(interrupted.endsCallSegment)
+    }
+
+    @Test fun unverifiedOrQuotedFarewellAndStopReplyKeepCall() {
+        for (correction in listOf(
+            CapturedVoiceTurn("stop listening", byteArrayOf(), recognitionIssue = "incomplete_audio"),
+            CapturedVoiceTurn("Explain what stop listening means", byteArrayOf()),
+            CapturedVoiceTurn("\"stop listening\"", byteArrayOf()),
+            CapturedVoiceTurn("stop speaking", byteArrayOf()),
+            CapturedVoiceTurn("", byteArrayOf())
+        )) assertFalse(ReplyOutcome.Interrupted(correction).endsCallSegment)
+    }
+
     @Test fun correctionCancelsReplyOnceAndRetainsItsAudio() = runBlocking {
         var stopped = 0
         var cancelled = false

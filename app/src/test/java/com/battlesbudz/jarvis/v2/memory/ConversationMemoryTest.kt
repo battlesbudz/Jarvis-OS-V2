@@ -50,6 +50,15 @@ class ConversationMemoryTest {
         assertNotEquals(approved.stateToken, bridge.approvedContext("where do I live", 500).stateToken)
     }
 
+    @Test fun conversationCaptureKeepsLegacyIdentityWhenWikiIsDerivedLater() {
+        val (os, bridge) = bridge(); val finalized = input("legacy-capture", "I prefer tea.")
+        val captured = bridge.capture(finalized).memory!!
+        assertNull(captured.wikiAssignment)
+        assertEquals(MemoryOutcome.APPROVED, os.assignWiki(captured.id, captured.revision, MemoryWikiAssignment(WikiCategory.PREFERENCES, "Tea")).outcome)
+        assertEquals(ConversationMemoryOutcome.PROPOSED, bridge.capture(finalized).outcome)
+        assertEquals(1, os.read().snapshot!!.memories.size)
+    }
+
     @Test fun rememberThatStripsDirectiveAndClassifiesPreference() {
         val (_, bridge) = bridge()
         val result = bridge.capture(input("remember", "Remember that I prefer oolong tea."))

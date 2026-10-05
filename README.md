@@ -1,39 +1,89 @@
-> Qwen update: [15 selectable LiteRT-LM Qwen models](docs/qwen-model-selection.md), using LiteRT-LM 0.16.0. See capabilities and pending Fold 6 acceptance there.
-
 # Jarvis OS V2
 
-Development: [APK size audit](docs/apk-size-audit.md) · [component map and refactoring progress](docs/app-modularization.md).
+![Build](https://github.com/battlesbudz/Jarvis-OS-V2/actions/workflows/android.yml/badge.svg)
+![Latest release](https://img.shields.io/github/v/release/battlesbudz/Jarvis-OS-V2)
 
-Current voice settings: Moonshine/Whisper, Gemma E2B/E4B, and fixed Piper Northern English. Experimental profile controls and old benchmark routes are removed. See [retained development diagnostics](docs/current-diagnostics.md).
+A native Android assistant written in Kotlin and Jetpack Compose. Conversation,
+speech recognition and speech output run on the device. Model downloads and
+explicit reference lookup use the network; there is no required conversation backend.
 
-A native Android voice assistant built with Kotlin and Jetpack Compose. The core
-assistant runs locally without a cloud backend.
+[<img src="demo/jarvis-voice-demo-thumbnail.jpg" width="320" alt="Watch the Jarvis voice demo">](https://cdn.jsdelivr.net/gh/battlesbudz/Jarvis-OS-V2@main/demo/jarvis-voice-demo.mp4)
 
-## Supported stack
+*53-second demo: airplane mode on, phone locked, "Hey Jarvis," interrupted mid-answer. Click to watch.*
 
-- **Recognition:** Moonshine Small Streaming or Whisper base.en.
-- **Conversation and tools:** selectable Gemma-4-E2B-it or Gemma-4-E4B-it.
-- **Voice:** Piper Northern English Male medium.
-- Kotlin validates typed tool calls before executing phone actions.
+Wake-word activation and conversational barge-in keep the core assistant loop
+on the device, using Moonshine/Whisper recognition, Gemma through LiteRT-LM,
+and Piper speech output.
 
-See [supported models, upgrades and shared dependencies](docs/supported-model-stack.md)
-and [E2B/E4B switching](docs/ai-model-switching.md). Kokoro and Paul are retired;
-old diagnostic results retain their original labels.
+## Reported device measurements
 
-## Voice implementation
+| Metric | Value |
+| --- | --- |
+| First-token latency (median) | 740 ms |
+| Time to first spoken word (median) | 3.6 s |
+| Generation speed (average) | 32.8 tokens/sec |
+| Test setup | Hundreds of voice turns on a Galaxy Z Fold 6 |
 
-Work continues on `audio-pr2`, existing PR #6. The [current pipeline](docs/voice-pipeline-current.md)
-is the source for current behavior and remaining acceptance. The
-[implementation plan](docs/local-voice-implementation-plan.md) retains historical
-progress. Piper voice quality was accepted; recognition, interruptions, latency,
-sustained use and lifecycle acceptance remain open. E4B requires Fold 6 testing.
+These reported phone measurements are separate from the emulator release gate.
 
-## APK signing
+## Start here
 
-GitHub Actions tests, builds and publishes signed release APKs for the existing
-PR and for pushes to `main`. Increasing version codes allow installation over an
-existing app signed with the same permanent key. The signing key is not committed.
-Required Actions secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
-`ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`.
+| Goal | Read |
+| --- | --- |
+| Understand the application and its owners | [Architecture](docs/architecture/README.md) |
+| Set up a checkout, build or install | [Development setup](docs/architecture/development.md) |
+| Find the right place to change a feature | [Change guide](docs/architecture/change-guide.md) |
+| Make a maintainable contribution | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Run checks and understand release evidence | [Verification workflow](docs/verification/README.md) and [feature coverage](docs/verification/features.md) |
+| Find feature notes, plans and measurements | [Documentation index](docs/README.md) |
 
-Never create or merge a PR without Justin's explicit permission; see [AGENTS.md](AGENTS.md).
+For a quick source map and environment check, run from the repository root:
+
+```bash
+python3 scripts/dev.py map
+python3 scripts/dev.py doctor
+```
+
+The app is one Android Gradle module, `:app`, divided into responsibility-focused
+packages and collaborators. [The module decision](docs/architecture/adr-001-package-boundaries.md)
+explains the native and release-test constraints. [The refactoring map](docs/app-modularization.md)
+records the typed stage owners and justified cohesive components.
+
+## Current stack
+
+| Role | Implementation |
+| --- | --- |
+| UI | Jetpack Compose; conversation surface with voice overlay, setup, history and diagnostics |
+| Local inference | LiteRT-LM 0.16.0; Gemma E2B/E4B and curated experimental Qwen bundles |
+| Recognition | Moonshine Small Streaming or Whisper base.en |
+| Speech output | Piper Northern English Male medium |
+| Phone actions | Validated battery, media-volume and installed-app actions with durable receipts |
+| Memory | Device-local SQLite store and source archive; retrieval, review and mutation fences |
+
+[`ModelCatalog.kt`](app/src/main/java/com/battlesbudz/jarvis/v2/ai/ModelCatalog.kt)
+is the authority for selectable model capabilities, filenames and pinned downloads.
+Model availability is separate from measured accuracy or speed on a particular
+phone. See [model selection](docs/qwen-model-selection.md),
+[Gemma switching](docs/ai-model-switching.md) and [voice acceptance notes](docs/verification/voice-audio-and-metrics.md).
+Kokoro and Pocket/Paul are retired; historical evidence keeps its original labels.
+
+## Build and release
+
+The hosted `Android APK` workflow runs native/helper checks, release JVM tests,
+signed normal and compact ARM64 builds, recorded speech, native page-size checks,
+API 29/30/35/36, foldable and genuine 16 KB emulator journeys, and an
+exact-build evidence receipt before publishing GitHub Release APKs.
+The app targets Android 10+; the shipped native ABI is `arm64-v8a`.
+
+Use the [GitHub Releases page](https://github.com/battlesbudz/Jarvis-OS-V2/releases)
+for installable APKs. A green emulator run is a release candidate: real model,
+microphone, speaker, Bluetooth and Fold 6 performance still require device evidence.
+
+Work continues on `audio-pr2` under existing PR #6. Read [AGENTS.md](AGENTS.md)
+before automated work; creation or merging of a PR requires Justin's explicit permission.
+
+## License
+
+Source-available under the PolyForm Noncommercial License 1.0.0: free for personal,
+study, research, and other noncommercial use. Commercial use needs permission.
+See [LICENSE.md](LICENSE.md).
