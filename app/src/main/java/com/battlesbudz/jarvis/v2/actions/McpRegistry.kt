@@ -1,5 +1,7 @@
 package com.battlesbudz.jarvis.v2.actions
 
+import java.util.UUID
+
 /**
  * M3 MCP server management (D07, T17): guided setup, custom URLs, secure
  * stored auth, session/version negotiation, discovery refresh, explicit
@@ -108,7 +110,11 @@ class McpSetupFlow(
         }
         // Stage 4: review — free-only default; the caller persists the config
         // and stores the secret under its opaque reference.
-        val authRef = if (token.isNotEmpty()) "mcp.$serverId.bearer".also {
+        // The credential reference is unique per setup run and independent of
+        // the display-name-derived server id: McpRegistry.add resolves id
+        // collisions AFTER this point, so a name-based ref would overwrite
+        // another server's secret and leave both configs sharing one slot.
+        val authRef = if (token.isNotEmpty()) "mcp.${UUID.randomUUID()}.bearer".also {
             credentials.putSecret(it, token)
         } else null
         val config = McpServerConfig(serverId, name, url, authRef)
