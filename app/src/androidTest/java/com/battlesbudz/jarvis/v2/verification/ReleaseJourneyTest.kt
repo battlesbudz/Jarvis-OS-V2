@@ -2236,10 +2236,15 @@ class ReleaseJourneyTest {
         assertEquals("no dispatch on invalid nested args", before, dispatched.get())
 
         // Update and uninstall invalidate exactly the affected bindings.
+        // (Descriptions are carried over so the only change is echo's
+        // version bump; shout disappears.)
         val secondDiff = registry.update(DiscoverySnapshot(listOf(
-            t57Metadata(pkgA, "echo", version = 2),
-            t57Metadata(pkgA, "lookup_user", params = nestedParams),
-            t57Metadata(pkgB, "echo", version = 1)
+            t57Metadata(pkgA, "echo", version = 2,
+                description = "Echoes the given text back."),
+            t57Metadata(pkgA, "lookup_user", params = nestedParams,
+                description = "Looks up a user by id with optional tags."),
+            t57Metadata(pkgB, "echo", version = 1,
+                description = "Another app's echo.")
         ), DiscoveryAccessMethod.ORDINARY_APP, 1L))
         assertEquals(listOf("echo"), secondDiff.updated.map { it.functionId })
         assertEquals(listOf("shout"), secondDiff.removed.map { it.functionId })
