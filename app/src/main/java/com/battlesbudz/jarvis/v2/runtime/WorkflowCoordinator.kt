@@ -278,9 +278,12 @@ internal class WorkflowCoordinator(
         val id = group.attemptIds.single()
         val attempt = phoneActionLedger.get(id)
             ?: return refusal("The routine's action disappeared before it could run.")
-        val claimed = phoneActionLedger.claim(attempt.id, attempt.generation)
-            ?: return refusal("The routine's action is no longer authorized.")
-        return try { phoneActionPipeline(executor).executeAttempt(claimed) }
+        // JournaledActionPipeline.executeAttempt owns the claim: it claims the
+        // admitted attempt atomically (eligibility, provider, schema, exact
+        // approval). A pre-claim here would leave the attempt RUNNING, so its
+        // claim — which only accepts QUEUED/READY/WAITING_APPROVAL — rejects
+        // and the step never executes.
+        return try { phoneActionPipeline(executor).executeAttempt(attempt) }
         catch (_: Exception) { ExecutionResult(
             ExecutionResult.Outcome.UNKNOWN_COMPLETION,
             "The routine's action may have run; its outcome is unknown and it won't be repeated.") }
