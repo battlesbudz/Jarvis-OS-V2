@@ -46,10 +46,11 @@ EMULATOR_PIN = {
 # of its pixels. Reduced pixel count is an experiment, not a measured cause or
 # cure for the permission-initialization timeout; all release gates remain required.
 # https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/vl.c
-# Build 1004 saturates both guest CPUs and repeatedly ANRs in stock telephony.
-# The unchanged macos-15 host exposes three CPUs. Match that reported count;
-# this is a capacity trial, not a proven speedup or hardware acceleration.
-SOFTWARE_CPU_COUNT = 3
+# Build 1007's three-vCPU trial restarted system_server twice and took 546s
+# to finish SurfaceFlinger boot, versus 224s in Build 1004 with two vCPUs.
+# A single guest CPU tests TCG/SMP and host-renderer contention without changing
+# the hosted machine, graphics path, Android checks or their deadlines.
+SOFTWARE_CPU_COUNT = 1
 SOFTWARE_AVD_SETTINGS = {"hw.cpu.ncore": str(SOFTWARE_CPU_COUNT), "hw.ramSize": "2048M", "vm.heapSize": "256M",
                          "hw.lcd.width": "360", "hw.lcd.height": "640", "hw.lcd.density": "140",
                          "disk.dataPartition.size": "4096M"}

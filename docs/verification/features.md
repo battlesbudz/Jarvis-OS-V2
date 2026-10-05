@@ -93,6 +93,28 @@ to find the obscured model control. Its artifact `11331800414` retains the
 screenshot and raw results. Neither this unrelated platform failure nor the
 missing API 29 report is waived; the final receipt fails and publication skips.
 
+### Build 1007 three-vCPU outcome and single-vCPU trial
+
+[Build 1007](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37279904852)
+tests head `3cb77d9904fefe10a754219e64f2f58ada3e2a29`. API 29's kernel explicitly
+activates three processors. Its artifact `11332429923`, ZIP SHA-256
+`959957e785832dc64a72a27777ea6e88d200673d0629e0166ad638b5a670053d`, retains
+two system-server deaths in permission initialization and SurfaceFlinger boot
+completion at 546,330 ms. The corresponding two-vCPU Build 1004 reached that
+display milestone at 223,575 ms without those system-server crashes. Both
+ultimately fail the user0 boot-delivery barrier, so neither is a passing device.
+The comparison does not isolate host scheduling noise or prove a CPU-count cause,
+but it provides no evidence that three guest CPUs help.
+
+The next single-variable trial requests one guest CPU in both AVD and QEMU.
+This tests whether avoiding guest SMP and leaving more scheduling room for host
+rendering/I/O helps software emulation. It retains the same image/API/ABI,
+graphics path, memory, watchdogs, every readiness assertion, controller and
+all deadlines. No performance or startup success is claimed before exact-head CI.
+Four other profiles pass Build 1007; API 35 compact instead fails before device
+startup on invalid GitHub artifact-pagination metadata. That independent
+infrastructure result is not converted to a pass and publication remains blocked.
+
 ## Spoken farewell returns to wake listening
 
 “Stop listening” and “Goodbye” end the current call segment while preserving the
