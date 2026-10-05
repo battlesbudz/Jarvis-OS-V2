@@ -44,9 +44,21 @@ data class McpServerStatus(
     /** Tools the user enabled. Setup enables only FREE tools by default. */
     val enabledTools: Set<String> = emptySet(),
     val schemaHash: String? = null,
+    /**
+     * Per-tool canonical schema hashes at the last review point. A schema
+     * change must never silently re-enable a changed tool: [changedToolNames]
+     * records exactly which tools changed since the user last reviewed them.
+     */
+    val toolSchemaHashes: Map<String, String> = emptyMap(),
+    /** Tool names whose schema changed (or which are new) since the last review. */
+    val changedToolNames: Set<String> = emptySet(),
     val protocolVersion: String? = null,
     val sessionId: String? = null
 )
+
+/** Per-tool canonical schema hashes, for change detection finer than the whole-list hash. */
+private fun toolSchemaHashes(tools: List<McpTool>): Map<String, String> =
+    tools.associate { it.name to McpProtocol.schemaHash(McpProtocol.canonicalSchema(it.inputSchemaJson)) }
 
 /**
  * Guided setup (D07): URL entry with validation, version negotiation,
@@ -131,6 +143,7 @@ class McpSetupFlow(
             tools = tools,
             enabledTools = tools.filter { it.pricing == ProviderPricing.FREE }.map { it.name }.toSet(),
             schemaHash = McpProtocol.toolListHash(tools),
+            toolSchemaHashes = toolSchemaHashes(tools),
             protocolVersion = negotiation.protocolVersion,
             sessionId = negotiation.sessionId
         ))
@@ -241,16 +254,31 @@ class McpRegistry(
                     is McpProtocol.ToolsList.Ok -> parsed.tools
                 }
                 val hash = McpProtocol.toolListHash(tools)
+                val newHashes = toolSchemaHashes(tools)
+                val changed = tools.map { it.name }
+                    .filter { newHashes[it] != status.toolSchemaHashes[it] }.toSet()
                 return if (status.schemaHash != null && hash != status.schemaHash) {
                     put(serverId, status.copy(state = McpServerState.SCHEMA_CHANGED,
                         explanation = "The server's tools changed since setup. Review them before any call runs.",
-                        tools = tools, schemaHash = hash))
+                        tools = tools, schemaHash = hash, toolSchemaHashes = newHashes,
+                        changedToolNames = status.changedToolNames + changed))
+                } else if (status.state == McpServerState.SCHEMA_CHANGED) {
+                    // A refresh must never silently clear a pending review:
+                    // the tools still differ from the last reviewed state.
+                    put(serverId, status.copy(
+                        explanation = "Still waiting for review: the server's tools changed since setup.",
+                        tools = tools, schemaHash = hash, toolSchemaHashes = newHashes,
+                        protocolVersion = negotiation.protocolVersion,
+                        sessionId = negotiation.sessionId,
+                        changedToolNames = status.changedToolNames + changed))
                 } else {
                     put(serverId, status.copy(state = McpServerState.CONNECTED,
                         explanation = "Connected: ${tools.size} tool(s) available.",
                         tools = tools,
                         enabledTools = status.enabledTools.intersect(tools.map { it.name }.toSet()),
-                        schemaHash = hash, protocolVersion = negotiation.protocolVersion,
+                        schemaHash = hash, toolSchemaHashes = newHashes,
+                        changedToolNames = emptySet(),
+                        protocolVersion = negotiation.protocolVersion,
                         sessionId = negotiation.sessionId))
                 }
             }
@@ -265,10 +293,13 @@ class McpRegistry(
     fun acknowledgeSchemaChange(serverId: String): Boolean {
         val status = servers[serverId] ?: return false
         if (status.state != McpServerState.SCHEMA_CHANGED) return false
+        val reviewable = status.tools
+            .filter { it.pricing == ProviderPricing.FREE && it.name !in status.changedToolNames }
+            .map { it.name }.toSet()
         servers[serverId] = status.copy(state = McpServerState.CONNECTED,
             explanation = "Connected: schema change reviewed; changed tools need explicit re-enablement.",
-            enabledTools = status.enabledTools.intersect(status.tools
-                .filter { it.pricing == ProviderPricing.FREE }.map { it.name }.toSet()))
+            enabledTools = status.enabledTools.intersect(reviewable),
+            changedToolNames = emptySet())
         return true
     }
 
