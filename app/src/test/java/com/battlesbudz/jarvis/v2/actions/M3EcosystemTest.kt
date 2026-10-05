@@ -827,37 +827,36 @@ class M3EcosystemTest {
 
     // -- File store: provider grants round-trip; tampered scopes refused -------------------
 
-    @Test fun providerGrantRoundTripsInTheFileStore() {
-        val file = File.createTempFile("m3-journal", ".json")
-        try {
-            val store = FileToolTaskStore(file)
-            val ledger = ToolTaskLedger(store)
-            ToolSourcePolicy.setProviderScopeResolver { wireName ->
-                if (wireName == ProviderWireNames.toolName(providerA, "echo")) scopes(pkgA, "read")
-                else emptySet()
-            }
-            val wire = ProviderWireNames.toolName(providerA, "echo")
-            // Admitting a provider call persists like any other request.
-            ledger.create(ActionRequest(wire))
-            ToolSourceAccess(ledger).recordProviderGrant(wire, scopes(pkgA, "read"))
-            val reread = FileToolTaskStore(file).readJournal()
-            val record = reread.sourceAccess.single { it.family == "provider:appfunctions:com.example.sample" }
-            assertEquals(SourceAccessState.GRANTED, record.state)
-            assertEquals(scopes(pkgA, "read"), record.scopes)
-        } finally {
-            file.delete()
-        }
+    /** Temp dir with a not-yet-created journal file (the store treats an existing empty file as corrupt). */
+    private fun withJournalFile(test: (File) -> Unit) {
+        val directory = java.nio.file.Files.createTempDirectory("m3-journal").toFile()
+        try { test(File(directory, "journal.json")) } finally { directory.deleteRecursively() }
     }
 
-    @Test fun tamperedCrossProviderScopeIsRefused() {
-        val file = File.createTempFile("m3-tampered", ".json")
-        try {
-            file.writeText(JSONObject()
-                .put("schemaVersion", 3)
-                .put("attempts", org.json.JSONArray())
-                .put("groups", org.json.JSONArray())
-                .put("approvals", org.json.JSONArray())
-                .put("grants", org.json.JSONArray())
+    @Test fun providerGrantRoundTripsInTheFileStore() = withJournalFile { file ->
+        val store = FileToolTaskStore(file)
+        val ledger = ToolTaskLedger(store)
+        ToolSourcePolicy.setProviderScopeResolver { wireName ->
+            if (wireName == ProviderWireNames.toolName(providerA, "echo")) scopes(pkgA, "read")
+            else emptySet()
+        }
+        val wire = ProviderWireNames.toolName(providerA, "echo")
+        // Admitting a provider call persists like any other request.
+        ledger.create(ActionRequest(wire))
+        ToolSourceAccess(ledger).recordProviderGrant(wire, scopes(pkgA, "read"))
+        val reread = FileToolTaskStore(file).readJournal()
+        val record = reread.sourceAccess.single { it.family == "provider:appfunctions:com.example.sample" }
+        assertEquals(SourceAccessState.GRANTED, record.state)
+        assertEquals(scopes(pkgA, "read"), record.scopes)
+    }
+
+    @Test fun tamperedCrossProviderScopeIsRefused() = withJournalFile { file ->
+        file.writeText(JSONObject()
+            .put("schemaVersion", 3)
+            .put("attempts", org.json.JSONArray())
+            .put("groups", org.json.JSONArray())
+            .put("approvals", org.json.JSONArray())
+            .put("grants", org.json.JSONArray())
                 .put("events", org.json.JSONArray())
                 .put("sourceAccess", org.json.JSONArray().put(JSONObject()
                     .put("family", "provider:appfunctions:com.a")
@@ -873,9 +872,6 @@ class M3EcosystemTest {
                 FileToolTaskStore(file).readJournal()
                 fail("tampered cross-provider scope must be refused")
             } catch (_: ToolTaskStorageException) { }
-        } finally {
-            file.delete()
-        }
     }
 
     // -- Settings projection -------------------------------------------------------------------
