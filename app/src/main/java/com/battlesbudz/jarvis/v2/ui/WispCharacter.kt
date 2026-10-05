@@ -111,7 +111,7 @@ internal fun WispCharacter(
 
 /** Also updates when a user changes Android's animation accessibility setting. */
 @Composable
-private fun rememberWispDurationScale(): State<Float> {
+internal fun rememberWispDurationScale(): State<Float> {
     val resolver = LocalContext.current.contentResolver
     fun readScale(): Float = runCatching {
         Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)

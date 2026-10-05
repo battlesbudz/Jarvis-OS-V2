@@ -95,6 +95,9 @@
 -keep class com.battlesbudz.jarvis.v2.ai.ModelCatalog { *; }
 -keep class com.battlesbudz.jarvis.v2.voice.VoiceSessionUi { *; }
 -keep class com.battlesbudz.jarvis.v2.voice.VoiceSessionState { *; }
+# test49 reads phase.label across the independently shrunk release-test DEX.
+# Build 1025 removed the otherwise inlined getter; preserve this exact enum ABI.
+-keep class com.battlesbudz.jarvis.v2.voice.VoicePhase { *; }
 
 # The controlled Compose fixture in release instrumentation directly calls these
 # shared top-level composables after replacing the activity content.

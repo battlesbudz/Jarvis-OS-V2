@@ -1,5 +1,7 @@
 package com.battlesbudz.jarvis.v2.ui
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -70,14 +72,25 @@ internal fun WispPresence(
             it.label, taskKey = "activity:${it.operationId}")
     } ?: setupActivity
     val presentation = WispPresenter.present(thread.id, journal, error, busy, armed, phase, call, paused, activity, receipt)
-    // The header reserves its own small area: transcripts and controls never sit behind Wisp.
+    // Reserve a little more space for the whole drawing during a real call, including its card.
+    // Only the call boundary changes size; poses/audio never move the transcript underneath it.
     val compact = LocalConfiguration.current.screenHeightDp < 500
+    val viewport = WispPresenter.viewport(armed, call, compact)
+    val durationScale by rememberWispDurationScale()
+    // Bypass animated state entirely at scale zero, including a change during an active tween.
+    val width by if (durationScale > 0f) {
+        animateDpAsState(viewport.widthDp.dp, tween(320), label = "Wisp viewport width")
+    } else rememberUpdatedState(viewport.widthDp.dp)
+    val height by if (durationScale > 0f) {
+        animateDpAsState(viewport.heightDp.dp, tween(320), label = "Wisp viewport height")
+    } else rememberUpdatedState(viewport.heightDp.dp)
     Column(Modifier.fillMaxWidth().testTag("jarvis_wisp").semantics {
         contentDescription = "Jarvis: ${presentation.label}"
         stateDescription = presentation.activity.name
     }, horizontalAlignment = Alignment.CenterHorizontally) {
-        WispAudioCharacter(presentation, voicePlayback, armed, phase, paused,
-            Modifier.size(width = if (compact) 116.dp else 168.dp, height = if (compact) 66.dp else 104.dp))
+        Box(Modifier.size(width, height).testTag("jarvis_wisp_viewport")) {
+            WispAudioCharacter(presentation, voicePlayback, armed, phase, paused, Modifier.fillMaxSize())
+        }
         Text(presentation.label, color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 16.dp).testTag("jarvis_wisp_status").semantics {

@@ -98,14 +98,19 @@ commits. Do not create or merge another PR without Justin's permission.
    Actual installed execution, backend/GLES capability, CPU count and complete
    device coverage remain fresh-run requirements. The AVD returns to the more
    stable two-vCPU baseline after one-/three-vCPU trials also failed boot delivery
-   and incurred system-server restarts. It disables only emulated accelerometer,
-   uncalibrated accelerometer, gyroscope, uncalibrated gyroscope and orientation
-   streams, which are unused by Jarvis and generated heavy sensor-HAL load during
-   boot. Light/proximity and other hardware retain their profile settings. The
-   unchanged UIAutomator display-rotation and continuity assertions remain required;
-   they do not depend on physical sensor-driven auto-rotation. Improved startup is
-   unproven until a complete exact-head run. No larger runner, hardware acceleration
-   or relaxed deadline is used.
+   and incurred system-server restarts. The API 29-only trial disables all 12
+   optional emulated sensor flags: accelerometer/uncalibrated accelerometer,
+   gyroscope/uncalibrated gyroscope, orientation, light, proximity,
+   magnetic field/uncalibrated magnetic field, pressure, humidity and temperature.
+   Jarvis has no SensorManager consumers; the pinned emulator and Android 10
+   framework support an empty sensor list. Automatic-brightness/proximity sensor
+   availability changes on this fixture, while microphone/audio configuration and all
+   other profiles remain unchanged. The existing UIAutomator display-rotation,
+   actual-dimension and continuity assertions remain required; they do not depend
+   on sensor-driven auto-rotation. Cleanup retains a bounded read-only sensorservice
+   receipt after the verdict. This is a load-reduction trial, not a proven startup
+   fix: actual admission, boot and the complete exact-head gate must pass. No
+   larger runner, hardware acceleration or relaxed deadline is used.
    The unchanged memory requests are
    2 GiB RAM and `vm.heapSize=256M`. Build 962's older wrapper interpreted that
    heap request as zero and promoted it to its 512 MiB minimum; its generated

@@ -20,7 +20,25 @@ internal data class WispPresentation(
     val taskKey: String? = null
 )
 
+internal data class WispViewport(val widthDp: Int, val heightDp: Int)
+
 internal object WispPresenter {
+    /** Call ownership controls space, independently of a temporary pose or microphone pause. */
+    fun viewport(armed: Boolean, callState: VoiceSessionState, compact: Boolean): WispViewport {
+        val activeCall = armed && when (callState) {
+            VoiceSessionState.PASSIVE_LISTENING, VoiceSessionState.ENDED -> false
+            VoiceSessionState.ACTIVELY_LISTENING, VoiceSessionState.PROCESSING,
+            VoiceSessionState.EXECUTING_ACTION, VoiceSessionState.SPEAKING,
+            VoiceSessionState.WAITING_FOR_CONFIRMATION, VoiceSessionState.INTERRUPTED -> true
+        }
+        return when {
+            compact && activeCall -> WispViewport(138, 80)
+            compact -> WispViewport(116, 66)
+            activeCall -> WispViewport(204, 128)
+            else -> WispViewport(168, 104)
+        }
+    }
+
     fun present(
         conversationId: String,
         journal: ToolTaskJournal?,

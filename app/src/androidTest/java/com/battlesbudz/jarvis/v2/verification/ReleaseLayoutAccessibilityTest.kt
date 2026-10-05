@@ -38,8 +38,12 @@ import com.battlesbudz.jarvis.v2.MainActivity
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
 import com.battlesbudz.jarvis.v2.chat.ConversationHistory
 import com.battlesbudz.jarvis.v2.ui.ConversationScreen
+import com.battlesbudz.jarvis.v2.ui.WispAppFrame
+import com.battlesbudz.jarvis.v2.ui.WispPresence
 import com.battlesbudz.jarvis.v2.ui.VoiceCallOverlay
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionState
+import com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame
+import com.battlesbudz.jarvis.v2.voice.VoicePhase
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionUi
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
@@ -68,6 +72,8 @@ class ReleaseLayoutAccessibilityTest {
     private lateinit var history: ConversationHistory
     private val callState = MutableStateFlow(VoiceSessionState.PASSIVE_LISTENING)
     private val paused = MutableStateFlow(false)
+    private val busy = MutableStateFlow(false)
+    private val playback = MutableStateFlow(VoicePlaybackFrame())
     private val sends = AtomicInteger()
     private val ends = AtomicInteger()
     private val opensMemory = AtomicInteger()
@@ -88,8 +94,11 @@ class ReleaseLayoutAccessibilityTest {
                     Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
                         Box(Modifier.fillMaxSize()) {
                         Box(if (narrow) Modifier.widthIn(max = 320.dp).fillMaxHeight() else Modifier.fillMaxSize()) {
+                            WispAppFrame(presence = {
+                                WispPresence(history, busy, callState, playback, null, null, null)
+                            }) {
                             ConversationScreen(
-                                history = history, busy = MutableStateFlow(false), callState = callState,
+                                history = history, busy = busy, callState = callState,
                                 onSend = { text, _ -> history.appendUser(text); sends.incrementAndGet(); null },
                                 selectedModel = LocalModelSpec("layout-fixture", "fixture.bin", recommendedGpu = false),
                                 onSelectConversation = { null },
@@ -101,6 +110,7 @@ class ReleaseLayoutAccessibilityTest {
                                         if (startRequest > 0 && callState.value == VoiceSessionState.PASSIVE_LISTENING) {
                                             callState.value = VoiceSessionState.ACTIVELY_LISTENING
                                             VoiceSessionUi.armed.value = true
+                                            VoiceSessionUi.phase.value = VoicePhase.LISTENING
                                         }
                                     }
                                     val microphonePaused by paused.collectAsState()
@@ -108,9 +118,13 @@ class ReleaseLayoutAccessibilityTest {
                                         phase = "Listening", status = "Listening to a controlled layout fixture",
                                         level = .2f, active = true, microphonePaused = microphonePaused,
                                         canStart = false, stopReplyAvailable = false,
-                                        onStart = {}, onStopReply = {}, onToggleMicrophone = { paused.value = !paused.value },
+                                        onStart = {}, onStopReply = {}, onToggleMicrophone = {
+                                            paused.value = !paused.value
+                                            VoiceSessionUi.paused.value = paused.value
+                                        },
                                         onEndCall = { endCall() }, transcriptSpeaker = "", transcript = "")
                                 })
+                            }
                         }
                         }
                     }
@@ -128,6 +142,8 @@ class ReleaseLayoutAccessibilityTest {
     @Before fun prepare() {
         originalFont = device.executeShellCommand("settings get system font_scale").trim()
         VoiceSessionUi.armed.value = false
+        VoiceSessionUi.phase.value = VoicePhase.IDLE
+        VoiceSessionUi.paused.value = false
         VoiceSessionUi.liveTranscript.value = ""
         val prefs = context.getSharedPreferences("release-layout-fixture", Context.MODE_PRIVATE)
         assertTrue(prefs.edit().clear().commit())
@@ -141,6 +157,8 @@ class ReleaseLayoutAccessibilityTest {
             activity?.close()
             application.unregisterActivityLifecycleCallbacks(callbacks)
             VoiceSessionUi.armed.value = false
+            VoiceSessionUi.phase.value = VoicePhase.IDLE
+            VoiceSessionUi.paused.value = false
             VoiceSessionUi.liveTranscript.value = ""
             callState.value = VoiceSessionState.PASSIVE_LISTENING
             device.unfreezeRotation()
@@ -156,6 +174,8 @@ class ReleaseLayoutAccessibilityTest {
 
     private fun endCall() {
         VoiceSessionUi.armed.value = false
+        VoiceSessionUi.phase.value = VoicePhase.IDLE
+        VoiceSessionUi.paused.value = false
         callState.value = VoiceSessionState.PASSIVE_LISTENING
         ends.incrementAndGet()
     }
@@ -217,6 +237,11 @@ class ReleaseLayoutAccessibilityTest {
         control.children.filter { !it.isClickable }.flatMap { actionLabelNodes(it) }
 
     private fun assertCallActions() {
+        val wisp = find(By.res("jarvis_wisp")).visibleBounds
+        val transcript = find(By.res("conversation_transcript")).visibleBounds
+        assertTrue("The call character must stay visible above the chat", wisp.height() > 0 && wisp.bottom <= transcript.top)
+        assertTrue("The enlarged character must leave a conversation viewport", transcript.height() > 0)
+        assertTrue("The character must remain within the display", wisp.left >= 0 && wisp.right <= device.displayWidth)
         assertAction("voice_call_pause", if (paused.value) "Resume microphone" else "Pause microphone")
         assertAction("voice_call_end", "End call")
         val status = find(By.res("voice_call_status"))

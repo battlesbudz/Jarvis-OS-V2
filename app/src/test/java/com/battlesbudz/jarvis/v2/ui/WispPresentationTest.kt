@@ -13,8 +13,58 @@ class WispPresentationTest {
         resultOutcome = outcome, groupId = group)
     private fun present(journal: ToolTaskJournal? = null, armed: Boolean = false,
         phase: VoicePhase = VoicePhase.IDLE, busy: Boolean = false, paused: Boolean = false,
-        receipt: WispPresentation? = null, observed: WispPresentation? = null) = WispPresenter.present(
-        "chat", journal, null, busy, armed, phase, VoiceSessionState.PASSIVE_LISTENING, paused, observed, receipt)
+        receipt: WispPresentation? = null, observed: WispPresentation? = null,
+        callState: VoiceSessionState = VoiceSessionState.PASSIVE_LISTENING) = WispPresenter.present(
+        "chat", journal, null, busy, armed, phase, callState, paused, observed, receipt)
+
+    @Test fun callViewportHasModestTargetsAndPreservesShortWindowSpace() {
+        assertEquals(WispViewport(168, 104), WispPresenter.viewport(false, VoiceSessionState.ENDED, false))
+        assertEquals(WispViewport(204, 128), WispPresenter.viewport(true, VoiceSessionState.ACTIVELY_LISTENING, false))
+        assertEquals(WispViewport(116, 66), WispPresenter.viewport(false, VoiceSessionState.ENDED, true))
+        assertEquals(WispViewport(138, 80), WispPresenter.viewport(true, VoiceSessionState.ACTIVELY_LISTENING, true))
+    }
+
+    @Test fun everyActiveCallStateKeepsItsSpaceUntilEndOrPassiveWakeListening() {
+        val activeStates = listOf(VoiceSessionState.ACTIVELY_LISTENING, VoiceSessionState.PROCESSING,
+            VoiceSessionState.EXECUTING_ACTION, VoiceSessionState.SPEAKING,
+            VoiceSessionState.WAITING_FOR_CONFIRMATION, VoiceSessionState.INTERRUPTED)
+        for (compact in listOf(false, true)) {
+            val expanded = if (compact) WispViewport(138, 80) else WispViewport(204, 128)
+            val resting = if (compact) WispViewport(116, 66) else WispViewport(168, 104)
+            for (state in activeStates) {
+                assertEquals(state.name, expanded, WispPresenter.viewport(true, state, compact))
+                // A stale DTO cannot enlarge the character after explicit disarm/end.
+                assertEquals(state.name, resting, WispPresenter.viewport(false, state, compact))
+            }
+            assertEquals(resting, WispPresenter.viewport(true, VoiceSessionState.ENDED, compact))
+            assertEquals(resting, WispPresenter.viewport(true, VoiceSessionState.PASSIVE_LISTENING, compact))
+            // A later call can expand again after the previous one ended.
+            assertEquals(expanded, WispPresenter.viewport(true, VoiceSessionState.ACTIVELY_LISTENING, compact))
+        }
+    }
+
+    @Test fun microphonePauseInterruptionAndTaskPosesDoNotCollapseAnActiveCall() {
+        val expected = WispViewport(204, 128)
+        assertEquals(WispActivity.PAUSED, present(armed = true, phase = VoicePhase.PAUSED,
+            paused = true, callState = VoiceSessionState.ACTIVELY_LISTENING).activity)
+        assertEquals(expected, WispPresenter.viewport(true, VoiceSessionState.ACTIVELY_LISTENING, false))
+        assertEquals(WispActivity.PAUSED, present(armed = true,
+            callState = VoiceSessionState.INTERRUPTED).activity)
+        assertEquals(expected, WispPresenter.viewport(true, VoiceSessionState.INTERRUPTED, false))
+        val running = ToolTaskJournal(attempts = listOf(attempt(ToolTaskState.RUNNING)))
+        assertEquals(WispActivity.CHECKING, present(running, armed = true,
+            callState = VoiceSessionState.EXECUTING_ACTION).activity)
+        assertEquals(expected, WispPresenter.viewport(true, VoiceSessionState.EXECUTING_ACTION, false))
+        val approval = ToolTaskJournal(attempts = listOf(attempt(ToolTaskState.WAITING_APPROVAL)))
+        assertEquals(WispActivity.APPROVAL, present(approval, armed = true,
+            callState = VoiceSessionState.WAITING_FOR_CONFIRMATION).activity)
+        assertEquals(expected, WispPresenter.viewport(true, VoiceSessionState.WAITING_FOR_CONFIRMATION, false))
+        // The same task/wake pose outside an active call retains the resting viewport.
+        assertEquals(WispActivity.CHECKING, present(running).activity)
+        assertEquals(WispViewport(168, 104), WispPresenter.viewport(false, VoiceSessionState.ENDED, false))
+        assertEquals(WispActivity.LISTENING, present(armed = true, phase = VoicePhase.WAKE).activity)
+        assertEquals(WispViewport(168, 104), WispPresenter.viewport(true, VoiceSessionState.PASSIVE_LISTENING, false))
+    }
 
     @Test fun idleIsPresentAndStaleCallPhaseCannotAnimateAfterEnd() {
         assertEquals(WispActivity.READY, present().activity)

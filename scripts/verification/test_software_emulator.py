@@ -992,7 +992,10 @@ class SoftwareSessionTest(unittest.TestCase):
                                       "hw.accelerometer=yes\nhw.accelerometer_uncalibrated=yes\n"
                                       "hw.gyroscope=yes\nhw.sensors.gyroscope_uncalibrated=yes\n"
                                       "hw.sensors.orientation=yes\nhw.sensors.light=yes\n"
-                                      "hw.sensors.proximity=yes\nhw.sensors.magnetic_field=yes\n")
+                                      "hw.sensors.proximity=yes\nhw.sensors.magnetic_field=yes\n"
+                                      "hw.sensors.magnetic_field_uncalibrated=yes\n"
+                                      "hw.sensors.pressure=yes\nhw.sensors.humidity=yes\n"
+                                      "hw.sensors.temperature=yes\nhw.audioInput=yes\nhw.gps=yes\n")
                 return reply("")
 
             with patch.object(session, "run", side_effect=run), \
@@ -1013,10 +1016,13 @@ class SoftwareSessionTest(unittest.TestCase):
             command = emulator_command(Path("/sdk"), session.diagnostics)
             self.assertEqual(effective["hw.cpu.ncore"], command[command.index("-smp") + 1])
             for sensor in ("hw.accelerometer", "hw.accelerometer_uncalibrated", "hw.gyroscope",
-                           "hw.sensors.gyroscope_uncalibrated", "hw.sensors.orientation"):
+                           "hw.sensors.gyroscope_uncalibrated", "hw.sensors.orientation",
+                           "hw.sensors.light", "hw.sensors.proximity", "hw.sensors.magnetic_field",
+                           "hw.sensors.magnetic_field_uncalibrated", "hw.sensors.pressure",
+                           "hw.sensors.humidity", "hw.sensors.temperature"):
                 self.assertEqual("no", effective[sensor])
-            for sensor in ("hw.sensors.light", "hw.sensors.proximity", "hw.sensors.magnetic_field"):
-                self.assertEqual("yes", effective[sensor])
+            for hardware in ("hw.audioInput", "hw.gps"):
+                self.assertEqual("yes", effective[hardware])
             self.assertEqual("2048M", effective["hw.ramSize"])
             self.assertEqual("256M", effective["vm.heapSize"])
             self.assertNotIn("hw.heapSize", effective)
@@ -1227,14 +1233,25 @@ class SoftwareSessionTest(unittest.TestCase):
             self.assertFalse(out.exists(), "Controller requires its own fresh output directory")
             session.report["errors"].append("No service published for: input")
             session.report["status"] = "failed"
-            with patch.object(session, "adb", return_value=reply("raw binder diagnostics")), \
+            def final_diagnostic(*args, **kwargs):
+                self.assertEqual(clock.now() + 10, kwargs["deadline"])
+                return reply("No Sensors on the device" if args == ("shell", "dumpsys", "sensorservice")
+                             else "raw binder diagnostics")
+
+            with patch.object(session, "adb", side_effect=final_diagnostic) as final_adb, \
                     patch("software_emulator.os.killpg") as kill:
                 session.close()
             kill.assert_called_once()
+            self.assertEqual([("shell", "service", "list"),
+                              ("logcat", "-b", "all", "-d", "-v", "threadtime"),
+                              ("shell", "dumpsys", "sensorservice")],
+                             [call.args for call in final_adb.call_args_list])
             report = json.loads((out / "software-emulator/startup.json").read_text())
             self.assertFalse(report["passed"])
             self.assertEqual("failed", report["status"])
             self.assertIn("No service published", report["errors"][0])
+            self.assertEqual("No Sensors on the device",
+                             (out / "software-emulator/final-sensorservice.txt").read_text())
             self.assertTrue((out / "software-emulator/emulator-stdout.txt").exists())
             receipts = [json.loads(line) for line in (out / "software-emulator/host-resources.jsonl").read_text().splitlines()]
             self.assertEqual({"boot-start", "boot-failed"}, {receipt["stage"] for receipt in receipts})

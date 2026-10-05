@@ -7,7 +7,13 @@ idle chat, model setup, saved calls and Memory navigation. There is no visual-mo
 selector. The prior in-call waveform is replaced; the existing call-control pill,
 shared transcript, draft, stop-reply, microphone pause and explicit end behavior
 remain. The character reserves a small header area instead of painting over text.
-The compact layout is used for short/landscape windows. Standard modal dialogs
+Idle Wisp uses a 168×104 dp drawing viewport. An armed, active call smoothly
+expands it to 204×128 dp over 320 ms, giving the character and tool card more
+room. Short/landscape windows use 116×66 dp idle and 138×80 dp in-call. Paused
+microphones, interrupted replies, working and approval poses retain the active
+call workspace. Explicit end or passive wake listening returns to idle size.
+Android reduced-motion settings snap directly to the requested size, including
+when animation scale changes during a tween. Standard modal dialogs
 still appear above the app chrome; the full-screen development-metrics dialog
 covers Wisp until dismissed. This is in-app UI, not an Android system overlay.
 
@@ -46,20 +52,72 @@ Current honest action coverage:
 | JVM presentation | Real audio owner, finite/clamped amplitude, idle after end, conversation isolation, approval priority, unknown versus success, fresh receipts only | `WispPresentationTest` |
 | JVM operation observation | Actual read boundaries, failure/finally cleanup, stale and cancelled leases, observer failure isolation, no prose/heuristic events | `AgentActivityTest` |
 | JVM phone dispatch | Durable RUNNING before executor, terminal state after result/cancellation, observer exceptions do not block effects, invalid claims do not animate | `JournaledActionPipelineTest` |
-| Android UI | Character above transcript and centered while idle; real state DTO projection; unknown outcome never celebrates; repeated call/start/back/pause/speak/stop/end preserves draft and character | Release `test49_wispStaysPresentAndReflectsOnlyObservedWork` |
-| Android navigation | Shipping parent retains Wisp before calls and during Memory; former waveform removed from the call controls | Release `test28`, `test30`, existing layout/accessibility matrix |
+| Android UI | Character above transcript and centered while idle; real state DTO projection; unknown outcome never celebrates; repeated call/start/back/pause/speak/stop/end preserves draft and character, enlarges the active call workspace and shrinks after end | Release `test49_wispStaysPresentAndReflectsOnlyObservedWork` |
+| Android navigation | Shipping parent retains Wisp before calls and during Memory; former waveform removed from the call controls; actual Wisp frame participates in the existing 320 dp/200% font and rotation/fold continuity cases without obscuring transcript or call controls | Release `test28`, `test30`, existing layout/accessibility matrix |
 | Visual/performance | Actual shared DrawScope code rendered at 168×104 and compact 116×66, all 11 poses; Android screenshots and physical frame/thermal measurements remain separately required | Shared Skia render is geometry evidence, not an Android screenshot or APK verification |
 
 Local focused verification passed with Kotlin 2.3.21 and coroutines 1.9.0:
-87 JVM regressions across 12 classes, plus the architecture guard and 232 Python
+90 JVM regressions across 12 classes, plus the architecture guard and 232 Python
 helper tests. The Android character/header compile check used actual API 35,
 Compose 1.7.6 and lifecycle 2.8.7 classes with no DTO stubs. All 11 shared-drawing
-poses rendered at three sizes; 132 maximum-audio edge checks found no clipping.
-These are targeted checks, not the full Gradle/R8/native/Android gate.
+poses rendered at three initial sizes; 132 maximum-audio edge checks found no
+clipping. The call-growth addition also passed 88 maximum-audio frames at its two
+expanded viewport sizes without clipping.
+These are targeted checks, not the full Gradle/R8/native/Android gate. The
+zero-scale bypass and mid-transition snap are source-reviewed; first-frame
+reduced-motion timing has not been measured on an Android device.
 
 The Android release journey and exact-head release matrix must pass before an APK
 is called verified. General model accuracy, acoustic reaction, Bluetooth, physical
 microphone/speaker behavior and device performance remain physical-device signoff.
+
+### Wisp Build 1025 release-test ABI correction
+
+[Build 1025](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37376965136)
+tests head `d3c6e041843591e867b8d09e4a68f5c07da40556`, merge
+`40043be0c68b5498c6b5f5d329f29154c7f73e0f`. Both signed APK variants, all
+1,029 release JVM tests (zero failures/errors/skips), 232 helper checks,
+recorded speech and native audits pass. This is not a passing Android gate.
+
+The API 35 compact profile preserves all first 48 main methods and actual Wisp
+screenshots for idle, reference reading, three tool props, approval, confirmed
+success and unknown outcome. The call portion of test49 then crashes on
+`NoSuchMethodError: VoicePhase.getLabel()` at `ReleaseJourneyTest.kt:3223`.
+R8 inlined/removed the getter in the app while the separately compiled test DEX
+still calls its public ABI. API 35 artifact `11373212383`, ZIP SHA-256
+`73256b818c7c8b40dc9733c0ced33cc0c222f997cc01e9c9d09156bf0448b03f`, retains
+instrumentation, logcat, screenshots and XML. Test49 and test90 did not pass;
+subsequent lifecycle/layout phases were not reached on this profile.
+
+An independent test-DEX/R8 audit confirms that the test calls
+`VoicePhase.getLabel():String`, while the release mapping/usage removes or
+reshapes that getter. Its enum fields are consistently remapped. The remaining
+call-flow references (`VoiceSessionUi`, `VoiceSessionState`, `VoicePlaybackFrame`
+and `VoiceCallOverlay`) have retained shared ABI entries.
+
+API 35 with 16 KB pages also has only that test49 failure (artifact `11372603079`,
+ZIP SHA-256 `49d545be7e6feaa64236fecb0819326205bdd0229a0cd02da61006ac4a72c71c`).
+API 36 phone additionally fails unchanged test45 while locating the restored
+benchmark reference control (artifact `11373770626`, ZIP SHA-256
+`d369dbee372f8ed623119692ff887eaa25a3a99c0279fcf13e13a6329df3cccf`). That fixture
+mounts `PipelineBenchmarkScreen` directly, without Wisp chrome; its screenshot
+confirms the standalone dashboard. Its earlier scoring/review steps passed,
+but the restored-store visibility assertion did not. Preserve that failure and
+rerun the same required navigation assertion rather than assuming a pass.
+
+The API 36 Pixel Fold emulator also passes the first 48 main methods before the
+same test49 getter failure. Artifact `11373681757`, ZIP SHA-256
+`b97596109b1e1de973301a11202e677d1206424e60cba2209248ac33e4d96686`, retains eight
+Wisp state captures. Visual inspection of the 2208×1840 unfolded layout shows
+centered, unclipped Wisp/approval content above a separate transcript and composer.
+This snapshot is not completion of the later fold/unfold lifecycle/layout phase.
+
+The narrow correction preserves the `VoicePhase` enum ABI beside existing
+`VoiceSessionUi`/`VoiceSessionState` boundaries. It changes no animation,
+assertion, scenario, timeout or acceptance gate. The same call-flow regression
+and complete exact-revision matrix must rerun successfully. API 30 separately
+failed to download a valid Emulator archive before startup; that infrastructure
+failure ran no app tests and cannot be treated as Wisp evidence.
 
 ## API 29 graphics boot loop — October 5, 2026
 
@@ -240,6 +298,17 @@ the boot-completion barrier fails rather than authorizing recovery. The same
 publication gates still apply; only a full new exact-head run can verify it.
 The candidate passes 232 local helper tests and the architecture guard, including
 strict ownership/history matching, one-input recovery and late/failing probes.
+
+### API 29 remaining sensor workload — controlled trial, exact CI pending
+
+Build 1025, run https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37376965136, head `d3c6e041843591e867b8d09e4a68f5c07da40556`, tested merge `40043be0c68b5498c6b5f5d329f29154c7f73e0f`, again exhausted the original 900-second boot budget before actual user-0 BOOT_COMPLETED delivery. The app tests and guarded System UI recovery never started. Artifact `11372978997`, ZIP SHA-256 `cc9077208b89c3abde2412830e7beb0a8f5cd104358546a6de3175a2b0dc1388`, retains one permission-initialization system-server failure, a later System UI ANR, and repeated stock-app ANRs. The sensor HAL still consumed 19–22% of a guest CPU after the five motion sensors were disabled; the native configuration verifies seven remaining advertised sensors. The logs do not identify which sensor subscriptions were active.
+
+The next API 29-only load-reduction trial also disables `hw.sensors.light`, `hw.sensors.proximity`, `hw.sensors.magnetic_field`, `hw.sensors.magnetic_field_uncalibrated`, `hw.sensors.pressure`, `hw.sensors.humidity`, and `hw.sensors.temperature`. Pinned Emulator 32.1.15 maps these supported flags into its advertised sensor mask and stops rearming its periodic sensor timer when no sensor is active. Android 10 SensorService explicitly supports an empty sensor list without starting its polling/ack threads. Sources: https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/android/android-emu/android/hw-sensors.cpp and https://android.googlesource.com/platform/frameworks/native/+/refs/heads/android10-release/services/sensorservice/SensorService.cpp .
+
+This is a supported device variation, not the emulator default or a proven boot fix. Jarvis has no SensorManager consumers, sensor-feature requirements, proximity wake locks or implemented brightness-control coupling. Microphone/audio configuration, other Android profiles and the actual UIAutomator rotation/dimension/continuity assertions remain intact. Platform automatic-brightness/proximity availability changes on this software fixture; physical sensor/device behavior remains outside emulator coverage. Genuine API 29 ARM64, two guest CPUs, 2 GiB RAM, 360x640@140, HostComposition, the 900-second boot/instrumentation budgets and every acceptance assertion remain required.
+
+Cleanup retains `final-sensorservice.txt` through one additional read-only `dumpsys sensorservice` query bounded to ten seconds within the original overall session deadline. It runs after the boot/controller verdict, cannot authorize app tests or make a failed boot pass, and supplements native parsed-configuration receipts. Fresh hosted evidence must establish actual sensor admission, boot completion and the complete release gate; publication stays blocked until then.
+
 
 ## Spoken farewell returns to wake listening
 

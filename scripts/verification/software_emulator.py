@@ -52,17 +52,25 @@ EMULATOR_PIN = {
 # Return to the most stable tested CPU baseline; one and three guest CPUs
 # both incurred system-server restarts and did not complete the boot barrier.
 SOFTWARE_CPU_COUNT = 2
-# Jarvis has no motion-sensor consumers. Its layout gate forces real display
+# Jarvis has no SensorManager consumers. Its layout gate forces real display
 # rotation through UIAutomator, independently of sensor-based auto-rotation.
-# Build 1004's unused sensor stream overflowed its cache while the HAL consumed
-# 18-21% of a guest CPU. Disable only this motion group, retaining other sensors.
+# Build 1025's sensor HAL still consumed 19-22% of a guest CPU after motion
+# sensors were disabled. Use Android's supported empty-sensor configuration
+# for this software-only fixture, retaining microphone/audio and other profiles.
+# This is a load-reduction trial; the unchanged full gates establish usability.
 # https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/android/android-emu/android/hw-sensors.cpp
-SOFTWARE_MOTION_SENSORS = ("hw.accelerometer", "hw.accelerometer_uncalibrated", "hw.gyroscope",
-                           "hw.sensors.gyroscope_uncalibrated", "hw.sensors.orientation")
+# https://android.googlesource.com/platform/frameworks/native/+/refs/heads/android10-release/services/sensorservice/SensorService.cpp
+SOFTWARE_DISABLED_SENSORS = (
+    "hw.accelerometer", "hw.accelerometer_uncalibrated", "hw.gyroscope",
+    "hw.sensors.gyroscope_uncalibrated", "hw.sensors.orientation",
+    "hw.sensors.light", "hw.sensors.proximity", "hw.sensors.magnetic_field",
+    "hw.sensors.magnetic_field_uncalibrated", "hw.sensors.pressure",
+    "hw.sensors.humidity", "hw.sensors.temperature",
+)
 SOFTWARE_AVD_SETTINGS = {"hw.cpu.ncore": str(SOFTWARE_CPU_COUNT), "hw.ramSize": "2048M", "vm.heapSize": "256M",
                          "hw.lcd.width": "360", "hw.lcd.height": "640", "hw.lcd.density": "140",
                          "disk.dataPartition.size": "4096M",
-                         **{sensor: "no" for sensor in SOFTWARE_MOTION_SENSORS}}
+                         **{sensor: "no" for sensor in SOFTWARE_DISABLED_SENSORS}}
 # Retain Build 963's requested selector. Its actual guest backend was
 # ANGLE/Vulkan SwiftShader with GLES 3, not a proven direct-only path.
 # Requested selector and fresh actual backend remain separate receipts;
@@ -926,11 +934,16 @@ class SoftwareSession:
         try:
             if self.emulator is not None:
                 if self.emulator.poll() is None:
-                    # Guest logs already stream from startup. Capture final binder state as well.
-                    for command in (("shell", "service", "list"), ("logcat", "-b", "all", "-d", "-v", "threadtime")):
+                    # These read-only receipts run after the boot/controller verdict;
+                    # they never authorize tests or extend a readiness deadline.
+                    diagnostics = (
+                        ("final-services.txt", ("shell", "service", "list")),
+                        ("final-logcat.txt", ("logcat", "-b", "all", "-d", "-v", "threadtime")),
+                        ("final-sensorservice.txt", ("shell", "dumpsys", "sensorservice")),
+                    )
+                    for name, command in diagnostics:
                         try:
                             result = self.adb(*command, deadline=self.now() + 10)
-                            name = "final-services.txt" if command[0] == "shell" else "final-logcat.txt"
                             (self.diagnostics / name).write_text(result.stdout + result.stderr)
                         except (OSError, TimeoutError) as error:
                             self.report["errors"].append(f"Final diagnostics: {error}")
