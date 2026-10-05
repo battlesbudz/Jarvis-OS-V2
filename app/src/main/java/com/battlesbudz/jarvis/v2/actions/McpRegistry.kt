@@ -84,10 +84,11 @@ class McpSetupFlow(
             return FlowResult.Failed(Stage.NEGOTIATION,
                 "The server could not be reached at $url. Check the URL and network.")
         }
-        val negotiation = McpProtocol.parseInitializeResponse(
-            initResponse.status, initResponse.body, initResponse.headers)
-        if (negotiation is McpProtocol.Negotiation.Failed) {
-            return FlowResult.Failed(Stage.NEGOTIATION, negotiation.reason)
+        val negotiation = when (val result = McpProtocol.parseInitializeResponse(
+            initResponse.status, initResponse.body, initResponse.headers)) {
+            is McpProtocol.Negotiation.Failed ->
+                return FlowResult.Failed(Stage.NEGOTIATION, result.reason)
+            is McpProtocol.Negotiation.Ok -> result
         }
         // Best-effort initialized notification; a failure here is not fatal.
         try {
@@ -185,7 +186,7 @@ class McpRegistry(
     /** Explicit disconnect: the server stays configured but calls stop honestly. */
     fun disconnect(serverId: String): Boolean {
         val status = servers[serverId] ?: return false
-        servers[serverId] = status.copy(state = McpServerState.DISCONNECTED,
+        servers[serverId] = status.copy(state = McpServerState.DISABLED,
             explanation = "Disconnected. Calls to this server are unavailable until you reconnect.")
         return true
     }
