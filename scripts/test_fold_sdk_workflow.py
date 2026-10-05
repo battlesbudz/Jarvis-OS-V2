@@ -11,6 +11,17 @@ import unittest
 
 WORKFLOW = Path(__file__).resolve().parents[1] / '.github/workflows/android-sandbox.yml'
 
+# The test body below executes the exact script content of these two named
+# workflow steps, so it only applies when the workflow file that carries them
+# is present. Workflow files are not managed on feature/muse-tools (the token
+# lacks workflows permission), so skip while they are absent.
+_FOLD_CATALOG_STEPS = ('Select the pinned catalog for the emulator runner',
+                       'Install the pinned Pixel Fold device catalog')
+WORKFLOW_HAS_FOLD_CATALOG_STEPS = (
+    WORKFLOW.exists()
+    and all(step in WORKFLOW.read_text() for step in _FOLD_CATALOG_STEPS)
+)
+
 
 def workflow_step(name):
     lines = WORKFLOW.read_text().splitlines()
@@ -20,6 +31,11 @@ def workflow_step(name):
     return '\n'.join(lines[start:end])
 
 
+@unittest.skipUnless(
+    WORKFLOW_HAS_FOLD_CATALOG_STEPS,
+    "Requires audio-pr2's android-sandbox.yml Pixel Fold catalog steps; "
+    "workflow files are not managed on feature/muse-tools (token lacks workflows permission). "
+    "Remove this skip if the workflow file is adopted.")
 class FoldSdkWorkflowTest(unittest.TestCase):
     def setUp(self):
         step = workflow_step('Select the pinned catalog for the emulator runner')
