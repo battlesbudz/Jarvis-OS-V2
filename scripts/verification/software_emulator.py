@@ -17,11 +17,14 @@ import shutil
 import signal
 import stat
 import subprocess
+import struct
 import sys
 import tempfile
 import time
 from xml.dom import minidom
+from xml.etree import ElementTree
 import zipfile
+import zlib
 
 try:
     from .profiles import load_profiles
@@ -299,7 +302,8 @@ def read_native_boot_log(path, *, deadline, now=time.monotonic, max_bytes=256 * 
             stream.seek(start)
             raw = stream.read(before.st_size - start)
             after, current = os.fstat(stream.fileno()), path.stat()
-            receipt.update(file_size_bytes=before.st_size, start_offset=start, read_bytes=len(raw))
+            receipt.update(file_size_bytes=before.st_size, file_identity=[before.st_dev, before.st_ino],
+                           start_offset=start, read_bytes=len(raw))
             if (len(raw) != before.st_size - start or after.st_size < before.st_size
                     or current.st_size < before.st_size
                     or (after.st_dev, after.st_ino) != (current.st_dev, current.st_ino)):
@@ -395,6 +399,138 @@ def wait_for_boot_broadcast(adb, running, deadline, *, now=time.monotonic, pause
             return state
         pause(min(2, max(0, deadline - now())))
     expired()
+
+
+# Android 10 gives error windows a system-owned window and a PRIVATE_FLAG_SYSTEM_ERROR.
+# Match both WindowManager ownership and fresh accessibility content, never text alone.
+# https://android.googlesource.com/platform/frameworks/base/+/refs/heads/android10-release/services/core/java/com/android/server/am/AppNotRespondingDialog.java
+# https://android.googlesource.com/platform/frameworks/base/+/refs/heads/android10-release/services/core/java/com/android/server/wm/WindowState.java
+SYSTEM_UI_ANR_WINDOW = "Application Not Responding: com.android.systemui"
+SYSTEM_UI_ANR_TITLE = "System UI isn't responding"
+
+
+def startup_error_window(raw, *, settling_window=None):
+    """Return the sole stock System UI error window, or None for a clean window dump."""
+    # Default dumpsys includes a saved LAST ANR snapshot with obsolete windows,
+    # focus and configuration. Android 10 prints the live POLICY section next.
+    # https://android.googlesource.com/platform/frameworks/base/+/refs/heads/android10-release/services/core/java/com/android/server/wm/WindowManagerService.java
+    policy = "WINDOW MANAGER POLICY STATE (dumpsys window policy)"
+    if raw.count(policy) != 1:
+        raise ValueError("Missing or ambiguous live WindowManager sections")
+    raw = raw.split(policy, 1)[1]
+    if (raw.count("WINDOW MANAGER DISPLAY CONTENTS (dumpsys window displays)") != 1
+            or raw.count("WINDOW MANAGER WINDOWS (dumpsys window windows)") != 1
+            or len(re.findall(r"^  mGlobalConfiguration=.+$", raw, re.MULTILINE)) != 1):
+        raise ValueError("Incomplete startup WindowManager dump")
+    headers = list(re.finditer(r"^  Window #[0-9]+ (Window\{[0-9a-f]+ u[0-9]+ ([^}\n]+)\}):$",
+                               raw, re.MULTILINE))
+    focus = re.findall(r"^\s*mCurrentFocus=(Window\{[^}\n]+\})\s*$", raw, re.MULTILINE)
+    if not headers or len(focus) != 1 or focus[0] not in [match[1] for match in headers]:
+        raise ValueError("Missing or ambiguous focused startup window")
+    errors = []
+    for index, match in enumerate(headers):
+        end = headers[index + 1].start() if index + 1 < len(headers) else raw.index("  mGlobalConfiguration=")
+        block = raw[match.end():end]
+        title = match[2]
+        if (title.startswith(("Application Not Responding:", "Application Error:", "Error Dialog"))
+                or re.search(r"\b(?:SYSTEM_ERROR|SYSTEM_ALERT)\b", block)):
+            errors.append((match[1], title, block))
+    if not errors:
+        return None
+    if len(errors) != 1:
+        raise ValueError("Multiple startup error windows; recovery is not permitted")
+    window, title, block = errors[0]
+    identity = window[:-len(" EXITING}")] + "}" if window.endswith(" EXITING}") else window
+    settling = settling_window is not None and identity == settling_window
+    allowed_visibility = (["true"], ["false"]) if settling else (["true"],)
+    if (title != SYSTEM_UI_ANR_WINDOW and not (settling and title == SYSTEM_UI_ANR_WINDOW + " EXITING")
+            or (not settling and focus != [window])
+            or re.findall(r"\bmOwnerUid=(\d+)\b", block) != ["1000"]
+            or re.findall(r"\bpackage=([^\s]+)", block) != ["android"]
+            or re.findall(r"\bmDisplayId=(\d+)\b", block) != ["0"]
+            or any(re.findall(rf"^[ \t]*{flag}=(true|false)[ \t]*$", block, re.MULTILINE)
+                   not in allowed_visibility for flag in ("isOnScreen", "isVisible"))
+            or not re.search(r"\bty=(?:SYSTEM_ALERT|SYSTEM_ERROR)\b", block)
+            or not re.search(r"\bpfl=[^\r\n}]*\bSYSTEM_ERROR\b", block)):
+        raise ValueError("Unrecognized or unowned startup error window; recovery is not permitted")
+    if settling_window is not None and not settling:
+        raise RuntimeError("New or repeated System UI ANR dialog after Wait")
+    return settling_window if settling else window
+
+
+def startup_wait_target(raw, window, display):
+    """Authorize only the exact stock title and one enabled Android Wait button."""
+    if len(raw) > 1024 * 1024 or "<!DOCTYPE" in raw.upper() or "<!ENTITY" in raw.upper():
+        raise ValueError("Unsupported startup UI hierarchy")
+    try:
+        root = ElementTree.fromstring(raw)
+    except ElementTree.ParseError as error:
+        raise ValueError("Malformed startup UI hierarchy") from error
+    nodes = list(root.iter("node"))
+    if root.tag != "hierarchy" or root.get("rotation") != "0" or not nodes:
+        raise ValueError("Missing or unexpected startup UI hierarchy")
+    alerts = [node for node in nodes if node.get("resource-id") == "android:id/alertTitle"]
+    actions = [node for node in nodes if node.get("resource-id", "").startswith("android:id/aerr_")]
+    if window is None:
+        if alerts or actions or any("isn't responding" in node.get("text", "") for node in nodes):
+            raise ValueError("Unrecognized startup dialog in UI hierarchy")
+        return None
+    titles = [node for node in alerts if node.get("text") == SYSTEM_UI_ANR_TITLE]
+    waits = [node for node in actions if node.get("resource-id") == "android:id/aerr_wait"]
+    if (len(alerts) != 1 or len(titles) != 1 or len(waits) != 1
+            or len([node for node in actions if node.get("resource-id") == "android:id/aerr_close"]) != 1
+            or any(node.get("package") != "android" for node in nodes)
+            or any(node.get("resource-id") not in ("android:id/aerr_close", "android:id/aerr_wait")
+                   for node in actions)):
+        raise ValueError("Ambiguous or non-stock System UI ANR hierarchy")
+    target = waits[0]
+    bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", target.get("bounds", ""))
+    if (target.get("text") != "Wait" or target.get("class") != "android.widget.Button"
+            or target.get("enabled") != "true" or target.get("clickable") != "true"
+            or target.get("visible-to-user", "true") != "true" or not bounds):
+        raise ValueError("System UI Wait target is not safely actionable")
+    x1, y1, x2, y2 = map(int, bounds.groups())
+    if not (0 <= x1 < x2 <= display["width"] and 0 <= y1 < y2 <= display["height"]):
+        raise ValueError("System UI Wait bounds are outside the verified display")
+    return [(x1 + x2) // 2, (y1 + y2) // 2]
+
+
+def require_startup_png(path, display):
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 8 * 1024 * 1024:
+        raise ValueError("Missing or oversized startup screenshot")
+    raw = path.read_bytes()
+    offset, kinds = 8, []
+    if raw[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("Invalid startup screenshot signature")
+    while offset < len(raw):
+        if len(raw) - offset < 12:
+            raise ValueError("Truncated startup screenshot")
+        size = int.from_bytes(raw[offset:offset + 4], "big")
+        kind, end = raw[offset + 4:offset + 8], offset + size + 12
+        if (end > len(raw) or zlib.crc32(raw[offset + 4:end - 4]) != int.from_bytes(raw[end - 4:end], "big")
+                or (not kinds and (kind != b"IHDR" or size != 13
+                    or struct.unpack(">II", raw[offset + 8:offset + 16]) != (display["width"], display["height"])))
+                or (kind == b"IEND" and (size != 0 or end != len(raw)))):
+            raise ValueError("Invalid startup screenshot chunk")
+        kinds.append(kind)
+        offset = end
+    if not kinds or kinds[-1] != b"IEND" or kinds.count(b"IHDR") != 1 or b"IDAT" not in kinds:
+        raise ValueError("Incomplete startup screenshot")
+
+
+def startup_anr_history(raw, pid):
+    """Use stream order: the guest clock can jump during a cold boot."""
+    prefix = rf"^\d{{2}}-\d{{2}} \d{{2}}:\d{{2}}:\d{{2}}\.\d{{3}}[ \t]+{pid}[ \t]+\d+[ \t]+"
+    boot = list(re.finditer(prefix + r"I[ \t]+ActivityManager[ \t]*:[ \t]+Finished processing BOOT_COMPLETED for u0[ \t]*$",
+                            raw, re.MULTILINE))
+    anrs = list(re.finditer(prefix + r"E[ \t]+ActivityManager[ \t]*:[ \t]+ANR in ([^\s]+)(?:[ \t]+[^\r\n]*)?$",
+                            raw, re.MULTILINE))
+    if len(boot) != 1:
+        raise ValueError("Ambiguous current-server BOOT_COMPLETED history")
+    if any(match.start() > boot[0].start() for match in anrs):
+        raise RuntimeError("New ANR after BOOT_COMPLETED; startup recovery is not permitted")
+    return {"boot_offset": boot[0].start(),
+            "cold_system_ui_anrs": [match.start() for match in anrs if match[1] == "com.android.systemui"]}
 
 
 class SoftwareSession:
@@ -608,6 +744,137 @@ class SoftwareSession:
                                             ("graphics_backend", "vulkan_mode", "gles_mode", "adapter"))
         graphics["backend_receipt"] = evidence
 
+    def require_startup_ui(self, deadline, *, pause=time.sleep):
+        """One cold System UI Wait at most, before the release controller installs anything."""
+        if "startup_ui" in self.report:
+            raise RuntimeError("Startup UI recovery cannot be run more than once")
+        proof = self.report["startup_ui"] = {"verified": False, "wait_attempts": 0, "observations": 0}
+        expected_pid = self.report["boot_broadcast"]["system_server_pid"]
+        native_identity, native_size = None, 0
+
+        def live():
+            remaining(min(deadline, self.deadline), self.now)
+            if self.emulator.poll() is not None:
+                raise RuntimeError("Emulator exited during startup UI verification")
+
+        def record(stage, **fields):
+            receipt = dict(fields)
+            receipt.update(stage=stage, observed_monotonic_seconds=self.now(),
+                           deadline_monotonic_seconds=deadline)
+            with (self.diagnostics / "startup-ui.jsonl").open("a") as stream:
+                stream.write(json.dumps(receipt) + "\n")
+
+        def probe(stage, *args, timeout=30):
+            live()
+            result = self.adb(*args, deadline=deadline, timeout=timeout)
+            record(stage, exit_code=result.returncode, stdout=result.stdout, stderr=result.stderr)
+            live()  # Late success is evidence, never permission for the next action.
+            if result.returncode:
+                raise RuntimeError(f"Startup UI {stage} failed ({result.returncode})")
+            return result.stdout
+
+        def history(stage):
+            nonlocal native_identity, native_size
+            live()
+            path = self.diagnostics / "guest-startup-logcat.txt"
+            # A full, bounded scan is necessary: the one cold ANR precedes the
+            # boot barrier by minutes and is outside the 256 KiB completion tail.
+            receipt = read_native_boot_log(path, deadline=deadline, now=self.now, max_bytes=16 * 1024 * 1024)
+            raw = receipt.pop("stdout")
+            record(stage, **receipt)
+            live()
+            if receipt["exit_code"] or receipt.get("start_offset") != 0:
+                raise RuntimeError("Incomplete native startup history; recovery is not permitted")
+            identity = receipt["file_identity"]
+            if native_identity is not None and (identity != native_identity or receipt["file_size_bytes"] < native_size):
+                raise RuntimeError("Native startup history changed or was truncated")
+            native_identity, native_size = identity, receipt["file_size_bytes"]
+            result = startup_anr_history(raw, expected_pid)
+            record(stage + "-anrs", **result)
+            return result
+
+        def current_server(stage):
+            raw = probe(stage, "shell", "pidof", "system_server", timeout=15)
+            if raw.strip() != str(expected_pid):
+                raise RuntimeError("System server changed during startup UI verification")
+
+        def snapshot(stage):
+            live()
+            number = proof["observations"] = proof["observations"] + 1
+            stem = f"startup-ui-{number:02d}-{stage}"
+            remote = f"/data/local/tmp/{stem}"
+            # Unique paths prevent a zero-exit failed dump from reusing old XML/PNG.
+            probe(stem + "-screencap", "shell", "screencap", "-p", remote + ".png")
+            png = self.diagnostics / (stem + ".png")
+            probe(stem + "-pull", "pull", remote + ".png", str(png))
+            require_startup_png(png, self.report["display"])
+            before = probe(stem + "-windows-before", "shell", "dumpsys", "window")
+            (self.diagnostics / (stem + "-windows-before.txt")).write_text(before)
+            # CLI dump only includes the active root; the complete WindowManager
+            # dump on both sides rejects other/hidden error windows and focus races.
+            # https://android.googlesource.com/platform/frameworks/base/+/refs/heads/android10-release/cmds/uiautomator/cmds/uiautomator/src/com/android/commands/uiautomator/DumpCommand.java
+            dumped = probe(stem + "-dump", "shell", "uiautomator", "dump", remote + ".xml", timeout=45)
+            if dumped.strip() != "UI hierchary dumped to: " + remote + ".xml":
+                raise ValueError("UIAutomator did not report a fresh startup hierarchy")
+            xml = probe(stem + "-xml", "shell", "cat", remote + ".xml")
+            (self.diagnostics / (stem + ".xml")).write_text(xml)
+            after = probe(stem + "-windows-after", "shell", "dumpsys", "window")
+            (self.diagnostics / (stem + "-windows-after.txt")).write_text(after)
+            window = startup_error_window(before)
+            if startup_error_window(after) != window:
+                raise RuntimeError("Startup error window changed during UI observation")
+            target = startup_wait_target(xml, window, self.report["display"])
+            live()
+            record(stem, window=window, wait_target=target, screenshot=png.name, hierarchy=stem + ".xml")
+            return window, target
+
+        try:
+            current_server("server-before")
+            history("history-before")
+            window, target = snapshot("before")
+            initial = history("history-before-action")
+            if window is not None:
+                if len(initial["cold_system_ui_anrs"]) != 1:
+                    raise RuntimeError("Recovery requires exactly one pre-boot current-server System UI ANR")
+                proof.update(window=window, wait_target=target, wait_attempts=1)
+                # The only recovery input: never Back, Close, force-stop, or a watcher.
+                probe("wait-tap", "shell", "input", "tap", *map(str, target))
+                while True:
+                    raw = probe("windows-clearing", "shell", "dumpsys", "window")
+                    observed = startup_error_window(raw, settling_window=window)
+                    history("history-after-wait")
+                    if observed is None:
+                        break
+                    # The same old window may be exiting or lose focus while it
+                    # disappears. This permits waiting only, never another input.
+                    pause(min(2, remaining(deadline, self.now)))
+                observed, _ = snapshot("after-wait")
+                if observed is not None:
+                    raise RuntimeError("New or repeated startup error dialog after clearance")
+            # Wait clears Android's not-responding flag; it is not health proof.
+            # Revalidate actual services/unlock and the SAME server, then require
+            # one more clear window observation. A new dialog never receives a tap.
+            self.wait_ready(deadline)
+            wait_for_unlock(self.adb, lambda: self.emulator.poll() is None, deadline, now=self.now,
+                            pause=pause, record=lambda raw: (self.diagnostics / "startup-ui-unlock.txt").write_text(raw))
+            current_server("server-after")
+            # A final WindowManager observation catches any new error without
+            # starting UIAutomator a third time on this CPU-bound guest.
+            final = probe("windows-final", "shell", "dumpsys", "window")
+            (self.diagnostics / "startup-ui-windows-final.txt").write_text(final)
+            if startup_error_window(final) is not None:
+                raise RuntimeError("New or repeated startup error dialog before controller")
+            current_server("server-final")
+            history("history-final")
+            live()
+            proof["verified"] = True
+            record("verified", **proof)
+            live()
+        except (OSError, ValueError, RuntimeError, TimeoutError) as error:
+            proof.update(verified=False, error=str(error))
+            record("failed", **proof)
+            raise
+
     def boot(self):
         deadline = min(self.deadline, self.now() + self.profile["boot_timeout"])
         command = emulator_command(self.sdk, self.diagnostics.resolve())
@@ -636,6 +903,7 @@ class SoftwareSession:
                          deadline=deadline, check=True, timeout=30)
             self.wait_ready(deadline)
             self.require_display(deadline)
+            self.require_startup_ui(deadline)
             self.report["status"] = "ready"
         finally:
             self.capture_graphics_backend()

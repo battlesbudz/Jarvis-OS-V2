@@ -144,6 +144,42 @@ helper tests verify this alongside unique generated keys and matching AVD/QEMU
 CPU counts. The full exact-head API 29 controller, all other profiles and unchanged
 deadlines remain necessary before publication. No physical sensor coverage is claimed.
 
+### Build 1014 completes startup; cold System UI dialog blocks app tests
+
+[Build 1014](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37287508312)
+tests head `4cc61034d935b91b21b25b117aabee82fd7d8354`, merge
+`70cc1c9ef5144b8cf6052ec44ddcd051d7b3e8e6`. API 29 admits the requested motion
+flags, and its native log contains no sensor-cache overflow. Sensor-HAL samples
+fall to 13–15% of one guest CPU; these separate runs do not isolate every timing
+variable. Crucially, the full current-PID user0 BOOT_COMPLETED receipt succeeds
+at 720.328 seconds of the original 900-second boot window. Input, unlock, all
+four services and actual physical display checks succeed. Both real Build 907
+upgrade phases pass without clearing data during replacement.
+
+The 49-case main phase does not pass: 24 methods fail in setup and the next
+method is incomplete when the unchanged instrumentation timeout expires. The
+retained screenshots/XML show Jarvis setup behind the Android-owned
+`System UI isn't responding` dialog. The only System UI ANR in the native log
+predates user0 boot completion and any Jarvis installation; it is not a Jarvis
+fatal or a failed product assertion. API 29 artifact `11336613748`, ZIP SHA-256
+`247e7eaa0922386c4ad2622a5740583ce2347126af9a24c1ff108b43c053bdfd`, preserves
+the failed run. All five other profiles and the host gates pass, but publication
+correctly remains blocked by incomplete API 29 verification.
+
+The next launcher correction treats that retained cold-start dialog as a
+one-time pre-app recovery. It verifies the exact Android-owned System UI ANR
+and Wait control from fresh device evidence, records the action, selects Wait
+once and requires clearance plus fresh readiness before controller execution.
+An app/other error dialog, ambiguous match, repeated dialog, failed command, emulator
+death or expiry cannot authorize the controller. No watchdog is disabled and
+no ANR is dismissed inside app tests. Evidence of the original platform ANR is
+retained, including resolved stock pre-boot Dialer/media ANRs. Any new ANR after
+the boot-completion barrier fails rather than authorizing recovery. The same
+900-second startup, instrumentation, lifecycle/layout and
+publication gates still apply; only a full new exact-head run can verify it.
+The candidate passes 232 local helper tests and the architecture guard, including
+strict ownership/history matching, one-input recovery and late/failing probes.
+
 ## Spoken farewell returns to wake listening
 
 “Stop listening” and “Goodbye” end the current call segment while preserving the

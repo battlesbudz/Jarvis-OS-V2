@@ -72,6 +72,13 @@ commits. Do not create or merge another PR without Justin's permission.
    Complete startup and release-controller coverage remain unverified. The requested
    enabled and disabled features are retained separately from actual startup
    output. It does not disable watchdogs or change any readiness/test deadline.
+   After full boot delivery, the launcher checks for a retained cold-start
+   System UI ANR dialog before installing any Jarvis APK. It may select Wait
+   once only for the exact Android-owned System UI dialog, retaining its UI
+   evidence and requiring dismissal plus fresh readiness. Other, ambiguous or
+   repeated error dialogs fail; no recovery runs during app tests. All of this
+   consumes the original boot deadline. The retained cold-start ANR remains
+   evidence and is never converted into app-test coverage.
    Software rendering requests `-gpu swiftshader_indirect`, with the
    installed binary's raw GPU/feature help and actual startup backend retained as
    diagnostics. Both help commands share the original provisioning budget and

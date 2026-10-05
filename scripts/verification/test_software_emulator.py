@@ -5,17 +5,20 @@ from pathlib import Path
 import shutil
 import stat
 import subprocess
+import struct
 import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
 from xml.dom import minidom
 import zipfile
+import zlib
 
 from profiles import load_profiles
 from software_emulator import (EMULATOR_PIN, SERVICES, SoftwareSession, emulator_command, main,
                                keyguard_dismissed, read_native_boot_log, require_software_profile,
-                               wait_for_android, wait_for_boot_broadcast, wait_for_unlock)
+                               wait_for_android, wait_for_boot_broadcast, wait_for_unlock,
+                               startup_error_window, startup_wait_target, startup_anr_history, require_startup_png)
 
 
 PROFILE = next(profile for profile in load_profiles() if profile["id"] == "29-phone-normal")
@@ -521,7 +524,449 @@ class NativeBootBroadcastTest(unittest.TestCase):
                                                     path, deadline=deadline, now=clock.now))
 
 
+# Minimal synthetic Android 10 dumps following WindowState/DisplayContent and
+# the CLI UIAutomator format. The instrumented retained build also has optional
+# visible-to-user attributes; CLI dump omits those and invisible descendants.
+DISPLAY = {"width": 360, "height": 640, "density_dpi": 140}
+COLD_ANR = "11-12 19:49:59.360   279   408 E ActivityManager: ANR in com.android.systemui\n"
+
+
+def startup_png():
+    def chunk(kind, body):
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 360, 640, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress((b"\x00" + b"\x00" * 360 * 3) * 640)) + chunk(b"IEND", b""))
+
+
+def window_dump(dialog=True, token="abc123", package="com.android.systemui"):
+    title = "Application Not Responding: " + package if dialog else "com.android.launcher3/.Launcher"
+    identity = f"Window{{{token} u0 {title}}}"
+    return ("WINDOW MANAGER POLICY STATE (dumpsys window policy)\n"
+            f"WINDOW MANAGER DISPLAY CONTENTS (dumpsys window displays)\n  mCurrentFocus={identity}\n"
+            "WINDOW MANAGER WINDOWS (dumpsys window windows)\n"
+            f"  Window #0 {identity}:\n"
+            "    mDisplayId=0 mSession=Session{123 279:1000} mClient=android.os.BinderProxy@123\n"
+            f"    mOwnerUid={'1000' if dialog else '10023'} mShowToOwnerOnly=false package={'android' if dialog else 'com.android.launcher3'} appop=NONE\n"
+            f"    mAttrs={{(0,0)(wrapxwrap) ty={'SYSTEM_ALERT' if dialog else 'BASE_APPLICATION'}\n"
+            f"      pfl={'SYSTEM_ERROR SHOW_FOR_ALL_USERS' if dialog else 'NO_MOVE_ANIMATION'}}}\n"
+            "    isOnScreen=true\n    isVisible=true\n"
+            "  mGlobalConfiguration={test}\n")
+
+
+def hierarchy(dialog=True):
+    if not dialog:
+        return '<hierarchy rotation="0"><node package="com.android.launcher3" text="Home" bounds="[0,0][360,640]"/></hierarchy>'
+    return ('<hierarchy rotation="0"><node package="android" bounds="[23,232][322,366]">'
+            '<node package="android" resource-id="android:id/alertTitle" text="System UI isn\'t responding" />'
+            '<node package="android" resource-id="android:id/aerr_close" text="Close app" />'
+            '<node package="android" resource-id="android:id/aerr_wait" text="Wait" '
+            'class="android.widget.Button" enabled="true" clickable="true" bounds="[23,331][322,366]" />'
+            '</node></hierarchy>')
+
+
+class StartupUiParserTest(unittest.TestCase):
+    def test_retained_build1014_dialog_root_matches_cli_single_root_contract(self):
+        # Build 1014 test01's Android dialog subtree, retaining every field the
+        # parser reads. Instrumentation also dumps status/navigation roots;
+        # Android 10's CLI uses getRootInActiveWindow(), just this focused root.
+        raw = '''<hierarchy rotation="0">
+  <node class="android.widget.FrameLayout" package="android" clickable="false" enabled="true" visible-to-user="true" bounds="[9,224][322,366]">
+    <node class="android.widget.FrameLayout" package="android" clickable="false" enabled="true" visible-to-user="true" bounds="[23,238][322,366]">
+      <node resource-id="android:id/content" class="android.widget.FrameLayout" package="android" clickable="false" enabled="true" visible-to-user="true" bounds="[23,238][322,366]">
+        <node resource-id="android:id/parentPanel" class="android.widget.LinearLayout" package="android" clickable="false" enabled="true" visible-to-user="true" bounds="[23,238][322,366]">
+          <node resource-id="android:id/topPanel" class="android.widget.LinearLayout" package="android" clickable="false" enabled="true" visible-to-user="true" bounds="[23,238][322,276]">
+            <node resource-id="android:id/title_template" class="android.widget.LinearLayout" package="android" clickable="false" enabled="true" visible-to-user="true" bounds="[23,238][322,276]">
+              <node text="System UI isn't responding" resource-id="android:id/alertTitle" class="android.widget.TextView" package="android" clickable="false" enabled="true" visible-to-user="true" bounds="[44,254][315,276]" />
+            </node>
+          </node>
+          <node resource-id="android:id/customPanel" class="android.widget.FrameLayout" package="android" clickable="false" enabled="true" visible-to-user="true" bounds="[23,276][322,366]">
+            <node resource-id="android:id/custom" class="android.widget.FrameLayout" package="android" clickable="false" enabled="true" visible-to-user="true" bounds="[23,276][322,366]">
+              <node class="android.widget.LinearLayout" package="android" clickable="false" enabled="true" visible-to-user="true" bounds="[23,276][322,366]">
+                <node text="Close app" resource-id="android:id/aerr_close" class="android.widget.Button" package="android" clickable="true" enabled="true" visible-to-user="true" bounds="[23,289][322,331]" />
+                <node text="Wait" resource-id="android:id/aerr_wait" class="android.widget.Button" package="android" clickable="true" enabled="true" visible-to-user="true" bounds="[23,331][322,366]" />
+              </node>
+            </node>
+          </node>
+        </node>
+      </node>
+    </node>
+  </node>
+</hierarchy>'''
+        self.assertEqual([172, 348], startup_wait_target(raw, startup_error_window(window_dump()), DISPLAY))
+
+    def test_saved_last_anr_windows_are_never_current_ui_evidence(self):
+        policy = "WINDOW MANAGER POLICY STATE (dumpsys window policy)"
+        stale = window_dump().split(policy, 1)[1]
+        raw = "WINDOW MANAGER LAST ANR (dumpsys window lastanr)\n" + stale + window_dump(False)
+        self.assertIsNone(startup_error_window(raw))
+        self.assertIsNotNone(startup_error_window("WINDOW MANAGER LAST ANR\n" + stale + window_dump()))
+
+    def test_old_window_may_only_settle_without_authorizing_a_second_action(self):
+        window = startup_error_window(window_dump())
+        raw = window_dump().replace('com.android.systemui}', 'com.android.systemui EXITING}')
+        raw = raw.replace('isVisible=true', 'isVisible=false').replace('isOnScreen=true', 'isOnScreen=false')
+        self.assertEqual(window, startup_error_window(raw, settling_window=window))
+        normal = window_dump(False, token='def456')
+        normal_block = normal[normal.index('  Window #0'):normal.index('  mGlobalConfiguration')].replace('#0', '#1')
+        focus = 'Window{def456 u0 com.android.launcher3/.Launcher}'
+        lost_focus = raw.replace('mCurrentFocus=' + window.replace('}', ' EXITING}'), 'mCurrentFocus=' + focus)
+        lost_focus = lost_focus.replace('  mGlobalConfiguration=', normal_block + '  mGlobalConfiguration=')
+        self.assertEqual(window, startup_error_window(lost_focus, settling_window=window))
+        with self.assertRaises(ValueError):
+            startup_error_window(raw)
+        with self.assertRaises(RuntimeError):
+            startup_error_window(window_dump(token='def456'), settling_window=window)
+
+    def test_split_records_are_not_boot_or_cold_anr_proof(self):
+        for marker in ['279', '353', 'ActivityManager:', 'Finished processing']:
+            with self.subTest(marker=marker), self.assertRaises(ValueError):
+                startup_anr_history(COLD_ANR + BOOT_DELIVERED.replace(marker, '\n' + marker), 279)
+        for marker in ['279', '408', 'ActivityManager:', 'ANR in']:
+            with self.subTest(marker=marker):
+                self.assertEqual([], startup_anr_history(COLD_ANR.replace(marker, '\n' + marker) + BOOT_DELIVERED, 279)['cold_system_ui_anrs'])
+        with self.assertRaisesRegex(RuntimeError, 'New ANR'):
+            startup_anr_history(BOOT_DELIVERED + COLD_ANR.replace('systemui\n', 'systemui (.MainActivity)\n'), 279)
+
+    def test_png_requires_complete_checked_chunks_and_observed_display_size(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'screen.png'
+            valid = startup_png()
+            path.write_bytes(valid)
+            require_startup_png(path, DISPLAY)
+            for raw in [b'', valid[:24], valid[:-12], valid + b'trailing', valid[:-5] + b'wrong']:
+                with self.subTest(size=len(raw)), self.assertRaises(ValueError):
+                    path.write_bytes(raw)
+                    require_startup_png(path, DISPLAY)
+            path.write_bytes(valid)
+            with self.assertRaises(ValueError):
+                require_startup_png(path, dict(DISPLAY, width=720))
+
+    def test_only_exact_stock_wait_is_authorized_at_observed_bounds(self):
+        window = startup_error_window(window_dump())
+        self.assertEqual("Window{abc123 u0 Application Not Responding: com.android.systemui}", window)
+        self.assertEqual([172, 348], startup_wait_target(hierarchy(), window, DISPLAY))
+        self.assertEqual([110, 315], startup_wait_target(
+            hierarchy().replace('[23,331][322,366]', '[10,300][210,330]'), window, DISPLAY))
+        self.assertIsNone(startup_error_window(window_dump(False)))
+        self.assertIsNone(startup_wait_target(hierarchy(False), None, DISPLAY))
+
+    def test_other_app_crash_unowned_ambiguous_and_incomplete_windows_fail_closed(self):
+        raw = window_dump()
+        second = raw[raw.index('  Window #0'):raw.index('  mGlobalConfiguration')].replace('#0', '#1').replace('abc123', 'def456')
+        invalid = [window_dump(package='com.battlesbudz.jarvis.v2'),
+                   raw.replace('Application Not Responding:', 'Application Error:'),
+                   raw.replace('mOwnerUid=1000', 'mOwnerUid=10023'), raw.replace('package=android', 'package=app'),
+                   raw.replace('mDisplayId=0', 'mDisplayId=1'), raw.replace('isVisible=true', 'isVisible=false'),
+                   raw.replace('ty=SYSTEM_ALERT', 'ty=BASE_APPLICATION'), raw.replace('pfl=SYSTEM_ERROR', 'pfl=NONE'),
+                   raw.replace('ty=SYSTEM_ALERT', 'ty=SYSTEM_ERROR').replace('pfl=SYSTEM_ERROR', 'pfl=NONE'),
+                   raw.replace('mCurrentFocus=Window{abc123', 'mCurrentFocus=Window{def456'),
+                   raw.replace('  mGlobalConfiguration', second + '  mGlobalConfiguration'),
+                   raw.replace('  mGlobalConfiguration={test}\n', ''), '', 'Error: dumpsys failed',
+                   raw + '  mCurrentFocus=Window{abc123 u0 Application Not Responding: com.android.systemui}\n']
+        for value in invalid:
+            with self.subTest(raw=value), self.assertRaises(ValueError):
+                startup_error_window(value)
+
+    def test_title_case_resource_owner_action_and_bounds_are_exact(self):
+        for before, after in [("System UI isn't responding", "Jarvis isn't responding"),
+                              ("System UI isn't responding", "system UI isn't responding"),
+                              ("System UI isn't responding", "System UI isn’t responding"),
+                              ('package="android"', 'package="com.android.systemui"'),
+                              ('android:id/aerr_wait', 'android:id/aerr_report'),
+                              ('text="Wait"', 'text="WAIT"'), ('enabled="true"', 'enabled="false"'),
+                              ('clickable="true"', 'clickable="false"'),
+                              ('[23,331][322,366]', '[23,331][400,366]'),
+                              ('[23,331][322,366]', '[23,331][23,366]'),
+                              ('[23,331][322,366]', '[-23,331][322,366]')]:
+            with self.subTest(change=(before, after)), self.assertRaises(ValueError):
+                startup_wait_target(hierarchy().replace(before, after), 'window', DISPLAY)
+        for raw in ['', '<hierarchy rotation="0"/>', hierarchy().replace('rotation="0"', 'rotation="1"'),
+                    hierarchy().replace('</node></hierarchy>', '<node package="android" resource-id="android:id/aerr_wait"/></node></hierarchy>'),
+                    '<!DOCTYPE hierarchy>' + hierarchy(), hierarchy().replace('enabled="true"', 'visible-to-user="false" enabled="true"')]:
+            with self.subTest(xml=raw), self.assertRaises(ValueError):
+                startup_wait_target(raw, 'window', DISPLAY)
+        with self.assertRaisesRegex(ValueError, 'Unrecognized'):
+            startup_wait_target(hierarchy(), None, DISPLAY)
+
+    def test_cold_attribution_uses_current_pid_and_stream_order_not_jumping_clock(self):
+        self.assertEqual([0], startup_anr_history(COLD_ANR + BOOT_DELIVERED, 279)['cold_system_ui_anrs'])
+        # Resolved stock pre-boot failures are retained history, not other
+        # recovery targets. Window/UI guards still reject their error dialogs.
+        mixed = (COLD_ANR + COLD_ANR.replace('com.android.systemui', 'com.android.dialer')
+                 + COLD_ANR.replace('com.android.systemui', 'android.process.media') + BOOT_DELIVERED)
+        self.assertEqual([0], startup_anr_history(mixed, 279)['cold_system_ui_anrs'])
+        self.assertEqual([], startup_anr_history(COLD_ANR.replace('279', '255') + BOOT_DELIVERED, 279)['cold_system_ui_anrs'])
+        for raw in [BOOT_DELIVERED + COLD_ANR, BOOT_DELIVERED + COLD_ANR.replace('com.android.systemui', 'com.battlesbudz.jarvis.v2')]:
+            with self.subTest(raw=raw), self.assertRaisesRegex(RuntimeError, 'New ANR'):
+                startup_anr_history(raw, 279)
+        for raw in [COLD_ANR, COLD_ANR + BOOT_DELIVERED + BOOT_DELIVERED]:
+            with self.assertRaises(ValueError):
+                startup_anr_history(raw, 279)
+
+
+class StartupUiSessionTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.clock, self.calls, self.snapshots = Clock(), [], [True, False, False]
+        self.session = SoftwareSession(PROFILE, Path(self.temporary.name) / 'evidence', '/sdk', now=self.clock.now)
+        self.session.emulator = Mock(pid=12345, poll=Mock(return_value=None))
+        self.session.report.update(display=DISPLAY, boot_broadcast={"system_server_pid": 279})
+        self.native = self.session.diagnostics / 'guest-startup-logcat.txt'
+        self.native.write_text(COLD_ANR + BOOT_DELIVERED)
+        self.index, self.hook, self.failure = -1, lambda args: None, None
+        self.ready = Mock()
+        self.adb_patch = patch.object(self.session, 'adb', side_effect=self.adb)
+        self.adb_patch.start()
+        self.addCleanup(self.adb_patch.stop)
+        self.ready_patch = patch.object(self.session, 'wait_ready', self.ready)
+        self.ready_patch.start()
+        self.addCleanup(self.ready_patch.stop)
+
+    def adb(self, *args, deadline, **kwargs):
+        self.assertEqual(900, deadline)
+        self.assertLessEqual(kwargs.get('timeout', 15), 45)
+        self.calls.append(args)
+        self.hook(args)
+        if self.failure and self.failure(args):
+            return reply('partial failed output', 124)
+        if args[:3] == ('shell', 'pidof', 'system_server'):
+            return reply('279')
+        if 'screencap' in args:
+            self.index += 1
+            return reply('')
+        if args[0] == 'pull':
+            Path(args[-1]).write_bytes(startup_png())
+            return reply('pulled')
+        final = any(call == ('shell', 'pidof', 'system_server') for call in self.calls[1:])
+        tapped = any(call[:3] == ('shell', 'input', 'tap') for call in self.calls)
+        observation = max(self.index, 1 if tapped else 0)
+        state = self.snapshots[-1] if final else self.snapshots[min(observation, len(self.snapshots) - 1)]
+        if args == ('shell', 'dumpsys', 'window'):
+            return reply(window_dump(state))
+        if args[:3] == ('shell', 'uiautomator', 'dump'):
+            return reply('UI hierchary dumped to: ' + args[-1])
+        if args[:2] == ('shell', 'cat'):
+            return reply(hierarchy(state))
+        if args == ('shell', 'dumpsys', 'activity', 'activities'):
+            return reply(UNLOCKED)
+        if args[:3] == ('shell', 'input', 'tap'):
+            return reply('')
+        self.fail('Unexpected startup command: ' + repr(args))
+
+    def run_recovery(self):
+        self.session.require_startup_ui(900, pause=self.clock.pause)
+
+    def taps(self):
+        return [args for args in self.calls if args[:3] == ('shell', 'input', 'tap')]
+
+    def test_one_cold_dialog_wait_requires_after_and_final_clean_readiness_with_artifacts(self):
+        self.run_recovery()
+        self.assertEqual([('shell', 'input', 'tap', '172', '348')], self.taps())
+        self.assertTrue(self.session.report['startup_ui']['verified'])
+        self.assertFalse(self.session.report['passed'])
+        self.assertEqual(2, self.session.report['startup_ui']['observations'])
+        self.ready.assert_called_once_with(900)
+        self.assertFalse(self.session.out.exists())
+        self.assertEqual(2, len(list(self.session.diagnostics.glob('startup-ui-*.png'))))
+        self.assertEqual(2, len(list(self.session.diagnostics.glob('startup-ui-*.xml'))))
+        self.assertEqual(4, len(list(self.session.diagnostics.glob('startup-ui-*-windows-*.txt'))))
+        self.assertTrue((self.session.diagnostics / 'startup-ui-windows-final.txt').is_file())
+        receipts = [json.loads(line) for line in (self.session.diagnostics / 'startup-ui.jsonl').read_text().splitlines()]
+        self.assertEqual('verified', receipts[-1]['stage'])
+        self.assertTrue(all(receipt['deadline_monotonic_seconds'] == 900 for receipt in receipts))
+        with self.assertRaisesRegex(RuntimeError, 'more than once'):
+            self.run_recovery()
+        self.assertEqual(1, len(self.taps()))
+
+    def test_clean_normal_boot_never_taps_and_does_not_require_a_cold_anr(self):
+        self.snapshots = [False, False]
+        self.native.write_text(BOOT_DELIVERED)
+        self.run_recovery()
+        self.assertEqual([], self.taps())
+        self.assertEqual(1, self.session.report['startup_ui']['observations'])
+        self.assertTrue(self.session.report['startup_ui']['verified'])
+
+    def test_new_dialog_after_initial_clean_or_after_recovery_never_gets_another_tap(self):
+        for states, taps in [([False, True], 0), ([True, False, True], 1)]:
+            with self.subTest(states=states):
+                self.snapshots, self.calls, self.index = states, [], -1
+                self.session.report.pop('startup_ui', None)
+                with self.assertRaisesRegex(RuntimeError, 'New or repeated'):
+                    self.run_recovery()
+                self.assertEqual(taps, len(self.taps()))
+                self.assertFalse(self.session.report['startup_ui']['verified'])
+
+    def test_changed_window_during_dump_cannot_authorize_tap(self):
+        original = self.adb
+        def changed(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if args == ('shell', 'dumpsys', 'window') and sum(call == args for call in self.calls) % 2 == 0:
+                result.stdout = result.stdout.replace('abc123', 'def456')
+            return result
+        with patch.object(self.session, 'adb', side_effect=changed), self.assertRaisesRegex(RuntimeError, 'changed'):
+            self.run_recovery()
+        self.assertEqual([], self.taps())
+
+    def test_replaced_window_after_tap_is_not_treated_as_slow_dismissal(self):
+        self.snapshots = [True, True]
+        original = self.adb
+        def replaced(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if self.taps() and args == ('shell', 'dumpsys', 'window'):
+                result.stdout = result.stdout.replace('abc123', 'def456')
+            return result
+        with patch.object(self.session, 'adb', side_effect=replaced), self.assertRaisesRegex(RuntimeError, 'New or repeated'):
+            self.run_recovery()
+        self.assertEqual(1, len(self.taps()))
+
+    def test_missing_duplicate_late_or_old_server_anr_cannot_authorize_wait(self):
+        for raw in [BOOT_DELIVERED, COLD_ANR * 2 + BOOT_DELIVERED, BOOT_DELIVERED + COLD_ANR,
+                    COLD_ANR.replace('279', '255') + BOOT_DELIVERED]:
+            with self.subTest(raw=raw):
+                self.native.write_text(raw)
+                self.calls, self.index = [], -1
+                self.session.report.pop('startup_ui', None)
+                with self.assertRaises(RuntimeError):
+                    self.run_recovery()
+                self.assertEqual([], self.taps())
+
+    def test_new_anr_after_tap_fails_even_if_dialog_disappears(self):
+        def new_anr(args):
+            if args[:3] == ('shell', 'input', 'tap'):
+                with self.native.open('a') as stream:
+                    stream.write(COLD_ANR)
+        self.hook = new_anr
+        with self.assertRaisesRegex(RuntimeError, 'New ANR'):
+            self.run_recovery()
+        self.assertEqual(1, len(self.taps()))
+        self.assertFalse(self.session.report['startup_ui']['verified'])
+
+    def test_native_history_must_be_complete_and_not_truncated_or_replaced(self):
+        original = self.native.read_text()
+        for scenario in ['oversize', 'removed', 'truncated', 'replaced']:
+            with self.subTest(scenario=scenario):
+                self.calls, self.index = [], -1
+                self.native.write_text(original)
+                self.session.report.pop('startup_ui', None)
+                if scenario == 'oversize':
+                    self.native.write_text('x' * (16 * 1024 * 1024) + '\n' + original)
+                elif scenario == 'removed':
+                    self.native.unlink()
+                else:
+                    def change(args):
+                        if args[:3] == ('shell', 'uiautomator', 'dump'):
+                            if scenario == 'replaced':
+                                replacement = self.native.with_suffix('.new')
+                                replacement.write_text(original)
+                                replacement.replace(self.native)
+                            else:
+                                self.native.write_text(BOOT_DELIVERED)
+                    self.hook = change
+                with self.assertRaises(RuntimeError):
+                    self.run_recovery()
+                self.assertEqual([], self.taps())
+                self.hook = lambda args: None
+
+    def test_failed_probe_tap_or_zero_exit_without_fresh_xml_cannot_pass(self):
+        for command in ['pidof', 'screencap', 'pull', 'window', 'uiautomator', 'cat', 'tap']:
+            with self.subTest(command=command):
+                self.calls, self.index = [], -1
+                self.session.report.pop('startup_ui', None)
+                self.failure = lambda args: command in args
+                with self.assertRaises(RuntimeError):
+                    self.run_recovery()
+                self.assertFalse(self.session.report['startup_ui']['verified'])
+                self.assertEqual(1 if command == 'tap' else 0, len(self.taps()))
+        self.failure = None
+        self.session.report.pop('startup_ui', None)
+        original = self.adb
+        def empty_dump(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if 'uiautomator' in args:
+                result.stdout = 'ERROR: null root node returned by UiTestAutomationBridge.'
+            return result
+        with patch.object(self.session, 'adb', side_effect=empty_dump), self.assertRaises(ValueError):
+            self.run_recovery()
+
+    def test_late_success_keeps_receipt_and_cannot_trigger_tap_or_finish(self):
+        for when in ['before', 'tap', 'final']:
+            with self.subTest(when=when):
+                self.calls, self.index, self.clock.seconds = [], -1, 899
+                self.session.report.pop('startup_ui', None)
+                def expire(args):
+                    if ((when == 'before' and args[:2] == ('shell', 'cat'))
+                            or (when == 'tap' and 'tap' in args)
+                            or (when == 'final' and args == ('shell', 'dumpsys', 'window')
+                                and sum('pidof' in call for call in self.calls) >= 2)):
+                        self.clock.pause(1)
+                self.hook = expire
+                with self.assertRaises(TimeoutError):
+                    self.run_recovery()
+                self.assertEqual(0 if when == 'before' else 1, len(self.taps()))
+                self.assertFalse(self.session.report['startup_ui']['verified'])
+                receipts = [json.loads(line) for line in (self.session.diagnostics / 'startup-ui.jsonl').read_text().splitlines()]
+                self.assertEqual('failed', receipts[-1]['stage'])
+                self.assertTrue(any(receipt.get('exit_code') == 0 and receipt['observed_monotonic_seconds'] == 900 for receipt in receipts))
+
+    def test_persistent_dialog_exhausts_original_budget_after_only_one_tap(self):
+        self.snapshots = [True]
+        self.clock.seconds = 896
+        with self.assertRaises(TimeoutError):
+            self.run_recovery()
+        self.assertEqual(900, self.clock.now())
+        self.assertEqual(1, len(self.taps()))
+        self.assertFalse(self.session.report['startup_ui']['verified'])
+
+    def test_emulator_death_or_server_restart_never_authorizes_controller(self):
+        original = self.adb
+        def restarted(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if self.index >= 1 and 'pidof' in args:
+                result.stdout = '888'
+            return result
+        with patch.object(self.session, 'adb', side_effect=restarted), self.assertRaisesRegex(RuntimeError, 'System server changed'):
+            self.run_recovery()
+        self.assertFalse(self.session.report['startup_ui']['verified'])
+        self.session.report.pop('startup_ui')
+        self.calls, self.index = [], -1
+        def died(args):
+            if 'tap' in args:
+                self.session.emulator.poll.return_value = 1
+        self.hook = died
+        with self.assertRaisesRegex(RuntimeError, 'Emulator exited'):
+            self.run_recovery()
+        self.assertFalse(self.session.report['startup_ui']['verified'])
+
+    def test_readiness_failure_after_wait_prevents_success(self):
+        self.ready.side_effect = TimeoutError('Services disappeared')
+        with self.assertRaisesRegex(TimeoutError, 'Services disappeared'):
+            self.run_recovery()
+        self.assertEqual(1, len(self.taps()))
+        self.assertFalse(self.session.report['startup_ui']['verified'])
+
+
 class SoftwareSessionTest(unittest.TestCase):
+    def test_ui_recovery_failure_blocks_main_controller_after_boot_barriers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            session = SoftwareSession(PROFILE, Path(temporary) / 'evidence', '/sdk', now=lambda: 0)
+            process = Mock(pid=12345, poll=Mock(return_value=None))
+            argv = ['software_emulator.py', '--profile', PROFILE['id'], '--out', str(session.out), '--', 'controller']
+            with patch('software_emulator.sys.argv', argv), patch.dict('software_emulator.os.environ', {'ANDROID_HOME': '/sdk'}), \
+                    patch('software_emulator.require_software_profile'), patch('software_emulator.SoftwareSession', return_value=session), \
+                    patch.object(session, 'provision'), patch.object(session, 'capture_host_resources'), \
+                    patch.object(session, 'wait_ready'), patch.object(session, 'require_display'), \
+                    patch.object(session, 'adb', return_value=reply(UNLOCKED)), \
+                    patch('software_emulator.wait_for_boot_broadcast', return_value={'completed': True, 'system_server_pid': 279}), \
+                    patch.object(session, 'require_startup_ui', side_effect=RuntimeError('New startup error dialog')) as recovery, \
+                    patch.object(session, 'close'), patch('software_emulator.subprocess.Popen', return_value=process), \
+                    patch('software_emulator.subprocess.run') as controller:
+                self.assertEqual(1, main())
+            recovery.assert_called_once_with(900)
+            controller.assert_not_called()
+            self.assertFalse(session.report['passed'])
+            self.assertEqual('failed', session.report['status'])
+
     def test_native_host_and_exact_api29_guest_are_enforced(self):
         require_software_profile(PROFILE, "Darwin", "arm64")
         for host in (("Linux", "x86_64"), ("Darwin", "x86_64")):
@@ -841,10 +1286,12 @@ class SoftwareSessionTest(unittest.TestCase):
                     patch.object(session, "wait_ready", side_effect=ready), \
                     patch.object(session, "capture_host_resources", side_effect=resources), \
                     patch.object(session, "record_boot_broadcast", side_effect=broadcast), \
+                    patch.object(session, "require_startup_ui") as startup_ui, \
                     patch.object(session, "adb", side_effect=adb):
                 session.boot()
             self.assertEqual("ready", session.report["status"])
             self.assertEqual([900] * 13, deadlines)
+            startup_ui.assert_called_once_with(900)
             self.assertFalse(session.report["passed"], "Ready emulator alone does not pass the controller")
             self.assertEqual({"width": 360, "height": 640, "density_dpi": 140}, session.report["display"])
             self.assertTrue(session.report["boot_broadcast"]["completed"])
