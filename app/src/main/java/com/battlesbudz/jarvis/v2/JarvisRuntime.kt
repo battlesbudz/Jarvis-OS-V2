@@ -39,6 +39,7 @@ import com.battlesbudz.jarvis.v2.runtime.AcceptedVoiceInvocation
 import com.battlesbudz.jarvis.v2.runtime.PhoneTaskCoordinator
 import com.battlesbudz.jarvis.v2.runtime.RuntimeMemoryCoordinator
 import com.battlesbudz.jarvis.v2.runtime.RuntimeVoiceResources
+import com.battlesbudz.jarvis.v2.runtime.WorkflowCoordinator
 import com.battlesbudz.jarvis.v2.runtime.turn.AcceptedVoiceFollowupStage
 import com.battlesbudz.jarvis.v2.runtime.turn.OrdinaryVoiceReplyStage
 import com.battlesbudz.jarvis.v2.runtime.turn.TypedVoiceInputStage
