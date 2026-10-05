@@ -115,6 +115,35 @@ Four other profiles pass Build 1007; API 35 compact instead fails before device
 startup on invalid GitHub artifact-pagination metadata. That independent
 infrastructure result is not converted to a pass and publication remains blocked.
 
+### Build 1009 outcome and unused motion-stream load
+
+[Build 1009](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37283283979)
+tests head `b559ac44daeaaab8e075f0e3a1d938ebbbd66901`. All five other Android
+profiles pass. API 29 admits one processor and reaches initial display boot at
+182,636 ms, but the platform watchdog subsequently kills two system-server
+processes on blocked UI handlers. It never completes user0 boot delivery or
+starts Jarvis tests. API 29 artifact `11334224802`, ZIP SHA-256
+`baa49cfebb1f5d6a88c65acbda9639a1dffb8e43e43ec385d5be6af8d2919318`, retains
+those failures. Initial display timing alone is not complete boot or a speed win.
+
+Restore the more stable two-CPU baseline. The next load reduction disables five
+supported emulator motion flags: `hw.accelerometer`, `hw.accelerometer_uncalibrated`,
+`hw.gyroscope`, `hw.sensors.gyroscope_uncalibrated` and `hw.sensors.orientation`.
+In Build 1004, the sensor HAL repeatedly used 18–21% of one guest CPU while
+SensorService dropped about 67–71 cached events every two seconds. The logs do
+not name the active sensor, so the group is a controlled load-reduction trial,
+not attribution to one proven faulty sensor. Emulator source exposes these exact
+AVD flags through its advertised sensor mask and periodic event stream.
+
+Production, manifests, instrumentation and scenario contracts have no sensor
+consumer or sensor-capability gate. The required non-foldable layout test calls
+UIAutomator `setOrientationLeft`/`setOrientationNatural` and still requires actual
+dimension changes plus call/draft continuity. Those assertions are unchanged.
+Light, proximity, magnetic field and remaining sensor profile settings are retained;
+helper tests verify this alongside unique generated keys and matching AVD/QEMU
+CPU counts. The full exact-head API 29 controller, all other profiles and unchanged
+deadlines remain necessary before publication. No physical sensor coverage is claimed.
+
 ## Spoken farewell returns to wake listening
 
 “Stop listening” and “Goodbye” end the current call segment while preserving the

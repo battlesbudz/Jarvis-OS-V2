@@ -46,14 +46,20 @@ EMULATOR_PIN = {
 # of its pixels. Reduced pixel count is an experiment, not a measured cause or
 # cure for the permission-initialization timeout; all release gates remain required.
 # https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/vl.c
-# Build 1007's three-vCPU trial restarted system_server twice and took 546s
-# to finish SurfaceFlinger boot, versus 224s in Build 1004 with two vCPUs.
-# A single guest CPU tests TCG/SMP and host-renderer contention without changing
-# the hosted machine, graphics path, Android checks or their deadlines.
-SOFTWARE_CPU_COUNT = 1
+# Return to the most stable tested CPU baseline; one and three guest CPUs
+# both incurred system-server restarts and did not complete the boot barrier.
+SOFTWARE_CPU_COUNT = 2
+# Jarvis has no motion-sensor consumers. Its layout gate forces real display
+# rotation through UIAutomator, independently of sensor-based auto-rotation.
+# Build 1004's unused sensor stream overflowed its cache while the HAL consumed
+# 18-21% of a guest CPU. Disable only this motion group, retaining other sensors.
+# https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/android/android-emu/android/hw-sensors.cpp
+SOFTWARE_MOTION_SENSORS = ("hw.accelerometer", "hw.accelerometer_uncalibrated", "hw.gyroscope",
+                           "hw.sensors.gyroscope_uncalibrated", "hw.sensors.orientation")
 SOFTWARE_AVD_SETTINGS = {"hw.cpu.ncore": str(SOFTWARE_CPU_COUNT), "hw.ramSize": "2048M", "vm.heapSize": "256M",
                          "hw.lcd.width": "360", "hw.lcd.height": "640", "hw.lcd.density": "140",
-                         "disk.dataPartition.size": "4096M"}
+                         "disk.dataPartition.size": "4096M",
+                         **{sensor: "no" for sensor in SOFTWARE_MOTION_SENSORS}}
 # Retain Build 963's requested selector. Its actual guest backend was
 # ANGLE/Vulkan SwiftShader with GLES 3, not a proven direct-only path.
 # Requested selector and fresh actual backend remain separate receipts;

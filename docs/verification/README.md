@@ -87,14 +87,18 @@ commits. Do not create or merge another PR without Justin's permission.
    failure or that all host Vulkan use disappears. See the official
    [troubleshooting guide](https://developer.android.com/studio/run/emulator-troubleshooting).
    The older ARM64 TCG source omits its generated SMP argument when HVF is
-   disabled; trailing `-qemu -smp 1` preserves the requested single-vCPU setting.
+   disabled; trailing `-qemu -smp 2` preserves the requested two-vCPU setting.
    Actual installed execution, backend/GLES capability, CPU count and complete
-   device coverage remain fresh-run requirements. The AVD now requests one vCPU.
-   Build 1004's two-vCPU guest remained saturated; Build 1007's three-vCPU trial
-   instead restarted system_server twice and delayed display startup to 546s.
-   A single-vCPU trial tests TCG/SMP and host-renderer contention on the same
-   three-core hosted runner. Speedup is not established; the full gate remains
-   required. No larger runner, hardware acceleration or relaxed deadline is used.
+   device coverage remain fresh-run requirements. The AVD returns to the more
+   stable two-vCPU baseline after one-/three-vCPU trials also failed boot delivery
+   and incurred system-server restarts. It disables only emulated accelerometer,
+   uncalibrated accelerometer, gyroscope, uncalibrated gyroscope and orientation
+   streams, which are unused by Jarvis and generated heavy sensor-HAL load during
+   boot. Light/proximity and other hardware retain their profile settings. The
+   unchanged UIAutomator display-rotation and continuity assertions remain required;
+   they do not depend on physical sensor-driven auto-rotation. Improved startup is
+   unproven until a complete exact-head run. No larger runner, hardware acceleration
+   or relaxed deadline is used.
    The unchanged memory requests are
    2 GiB RAM and `vm.heapSize=256M`. Build 962's older wrapper interpreted that
    heap request as zero and promoted it to its 512 MiB minimum; its generated

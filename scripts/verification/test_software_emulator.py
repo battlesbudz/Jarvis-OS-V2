@@ -543,7 +543,11 @@ class SoftwareSessionTest(unittest.TestCase):
                     config = session.avd_home / "jarvis-api29-software.avd/config.ini"
                     config.parent.mkdir()
                     config.write_text("hw.cpu.ncore=1\nhw.ramSize=1536M\nvm.heapSize=256M\n"
-                                      "hw.lcd.width=1080\nhw.lcd.height=1920\nhw.lcd.density=420\n")
+                                      "hw.lcd.width=1080\nhw.lcd.height=1920\nhw.lcd.density=420\n"
+                                      "hw.accelerometer=yes\nhw.accelerometer_uncalibrated=yes\n"
+                                      "hw.gyroscope=yes\nhw.sensors.gyroscope_uncalibrated=yes\n"
+                                      "hw.sensors.orientation=yes\nhw.sensors.light=yes\n"
+                                      "hw.sensors.proximity=yes\nhw.sensors.magnetic_field=yes\n")
                 return reply("")
 
             with patch.object(session, "run", side_effect=run), \
@@ -560,9 +564,14 @@ class SoftwareSessionTest(unittest.TestCase):
             self.assertFalse(any("google_apis" in argument for command in calls for argument in command))
             config = (session.diagnostics / "avd-config.ini").read_text()
             effective = dict(line.split("=", 1) for line in config.splitlines() if "=" in line)
-            self.assertEqual("1", effective["hw.cpu.ncore"])
+            self.assertEqual("2", effective["hw.cpu.ncore"])
             command = emulator_command(Path("/sdk"), session.diagnostics)
             self.assertEqual(effective["hw.cpu.ncore"], command[command.index("-smp") + 1])
+            for sensor in ("hw.accelerometer", "hw.accelerometer_uncalibrated", "hw.gyroscope",
+                           "hw.sensors.gyroscope_uncalibrated", "hw.sensors.orientation"):
+                self.assertEqual("no", effective[sensor])
+            for sensor in ("hw.sensors.light", "hw.sensors.proximity", "hw.sensors.magnetic_field"):
+                self.assertEqual("yes", effective[sensor])
             self.assertEqual("2048M", effective["hw.ramSize"])
             self.assertEqual("256M", effective["vm.heapSize"])
             self.assertNotIn("hw.heapSize", effective)
@@ -959,7 +968,7 @@ class SoftwareSessionTest(unittest.TestCase):
         self.assertEqual("swiftshader_indirect", command[command.index("-gpu") + 1])
         self.assertEqual(1, command.count("-verbose"))
         self.assertLess(command.index("-verbose"), command.index("-qemu"))
-        self.assertEqual(["-qemu", "-smp", "1"], command[-3:])
+        self.assertEqual(["-qemu", "-smp", "2"], command[-3:])
         self.assertEqual(1, command.count("-qemu"))
         self.assertEqual(1, command.count("-smp"))
         self.assertNotIn("-no-watchdog", command)
@@ -1089,7 +1098,7 @@ class EmulatorPinTest(unittest.TestCase):
         self.assertEqual(self.version, proof["installed_version_output"])
         self.assertTrue((self.session.diagnostics / "emulator-package.xml").exists())
         config = (self.session.diagnostics / "avd-config.ini").read_text()
-        for setting in ("hw.cpu.ncore=1", "hw.ramSize=2048M", "vm.heapSize=256M", "hw.lcd.width=360",
+        for setting in ("hw.cpu.ncore=2", "hw.ramSize=2048M", "vm.heapSize=256M", "hw.lcd.width=360",
                         "hw.lcd.height=640", "hw.lcd.density=140", "disk.dataPartition.size=4096M"):
             self.assertIn(setting, config)
         self.assertEqual(3600, self.session.deadline)
