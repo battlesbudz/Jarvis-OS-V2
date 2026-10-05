@@ -87,9 +87,15 @@ commits. Do not create or merge another PR without Justin's permission.
    failure or that all host Vulkan use disappears. See the official
    [troubleshooting guide](https://developer.android.com/studio/run/emulator-troubleshooting).
    The older ARM64 TCG source omits its generated SMP argument when HVF is
-   disabled; trailing `-qemu -smp 2` preserves the requested two-vCPU setting.
+   disabled; trailing `-qemu -smp 3` preserves the requested three-vCPU setting.
    Actual installed execution, backend/GLES capability, CPU count and complete
-   device coverage remain fresh-run requirements. The AVD requests two vCPUs,
+   device coverage remain fresh-run requirements. The AVD requests three vCPUs,
+   matching the existing hosted runner's three CPUs. Build 1004's two-vCPU guest
+   remained 98–100% busy in retained ANR samples while stock telephony repeatedly
+   restarted and held ordered boot delivery. The third vCPU is a single-variable
+   capacity trial, not a demonstrated speedup; host rendering and I/O still share
+   those cores. No larger runner, hardware acceleration or relaxed deadline is used.
+   The unchanged memory requests are
    2 GiB RAM and `vm.heapSize=256M`. Build 962's older wrapper interpreted that
    heap request as zero and promoted it to its 512 MiB minimum; its generated
    hardware and kernel arguments record 512 MiB, not a verified 256 MiB guest

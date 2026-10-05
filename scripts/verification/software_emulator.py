@@ -46,7 +46,11 @@ EMULATOR_PIN = {
 # of its pixels. Reduced pixel count is an experiment, not a measured cause or
 # cure for the permission-initialization timeout; all release gates remain required.
 # https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/vl.c
-SOFTWARE_AVD_SETTINGS = {"hw.cpu.ncore": "2", "hw.ramSize": "2048M", "vm.heapSize": "256M",
+# Build 1004 saturates both guest CPUs and repeatedly ANRs in stock telephony.
+# The unchanged macos-15 host exposes three CPUs. Match that reported count;
+# this is a capacity trial, not a proven speedup or hardware acceleration.
+SOFTWARE_CPU_COUNT = 3
+SOFTWARE_AVD_SETTINGS = {"hw.cpu.ncore": str(SOFTWARE_CPU_COUNT), "hw.ramSize": "2048M", "vm.heapSize": "256M",
                          "hw.lcd.width": "360", "hw.lcd.height": "640", "hw.lcd.density": "140",
                          "disk.dataPartition.size": "4096M"}
 # Retain Build 963's requested selector. Its actual guest backend was
@@ -219,7 +223,7 @@ def emulator_command(sdk, diagnostics):
     # -logcat-output captures guest logs from startup, including when adb is broken.
     # AOSP f0c183f1, android-qemu2-glue/main.cpp and android/android-emu/android/main-common.c.
     # Emulator 32 forwards the AVD core count only with acceleration; explicit
-    # QEMU SMP retains the declared two CPUs for TCG. Actual kernel proof is required.
+    # QEMU SMP retains the declared CPUs for TCG. Actual kernel proof is required.
     # -verbose retains older OpenGL identity and final QEMU argv diagnostics.
     # https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/android-qemu2-glue/main.cpp
     return [str(sdk / "emulator/emulator"), "-port", "5554", "-avd", AVD_NAME,
@@ -228,7 +232,7 @@ def emulator_command(sdk, diagnostics):
             "-accel", "off", "-feature", ",".join((*SOFTWARE_ENABLED_FEATURES,
                 *("-" + feature for feature in SOFTWARE_DISABLED_FEATURES))),
             "-verbose", "-show-kernel", "-logcat", "*:V",
-            "-logcat-output", str(diagnostics / "guest-startup-logcat.txt"), "-qemu", "-smp", "2"]
+            "-logcat-output", str(diagnostics / "guest-startup-logcat.txt"), "-qemu", "-smp", str(SOFTWARE_CPU_COUNT)]
 
 
 def keyguard_dismissed(output):

@@ -59,6 +59,40 @@ the adb-logcat fallback and original deadlines remain unchanged. All 209 Python
 helper checks pass locally; a fresh exact-revision device run must measure the
 effect and complete the full gate before any APK is called verified.
 
+### Build 1004 CPU saturation and same-runner capacity trial
+
+[Build 1004](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37276324771)
+tested head `fe0de66e3fce6d22ca5655afd2c3fe08eb72ad0a`, merge
+`626f2349ccda4a155aa2860647175fbd3afc16db`. Native host composition remains
+advertised; no composer crash occurs. The monitor makes zero guest PID probes
+before a completion candidate. Boot/services/input/unlock succeed, but user0
+boot delivery still misses 900 seconds. API 29 artifact `11331751012`, ZIP SHA-256
+`aeea282b9fd2af3ec9d93cc41282956a83abb88cb0506ed946b8fecfd0386512`, retains
+the complete failed startup evidence.
+
+ANR samples report 98–100% guest CPU utilization with 53–69% kernel work.
+The phone service repeatedly ANRs/restarts; after BOOT_COMPLETED posts at
+07:36:26 UTC, its receiver times out after 60 seconds at 07:37:55. System-server
+work dominates, with sensor, UI and provider work competing for the two guest
+CPUs. Graphics compositor crashes and monitor PID polling are no longer the
+failure. Early host receipts show three CPUs and no swap; late host contention
+has not been measured.
+
+The next controlled trial changes only guest CPU count from two to three on
+the same macos-15 runner, using one shared setting for AVD configuration and
+the explicit QEMU SMP argument. This preserves API/ABI, image, renderer, RAM,
+watchdogs, all readiness checks and deadlines. The reported host count is not
+proof of idle headroom or that extra guest concurrency will outperform two cores while
+rendering and I/O share the host. Actual kernel CPU admission, complete startup
+and the full release controller must pass on the new revision.
+
+All 1,005 JVM tests, four recorded-speech checks, native audits and four other
+device profiles passed Build 1004. API 35 compact instead encountered a stock
+Pixel Launcher ANR dialog covering Jarvis setup; its unchanged test code failed
+to find the obscured model control. Its artifact `11331800414` retains the
+screenshot and raw results. Neither this unrelated platform failure nor the
+missing API 29 report is waived; the final receipt fails and publication skips.
+
 ## Spoken farewell returns to wake listening
 
 “Stop listening” and “Goodbye” end the current call segment while preserving the
