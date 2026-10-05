@@ -240,6 +240,20 @@ class M1cScreenControlTest {
         assertTrue(missing is TargetVerification.Rejected)
     }
 
+    // Target binding (finding 3): the live node must match role, label AND
+    // bounds. The walk index is positional, so a shifted tree resolving the
+    // same index to a same-labeled node at a different position must not bind.
+    @Test fun liveNodeBindingRequiresRoleLabelAndBounds() {
+        val node = button() // n0, "Search", button, "10,20-100,80"
+        assertTrue(node.matchesLiveNode("button", "Search", "10,20-100,80"))
+        assertFalse("same label at a different position must not bind",
+            node.matchesLiveNode("button", "Search", "10,300-100,360"))
+        assertFalse("same position with a different label must not bind",
+            node.matchesLiveNode("button", "Send", "10,20-100,80"))
+        assertFalse("same label with a different role must not bind",
+            node.matchesLiveNode("text", "Search", "10,20-100,80"))
+    }
+
     // Session: touch pause and idle resume (T06)
 
     @Test fun manualTouchPausesDispatchAndIdleResumeRequiresReobserve() {

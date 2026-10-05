@@ -76,6 +76,18 @@ sealed interface TargetVerification {
 }
 
 /**
+ * Binds a verified snapshot node to the live node at dispatch time.
+ *
+ * The walk index ("n7") is positional: a tree that shifted between observation
+ * and dispatch can resolve the same index to a different node. Role, label AND
+ * bounds must all agree, or the dispatch fails closed and the caller
+ * re-observes. A scroll or re-layout changes bounds, which is the safe
+ * direction — a wrong tap is never taken.
+ */
+fun ScreenNode.matchesLiveNode(role: String, label: String, bounds: String): Boolean =
+    this.role == role && this.label == label && this.bounds == bounds
+
+/**
  * Session-scoped screen-control grant. One grant per task group: admitting a
  * second group while one holds the lease is denied, and a later group never
  * silently inherits an expired session (D26). Manual touch pauses dispatch;

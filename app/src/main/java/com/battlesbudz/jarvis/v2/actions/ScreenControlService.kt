@@ -108,17 +108,21 @@ private fun screenNodeRole(node: AccessibilityNodeInfo): String = when {
 }
 
 private fun toScreenNode(node: AccessibilityNodeInfo, id: String): ScreenNode {
-    val bounds = Rect()
-    node.getBoundsInScreen(bounds)
     return ScreenNode(
         id = id,
         label = screenNodeLabel(node),
         role = screenNodeRole(node),
-        bounds = "${bounds.left},${bounds.top}-${bounds.right},${bounds.bottom}",
+        bounds = screenNodeBounds(node),
         clickable = node.isClickable,
         editable = node.isEditable,
         scrollable = node.isScrollable
     )
+}
+
+private fun screenNodeBounds(node: AccessibilityNodeInfo): String {
+    val bounds = Rect()
+    node.getBoundsInScreen(bounds)
+    return "${bounds.left},${bounds.top}-${bounds.right},${bounds.bottom}"
 }
 
 /** Finds the live node at the same walk position as [id] ("n<index>"). Caller must recycle the result. */
@@ -144,7 +148,11 @@ private fun findScreenNodeById(root: AccessibilityNodeInfo, id: String): Accessi
 }
 
 private fun matchesSnapshot(live: AccessibilityNodeInfo, snapshot: ScreenNode): Boolean =
-    screenNodeRole(live) == snapshot.role && screenNodeLabel(live) == snapshot.label
+    snapshot.matchesLiveNode(
+        screenNodeRole(live),
+        screenNodeLabel(live),
+        screenNodeBounds(live)
+    )
 
 private class ServiceScreenBridge(
     private val context: android.content.Context
