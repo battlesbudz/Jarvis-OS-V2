@@ -14,7 +14,7 @@ the model confabulated "I shall set a reminder" with nothing scheduled. Follow-u
 NotAction, so the model looped "It is noted in your schedule" with no schedule in existence
 and no way to view one. Same shape as the Item 1 media parser bugfix.
 
-Changed files (commit `<slice-sha>`, server `<tip-sha>`):
+Changed files (slice commit `c510bcac`, repairs `775f799d` + `0718e957`, server tip `0718e957a9459ec7dd429c0bfc7582091786137a`):
 - `app/.../actions/ReminderWorkflow.kt` (new): JVM-pure reminder plumbing — `ReminderSpec`,
   bounded "remind me" grammar with deterministic clock resolution (bare hour takes the
   plain PM reading; no AM/PM rule exists in tools-interview-decisions.md), `buildReminderWorkflow`
@@ -61,9 +61,19 @@ Acceptance: JVM parser/ledger tests green; test60/test61 pass on both emulator v
 a "remind me" turn can no longer confirm a reminder that was not written to the ledger.
 
 CI evidence:
-- Run <run-id> (<attempt>): <results>
-- Run URLs: <urls>
-- Release: `v0.1.0-build.<NNN>` (<url>)
+- Run 37278348469 (slice commit c510bcac): compile FAILED — 6 type errors wiring
+  `WorkflowAlarmScheduler` (`ReminderCoordinator.kt:32`, `JarvisRuntime.kt:128-129`).
+- Run 37279722928 (repair 1, commit 775f799d): compile green; 3 `ReminderPlanTest`
+  failures — `resolveClockTime` anchored "today" to the wall clock instead of the
+  deterministic `nowMs`.
+- Run 37283169032 (repair 2, commit 0718e957): all green — Build signed release APK
+  success; both sandbox emulator variants success (API 30/app-release and
+  API 35/app-compact); verification evidence consolidated; publish job ran.
+- Run URLs: https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37278348469,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37279722928,
+  https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37283169032
+- Release: `v0.1.0-build.1008` (https://github.com/battlesbudz/Jarvis-OS-V2/releases/tag/v0.1.0-build.1008),
+  published by the workflow's publish job with app-release.apk + app-compact.apk.
 
 Unverified: real-model selection of the new tools; physical Fold 6 alarm delivery while
 the app is closed; on-device notification audibility. Reminder cancellation ("cancel my
