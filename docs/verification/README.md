@@ -31,7 +31,7 @@ commits. Do not create or merge another PR without Justin's permission.
    Google APIs and Play images contain no ARM64 bridge, so that profile uses
    the official AOSP `system-images;android-29;default;arm64-v8a` image on a
    standard `macos-15` ARM64 runner with explicit
-   software emulation (`-accel off -feature -HVF,-Vulkan`). GitHub's M1 VMs do not
+   software emulation (`-accel off -feature HostComposition,-HVF,-Vulkan`). GitHub's M1 VMs do not
    support nested hardware virtualization. This profile alone uses the official
    [Emulator archive](https://developer.android.com/studio/emulator_archive)
    Stable 32.1.15 Apple Silicon package, build 10696886, as a controlled
@@ -59,7 +59,16 @@ commits. Do not create or merge another PR without Justin's permission.
    before the original deadline remain required; a retained artifact alone cannot
    authorize readiness. This avoids Build 944's repeatedly timed-out guest logcat
    dumps without extending a deadline. All readiness and unlock checks share the 15-minute boot budget;
-   software rendering requests `-gpu swiftshader_indirect`, with the
+   the API 29 launcher explicitly adds `HostComposition` to its feature request.
+   Emulator 32 disables that capability by default below API 32, although the
+   inspected API 29 revision 8 image's `advancedFeatures.ini` declares it supported. Build 986
+   lacked the host-composition extensions and repeatedly crashed the guest
+   composer in `GoldfishGralloc::getHostHandle`, then lost SurfaceFlinger and
+   restarted Android. The override selects the guest-supported composition path;
+   a fresh full device pass must establish that it resolves startup. The requested
+   enabled and disabled features are retained separately from actual startup
+   output. It does not disable watchdogs or change any readiness/test deadline.
+   Software rendering requests `-gpu swiftshader_indirect`, with the
    installed binary's raw GPU/feature help and actual startup backend retained as
    diagnostics. Both help commands share the original provisioning budget and
    are individually bounded by 15 seconds; help text does not authorize readiness.

@@ -55,6 +55,14 @@ SOFTWARE_AVD_SETTINGS = {"hw.cpu.ncore": "2", "hw.ramSize": "2048M", "vm.heapSiz
 # no performance improvement or complete device pass has been established.
 # https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/android/android-emu/android/opengl/emugl_config.cpp
 SOFTWARE_GPU_SELECTOR = "swiftshader_indirect"
+# Emulator 32 disables HostComposition by default below API 32 (b/243189303),
+# despite this API 29 image advertising support. Build 986 repeatedly crashed
+# its guest composer in GoldfishGralloc::getHostHandle without that extension.
+# Keep the guest-supported host-composition path explicit; readiness and the
+# unchanged full controller, not this request, establish a usable device.
+# https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/android/android-emu/android/main-emugl.cpp
+SOFTWARE_ENABLED_FEATURES = ("HostComposition",)
+SOFTWARE_DISABLED_FEATURES = ("HVF", "Vulkan")
 
 
 def require_software_profile(profile, system=None, machine=None):
@@ -217,7 +225,9 @@ def emulator_command(sdk, diagnostics):
     return [str(sdk / "emulator/emulator"), "-port", "5554", "-avd", AVD_NAME,
             "-no-window", "-gpu", SOFTWARE_GPU_SELECTOR, "-noaudio", "-no-boot-anim", "-no-snapshot",
             "-timezone", "Etc/UTC",
-            "-accel", "off", "-feature", "-HVF,-Vulkan", "-verbose", "-show-kernel", "-logcat", "*:V",
+            "-accel", "off", "-feature", ",".join((*SOFTWARE_ENABLED_FEATURES,
+                *("-" + feature for feature in SOFTWARE_DISABLED_FEATURES))),
+            "-verbose", "-show-kernel", "-logcat", "*:V",
             "-logcat-output", str(diagnostics / "guest-startup-logcat.txt"), "-qemu", "-smp", "2"]
 
 
@@ -375,7 +385,8 @@ class SoftwareSession:
                        "acceleration": "software", "boot_timeout_seconds": profile["boot_timeout"],
                        "status": "provisioning", "errors": [],
                        "graphics": {"requested_selector": SOFTWARE_GPU_SELECTOR,
-                                    "requested_disabled_features": ["HVF", "Vulkan"]}}
+                                    "requested_enabled_features": list(SOFTWARE_ENABLED_FEATURES),
+                                    "requested_disabled_features": list(SOFTWARE_DISABLED_FEATURES)}}
 
     def run(self, command, *, deadline=None, timeout=60, check=True, input=None):
         deadline = self.deadline if deadline is None else min(deadline, self.deadline)

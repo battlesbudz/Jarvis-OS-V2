@@ -607,6 +607,7 @@ class SoftwareSessionTest(unittest.TestCase):
             session.capture_graphics_backend()
             graphics = session.report["graphics"]
             self.assertEqual("swiftshader_indirect", graphics["requested_selector"])
+            self.assertEqual(["HostComposition"], graphics["requested_enabled_features"])
             self.assertEqual(["HVF", "Vulkan"], graphics["requested_disabled_features"])
             self.assertEqual("gfxstream", graphics["graphics_backend"])
             self.assertEqual("swiftshader", graphics["vulkan_mode"])
@@ -842,7 +843,8 @@ class SoftwareSessionTest(unittest.TestCase):
     def test_launcher_disables_both_acceleration_paths_and_logs_from_startup(self):
         command = emulator_command(Path("/sdk"), Path("/evidence"))
         self.assertEqual("off", command[command.index("-accel") + 1])
-        self.assertEqual("-HVF,-Vulkan", command[command.index("-feature") + 1])
+        self.assertEqual("HostComposition,-HVF,-Vulkan", command[command.index("-feature") + 1])
+        self.assertLess(command.index("-feature"), command.index("-qemu"))
         self.assertEqual("*:V", command[command.index("-logcat") + 1])
         self.assertEqual("/evidence/guest-startup-logcat.txt", command[command.index("-logcat-output") + 1])
         self.assertEqual("swiftshader_indirect", command[command.index("-gpu") + 1])
@@ -852,6 +854,16 @@ class SoftwareSessionTest(unittest.TestCase):
         self.assertEqual(1, command.count("-qemu"))
         self.assertEqual(1, command.count("-smp"))
         self.assertNotIn("-no-watchdog", command)
+
+    def test_host_composition_request_cannot_stand_in_for_device_readiness(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            session = SoftwareSession(PROFILE, Path(temporary) / "evidence", "/sdk", now=lambda: 0)
+            self.assertEqual(["HostComposition"], session.report["graphics"]["requested_enabled_features"])
+            self.assertFalse(session.report["passed"])
+            self.assertEqual("provisioning", session.report["status"])
+            self.assertEqual(900, session.report["boot_timeout_seconds"])
+            self.assertEqual(3600, session.deadline)
+            self.assertNotIn("backend_observed", session.report["graphics"])
 
     def test_launcher_timezone_does_not_inherit_invalid_host_detection(self):
         with patch.dict("os.environ", {"TZ": "Unknown/Unknown"}):

@@ -1,5 +1,35 @@
 # Feature and acceptance map
 
+## API 29 graphics boot loop — October 5, 2026
+
+[Build 986](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37236069164)
+tested head `9d933b754f0e7124850bde5a289931b4cf9cadb3`. Its API 29 artifact
+`11316332939` (ZIP SHA-256
+`09f1b72bc51ef80f92c313571af24eab45215593d489ed80a6a845fd50ca98d0`)
+retains five matching native crashes: the guest graphics composer dereferences
+a null handle in `GoldfishGralloc::getHostHandle` from `EmuHWC2::Display::present`.
+Each is followed by a SurfaceFlinger abort and Android restart. The guest's
+extension strings lack `ANDROID_EMU_host_composition_v1/v2`; this is a concrete
+graphics failure before Jarvis installation, not merely slow app tests.
+
+The inspected API 29 revision 8 image declares `HostComposition = on`. Emulator 32's
+[API-level fallback](https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/android/android-emu/android/main-emugl.cpp)
+nevertheless disables it below API 32 unless explicitly overridden. Its
+[render-control implementation](https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/android/android-emugl/host/libs/libOpenglRender/RenderControl.cpp)
+advertises both host-composition extensions only when this feature is enabled.
+The narrow infrastructure correction requests `HostComposition,-HVF,-Vulkan`
+for API 29 only. The causal connection to the crash is an inference requiring
+fresh hosted validation; no successful boot or speed improvement is claimed yet.
+
+Acceptance: the genuine API 29 ARM64 image must finish boot, retain all four
+Binder services, execute input, unlock, deliver user0 BOOT_COMPLETED and pass
+the unchanged release controller within the existing 900-second boot and
+60-minute job limits. Missing services, crashes, failed journeys or incomplete
+same-run evidence must still block publication. Helper regressions preserve the
+feature request, disabled acceleration/Vulkan, original deadlines and the
+distinction between requested configuration and verified device success. All
+other profiles, APKs, watchdogs, app code and release dependencies are unchanged.
+
 ## Spoken farewell returns to wake listening
 
 “Stop listening” and “Goodbye” end the current call segment while preserving the
