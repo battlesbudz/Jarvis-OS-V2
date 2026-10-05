@@ -155,6 +155,83 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         refreshPhoneTasks()
     }
 
+    // -- M3 ecosystem integrations (D05/D07, T16/T17) ---------------------------
+
+    /** Discovered AppFunctions providers with collision-safe alias bindings. */
+    internal val providerRegistry = com.battlesbudz.jarvis.v2.actions.ProviderRegistry()
+    private val mcpHttpClient = com.battlesbudz.jarvis.v2.actions.UrlConnectionMcpHttpClient()
+    private val mcpCredentialStore: com.battlesbudz.jarvis.v2.actions.McpCredentialStore =
+        com.battlesbudz.jarvis.v2.actions.AndroidKeystoreMcpCredentialStore(this)
+    /** Connected MCP servers: guided setup, refresh, enablement, disconnect. */
+    internal val mcpRegistry =
+        com.battlesbudz.jarvis.v2.actions.McpRegistry(mcpHttpClient, mcpCredentialStore)
+    private val mcpSetupFlow =
+        com.battlesbudz.jarvis.v2.actions.McpSetupFlow(mcpHttpClient, mcpCredentialStore)
+    /** Honest AppFunctions platform state (ordinary-app probe); null until the probe runs. */
+    internal var appFunctionPlatformStatus: com.battlesbudz.jarvis.v2.actions.AppFunctionPlatformStatus? = null
+        private set
+
+    /**
+     * M3 provider scope resolution for the T08 grant discipline: a provider
+     * wire name resolves to its declared scopes from the live registries.
+     * Secrets never pass through here — only scope names.
+     */
+    private fun seedProviderScopeResolver() {
+        com.battlesbudz.jarvis.v2.actions.ToolSourcePolicy.setProviderScopeResolver { wireName ->
+            com.battlesbudz.jarvis.v2.actions.ProviderWireNames.parseToolName(wireName)?.let { parsed ->
+                when (parsed.provider.kind) {
+                    com.battlesbudz.jarvis.v2.actions.ProviderKind.APP_FUNCTIONS ->
+                        providerRegistry.metadataFor(parsed.provider, parsed.functionId)?.scopes.orEmpty()
+                    com.battlesbudz.jarvis.v2.actions.ProviderKind.MCP ->
+                        mcpRegistry.toolsFor(parsed.provider.id)
+                            .firstOrNull { it.name == parsed.functionId }
+                            ?.scopes?.map { scope ->
+                                com.battlesbudz.jarvis.v2.actions.ProviderWireNames.scopedName(parsed.provider, scope)
+                            }.orEmpty().toSet()
+                }
+            }.orEmpty()
+        }
+    }
+
+    /** Run the AppFunctions platform probe once (ordinary app access); refresh the settings rows after. */
+    private fun probeAppFunctionPlatform() {
+        runtimeScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            appFunctionPlatformStatus = try {
+                com.battlesbudz.jarvis.v2.actions.AppFunctionPlatformProbe(this@JarvisRuntime).probe()
+            } catch (_: Exception) {
+                null
+            }
+            refreshWorkflowSettings()
+        }
+    }
+
+    /**
+     * Guided MCP setup from settings (D07): custom URL, staged negotiation
+     * and discovery, secret stored under an opaque reference. The result
+     * message is honest about which stage failed and why.
+     */
+    internal fun connectMcpServer(name: String, url: String, token: String, done: (String) -> Unit) {
+        runtimeScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val message = try {
+                when (val result = mcpSetupFlow.run(name, url, token.ifBlank { null })) {
+                    is com.battlesbudz.jarvis.v2.actions.McpSetupFlow.FlowResult.Connected -> {
+                        val placed = mcpRegistry.add(result.status)
+                        "Connected to ${placed.config.name}: ${placed.tools.size} tool(s) discovered, " +
+                            "${placed.enabledTools.size} free tool(s) enabled by default."
+                    }
+                    is com.battlesbudz.jarvis.v2.actions.McpSetupFlow.FlowResult.Failed ->
+                        "Could not connect (${result.stage.name.lowercase()}): ${result.reason}"
+                }
+            } catch (_: Exception) {
+                "Could not connect: an unexpected error stopped setup. Nothing was saved."
+            }
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                refreshWorkflowSettings()
+                done(message)
+            }
+        }
+    }
+
     // -- M2 reusable workflows (D31–D36, T11–T14) -------------------------------
 
     /** Settings projection: saved workflows plus connected tools. Chat stays the operating surface. */
@@ -164,7 +241,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     internal fun refreshWorkflowSettings() {
         workflowSettings.value = try {
             com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection.from(
-                phoneActionLedger.journal(), System.currentTimeMillis())
+                phoneActionLedger.journal(), System.currentTimeMillis(),
+                com.battlesbudz.jarvis.v2.actions.ProviderSettings.rows(
+                    providerRegistry, mcpRegistry, appFunctionPlatformStatus))
         } catch (_: com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException) { null }
     }
 
@@ -714,6 +793,11 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 phoneTaskError.value = "The action journal is unavailable. Phone actions are paused."
             } finally { refreshPhoneTasks() }
         }
+        // M3 ecosystem providers (D05/D07, T16/T17): seed the T08 scope
+        // resolver before any provider grant is recorded, and probe the
+        // AppFunctions platform once with ordinary app access.
+        seedProviderScopeResolver()
+        probeAppFunctionPlatform()
         shortTermContext.restoreSummary(sessionPreferences.getString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, null))
         AndroidMemoryOs.get(applicationContext).addApprovedStateObserver {
             // Fence output immediately, then durably publish the context boundary off the caller

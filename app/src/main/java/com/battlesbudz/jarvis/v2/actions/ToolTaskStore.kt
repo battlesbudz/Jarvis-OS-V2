@@ -190,7 +190,13 @@ class FileToolTaskStore(
             require(s.family.isNotBlank() && s.family.length <= 64 && s.updatedAtMs >= 0)
             require(s.scopes.size <= 16 && s.scopes.all { it.length <= 64 })
             // A persisted grant can never exceed its family's scope set (T08).
-            require(s.scopes.all { it in ToolSourcePolicy.familyScopes(s.family) })
+            // M3: provider families are capped by their static namespace —
+            // enforceable without a registry at read time.
+            if (ToolSourcePolicy.isProviderFamily(s.family)) {
+                require(s.scopes.all { ToolSourcePolicy.providerScopeWithinCap(s.family, it) })
+            } else {
+                require(s.scopes.all { it in ToolSourcePolicy.familyScopes(s.family) })
+            }
         }
         // M2 workflows: definitions validate structurally; occurrences pin
         // an existing version; dedup keys are unique among unfinished runs.
@@ -265,7 +271,9 @@ class FileToolTaskStore(
         // M1d: the durable journal must accept every catalog tool, not just
         // the original four — screen and destination tools are admitted for
         // tracking/approval and must persist like the rest.
-        require(MobileToolCatalog.find(name) != null)
+        // M3: provider wire names (`provider:<kind>:<id>:<function>`) are
+        // admitted too; their grant discipline lives in ToolSourceAccess.
+        require(MobileToolCatalog.find(name) != null || ProviderWireNames.isProviderTool(name))
         require(arguments.size <= 3 && arguments.all { (k, v) -> k.length <= 64 && v.length <= 512 })
     }
     private fun <T> JSONArray.objects(map: (JSONObject) -> T) = (0 until length()).map { map(getJSONObject(it)) }

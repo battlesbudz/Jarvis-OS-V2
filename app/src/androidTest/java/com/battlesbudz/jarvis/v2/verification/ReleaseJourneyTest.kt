@@ -47,6 +47,7 @@ import org.junit.rules.TestName
 import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
 import java.io.File
+import java.net.ServerSocket
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -2103,6 +2104,421 @@ class ReleaseJourneyTest {
         assertTrue(asked.question.contains("lower the volume"))
         assertEquals("one battery read plus three bounded attempts", 4, dispatched.get())
         assertEquals("only the completed battery read is recorded", 1, asked.completedStepIds.size)
+    }
+
+    // -- M3 ecosystem integrations (T16) --------------------------------------
+
+    private fun t57Metadata(
+        packageName: String,
+        functionId: String,
+        version: Long = 1,
+        params: AppFunctionType.Obj = AppFunctionType.Obj(
+            mapOf("text" to AppFunctionProperty(AppFunctionType.Text, true))),
+        scopeNames: Set<String> = setOf("read"),
+        description: String = "A controlled test function."
+    ): AppFunctionMetadata {
+        val provider = ProviderId.appFunctions(packageName)
+        return AppFunctionMetadata(
+            providerPackage = packageName,
+            functionId = functionId,
+            displayName = functionId,
+            description = description,
+            versionCode = version,
+            parameters = params,
+            resultType = AppFunctionType.Text,
+            scopes = scopeNames.map { ProviderWireNames.scopedName(provider, it) }.toSet()
+        )
+    }
+
+    private fun t57SeedResolver(registry: ProviderRegistry) {
+        ToolSourcePolicy.setProviderScopeResolver { wireName ->
+            ProviderWireNames.parseToolName(wireName)?.let { parsed ->
+                if (parsed.provider.kind == ProviderKind.APP_FUNCTIONS)
+                    registry.metadataFor(parsed.provider, parsed.functionId)?.scopes.orEmpty()
+                else emptySet()
+            }.orEmpty()
+        }
+    }
+
+    @Test fun test57_appFunctionsDiscoveryAndControlledJourney() {
+        // T16: AppFunctions nested schema/types, state/update/uninstall/name
+        // collisions; ordinary-app access vs ADB labeled. The platform probe
+        // below runs against the real PackageManager; the provider world is
+        // a controlled fake — the "one controlled dependent function
+        // journey" the plan requires before real priority apps.
+        val probe = AppFunctionPlatformProbe(context).probe()
+        assertEquals("discovery access must be labeled",
+            DiscoveryAccessMethod.ORDINARY_APP, probe.accessMethod)
+        assertTrue("provider count is never negative", probe.providersFound >= 0)
+        assertTrue("the probe note must be honest", probe.note.isNotBlank())
+
+        val pkgA = "com.example.sample"
+        val pkgB = "com.other.sample"
+        val providerA = ProviderId.appFunctions(pkgA)
+        val nestedParams = AppFunctionType.Obj(mapOf(
+            "user" to AppFunctionProperty(AppFunctionType.Obj(mapOf(
+                "id" to AppFunctionProperty(AppFunctionType.Integer, true),
+                "tags" to AppFunctionProperty(
+                    AppFunctionType.Arr(AppFunctionType.Text, maxItems = 3), false)
+            )), true)
+        ))
+        val registry = ProviderRegistry()
+        val firstDiff = registry.update(DiscoverySnapshot(listOf(
+            t57Metadata(pkgA, "echo", description = "Echoes the given text back."),
+            t57Metadata(pkgA, "shout", description = "Upper-cases the given text."),
+            t57Metadata(pkgA, "lookup_user", params = nestedParams,
+                description = "Looks up a user by id with optional tags."),
+            t57Metadata(pkgB, "echo", description = "Another app's echo.")
+        ), DiscoveryAccessMethod.ORDINARY_APP, 0L))
+        assertEquals("four functions discovered", 4, firstDiff.added.size)
+        t57SeedResolver(registry)
+
+        // Collision-safe aliases: one short alias per colliding name would
+        // be ambiguous, so the bindings stay unique and flagged.
+        val aliases = registry.aliasRegistry.all().map { it.alias }.toSet()
+        assertEquals(setOf("echo", "echo_sample", "shout", "lookup_user"), aliases)
+        val collided = (registry.aliasRegistry.resolve("echo_sample") as AliasResolution.Resolved).binding
+        assertEquals(pkgB, collided.identity.providerPackage)
+        assertTrue("collision must be flagged", collided.collided)
+        assertNotNull("collision must be explained", collided.collisionNote)
+        val plain = (registry.aliasRegistry.resolve("echo") as AliasResolution.Resolved).binding
+        assertEquals(pkgA, plain.identity.providerPackage)
+
+        // Task-relevant selection surfaces the calendar-ish function first.
+        val selected = AppFunctionTaskSelection.select(
+            "look up the user by id",
+            registry.aliasRegistry.all(),
+            metadataFor = { binding -> registry.metadataForWire(binding.wireName) })
+        assertEquals("lookup_user", selected.first().alias)
+
+        // The controlled dependent-function journey: shout consumes echo's
+        // output through a typed binding.
+        val dispatched = AtomicInteger(0)
+        val invoker = ProviderInvoker { call ->
+            dispatched.incrementAndGet()
+            val text = call.arguments["text"]?.toString().orEmpty()
+            when (call.functionId) {
+                "shout" -> ProviderCallResult.Success(mapOf("text" to text.uppercase()), "shouted")
+                "lookup_user" -> {
+                    @Suppress("UNCHECKED_CAST")
+                    val user = call.arguments["user"] as Map<String, Any?>
+                    ProviderCallResult.Success(mapOf("id" to user["id"].toString()), "found")
+                }
+                else -> ProviderCallResult.Success(mapOf("text" to text), "echoed")
+            }
+        }
+        val ledger = ToolTaskLedger()
+        val dispatcher = ProviderDispatcher(ledger, registry,
+            McpRegistry(McpHttpClient { _, _, _ -> McpHttpResponse(500, "", emptyMap()) },
+                InMemoryMcpCredentialStore()),
+            mapOf(providerA to invoker, ProviderId.appFunctions(pkgB) to invoker))
+        val journey = dispatcher.runJourney(listOf(
+            ProviderJourneyStep("s1", "echo", mapOf("text" to "hello")),
+            ProviderJourneyStep("s2", "shout", mapOf("text" to "\${s1.text}"))))
+        assertTrue("the dependent journey completes", journey.succeeded)
+        assertEquals("HELLO",
+            (journey.stepResults[1] as ProviderCallResult.Success).data["text"])
+
+        // Strict nested types: a valid nested call dispatches; a string id
+        // is rejected with no dispatch.
+        val nestedOk = dispatcher.dispatchByAlias("lookup_user",
+            mapOf("user" to mapOf("id" to 7, "tags" to listOf("a", "b"))))
+        assertTrue(nestedOk is ProviderCallResult.Success)
+        assertEquals("7", (nestedOk as ProviderCallResult.Success).data["id"])
+        val before = dispatched.get()
+        val nestedBad = dispatcher.dispatchByAlias("lookup_user",
+            mapOf("user" to mapOf("id" to "7")))
+        assertTrue(nestedBad is ProviderCallResult.TypedError)
+        assertEquals(ProviderErrorCode.INVALID_ARGUMENTS,
+            (nestedBad as ProviderCallResult.TypedError).code)
+        assertEquals("no dispatch on invalid nested args", before, dispatched.get())
+
+        // Update and uninstall invalidate exactly the affected bindings.
+        val secondDiff = registry.update(DiscoverySnapshot(listOf(
+            t57Metadata(pkgA, "echo", version = 2),
+            t57Metadata(pkgA, "lookup_user", params = nestedParams),
+            t57Metadata(pkgB, "echo", version = 1)
+        ), DiscoveryAccessMethod.ORDINARY_APP, 1L))
+        assertEquals(listOf("echo"), secondDiff.updated.map { it.functionId })
+        assertEquals(listOf("shout"), secondDiff.removed.map { it.functionId })
+        assertTrue(registry.aliasRegistry.resolve("shout") is AliasResolution.Unknown)
+        assertTrue(registry.aliasRegistry.resolve("echo") is AliasResolution.Resolved)
+
+        // T08 for the new provider family: the first successful call
+        // remembers the grant; revocation blocks every adapter while the
+        // independent provider keeps working.
+        val familyA = "provider:appfunctions:com.example.sample"
+        val record = ledger.journal().sourceAccess.single { it.family == familyA }
+        assertEquals(SourceAccessState.GRANTED, record.state)
+        assertTrue(ToolSourceAccess(ledger).revoke(familyA))
+        val blocked = dispatcher.dispatchByAlias("echo", mapOf("text" to "hi"))
+        assertTrue(blocked is ProviderCallResult.TypedError)
+        assertEquals(ProviderErrorCode.DENIED_PERMISSION,
+            (blocked as ProviderCallResult.TypedError).code)
+        val otherStillWorks = dispatcher.dispatchByAlias("echo_sample", mapOf("text" to "hi"))
+        assertTrue("an independent provider family is unaffected",
+            otherStillWorks is ProviderCallResult.Success)
+
+        // The settings surface labels ordinary-app access honestly.
+        val rows = ProviderSettings.rows(registry,
+            McpRegistry(McpHttpClient { _, _, _ -> McpHttpResponse(500, "", emptyMap()) },
+                InMemoryMcpCredentialStore()),
+            probe.let { AppFunctionPlatformStatus(it.accessMethod, it.platformServiceAvailable,
+                it.providersFound, it.note) })
+        val platformRow = rows.single { it.id == "appfunctions-platform" }
+        assertTrue("unavailable providers are explained, not implied",
+            platformRow.explanation.contains("ordinary app"))
+    }
+
+    // -- M3 MCP (T17) ----------------------------------------------------------
+
+    /** Minimal loopback HTTP/1.1 MCP stub: initialize, tools/list, tools/call. */
+    private class StubMcpServer : java.io.Closeable {
+        private val socket = ServerSocket(0)
+        val port: Int = socket.localPort
+        @Volatile var requireToken: String? = "good-token"
+        @Volatile var toolNames: List<String> = listOf("free_lookup", "paid_export")
+        private val running = AtomicBoolean(true)
+        private val worker = kotlin.concurrent.thread(isDaemon = true, name = "stub-mcp") {
+            while (running.get()) {
+                try {
+                    handle(socket.accept())
+                } catch (_: Exception) {
+                    if (!running.get()) return@thread
+                }
+            }
+        }
+
+        private fun toolJson(name: String): String {
+            val pricing = if (name == "paid_export") "paid" else "free"
+            return "{\"name\":\"$name\",\"description\":\"$name tool\"," +
+                "\"inputSchema\":{\"type\":\"object\"},\"x-jarvis-pricing\":\"$pricing\"," +
+                "\"x-jarvis-scopes\":[\"lookup\"]}"
+        }
+
+        private fun handle(client: java.net.Socket) {
+            client.use { sock ->
+                val input = sock.getInputStream().bufferedReader(Charsets.UTF_8)
+                val requestLine = input.readLine() ?: return
+                val headers = mutableMapOf<String, String>()
+                if (requestLine.startsWith("POST")) {
+                    while (true) {
+                        val line = input.readLine() ?: break
+                        if (line.isEmpty()) break
+                        val idx = line.indexOf(':')
+                        if (idx > 0) headers[line.substring(0, idx).trim().lowercase()] =
+                            line.substring(idx + 1).trim()
+                    }
+                }
+                val length = headers["content-length"]?.toIntOrNull() ?: 0
+                val chars = CharArray(length)
+                var read = 0
+                while (read < length) {
+                    val n = input.read(chars, read, length - read)
+                    if (n <= 0) break
+                    read += n
+                }
+                val body = String(chars, 0, read)
+                if (!requestLine.startsWith("POST")) {
+                    respond(sock, 404, ""); return
+                }
+                if (requireToken != null && headers["authorization"] != "Bearer $requireToken") {
+                    respond(sock, 401, "unauthorized"); return
+                }
+                val method = try { org.json.JSONObject(body).optString("method") } catch (_: Exception) { "" }
+                when (method) {
+                    "initialize" -> respond(sock, 200,
+                        "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{" +
+                            "\"protocolVersion\":\"2025-06-18\",\"capabilities\":{}}}",
+                        mapOf("Mcp-Session-Id" to "stub-session"))
+                    "notifications/initialized" -> respond(sock, 202, "")
+                    "tools/list" -> {
+                        val tools = toolNames.joinToString(",") { toolJson(it) }
+                        respond(sock, 200,
+                            "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":[$tools]}}")
+                    }
+                    "tools/call" -> respond(sock, 200,
+                        "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"content\":" +
+                            "[{\"type\":\"text\",\"text\":\"stub-result\"}]}}")
+                    else -> respond(sock, 404, "")
+                }
+            }
+        }
+
+        private fun respond(sock: java.net.Socket, status: Int, body: String,
+                             extraHeaders: Map<String, String> = emptyMap()) {
+            val bytes = body.toByteArray(Charsets.UTF_8)
+            val out = sock.getOutputStream()
+            val reason = when (status) {
+                200 -> "OK"; 202 -> "Accepted"; 401 -> "Unauthorized"; else -> "Not Found"
+            }
+            val head = buildString {
+                append("HTTP/1.1 $status $reason\r\n")
+                append("Content-Type: application/json\r\n")
+                append("Content-Length: ${bytes.size}\r\n")
+                for ((k, v) in extraHeaders) append("$k: $v\r\n")
+                append("Connection: close\r\n\r\n")
+            }
+            out.write(head.toByteArray(Charsets.UTF_8))
+            out.write(bytes)
+            out.flush()
+        }
+
+        override fun close() {
+            running.set(false)
+            try { socket.close() } catch (_: Exception) { }
+        }
+    }
+
+    @Test fun test58_mcpGuidedSetupAndServerStates() {
+        // T17: guided/custom connection, auth failure, disconnect, schema
+        // change, scope limits and paid-service default — against a real
+        // loopback HTTP server through the real HttpURLConnection transport.
+        val stub = StubMcpServer()
+        try {
+            val credentials = InMemoryMcpCredentialStore()
+            val http = UrlConnectionMcpHttpClient(connectTimeoutMs = 5_000, readTimeoutMs = 5_000)
+            val flow = McpSetupFlow(http, credentials)
+            // Custom URL validation happens before any network use.
+            val badUrl = flow.run("Stub", "ftp://example.com/", null)
+            assertTrue(badUrl is McpSetupFlow.FlowResult.Failed)
+            assertEquals(McpSetupFlow.Stage.URL, (badUrl as McpSetupFlow.FlowResult.Failed).stage)
+            // Guided setup connects; only free tools turn on by default and
+            // the secret never lands in the config.
+            val connected = flow.run("Stub", "http://127.0.0.1:${stub.port}/", "good-token")
+            assertTrue(connected is McpSetupFlow.FlowResult.Connected)
+            val status = (connected as McpSetupFlow.FlowResult.Connected).status
+            assertEquals(McpServerState.CONNECTED, status.state)
+            assertEquals(setOf("free_lookup"), status.enabledTools)
+            assertFalse("secret must not leak into the config",
+                status.config.redacted().contains("good-token"))
+            val registry = McpRegistry(http, credentials)
+            val placed = registry.add(status)
+            val serverId = placed.config.id
+            val provider = ProviderId.mcp(serverId)
+            ToolSourcePolicy.setProviderScopeResolver { wireName ->
+                ProviderWireNames.parseToolName(wireName)?.let { parsed ->
+                    if (parsed.provider.kind == ProviderKind.MCP)
+                        registry.toolsFor(parsed.provider.id)
+                            .firstOrNull { it.name == parsed.functionId }
+                            ?.scopes?.map { ProviderWireNames.scopedName(parsed.provider, it) }
+                            .orEmpty().toSet()
+                    else emptySet()
+                }.orEmpty()
+            }
+            val dispatcher = ProviderDispatcher(ToolTaskLedger(), ProviderRegistry(), registry,
+                mapOf(provider to McpInvoker(registry, http, credentials)))
+            // A free tool call dispatches through the real transport.
+            val ok = dispatcher.dispatch(ProviderCall(provider, "free_lookup", mapOf("q" to "x")))
+            assertTrue(ok is ProviderCallResult.Success)
+            assertEquals("stub-result", (ok as ProviderCallResult.Success).data["text"])
+            // Paid-service default: disabled until explicitly enabled, and
+            // even then purchase confirmation is never waived.
+            val paidDisabled = dispatcher.dispatch(ProviderCall(provider, "paid_export", mapOf("q" to "x")))
+            assertTrue(paidDisabled is ProviderCallResult.TypedError)
+            assertEquals(ProviderErrorCode.NOT_ENABLED,
+                (paidDisabled as ProviderCallResult.TypedError).code)
+            assertTrue(registry.setToolEnabled(serverId, "paid_export", true))
+            val paidConfirm = dispatcher.dispatch(ProviderCall(provider, "paid_export", mapOf("q" to "x")))
+            assertTrue("paid enablement never waives purchase confirmation",
+                paidConfirm is ProviderCallResult.NeedsPurchaseConfirmation)
+            // Schema change blocks calls until re-reviewed.
+            stub.toolNames = listOf("free_lookup", "paid_export_changed")
+            val changed = registry.refresh(serverId)
+            assertEquals(McpServerState.SCHEMA_CHANGED, changed.state)
+            val blocked = dispatcher.dispatch(ProviderCall(provider, "free_lookup", mapOf("q" to "x")))
+            assertTrue(blocked is ProviderCallResult.TypedError)
+            assertEquals(ProviderErrorCode.PROVIDER_UNAVAILABLE,
+                (blocked as ProviderCallResult.TypedError).code)
+            assertTrue(registry.acknowledgeSchemaChange(serverId))
+            assertEquals(McpServerState.CONNECTED, registry.status(serverId)!!.state)
+            // Auth failure is an explicit denied state, not a silent retry.
+            stub.toolNames = listOf("free_lookup", "paid_export")
+            stub.requireToken = "rotated-token"
+            val denied = registry.refresh(serverId)
+            assertEquals(McpServerState.DENIED, denied.state)
+            assertTrue(denied.explanation.contains("credentials"))
+            // Explicit disconnect makes calls honestly unavailable.
+            stub.requireToken = "good-token"
+            assertTrue(registry.disconnect(serverId))
+            assertEquals(McpServerState.DISABLED, registry.status(serverId)!!.state)
+            val gone = dispatcher.dispatch(ProviderCall(provider, "free_lookup", mapOf("q" to "x")))
+            assertTrue(gone is ProviderCallResult.TypedError)
+            val goneError = gone as ProviderCallResult.TypedError
+            assertEquals(ProviderErrorCode.PROVIDER_UNAVAILABLE, goneError.code)
+            assertTrue(goneError.message.contains("Disconnected"))
+        } finally {
+            stub.close()
+        }
+    }
+
+    // -- M3 provider grants and exposure gate (T08 for new providers) ------------
+
+    @Test fun test59_providerGrantDisciplineAndExposureGate() {
+        // T08 applied to new providers: first-source access is remembered per
+        // provider family, a grant can never broaden (in scope or across
+        // families), denial/revocation blocks every adapter, and provider
+        // tools stay structurally unavailable to the model until M7.
+        val pkg = "com.example.sample"
+        val provider = ProviderId.appFunctions(pkg)
+        val wire = ProviderWireNames.toolName(provider, "echo")
+        val registry = ProviderRegistry()
+        registry.update(DiscoverySnapshot(listOf(
+            AppFunctionMetadata(pkg, "echo", "Echo", "Echoes.", 1,
+                AppFunctionType.Obj(mapOf("text" to AppFunctionProperty(AppFunctionType.Text, true))),
+                AppFunctionType.Text,
+                setOf(ProviderWireNames.scopedName(provider, "read")))
+        ), DiscoveryAccessMethod.ORDINARY_APP, 0L))
+        ToolSourcePolicy.setProviderScopeResolver { wireName ->
+            if (wireName == wire) setOf(ProviderWireNames.scopedName(provider, "read")) else emptySet()
+        }
+        val ledger = ToolTaskLedger()
+        val dispatched = AtomicInteger(0)
+        val invoker = ProviderInvoker { call ->
+            dispatched.incrementAndGet()
+            ProviderCallResult.Success(mapOf("text" to call.arguments["text"].toString()), "echoed")
+        }
+        val dispatcher = ProviderDispatcher(ledger, registry,
+            McpRegistry(McpHttpClient { _, _, _ -> McpHttpResponse(500, "", emptyMap()) },
+                InMemoryMcpCredentialStore()),
+            mapOf(provider to invoker))
+        // The model-exposure gate is structural, not advisory.
+        val modelCall = dispatcher.dispatchByAlias("echo", mapOf("text" to "hi"),
+            ProviderCallerKind.MODEL)
+        assertTrue(modelCall is ProviderCallResult.TypedError)
+        assertEquals(ProviderErrorCode.DENIED_PERMISSION,
+            (modelCall as ProviderCallResult.TypedError).code)
+        assertEquals("no model dispatch while exposure is off", 0, dispatched.get())
+        // The first successful call remembers the grant within its scopes.
+        assertTrue(dispatcher.dispatchByAlias("echo", mapOf("text" to "hi"))
+            is ProviderCallResult.Success)
+        val family = "provider:appfunctions:com.example.sample"
+        val record = ledger.journal().sourceAccess.single { it.family == family }
+        assertEquals(SourceAccessState.GRANTED, record.state)
+        assertEquals(setOf("appfunctions:com.example.sample:read"), record.scopes)
+        // A later grant attempt can never broaden the scopes.
+        ToolSourceAccess(ledger).recordProviderGrant(wire, setOf("battery.read"))
+        assertEquals(setOf("appfunctions:com.example.sample:read"),
+            ledger.journal().sourceAccess.single { it.family == family }.scopes)
+        assertEquals("the narrowing attempt dispatched nothing new", 1, dispatched.get())
+        // Denial blocks the provider adapter with a truthful receipt.
+        ToolSourceAccess(ledger).recordDenial(family)
+        val denied = dispatcher.dispatchByAlias("echo", mapOf("text" to "hi"))
+        assertTrue(denied is ProviderCallResult.TypedError)
+        assertEquals(ProviderErrorCode.DENIED_PERMISSION,
+            (denied as ProviderCallResult.TypedError).code)
+        assertEquals("denied calls never reach the adapter", 1, dispatched.get())
+        // The settings surface stays honest about availability.
+        val rows = ProviderSettings.rows(registry,
+            McpRegistry(McpHttpClient { _, _, _ -> McpHttpResponse(500, "", emptyMap()) },
+                InMemoryMcpCredentialStore()),
+            AppFunctionPlatformStatus(DiscoveryAccessMethod.ORDINARY_APP, false, 0,
+                "No provider declarations found by the package scan."))
+        val platformRow = rows.single { it.id == "appfunctions-platform" }
+        assertEquals("unavailable", platformRow.state)
+        assertTrue("access method is labeled", platformRow.explanation.contains("ordinary app"))
+        val projection = WorkflowSettingsProjection.from(ledger.journal(), 0L, rows)
+        assertEquals("provider rows reach the settings projection", rows, projection.providers)
     }
 
     // Leave this selection in durable preferences for the controller's separate-process check.

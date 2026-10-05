@@ -57,6 +57,9 @@
     "test54_workflowDraftNeedsEnablementAndRevisionKeepsRunningVersion",
     "test55_reminderTimingWindowsDstAndRebootDedup",
     "test56_missedRunEvaluationAndBoundedEffort",
+    "test57_appFunctionsDiscoveryAndControlledJourney",
+    "test58_mcpGuidedSetupAndServerStates",
+    "test59_providerGrantDisciplineAndExposureGate",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

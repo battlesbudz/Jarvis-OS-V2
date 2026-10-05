@@ -26,10 +26,19 @@ data class ConnectedToolRow(
 
 data class WorkflowSettingsProjection(
     val workflows: List<WorkflowSettingsRow>,
-    val tools: List<ConnectedToolRow>
+    val tools: List<ConnectedToolRow>,
+    /** M3: ecosystem providers with honest availability states (D36, T16, T17). */
+    val providers: List<ProviderSettingsRow> = emptyList()
 ) {
     companion object {
-        fun from(journal: ToolTaskJournal, nowMs: Long): WorkflowSettingsProjection {
+        fun from(journal: ToolTaskJournal, nowMs: Long): WorkflowSettingsProjection =
+            from(journal, nowMs, emptyList())
+
+        fun from(
+            journal: ToolTaskJournal,
+            nowMs: Long,
+            providers: List<ProviderSettingsRow>
+        ): WorkflowSettingsProjection {
             val seen = hashSetOf<String>()
             val current = journal.workflows.sortedByDescending { it.version }.filter { seen.add(it.id) }
             val rows = current.map { definition ->
@@ -56,7 +65,7 @@ data class WorkflowSettingsProjection(
                 ConnectedToolRow(family, ToolSourcePolicy.describeFamily(family),
                     record?.state?.name?.lowercase() ?: "not yet asked")
             }
-            return WorkflowSettingsProjection(rows, toolRows)
+            return WorkflowSettingsProjection(rows, toolRows, providers)
         }
 
         private fun triggerSummary(trigger: WorkflowTrigger): String = when (trigger) {

@@ -237,3 +237,13 @@
 -keep class com.battlesbudz.jarvis.v2.actions.TaskProjectionState { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.TaskProgressProjector { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.TaskProgressNotification { *; }
+# M3 ecosystem integrations: the release journeys drive the provider
+# registry, dispatcher, MCP flow and settings projection reflectively
+# through the shared test class loader; keep them unshrunk like the other
+# journey-driven action classes.
+-keep class com.battlesbudz.jarvis.v2.actions.Provider** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AppFunction** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.Mcp** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.Alias** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.Discovery** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TypeConversion** { *; }

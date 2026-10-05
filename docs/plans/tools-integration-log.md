@@ -5,6 +5,69 @@ Epic: [#8](https://github.com/battlesbudz/Jarvis-OS-V2/issues/8). Implementation
 workflow, whose push trigger covers `feature/**`; older entries below still say
 `muse/feature-tools`).
 
+## Item 7: M3 ecosystem integrations — 2026-10-04
+
+Implements AppFunctions discovery and MCP server integrations (D05, D07,
+T16, T17, T08-for-providers) on top of the M1 ledger/approval/grant model —
+extended, never duplicated. Provider exposure to the model stays
+structurally disabled until M7 (`ProviderExposure.MODEL_EXPOSURE_ENABLED =
+false`; model-kind calls are rejected, not policy-gated).
+
+Changed files (commit pending; server head `5cd75a8a` on `feature/muse-tools`
+before this slice):
+- `actions/ProviderIdentity.kt` (new): provider kinds/ids, canonical wire
+  names `provider:<kind>:<id>:<function>`, per-provider grant families,
+  namespaced scopes, `ProviderPricing` (UNKNOWN is never "free").
+- `actions/AppFunctionSchema.kt` (new): nested schema model + strict type
+  conversion (no coercion, exact path/expected/actual errors) + canonical
+  JSON/SHA-256 for schema hashing.
+- `actions/AppFunctionDiscovery.kt` (new): metadata, snapshot
+  diff/invalidation, collision-safe alias registry, task-relevant
+  selection, `ProviderRegistry`.
+- `actions/AppFunctionPlatform.kt` (new): honest ordinary-app platform
+  probe (framework class + heuristic package scan), access method always
+  labeled; empty results never block other adapters.
+- `actions/ProviderCall.kt` (new): `ProviderDispatcher` (exposure gate,
+  grant check, paid confirmation, strict conversion, typed results,
+  first-source grant recording) + controlled dependent-function journeys
+  with `${stepId.path}` bindings.
+- `actions/McpProtocol.kt` (new): JSON-RPC initialize/version negotiation,
+  tools/list, tools/call, SSE tolerance, pricing/scope extensions.
+- `actions/McpTransport.kt` (new): URL policy (https; http loopback-only;
+  no credentials in URLs), `McpCredentialStore` + Android Keystore
+  AES-GCM implementation, JVM-pure HttpURLConnection client.
+- `actions/McpRegistry.kt` (new): `McpSetupFlow` guided setup (URL →
+  negotiation → discovery → review, free-only default), refresh with
+  schema-change blocking, explicit UNAVAILABLE/DENIED/VERSION_MISMATCH/
+  DISABLED states, per-tool enablement, disconnect, secret deletion on
+  remove; `McpInvoker` executes enabled tools.
+- `actions/ProviderSettings.kt` (new): honest provider rows for settings.
+- `actions/ToolSourceAccess.kt`: provider families in `familyOf`,
+  `requiredScopes` via the registry-backed resolver, namespace-cap helpers,
+  `recordProviderGrant`.
+- `actions/ToolTaskLedger.kt`: `recordSourceGrant(request,
+  providerScopes)` — provider grants capped at declared scopes under the
+  static namespace cap.
+- `actions/ToolTaskStore.kt`: provider-family scope-cap validation;
+  provider wire names admitted to the journal.
+- `actions/WorkflowSettingsProjection.kt`: `providers` rows.
+- `ui/WorkflowSettings.kt`: "Connected providers" section with honest
+  states/explanations + guided MCP connect dialog (custom URL).
+- `JarvisRuntime.kt` / `MainActivity.kt` / `ui/JarvisApp.kt` /
+  `ui/VoiceCallScreen.kt`: provider registries, T08 scope-resolver seeding,
+  one platform probe, `connectMcpServer` threading.
+- `app/proguard-rules.pro`: keeps for the new journey-driven classes.
+- Tests: `M3EcosystemTest` (new JVM, incl. a real loopback-HTTP
+  negotiation test); `ReleaseJourneyTest` test57 (T16), test58 (T17),
+  test59 (T08 provider grants + exposure gate); `scenarios.json` now lists
+  59 named methods.
+- Docs: M3 checkpoint in the implementation plan (T16/T17 annotated),
+  this log entry, `docs/verification/features.md` M3 row.
+
+Evidence: exact-SHA CI (build-release JVM tests, API 30 + API 35 sandbox,
+consolidated receipt) pending after push; the release is published by the
+workflow's publish job and renamed per the slice convention.
+
 ## Item 6: M2 reusable workflows and triggers — 2026-10-04
 
 Implements versioned step graphs with typed result bindings, deterministic

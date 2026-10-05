@@ -122,9 +122,17 @@ class ToolTaskLedger(
      * are automatically exposed. A tool can never claim another family's
      * scopes, and a persisted grant can never exceed its family's set.
      */
-    fun recordSourceGrant(request: ActionRequest) {
+    fun recordSourceGrant(request: ActionRequest, providerScopes: Set<String> = emptySet()) {
         val family = ToolSourcePolicy.familyOf(request.name)
-        val scopes = ToolSourcePolicy.familyScopes(family)
+        val isProvider = ToolSourcePolicy.isProviderFamily(family)
+        val scopes = if (isProvider) {
+            // M3: a provider grant is capped at the provider's declared
+            // scopes under the static namespace cap — never another
+            // provider's or family's scopes.
+            providerScopes.filter { ToolSourcePolicy.providerScopeWithinCap(family, it) }.toSet()
+        } else {
+            ToolSourcePolicy.familyScopes(family)
+        }
         if (scopes.isEmpty()) return
         val at = now()
         store.updateJournal { j ->
@@ -132,6 +140,10 @@ class ToolTaskLedger(
             val next = when {
                 existing == null -> ToolSourceAccessRecord(family, scopes, SourceAccessState.GRANTED, at)
                 existing.state != SourceAccessState.GRANTED -> existing
+                isProvider -> existing.copy(
+                    scopes = (existing.scopes + scopes)
+                        .filter { ToolSourcePolicy.providerScopeWithinCap(family, it) }.toSet(),
+                    updatedAtMs = at)
                 else -> existing.copy(
                     scopes = (existing.scopes + scopes) intersect ToolSourcePolicy.familyScopes(family),
                     updatedAtMs = at)

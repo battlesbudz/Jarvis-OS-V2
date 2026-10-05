@@ -73,6 +73,8 @@ fun JarvisApp(
     // M2 saved workflows (D36): settings lists them with enable/disable; chat stays the operating surface.
     workflowSettings: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection?>? = null,
     onWorkflowSetEnabled: (String, Boolean) -> Unit = { _, _ -> },
+    // M3 guided MCP setup (D07): custom server URL from the settings dialog.
+    onConnectMcpServer: (String, String, String, (String) -> Unit) -> Unit = { _, _, _, done -> done("MCP setup is unavailable right now.") },
 ) {
     var selectedModel by remember { mutableStateOf(store.selectedModel()) }
     var selectionError by remember { mutableStateOf<String?>(null) }
@@ -338,7 +340,9 @@ fun JarvisApp(
                         onSilentWork = onSilentWork,
                         // M2 saved workflows (D36).
                         workflowSettings = workflowSettings,
-                        onWorkflowSetEnabled = onWorkflowSetEnabled
+                        onWorkflowSetEnabled = onWorkflowSetEnabled,
+                        // M3 guided MCP setup (D07).
+                        onConnectMcpServer = onConnectMcpServer
                     ) }
                     }
                     }

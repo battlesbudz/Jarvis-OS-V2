@@ -5,6 +5,87 @@ Follow-up source baseline: `feature-tools` at `bfeca6d06dc3dba583e0f92e812046e9e
 Created: September 24, 2026. Updated: September 30, 2026 (America/New_York). Owner: Justin Battles.
 Status: existing tools scope retained; September 29 autonomous messaging/warm-inference requirements integrated. New phases below are planned, not implemented or verified by this documentation update.
 
+## Implementation checkpoint — October 4, 2026 (M3 ecosystem integrations)
+
+M3 is implemented on `feature/muse-tools` (no PR, no merge), building on the
+M1 ledger/approval/grant model — extended, never duplicated. `FinalVoiceToolGuard`
+untouched. Provider exposure to the model stays structurally disabled until M7.
+
+- Provider identity (T08 for providers): `actions/ProviderIdentity.kt` —
+  `ProviderId` (AppFunctions package / MCP server id), canonical wire names
+  `provider:<kind>:<id>:<function>`, one grant family per provider
+  (`provider:<kind>:<id>`), and namespaced scopes `<kind>:<id>:<scope>`.
+  `ToolSourcePolicy` maps provider tools to their family, resolves required
+  scopes from the live registries, and enforces the T08 cap statically:
+  a persisted provider grant can only ever hold its own namespace's scopes
+  (no registry needed at journal read time). `ToolTaskLedger.recordSourceGrant`
+  takes declared scopes for providers and intersects them with the cap;
+  `FileToolTaskStore` refuses tampered cross-provider scopes; provider wire
+  names persist in the journal like any other request.
+- AppFunctions discovery (T16): `actions/AppFunctionDiscovery.kt` holds
+  metadata (nested parameter/result schemas, version, scopes, pricing),
+  snapshot diffing (added/updated/removed — uninstalls invalidate exactly
+  the affected aliases), `AppFunctionAliasRegistry` for collision-safe
+  model-visible aliases (colliding names get provider-suffixed unique
+  aliases, every collision flagged and explained), and keyword
+  task-relevant selection. `actions/AppFunctionSchema.kt` is the strict
+  nested type converter — no coercion, unknown keys rejected, exact
+  path/expected/actual errors — plus canonical JSON for schema hashing.
+  `actions/AppFunctionPlatform.kt` probes the real device with ordinary app
+  access only (framework class presence + heuristic package scan) and
+  always labels the access method; an empty result is reported honestly
+  and never blocks the other adapters.
+- MCP (T17): `actions/McpProtocol.kt` (JSON-RPC initialize with version
+  negotiation, tools/list, tools/call, SSE-envelope tolerance, pricing and
+  scope extensions `x-jarvis-pricing`/`x-jarvis-scopes` — absent pricing is
+  UNKNOWN, never free), `actions/McpTransport.kt` (URL policy: https, or
+  http for loopback only, no credentials in URLs; `McpCredentialStore`
+  with an Android Keystore AES-GCM implementation — secrets never enter
+  configs, logs, receipts or memory; JVM-pure HttpURLConnection client),
+  `actions/McpRegistry.kt` (`McpSetupFlow`: URL → negotiation → discovery →
+  review, each stage failing explicitly; free-only default enablement;
+  refresh with schema-change detection blocking calls until re-reviewed;
+  explicit UNAVAILABLE/DENIED/VERSION_MISMATCH/DISABLED states; per-tool
+  enablement; disconnect removes nothing silently and deletes the secret).
+  Paid tools return `NeedsPurchaseConfirmation` instead of dispatching —
+  D11 is never waived.
+- Dispatch (T16/T17): `actions/ProviderCall.kt` — `ProviderDispatcher`
+  admits in pipeline order (model-exposure gate, remembered source access,
+  paid confirmation, strict conversion, invoker), returns typed results
+  (Success, TypedError, UriResult, NeedsUserInteraction,
+  NeedsPurchaseConfirmation), records the provider's first-source grant on
+  success, and runs controlled dependent-function journeys with
+  `${stepId.path}` output bindings (first non-success stops the journey;
+  completed steps never re-run).
+- Settings (D36): `actions/ProviderSettings.kt` projects every known
+  provider with an honest state and plain-language explanation; the
+  settings dialog gains a "Connected providers" section plus the guided
+  MCP connect dialog (custom URL, staged honest results). `JarvisRuntime`
+  seeds the T08 scope resolver, probes the platform once, and refreshes
+  the projection.
+- Tests: `M3EcosystemTest` (JVM) covers identity/caps, strict nested
+  conversion, diff/invalidation, collisions, selection, dispatch grants
+  and typed results, paid confirmation, the model-exposure gate, journeys,
+  URL policy, protocol parsing, guided setup (fake + real loopback HTTP),
+  schema change/disconnect/enablement, credential hygiene, file-store
+  round-trip and tamper refusal, and the settings projection. Release
+  journeys `test57` (T16: real platform probe, controlled dependent
+  journey, collisions, nested types, invalidation, provider T08),
+  `test58` (T17: guided setup against a real loopback server, free-only
+  default, paid confirmation, schema change, auth failure, disconnect),
+  `test59` (T08 provider grants, exposure gate, honest settings rows).
+  The named contract is now 59 methods. `docs/verification/features.md`
+  updated.
+
+M3 definition of done: the capability matrix has real evidence for each
+advertised operation — successful calls and negative cases — and the UI
+explains unavailable providers. Broad AppFunctions consumer access remains
+platform-gated (the probe reports it honestly); the validated adapters stay
+green regardless. Provider exposure stays disabled until M7.
+
+M3 remaining: none — ecosystem integrations are implemented.
+M4–M8 and A0–A6 are still planned.
+
 ## Implementation checkpoint — October 4, 2026 (M2 reusable workflows and triggers)
 
 M2 is implemented on `feature/muse-tools` (no PR, no merge), building on the
@@ -559,8 +640,8 @@ J = JVM/contract; A = Android integration/release UI; D = real weights/physical 
 | T13 | Reminder timing and DND; flexible schedules, notification/location triggers, DST and reboot deduplication | J,A,D | M2 |
 | T14 | Missed task relevant/irrelevant/uncertain outcomes; bounded effort/no-progress asks user without duplicate effects | J,A,D | M2 |
 | T15 | Relevant proactive chat/notification without user turn; conversational calls read successive bubbles; explicit silent mode stays silent; source references survive | J,A,D | M1–M4 |
-| T16 | AppFunctions nested schema/types, state/update/uninstall/name collisions; ordinary-app access vs ADB labeled | J,A,D | M3 |
-| T17 | MCP guided/custom connection, auth failure, disconnect, schema change, scope limits and paid-service default | J,A | M3 |
+| T16 | AppFunctions nested schema/types, state/update/uninstall/name collisions; ordinary-app access vs ADB labeled | J,A,D | M3 — implemented (see M3 checkpoint); D-level real-priority-app evidence still pending platform eligibility |
+| T17 | MCP guided/custom connection, auth failure, disconnect, schema change, scope limits and paid-service default | J,A | M3 — implemented (see M3 checkpoint) |
 | T18 | Browser manual/auth/native handoff, changed-page validation, sensitive submit approval; credentials absent from logs/memory | J,A,D | M4 |
 | T19 | Import review, disabled missing dependencies, sanitized export, compatible auto-update vs changed-script review | J,A | M5 |
 | T20 | Isolated scripts cannot escape grants; CPU/memory/output limits and stop work; unsupported runtimes explain failure | J,A,D | M5 |

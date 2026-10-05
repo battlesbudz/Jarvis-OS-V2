@@ -26,48 +26,88 @@ data class ToolSourceAccessRecord(
  * future work for runtime-permission-gated tools (M3+).
  */
 object ToolSourcePolicy {
-    fun familyOf(tool: String): String = when (tool) {
-        "read_battery", "set_volume", "open_app" -> "phone"
-        "media_control" -> "media"
-        "open_website" -> "web"
-        "open_settings" -> "settings"
-        "navigate" -> "map"
-        "screen_observe", "screen_tap", "screen_scroll", "screen_type" -> "screen"
-        else -> "unknown"
+    fun familyOf(tool: String): String {
+        ProviderWireNames.parseToolName(tool)?.let { return ProviderWireNames.familyFor(it.provider) }
+        return when (tool) {
+            "read_battery", "set_volume", "open_app" -> "phone"
+            "media_control" -> "media"
+            "open_website" -> "web"
+            "open_settings" -> "settings"
+            "navigate" -> "map"
+            "screen_observe", "screen_tap", "screen_scroll", "screen_type" -> "screen"
+            else -> "unknown"
+        }
+    }
+
+    /** M3: one grant family per ecosystem provider (`provider:<kind>:<id>`). */
+    fun providerFamily(provider: ProviderId): String = ProviderWireNames.familyFor(provider)
+
+    fun isProviderFamily(family: String): Boolean = ProviderWireNames.isProviderFamily(family)
+
+    /**
+     * M3 static T08 cap for provider families: a persisted grant can only
+     * ever hold scopes namespaced to its own provider. The registry is not
+     * needed to enforce this.
+     */
+    fun providerScopeWithinCap(family: String, scope: String): Boolean =
+        ProviderWireNames.scopeWithinCap(family, scope)
+
+    /** Resolves a provider wire name to its declared scopes; set by the runtime from the registries. */
+    private var providerScopeResolver: (String) -> Set<String> = { emptySet() }
+
+    fun setProviderScopeResolver(resolver: (String) -> Set<String>) {
+        providerScopeResolver = resolver
     }
 
     /** The full scope set a family grant may ever cover; a grant can never exceed this. */
-    fun familyScopes(family: String): Set<String> = when (family) {
-        "phone" -> setOf("battery.read", "audio.modify", "app.launch")
-        "media" -> setOf("media.keys")
-        "web" -> setOf("web.open")
-        "settings" -> setOf("settings.open")
-        "map" -> setOf("maps.directions")
-        "screen" -> setOf("screen.read", "screen.control")
-        else -> emptySet()
+    fun familyScopes(family: String): Set<String> {
+        // M3: provider families are capped dynamically — their declared
+        // scopes are recorded at grant time under the static namespace cap
+        // (see providerScopeWithinCap); there is no fixed static set.
+        if (isProviderFamily(family)) return emptySet()
+        return when (family) {
+            "phone" -> setOf("battery.read", "audio.modify", "app.launch")
+            "media" -> setOf("media.keys")
+            "web" -> setOf("web.open")
+            "settings" -> setOf("settings.open")
+            "map" -> setOf("maps.directions")
+            "screen" -> setOf("screen.read", "screen.control")
+            else -> emptySet()
+        }
     }
 
-    fun requiredScopes(tool: String): Set<String> = when (tool) {
-        "read_battery" -> setOf("battery.read")
-        "set_volume" -> setOf("audio.modify")
-        "open_app" -> setOf("app.launch")
-        "media_control" -> setOf("media.keys")
-        "open_website" -> setOf("web.open")
-        "open_settings" -> setOf("settings.open")
-        "navigate" -> setOf("maps.directions")
-        "screen_observe" -> setOf("screen.read")
-        "screen_tap", "screen_scroll", "screen_type" -> setOf("screen.control")
-        else -> emptySet()
+    fun requiredScopes(tool: String): Set<String> {
+        if (ProviderWireNames.isProviderTool(tool)) return providerScopeResolver(tool)
+        return when (tool) {
+            "read_battery" -> setOf("battery.read")
+            "set_volume" -> setOf("audio.modify")
+            "open_app" -> setOf("app.launch")
+            "media_control" -> setOf("media.keys")
+            "open_website" -> setOf("web.open")
+            "open_settings" -> setOf("settings.open")
+            "navigate" -> setOf("maps.directions")
+            "screen_observe" -> setOf("screen.read")
+            "screen_tap", "screen_scroll", "screen_type" -> setOf("screen.control")
+            else -> emptySet()
+        }
     }
 
-    fun describeFamily(family: String): String = when (family) {
-        "phone" -> "phone controls"
-        "media" -> "media control"
-        "web" -> "website opening"
-        "settings" -> "system settings"
-        "map" -> "map directions"
-        "screen" -> "screen control"
-        else -> "this phone feature"
+    fun describeFamily(family: String): String {
+        ProviderWireNames.parseFamily(family)?.let { provider ->
+            return when (provider.kind) {
+                ProviderKind.APP_FUNCTIONS -> "AppFunctions provider ${provider.id}"
+                ProviderKind.MCP -> "MCP server ${provider.id}"
+            }
+        }
+        return when (family) {
+            "phone" -> "phone controls"
+            "media" -> "media control"
+            "web" -> "website opening"
+            "settings" -> "system settings"
+            "map" -> "map directions"
+            "screen" -> "screen control"
+            else -> "this phone feature"
+        }
     }
 }
 
@@ -105,6 +145,15 @@ class ToolSourceAccess(private val ledger: ToolTaskLedger) {
      * beyond the family's scope set (T08).
      */
     fun recordGrant(request: ActionRequest) = ledger.recordSourceGrant(request)
+
+    /**
+     * M3: remember a provider's first-source access after a successful
+     * provider call. The grant is capped at the provider's declared scopes
+     * intersected with the static namespace cap — a provider can never
+     * claim another provider's (or family's) scopes.
+     */
+    fun recordProviderGrant(wireName: String, declaredScopes: Set<String>) =
+        ledger.recordSourceGrant(ActionRequest(wireName), declaredScopes)
 
     fun revoke(family: String): Boolean = ledger.revokeSourceAccess(family)
 

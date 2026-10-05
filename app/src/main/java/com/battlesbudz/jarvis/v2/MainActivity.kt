@@ -151,6 +151,8 @@ class MainActivity : ComponentActivity() {
                 // M2 saved workflows (D36): settings lists them; chat stays the operating surface.
                 workflowSettings = runtime.workflowSettings,
                 onWorkflowSetEnabled = runtime::setWorkflowEnabled,
+                // M3 guided MCP setup (D07): custom server URL from the settings dialog.
+                onConnectMcpServer = runtime::connectMcpServer,
                 callState = voiceSessionController.state,
                 onSendChat = runtime::sendChat,
                 onSelectConversation = runtime::selectConversation,

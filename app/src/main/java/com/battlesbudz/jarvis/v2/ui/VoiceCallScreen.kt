@@ -50,7 +50,9 @@ internal fun VoiceCallScreen(
     onSilentWork: (Boolean) -> Unit = {},
     // M2 saved workflows (D36): settings lists them with enable/disable; chat stays the operating surface.
     workflowSettings: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection?>? = null,
-    onWorkflowSetEnabled: (String, Boolean) -> Unit = { _, _ -> }
+    onWorkflowSetEnabled: (String, Boolean) -> Unit = { _, _ -> },
+    // M3 guided MCP setup (D07): custom server URL from the settings dialog.
+    onConnectMcpServer: (String, String, String, (String) -> Unit) -> Unit = { _, _, _, done -> done("MCP setup is unavailable right now.") }
 ) {
     val runtime = com.battlesbudz.jarvis.v2.voice.VoiceSessionUi
     val runtimePhase by runtime.phase.collectAsState()
@@ -227,7 +229,8 @@ internal fun VoiceCallScreen(
         // M2 saved workflows (D36): list with enable/disable; chat stays the operating surface.
         val workflowProjection by (workflowSettings?.collectAsState()
             ?: androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection?>(null) })
-        WorkflowSettingsSection(projection = workflowProjection, onSetEnabled = onWorkflowSetEnabled)
+        WorkflowSettingsSection(projection = workflowProjection, onSetEnabled = onWorkflowSetEnabled,
+            onConnectMcpServer = onConnectMcpServer)
         androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 16.dp))
         Text("Voice & microphone", style = MaterialTheme.typography.titleMedium)
         Text("Voice: Piper Northern English", style = MaterialTheme.typography.bodyMedium)
