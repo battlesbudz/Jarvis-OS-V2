@@ -17,6 +17,14 @@ object VoiceSessionUi {
     val liveTranscript = MutableStateFlow("")
     val level = MutableStateFlow(0f)
     val armed = MutableStateFlow(false)
+    /**
+     * True from the first arm() until the voice session is truly stopped.
+     * Unlike [armed], this survives the farewell -> "Waiting for Hey Jarvis"
+     * phase, where the armed flag can drop while the session (wake listener,
+     * microphone, foreground service) is fully alive. The End-call button
+     * gates on this so it stays visible for the whole session lifetime.
+     */
+    val sessionAlive = MutableStateFlow(false)
     val paused = MutableStateFlow(false)
     internal val liveReplyMetrics = MutableStateFlow<LiveReplyMetrics?>(null)
     internal fun beginLiveMetrics(metrics: LiveReplyMetrics) { liveReplyMetrics.value = metrics }

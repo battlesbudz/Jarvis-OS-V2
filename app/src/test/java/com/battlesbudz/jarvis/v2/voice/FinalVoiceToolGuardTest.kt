@@ -48,4 +48,14 @@ class FinalVoiceToolGuardTest {
     @Test fun spokenScheduleViewIsAllowed() {
         assertTrue(FinalVoiceToolGuard.allows("show my schedule", "show_schedule", emptyMap()))
     }
+    @Test fun spokenMediaVerbMustMatchProposedAction() {
+        assertTrue(FinalVoiceToolGuard.allows("play some music", "media_control", mapOf("action" to "play")))
+        assertTrue(FinalVoiceToolGuard.allows("pause the music", "media_control", mapOf("action" to "pause")))
+        assertFalse("verb mismatch must not pass",
+            FinalVoiceToolGuard.allows("play some music", "media_control", mapOf("action" to "pause")))
+        assertFalse("unknown verb must not pass",
+            FinalVoiceToolGuard.allows("play some music", "media_control", mapOf("action" to "blast")))
+        assertFalse("late cancellation must not pass",
+            FinalVoiceToolGuard.allows("pause the music actually cancel that", "media_control", mapOf("action" to "pause")))
+    }
 }

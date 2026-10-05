@@ -11,9 +11,10 @@ import android.os.BatteryManager
  * Consulted at admission and immediately before dispatch: a denied or
  * missing Android capability blocks dispatch on every adapter with a
  * truthful receipt. Intent-family tools (open_app/open_website/
- * open_settings/navigate) are verified by the dispatch receipt itself —
- * startActivity returns void, so the executor reports "could not find" or
- * "requested" honestly rather than claiming an external effect.
+ * open_settings/navigate) additionally gate background launches on a real
+ * background activity-start exemption (selected assistant or "Display over
+ * other apps"); with no exemption the executor reports the launch as blocked
+ * instead of claiming an effect it cannot verify.
  */
 fun interface ToolCapabilityProbe {
     /** Null when the capability is present; otherwise the honest user-facing reason it is missing. */

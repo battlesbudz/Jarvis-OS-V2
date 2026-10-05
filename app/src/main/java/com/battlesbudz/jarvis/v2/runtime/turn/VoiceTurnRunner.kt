@@ -135,7 +135,12 @@ internal class VoiceTurnRunner(
                             call.events.report(lifetime.finalMessage)
                             call.events.finished(lifetime.finalMessage)
                             if (call.state.armed && !lifetime.finalMessage.contains("turn failed", true)) call.events.restartTurn()
-                            else { call.state.armed = false; call.events.stopService() }
+                            else {
+                                call.state.armed = false
+                                // Turn teardown with a service stop is a true session end.
+                                com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.sessionAlive.value = false
+                                call.events.stopService()
+                            }
                         }
                     }
                 }

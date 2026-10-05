@@ -79,25 +79,29 @@ class AndroidMobileActionExecutor(
                 if (assistantResult != null) {
                     onDiagnostic("App launch route=selected_assistant visible=$visible selected=$assistantSelected app=${resolution.app.packageName} result=${assistantResult.succeeded}")
                     assistantResult
-                } else try {
-                    // Activity visibility alone does not describe Android's launch eligibility.
-                    // A recently used activity, system binding, or user-granted exemption may
-                    // allow this explicit command. Let Android evaluate the real request.
-                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(launchIntent)
-                    onDiagnostic("App launch route=${if (visible) "visible_activity" else "background_request"} visible=$visible selected=$assistantSelected app=${resolution.app.packageName} result=submitted foregroundTransition=unobserved")
-                    // startActivity returns void, and BAL denials may be silent. A background
-                    // submission must not be described as a verified foreground transition.
-                    ExecutionResult(true, if (visible) "Opening ${resolution.app.label}."
-                        else "Requested opening ${resolution.app.label}.")
-                } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                    throw cancelled
-                } catch (error: android.content.ActivityNotFoundException) {
-                    onDiagnostic("App launch result=rejected type=ActivityNotFoundException app=${resolution.app.packageName}")
-                    ExecutionResult(false, "Could not open ${resolution.app.label}: ${error.message ?: "Android rejected the launch."}")
-                } catch (error: SecurityException) {
-                    onDiagnostic("App launch result=rejected type=SecurityException app=${resolution.app.packageName}")
-                    ExecutionResult(false, "Could not open ${resolution.app.label}: ${error.message ?: "Android rejected the launch."}")
+                } else {
+                    // Background activity starts are silently dropped by Android 10+
+                    // background activity-start (BAL) restrictions without an exemption.
+                    // The selected-assistant route above is one exemption;
+                    // "Display over other apps" (SYSTEM_ALERT_WINDOW, declared in the
+                    // manifest) is another. With neither, a raw background
+                    // startActivity can never arrive — report the block honestly
+                    // instead of the old optimistic "Requested opening X" success.
+                    val overlayExempt = android.provider.Settings.canDrawOverlays(context)
+                    if (!visible && !overlayExempt) {
+                        onDiagnostic("App launch result=blocked_background visible=false selected=$assistantSelected app=${resolution.app.packageName}")
+                        ExecutionResult(
+                            false,
+                            "I couldn't open ${resolution.app.label} while another app is in front — " +
+                                "Android blocked the background launch. Set Jarvis as your default assistant " +
+                                "or grant \"Display over other apps\" in Settings, then ask again."
+                        )
+                    } else submitLaunch(
+                        launchIntent,
+                        resolution.app.label,
+                        route = if (visible) "visible_activity" else "overlay_exempt",
+                        assistantSelected = assistantSelected
+                    )
                 }
             }
         }
@@ -132,14 +136,12 @@ class AndroidMobileActionExecutor(
         is MobileAction.OpenWebsite -> dispatchViewIntent(
             Intent(Intent.ACTION_VIEW, Uri.parse(action.url)),
             label = action.url,
-            openedText = "Opening",
-            requestedText = "Requested opening"
+            openedText = "Opening"
         )
         is MobileAction.OpenSettings -> dispatchViewIntent(
             Intent(action.screen.intentAction),
             label = "${action.screen.label} settings",
-            openedText = "Opening",
-            requestedText = "Requested opening"
+            openedText = "Opening"
         )
         is MobileAction.Navigate -> dispatchViewIntent(
             Intent(
@@ -150,8 +152,7 @@ class AndroidMobileActionExecutor(
                 )
             ),
             label = action.destination,
-            openedText = "Showing directions to",
-            requestedText = "Requested directions to"
+            openedText = "Showing directions to"
         )
         MobileAction.ScreenObserve -> observeScreen()
         is MobileAction.ScreenTap -> dispatchScreenMutation(
@@ -217,18 +218,46 @@ class AndroidMobileActionExecutor(
     }
 
     /**
+     * Fire a NEW_TASK launch and report the platform's verdict. Callers must
+     * only reach this when the launch is eligible: the activity is visible,
+     * the selected-assistant route handled it, or a BAL exemption (overlay
+     * grant) applies. startActivity returns void, so only the caught
+     * rejections are reported as failures; silent background drops are kept
+     * out by the eligibility check at the call sites.
+     */
+    private fun submitLaunch(
+        intent: Intent,
+        label: String,
+        route: String,
+        assistantSelected: Boolean
+    ): ExecutionResult = try {
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+        onDiagnostic("App launch route=$route selected=$assistantSelected label=$label result=submitted")
+        ExecutionResult(true, "Opening $label.")
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (error: android.content.ActivityNotFoundException) {
+        onDiagnostic("App launch result=rejected type=ActivityNotFoundException label=$label")
+        ExecutionResult(false, "Could not open $label: ${error.message ?: "Android rejected the launch."}")
+    } catch (error: SecurityException) {
+        onDiagnostic("App launch result=rejected type=SecurityException label=$label")
+        ExecutionResult(false, "Could not open $label: ${error.message ?: "Android rejected the launch."}")
+    }
+
+    /**
      * Dispatch a view intent through the same launch path as OpenApp: the
      * assistant service when the activity is not visible, otherwise a direct
-     * startActivity. startActivity returns void and background denials may be
-     * silent, so a background submission is reported as requested, not verified.
+     * startActivity. A background launch with no BAL exemption is reported as
+     * blocked, never as an optimistic "requested" success.
      */
     private fun dispatchViewIntent(
         intent: Intent,
         label: String,
-        openedText: String,
-        requestedText: String
+        openedText: String
     ): ExecutionResult {
         val visible = canLaunchDirectly()
+        val assistantSelected = com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.isSelected(context)
         val assistantResult = if (!visible)
             com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.launch(context, intent, label)
         else null
@@ -236,19 +265,26 @@ class AndroidMobileActionExecutor(
             onDiagnostic("View intent route=selected_assistant visible=$visible label=$label result=${assistantResult.succeeded}")
             return assistantResult
         }
-        return try {
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-            onDiagnostic("View intent route=${if (visible) "visible_activity" else "background_request"} visible=$visible label=$label result=submitted foregroundTransition=unobserved")
-            ExecutionResult(true, if (visible) "$openedText $label." else "$requestedText $label.")
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
-        } catch (error: android.content.ActivityNotFoundException) {
-            onDiagnostic("View intent result=rejected type=ActivityNotFoundException label=$label")
-            ExecutionResult(false, "Could not open $label: ${error.message ?: "Android rejected the launch."}")
-        } catch (error: SecurityException) {
-            onDiagnostic("View intent result=rejected type=SecurityException label=$label")
-            ExecutionResult(false, "Could not open $label: ${error.message ?: "Android rejected the launch."}")
+        val overlayExempt = android.provider.Settings.canDrawOverlays(context)
+        if (!visible && !overlayExempt) {
+            onDiagnostic("View intent result=blocked_background visible=false label=$label")
+            return ExecutionResult(
+                false,
+                "I couldn't open $label while another app is in front — " +
+                    "Android blocked the background launch. Set Jarvis as your default assistant " +
+                    "or grant \"Display over other apps\" in Settings, then ask again."
+            )
+        }
+        return submitLaunch(
+            intent,
+            label,
+            route = if (visible) "visible_activity" else "overlay_exempt",
+            assistantSelected = assistantSelected
+        ).let { result ->
+            // Preserve the caller's wording for the verified launch; the
+            // "requested" wording no longer occurs because unverified
+            // background submissions are blocked above.
+            if (result.succeeded) ExecutionResult(true, "$openedText $label.") else result
         }
     }
 

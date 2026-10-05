@@ -88,6 +88,7 @@ class MainActivity : ComponentActivity() {
             runVoiceTurn(pending.start, pending.report, pending.onTranscript, pending.onFinished)
         } else {
             runtime.voiceSessionArmed = false
+            com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.sessionAlive.value = false
             pending.report("Microphone permission is required for Voice Calls.")
             pending.onFinished("Voice Call could not start because microphone permission was denied.")
         }

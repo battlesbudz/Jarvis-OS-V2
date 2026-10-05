@@ -367,6 +367,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         returnToWakeCuePending.set(false)
         com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
         voiceSessionArmed = true
+        // The session now exists until a true stop: the End-call button gates
+        // on this, not on the armed flag, which can drop during the
+        // farewell -> "Waiting for Hey Jarvis" phase while the session lives.
+        com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.sessionAlive.value = true
         startVoiceDiagnostics("Jarvis session — awaiting wake word")
     }
     fun sendChat(text: String, attachment: com.battlesbudz.jarvis.v2.chat.ChatAttachment? = null): String? {
@@ -744,7 +748,11 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             runCatching { voiceSessionController.recordTerminalInputForCall(input.callId, input.id,
                 "Cancelled before processing typed message: ${input.text}") }
         }
-        if (stopSession) voiceSessionArmed = false
+        if (stopSession) {
+            voiceSessionArmed = false
+            // True session end: the End-call button's sessionAlive gate drops here.
+            com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.sessionAlive.value = false
+        }
         com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
         com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.liveTranscript.value = ""
         val status = if (stopSession) "Jarvis session stopped — microphone off."

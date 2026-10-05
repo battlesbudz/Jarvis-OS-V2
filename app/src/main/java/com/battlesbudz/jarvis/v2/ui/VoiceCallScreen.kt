@@ -45,9 +45,11 @@ internal object VoiceCallOverlay {
     onEndCall: () -> Unit,
     transcriptSpeaker: String = "",
     transcript: String = "",
-    // A call is in flight while the runtime is armed OR a voice turn is running.
-    // The end-call affordance must not depend on `active` alone: on device the
-    // armed flag can lag the turn, which left the bubble with no way to end it.
+    // A call is in flight while the voice session is alive OR a voice turn is
+    // running. The end-call affordance must not depend on `active` (the armed
+    // flag) alone: on device the armed flag can drop during the farewell ->
+    // wake-listening phase while the session is fully alive, which left the
+    // bubble with no way to end it.
     callInFlight: Boolean = active,
 ) {
     // Only the orb and its opaque control pill paint over the chat. The live
@@ -129,6 +131,10 @@ internal fun VoiceCallScreen(
     val runtimePhase by runtime.phase.collectAsState()
     val runtimeStatus by runtime.status.collectAsState()
     val runtimeArmed by runtime.armed.collectAsState()
+    // Session aliveness, not the armed flag: the End-call button must survive
+    // the farewell -> "Waiting for Hey Jarvis" phase, where armed can drop
+    // while the session (wake listener, mic, foreground service) is alive.
+    val sessionAlive by runtime.sessionAlive.collectAsState()
     val microphonePaused by runtime.paused.collectAsState()
     val microphoneLevel by runtime.level.collectAsState()
     val chatSending by chatBusy.collectAsState()
@@ -237,9 +243,13 @@ internal fun VoiceCallScreen(
                 if (runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING) playback.level else microphoneLevel
             } else 0f,
             active = runtimeArmed,
-            // A turn already counts as a call: the end-call button must appear
-            // even if the armed flag has not (or no longer) caught up on device.
-            callInFlight = runtimeArmed || turnInFlight,
+            // The session is in flight from the first arm() until a true stop,
+            // including the farewell -> "Waiting for Hey Jarvis" phase. The
+            // end-call button must not depend on the armed flag or the
+            // composable's turn state alone: on device, "hey Jarvis" rearms
+            // the call inside the runtime turn chain without touching either,
+            // which left the bubble with no way to end it.
+            callInFlight = sessionAlive || turnInFlight,
             microphonePaused = microphonePaused,
             canStart = !runtimeArmed && !chatSending && !turnInFlight && !wakeTesting && !inputTesting && !audioPathTesting,
             stopReplyAvailable = runtimeArmed && (

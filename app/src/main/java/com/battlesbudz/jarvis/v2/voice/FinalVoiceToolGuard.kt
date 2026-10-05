@@ -24,6 +24,16 @@ object FinalVoiceToolGuard {
             }
             "read_battery" -> true
             "show_schedule" -> true
+            "media_control" -> {
+                // Media verbs are voice-triggerable; re-parse the final spoken
+                // clause deterministically and require the spoken verb to match
+                // the planned argument, mirroring the set_volume final-number
+                // discipline. Without this branch every voice media request was
+                // rejected before dispatch ("Failed; unattempted: media_control").
+                val verb = arguments["action"]?.trim().orEmpty()
+                if (com.battlesbudz.jarvis.v2.actions.MediaControlAction.fromVerb(verb) == null) return false
+                com.battlesbudz.jarvis.v2.actions.ActionRequestText.mediaAction(text) == verb
+            }
             "create_reminder" -> {
                 // Reminders are voice-triggerable per D32 (triggers by
                 // voice/text) and need no separate confirmation (not a D11
