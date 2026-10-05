@@ -289,3 +289,8 @@
 -keep,allowoptimization class com.battlesbudz.jarvis.v2.voice.VoiceCallService$Companion {
     public *** getStopRequested();
 }
+
+# Wisp's release journey calls the shipping observer-driven header and DTO from test DEX.
+-keep,includedescriptorclasses class com.battlesbudz.jarvis.v2.ui.WispPresenceKt { *; }
+-keep class com.battlesbudz.jarvis.v2.presentation.AgentActivitySnapshot { *; }
+-keep class com.battlesbudz.jarvis.v2.presentation.AgentActivityKind { *; }

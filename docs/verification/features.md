@@ -1,5 +1,66 @@
 # Feature and acceptance map
 
+## Persistent Wisp character — October 5, 2026
+
+Wisp is the single, always-present top-center character in the app shell, including
+idle chat, model setup, saved calls and Memory navigation. There is no visual-mode
+selector. The prior in-call waveform is replaced; the existing call-control pill,
+shared transcript, draft, stop-reply, microphone pause and explicit end behavior
+remain. The character reserves a small header area instead of painting over text.
+The compact layout is used for short/landscape windows. Standard modal dialogs
+still appear above the app chrome; the full-screen development-metrics dialog
+covers Wisp until dismissed. This is in-app UI, not an Android system overlay.
+
+`WispPresence` observes existing process owners and has no operation authority.
+`WispPresenter` deterministically maps call phases, microphone/playback envelopes,
+chat activity and durable phone-task state to a pose. `WispCharacter` draws the
+curled cyan silhouette, translucent filaments, face and purposeful props using
+native Compose Canvas. Its frame loop stops below STARTED, respects Android's
+animator duration scale (including zero/reduced motion), and uses no bitmap blur
+or offscreen WebView. Audio updates are collected below the app/transcript owner.
+
+Current honest action coverage:
+
+- `JournaledActionPipeline` publishes its already-durable RUNNING boundary before
+  Android execution and terminal state afterward. Battery checking uses a scan
+  card, volume changes use sliders, and app opening uses an application tile.
+  Fast operations may be conflated by StateFlow; they are never slowed just to
+  display an animation. An observer failure cannot block or retry an action.
+- Actual `ReferenceGroundingClient` byte reads emit a token-scoped
+  CHECKING_REFERENCES observation. Query-routing heuristics do not emit fake
+  search activity. Snapshots contain constant presentation metadata, not URLs,
+  prompts or source contents. Stale cleanup cannot clear a newer operation.
+- Approval/input requirements show a waiting pose. Failure and unknown outcomes
+  show attention, not success. A brief success pose requires a newly observed
+  durable SUCCEEDED receipt with `ExecutionResult.Outcome.SUCCEEDED`; history
+  loading, recomposition and conversation changes do not replay celebrations.
+- Setup download/import/test flags, active/wake listening, thinking, speaking,
+  microphone pause and interruption retain their real owners. Actual model failures
+  and exhausted/terminal voice failures emit a bounded error lease; a new admitted
+  turn clears it and stale expiry cannot dismiss newer work. Stop, pause and
+  recoverable microphone handoffs are not errors. The drawing does not invent
+  document editing, send messages, complete tasks or grant approval.
+
+| Layer | Acceptance and failure cases | Coverage |
+| --- | --- | --- |
+| JVM presentation | Real audio owner, finite/clamped amplitude, idle after end, conversation isolation, approval priority, unknown versus success, fresh receipts only | `WispPresentationTest` |
+| JVM operation observation | Actual read boundaries, failure/finally cleanup, stale and cancelled leases, observer failure isolation, no prose/heuristic events | `AgentActivityTest` |
+| JVM phone dispatch | Durable RUNNING before executor, terminal state after result/cancellation, observer exceptions do not block effects, invalid claims do not animate | `JournaledActionPipelineTest` |
+| Android UI | Character above transcript and centered while idle; real state DTO projection; unknown outcome never celebrates; repeated call/start/back/pause/speak/stop/end preserves draft and character | Release `test49_wispStaysPresentAndReflectsOnlyObservedWork` |
+| Android navigation | Shipping parent retains Wisp before calls and during Memory; former waveform removed from the call controls | Release `test28`, `test30`, existing layout/accessibility matrix |
+| Visual/performance | Actual shared DrawScope code rendered at 168×104 and compact 116×66, all 11 poses; Android screenshots and physical frame/thermal measurements remain separately required | Shared Skia render is geometry evidence, not an Android screenshot or APK verification |
+
+Local focused verification passed with Kotlin 2.3.21 and coroutines 1.9.0:
+87 JVM regressions across 12 classes, plus the architecture guard and 232 Python
+helper tests. The Android character/header compile check used actual API 35,
+Compose 1.7.6 and lifecycle 2.8.7 classes with no DTO stubs. All 11 shared-drawing
+poses rendered at three sizes; 132 maximum-audio edge checks found no clipping.
+These are targeted checks, not the full Gradle/R8/native/Android gate.
+
+The Android release journey and exact-head release matrix must pass before an APK
+is called verified. General model accuracy, acoustic reaction, Bluetooth, physical
+microphone/speaker behavior and device performance remain physical-device signoff.
+
 ## API 29 graphics boot loop — October 5, 2026
 
 [Build 986](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37236069164)

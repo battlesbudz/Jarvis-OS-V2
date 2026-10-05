@@ -148,7 +148,7 @@ internal fun ConversationScreen(
                     PhoneTaskPanel(taskJournal, thread.id, taskError, onPhoneTaskAction)
                 }
                 LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().testTag("conversation_transcript"),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = if (voiceVisible) 280.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = if (voiceVisible) 180.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(thread.messages, key = { it.id }) { message ->
                         Surface(color = if (message.role == "You") MaterialTheme.colorScheme.secondaryContainer
                             else MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium) {

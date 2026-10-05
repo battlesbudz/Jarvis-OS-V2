@@ -112,6 +112,7 @@ class MainActivity : ComponentActivity() {
                 store = runtime.modelStore,
                 conversationHistory = runtime.conversationHistory,
                 chatBusy = runtime.chatBusy,
+                agentActivity = runtime.agentActivity,
                 phoneTasks = runtime.phoneTasks,
                 phoneTaskError = runtime.phoneTaskError,
                 onPhoneTaskAction = runtime::phoneTaskAction,

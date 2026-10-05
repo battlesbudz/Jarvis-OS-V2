@@ -6,7 +6,7 @@ import com.battlesbudz.jarvis.v2.voice.VoiceCallRecord
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -53,6 +53,7 @@ fun JarvisApp(
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onExportSpeechAudio: () -> Unit,
+    agentActivity: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.presentation.AgentActivitySnapshot?>? = null,
     phoneTasks: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>? = null,
     phoneTaskError: kotlinx.coroutines.flow.StateFlow<String?>? = null,
     onPhoneTaskAction: (String, Long, String) -> Unit = { _, _, _ -> },
@@ -86,81 +87,101 @@ fun JarvisApp(
             colorScheme = darkColorScheme()
         ) {
             Surface(modifier = Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
-                if (setup.modelsReady && setup.smokeTestPassed) {
-                    Box(Modifier.fillMaxSize()) {
-                        Box(Modifier.fillMaxSize().then(if (showingMemory) Modifier.clearAndSetSemantics { } else Modifier)) {
-                            when {
-                                selectedVoiceCall != null -> {
-                                    val selected = requireNotNull(selectedVoiceCall)
-                                    VoiceCallDetailScreen(
-                                        call = selected,
-                                        benchmarkStore = benchmarkStore,
-                                        onBack = { selectedVoiceCall = null },
-                                        onContinueChat = {
-                                            conversationHistory.openCall(selected)
-                                            onSelectConversation(conversationHistory.current.value.id)
-                                            selectedVoiceCall = null
-                                            showingVoiceCalls = false
-                                        },
-                                        onResume = { done ->
-                                            onResumeVoiceCall(selected) { error ->
-                                                done(error)
-                                                if (error == null) {
-                                                    resumedVoiceCall = selected
-                                                    selectedVoiceCall = null
-                                                    showingVoiceCalls = false
+                WispAppFrame(presence = {
+                    WispPresence(conversationHistory, chatBusy, callState, voicePlayback, phoneTasks, phoneTaskError,
+                        agentActivity, setupActivity = when {
+                            setup.modelDownloadRunning -> WispPresentation(WispActivity.CONNECTING, "Installing model")
+                            setup.modelImportRunning -> WispPresentation(WispActivity.CHECKING, "Importing model")
+                            setup.smokeTestRunning -> WispPresentation(WispActivity.THINKING, "Testing model")
+                            else -> null
+                        })
+                }) {
+                    if (setup.modelsReady && setup.smokeTestPassed) {
+                        Box(Modifier.fillMaxSize()) {
+                            Box(Modifier.fillMaxSize().then(if (showingMemory) Modifier.clearAndSetSemantics { } else Modifier)) {
+                                when {
+                                    selectedVoiceCall != null -> {
+                                        val selected = requireNotNull(selectedVoiceCall)
+                                        VoiceCallDetailScreen(
+                                            call = selected,
+                                            benchmarkStore = benchmarkStore,
+                                            onBack = { selectedVoiceCall = null },
+                                            onContinueChat = {
+                                                conversationHistory.openCall(selected)
+                                                onSelectConversation(conversationHistory.current.value.id)
+                                                selectedVoiceCall = null
+                                                showingVoiceCalls = false
+                                            },
+                                            onResume = { done ->
+                                                onResumeVoiceCall(selected) { error ->
+                                                    done(error)
+                                                    if (error == null) {
+                                                        resumedVoiceCall = selected
+                                                        selectedVoiceCall = null
+                                                        showingVoiceCalls = false
+                                                    }
                                                 }
                                             }
+                                        )
+                                    }
+                                    showingVoiceCalls -> VoiceCallsScreen(
+                                        calls = voiceCalls,
+                                        onBack = { showingVoiceCalls = false },
+                                        onSelect = { selectedVoiceCall = it },
+                                        onDelete = {
+                                            onDeleteVoiceCall(it)
+                                            voiceCalls = onRefreshVoiceCalls()
                                         }
                                     )
-                                }
-                                showingVoiceCalls -> VoiceCallsScreen(
-                                    calls = voiceCalls,
-                                    onBack = { showingVoiceCalls = false },
-                                    onSelect = { selectedVoiceCall = it },
-                                    onDelete = {
-                                        onDeleteVoiceCall(it)
-                                        voiceCalls = onRefreshVoiceCalls()
+                                    else -> ConversationScreen(
+                                        history = conversationHistory, busy = chatBusy, callState = callState, onSend = onSendChat,
+                                        phoneTasks = phoneTasks, phoneTaskError = phoneTaskError, onPhoneTaskAction = onPhoneTaskAction,
+                                        selectedModel = setup.selectedModel,
+                                        onSelectConversation = onSelectConversation, onEndVoice = onEndVoiceCall,
+                                        onOpenVoiceCalls = {
+                                            voiceCalls = onRefreshVoiceCalls()
+                                            showingVoiceCalls = true
+                                        },
+                                        resumedVoice = resumedVoiceCall != null,
+                                        onOpenMemory = { showingMemory = true },
+                                        forceVoiceDestination = memoryReturnToVoice,
+                                        onForceVoiceConsumed = { memoryReturnToVoice = false },
+                                        forceChatDestination = memoryReturnToChat,
+                                        onForceChatConsumed = { memoryReturnToChat = false },
+                                        pipelineBenchmarkStore = benchmarkStore
+                                    ) { visible, settingsOpen, dismissSettings, startRequest ->
+                                        VoiceCallScreen(
+                                            visible = visible, settingsOpen = settingsOpen, memoryOpen = showingMemory,
+                                            onDismissSettings = dismissSettings, startRequest = startRequest,
+                                            chatBusy = chatBusy, modelSelector = modelSelector,
+                                            resumedCall = resumedVoiceCall,
+                                            onResumeConsumed = { resumedVoiceCall = null },
+                                            voicePlayback = voicePlayback,
+                                            onVoiceTurn = onVoiceTurn,
+                                            onWakeTest = onWakeTest,
+                                            onStopWakeTest = onStopWakeTest,
+                                            onEndVoiceCall = onEndVoiceCall,
+                                            onCopyDiagnostics = onCopyDiagnostics,
+                                            onExportSpeechAudio = onExportSpeechAudio,
+                                            pipelineBenchmarkStore = benchmarkStore,
+                                            callEvidenceActions = callEvidence,
+                                        )
                                     }
-                                )
-                                else -> ConversationScreen(
-                                    history = conversationHistory, busy = chatBusy, callState = callState, onSend = onSendChat,
-                                    phoneTasks = phoneTasks, phoneTaskError = phoneTaskError, onPhoneTaskAction = onPhoneTaskAction,
-                                    selectedModel = setup.selectedModel,
-                                    onSelectConversation = onSelectConversation, onEndVoice = onEndVoiceCall,
-                                    onOpenVoiceCalls = {
-                                        voiceCalls = onRefreshVoiceCalls()
-                                        showingVoiceCalls = true
-                                    },
-                                    resumedVoice = resumedVoiceCall != null,
-                                    onOpenMemory = { showingMemory = true },
-                                    forceVoiceDestination = memoryReturnToVoice,
-                                    onForceVoiceConsumed = { memoryReturnToVoice = false },
-                                    forceChatDestination = memoryReturnToChat,
-                                    onForceChatConsumed = { memoryReturnToChat = false },
-                                    pipelineBenchmarkStore = benchmarkStore
-                                ) { visible, settingsOpen, dismissSettings, startRequest ->
-                                    VoiceCallScreen(
-                                        visible = visible, settingsOpen = settingsOpen, memoryOpen = showingMemory,
-                                        onDismissSettings = dismissSettings, startRequest = startRequest,
-                                        chatBusy = chatBusy, modelSelector = modelSelector,
-                                        resumedCall = resumedVoiceCall,
-                                        onResumeConsumed = { resumedVoiceCall = null },
-                                        voicePlayback = voicePlayback,
-                                        onVoiceTurn = onVoiceTurn,
-                                        onWakeTest = onWakeTest,
-                                        onStopWakeTest = onStopWakeTest,
-                                        onEndVoiceCall = onEndVoiceCall,
-                                        onCopyDiagnostics = onCopyDiagnostics,
-                                        onExportSpeechAudio = onExportSpeechAudio,
-                                        pipelineBenchmarkStore = benchmarkStore,
-                                        callEvidenceActions = callEvidence,
-                                    )
                                 }
                             }
+                            // Keep the conversation and voice controller composed beneath this review surface.
+                            if (showingMemory) MemoryScreen(
+                                memoryOs = memoryOs,
+                                onBack = { showingMemory = false },
+                                callActive = activeVoiceCall,
+                                callStatus = activeVoiceStatus,
+                                onEndCall = onEndVoiceCall,
+                                onOpenChat = { memoryReturnToVoice = false; memoryReturnToChat = true; showingMemory = false },
+                                onOpenVoice = { memoryReturnToChat = false; memoryReturnToVoice = true; showingMemory = false },
+                            )
                         }
-                        // Keep the conversation and voice controller composed beneath this review surface.
-                        if (showingMemory) MemoryScreen(
+                    } else if (showingMemory) {
+                        MemoryScreen(
                             memoryOs = memoryOs,
                             onBack = { showingMemory = false },
                             callActive = activeVoiceCall,
@@ -169,34 +190,24 @@ fun JarvisApp(
                             onOpenChat = { memoryReturnToVoice = false; memoryReturnToChat = true; showingMemory = false },
                             onOpenVoice = { memoryReturnToChat = false; memoryReturnToVoice = true; showingMemory = false },
                         )
+                    } else {
+                        ModelSetup(
+                            modelSelector = modelSelector,
+                            ready = setup.modelInstalled,
+                            gemmaReady = setup.modelInstalled,
+                            downloadAvailable = !setup.selectedModel.requiresAccess,
+                            testing = setup.smokeTestRunning,
+                            importing = setup.modelImportRunning,
+                            downloading = setup.modelDownloadRunning,
+                            downloadBytes = setup.downloadBytes,
+                            downloadTotalBytes = setup.downloadTotalBytes,
+                            status = setup.setupStatus,
+                            elapsedSeconds = setup.setupElapsedSeconds,
+                            onDownload = { setup.download(setup.selectedModel) },
+                            onPickGemma = { pickerModelId = setup.selectedModel.id; gemmaPicker.launch(arrayOf("*/*")) },
+                            onTest = setup::test
+                        )
                     }
-                } else if (showingMemory) {
-                    MemoryScreen(
-                        memoryOs = memoryOs,
-                        onBack = { showingMemory = false },
-                        callActive = activeVoiceCall,
-                        callStatus = activeVoiceStatus,
-                        onEndCall = onEndVoiceCall,
-                        onOpenChat = { memoryReturnToVoice = false; memoryReturnToChat = true; showingMemory = false },
-                        onOpenVoice = { memoryReturnToChat = false; memoryReturnToVoice = true; showingMemory = false },
-                    )
-                } else {
-                    ModelSetup(
-                        modelSelector = modelSelector,
-                        ready = setup.modelInstalled,
-                        gemmaReady = setup.modelInstalled,
-                        downloadAvailable = !setup.selectedModel.requiresAccess,
-                        testing = setup.smokeTestRunning,
-                        importing = setup.modelImportRunning,
-                        downloading = setup.modelDownloadRunning,
-                        downloadBytes = setup.downloadBytes,
-                        downloadTotalBytes = setup.downloadTotalBytes,
-                        status = setup.setupStatus,
-                        elapsedSeconds = setup.setupElapsedSeconds,
-                        onDownload = { setup.download(setup.selectedModel) },
-                        onPickGemma = { pickerModelId = setup.selectedModel.id; gemmaPicker.launch(arrayOf("*/*")) },
-                        onTest = setup::test
-                    )
                 }
             }
         }

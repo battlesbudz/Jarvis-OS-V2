@@ -50,6 +50,10 @@ import com.battlesbudz.jarvis.v2.ui.ConversationScreen
 import com.battlesbudz.jarvis.v2.ui.VoiceCallOverlay
 import com.battlesbudz.jarvis.v2.ui.MemoryScreen
 import com.battlesbudz.jarvis.v2.ui.JarvisApp
+import com.battlesbudz.jarvis.v2.ui.WispPresence
+import com.battlesbudz.jarvis.v2.ui.WispAppFrame
+import com.battlesbudz.jarvis.v2.presentation.AgentActivitySnapshot
+import com.battlesbudz.jarvis.v2.presentation.AgentActivityKind
 import com.battlesbudz.jarvis.v2.ui.PipelineBenchmarkScreen
 import com.battlesbudz.jarvis.v2.diagnostics.*
 import com.battlesbudz.jarvis.v2.voice.*
@@ -1529,10 +1533,12 @@ class ReleaseJourneyTest {
                     )
                 } }
             } }
+            assertNotNull("Wisp is present before starting a call", find(By.res("jarvis_wisp")))
             VoiceSessionUi.armed.value = true
             assertNotNull(find(By.res("voice_call_overlay")))
             assertNotNull(find(By.res("voice_call_status")))
             clickEnabled(By.res("memory_open"))
+            assertNotNull("Wisp stays present while reviewing memory", find(By.res("jarvis_wisp")))
             assertNotNull(find(By.text("Memory")))
             clickEnabled(By.res("memory_nav_chat"))
             assertNotNull(find(By.res("chat_composer")))
@@ -1675,7 +1681,7 @@ class ReleaseJourneyTest {
             busy.value = false
             enabled(By.res("voice_call_open"))
             find(By.res("voice_call_open")).click()
-            assertNotNull("Voice button opens the in-window waveform bubble", find(By.res("voice_call_overlay")))
+            assertNotNull("Voice button opens the in-window call controls", find(By.res("voice_call_overlay")))
             assertNotNull(find(By.res("voice_start")))
             assertNotNull("The separate dictation microphone stays in the composer", find(By.res("chat_voice_input")))
             VoiceSessionUi.status.value = "Voice Call is listening · live transcript fixture"
@@ -1687,15 +1693,15 @@ class ReleaseJourneyTest {
             VoiceSessionUi.liveTranscript.value = liveCaption
             assertEquals("Live speech appears without minimizing", find(By.res("voice_call_live_transcript")).text)
             assertNotNull(find(By.res("voice_call_status")))
-            assertNotNull(find(By.res("voice_call_orb")))
+            assertFalse("The call pill must not duplicate the persistent character", device.hasObject(By.res("voice_call_orb")))
             assertNotNull(find(By.res("voice_call_end")))
             assertNotNull(find(By.res("voice_call_pause")))
             assertFalse("A minimize control is not part of the call overlay", device.hasObject(By.res("voice_call_minimize")))
             val liveTranscript = find(By.text("Transcript is updating while I speak"))
             val overlayBounds = find(By.res("voice_call_overlay")).visibleBounds
             val transcriptBounds = find(By.res("conversation_transcript")).visibleBounds
-            assertTrue("Waveform bubble must be visible in the chat window", overlayBounds.width() > 0 && overlayBounds.height() > 0)
-            assertTrue("The floating orb must leave most chat width clear", overlayBounds.width() < transcriptBounds.width() / 2)
+            assertTrue("Call controls must be visible in the chat window", overlayBounds.width() > 0 && overlayBounds.height() > 0)
+            assertTrue("The call controls must leave most chat width clear", overlayBounds.width() < transcriptBounds.width() / 2)
             assertFalse("Live text must remain outside the floating controls", android.graphics.Rect.intersects(
                 find(By.res("voice_call_live_transcript")).visibleBounds, overlayBounds))
             assertTrue("The conversation viewport remains on screen under the bubble", transcriptBounds.width() > 0 && transcriptBounds.height() > 0)
@@ -3153,6 +3159,155 @@ class ReleaseJourneyTest {
                 VoiceSessionUi.paused.value = originalPaused
                 VoiceCallService.stopRequested.value = originalServiceStop
             }
+        }
+    }
+
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @Test fun test49_wispStaysPresentAndReflectsOnlyObservedWork() {
+        val prefs = context.getSharedPreferences("release-wisp", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val history = ConversationHistory(prefs)
+        history.appendUser("Keep this conversation visible while Jarvis works.")
+        val busy = MutableStateFlow(false)
+        val call = MutableStateFlow(VoiceSessionState.PASSIVE_LISTENING)
+        val playback = MutableStateFlow(VoicePlaybackFrame())
+        val journal = MutableStateFlow<ToolTaskJournal?>(ToolTaskJournal())
+        val observed = MutableStateFlow<AgentActivitySnapshot?>(null)
+        val approvals = AtomicInteger()
+        val stops = AtomicInteger()
+        val ends = AtomicInteger()
+        fun endCall() {
+            ends.incrementAndGet()
+            VoiceSessionUi.armed.value = false
+            VoiceSessionUi.phase.value = VoicePhase.IDLE
+            VoiceSessionUi.level.value = 0f
+            playback.value = VoicePlaybackFrame()
+            call.value = VoiceSessionState.PASSIVE_LISTENING
+        }
+        fun pose(label: String) {
+            assertTrue("Wisp should show $label", device.wait(
+                Until.hasObject(By.res("jarvis_wisp_status").text(label)), 10_000))
+        }
+        fun task(state: ToolTaskState, tool: String = "read_battery", generation: Long = 0,
+            outcome: ExecutionResult.Outcome? = null) {
+            journal.value = ToolTaskJournal(attempts = listOf(ToolTaskAttempt(
+                "wisp-task", generation, state, ActionRequest(tool, if (tool == "set_volume") mapOf("level" to "25") else emptyMap()),
+                1, 2, resultOutcome = outcome)))
+        }
+        try {
+            VoiceSessionUi.armed.value = false
+            VoiceSessionUi.phase.value = VoicePhase.IDLE
+            VoiceSessionUi.paused.value = false
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme(colorScheme = androidx.compose.material3.darkColorScheme()) {
+                    Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                        WispAppFrame(presence = {
+                            WispPresence(history, busy, call, playback, journal, null, observed)
+                        }) {
+                                ConversationScreen(history, busy, call, onSend = { _, _ -> null },
+                                    selectedModel = LocalModelSpec("wisp-fixture", "fixture.bin", recommendedGpu = false),
+                                    onSelectConversation = { null }, onEndVoice = { done -> endCall(); done("") },
+                                    onOpenVoiceCalls = {}, resumedVoice = false,
+                                    phoneTasks = journal, onPhoneTaskAction = { _, _, _ -> approvals.incrementAndGet() },
+                                    voiceContent = { visible, _, _, request ->
+                                        androidx.compose.runtime.LaunchedEffect(request) {
+                                            if (request > 0) {
+                                                VoiceSessionUi.armed.value = true
+                                                VoiceSessionUi.phase.value = VoicePhase.LISTENING
+                                                call.value = VoiceSessionState.ACTIVELY_LISTENING
+                                            }
+                                        }
+                                        val armed by VoiceSessionUi.armed.collectAsState()
+                                        val phase by VoiceSessionUi.phase.collectAsState()
+                                        val paused by VoiceSessionUi.paused.collectAsState()
+                                        if (visible) VoiceCallOverlay.Bubble(phase.label, phase.label, 0f,
+                                            armed, paused, !armed, phase == VoicePhase.SPEAKING,
+                                            onStart = {}, onStopReply = {
+                                                stops.incrementAndGet(); playback.value = VoicePlaybackFrame()
+                                                VoiceSessionUi.phase.value = VoicePhase.LISTENING
+                                            }, onToggleMicrophone = {
+                                                VoiceSessionUi.paused.value = !VoiceSessionUi.paused.value
+                                            }, onEndCall = { endCall() })
+                                    })
+                        }
+                    }
+                }
+            } }
+            pose("Ready")
+            val wisp = find(By.res("jarvis_wisp")).visibleBounds
+            val transcript = find(By.res("conversation_transcript")).visibleBounds
+            assertTrue("Wisp stays above the transcript", wisp.bottom <= transcript.top)
+            assertEquals("Wisp is centered", device.displayWidth / 2, wisp.centerX())
+            assertFalse("There is no visual-mode setting", device.hasObject(By.text("Visual mode")))
+            captureEvidence("test49_wispReady")
+            busy.value = true
+            pose("Thinking")
+            observed.value = AgentActivitySnapshot(1, "another-conversation", AgentActivityKind.CHECKING_REFERENCES, "Checking references")
+            pose("Thinking")
+            observed.value = AgentActivitySnapshot(2, history.current.value.id, AgentActivityKind.CHECKING_REFERENCES, "Checking references")
+            pose("Checking references")
+            captureEvidence("test49_wispReferences")
+            observed.value = null
+            busy.value = false
+            observed.value = AgentActivitySnapshot(3, history.current.value.id, AgentActivityKind.ERROR, "Something went wrong")
+            pose("Something went wrong")
+            busy.value = true
+            pose("Thinking")
+            observed.value = null
+            busy.value = false
+            for ((tool, label) in listOf("open_app" to "Opening app", "read_battery" to "Checking battery", "set_volume" to "Adjusting volume")) {
+                task(ToolTaskState.RUNNING, tool)
+                pose(label)
+                captureEvidence("test49_wisp_$tool")
+            }
+            task(ToolTaskState.WAITING_APPROVAL, "set_volume", 1)
+            pose("Waiting for your approval")
+            assertEquals("Animation must not approve work", 0, approvals.get())
+            captureEvidence("test49_wispApproval")
+            task(ToolTaskState.SUCCEEDED, "set_volume", 2, ExecutionResult.Outcome.SUCCEEDED)
+            pose("Task complete")
+            captureEvidence("test49_wispSuccess")
+            pose("Ready")
+            task(ToolTaskState.UNKNOWN_OUTCOME, "open_app", 3, ExecutionResult.Outcome.UNKNOWN_COMPLETION)
+            pose("Check the task outcome")
+            captureEvidence("test49_wispUnknownOutcome")
+            assertEquals(0, approvals.get())
+            journal.value = ToolTaskJournal()
+            pose("Ready")
+            enterText(By.res("chat_composer"), "Keep my Wisp draft")
+            hideKeyboardWithoutNavigating()
+            repeat(2) {
+                clickEnabled(By.res("voice_call_open"))
+                pose("Listening")
+                VoiceSessionUi.level.value = .7f
+                assertNotNull(find(By.res("conversation_transcript")))
+                device.pressBack()
+                assertNotNull("Back must retain the character", find(By.res("jarvis_wisp")))
+                assertNotNull("Back must retain call controls", find(By.res("voice_call_end")))
+                clickEnabled(By.res("voice_call_pause"))
+                pose("Microphone paused")
+                clickEnabled(By.res("voice_call_pause"))
+                pose("Listening")
+                VoiceSessionUi.phase.value = VoicePhase.SPEAKING
+                playback.value = VoicePlaybackFrame("A controlled playback frame", .8f)
+                pose("Speaking")
+                captureEvidence("test49_wispSpeaking$it")
+                clickEnabled(By.res("voice_call_stop_reply"))
+                pose("Listening")
+                clickEnabled(By.res("voice_call_end"))
+                pose("Ready")
+                assertTrue(find(By.res("chat_composer")).text.contains("Keep my Wisp draft"))
+            }
+            assertEquals(2, stops.get())
+            assertEquals(2, ends.get())
+            assertNotNull("Ending a call never removes Wisp", find(By.res("jarvis_wisp")))
+            assertFalse(device.hasObject(By.res("voice_call_orb")))
+        } finally {
+            VoiceSessionUi.armed.value = false
+            VoiceSessionUi.phase.value = VoicePhase.IDLE
+            VoiceSessionUi.paused.value = false
+            VoiceSessionUi.level.value = 0f
+            VoiceSessionUi.liveTranscript.value = ""
         }
     }
 

@@ -5,6 +5,14 @@ class JournaledActionPipeline(
     private val ledger: ToolTaskLedger,
     private val executor: MobileActionExecutor
 ) {
+    private var onJournalChanged: () -> Unit = {}
+
+    /** Preserve the original executor/trailing-lambda constructor used by release callers. */
+    constructor(ledger: ToolTaskLedger, executor: MobileActionExecutor, onJournalChanged: () -> Unit) :
+        this(ledger, executor) {
+        this.onJournalChanged = onJournalChanged
+    }
+
     fun execute(request: ActionRequest): ExecutionResult {
         val frozenRequest = request.copy(arguments = request.arguments.toMap())
         val validation = MobileActionValidator().validate(frozenRequest)
@@ -37,23 +45,33 @@ class JournaledActionPipeline(
     }
 
     private fun perform(running: ToolTaskAttempt, durableGroup: Boolean): ExecutionResult {
-        val result = try { MobileActionPipeline(executor = executor).execute(running.request) }
-        catch (error: Exception) {
-            // Cancellation or a programming error can arrive after a synchronous Android effect.
-            try { save(running, ExecutionResult(ExecutionResult.Outcome.UNKNOWN_COMPLETION,
-                "Execution ended before completion could be confirmed."), durableGroup) }
-            catch (_: ToolTaskStorageException) { /* Durable RUNNING will recover as unknown. */ }
-            throw error
-        }
-        return try {
-            if (save(running, result, durableGroup) == null)
-                ExecutionResult(ExecutionResult.Outcome.UNKNOWN_COMPLETION, "This phone action's completion could not be recorded.")
-            else result
-        } catch (_: ToolTaskStorageException) {
-            ExecutionResult(ExecutionResult.Outcome.UNKNOWN_COMPLETION,
-                "The action ran, but I couldn't save its completion. I won't repeat it automatically.")
+        // Intent is already durably RUNNING. Publish the real boundary without delaying dispatch
+        // for an animation; fast operations may still be conflated by a UI StateFlow collector.
+        observeJournal()
+        try {
+            val result = try { MobileActionPipeline(executor = executor).execute(running.request) }
+            catch (error: Exception) {
+                // Cancellation or a programming error can arrive after a synchronous Android effect.
+                try { save(running, ExecutionResult(ExecutionResult.Outcome.UNKNOWN_COMPLETION,
+                    "Execution ended before completion could be confirmed."), durableGroup) }
+                catch (_: ToolTaskStorageException) { /* Durable RUNNING will recover as unknown. */ }
+                throw error
+            }
+            return try {
+                if (save(running, result, durableGroup) == null)
+                    ExecutionResult(ExecutionResult.Outcome.UNKNOWN_COMPLETION, "This phone action's completion could not be recorded.")
+                else result
+            } catch (_: ToolTaskStorageException) {
+                ExecutionResult(ExecutionResult.Outcome.UNKNOWN_COMPLETION,
+                    "The action ran, but I couldn't save its completion. I won't repeat it automatically.")
+            }
+        } finally {
+            observeJournal()
         }
     }
+
+    /** Observation cannot authorize, block, retry or replace an action's outcome. */
+    private fun observeJournal() { runCatching { onJournalChanged() } }
 
     private fun save(running: ToolTaskAttempt, result: ExecutionResult, durableGroup: Boolean): ToolTaskAttempt? {
         if (durableGroup) return ledger.finish(running, result)

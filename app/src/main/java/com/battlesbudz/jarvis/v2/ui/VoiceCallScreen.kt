@@ -47,14 +47,12 @@ internal object VoiceCallOverlay {
     transcriptSpeaker: String = "",
     transcript: String = ""
 ) {
-    // Only the orb and its opaque control pill paint over the chat. The live
-    // transcript belongs to the conversation, rather than a duplicate overlay.
+    // Wisp lives in the persistent app header. This compact pill retains the same
+    // call controls; the transcript stays in the conversation.
     Box(Modifier.fillMaxSize().testTag("voice_call_overlay_layer")) {
         Column(Modifier.align(Alignment.BottomEnd).imePadding()
             .padding(end = 16.dp, bottom = 104.dp).width(112.dp).testTag("voice_call_overlay"),
             horizontalAlignment = Alignment.CenterHorizontally) {
-            VoiceOrb(phase = phase, level = level, diameter = 100.dp, showPhaseLabel = false,
-                modifier = Modifier.testTag("voice_call_orb"))
             androidx.compose.material3.Surface(shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 3.dp) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {

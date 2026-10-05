@@ -83,4 +83,102 @@ class JournaledActionPipelineTest {
             assertEquals(outcome, ToolTaskLedger(FileToolTaskStore(file)).snapshot().single().resultOutcome)
         }
     }
+
+    @Test fun observerSeesDurableRunningBeforeExecutorAndReceiptAfterward() = withFile { file ->
+        for (bound in listOf(false, true)) {
+            file.delete()
+            val ledger = ToolTaskLedger(FileToolTaskStore(file))
+            val observed = mutableListOf<ToolTaskState>()
+            var calls = 0
+            val request = ActionRequest("read_battery")
+            val pipeline = JournaledActionPipeline(ledger, MobileActionExecutor {
+                calls++
+                assertEquals(listOf(ToolTaskState.RUNNING), observed)
+                ExecutionResult(true, "85%")
+            }, onJournalChanged = {
+                observed += ToolTaskLedger(FileToolTaskStore(file)).snapshot().single().state
+            })
+            val result = if (bound) {
+                val group = ledger.admit(listOf(request), "conversation-a")
+                pipeline.executeBound(requireNotNull(ledger.get(group.attemptIds.single())), request)
+            } else pipeline.execute(request)
+
+            assertTrue(result.succeeded)
+            assertEquals(1, calls)
+            assertEquals(listOf(ToolTaskState.RUNNING, ToolTaskState.SUCCEEDED), observed)
+        }
+    }
+
+    @Test fun observerSeesFailureAndCancellationWithoutChangingTheOriginalOutcome() = withFile { file ->
+        for (error in listOf(CancellationException("cancel"), IllegalArgumentException("bug"))) {
+            file.delete()
+            val ledger = ToolTaskLedger(FileToolTaskStore(file))
+            val observed = mutableListOf<ToolTaskState>()
+            var calls = 0
+            val pipeline = JournaledActionPipeline(ledger, MobileActionExecutor { calls++; throw error },
+                onJournalChanged = { observed += ledger.snapshot().single().state })
+
+            try { pipeline.execute(ActionRequest("read_battery")); fail("Expected original exception") }
+            catch (caught: Exception) { assertSame(error, caught) }
+            assertEquals(1, calls)
+            assertEquals(listOf(ToolTaskState.RUNNING, ToolTaskState.UNKNOWN_OUTCOME), observed)
+        }
+    }
+
+    @Test fun observerFailureCannotBlockRetryOrReplaceDispatch() = withFile { file ->
+        val ledger = ToolTaskLedger(FileToolTaskStore(file))
+        var calls = 0
+        var observations = 0
+        val pipeline = JournaledActionPipeline(ledger, MobileActionExecutor {
+            calls++
+            ExecutionResult(true, "85%")
+        }, onJournalChanged = {
+            observations++
+            throw IllegalStateException("fixture presentation failure")
+        })
+
+        assertTrue(pipeline.execute(ActionRequest("read_battery")).succeeded)
+        assertEquals(1, calls)
+        assertEquals(2, observations)
+        assertEquals(ToolTaskState.SUCCEEDED, ledger.snapshot().single().state)
+    }
+
+    @Test fun rejectedRequestsNeverPublishRunningOrCallExecutor() = withFile { file ->
+        val ledger = ToolTaskLedger(FileToolTaskStore(file))
+        var calls = 0
+        var observations = 0
+        val pipeline = JournaledActionPipeline(ledger, MobileActionExecutor {
+            calls++
+            ExecutionResult(true, "effect")
+        }, onJournalChanged = { observations++ })
+
+        assertEquals(ExecutionResult.Outcome.REJECTED_VALIDATION,
+            pipeline.execute(ActionRequest("set_volume", mapOf("level" to "999"))).outcome)
+        assertEquals(0, calls)
+        assertEquals(0, observations)
+        assertFalse(file.exists())
+    }
+
+    @Test fun failedReceiptWritePublishesActualRunningStateWithoutInventingSuccess() = withFile { file ->
+        val goodStore = FileToolTaskStore(file)
+        var writes = 0
+        val store = object : ToolTaskStore {
+            override fun read() = goodStore.read()
+            override fun update(change: (List<ToolTaskAttempt>) -> List<ToolTaskAttempt>): List<ToolTaskAttempt> {
+                if (++writes == 3) throw ToolTaskStorageException()
+                return goodStore.update(change)
+            }
+        }
+        val ledger = ToolTaskLedger(store)
+        val observed = mutableListOf<ToolTaskState>()
+        var calls = 0
+        val result = JournaledActionPipeline(ledger, MobileActionExecutor {
+            calls++
+            ExecutionResult(true, "effect")
+        }, onJournalChanged = { observed += ledger.snapshot().single().state }).execute(ActionRequest("read_battery"))
+
+        assertEquals(ExecutionResult.Outcome.UNKNOWN_COMPLETION, result.outcome)
+        assertEquals(listOf(ToolTaskState.RUNNING, ToolTaskState.RUNNING), observed)
+        assertEquals(1, calls)
+    }
 }

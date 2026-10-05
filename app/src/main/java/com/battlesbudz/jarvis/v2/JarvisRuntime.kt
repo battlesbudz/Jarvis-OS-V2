@@ -33,6 +33,7 @@ import com.battlesbudz.jarvis.v2.memory.AndroidMemoryOs
 import com.battlesbudz.jarvis.v2.memory.ConversationMemory
 import com.battlesbudz.jarvis.v2.memory.ConversationMemorySource
 import com.battlesbudz.jarvis.v2.memory.MemoryTurnContext
+import com.battlesbudz.jarvis.v2.presentation.AgentActivityMonitor
 import com.battlesbudz.jarvis.v2.runtime.AcceptedActionConversation
 import com.battlesbudz.jarvis.v2.runtime.AcceptedVoiceActionCoordinator
 import com.battlesbudz.jarvis.v2.runtime.AcceptedVoiceInvocation
@@ -119,9 +120,22 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     // app-managed context capsule.
     internal var nativeConversationHasContext = false
     internal val shortTermContext = ShortTermConversationContext()
-    internal val referenceGrounding = ReferenceGroundingClient { bytes ->
-        com.battlesbudz.jarvis.v2.ai.ReferencePdfText.read(applicationContext, bytes)
+    private val agentActivityMonitor = AgentActivityMonitor()
+    internal val agentActivity = agentActivityMonitor.state
+    private fun showAgentFailure(conversationId: String) {
+        val lease = agentActivityMonitor.beginFailure(conversationId)
+        runtimeScope.launch {
+            try { kotlinx.coroutines.delay(5_000) } finally { lease.close() }
+        }
     }
+    internal val referenceGrounding = ReferenceGroundingClient(
+        onReadStarted = {
+            val lease = agentActivityMonitor.beginReferences(conversationHistory.current.value.id)
+            val finish: () -> Unit = { lease.close() }
+            finish
+        },
+        pdfText = { bytes -> com.battlesbudz.jarvis.v2.ai.ReferencePdfText.read(applicationContext, bytes) },
+    )
     internal val factualityVerifier = com.battlesbudz.jarvis.v2.ai.FactualityVerifier()
     internal val turnOrchestrator = com.battlesbudz.jarvis.v2.ai.TurnOrchestrator(referenceGrounding)
     internal val promptBuilder = com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder(shortTermContext)
@@ -508,7 +522,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             finishOwnedBenchmark = { capture, outcome, callId, failure ->
                 pipelineBenchmarks.finishResources(capture)
                 capture.finish(outcome, callId = callId, failureCode = failure)?.let { pipelineBenchmarkStore.append(it) }
-            }, diagnostics = diagnostics)
+            }, diagnostics = diagnostics,
+            onTurnStarted = agentActivityMonitor::clearFailure, onTurnFailure = ::showAgentFailure)
     }
     private val voiceTurns: VoiceTurnRunner by lazy {
         val call = VoiceCallAccess(voiceCallState, voiceSessionController, VoiceCallEvents(
@@ -556,7 +571,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             ordinaryReplies = OrdinaryVoiceReplyStage(call, runtimeScope, conversation, replyCaptureBenchmark,
                 runtimeVoiceResources, conversationHistory, memory, turnOrchestrator, diagnosticRecorder, asrComparisonStore),
             finalizer = VoiceTurnFinalizer(call, conversation, nativeSessionState, acceptedActionCoordinator,
-                runtimeVoiceResources, memory, turnOrchestrator, typedInputs, diagnosticRecorder), diagnosticRecorder = diagnosticRecorder)
+                runtimeVoiceResources, memory, turnOrchestrator, typedInputs, diagnosticRecorder), diagnosticRecorder = diagnosticRecorder,
+            onTurnStarted = agentActivityMonitor::clearFailure,
+            onTerminalFailure = { showAgentFailure(conversationHistory.current.value.id) })
     }
 
     internal fun runConversationInternal(

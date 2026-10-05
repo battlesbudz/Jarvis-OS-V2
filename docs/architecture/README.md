@@ -26,7 +26,9 @@ for the decision to keep package/collaborator boundaries before adding build mod
 | Owner | Lifetime and responsibility |
 | --- | --- |
 | `MainActivity` | Permissions, activity results, exports and attaching Compose; delegates feature work |
-| `ui/JarvisApp` | UI state/callback wiring and selecting conversation/setup/history/diagnostic surfaces |
+| `ui/JarvisApp` | UI state/callback wiring and selecting conversation/setup/history/diagnostic surfaces inside persistent Wisp chrome |
+| `ui/WispPresence` / `WispPresenter` / `WispCharacter` | App-level observation, deterministic pose policy and native drawing; never owns or starts calls/actions |
+| `presentation/AgentActivityMonitor` | Ephemeral token-scoped observation of actual reference reads and terminal turn errors; no request content or operation authority |
 | `JarvisAppComposition` | Compatibility composition adapter supplying only benchmark-store and call-evidence dependencies to UI |
 | `JarvisRuntime.get(applicationContext)` | Process composition/lifecycle facade wiring typed owners/ports, shared history and compatibility entry adapters |
 | `runtime/turn/VoiceTurnRunner` | Admits and orders typed voice stages, with error/rearm policy; resource release belongs to finalizer |
@@ -66,7 +68,8 @@ modes. A live ASR caption is not authority for an unfinished phone action.
 A turn prepares bounded history, memory and references, chooses a validated action
 or inference path, then publishes tokens/results through its delivery boundary.
 Memory mutation fences can invalidate an in-flight answer. Phone success comes
-from durable executor receipts. Voice sends delivered text to Piper and records
+from durable executor receipts. The phone pipeline publishes its durable RUNNING and
+terminal journal boundaries for presentation; observation cannot authorize, block or retry an effect. Voice sends delivered text to Piper and records
 playback evidence; unplayed generated text must not become heard conversation context.
 
 ## Feature packages

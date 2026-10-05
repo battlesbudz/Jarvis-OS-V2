@@ -29,7 +29,9 @@ internal class VoiceTurnRunner(
     private val acceptedReplies: AcceptedVoiceFollowupStage,
     private val ordinaryReplies: OrdinaryVoiceReplyStage,
     private val finalizer: VoiceTurnFinalizer,
-    private val diagnosticRecorder: DiagnosticRecorder
+    private val diagnosticRecorder: DiagnosticRecorder,
+    private val onTurnStarted: () -> Unit = {},
+    private val onTerminalFailure: () -> Unit = {}
 ) {
     fun start() {
         if (!call.state.armed || call.state.turnJob?.isCompleted == false || actions.queue.hasUnfinished() ||
@@ -47,8 +49,10 @@ internal class VoiceTurnRunner(
         }
         val request = selectRequest(queued)
         val observation = createObservation(request)
+        runCatching { onTurnStarted() }
         call.state.turnJob = applicationScope.launch(Dispatchers.Default) {
             val lifetime = VoiceTurnLifetime(this, createModelLease(), call.controller.currentCallId() != null)
+            var terminalFailure = false
             fun relinquishTyped() = typedInputs.relinquish(request.queuedTypedInput)
             try {
                 val prepared = preparation.prepare(request, observation, lifetime)
@@ -72,6 +76,7 @@ internal class VoiceTurnRunner(
                 lifetime.finalMessage = if (call.state.audioRecoveryAttempts <= 2)
                     com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " audio capture recovered; say Hey Jarvis again."
                 else "Voice Call turn failed: audio capture repeatedly fell behind. Restart the session."
+                if (call.state.audioRecoveryAttempts > 2) terminalFailure = true
             } catch (busy: com.battlesbudz.jarvis.v2.voice.MicrophoneBusyException) {
                 observation.outcome = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome.REJECTED
                 observation.failure = "microphone_busy"
@@ -107,11 +112,13 @@ internal class VoiceTurnRunner(
                         lifetime.finalMessage = if (call.state.audioRecoveryAttempts <= 2)
                             "Recovering interrupted voice capture…"
                         else "Voice Call turn failed: capture repeatedly cancelled. Restart the session."
+                        if (call.state.audioRecoveryAttempts > 2) terminalFailure = true
                         diagnosticRecorder.recordImportant("Capture cancellation recovery attempt=${call.state.audioRecoveryAttempts} max=2")
                     }
                     throw cancelled
                 }
             } catch (error: Throwable) {
+                terminalFailure = true
                 observation.outcome = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome.ERROR
                 observation.failure = error.javaClass.simpleName
                 (listOfNotNull(request.queuedTypedInput, lifetime.activePumpTypedInput.getAndSet(null))).distinctBy { it.id }.forEach { typed ->
@@ -127,6 +134,8 @@ internal class VoiceTurnRunner(
                 val cancelled = kotlin.coroutines.coroutineContext[Job]?.isActive != true
                 finalizer.close(request, lifetime, cancelled)
                 observation.finish(lifetime, cancelled, actions.queue::hasUnfinished)
+                // Cleanup can be slow; its duration must not consume the visible error lease.
+                if (terminalFailure) runCatching { onTerminalFailure() }
                 if (call.state.armed && (lifetime.hadActiveCall || lifetime.wokeThisTurn) && call.controller.currentCallId() == null)
                     call.state.returnToWakeCuePending.set(true)
                 if (kotlin.coroutines.coroutineContext[Job]?.isActive == true || lifetime.microphoneYielded) {

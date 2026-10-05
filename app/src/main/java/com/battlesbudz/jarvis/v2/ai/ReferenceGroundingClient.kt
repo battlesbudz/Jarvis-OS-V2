@@ -6,7 +6,11 @@ import java.net.URL
 
 data class ReferenceGrounding(val context: String, val sources: List<String>)
 
-class ReferenceGroundingClient(private val readBytes: ((URL) -> ByteArray)? = null, private val pdfText: (ByteArray) -> String = { "" }) {
+class ReferenceGroundingClient(
+    private val readBytes: ((URL) -> ByteArray)? = null,
+    private val onReadStarted: () -> (() -> Unit) = { {} },
+    private val pdfText: (ByteArray) -> String = { "" },
+) {
     private companion object {
         const val MAX_EVIDENCE_CHARS = 4_500
         const val MAX_EXTRACT_CHARS = 1_800
@@ -267,6 +271,17 @@ class ReferenceGroundingClient(private val readBytes: ((URL) -> ByteArray)? = nu
     private fun get(url: URL): org.json.JSONObject = org.json.JSONObject(read(url).toString(Charsets.UTF_8))
 
     private fun read(original: URL): ByteArray {
+        // Publish only at the real read boundary, not while deciding whether a lookup is needed.
+        // Observers receive no source data, and a presentation failure cannot change retrieval.
+        val finish = runCatching { onReadStarted() }.getOrNull()
+        try {
+            return readReferenceBytes(original)
+        } finally {
+            runCatching { finish?.invoke() }
+        }
+    }
+
+    private fun readReferenceBytes(original: URL): ByteArray {
         readBytes?.let { return it(original) }
         var url = original
         repeat(4) {

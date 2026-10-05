@@ -77,7 +77,7 @@ internal class PhoneTaskCoordinator(
         groupId: String? = null,
         stepIndex: Int = 0
     ): ExecutionResult = try {
-        val pipeline = JournaledActionPipeline(ledger, executor)
+        val pipeline = JournaledActionPipeline(ledger, executor, ::refreshPhoneTasks)
         if (groupId == null) pipeline.execute(request) else {
             val journal = ledger.journal()
             val id = journal.groups.find { it.id == groupId }?.attemptIds?.getOrNull(stepIndex)
@@ -109,7 +109,7 @@ internal class PhoneTaskCoordinator(
                         if (attempt.state == ToolTaskState.SUCCEEDED) continue
                         if (attempt.state != ToolTaskState.READY) break
                         val result = JournaledActionPipeline(ledger,
-                            createExecutor()).executeAttempt(attempt)
+                            createExecutor(), ::refreshPhoneTasks).executeAttempt(attempt)
                         projectPhoneTask(group.id, recovered = true)
                         if (!result.succeeded) break
                     }
@@ -143,7 +143,7 @@ internal class PhoneTaskCoordinator(
                         if (isDeviceLocked()) return@launch
                         val approval = a.approvalId?.let { approvals.get(it) } ?: return@launch
                         val result = JournaledActionPipeline(ledger,
-                            createExecutor()).executeAttempt(a, approval)
+                            createExecutor(), ::refreshPhoneTasks).executeAttempt(a, approval)
                         if (!result.succeeded) error.value = result.message
                     }
                     "deny" -> a.approvalId?.let { approvals.deny(it) }

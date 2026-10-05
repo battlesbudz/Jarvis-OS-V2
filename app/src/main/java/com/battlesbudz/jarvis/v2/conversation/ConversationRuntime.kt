@@ -31,7 +31,9 @@ internal class ConversationCoordinator(
     private val createActions: (String, (String, String, Boolean) -> Unit) -> ConversationActions,
     private val createBenchmark: (String, String) -> PipelineBenchmarkCapture,
     private val finishOwnedBenchmark: (PipelineBenchmarkCapture, PipelineBenchmarkOutcome, String?, String?) -> Unit,
-    private val diagnostics: ConversationDiagnostics
+    private val diagnostics: ConversationDiagnostics,
+    private val onTurnStarted: () -> Unit = {},
+    private val onTurnFailure: (conversationId: String) -> Unit = {}
 ) {
     fun start(input: ConversationInvocation, callbacks: ConversationCallbacks): Job? {
         val conversationId = input.conversationIdentity ?: currentConversationId()
@@ -66,7 +68,9 @@ internal class ConversationCoordinator(
             reply.finishBenchmark()
             return null
         }
+        runCatching { onTurnStarted() }
         val job = scope.launch(Dispatchers.Default) {
+            var failed = false
             var ownedBackend: ConversationBackend? = null
             var telemetry: ConversationInferenceTelemetry? = null
             capture.mark("request_processing_started")
@@ -101,6 +105,7 @@ internal class ConversationCoordinator(
                 telemetry?.finishProgress()
                 throw cancelled
             } catch (error: Throwable) {
+                failed = true
                 reply.recordOutcome(PipelineBenchmarkOutcome.ERROR, error.javaClass.simpleName)
                 actions.cancel()
                 telemetry?.finishProgress()
@@ -117,6 +122,8 @@ internal class ConversationCoordinator(
                 modelSession.residentBackend?.onInferenceProgress = {}
                 if (input.voiceAudio == null && !input.callOwned) modelSession.residentBackend?.onPromptSubmitted = { _, _ -> }
                 input.incrementalVoice?.close()
+                // Start the bounded visible error after cleanup, before releasing admission.
+                if (failed) runCatching { onTurnFailure(conversationId) }
             }
         }
         job.invokeOnCompletion { ConversationWork.activeJobs.decrementAndGet() }
