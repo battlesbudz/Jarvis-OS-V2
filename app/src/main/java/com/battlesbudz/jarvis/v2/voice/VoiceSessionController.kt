@@ -45,6 +45,20 @@ class VoiceSessionController(
         if (complete) checkpoint() else store.saveProgress(requireActiveCall())
     }
 
+    /** Replace only the user entry paired with this exact reply, never append a second user turn. */
+    @Synchronized fun updateUserTranscriptForReply(callId: String, replyId: String, text: String, expectedText: String? = null): Boolean {
+        if (text.isBlank() || activeCall?.id != callId) return false
+        val call = requireActiveCall()
+        val replyIndex = call.transcript.indexOfFirst { it.replyId == replyId && it.role == "Jarvis" }
+        if (replyIndex <= 0 || call.transcript[replyIndex - 1].role != "You") return false
+        if (expectedText != null && call.transcript[replyIndex - 1].text != expectedText) return false
+        val entries = call.transcript.toMutableList()
+        entries[replyIndex - 1] = entries[replyIndex - 1].copy(text = text, complete = true, generationComplete = true)
+        activeCall = call.copy(transcript = entries)
+        checkpoint()
+        return true
+    }
+
     /** Stable reply IDs separate generation, audio delivery and tool receipts. */
     @Synchronized fun beginReply(callId: String, replyId: String) {
         if (activeCall?.id != callId) return
@@ -103,7 +117,9 @@ class VoiceSessionController(
         if (call == null) return
         val index = call.transcript.indexOfFirst { it.replyId == replyId }
         if (index < 0) return
-        val entry = transform(call.transcript[index])
+        val transformed = transform(call.transcript[index])
+        val entry = if (transformed.role == "Jarvis") transformed.copy(metrics =
+            (transformed.metrics ?: com.battlesbudz.jarvis.v2.diagnostics.ReplyMetrics.unavailable).withOutputText(transformed.text)) else transformed
         if (entry == call.transcript[index]) return
         val entries = call.transcript.toMutableList().also { it[index] = entry }
         val updated = call.copy(transcript = entries)

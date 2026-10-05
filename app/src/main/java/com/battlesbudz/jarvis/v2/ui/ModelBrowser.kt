@@ -1,5 +1,6 @@
 package com.battlesbudz.jarvis.v2.ui
 
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -15,10 +16,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import com.battlesbudz.jarvis.v2.ai.*
 
 /** Family first, then a bounded lazy list of model cards. Browsing never selects/downloads a model. */
@@ -29,7 +32,10 @@ internal fun ModelBrowser(
     selectedId: String,
     isInstalled: (LocalModelSpec) -> Boolean,
     onSelect: (LocalModelSpec) -> String?,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    selectionEnabled: Boolean = true,
+    downloadingId: String? = null,
+    onDownload: ((LocalModelSpec) -> Unit)? = null
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var family by rememberSaveable { mutableStateOf<String?>(null) }
@@ -39,7 +45,17 @@ internal fun ModelBrowser(
     val families = remember(query) { ModelGuide.families(query = query) }
     val familyListState = rememberLazyListState()
     fun goBack() { if (family != null) { family = null; detailId = null } else onDismiss() }
-    Dialog(onDismissRequest = { goBack() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    Dialog(onDismissRequest = { goBack() }, properties = DialogProperties(usePlatformDefaultWidth = true, decorFitsSystemWindows = false)) {
+        val dialogWindow = (LocalView.current.parent as DialogWindowProvider).window
+        SideEffect {
+            val fullSize = WindowManager.LayoutParams.MATCH_PARENT
+            if (dialogWindow.attributes.width != fullSize || dialogWindow.attributes.height != fullSize) {
+                // Keep the full browser width while measuring against the actual window. The
+                // pinned Compose dialog's non-default-width path substitutes display-height
+                // constraints, which can crop the final model card at the window's insets.
+                dialogWindow.setLayout(fullSize, fullSize)
+            }
+        }
         BackHandler { goBack() }
         detailId?.let { id -> ModelCatalog.find(id)?.let { spec ->
             ModelDetails(spec, phone) { detailId = null }
@@ -129,11 +145,17 @@ internal fun ModelBrowser(
                                     ModelGuidance.storageNotice(spec, phone, installed)?.let {
                                         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                                     }
+                                    if (!installed && !spec.requiresAccess && onDownload != null) {
+                                        OutlinedButton(modifier = Modifier.fillMaxWidth().testTag("model_download_${spec.id}"), enabled = downloadingId == null, onClick = { onDownload(spec) }) {
+                                            Text(if (downloadingId == spec.id) "Downloading" else "Download")
+                                        }
+                                    }
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                         TextButton(onClick = { detailId = spec.id }, modifier = Modifier.testTag("model_details_${spec.id}")) {
                                             Text("Details")
                                         }
-                                        Button(modifier = Modifier.testTag("model_choose_${spec.id}"), onClick = { if (ModelCompatibility.assess(spec).confirmBeforeSelection) warningId = spec.id
+                                        Button(enabled = selectionEnabled && downloadingId != spec.id,
+                                            modifier = Modifier.testTag("model_choose_${spec.id}"), onClick = { if (ModelCompatibility.assess(spec).confirmBeforeSelection) warningId = spec.id
                                             else { error = onSelect(spec); if (error == null) onDismiss() } }) {
                                             Text(if (spec.id == selectedId) "Selected" else "Choose")
                                         }

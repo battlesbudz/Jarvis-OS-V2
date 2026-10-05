@@ -7,18 +7,25 @@ import kotlinx.coroutines.*
 
 /** Local speech capture alongside generation/playback, with the ordinary mic-priority contract. */
 class ReplyVoiceCapture(private val context: Context, private val log: (String) -> Unit) {
-    suspend fun listen(output: PiperVoiceOutput, asrDirectory: File,
+    suspend fun listen(output: PiperVoiceOutput, asrDirectory: File?,
                        onConfirmed: () -> Unit, asrEngine: AsrEngine = AsrEngine.MOONSHINE, onPartialTranscript: (String) -> Unit = {}, trace: VoiceTurnTrace? = null,
                        inputFactory: (suspend () -> AudioInput)? = null, modelSession: VoiceModelSession? = null,
                        /** Action mode listens while native work is silent; its ASR budget is independent of Piper. */
                        asrOnly: Boolean = false,
+                       /** No recognizer download, construction or probing in an ASR-free trial. */
+                       recognitionEnabled: Boolean = true,
                        /** The action pump can swap its report ledger/output without restarting ASR. */
-                       outputProvider: () -> PiperVoiceOutput = { output }): CapturedVoiceTurn = recoverReplyListener(log) {
+                       outputProvider: () -> PiperVoiceOutput = { output },
+                       onReady: () -> Unit = {},
+                       /** Original finalized ASR and its acoustic end, before echo resolution or control routing. */
+                       onMetrics: (AsrCaptureMetrics, String, Long?) -> Unit = { _, _, _ -> }): CapturedVoiceTurn = recoverReplyListener(log) {
         supervisorScope {
             MicrophoneInterruptionMonitor.awaitAvailable()
+            val profile = SpeechCaptureProfile.selected(context)
             val input = inputFactory?.invoke() ?: AndroidAudioInput(this,
                 audioManager = context.getSystemService(AudioManager::class.java),
-                echoCancellation = true, noiseSuppression = true, log = log)
+                echoCancellation = true, communicationInput = profile.communicationInput,
+                noiseSuppression = profile.noiseSuppression, log = log)
             val confirmed = CompletableDeferred<Unit>()
             var naturalReference: String? = null
             var confirmedNaturalText = ""
@@ -32,16 +39,29 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                 confirmed.complete(Unit)
                 onConfirmed()
             }
-            val gated: AudioInput = NaturalBargeInAudioInput(input,
+            val gated: AudioInput = if (!recognitionEnabled) KeywordBargeInAudioInput(input,
+                createDetector = { MicroInterruptionKeywords(context.assets) },
+                onConfirmed = { keyword ->
+                    stopOnly = keyword == "stop"
+                    confirm()
+                },
+                // A keyword hit only interrupts speech in this mode; it never executes an
+                // action. Suppress a hit when Piper's recent output contains the same keyword.
+                allowKeyword = { keyword ->
+                    val ownWords = PlaybackEchoText.words(currentOutput().recentSpokenText())
+                    if (keyword == "stop") "stop" !in ownWords
+                    else !PlaybackEchoText.words(keyword.replace('_', ' ')).all { it in ownWords }
+                }, log = log).also { log("barge_asr_disabled scope=all_natural_and_keyword_verification_probes fallback=keyword_vad_only") }
+            else NaturalBargeInAudioInput(input,
                     createKeyword = { MicroInterruptionKeywords(context.assets) },
                     createVad = { SileroSpeechDetector.create(context.assets) },
                     createTranscriber = {
                         when (asrEngine) {
                             AsrEngine.MOONSHINE -> {
-                                check(MoonshineStreamingTranscriber.canReuseForProbe(asrDirectory, modelSession)) { "probe_model_not_warm" }
-                                MoonshineStreamingTranscriber(asrDirectory, modelSession = modelSession, reserveReplyProbes = false)
+                                check(MoonshineStreamingTranscriber.canReuseForProbe(requireNotNull(asrDirectory), modelSession)) { "probe_model_not_warm" }
+                                MoonshineStreamingTranscriber(requireNotNull(asrDirectory), modelSession = modelSession, reserveReplyProbes = false)
                             }
-                            AsrEngine.WHISPER -> WhisperTranscriber(asrDirectory, live = false,
+                            AsrEngine.WHISPER -> WhisperTranscriber(requireNotNull(asrDirectory), live = false,
                                 log = log, modelSession = modelSession, warmProbe = true)
                         }
                     },
@@ -57,15 +77,22 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                         }
                         confirm()
                     }, log = log)
-            val capture = AudioTurnCapture(gated, this,
+            lateinit var capture: AudioTurnCapture
+            capture = AudioTurnCapture(gated, this,
                 createDetector = { SileroSpeechDetector.create(context.assets) },
-                createTranscriber = { LazyStreamingTranscriber { asrEngine.create(asrDirectory, log = log, modelSession = modelSession) } }, log = log,
+                createTranscriber = if (recognitionEnabled) { { LazyStreamingTranscriber { asrEngine.create(requireNotNull(asrDirectory), log = log, modelSession = modelSession) } } } else null, log = log,
+                trailingSilenceMs = if (recognitionEnabled) null else 650L,
+                maxAudioDurationMs = if (recognitionEnabled) 25000 else GemmaAudioInputPolicy.MAX_CAPTURE_MS,
+                rejectAtAudioLimit = !recognitionEnabled,
+                captionOnly = !recognitionEnabled,
                 allowAudioOnlyTurns = true,
                 guardFollowupSpeech = true,
                 initialConfirmedSpeech = { confirmedNaturalText },
+                onMetrics = { metrics, originalText -> onMetrics(metrics, originalText, capture.lastSpeechAtMs) },
                 onPartialTranscript = { text -> onPartialTranscript(text) })
             try {
                 capture.start(initialSilenceTimeoutMs = null)
+                onReady()
                 log("barge_capture_ready keywordReadiness=reported_separately naturalSpeechReady=false")
                 // Observe capture failures while waiting for speech, too.
                 val completion = async { capture.awaitTurnCompletion() }

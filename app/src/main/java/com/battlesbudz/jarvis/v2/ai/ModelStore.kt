@@ -11,14 +11,20 @@ import android.provider.OpenableColumns
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
+import com.battlesbudz.jarvis.v2.work.ProcessConversationAdmission
 
-class ModelStore(context: Context) {
+class ModelStore @JvmOverloads constructor(
+    context: Context,
+    private val conversationActive: () -> Boolean = ProcessConversationAdmission::isActive
+) {
     private val downloader = ModelDownloader()
     private val downloadedModels = DownloadedModelLookup(context)
 
     private companion object {
         val activeImports = AtomicInteger(0)
-        val activeModelOperation = AtomicInteger(0)
+        val operations = ModelOperationGate()
     }
 
     private val preferences = context.getSharedPreferences("model_setup", Context.MODE_PRIVATE)
@@ -28,7 +34,7 @@ class ModelStore(context: Context) {
         if (activeImports.get() == 0 && preferences.getBoolean("import_in_progress", false)) {
             preferences.edit().putBoolean("import_in_progress", false).apply()
             modelDirectory.listFiles()
-                ?.filter { it.name.endsWith(".part") }
+                ?.filter { it.name.endsWith(".part") && ModelCatalog.all.none { spec -> it.name == "${spec.fileName}.part" } }
                 ?.forEach { it.delete() }
         }
     }
@@ -39,6 +45,7 @@ class ModelStore(context: Context) {
     fun selectModel(spec: LocalModelSpec) {
         require(ModelCatalog.find(spec.id) == spec) { "Unsupported model." }
         check(isModelOperationActive()) { "Model selection requires exclusive ownership." }
+        check(!operations.downloading(spec.id)) { "This model is still downloading. Choose an installed model or cancel its download." }
         check(preferences.edit().putString("selected_model", spec.id).commit()) {
             "Could not save the selected model."
         }
@@ -52,6 +59,7 @@ class ModelStore(context: Context) {
     fun deleteModel(spec: LocalModelSpec) {
         require(ModelCatalog.find(spec.id) == spec) { "Unsupported model." }
         check(isModelOperationActive()) { "Model deletion requires exclusive ownership." }
+        check(!operations.downloading(spec.id)) { "Cancel this model's download before deleting it." }
         removeModelFiles(modelDirectory, spec.fileName, File(context.cacheDir, spec.id))
         val key = fingerprintKey(spec)
         val editor = preferences.edit()
@@ -63,7 +71,9 @@ class ModelStore(context: Context) {
     }
 
     fun storedBytes(spec: LocalModelSpec): Long = modelFiles(modelDirectory, spec.fileName)
-        .sumOf { it.length() } + File(context.cacheDir, spec.id).let { cache ->
+        .sumOf { it.length() } + File(modelDirectory, "${spec.fileName}.part.chunks").let { chunks ->
+            if (chunks.exists()) chunks.walkTopDown().filter { it.isFile }.sumOf { it.length() } else 0L
+        } + File(context.cacheDir, spec.id).let { cache ->
             if (cache.exists()) cache.walkTopDown().filter { it.isFile }.sumOf { it.length() } else 0L
         }
 
@@ -145,13 +155,17 @@ class ModelStore(context: Context) {
 
     fun importInProgress(): Boolean = preferences.getBoolean("import_in_progress", false)
 
-    fun tryBeginModelOperation(): Boolean = activeModelOperation.compareAndSet(0, 1)
+    fun tryBeginModelOperation(): Boolean = operations.tryBeginRuntime(selectedModel().id)
+
+    fun tryBeginModelSelection(spec: LocalModelSpec): Boolean = operations.tryBeginRuntime(spec.id)
 
     fun endModelOperation() {
-        activeModelOperation.set(0)
+        operations.endRuntime()
     }
 
-    fun isModelOperationActive(): Boolean = activeModelOperation.get() > 0
+    fun isModelOperationActive(): Boolean = operations.runtimeActive() || operations.downloading(selectedModel().id)
+
+    fun isDownloading(spec: LocalModelSpec): Boolean = operations.downloading(spec.id)
 
     /** Reuses a verified app copy, imports a matching local file, or downloads the pinned model. */
     suspend fun downloadOrReuse(
@@ -159,10 +173,18 @@ class ModelStore(context: Context) {
         onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit = { _, _ -> },
         onStatus: (String) -> Unit = {}
     ): Result<File> = runCatching {
-        check(tryBeginModelOperation()) { "Another model operation is still running." }
+        check(operations.tryBeginDownload(spec.id, selectedModel().id,
+            conversationActive())) {
+            "This model is currently in use or already downloading. Other models can still be used."
+        }
+        val transferContext = kotlinx.coroutines.currentCoroutineContext()
+        val reportProgress: (Long, Long) -> Unit = { bytes, total ->
+            transferContext.ensureActive()
+            onProgress(bytes, total)
+        }
         try {
             onStatus("Checking Jarvis’s app storage…")
-            if (verifyIntegrity(spec, onProgress)) {
+            if (verifyIntegrity(spec, reportProgress)) {
                 onProgress(fileFor(spec).length(), fileFor(spec).length())
                 return@runCatching fileFor(spec)
             }
@@ -188,7 +210,7 @@ class ModelStore(context: Context) {
             if (exactDownload != null) {
                 onStatus("Found ${spec.fileName} in Downloads. Verifying that exact file…")
                 onStatus("Importing the existing AI model from Downloads…")
-                val imported = importExactDownloadedModel(exactDownload, spec, onProgress, onStatus)
+                val imported = importExactDownloadedModel(exactDownload, spec, reportProgress, onStatus)
                 if (imported != null) return@runCatching imported
             }
             onStatus("No exact ${spec.fileName} file was found in Downloads. Starting the verified download…")
@@ -196,22 +218,25 @@ class ModelStore(context: Context) {
             val url = requireNotNull(spec.downloadUrl) { "No automatic download is configured for ${spec.id}." }
             val destination = fileFor(spec)
             val temporary = File(modelDirectory, "${spec.fileName}.part")
-            downloader.download(
+            // A stopped worker may already have assembled the complete file.
+            // Verify it before contacting the host or restarting its transfer.
+            val completedDownload = temporary.isFile && spec.downloadBytes != null &&
+                temporary.length() == spec.downloadBytes && spec.expectedSha256 != null &&
+                temporary.sha256(reportProgress) == spec.expectedSha256
+            if (!completedDownload) downloader.download(
                 url = url,
                 temporary = temporary,
-                onProgress = onProgress,
+                onProgress = reportProgress,
                 onStatus = onStatus
             )
             check(temporary.isFile && temporary.length() > 0L) { "The downloaded model is empty." }
             onStatus("Verifying the downloaded AI model…")
-            val actualSha256 = temporary.sha256(onProgress)
+            val actualSha256 = temporary.sha256(reportProgress)
             spec.expectedSha256?.let { expected ->
-                check(actualSha256.equals(expected, ignoreCase = true)) {
-                    "The downloaded model failed integrity verification."
+                if (!actualSha256.equals(expected, ignoreCase = true)) {
+                    temporary.delete()
+                    error("The downloaded model failed integrity verification. It was not installed. Retry the download.")
                 }
-            }
-            if (destination.exists()) check(destination.delete()) {
-                "Unable to replace the previous model file."
             }
             check(temporary.renameTo(destination)) { "Unable to finalize the downloaded model." }
             val key = fingerprintKey(spec)
@@ -223,12 +248,12 @@ class ModelStore(context: Context) {
                 .putBoolean("${key}_enforce_catalog_hash", true)
                 .putBoolean(smokeTestKey(spec), false)
                 .putBoolean("smoke_test_attempted_${spec.id}", false)
-                .apply()
+                .commit().also { check(it) { "The model was installed but its verification state could not be saved. Check the installed model again." } }
             destination
         } finally {
-            endModelOperation()
+            operations.endDownload(spec.id)
         }
-    }
+    }.onFailure { if (it is CancellationException) throw it }
 
     private sealed interface DownloadLookupResult {
         data class Completed(val uri: Uri?) : DownloadLookupResult
@@ -240,7 +265,8 @@ class ModelStore(context: Context) {
         onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
         onStatus: (String) -> Unit
     ): File? {
-        val temporary = File(modelDirectory, "${spec.fileName}.part")
+        // Imports must never erase a resumable HTTP checkpoint.
+        val temporary = File.createTempFile("${spec.fileName}.import.", ".part", modelDirectory)
         return runCatching {
             temporary.delete()
             context.contentResolver.openInputStream(uri)?.use { input ->
@@ -268,7 +294,6 @@ class ModelStore(context: Context) {
                 !actualSha256.equals(spec.expectedSha256, ignoreCase = true)
             ) return@runCatching null
             val destination = fileFor(spec)
-            if (destination.exists()) check(destination.delete())
             check(temporary.renameTo(destination)) { "Unable to finalize the existing model file." }
             val key = fingerprintKey(spec)
             preferences.edit()
@@ -281,7 +306,7 @@ class ModelStore(context: Context) {
                 .putBoolean("smoke_test_attempted_${spec.id}", false)
                 .apply()
             destination
-        }.getOrNull().also {
+        }.onFailure { if (it is CancellationException) throw it }.getOrNull().also {
             if (it == null) temporary.delete()
         }
     }
@@ -299,7 +324,8 @@ class ModelStore(context: Context) {
         return runCatching {
             // Create the temporary file inside runCatching so storage errors
             // are returned through the UI callback instead of escaping launch.
-            check(tryBeginModelOperation()) { "Another model operation is still running." }
+            check(!conversationActive() &&
+                operations.tryBeginRuntime(spec.id)) { "Another model operation is still running." }
             val temporary = try {
                 File.createTempFile("${spec.fileName}.", ".part", modelDirectory)
             } catch (error: Throwable) {
@@ -318,8 +344,8 @@ class ModelStore(context: Context) {
                 )?.use { cursor ->
                     if (cursor.moveToFirst()) cursor.getString(0) else null
                 }
-                require(selectedName == null || selectedName == spec.fileName) {
-                    "Select the ${spec.fileName} model file."
+                require(selectedName == null || selectedName in spec.importFileNames()) {
+                    "Select ${spec.importFileNames().joinToString(" or ")}."
                 }
                 val resolver = context.contentResolver
                 resolver.openInputStream(uri)?.use { input ->
@@ -327,6 +353,11 @@ class ModelStore(context: Context) {
                 } ?: error("Unable to open selected model file.")
                 require(temporary.length() > 0L) { "The selected model file is empty." }
                 val actualSha256 = temporary.sha256()
+                if (selectedName != null && selectedName != spec.fileName) {
+                    require(actualSha256.equals(spec.expectedSha256, ignoreCase = true)) {
+                        "The publisher file does not match the selected model. Select its exact model bundle."
+                    }
+                }
                 // An explicitly selected model is validated by the native
                 // Gemma smoke test below, not forced to match the catalog's
                 // download hash. This makes “import your own compatible Gemma” supported.

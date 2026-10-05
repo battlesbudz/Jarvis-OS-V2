@@ -94,9 +94,17 @@ class AndroidAudioInput(
             created.release()
             error("The microphone could not be initialized.")
         }
+        var aecDefaultEnabled: Boolean? = null
+        var aecEnableStatus: Int? = null
+        var aecEnableError: String? = null
         val aec = if (echoCancellation && android.media.audiofx.AcousticEchoCanceler.isAvailable()) {
             runCatching { android.media.audiofx.AcousticEchoCanceler.create(created.audioSessionId) }.getOrNull()
-                ?.also { runCatching { it.enabled = true } }
+                ?.also { effect ->
+                    aecDefaultEnabled = runCatching { effect.enabled }.getOrNull()
+                    runCatching { effect.setEnabled(true) }
+                        .onSuccess { aecEnableStatus = it }
+                        .onFailure { aecEnableError = it.javaClass.simpleName }
+                }
         } else null
         log("capture_effects session=${created.audioSessionId} " +
             "aecAvailable=${android.media.audiofx.AcousticEchoCanceler.isAvailable()} " +
@@ -105,12 +113,29 @@ class AndroidAudioInput(
             "aecImplementation=${runCatching { aec?.descriptor?.implementor }.getOrNull()} " +
             "aecUuid=${runCatching { aec?.descriptor?.uuid }.getOrNull()} " +
             "preHardwarePcm=unavailable effectiveness=unmeasured")
-        log("capture_aec requested=$echoCancellation enabled=${runCatching { aec?.enabled == true }.getOrDefault(false)}")
-        val suppressor = if (noiseSuppression && android.media.audiofx.NoiseSuppressor.isAvailable()) {
+        log("capture_aec requested=$echoCancellation defaultEnabled=$aecDefaultEnabled " +
+            "enableStatus=$aecEnableStatus enableError=$aecEnableError enabled=${runCatching { aec?.enabled }.getOrNull()} " +
+            "platformUncontrolledProcessing=unknown")
+        var nsDefaultEnabled: Boolean? = null
+        var nsEnableStatus: Int? = null
+        var nsEnableError: String? = null
+        // Explicitly disable NS when this profile requests speech preservation.
+        // Some platforms insert it by audio source; merely not creating an NS
+        // object does not make requested=false a verified disabled state.
+        val suppressor = if (android.media.audiofx.NoiseSuppressor.isAvailable()) {
             runCatching { android.media.audiofx.NoiseSuppressor.create(created.audioSessionId) }.getOrNull()
-                ?.also { runCatching { it.enabled = true } }
+                ?.also { effect ->
+                    nsDefaultEnabled = runCatching { effect.enabled }.getOrNull()
+                    runCatching { effect.setEnabled(noiseSuppression) }
+                        .onSuccess { nsEnableStatus = it }
+                        .onFailure { nsEnableError = it.javaClass.simpleName }
+                }
         } else null
-        log("capture_noise_suppression requested=$noiseSuppression enabled=${runCatching { suppressor?.enabled == true }.getOrDefault(false)}")
+        log("capture_noise_suppression requested=$noiseSuppression available=${android.media.audiofx.NoiseSuppressor.isAvailable()} " +
+            "defaultEnabled=$nsDefaultEnabled enableStatus=$nsEnableStatus enableError=$nsEnableError " +
+            "enabled=${runCatching { suppressor?.enabled }.getOrNull()} control=${runCatching { suppressor?.hasControl() }.getOrNull()} " +
+            "implementation=${runCatching { suppressor?.descriptor?.implementor }.getOrNull()} " +
+            "uuid=${runCatching { suppressor?.descriptor?.uuid }.getOrNull()} platformUncontrolledProcessing=unknown")
         if (evidence != null) {
             aec?.setControlStatusListener { _, granted -> log("capture_aec_control granted=$granted") }
             aec?.setEnableStatusListener { _, enabled -> log("capture_aec_state enabled=$enabled") }
@@ -120,7 +145,10 @@ class AndroidAudioInput(
                 val config = created.activeRecordingConfiguration
                 if (!dictation) MicrophoneHandoff.ownRecorderSilenced = config?.isClientSilenced == true
                 applyMicrophonePreference(created, config?.audioDevice)
-                log("capture_route silenced=${config?.isClientSilenced} source=${config?.clientAudioSource} routeType=${config?.audioDevice?.type} routeId=${config?.audioDevice?.id} sampleRate=${config?.clientFormat?.sampleRate}")
+                log("capture_route silenced=${config?.isClientSilenced} source=${config?.clientAudioSource} routeType=${config?.audioDevice?.type} routeId=${config?.audioDevice?.id} " +
+                    "clientRate=${config?.clientFormat?.sampleRate} clientChannels=${config?.clientFormat?.channelCount} " +
+                    "clientEncoding=${config?.clientFormat?.encoding} deviceRate=${config?.format?.sampleRate} " +
+                    "deviceChannels=${config?.format?.channelCount} deviceEncoding=${config?.format?.encoding}")
             }
         }
         try {
@@ -150,7 +178,11 @@ class AndroidAudioInput(
             }
             throw error
         }
-        log("capture_open source=${if (communicationInput) "VOICE_COMMUNICATION" else "VOICE_RECOGNITION"} routeType=${created.routedDevice?.type} routeId=${created.routedDevice?.id} session=${created.audioSessionId} silenced=${created.activeRecordingConfiguration?.isClientSilenced}")
+        log("capture_open source=${if (communicationInput) "VOICE_COMMUNICATION" else "VOICE_RECOGNITION"} " +
+            "actualClientSource=${created.activeRecordingConfiguration?.clientAudioSource} " +
+            "requestedRate=${format.sampleRateHz} actualRate=${created.sampleRate} actualChannels=${created.channelCount} actualEncoding=${created.audioFormat} " +
+            "routeType=${created.routedDevice?.type} routeId=${created.routedDevice?.id} session=${created.audioSessionId} " +
+            "silenced=${created.activeRecordingConfiguration?.isClientSilenced} pcmScope=after_platform_effects")
         val ready = CompletableDeferred<Unit>()
         recorder = created
         ownsRecorder = true

@@ -27,6 +27,7 @@ class MemoryTurnContext(
         )
         fun isPersonalRecall(rawPrompt: String): Boolean {
             val text = rawPrompt.trim().lowercase()
+            if (Regex("(?i)^what(?: [a-z]+){0,3} (?:do|did) i (?:like|love|prefer|enjoy|hate|dislike)[?!.]*$|^i like what[?!.]*$").matches(text)) return true
             return Regex(
                 "^\\s*(?:what(?:\\'s| is)|who(?:\\'s| is)|do you know) my " +
                     "(?:name|wife|husband|favorite(?: [a-z ]+)?|preference)|" +

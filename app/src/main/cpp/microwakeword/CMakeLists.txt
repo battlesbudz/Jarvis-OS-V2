@@ -276,7 +276,8 @@ if(ANDROID)
     add_library(microwakeword SHARED MicroWakeWord_jni.cpp MicroWakeWordEngine.cpp MicroFrontendWrapper.cpp)
     target_link_libraries(microwakeword tflite_micro_frontend tflite_micro_interpreter android log)
     # Keep bundled TFLite symbols private to avoid clashes with LiteRT-LM.
-    target_link_options(microwakeword PRIVATE -Wl,--exclude-libs,ALL -Wl,-z,max-page-size=16384)
+    target_link_options(microwakeword PRIVATE -Wl,--exclude-libs,ALL
+        -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384)
 else()
     add_executable(microwakeword_test ../../../../../scripts/microwakeword_test.cpp MicroWakeWordEngine.cpp MicroFrontendWrapper.cpp)
     target_link_libraries(microwakeword_test tflite_micro_frontend tflite_micro_interpreter)

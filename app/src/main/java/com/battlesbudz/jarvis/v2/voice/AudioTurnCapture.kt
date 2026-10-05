@@ -36,11 +36,15 @@ class AudioTurnCapture(
     private val onSpeechResumed: () -> Unit = {},
     private val turnEnd: TurnEndDetector = AdaptiveTurnEnd(),
     private val captureDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val maxAudioDurationMs: Int = 25_000,
+    private val rejectAtAudioLimit: Boolean = false,
+    /** Display-only recognition cannot veto acoustically confirmed native audio. */
+    private val captionOnly: Boolean = false,
     private val onAcousticDecision: (ByteArray, SpeechDecision, SpeechDecision, Double) -> Unit = { _, _, _, _ -> }
 ) {
-    private val pcm = RollingAudioBuffer(maxDurationMs = 25_000)
+    private val pcm = RollingAudioBuffer(maxDurationMs = maxAudioDurationMs.toLong())
     private var capturedPcmBytes = 0L
-    val audioIsComplete: Boolean get() = capturedPcmBytes <= MAX_TURN_BYTES
+    val audioIsComplete: Boolean get() = capturedPcmBytes <= maxAudioDurationMs.toLong() * 32
     @Volatile var recognitionIssue: String? = null
         private set
     private val preRoll = RollingAudioBuffer(AudioFormat(input.sampleRateHz), maxDurationMs = 1200)
@@ -60,6 +64,8 @@ class AudioTurnCapture(
     private var stopped = false
     private fun newTranscriber(): StreamingTranscriber? = createTranscriber?.let { SegmentedTranscriber(it, log) }
     private val quietEvidence = QuietSpeechEvidence()
+    @Volatile var firstSpeechCaptureAtMs: Long? = null
+        private set
     @Volatile var lastSpeechAtMs: Long? = null
         private set
     @Volatile private var endRequested = false
@@ -91,6 +97,8 @@ class AudioTurnCapture(
         var finalDecodeMs = 0L
         val recognitionBudget = CaptureRecognitionBudget()
         var maxRecognitionBacklogMs = 0L
+        val acousticMetrics = CaptureAcousticAccumulator()
+        val recognitionWork = AsrRecognitionWorkLedger()
         var lastSpeechAt = startedAt
         var lastLevelLogAt = startedAt
         var pendingEndpoint = false
@@ -101,7 +109,7 @@ class AudioTurnCapture(
         log("capture_started vad=silero threshold=0.5 speechConfirmationMs=96 " +
             "speechGate=confirmed_acoustic_v4 noiseWindowMs=3000 noiseCalibrationMs=200 weakNoiseRatio=1.8 strongNoiseRatio=1.1 partialPolicy=work_paced_v1 " +
             "endpointing=${if (trailingSilenceMs == null) "adaptive" else "fixed"} " +
-            "trailingSilenceMs=$trailingSilenceMs initialSilenceTimeoutMs=$initialSilenceTimeoutMs audioWindowMs=25000 maxTurnMs=120000")
+            "trailingSilenceMs=$trailingSilenceMs initialSilenceTimeoutMs=$initialSilenceTimeoutMs audioWindowMs=$maxAudioDurationMs maxTurnMs=${if (rejectAtAudioLimit) maxAudioDurationMs else 120000}")
         captureReadyMs = nowMs() - captureRequestedAt
         collectionJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
@@ -114,6 +122,7 @@ class AudioTurnCapture(
                     recoveryAudio.append(chunk)
                     val signal = Pcm16Signal.measure(chunk)
                     val decision = frame.decision
+                    acousticMetrics.record(signal, decision, frame.noiseFloorRms)
                     val now = nowMs()
                     val audioAt = frame.capturedAtMs
                     // Give a possible onset one confirmation window before sealing.
@@ -147,6 +156,7 @@ class AudioTurnCapture(
                             if (hasSpeech && audioAt - lastSpeechAt >= 180) onSpeechResumed()
                             if (!hasSpeech) {
                                 firstSpeechAt = now
+                                firstSpeechCaptureAtMs = audioAt
                                 pcm.append(preRoll.snapshot())
                                 capturedPcmBytes = pcm.sizeBytes()
                                 preRoll.clear()
@@ -191,6 +201,7 @@ class AudioTurnCapture(
                     if (!hasSpeech && corroborated) {
                         synchronized(pcm) {
                             firstSpeechAt = now
+                                firstSpeechCaptureAtMs = audioAt
                             pcm.append(preRoll.snapshot())
                             capturedPcmBytes = pcm.sizeBytes()
                             preRoll.clear()
@@ -210,6 +221,7 @@ class AudioTurnCapture(
                         endRequested -> "explicit_stop"
                         hasSpeech && audioAt - lastSpeechAt >= endpoint.silenceMs &&
                             !awaitingConfirmation && speechQueue.bufferedAudioMs == 0L -> "trailing_silence"
+                        rejectAtAudioLimit && hasSpeech && capturedPcmBytes >= maxAudioDurationMs.toLong() * 32 -> "audio_input_limit"
                         hasSpeech && capturedPcmBytes >= 120L * 32_000 -> "utterance_capacity"
                         !hasSpeech && initialSilenceTimeoutMs != null && now - lastSpeechAt >= initialSilenceTimeoutMs -> "initial_silence"
                         else -> null
@@ -230,9 +242,13 @@ class AudioTurnCapture(
                             synchronized(pcm) { pcm.clear(); capturedPcmBytes = 0; preRoll.clear() }
                             followupEvidence.reset(); initialEvidenceAvailable = false; recoveryAudio.clear()
                             pendingEndpoint = false; pendingAudio.clear(); recognitionIssue = null
-                            firstSpeechAt = null; firstPartialAfterSpeechMs = null; lastPartial = ""
+                            firstSpeechCaptureAtMs = null; firstSpeechAt = null; firstPartialAfterSpeechMs = null; lastPartial = ""
                             quietEvidence.reset(); turnEnd.reset()
-                            transcriber?.close(); transcriber = null
+                            transcriber?.let { previous ->
+                                previous.close()
+                                recognitionWork.retain(previous.recognitionWorkMetrics)
+                            }
+                            transcriber = null
                             if (initialSilenceTimeoutMs != null && now - startedAt >= initialSilenceTimeoutMs) {
                                 turnCompleted.complete(false)
                                 return@collect
@@ -248,13 +264,16 @@ class AudioTurnCapture(
                             finalDecodeMs += nowMs() - finishAt
                             currentCoroutineContext().ensureActive()
                             if (turnCompleted.isCompleted) return@collect
-                            recognitionIssue = (transcriber as? SegmentedTranscriber)?.issue
-                                ?: if (reason == "utterance_capacity") "utterance_capacity" else null
+                            recognitionIssue = if (reason == "audio_input_limit") "gemma_audio_request_exceeds_limit"
+                                else (transcriber as? SegmentedTranscriber)?.issue
+                                    ?: if (reason == "utterance_capacity") "utterance_capacity" else null
                             if (!audioIsComplete && rawFinal.isBlank()) recognitionIssue = "missing_long_transcript"
-                            // ASR finalization can take time. If fresh PCM arrived meanwhile,
-                            // consume it before accepting an old endpoint. Retain the final words
-                            // as a committed segment and continue on the same hardware reader.
-                            if (reason == "trailing_silence" && speechQueue.bufferedAudioMs > 0 && transcriber is SegmentedTranscriber) {
+                            // ASR finalization can take time. Consume new possible speech
+                            // or unclassified hardware audio before accepting an old endpoint.
+                            // Already classified silence alone cannot invalidate it. Retain the
+                            // final words as a segment and continue on the same hardware reader.
+                            if (reason == "trailing_silence" && speechQueue.bufferedAudioMs > 0 &&
+                                speechQueue.requiresEndpointDrain(audioAt) && transcriber is SegmentedTranscriber) {
                                 if (!pendingEndpoint) {
                                     pendingAudio.clear()
                                     log("turn_endpoint_deferred reason=audio_arrived_during_finalization")
@@ -278,7 +297,7 @@ class AudioTurnCapture(
                             }
                             val nonverbal = TranscriptContent.isSoundOnly(resolvedFinal)
                             finalTranscript = if (nonverbal) "" else TranscriptContent.speech(resolvedFinal)
-                            if (nonverbal) log("nonverbal_candidate ignored=true destination=none microphone=kept_open")
+                            if (nonverbal) log(if (captionOnly) "nonverbal_caption ignored=true original_audio_retained=true" else "nonverbal_candidate ignored=true destination=none microphone=kept_open")
                             if (transcriber != null && finalTranscript.isBlank() && !allowAudioOnlyTurns && !nonverbal && recognitionIssue == null) {
                                 val candidate = recoveryAudio.snapshot()
                                 val recoveryAt = nowMs()
@@ -291,7 +310,7 @@ class AudioTurnCapture(
                                     onRecognitionRecovery(false)
                                 }
                             }
-                            if (transcriber != null && finalTranscript.isBlank() && (!allowAudioOnlyTurns || nonverbal) && recognitionIssue == null) {
+                            if (!captionOnly && transcriber != null && finalTranscript.isBlank() && (!allowAudioOnlyTurns || nonverbal) && recognitionIssue == null) {
                                 emptyCandidates++
                                 hasSpeech = false
                                 // A new word may be starting in the final, not-yet-confirmed
@@ -304,7 +323,7 @@ class AudioTurnCapture(
                                     preRoll.append(retained)
                                     retained
                                 }
-                                firstSpeechAt = null
+                                firstSpeechCaptureAtMs = null; firstSpeechAt = null
                                 firstPartialAfterSpeechMs = null
                                 lastPartial = ""
                                 pendingEndpoint = false
@@ -321,6 +340,7 @@ class AudioTurnCapture(
                                     val previous = transcriber
                                     transcriber = null
                                     previous?.close()
+                                    if (previous != null) recognitionWork.retain(previous.recognitionWorkMetrics)
                                     val reloadAt = nowMs()
                                     transcriber = newTranscriber()
                                     recoveryAudio.clear()
@@ -343,7 +363,9 @@ class AudioTurnCapture(
                             decodeMs, maxDecodeChunkMs, firstPartialAfterSpeechMs, partialUpdates,
                             nowMs() - finalizeStartedAt, reason, emptyCandidates,
                             lastSpeechAtMs?.let { (finalizeStartedAt - it).coerceAtLeast(0) },
-                            endpoint.silenceMs, endpoint.cue), finalTranscript)
+                            endpoint.silenceMs, endpoint.cue, acousticMetrics.snapshot(),
+                            maxRecognitionBacklogMs, recognitionBudget.largestWorkMs, finalDecodeMs,
+                            recognitionWork.withActive(transcriber?.recognitionWorkMetrics, transcriber != null)), finalTranscript)
                         log("capture_endpoint_timing reason=$reason " +
                             "speechEndToFinalMs=${lastSpeechAtMs?.let { (nowMs() - it).coerceAtLeast(0) }} " +
                             "silenceDetectedToFinalMs=${speechQueue.latestSilenceDetectedAtMs?.takeIf { it >= lastSpeechAt }?.let { (nowMs() - it).coerceAtLeast(0) }} " +

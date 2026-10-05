@@ -6,16 +6,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
-import com.battlesbudz.jarvis.v2.JarvisRuntime
-import com.battlesbudz.jarvis.v2.voice.MicrophoneHandoff
 import com.battlesbudz.jarvis.v2.voice.LiveCallAudioEvidence
 import kotlinx.coroutines.*
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
+/** Call evidence is supplied by composition; rendering has no authority to locate the runtime. */
+internal data class CallEvidenceSnapshot(val report: String, val audio: LiveCallAudioEvidence.Export?)
+internal data class CallEvidenceActions(
+    val armAudio: () -> Unit,
+    val clearAudio: () -> Unit,
+    val snapshot: () -> CallEvidenceSnapshot,
+)
+
 /** Snapshot the latest call before opening the document picker. One ZIP per phone test. */
 @Composable
-internal fun CallEvidenceExport(enabled: Boolean) {
+internal fun CallEvidenceExport(actions: CallEvidenceActions, enabled: Boolean) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf<String?>(null) }
@@ -48,20 +54,17 @@ internal fun CallEvidenceExport(enabled: Boolean) {
         }
     }
     TextButton(enabled = enabled, onClick = {
-        LiveCallAudioEvidence.arm()
+        actions.armAudio()
         status = "Next call will retain a short audio sample in memory, including nearby speech. Export it with the call ZIP after ending the call."
     }) { Text("Record next call audio for diagnosis") }
     TextButton(enabled = enabled, onClick = {
-        LiveCallAudioEvidence.clear()
+        actions.clearAudio()
         status = "Diagnostic audio cleared; recording disarmed."
     }) { Text("Clear diagnostic audio") }
     TextButton(enabled = enabled, onClick = {
-        pendingAudio = LiveCallAudioEvidence.snapshot()
-        pending = "Jarvis live call echo test\n" +
-            "scope=retained_call_diagnostics microphoneRecording=${pendingAudio != null} acousticCancellation=not_measured\n" +
-            "Save one ZIP after each call test, before starting the next call.\n\n" +
-            JarvisRuntime.get(context.applicationContext).diagnosticRecorder.snapshot() +
-            "\n\n" + MicrophoneHandoff.diagnostics()
+        val snapshot = actions.snapshot()
+        pendingAudio = snapshot.audio
+        pending = snapshot.report
         save.launch("jarvis-call-echo-${System.currentTimeMillis()}.zip")
     }) { Text("Save latest call test ZIP") }
     if (status.isNotEmpty()) Text(status)

@@ -1,6 +1,7 @@
 package com.battlesbudz.jarvis.v2.voice
 
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
 
 /** Checks complete speech phrases before publication; never retracts already-spoken text. */
 class VoiceRepetitionGuard(user: String, previousReply: String?, private val emit: (String) -> Unit) {
@@ -10,21 +11,44 @@ class VoiceRepetitionGuard(user: String, previousReply: String?, private val emi
     private val pending = StringBuilder()
     private val accepted = StringBuilder()
     private var received = false
+    private val runaway = RunawayRepetition()
+    /** Native streaming must stop on this specific cancellation, without swallowing user Stop. */
+    class RunawayLoop : CancellationException("voice_runaway_repetition")
+    var loopDetected: Boolean = false
+        private set
+    /** Begins the one controlled recovery while retaining the valid already-delivered opening. */
+    fun beginRepair() { loopDetected = false; discardPending() }
     /** Optional evidence/knowledge-gap policy, applied to complete sentences before publication. */
     var isPublishable: (String) -> Boolean = { true }
     private var policyRejected = false
+    private var codeFence = false
+    var preserveFormatting: Boolean = false
     var suppressedSentences = 0
         private set
     var acceptedSentences = 0
         private set
-    fun discardPending() { pending.clear() }
+    fun discardPending() { pending.clear(); runaway.reset() }
     val text: String get() = accepted.toString()
-    val needsRepair: Boolean get() = suppressedSentences > 0 && text.isBlank()
+    val needsRepair: Boolean get() = loopDetected || ((suppressedSentences > 0 || policyRejected) && text.isBlank())
 
     fun accept(chunk: String) {
         if (chunk.isEmpty()) return
         received = true
-        pending.append(chunk)
+        if (loopDetected) throw RunawayLoop()
+        // Consume callbacks incrementally: a huge native chunk cannot flush a broken suffix first.
+        for (character in chunk) {
+            pending.append(character)
+            // Formatting-preserving text can contain intentionally repetitive code or data.
+            if (!preserveFormatting && runaway.accept(character)) {
+                loopDetected = true
+                discardPending()
+                throw RunawayLoop()
+            }
+            drainSentences()
+            if (pending.length > 4096) { publish(pending.toString()); discardPending() }
+        }
+    }
+    private fun drainSentences() {
         while (true) {
             var end = -1
             for (i in pending.indices) {
@@ -40,11 +64,18 @@ class VoiceRepetitionGuard(user: String, previousReply: String?, private val emi
             val sentence = pending.substring(0, end + 1)
             pending.delete(0, end + 1)
             publish(sentence)
+            runaway.reset()
+            // The pending suffix is at most the lookahead character for a decimal boundary.
+            pending.forEach { runaway.accept(it) }
         }
-        if (pending.length > 4096) { publish(pending.toString()); pending.clear() }
     }
+
     fun finish(finalText: String? = null): String {
+        if (loopDetected) { discardPending(); return text }
         if (!received && finalText != null) accept(finalText)
+        if (!preserveFormatting && runaway.accept(' ')) {
+            loopDetected = true; discardPending(); throw RunawayLoop()
+        }
         if (pending.isNotBlank()) publish(pending.toString())
         pending.clear()
         // If every streamed draft sentence failed policy, a final safe fallback may still be spoken.
@@ -55,15 +86,22 @@ class VoiceRepetitionGuard(user: String, previousReply: String?, private val emi
     }
     private fun publish(candidate: String) {
         val phrase = candidate.trim()
-        if (phrase.isBlank()) return
-        if (!isPublishable(phrase)) { policyRejected = true; return }
-        if (references.any { duplicates(phrase, it) }) { suppressedSentences++; return }
-        val output = (if (accepted.isEmpty()) "" else " ") + phrase
+        if (phrase.isBlank()) {
+            if (preserveFormatting && accepted.isNotEmpty()) { accepted.append(candidate); emit(candidate) }
+            return
+        }
+        val fence = preserveFormatting && phrase.startsWith("```")
+        val literal = preserveFormatting && (codeFence || fence)
+        if (!literal && !isPublishable(phrase)) { policyRejected = true; return }
+        if (!literal && references.any { duplicates(phrase, it) }) { suppressedSentences++; return }
+        val output = if (preserveFormatting) candidate else (if (accepted.isEmpty()) "" else " ") + phrase
         accepted.append(output)
         acceptedSentences++
-        references += phrase
+        if (fence) codeFence = !codeFence
+        if (!literal) references += phrase
         emit(output)
     }
+
     companion object {
         /** A checked phrase is complete; make its boundary visible to the speech chunker now. */
         fun speechReady(phrase: String): String = phrase.trim() + " "

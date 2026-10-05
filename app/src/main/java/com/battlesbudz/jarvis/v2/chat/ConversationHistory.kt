@@ -23,7 +23,9 @@ data class ConversationMessage(
     /** Original final-input/checkpoint time; call updates retain it across late replacement. */
     val sourceTimestampMs: Long = System.currentTimeMillis(),
     /** Reply-owned timings survive streaming replacements, call sync and process restart. */
-    val metrics: ReplyMetrics? = null
+    val metrics: ReplyMetrics? = null,
+    /** Native/call reply identity; display row IDs may instead use call/index. */
+    val sourceReplyId: String? = null
 )
 data class ActionReceipt(val name: String, val message: String, val succeeded: Boolean)
 data class ConversationThread(val id: String, val messages: List<ConversationMessage> = emptyList()) {
@@ -52,7 +54,8 @@ class ConversationHistory(private val preferences: SharedPreferences) {
                         }.getOrNull() }, m.optJSONArray("actions")?.let { actions -> (0 until actions.length()).map { i ->
                             actions.getJSONObject(i).let { a -> ActionReceipt(a.getString("name"), a.getString("message"), a.getBoolean("succeeded")) }
                         } }.orEmpty(), m.optLong("sourceTimestampMs", System.currentTimeMillis()),
-                        ReplyMetrics.read(m.optJSONObject("metrics")))
+                        ReplyMetrics.read(m.optJSONObject("metrics")),
+                        m.optString("sourceReplyId").takeUnless { it.isBlank() || it == "null" })
                 }
                 threads[t.getString("id")] = ConversationThread(t.getString("id"), messages)
             }
@@ -70,6 +73,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
     @Synchronized fun appendUser(text: String, attachment: ChatAttachment? = null): String {
         val id = UUID.randomUUID().toString()
         replace(_current.value.copy(messages = _current.value.messages + ConversationMessage(id, "You", text,
+            spoken = attachment?.kind == AttachmentKind.AUDIO,
             contextText = text + (attachment?.let { "\n[${it.kind.name.lowercase()} attached to this message]" } ?: ""), attachment = attachment)))
         return id
     }
@@ -83,7 +87,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
             else listOf(text, receiptText).filter { it.isNotBlank() }.joinToString("\n")
         val message = ConversationMessage(id, "Jarvis", visible, complete = complete,
             contextText = if (complete) visible else receiptText, actions = savedActions,
-            sourceTimestampMs = prior?.sourceTimestampMs ?: System.currentTimeMillis(), metrics = prior?.metrics)
+            sourceTimestampMs = prior?.sourceTimestampMs ?: System.currentTimeMillis(), metrics = (prior?.metrics ?: ReplyMetrics.unavailable).withOutputText(visible))
         val index = thread.messages.indexOfFirst { it.id == id }
         val entries = thread.messages.toMutableList()
         if (index < 0) entries += message else entries[index] = message
@@ -106,7 +110,8 @@ class ConversationHistory(private val preferences: SharedPreferences) {
         val prior = entries[index]
         val actions = prior.actions + receipt // the runner, not receipt values, decides replay deduplication.
         val visible = listOf(prior.text, receipt.message).filter { it.isNotBlank() }.joinToString("\n")
-        entries[index] = prior.copy(text = visible, contextText = actions.joinToString(" ") { it.message }, actions = actions)
+        entries[index] = prior.copy(text = visible, contextText = actions.joinToString(" ") { it.message }, actions = actions,
+            metrics = (prior.metrics ?: ReplyMetrics.unavailable).withOutputText(visible))
         replace(thread.copy(messages = entries))
     }
 
@@ -116,7 +121,8 @@ class ConversationHistory(private val preferences: SharedPreferences) {
         val thread = threads[threadId] ?: return
         val messages = call.transcript.mapIndexed { index, entry ->
             ConversationMessage("${call.id}:$index", entry.role, entry.text, entry.role == "You" && entry.origin == TranscriptOrigin.SPOKEN, call.id,
-                entry.forConversation()?.text.orEmpty(), entry.complete, sourceTimestampMs = entry.timestampMs, metrics = entry.metrics)
+                entry.forConversation()?.text.orEmpty(), entry.complete, sourceTimestampMs = entry.timestampMs,
+                metrics = entry.metrics, sourceReplyId = entry.replyId)
         }
         val first = thread.messages.indexOfFirst { it.callId == call.id }
         val entries = thread.messages.filterNot { it.callId == call.id }.toMutableList()
@@ -142,7 +148,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
     }
     @Synchronized fun context(excludingCall: String? = null): List<ChatEntry> =
         _current.value.messages.filter { (excludingCall == null || it.callId != excludingCall) && it.contextText.isNotBlank() }
-            .takeLast(24).map { ChatEntry(it.role, it.contextText) }
+            .takeLast(128).map { ChatEntry(it.role, it.contextText) }
 
     /**
      * Keeps visible history but fences pre-mutation prompt context by stable text IDs and original
@@ -176,7 +182,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
             (message.callId == null && message.id !in directIds) ||
                 (message.callId != null && message.sourceTimestampMs > callCutoff)
         }.filter { (excludingCall == null || it.callId != excludingCall) && it.contextText.isNotBlank() }
-            .takeLast(24).map { ChatEntry(it.role, it.contextText) }
+            .takeLast(128).map { ChatEntry(it.role, it.contextText) }
     }
 
     private fun replace(thread: ConversationThread, durable: Boolean = true) {
@@ -192,7 +198,7 @@ class ConversationHistory(private val preferences: SharedPreferences) {
             thread.messages.forEach { m -> messages.put(JSONObject().put("id", m.id).put("role", m.role)
                 .put("text", m.text).put("spoken", m.spoken).put("callId", m.callId)
                 .put("contextText", m.contextText).put("complete", m.complete).put("sourceTimestampMs", m.sourceTimestampMs)
-                .put("metrics", m.metrics?.json())
+                .put("metrics", m.metrics?.json()).put("sourceReplyId", m.sourceReplyId)
                 .put("attachment", m.attachment?.let { JSONObject().put("uri", it.uri).put("kind", it.kind.name) })
                 .put("actions", JSONArray().also { actions -> m.actions.forEach { action -> actions.put(JSONObject().put("name", action.name).put("message", action.message).put("succeeded", action.succeeded)) } })) }
             array.put(JSONObject().put("id", thread.id).put("messages", messages))

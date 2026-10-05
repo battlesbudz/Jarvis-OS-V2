@@ -20,6 +20,15 @@ data class LocalModelSpec(
     val requiresAccess: Boolean = false
 )
 
+/** Publisher filenames often differ from Jarvis's installed filename. */
+internal fun LocalModelSpec.importFileNames(): Set<String> = buildSet {
+    add(fileName)
+    downloadUrl?.let { url ->
+        val publishedName = java.net.URI(url).path.substringAfterLast('/')
+        if (publishedName.endsWith(".litertlm")) add(publishedName)
+    }
+}
+
 object ModelCatalog {
     val gemma4E2b = LocalModelSpec(
         id = "Gemma-4-E2B-it",

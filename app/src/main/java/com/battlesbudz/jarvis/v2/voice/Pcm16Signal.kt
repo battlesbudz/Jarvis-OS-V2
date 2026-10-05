@@ -8,7 +8,9 @@ internal data class Pcm16Signal(
     val sampleCount: Int,
     val rms: Double,
     val peak: Int,
-    val activeSampleRatio: Double
+    val activeSampleRatio: Double,
+    val nearSilentSampleCount: Int = 0,
+    val clippedSampleCount: Int = 0
 ) {
     companion object {
         fun measure(bytes: ByteArray, start: Int = 0): Pcm16Signal {
@@ -16,6 +18,8 @@ internal data class Pcm16Signal(
             var peak = 0
             var active = 0
             var count = 0
+            var nearSilent = 0
+            var clipped = 0
             var offset = start
             while (offset + 1 < bytes.size) {
                 // Mask both bytes before interpreting the combined word as signed.
@@ -28,11 +32,13 @@ internal data class Pcm16Signal(
                 sumSquares += sample.toDouble() * sample.toDouble()
                 peak = maxOf(peak, magnitude)
                 if (magnitude >= 500) active++
+                if (magnitude <= 1) nearSilent++
+                if (magnitude >= 32767) clipped++
                 count++
                 offset += 2
             }
             return if (count == 0) Pcm16Signal(0, 0.0, 0, 0.0)
-            else Pcm16Signal(count, sqrt(sumSquares / count), peak, active.toDouble() / count)
+            else Pcm16Signal(count, sqrt(sumSquares / count), peak, active.toDouble() / count, nearSilent, clipped)
         }
     }
 }

@@ -12,7 +12,9 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
     private val lines = linkedMapOf<Long, String>()
     // Avoid applying a second native speech gate to audio qualified by Jarvis VAD.
     // It could return an empty stream without ever invoking the speech decoder.
-    private val speechGate = ExternalSpeechGate()
+    private val speechGate = ExternalSpeechGate.completePhrase()
+    private val work = AsrRecognitionWorkAccumulator("moonshine_native_api_wall")
+    override val recognitionWorkMetrics get() = work.snapshot()
     override fun observeSpeech(speech: Boolean) = speechGate.observe(speech)
     private fun createLoaded(): Transcriber {
         val created = Transcriber(listOf(
@@ -107,16 +109,20 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
                 lowByte = null
             }
         }
-        if (samples.isNotEmpty()) native { transcriber.addAudioToStream(streamHandle, samples, 16_000) }
+        if (samples.isNotEmpty()) work.measure(AsrRecognitionWorkAccumulator.Phase.FEED, samples.size) {
+            native { transcriber.addAudioToStream(streamHandle, samples, 16_000) }
+        }
         return text()
     }
 
     override fun finish(): String {
         check(!closed)
         if (!finished) {
-            native { transcriber.stopStream(streamHandle) } // Forced final update includes the last, incomplete native line.
+            work.measure(AsrRecognitionWorkAccumulator.Phase.FINAL) {
+                native { transcriber.stopStream(streamHandle) }
+            } // Forced final update includes the last, incomplete native line.
             finished = true
-            log("moonshine_input_policy version=bounded_acoustic_v2 nativeGate=${inputMode.diagnosticName} freshCommand=$reserveReplyProbes inputMs=${speechGate.receivedBytes / 32} decoderMs=${speechGate.acceptedBytes / 32}")
+            log("moonshine_input_policy version=complete_phrase_v1 nativeGate=${inputMode.diagnosticName} freshCommand=$reserveReplyProbes inputMs=${speechGate.receivedBytes / 32} decoderMs=${speechGate.acceptedBytes / 32}")
         }
         return text()
     }
@@ -144,7 +150,9 @@ class MoonshineStreamingTranscriber(private val directory: File, private val upd
             TranscriberOption("return_audio_data", "false")
         ))
         transcriber.loadFromFiles(directory.path, JNI.MOONSHINE_MODEL_ARCH_SMALL_STREAMING)
-        return transcriber.transcribeWithoutStreaming(samples, 16_000)?.lines.orEmpty()
+        return work.measure(AsrRecognitionWorkAccumulator.Phase.RECOVERY, samples.size) {
+            native { transcriber.transcribeWithoutStreaming(samples, 16_000) }
+        }?.lines.orEmpty()
             .mapNotNull { it.text?.trim()?.takeIf(String::isNotEmpty) }.joinToString(" ")
     }
 
