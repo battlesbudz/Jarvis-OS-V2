@@ -262,6 +262,27 @@ class NativeBootBroadcastTest(unittest.TestCase):
                         wait_for_boot_broadcast(adb, lambda: True, 2, now=clock.now, pause=clock.pause,
                                                 log_reader=lambda deadline: read_native_boot_log(
                                                     path, deadline=deadline, now=clock.now, max_bytes=limit))
+                    adb.assert_not_called()
+
+    def test_no_native_marker_never_queries_guest_and_keeps_original_boot_deadline(self):
+        clock, receipts = Clock(), []
+        adb = Mock()
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "guest-startup-logcat.txt"
+            path.write_text("Posting BOOT_COMPLETED user #0\n")
+
+            def read(deadline):
+                self.assertEqual(900, deadline)
+                return read_native_boot_log(path, deadline=deadline, now=clock.now)
+
+            with self.assertRaisesRegex(TimeoutError, '"completed": false'):
+                wait_for_boot_broadcast(adb, lambda: True, 900, now=clock.now, pause=clock.pause,
+                                        log_reader=read, record=receipts.append)
+        adb.assert_not_called()
+        self.assertEqual(900, clock.now())
+        self.assertTrue(receipts)
+        self.assertTrue(all(set(receipt["probes"]) == {"log_candidate"} for receipt in receipts))
+        self.assertTrue(all(not receipt["completed"] for receipt in receipts))
 
     def test_native_completion_is_read_between_fresh_pid_checks_without_guest_logcat(self):
         clock, operations, receipts = Clock(), [], []
@@ -284,12 +305,45 @@ class NativeBootBroadcastTest(unittest.TestCase):
             result = wait_for_boot_broadcast(adb, lambda: True, 6, now=clock.now, pause=clock.pause,
                                             log_reader=read,
                                             record=lambda state: receipts.append(json.loads(json.dumps(state))))
-            self.assertEqual(["pid", "native", "pid"] * 2, operations)
+            self.assertEqual(["native", "native", "pid", "native", "pid"], operations)
             self.assertEqual(2, clock.now())
             self.assertTrue(result["completed"])
             self.assertEqual(279, result["system_server_pid"])
             self.assertFalse(receipts[3]["completed"])
             self.assertEqual(BOOT_DELIVERED, receipts[-1]["probes"]["logcat"]["stdout"])
+
+    def test_candidate_cannot_replace_fresh_log_read_between_pid_probes(self):
+        for fresh in (b"", BOOT_DELIVERED.replace("279", "775").encode(),
+                      BOOT_DELIVERED.replace("for u0", "for u10").encode(),
+                      BOOT_DELIVERED.replace("ActivityManager", "OtherService").encode(),
+                      BOOT_DELIVERED.replace("ActivityManager: ", "ActivityManager:\n").encode(),
+                      BOOT_DELIVERED.replace("279   353", "279\n353").encode(),
+                      BOOT_DELIVERED.rstrip("\n").encode(), b"\xff\n" + BOOT_DELIVERED.encode(), None):
+            with self.subTest(fresh=fresh), tempfile.TemporaryDirectory() as temporary:
+                path = Path(temporary) / "guest-startup-logcat.txt"
+                path.write_text(BOOT_DELIVERED)
+                clock, receipts, operations = Clock(), [], []
+
+                def adb(*args, **kwargs):
+                    self.assertEqual(("shell", "pidof", "system_server"), args)
+                    operations.append("pid")
+                    if operations == ["native", "pid"]:
+                        if fresh is None:
+                            path.unlink()
+                        else:
+                            path.write_bytes(fresh)
+                    return reply("279")
+
+                def read(deadline):
+                    operations.append("native")
+                    return read_native_boot_log(path, deadline=deadline, now=clock.now)
+
+                with self.assertRaisesRegex(TimeoutError, '"completed": false'):
+                    wait_for_boot_broadcast(adb, lambda: True, 2, now=clock.now, pause=clock.pause,
+                                            log_reader=read, record=receipts.append)
+                self.assertEqual(["native", "pid", "native", "pid"], operations)
+                self.assertEqual(BOOT_DELIVERED, receipts[-1]["probes"]["log_candidate"]["stdout"])
+                self.assertFalse(receipts[-1]["completed"])
 
     def test_native_marker_requires_correct_current_server_and_successful_stable_pid_probes(self):
         cases = [(BOOT_DELIVERED, reply("279 280"), reply("279")),
@@ -313,6 +367,32 @@ class NativeBootBroadcastTest(unittest.TestCase):
                                                 log_reader=lambda deadline: read_native_boot_log(
                                                     path, deadline=deadline, now=clock.now))
 
+    def test_wrong_user_tag_priority_or_incomplete_message_never_queries_guest(self):
+        for old, new in (("for u0", "for u10"), ("I ActivityManager", "W ActivityManager"),
+                         ("ActivityManager", "OtherService"), ("for u0", "for u"),
+                         ("for u0", "for u0 pending"), ("279", "0"),
+                         ("ActivityManager: ", "ActivityManager:\n"), ("279   353", "279\n353")):
+            with self.subTest(old=old, new=new), tempfile.TemporaryDirectory() as temporary:
+                path = Path(temporary) / "guest-startup-logcat.txt"
+                path.write_text(BOOT_DELIVERED.replace(old, new))
+                clock, adb = Clock(), Mock()
+                with self.assertRaisesRegex(TimeoutError, "BOOT_COMPLETED delivery"):
+                    wait_for_boot_broadcast(adb, lambda: True, 2, now=clock.now, pause=clock.pause,
+                                            log_reader=lambda deadline: read_native_boot_log(
+                                                path, deadline=deadline, now=clock.now))
+                adb.assert_not_called()
+
+    def test_failed_candidate_read_with_matching_marker_never_queries_guest(self):
+        for code in (1, 124):
+            with self.subTest(code=code):
+                clock, adb = Clock(), Mock()
+                read = Mock(return_value={"exit_code": code, "stdout": BOOT_DELIVERED, "stderr": "read failed"})
+                with self.assertRaisesRegex(TimeoutError, "BOOT_COMPLETED delivery"):
+                    wait_for_boot_broadcast(adb, lambda: True, 2, now=clock.now, pause=clock.pause,
+                                            log_reader=read)
+                adb.assert_not_called()
+                self.assertEqual(2, clock.now())
+
     def test_missing_unreadable_or_malformed_native_log_cannot_fall_back_to_adb_logcat(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "guest-startup-logcat.txt"
@@ -329,10 +409,9 @@ class NativeBootBroadcastTest(unittest.TestCase):
                                                 record=receipts.append,
                                                 log_reader=lambda deadline: read_native_boot_log(
                                                     path, deadline=deadline, now=clock.now))
-                    self.assertTrue(all(call.args == ("shell", "pidof", "system_server")
-                                        for call in adb.call_args_list))
-                    self.assertNotEqual(0, receipts[-1]["probes"]["logcat"]["exit_code"])
-                    self.assertTrue(receipts[-1]["probes"]["logcat"]["stderr"])
+                    adb.assert_not_called()
+                    self.assertNotEqual(0, receipts[-1]["probes"]["log_candidate"]["exit_code"])
+                    self.assertTrue(receipts[-1]["probes"]["log_candidate"]["stderr"])
                     if path.is_dir():
                         path.rmdir()
                     elif path.exists():
@@ -369,7 +448,7 @@ class NativeBootBroadcastTest(unittest.TestCase):
             self.assertIn("truncated", receipt["stderr"])
             self.assertEqual("", receipt["stdout"])
 
-    def test_late_native_read_cannot_query_after_pid_or_renew_original_deadline(self):
+    def test_late_candidate_read_cannot_query_guest_or_renew_original_deadline(self):
         clock, receipts = Clock(), []
         adb = Mock(return_value=reply("279"))
 
@@ -382,8 +461,36 @@ class NativeBootBroadcastTest(unittest.TestCase):
         with self.assertRaisesRegex(TimeoutError, "BOOT_COMPLETED delivery"):
             wait_for_boot_broadcast(adb, lambda: True, 3, now=clock.now, pause=clock.pause,
                                     log_reader=read, record=receipts.append)
-        self.assertEqual(1, adb.call_count)
-        self.assertEqual({"pid_before", "logcat"}, set(receipts[-1]["probes"]))
+        adb.assert_not_called()
+        self.assertEqual({"log_candidate"}, set(receipts[-1]["probes"]))
+
+    def test_late_native_validation_stops_queries_without_renewing_deadline(self):
+        for late_probe in ("pid_before", "logcat"):
+            with self.subTest(late_probe=late_probe):
+                clock, receipts = Clock(), []
+
+                def adb(*args, deadline, **kwargs):
+                    self.assertEqual(3, deadline)
+                    if late_probe == "pid_before":
+                        clock.pause(3)
+                    return reply("279")
+
+                def read(deadline):
+                    self.assertEqual(3, deadline)
+                    if late_probe == "logcat" and receipts:
+                        clock.pause(3)
+                    return {"exit_code": 0, "stdout": BOOT_DELIVERED, "stderr": ""}
+
+                query = Mock(side_effect=adb)
+                with self.assertRaisesRegex(TimeoutError, "BOOT_COMPLETED delivery"):
+                    wait_for_boot_broadcast(query, lambda: True, 3, now=clock.now, pause=clock.pause,
+                                            log_reader=read, record=receipts.append)
+                self.assertEqual(1, query.call_count)
+                self.assertEqual(3, clock.now())
+                expected = {"log_candidate", "pid_before"}
+                if late_probe == "logcat":
+                    expected.add("logcat")
+                self.assertEqual(expected, set(receipts[-1]["probes"]))
 
     def test_native_reader_retains_late_marker_as_failure_evidence_only(self):
         with tempfile.TemporaryDirectory() as temporary:

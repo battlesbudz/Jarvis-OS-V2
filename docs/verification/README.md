@@ -54,8 +54,10 @@ commits. Do not create or merge another PR without Justin's permission.
    window services, successful unlock and actual user0 BOOT_COMPLETED delivery
    for the current system_server before invoking the same full release
    controller. Completion is read live from a bounded 256 KiB complete-line tail
-   of that launch's native guest log, between fresh matching system_server PID
-   probes. The exact user0 completion marker, a running emulator and observation
+   of that launch's native guest log. A local candidate scan avoids repeatedly
+   launching guest PID probes while that completion marker is absent. A candidate
+   alone cannot authorize readiness: the log is read again between fresh matching
+   system_server PID probes. The exact user0 completion marker, a running emulator and observation
    before the original deadline remain required; a retained artifact alone cannot
    authorize readiness. This avoids Build 944's repeatedly timed-out guest logcat
    dumps without extending a deadline. All readiness and unlock checks share the 15-minute boot budget;
@@ -64,8 +66,10 @@ commits. Do not create or merge another PR without Justin's permission.
    inspected API 29 revision 8 image's `advancedFeatures.ini` declares it supported. Build 986
    lacked the host-composition extensions and repeatedly crashed the guest
    composer in `GoldfishGralloc::getHostHandle`, then lost SurfaceFlinger and
-   restarted Android. The override selects the guest-supported composition path;
-   a fresh full device pass must establish that it resolves startup. The requested
+   restarted Android. Build 1003 and its unchanged-code retry advertised both
+   host-composition extensions and no longer hit that native crash loop; services,
+   input and unlock succeeded, but final user0 boot delivery still timed out.
+   Complete startup and release-controller coverage remain unverified. The requested
    enabled and disabled features are retained separately from actual startup
    output. It does not disable watchdogs or change any readiness/test deadline.
    Software rendering requests `-gpu swiftshader_indirect`, with the

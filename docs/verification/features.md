@@ -30,6 +30,35 @@ feature request, disabled acceleration/Vulkan, original deadlines and the
 distinction between requested configuration and verified device success. All
 other profiles, APKs, watchdogs, app code and release dependencies are unchanged.
 
+### Build 1003 validation and boot-monitor overhead
+
+[Build 1003](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37271709675)
+tested head `6ef8a21996b51691b97da8acd7cb5dfae70d81db`, merge
+`2ba2ef6abba05265305d861d64266d69db2a88f1`. Both initial and retry API 29 logs
+advertise the two host-composition extensions and contain no native composer
+crash. Boot flag, all four services, input and unlock succeed. Final user0
+BOOT_COMPLETED delivery still misses the unchanged 900-second budget, so no
+Jarvis device tests run. Retained API 29 artifact IDs are `11329647808` and
+`11330521018`; the retry ZIP SHA-256 is
+`c5c46a77273d72611f772891192150ba7748e5cbfe5a27ff2d8b4f956ca63d09`.
+The first attempt had an early permission-initialization crash; the retry did
+not, yet still timed out during ordered boot delivery. The five other profiles
+pass across the latest successful producer attempts, with API 30's intermittent
+benchmark-navigation failure passing on its one unchanged-code retry. The
+consolidated receipt fails and publication remains blocked by API 29.
+
+The first attempt's boot-broadcast monitor launched 36 guest PID probes with
+286.7 seconds of combined command elapsed time despite no completion marker in
+the already-local log. This is waiting time, not a measured amount of recoverable
+CPU. The next correction scans the bounded native log first, avoiding guest
+queries until an exact completion candidate appears. It then performs the same
+fresh PID/log/PID validation for the current system_server. The candidate never
+authorizes readiness. Regressions reject missing, stale, wrong-user, wrong-tag,
+split-line and partial markers, failed reads/probes, process changes and expiry;
+the adb-logcat fallback and original deadlines remain unchanged. All 209 Python
+helper checks pass locally; a fresh exact-revision device run must measure the
+effect and complete the full gate before any APK is called verified.
+
 ## Spoken farewell returns to wake listening
 
 “Stop listening” and “Goodbye” end the current call segment while preserving the

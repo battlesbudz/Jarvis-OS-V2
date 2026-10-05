@@ -332,6 +332,21 @@ def wait_for_boot_broadcast(adb, running, deadline, *, now=time.monotonic, pause
         if not running():
             raise RuntimeError("Emulator exited before user0 BOOT_COMPLETED delivery was observed")
         state = {"completed": False, "probes": {}}
+        if log_reader is not None:
+            if now() >= deadline:
+                expired()
+            # Scan the bounded local tail before spending guest CPU on PID
+            # probes. This candidate is only a hint: the full PID/log/PID
+            # observation below must read the log again and validate readiness.
+            candidate = state["probes"]["log_candidate"] = log_reader(deadline=deadline)
+            pattern = (r"^\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\s+[1-9][0-9]*\s+"
+                       r"[0-9]+\s+I\s+ActivityManager\s*:\s+"
+                       r"Finished processing BOOT_COMPLETED for u0\s*$")
+            record(state)
+            if candidate["exit_code"] != 0 or not any(
+                    re.fullmatch(pattern, line) for line in candidate["stdout"].split("\n")):
+                pause(min(2, max(0, deadline - now())))
+                continue
         for name, args in (("pid_before", ("shell", "pidof", "system_server")),
                            ("logcat", ("logcat", "-b", "system", "-d", "-v", "threadtime",
                                        "-s", "ActivityManager:I")),
@@ -357,7 +372,13 @@ def wait_for_boot_broadcast(adb, running, deadline, *, now=time.monotonic, pause
             pattern = (rf"^\d{{2}}-\d{{2}} \d{{2}}:\d{{2}}:\d{{2}}\.\d{{3}}\s+{pid}\s+"
                        r"[0-9]+\s+I\s+ActivityManager\s*:\s+"
                        r"Finished processing BOOT_COMPLETED for u0\s*$")
-            state["completed"] = bool(re.search(pattern, probes["logcat"]["stdout"], re.MULTILINE))
+            if log_reader is not None:
+                # Match one complete native record, never whitespace spanning
+                # separate lines, both here and in the candidate scan above.
+                state["completed"] = any(re.fullmatch(pattern, line)
+                                         for line in probes["logcat"]["stdout"].split("\n"))
+            else:
+                state["completed"] = bool(re.search(pattern, probes["logcat"]["stdout"], re.MULTILINE))
         record(state)
         if state["completed"] and running() and now() < deadline:
             return state
