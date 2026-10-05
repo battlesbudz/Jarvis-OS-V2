@@ -2877,6 +2877,7 @@ class ReleaseJourneyTest {
             benchmarkClickEnabled(By.res("benchmark_quality_intent_PASS"))
             benchmarkClickEnabled(By.res("benchmark_quality_factuality_FAIL"))
             assertFalse(benchmarkScrollTo(By.res("pipeline_benchmark_quality_save"),
+                holdDiscovery = true,
                 sparseHeldDiscovery = android.os.Build.VERSION.SDK_INT >= 35).isEnabled)
             benchmarkClickEnabled(By.res("pipeline_benchmark_quality_verify"))
             benchmarkClickEnabled(By.res("pipeline_benchmark_quality_save"))
