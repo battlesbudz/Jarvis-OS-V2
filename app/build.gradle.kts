@@ -77,6 +77,13 @@ android {
     }
     // Exercise the same signed, shrunk variant delivered to the user.
     testBuildType = "release"
+    // Robolectric needs the merged manifest and resources: without this the
+    // test PackageManager sees no manifest, the package falls back to
+    // org.robolectric.default, and no activity resolves — the compose rule's
+    // host activity (VoiceCallEndVisibilityTest) fails to launch.
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
     // Robolectric needs the merged manifest/resources (the ComponentActivity
     // declared for createAndroidComposeRule lives in the release manifest).
     testOptions {
