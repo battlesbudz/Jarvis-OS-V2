@@ -3085,15 +3085,18 @@ class ReleaseJourneyTest {
             assertNotNull(find(By.textContains("Captions are display-only")))
             assertNotNull(find(By.text("Off")))
             // Exercise the actual dropdown and rebuild the UI for each persisted choice.
-            for (engine in listOf(AsrEngine.MOONSHINE, AsrEngine.WHISPER, null)) {
+            // Expected UI labels are fixture data, not getters across the independently
+            // optimized app/test APK boundary (the app can inline AsrEngine.label).
+            for ((label, engine) in listOf("Moonshine" to AsrEngine.MOONSHINE,
+                "Whisper base.en" to AsrEngine.WHISPER, "Off" to null)) {
                 find(By.res("gemma_caption_engine")).click()
                 // The separate popup window does not inherit testTagsAsResourceId.
                 // Each new label differs from the selected value; other controls
                 // use prefixed labels, so this targets the actual visible option.
-                find(By.text(engine?.label ?: "Off")).click()
+                find(By.text(label)).click()
                 assertEquals(engine, VoiceInputMode.captionEngine(context))
                 render()
-                assertNotNull(find(By.text(engine?.label ?: "Off")))
+                assertNotNull(find(By.text(label)))
             }
             assertFalse(VoiceInputMode.captions(context))
             captureEvidence("gemma_audio_display_caption_settings")
@@ -3993,6 +3996,7 @@ class ReleaseJourneyTest {
         // the journey sets a real PIN via locksettings first — the keyguard
         // state below is genuine Android lock state, not a fixture.
         val keyguard = context.getSystemService(android.app.KeyguardManager::class.java)
+        val keyguardDismissal = AtomicReference("not_requested")
         device.executeShellCommand("locksettings set-pin 1234")
         try {
             device.sleep()
@@ -4039,7 +4043,22 @@ class ReleaseJourneyTest {
                 keyguard?.isDeviceSecure == false) {
                 device.wakeUp()
                 if (android.os.SystemClock.uptimeMillis() < cleanupDeadline) {
-                    runCatching { device.executeShellCommand("wm dismiss-keyguard") }
+                    runCatching {
+                        // Use the current owned Activity without forcing RESUMED behind
+                        // keyguard or retaining an Activity across lifecycle transitions.
+                        activity.onActivity { host ->
+                            if (android.os.SystemClock.uptimeMillis() < cleanupDeadline &&
+                                keyguard?.isDeviceSecure == false) {
+                                keyguardDismissal.set("requested")
+                                keyguard.requestDismissKeyguard(host,
+                                    object : android.app.KeyguardManager.KeyguardDismissCallback() {
+                                        override fun onDismissSucceeded() { keyguardDismissal.set("succeeded") }
+                                        override fun onDismissError() { keyguardDismissal.set("error") }
+                                        override fun onDismissCancelled() { keyguardDismissal.set("cancelled") }
+                                    })
+                            } else keyguardDismissal.set("precondition_changed")
+                        }
+                    }.onFailure { keyguardDismissal.set("request_failed:${it.javaClass.simpleName}") }
                 }
             }
             while (android.os.SystemClock.uptimeMillis() < cleanupDeadline &&
@@ -4047,11 +4066,15 @@ class ReleaseJourneyTest {
                     !device.hasObject(By.res("model_browse")))) {
                 Thread.sleep(100)
             }
+            android.util.Log.i("JarvisVerification", "test64 dismissal=${keyguardDismissal.get()} " +
+                "secure=${keyguard?.isDeviceSecure} deviceLocked=${keyguard?.isDeviceLocked} " +
+                "keyguardShowing=${keyguard?.isKeyguardLocked}")
         }
         assertFalse("PIN must be cleared so later journeys run unlocked",
             keyguard?.isDeviceLocked == true)
         assertFalse("The fixture PIN must no longer secure the device", keyguard?.isDeviceSecure == true)
-        assertFalse("Keyguard UI must be dismissed before later journeys", keyguard?.isKeyguardLocked == true)
+        assertFalse("Keyguard UI must be dismissed before later journeys (${keyguardDismissal.get()})",
+            keyguard?.isKeyguardLocked == true)
         assertNotNull("The owned setup screen must be accessible after lock cleanup",
             device.findObject(By.res("model_browse")))
     }

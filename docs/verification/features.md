@@ -3187,3 +3187,44 @@ Fold `11410457443`,
 `e56de1d0c17ab35cd86d0d2fcdfd303ceb3053fbde6930ca13e50b04657a6b9e`;
 failed receipt `11410002487`,
 `7607614dde4b5295fab83973b3e73ba39c2a904277d3c783655c02a1eb796efc`.
+
+### Build 1102 release-instrumentation ABI and dismissal follow-up
+
+Build 1102 (`3708cd6a`, tested merge `fa9a6662`) passed 1,421 JVM tests in 214
+suites, both signed builds/audits and all five real 1098→1102 upgrade phases. This
+confirms the transactional seed repair on the required profiles. Publication was
+skipped because the main gate still failed.
+
+Test47 reached the repaired popup but invoked `AsrEngine.getLabel()` across the
+independently optimized app/test APK boundary. The optimized application did not
+expose that callable getter at the expected ABI, causing `NoSuchMethodError`.
+The journey now pairs explicit expected UI labels (Moonshine, Whisper base.en,
+Off) with the same enum values. It still clicks each visible option, checks the
+persisted choice and reopens the screen. No production keep rule, optimizer
+setting, debug APK substitution or assertion removal is used.
+
+API30 and Fold also demonstrate that the single shell dismissal did not reliably
+remove keyguard. The new readiness assertions correctly fail instead of reporting
+cleanup success while later journeys are obscured. The next candidate uses one
+[activity-owned keyguard dismissal request](https://developer.android.com/reference/android/app/KeyguardManager#requestDismissKeyguard(android.app.Activity,android.app.KeyguardManager.KeyguardDismissCallback))
+after the known fixture PIN is cleared. It obtains the current Activity only
+inside [ActivityScenario.onActivity](https://developer.android.com/reference/androidx/test/core/app/ActivityScenario#onActivity(androidx.test.core.app.ActivityScenario.ActivityAction)):
+no retained Activity reference, forced RESUMED state, show-when-locked override or
+second dismissal request. Callback success/error/cancellation is diagnostic;
+observed nonsecure/unlocked state, hidden keyguard and visible owned setup remain
+the final authority. The same polling deadline and all original action assertions
+remain. This framework change needs fresh exact-head API30/Fold/device evidence;
+a source review is not proof that dismissal succeeded.
+
+Retained failed-run artifacts: API35 `11414466366`, ZIP SHA-256
+`57dec9bbaf5af5b8682999070d77ae4f886459227de6aaf30d8be8a6910178db`;
+API30 `11414367268`,
+`f3662b271404b0b826636b80cd970bbb5505cfdf72b56ab1f5a5d2fc12d4d14e`;
+API36 phone `11414061627`,
+`d7272a6da03b66b250da2e0dd55524333d83ed8603fa529ccb552a0799f72c0a`;
+Fold `11413673303`,
+`34a6fe76aec4defdab73fd47d94c94da4ddb756016e454ba8bcf8e872be0a60c`;
+actual16KB `11413187238`,
+`ebf76bddc218aa4c676dbce7f7c6969983a7f37d902f61ec0a5f7ec3a311c908`;
+receipt `11414388237`,
+`16af1d7b38d55a791dd3bcba324c656836bdb0e2d162b59f058cfa0e19fee8a7`.
