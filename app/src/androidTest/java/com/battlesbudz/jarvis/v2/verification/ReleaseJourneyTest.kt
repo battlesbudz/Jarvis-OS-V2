@@ -3049,7 +3049,7 @@ class ReleaseJourneyTest {
     }
 
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-    @Test fun test47_audioInputChoiceAndCaptionEnginePersistWithoutLoadingModels() {
+    @Test fun test47_audioInputChoiceAndDisplayCaptionTogglePersistWithoutLoadingModels() {
         val originalMode = VoiceInputMode.selected(context)
         val originalEngine = VoiceInputMode.captionEngine(context)
         fun render() {
