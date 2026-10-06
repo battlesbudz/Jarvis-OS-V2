@@ -4,6 +4,7 @@ import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
 import com.battlesbudz.jarvis.v2.ai.ToolCall
 import com.battlesbudz.jarvis.v2.ai.ToolCallEngine
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
 /**
@@ -96,7 +97,7 @@ class ToolReliabilityBenchmark(
                 // Verification is synchronous and slow (a multi-GB hash); a
                 // cancellation that landed during it must never be followed
                 // by native allocation or initialization.
-                coroutineContext.ensureActive()
+                currentCoroutineContext().ensureActive()
                 val engine = engineFactory(spec)
                 try {
                     engine.initialize()
