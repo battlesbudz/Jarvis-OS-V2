@@ -3275,6 +3275,8 @@ class ReleaseJourneyTest {
         val call = MutableStateFlow(VoiceSessionState.PASSIVE_LISTENING)
         val playback = MutableStateFlow(VoicePlaybackFrame())
         val journal = MutableStateFlow<ToolTaskJournal?>(ToolTaskJournal())
+        val journalWarning = "The action journal is unavailable. Phone actions are paused."
+        val taskError = MutableStateFlow<String?>(null)
         val observed = MutableStateFlow<AgentActivitySnapshot?>(null)
         val approvals = AtomicInteger()
         val stops = AtomicInteger()
@@ -3290,6 +3292,8 @@ class ReleaseJourneyTest {
         fun pose(label: String) {
             assertTrue("Wisp should show $label", device.wait(
                 Until.hasObject(By.res("jarvis_wisp_status").text(label)), 10_000))
+            if (taskError.value != null) assertTrue("The task warning must remain visible during $label", device.wait(
+                Until.hasObject(By.text("Phone tasks need attention")), 5_000))
         }
         fun awaitWispSize(message: String, expected: (android.graphics.Rect) -> Boolean): android.graphics.Rect =
             awaitWispGeometry("jarvis_wisp_viewport", message, 5_000, 200, expected)
@@ -3307,13 +3311,14 @@ class ReleaseJourneyTest {
                 MaterialTheme(colorScheme = androidx.compose.material3.darkColorScheme()) {
                     Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
                         WispAppFrame(presence = {
-                            WispPresence(history, busy, call, playback, journal, null, observed)
+                            WispPresence(history, busy, call, playback, journal, taskError, observed)
                         }) {
                                 ConversationScreen(history, busy, call, onSend = { _, _ -> null },
                                     selectedModel = LocalModelSpec("wisp-fixture", "fixture.bin", recommendedGpu = false),
                                     onSelectConversation = { null }, onEndVoice = { done -> endCall(); done("") },
                                     onOpenVoiceCalls = {}, resumedVoice = false,
-                                    phoneTasks = journal, onPhoneTaskAction = { _, _, _ -> approvals.incrementAndGet() },
+                                    phoneTasks = journal, phoneTaskError = taskError,
+                                    onPhoneTaskAction = { _, _, _ -> approvals.incrementAndGet() },
                                     voiceContent = { visible, _, _, request ->
                                         androidx.compose.runtime.LaunchedEffect(request) {
                                             if (request > 0) {
@@ -3330,6 +3335,7 @@ class ReleaseJourneyTest {
                                             onStart = {}, onStopReply = {
                                                 stops.incrementAndGet(); playback.value = VoicePlaybackFrame()
                                                 VoiceSessionUi.phase.value = VoicePhase.LISTENING
+                                                call.value = VoiceSessionState.ACTIVELY_LISTENING
                                             }, onToggleMicrophone = {
                                                 VoiceSessionUi.paused.value = !VoiceSessionUi.paused.value
                                             }, onEndCall = { endCall() })
@@ -3383,6 +3389,21 @@ class ReleaseJourneyTest {
             assertEquals(0, approvals.get())
             journal.value = ToolTaskJournal()
             pose("Ready")
+            // Keep the same storage failure throughout real UI state transitions; animation must
+            // neither hide the phone-action warning nor require clearing its process-owned state.
+            taskError.value = journalWarning
+            pose("Task needs attention")
+            clickEnabled(By.res("phone_tasks_open"))
+            assertNotNull(find(By.text(journalWarning)))
+            captureEvidence("test49_wispJournalWarning")
+            clickEnabled(By.text("Done"))
+            busy.value = true
+            pose("Thinking")
+            observed.value = AgentActivitySnapshot(4, history.current.value.id, AgentActivityKind.CHECKING_REFERENCES, "Checking references")
+            pose("Checking references")
+            observed.value = null
+            busy.value = false
+            pose("Task needs attention")
             enterText(By.res("chat_composer"), "Keep my Wisp draft")
             hideKeyboardWithoutNavigating()
             repeat(2) {
@@ -3402,7 +3423,13 @@ class ReleaseJourneyTest {
                 awaitWispSize("Pausing a call must retain its larger workspace", ::isModestlyExpanded)
                 clickEnabled(By.res("voice_call_pause"))
                 pose("Listening")
+                VoiceSessionUi.phase.value = VoicePhase.PREPARING
+                pose("Preparing")
+                VoiceSessionUi.phase.value = VoicePhase.THINKING
+                call.value = VoiceSessionState.PROCESSING
+                pose("Thinking")
                 VoiceSessionUi.phase.value = VoicePhase.SPEAKING
+                call.value = VoiceSessionState.SPEAKING
                 playback.value = VoicePlaybackFrame("A controlled playback frame", .8f)
                 pose("Speaking")
                 captureEvidence("test49_wispSpeaking$it")
@@ -3410,7 +3437,7 @@ class ReleaseJourneyTest {
                 pose("Listening")
                 awaitWispSize("Stopping a reply must not shrink an active call", ::isModestlyExpanded)
                 clickEnabled(By.res("voice_call_end"))
-                pose("Ready")
+                pose("Task needs attention")
                 awaitWispSize("Ending a call must return Wisp to its idle size") {
                     kotlin.math.abs(it.height() - idleViewport.height()) <= 1 && kotlin.math.abs(it.width() - idleViewport.width()) <= 1
                 }
@@ -3418,6 +3445,8 @@ class ReleaseJourneyTest {
             }
             assertEquals(2, stops.get())
             assertEquals(2, ends.get())
+            assertEquals("Poses cannot clear the journal failure", journalWarning, taskError.value)
+            assertEquals("Poses cannot authorize paused phone actions", 0, approvals.get())
             assertNotNull("Ending a call never removes Wisp", find(By.res("jarvis_wisp")))
             assertFalse(device.hasObject(By.res("voice_call_orb")))
         } finally {

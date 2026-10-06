@@ -36,6 +36,10 @@ Current honest action coverage:
   CHECKING_REFERENCES observation. Query-routing heuristics do not emit fake
   search activity. Snapshots contain constant presentation metadata, not URLs,
   prompts or source contents. Stale cleanup cannot clear a newer operation.
+- A generic persistent task-store error remains visible in the phone-task panel
+  and becomes Wisp's idle attention fallback. It does not mask actual voice,
+  text or reference activity. This presentation choice neither clears the error
+  nor resumes phone actions.
 - Approval/input requirements show a waiting pose. Failure and unknown outcomes
   show attention, not success. A brief success pose requires a newly observed
   durable SUCCEEDED receipt with `ExecutionResult.Outcome.SUCCEEDED`; history
@@ -535,6 +539,74 @@ source still matches the independently compiled and boundary-tested candidate.
 Workflow YAML parsing and whitespace checks pass. These local checks do not
 establish API 29 completion or API 36 16 KB runtime health; the new full
 same-revision release gate remains required.
+
+### Persistent journal warning must not freeze live Wisp activity
+
+October 6 phone screenshots show Wisp labelled “Task needs attention” and the
+separate phone-task dialog reporting “The action journal is unavailable. Phone
+actions are paused.” The screenshots do not identify the installed build or
+prove why its private journal could not be read. The presentation defect is
+independent and reproducible: `WispPresenter.present` returned a generic
+`taskError` before current voice/text/reference signals, also preventing the
+listening/speaking poses from selecting their real audio envelopes.
+
+The generic error is now an idle fallback. Specific task approval, unresolved
+outcome and RUNNING priorities remain intact; current work and genuine fresh
+receipts keep their meaning. Listening, thinking, speaking and microphone pause
+can appear while the task warning remains visible. Ending a call returns to
+attention if the same error is still present. No error state is cleared, no
+journal is modified and no phone-action authority is granted by a pose.
+
+Five JVM regressions cover repeated call transitions, microphone versus playback
+amplitudes, idle/end attention, concurrent text/reference work, preserved urgent
+state priority and fresh receipts. Four of these fail against the original
+presenter. The real-state release test49 holds the identical warning StateFlow
+in both Wisp and the conversation's phone-task UI through text/reference work
+and two call cycles, checks its visibility and detail, and verifies that end
+preserves the error and draft. Local validation passes 95 JVM tests across 12
+classes, including 17 Wisp tests, compilation of the header against actual
+API 35/Compose classes, the architecture guard and all 271 Python helpers.
+This is not local execution of the Android journey;
+the next full signed, exact-revision gate remains required.
+
+A separate read-only schema review finds a possible downgrade explanation:
+released Muse build 1067 (`b29b19bfa12495b537bea691ada124f4501e08fc`) writes
+journal schema 3, while this branch's store accepts 1–2 and writes 2 at the
+inspected baseline. Both use the same app-private journal filename. That source
+mismatch does not prove this phone contains a v3 file. Simply widening the old
+reader would discard newer workflow/source-access sections on write and still
+reject newer action types. No downgrade conversion, journal reset or unsafe
+recovery is included in the Wisp fix. The existing installed-build diagnostic
+alone cannot establish the journal schema or swallowed storage-failure cause.
+
+### Build 1068 approved matrix result
+
+[Build 1068](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37423443731)
+tests head `be1c099d221335b37fd33eb2cebfb44c50a0d7fe`, merge
+`76c57bd344e93a2516993be4b89a268c8d9fd321`. Both signed APK variants,
+recorded speech/native audits and all 1,032 JVM tests pass with zero
+failures/errors/skips. JVM artifact `11394560690`, ZIP SHA-256
+`4ddef6d4f1d689c8bfab71bd71dac318297b2b41c5e113750ec4fa8b38de1eb3`, retains
+the results. All five KVM profiles pass, including the required API 36 16 KB
+profile with actual SDK 36, `PAGE_SIZE=16384`, `libndk_translation`, all nine
+native libraries loaded, 50 main tests and upgrade/lifecycle/layout coverage.
+Its artifact `11395087011`, ZIP SHA-256
+`bfabf163354d5835e7b1fd6c24094602a0803120f7a313e6a7267286e4d5e087`, verifies
+the new profile. Android 15-specific 16 KB coverage remains excluded by the
+approved replacement; this is not evidence that its old image is repaired.
+
+API 29 reaches full startup in 753.252 seconds on the same live system server,
+with actual 30 Hz and 360×640 at 140 dpi. The previous Build 907 seed then
+fails while exporting evidence through MediaStore: `external_primary` is absent
+and `/sdcard` unavailable after a retained vold/FUSE mount timeout (`-110`).
+Artifact `11394687449`, ZIP SHA-256
+`f9d986aab9f1bb26c496f85c57e1f81fe41a3d5521081730f32f6fbd5a787310`, retains
+that platform/storage failure. Main instrumentation never starts, so the new
+40-minute main budget is unexercised. A waiting barrier alone would not repair
+the persistently missing mount; no reset, remount workaround or waived seed
+assertion is included. The consolidated receipt fails and publication is skipped.
+The separate phone-reported Wisp priority correction requires a new exact-head
+run; Build 1068 does not verify that later change.
 
 ## API 29 graphics boot loop — October 5, 2026
 

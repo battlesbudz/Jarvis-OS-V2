@@ -7,6 +7,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WispPresentationTest {
+    private val journalError = "The action journal is unavailable. Phone actions are paused."
     private fun attempt(state: ToolTaskState, name: String = "read_battery", generation: Long = 0,
         outcome: ExecutionResult.Outcome? = null, group: String? = null) = ToolTaskAttempt(
         "task", generation, state, ActionRequest(name, emptyMap()), 1, 2,
@@ -14,8 +15,9 @@ class WispPresentationTest {
     private fun present(journal: ToolTaskJournal? = null, armed: Boolean = false,
         phase: VoicePhase = VoicePhase.IDLE, busy: Boolean = false, paused: Boolean = false,
         receipt: WispPresentation? = null, observed: WispPresentation? = null,
-        callState: VoiceSessionState = VoiceSessionState.PASSIVE_LISTENING) = WispPresenter.present(
-        "chat", journal, null, busy, armed, phase, callState, paused, observed, receipt)
+        callState: VoiceSessionState = VoiceSessionState.PASSIVE_LISTENING,
+        taskError: String? = null) = WispPresenter.present(
+        "chat", journal, taskError, busy, armed, phase, callState, paused, observed, receipt)
 
     @Test fun callViewportHasModestTargetsAndPreservesShortWindowSpace() {
         assertEquals(WispViewport(168, 104), WispPresenter.viewport(false, VoiceSessionState.ENDED, false))
@@ -88,6 +90,90 @@ class WispPresentationTest {
         assertEquals(0f, level(WispActivity.SPEAKING, VoicePhase.SPEAKING, output = Float.POSITIVE_INFINITY), 0f)
         assertEquals(1f, level(WispActivity.SPEAKING, VoicePhase.SPEAKING, output = 3f), 0f)
         assertEquals(0f, level(WispActivity.LISTENING, VoicePhase.LISTENING, mic = -1f), 0f)
+    }
+
+    @Test fun persistentJournalErrorAllowsRepeatedCallTransitionsAndActualAudioOwners() {
+        fun check(phase: VoicePhase, state: VoiceSessionState, expected: WispActivity,
+            paused: Boolean = false, expectedLevel: Float = 0f) {
+            val result = present(armed = true, phase = phase, callState = state,
+                paused = paused, taskError = journalError)
+            assertEquals("$phase / $state / paused=$paused", expected, result.activity)
+            assertEquals(expectedLevel, WispPresenter.audioLevel(result.activity, phase, true,
+                paused, microphone = .25f, playback = .8f), 0f)
+        }
+        repeat(2) {
+            check(VoicePhase.PREPARING, VoiceSessionState.PROCESSING, WispActivity.THINKING)
+            check(VoicePhase.WAKE, VoiceSessionState.PASSIVE_LISTENING, WispActivity.LISTENING, expectedLevel = .25f)
+            check(VoicePhase.WAKING, VoiceSessionState.ACTIVELY_LISTENING, WispActivity.THINKING)
+            check(VoicePhase.LISTENING, VoiceSessionState.ACTIVELY_LISTENING, WispActivity.LISTENING, expectedLevel = .25f)
+            check(VoicePhase.THINKING, VoiceSessionState.PROCESSING, WispActivity.THINKING)
+            check(VoicePhase.SPEAKING, VoiceSessionState.SPEAKING, WispActivity.SPEAKING, expectedLevel = .8f)
+            check(VoicePhase.SPEAKING, VoiceSessionState.SPEAKING, WispActivity.SPEAKING, paused = true, expectedLevel = .8f)
+            check(VoicePhase.LISTENING, VoiceSessionState.ACTIVELY_LISTENING, WispActivity.PAUSED, paused = true)
+            check(VoicePhase.PAUSED, VoiceSessionState.ACTIVELY_LISTENING, WispActivity.PAUSED)
+            check(VoicePhase.IDLE, VoiceSessionState.INTERRUPTED, WispActivity.PAUSED)
+            check(VoicePhase.IDLE, VoiceSessionState.EXECUTING_ACTION, WispActivity.THINKING)
+            check(VoicePhase.LISTENING, VoiceSessionState.ACTIVELY_LISTENING, WispActivity.LISTENING, expectedLevel = .25f)
+            assertEquals("Task needs attention", present(callState = VoiceSessionState.ENDED,
+                taskError = journalError).label)
+        }
+    }
+
+    @Test fun journalErrorRemainsAttentionAtIdleAndAfterEndEvenWithStaleAudioPhase() {
+        val attention = WispPresentation(WispActivity.ERROR, "Task needs attention", journalError)
+        for (phase in VoicePhase.entries) {
+            val result = present(phase = phase, callState = VoiceSessionState.ENDED, taskError = journalError)
+            assertEquals(phase.name, attention, result)
+            assertEquals(0f, WispPresenter.audioLevel(result.activity, phase, false, false, .7f, .9f), 0f)
+        }
+        assertEquals(attention, present(armed = true, taskError = journalError))
+        assertEquals(attention, present(taskError = journalError,
+            observed = WispPresentation(WispActivity.ERROR, "Something went wrong")))
+        assertEquals(WispActivity.READY, present().activity)
+    }
+
+    @Test fun journalErrorDoesNotMaskCurrentTextOrReferenceWork() {
+        assertEquals(WispActivity.THINKING, present(busy = true, taskError = journalError).activity)
+        val reference = WispPresentation(WispActivity.CHECKING, "Checking references")
+        assertEquals(reference, present(busy = true, observed = reference, taskError = journalError))
+        assertEquals("Task needs attention", present(taskError = journalError).label)
+    }
+
+    @Test fun journalErrorPreservesUrgentTaskAndCallApprovalPriorityWithoutChangingTasks() {
+        val reference = WispPresentation(WispActivity.CHECKING, "Checking references")
+        val success = WispPresentation(WispActivity.SUCCESS, "Task complete")
+        for (state in listOf(ToolTaskState.WAITING_APPROVAL, ToolTaskState.UNKNOWN_OUTCOME, ToolTaskState.RUNNING)) {
+            val task = attempt(state)
+            val journal = ToolTaskJournal(attempts = listOf(task))
+            assertEquals(state.name, WispPresenter.task(task), present(journal, armed = true,
+                phase = VoicePhase.SPEAKING, busy = true, observed = reference, receipt = success, taskError = journalError))
+            assertEquals(task, journal.attempts.single())
+        }
+        assertEquals("Waiting for you", present(armed = true, phase = VoicePhase.SPEAKING,
+            callState = VoiceSessionState.WAITING_FOR_CONFIRMATION, taskError = journalError).label)
+        for (state in listOf(ToolTaskState.QUEUED, ToolTaskState.READY, ToolTaskState.WAITING_INPUT,
+            ToolTaskState.WAITING_RESOURCE, ToolTaskState.PAUSED)) {
+            val task = attempt(state)
+            assertEquals(state.name, WispPresenter.task(task), present(
+                ToolTaskJournal(attempts = listOf(task)), taskError = journalError))
+        }
+    }
+
+    @Test fun freshReceiptsKeepTheirMeaningWithJournalErrorAndThenReturnToAttention() {
+        for ((state, outcome, expected) in listOf(
+            Triple(ToolTaskState.SUCCEEDED, ExecutionResult.Outcome.SUCCEEDED, WispActivity.SUCCESS),
+            Triple(ToolTaskState.FAILED, ExecutionResult.Outcome.FAILED, WispActivity.ERROR),
+            Triple(ToolTaskState.CANCELLED, null, WispActivity.PAUSED))) {
+            val tracker = WispReceiptTracker()
+            val running = ToolTaskJournal(attempts = listOf(attempt(ToolTaskState.RUNNING)))
+            val completed = ToolTaskJournal(attempts = listOf(attempt(state, generation = 1, outcome = outcome)))
+            assertNull(tracker.update(running, "chat"))
+            val receipt = tracker.update(completed, "chat")
+            assertEquals(expected, present(completed, receipt = receipt, taskError = journalError).activity)
+            assertEquals("Task needs attention", present(completed, taskError = journalError).label)
+            assertNull(tracker.update(completed, "chat"))
+            assertNull(WispReceiptTracker().update(completed, "chat"))
+        }
     }
 
     @Test fun everyRunningPropRequiresItsActualTool() {

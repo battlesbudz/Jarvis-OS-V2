@@ -52,12 +52,11 @@ internal object WispPresenter {
         receipt: WispPresentation? = null
     ): WispPresentation {
         val attempts = relevantAttempts(journal, conversationId)
-        // Attention is more important than motion. Unknown outcomes must never look successful.
+        // Specific task authority/outcomes take priority. Unknown outcomes must never look successful.
         val urgent = attempts.lastOrNull { it.state == ToolTaskState.WAITING_APPROVAL }
             ?: attempts.lastOrNull { it.state == ToolTaskState.UNKNOWN_OUTCOME && !it.reconciled }
         if (urgent != null) return task(urgent)
         attempts.lastOrNull { it.state == ToolTaskState.RUNNING }?.let { return task(it) }
-        if (taskError != null) return WispPresentation(WispActivity.ERROR, "Task needs attention", taskError)
         val recentError = observedActivity?.takeIf { it.activity == WispActivity.ERROR }
         if (observedActivity != null && recentError == null) return observedActivity
         if (armed && callState == VoiceSessionState.WAITING_FOR_CONFIRMATION)
@@ -67,8 +66,12 @@ internal object WispPresenter {
         attempts.lastOrNull { it.state in pendingStates && !it.reconciled }?.let { return task(it) }
         if (chatBusy) return WispPresentation(WispActivity.THINKING, "Thinking")
         if (receipt != null) return receipt
-        if (recentError != null && (!armed || phase == VoicePhase.IDLE)) return recentError
-        if (!armed) return WispPresentation(WispActivity.READY, "Ready")
+        // A persistent journal failure remains visible in the task panel. It is the idle
+        // fallback here, so unrelated live work and its real audio owner remain represented.
+        val idle = if (taskError != null) WispPresentation(WispActivity.ERROR, "Task needs attention", taskError)
+            else WispPresentation(WispActivity.READY, "Ready")
+        if (taskError == null && recentError != null && (!armed || phase == VoicePhase.IDLE)) return recentError
+        if (!armed) return idle
         if (microphonePaused || phase == VoicePhase.PAUSED)
             return WispPresentation(WispActivity.PAUSED, "Microphone paused")
         return when (phase) {
@@ -79,7 +82,7 @@ internal object WispPresenter {
             else -> when (callState) {
                 VoiceSessionState.EXECUTING_ACTION -> WispPresentation(WispActivity.THINKING, "Working")
                 VoiceSessionState.INTERRUPTED -> WispPresentation(WispActivity.PAUSED, "Reply interrupted")
-                else -> WispPresentation(WispActivity.READY, "Ready")
+                else -> idle
             }
         }
     }
