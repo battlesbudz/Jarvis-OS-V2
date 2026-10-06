@@ -18,7 +18,11 @@ class TaskProgressProjectionTest {
             "conversation-1", resumeAfterRestart = false
         )
         val attempt = checkNotNull(ledger.get(group.attemptIds.single()))
-        val running = checkNotNull(ledger.transition(attempt.id, attempt.generation, ToolTaskState.RUNNING))
+        // The production claim path (QUEUED -> RUNNING) owns the exactly-once
+        // transition for grouped attempts; a raw transition() to RUNNING is
+        // refused by design (double-claim hardening), so the test exercises
+        // the same seam the dispatcher uses.
+        val running = checkNotNull(ledger.claim(attempt.id, attempt.generation))
         ledger.finish(running, result)
         return ledger to group
     }
