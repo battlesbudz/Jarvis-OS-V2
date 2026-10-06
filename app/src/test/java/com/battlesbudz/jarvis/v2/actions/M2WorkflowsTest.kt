@@ -538,6 +538,31 @@ class M2WorkflowsTest {
         assertTrue((outcome as WorkflowRunOutcome.Failed).reason.contains("not repeated"))
     }
 
+    @Test fun unconfirmedLaunchNeverAdvancesDependentWorkflowSteps() {
+        // A launch submitted without foreground evidence is unknown
+        // completion: the run stops, the launch is dispatched exactly once
+        // (no retry of the uncertain launch), and the step that depends on
+        // the destination having opened never executes.
+        val dispatched = mutableListOf<String>()
+        val def = definition(steps = listOf(
+            WorkflowStep.Tool(uid(), ActionRequest("open_app", mapOf("app" to "Settings"))),
+            batteryStep()))
+        val outcome = WorkflowEngine(now).run(def,
+            dispatch = { request ->
+                dispatched += request.name
+                if (request.name == "open_app") verifiedLaunchReceipt(
+                    "Settings", BackgroundLaunchRoute.DIRECT,
+                    platformError = null, foregroundObserved = false
+                ) else ok()
+            })
+        assertTrue(outcome is WorkflowRunOutcome.Failed)
+        assertEquals(
+            "the uncertain launch is not repeated and the dependent step never runs",
+            listOf("open_app"), dispatched
+        )
+        assertTrue((outcome as WorkflowRunOutcome.Failed).reason.contains("not repeated"))
+    }
+
     @Test fun engineSuspendsOnWaitAndResumesWithoutRerun() {
         val waitId = uid()
         val def = definition(steps = listOf(batteryStep(), WorkflowStep.Wait(waitId, WorkflowWait.Timer(60_000)),
