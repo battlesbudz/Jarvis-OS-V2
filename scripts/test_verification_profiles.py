@@ -27,9 +27,15 @@ class ProfileContractTest(unittest.TestCase):
         self.assertTrue(any(p['screen_profile'] == 'foldable' for p in profiles))
         foldable = next(profile for profile in profiles if profile['screen_profile'] == 'foldable')
         self.assertEqual('pixel_fold', foldable['device_profile'])
-        self.assertTrue(any(p['page_size'] == 16384 for p in profiles))
+        large_page = [p for p in profiles if p['page_size'] == 16384]
+        self.assertEqual(1, len(large_page))
+        self.assertEqual(('36-16k-normal', 36, 'google_apis_ps16k', 'app-release'),
+                         tuple(large_page[0][key] for key in ('id', 'api', 'target', 'apk')))
+        self.assertTrue(any(p['api'] == 35 and p['page_size'] == 4096 for p in profiles))
+        for profile in profiles:
+            self.assertEqual(2400 if profile['api'] == 29 else 900, profile['instrumentation_timeout'])
         oldest = next(profile for profile in profiles if profile['api'] == 29)
-        self.assertEqual(('default', 4096, 'macos-15', 'arm64-v8a', 'software', 900, 60),
+        self.assertEqual(('default', 4096, 'macos-15', 'arm64-v8a', 'software', 900, 90),
                          tuple(oldest[key] for key in ('target', 'page_size', 'runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout')))
         for profile in profiles:
             if profile['api'] != 29:
@@ -85,11 +91,25 @@ class ProfileContractTest(unittest.TestCase):
         for key, value in [('runner', 'self-hosted'), ('arch', 'armeabi-v7a'), ('acceleration', 'automatic'),
                            ('boot_timeout', True), ('boot_timeout', '900'), ('boot_timeout', 900.0),
                            ('boot_timeout', 299), ('boot_timeout', 901), ('job_timeout', False),
-                           ('job_timeout', '60'), ('job_timeout', 60.0), ('job_timeout', 39), ('job_timeout', 61)]:
+                           ('job_timeout', '60'), ('job_timeout', 60.0), ('job_timeout', 39), ('job_timeout', 91)]:
             contract = copy.deepcopy(self.original)
             contract['profiles'][0][key] = value
             self.path.write_text(json.dumps(contract))
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                load_profiles(self.path)
+
+    def test_main_and_job_budget_expansion_is_limited_to_api29_software(self):
+        for index, key, value in ((0, 'instrumentation_timeout', True),
+                                  (0, 'instrumentation_timeout', 2400.0),
+                                  (0, 'instrumentation_timeout', '2400'),
+                                  (0, 'instrumentation_timeout', 2399),
+                                  (0, 'instrumentation_timeout', 2401),
+                                  (1, 'instrumentation_timeout', 2400),
+                                  (1, 'job_timeout', 90), (5, 'job_timeout', 90)):
+            contract = copy.deepcopy(self.original)
+            contract['profiles'][index][key] = value
+            self.path.write_text(json.dumps(contract))
+            with self.subTest(index=index, key=key, value=value), self.assertRaises(ValueError):
                 load_profiles(self.path)
 
     def test_unsafe_or_mismatched_host_guest_acceleration_rejected(self):
@@ -102,7 +122,7 @@ class ProfileContractTest(unittest.TestCase):
                 load_profiles(self.path)
 
     def test_provisioning_fields_are_required_and_cannot_be_silently_defaulted(self):
-        for key in ('runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout'):
+        for key in ('runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout', 'instrumentation_timeout'):
             contract = copy.deepcopy(self.original)
             del contract['profiles'][0][key]
             self.path.write_text(json.dumps(contract))

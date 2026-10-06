@@ -440,6 +440,10 @@ def verify(args):
             raise RuntimeError("Provisioned emulator API/page size disagrees with its required profile")
         if "arm64-v8a" not in report["device"]["abi"]:
             raise RuntimeError("Emulator cannot run the release ARM64 APK: missing arm64-v8a ABI/native bridge")
+        if profile["arch"] == "x86_64" and (
+                "x86_64" not in report["device"]["abi"].split(",") or
+                report["device"]["native_bridge"] in ("", "0")):
+            raise RuntimeError("x86-64 emulator requires an observed ARM64 native bridge")
         if profile["id"] == GC_PROFILE_ID:
             gc_setup = RuntimeGcSetup(device, profile, args.source_commit)
             report["runtime_gc_setup"] = gc_setup.report
@@ -485,7 +489,8 @@ def verify(args):
         if gc_setup is not None:
             gc_setup.verify_app(PACKAGE)
         device.snapshot("first-launch")
-        report["instrumentation"], _ = instrument_phase(scenarios, "instrumentation.txt", timeout=900)
+        report["instrumentation"], _ = instrument_phase(scenarios, "instrumentation.txt",
+                                                       timeout=profile["instrumentation_timeout"])
         device.shell("am", "force-stop", PACKAGE)
         device.shell("am", "start", "-W", "-n", ACTIVITY)
         for _ in range(6):

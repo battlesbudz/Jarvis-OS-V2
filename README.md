@@ -11,9 +11,12 @@ explicit reference lookup use the network; there is no required conversation bac
 
 *53-second demo: airplane mode on, phone locked, "Hey Jarvis," interrupted mid-answer. Click to watch.*
 
-Wake-word activation and conversational barge-in keep the core assistant loop
-on the device, using Moonshine/Whisper recognition, Gemma through LiteRT-LM,
-and Piper speech output.
+Jarvis implements a **system-level full-duplex voice pipeline**: microphone
+capture can continue while Piper plays the assistant's reply. In speech-recognition
+mode, bounded Moonshine/Whisper probes verify natural barge-in, stop the reply and
+retain the interruption audio for the next turn. Wake-word activation, Gemma through
+LiteRT-LM and Piper output keep the core assistant loop on the device. See the
+[duplex architecture and validation limits](docs/verification/voice-audio-and-metrics.md#system-level-full-duplex).
 
 ## Reported device measurements
 

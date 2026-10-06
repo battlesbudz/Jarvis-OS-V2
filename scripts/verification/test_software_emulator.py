@@ -1218,7 +1218,7 @@ class SoftwareSessionTest(unittest.TestCase):
                 pixels = int(effective[f"hw.lcd.{dimension}"])
                 self.assertEqual(original * density, pixels * 420, "Pixel 2 dp viewport must remain exact")
                 self.assertEqual(original, pixels * 3, "Supported software raster dimensions must be one-third")
-            self.assertEqual({"boot_timeout": 900, "job_timeout": 60},
+            self.assertEqual({"boot_timeout": 900, "job_timeout": 90},
                              {key: session.profile[key] for key in ("boot_timeout", "job_timeout")})
             session.close()
 
@@ -1716,7 +1716,7 @@ class SoftwareSessionTest(unittest.TestCase):
             self.assertFalse(session.report["passed"])
             self.assertEqual("provisioning", session.report["status"])
             self.assertEqual(900, session.report["boot_timeout_seconds"])
-            self.assertEqual(3600, session.deadline)
+            self.assertEqual(5400, session.deadline)
             self.assertNotIn("backend_observed", session.report["graphics"])
 
     def test_launcher_timezone_does_not_inherit_invalid_host_detection(self):
@@ -1837,7 +1837,7 @@ class EmulatorPinTest(unittest.TestCase):
         for setting in ("hw.cpu.ncore=2", "hw.ramSize=2048M", "vm.heapSize=256M", "hw.lcd.width=360",
                         "hw.lcd.height=640", "hw.lcd.density=140", "hw.lcd.vsync=30", "disk.dataPartition.size=4096M"):
             self.assertIn(setting, config)
-        self.assertEqual(3600, self.session.deadline)
+        self.assertEqual(5400, self.session.deadline)
         self.assertFalse(self.session.report["passed"], "Provisioning does not establish test coverage")
 
     def test_corrupt_or_truncated_archive_is_rejected_before_extraction(self):

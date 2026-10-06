@@ -20,7 +20,7 @@ commits. Do not create or merge another PR without Justin's permission.
    and use the existing signing identity.
 3. Run `.github/workflows/android-sandbox.yml` on disposable Android
    emulators from `scripts/verification/profiles.json`: API 29/30/35/36,
-   an API 36 foldable and a true 16 KB system image. The foldable uses the SDK's
+   an API 36 foldable and an API 36 true 16 KB system image. The foldable uses the SDK's
    genuine `pixel_fold` hardware definition from pinned command-line tools
    23.0, build 16111833: a 2208×1840 inner screen, a 1080×2092 cover display and
    a 0–180° hinge. The fold job promotes the verified pinned tools directory to
@@ -46,7 +46,7 @@ commits. Do not create or merge another PR without Justin's permission.
    staged and installed binaries must report version 32.1.15/build 10696886 before
    boot. Invalid input retains the previous emulator; a failed installed-version
    check restores it. Download, verification and replacement share one 600-second
-   provisioning budget within the existing 60-minute job limit. This is a
+   provisioning budget within the approved 90-minute API 29 job limit. This is a
    hypothesis requiring a complete device pass, not evidence that the emulator
    version caused or repairs the failure. The software-specific launcher
    `scripts/verification/software_emulator.py` retains provisioning/emulator
@@ -73,9 +73,9 @@ commits. Do not create or merge another PR without Justin's permission.
    restarted Android. Build 1003 and its unchanged-code retry advertised both
    host-composition extensions and no longer hit that native crash loop; services,
    input and unlock succeeded, but final user0 boot delivery still timed out.
-   Complete startup and release-controller coverage remain unverified. The requested
+   Full startup passed in Builds 1041 and 1050; complete API 29 release-controller coverage remains unverified. The requested
    enabled and disabled features are retained separately from actual startup
-   output. It does not disable watchdogs or change any readiness/test deadline.
+   output. Those graphics settings do not disable watchdogs or change readiness/individual assertion deadlines.
    After full boot delivery, the launcher checks for a retained cold-start
    System UI ANR dialog before installing any Jarvis APK. It may select Wait
    once only for the exact Android-owned System UI dialog, retaining its UI
@@ -141,12 +141,13 @@ commits. Do not create or merge another PR without Justin's permission.
    Physical size/density are observed before ready; optional read-only host
    resource receipts consume the existing deadline. These provisioning settings
    are experiments pending a complete passing run, not evidence of a memory cause.
-   The job remains bounded by 60 minutes, with the existing 180-second APK install
-   limit. A boot flag alone is not a passing
+   The API 29 job is bounded by 90 minutes, with a 40-minute main instrumentation
+   budget declared in the profile. Its existing 900-second startup, 180-second
+   APK installs and all individual assertions/lifecycle/layout limits remain unchanged. A boot flag alone is not a passing
    device result. Missing services, ABI/page-size compatibility, a failed test
    or a timeout fails rather than skips. Linux profiles retain emulator-runner.
-   The API 29 target is AOSP `default`; the other five image targets remain
-   unchanged. Google's official Android system-image catalog currently lists
+   The API 29 target is AOSP `default`; the approved API 36 16 KB
+   replacement is described below. Google's official Android system-image catalog currently lists
    stable revision 8 (`arm64-v8a-29_r08.zip`, 498,049,256 bytes, SHA-1
    `fa0d67d7430fcc84b2fe2508ea81e92ac644e264`). This avoids the Google APIs
    bundle whose framework permission initialization and watchdog failed under
@@ -177,41 +178,50 @@ referenced by instrumentation, including lazy-layout methods. Recheck this ABI
 boundary when moving classes or changing test dependencies. Do not substitute
 an unshrunk/debug build for release verification.
 
-## API 35 16 KB emulator ART compatibility trial
+## API 36 16 KB coverage and API 29 capacity
 
-The `35-16k-normal` profile retains API 35, `google_apis_ps16k`, x86-64 with
-ARM64 translation, runtime `PAGE_SIZE=16384`, SELinux enforcing, and every
-release/upgrade/native/layout/lifecycle gate. Stock revision 5
-(`AE3A.240806.043/12960925`) repeatedly crashed platform processes while reporting
-`CollectorTypeCMC`. The [AOSP kernel compatibility fix](https://android.googlesource.com/kernel/common/+/38447e018c92f6ae182067a02a6954fa92b33a73)
-explains that x86-64 16 KB page-size simulation is incompatible with UFFD/CMC.
-AOSP ART's [odrefresh regression test](https://android.googlesource.com/platform/art/+/8222aa2d2df6273da689f0edd3913e8370c0c1c2)
-exercises the supported `runtime_native_boot/force_disable_uffd_gc=true`
-DeviceConfig override followed by a reboot to select concurrent copying (CC).
+The required `36-16k-normal` profile uses API 36 `google_apis_ps16k` on the
+existing x86-64/KVM runner. Official stable revision 7 metadata identifies
+Android 16 SDK 36, build `BE2A.250530.026.F3/13894323`, an ARM64
+`libndk_translation.so` bridge and `page_shift=14`. The installed candidate
+still needs actual runtime verification: the controller requires SDK 36,
+`getconf PAGE_SIZE=16384`, the ARM64 ABI and a nonempty/nonzero bridge before
+installation. The unchanged native-loading journey independently checks the
+page size and every required shared library. An image label alone cannot pass.
+All upgrade, main, process/permission recovery, layout and receipt gates remain
+required; the KVM boot/job/main limits remain 300 seconds/40 minutes/900 seconds.
+The API 36 candidate boots with stock runtime settings, without the historical
+API 35 DeviceConfig override or forced recompilation/reboot.
 
-This profile alone records its original 300-second deadline immediately before
-initial emulator launch. `scripts/verification/runtime_gc.py`, called by the
-existing Android controller, writes the flag once, requires both DeviceConfig
-and persisted-property readback, and reboots once. The initial boot, propagation,
-reboot, complete ART regeneration, odsign verification and fresh service/input readiness
-all consume that same deadline. A changed boot ID, unchanged API/page-size/ABI/
-bridge/SELinux identity, the current system server's exact CC log and current
-zygote parent (including process start ticks) are required before any APK installation.
-Because odsign can verify partially compiled artifacts, its success property alone
-is insufficient: the current boot must also log the exact `odrefresh compiled all artifacts, returned 80` success. Partial or failed compilation is rejected, following the distinct
-[odsign result branches](https://android.googlesource.com/platform/system/security/+/android-15.0.0_r1/ondevice-signing/odsign_main.cpp#588). Its real first-launch
-Jarvis PID must independently report CC before the ordinary journeys run.
-Missing, wrong, stale or late evidence fails; it never selects a replacement
-image, retries a reboot, relaxes a timeout or skips an existing check.
+The October 6 approved matrix change replaces API 35-specific 16 KB coverage.
+API 35 compact coverage at 4 KB remains required. Android 15 with 16 KB pages
+is now an explicit coverage gap, not a repaired or passing profile. No claim of
+physical 16 KB ARM64 hardware, OEM behavior, real acoustics/models or device
+performance follows from this x86-64 simulated-page test. Revision metadata
+establishes feasibility, not successful boot or full release verification.
 
-The artifact retains the prelaunch receipt, bounded logs from each setup boot,
-intentional reboot boundary, identities/readbacks, complete-compilation and system collector receipts, and
-immediate first-launch Jarvis collector receipt. The foldable prelaunch hook and
-all other profiles keep their behavior. This is a configuration trial pending a
-fresh full hosted result; local helper tests do not establish that ART's work
-fits 300 seconds. A pass establishes the simulated runtime's 16 KB compatibility
-and native loading checks, not physical 16 KB hardware, OEM/ARM64 behavior,
-acoustic/model correctness, or device performance.
+Every profile declares `instrumentation_timeout` in the same contract used by
+provisioning, artifact selection and receipts. Only API 29 software emulation
+uses 2,400 seconds for the unchanged main suite and a 90-minute job ceiling;
+all other profiles retain 900-second main suites and their previous job limits.
+API 29's 900-second boot, 180-second installs, every named test and all individual
+assertion/upgrade/lifecycle/layout deadlines remain intact. The larger capacity
+is not a latency-performance pass or a guarantee that stock Settings meets its
+separate 15-second visibility assertion.
+
+### Historical API 35 collector trial
+
+The former `35-16k-normal` image repeatedly crashed stock Android processes.
+The [AOSP kernel compatibility fix](https://android.googlesource.com/kernel/common/+/38447e018c92f6ae182067a02a6954fa92b33a73)
+explains the x86-64 16 KB simulation/UFFD mismatch; the
+[ART regression test](https://android.googlesource.com/platform/art/+/8222aa2d2df6273da689f0edd3913e8370c0c1c2)
+documents `runtime_native_boot/force_disable_uffd_gc=true` and one reboot.
+Builds 1042 and 1050 verified the flag, complete ART regeneration (`returned 80`)
+and actual CC selection, then still encountered native system-server faults
+before APK installation. The narrowly scoped `runtime_gc.py` helper and its
+failure tests remain as historical implementation evidence; the active API 36
+profile cannot invoke it. Detailed failed artifacts and collector proof remain
+in [the feature acceptance map](features.md).
 
 ## Run identity and evidence
 

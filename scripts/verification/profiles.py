@@ -13,7 +13,7 @@ except ImportError:
 
 PROFILES = Path(__file__).with_name('profiles.json')
 FIELDS = {'id', 'api', 'apk', 'device_profile', 'screen_profile', 'page_size', 'target',
-          'runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout'}
+          'runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout', 'instrumentation_timeout'}
 
 
 def load_profiles(path=PROFILES):
@@ -56,9 +56,16 @@ def load_profiles(path=PROFILES):
             raise ValueError('Runner and guest architecture do not match acceleration policy')
         if profile['api'] == 29 and profile['acceleration'] != 'software':
             raise ValueError('API 29 requires the native ARM64 software-emulation profile')
-        for key, lower, upper in (('boot_timeout', 300, 900), ('job_timeout', 40, 60)):
+        software_api29 = profile['api'] == 29 and profile['acceleration'] == 'software'
+        # Approved software-runner capacity; boot and other profiles keep their limits.
+        for key, lower, upper in (('boot_timeout', 300, 900),
+                                  ('job_timeout', 40, 90 if software_api29 else 60)):
             if isinstance(profile[key], bool) or not isinstance(profile[key], int) or not lower <= profile[key] <= upper:
                 raise ValueError(f'Invalid or out-of-bounds emulator {key}')
+        main_timeout = profile['instrumentation_timeout']
+        if (isinstance(main_timeout, bool) or not isinstance(main_timeout, int) or
+                main_timeout != (2400 if software_api29 else 900)):
+            raise ValueError('Invalid or out-of-scope main instrumentation timeout')
         configuration = tuple(profile[key] for key in sorted(FIELDS - {'id'}))
         if profile['id'] in ids or configuration in configurations:
             raise ValueError('Duplicate required emulator profile')

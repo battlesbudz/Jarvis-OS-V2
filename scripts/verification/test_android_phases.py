@@ -18,6 +18,7 @@ import zlib
 
 from android import Device, PACKAGE, instrumentation_results, interrupted_results, sha256, verify
 from profiles import load_profiles
+from runtime_gc import PROFILE as LEGACY_GC_PROFILE
 
 
 def interrupted(boundary="process_kill"):
@@ -109,7 +110,8 @@ class InstallTransportTest(unittest.TestCase):
                 with self.assertRaises(subprocess.TimeoutExpired):
                     device.install("candidate.apk", "-r", profile=profile)
 
-    def exercise_upgrade(self, profile, *, reject_candidate=False, collector_error=False):
+    def exercise_upgrade(self, profile, *, reject_candidate=False, collector_error=False,
+                         stop_at_main=False, identity_override=None):
         """Exercise the real controller's upgrade ordering, then deliberately stop."""
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
@@ -140,27 +142,33 @@ class InstallTransportTest(unittest.TestCase):
                         return ""
                     command = shlex.split(argv[1])
                     if command[0] == "getprop":
-                        return {"ro.kernel.qemu": "1", "ro.product.cpu.abilist": "arm64-v8a",
-                                "ro.build.version.sdk": str(profile["api"]), "ro.build.fingerprint": "fixture",
-                                "ro.dalvik.vm.native.bridge": "0"}[command[1]]
+                        values = {"ro.kernel.qemu": "1",
+                                  "ro.product.cpu.abilist": "x86_64,arm64-v8a" if profile["arch"] == "x86_64" else "arm64-v8a",
+                                  "ro.build.version.sdk": str(profile["api"]), "ro.build.fingerprint": "fixture",
+                                  "ro.dalvik.vm.native.bridge": "libndk_translation.so" if profile["arch"] == "x86_64" else "0"}
+                        values.update(identity_override or {})
+                        return values[command[1]]
                     if command[0] == "getconf":
-                        return str(profile["page_size"])
+                        return (identity_override or {}).get("PAGE_SIZE", str(profile["page_size"]))
                     if command[:2] == ["dumpsys", "package"]:
                         return "versionCode=" + ("931" if self.updated else "907")
                     return "Success"
 
                 def instrument(self, test_class, named_tests, evidence_folder, **kwargs):
                     calls.append((("instrument", *named_tests), kwargs))
+                    if stop_at_main and test_class.endswith("ReleaseJourneyTest"):
+                        raise RuntimeError("Controlled stop at main suite")
                     return "synthetic upgrade phase", {"passed": True, "errors": []}, []
 
                 def snapshot(self, label):
-                    if label != "final":
+                    if label != "final" and not stop_at_main:
                         raise RuntimeError("Controlled stop after upgrade; later Android gates are not simulated")
                     return "<hierarchy />"
 
             # This fixture owns upgrade ordering; the separate ART setup suite
             # exercises readiness/admission and collector failure behavior.
-            with patch("android.Device", UpgradeDevice), patch("android.RuntimeGcSetup") as setup, redirect_stdout(io.StringIO()):
+            with patch("android.Device", UpgradeDevice), patch("android.RuntimeGcSetup") as setup, \
+                    patch("android.load_profiles", return_value=[profile]), redirect_stdout(io.StringIO()):
                 setup.return_value.report = {}
                 setup.return_value.prepare.side_effect = lambda: calls.append((("gc_prepare",), {}))
                 def app_collector(package):
@@ -183,6 +191,9 @@ class InstallTransportTest(unittest.TestCase):
                     setup.assert_not_called()
             report = json.loads((Path(args.out) / "report.json").read_text())
             self.assertFalse(report["passed"])
+            if identity_override:
+                self.assertFalse(any(argv[0] in ("install", "instrument") for argv, _ in calls))
+                return report, calls
             installs = [(argv[1:], kwargs) for argv, kwargs in calls if argv[0] == "install"]
             transport = ("--no-streaming",) if profile["id"] == "29-phone-normal" else ()
             self.assertEqual([(transport + (str(previous),), {"timeout": 180}),
@@ -208,12 +219,35 @@ class InstallTransportTest(unittest.TestCase):
                 self.assertIn("Controlled stop after upgrade", report["errors"][0])
 
     def test_current_app_collector_failure_prevents_main_journeys(self):
-        profile = next(profile for profile in load_profiles() if profile["id"] == "35-16k-normal")
+        profile = dict(LEGACY_GC_PROFILE)
         report, calls = self.exercise_upgrade(profile, collector_error=True)
         self.assertTrue(report["upgrade"]["passed"])
         self.assertNotIn("instrumentation", report)
         self.assertEqual(2, sum(argv[0] == "instrument" for argv, _ in calls))
         self.assertIn("Controlled current-app collector rejection", report["errors"][0])
+
+    def test_main_suite_uses_declared_budget_and_preserves_all_named_tests(self):
+        expected = json.loads((Path(__file__).parent / "scenarios.json").read_text())["tests"]
+        for profile in load_profiles():
+            with self.subTest(profile=profile["id"]):
+                report, calls = self.exercise_upgrade(profile, stop_at_main=True)
+                phases = [(argv, kwargs) for argv, kwargs in calls if argv[0] == "instrument"]
+                self.assertEqual(3, len(phases))
+                self.assertEqual(expected, list(phases[-1][0][1:]))
+                self.assertEqual(profile["instrumentation_timeout"], phases[-1][1]["timeout"])
+                self.assertEqual([180, 180], [kwargs["timeout"] for _, kwargs in phases[:2]])
+                self.assertEqual(profile, report["profile"])
+                self.assertIn("Controlled stop at main suite", report["errors"][0])
+
+    def test_api36_large_page_profile_requires_actual_api_page_size_and_bridge(self):
+        profile = next(p for p in load_profiles() if p["id"] == "36-16k-normal")
+        for values in ({"ro.build.version.sdk": "35"}, {"PAGE_SIZE": "4096"},
+                       {"ro.product.cpu.abilist": "x86_64"},
+                       {"ro.dalvik.vm.native.bridge": "0"}, {"ro.dalvik.vm.native.bridge": ""}):
+            with self.subTest(values=values):
+                report, _ = self.exercise_upgrade(profile, identity_override=values)
+                self.assertTrue(report["errors"])
+                self.assertNotIn("upgrade", report)
 
     def test_rejected_update_does_not_run_upgrade_verification_or_pass(self):
         for profile in load_profiles():

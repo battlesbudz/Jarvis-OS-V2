@@ -309,7 +309,7 @@ exercised in [ART's regression test](https://android.googlesource.com/platform/a
 This is stronger evidence for a targeted environment correction than the earlier
 stack-only hypothesis; it still requires successful hosted admission and all
 app gates. The implementation and evidence contract are in the
-[runbook](README.md#api-35-16-kb-emulator-art-compatibility-trial).
+[runbook](README.md#historical-api-35-collector-trial).
 
 | Layer | Acceptance and failure cases | Preserved coverage |
 | --- | --- | --- |
@@ -415,6 +415,126 @@ Fresh evidence must show host 30 Hz, `qemu.vsync=30`, and guest display near
 not skipped-frame counts, which also change with cadence. The full API 29
 profile and complete release gates remain required. No new boot probes,
 watchdog changes, timeout extensions or app changes accompany this trial.
+
+### Build 1050 software-raster navigation geometry
+
+[Build 1050](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37408280677)
+tests head `388430dc4efd9a24e1bfc1ac58d3595c6607a8cf`, merge
+`3435dd66cdf239e71f62b7025a190cb8237c0e4c`. API 30, API 35 compact, API 36
+phone and API 36 Pixel Fold pass their complete profiles. API 30 artifact
+`11388283796`, ZIP SHA-256
+`a8a6ffe96b5cbad41c1682b66db7308d00e0cd8730530596b6addb367f134ac4`, confirms
+all 50 main and four layout cases. Its factuality control was already visible
+and received one tap at `(302,1659)`: this run does not replay the previous
+nearby-outside geometry, which remains covered by deterministic helper cases.
+
+API 29 now records host 30 Hz, `qemu.vsync=30` and the corresponding guest display
+rate, completes startup in 714.265 seconds with one guarded System UI Wait, and
+passes the Build 907 replacement upgrade. Main instrumentation reaches its
+existing 900-second deadline with 22 passing methods, four assertion failures
+and test27 partial. Tests 1–26's native start/finish spans total 831.863 seconds,
+including per-test setup/evidence/teardown; these spans do not isolate implicit
+idle-wait costs. Later native execution after the controller deadline is not
+accepted coverage. Artifact `11389452621`, ZIP SHA-256
+`7f1c09b1a8382e0f1fa8e84564ac3d7144d2f0e0e9b31fab7eedd648447a9bdd`, retains
+this incomplete result.
+
+Three failures are deterministic test-coordinate errors: `model_search` is
+enabled/clickable at `[14,120][346,169]` and `memory_open` at
+`[21,303][339,345]`, but the fixed 24-pixel gutter permits only `[24,336]` on
+the 360-pixel raster. The original 1080×1920/420 dpi Pixel 2 and the
+360×640/140 dpi software fixture have the same logical viewport; that literal
+gutter accidentally triples its logical size. The API 29-only correction scales
+reference pixels by `densityDpi / 420`, rounding upward, validating positive
+density and rejecting arithmetic overflow. At 140 dpi, 24/12/48 reference pixels
+become 8/4/16, preserving the original logical safety margins. All other APIs
+retain their literal values.
+
+The same conversion covers duplicate benchmark safety/alignment margins. Its
+Copy JSON control begins at 16 dp (about 14 pixels here), so the original outer
+24-pixel viewport would reject it regardless of vertical scrolling. That is a
+source-derived future blocker, not a benchmark failure observed in this run.
+Full-rectangle containment, nonempty bounds, enabled state, actual 48 dp target
+requirements, 96-pixel usable-gesture preconditions, viewport ratios, gesture
+step counts, deadlines, stability and single-action behavior remain unchanged.
+Independent exact-source validation passes 155 explicit cases, 50,000 property
+cases and 65,000 unchanged-HEAD comparisons, including conservative rounding,
+invalid density/overflow and clipped/empty/offscreen bounds. Full extracted
+navigation helpers compile with actual Android/UiAutomator classes; the
+architecture guard and all 268 Python helpers also pass. These are local
+harness checks, not a completed API 29 Android journey.
+
+Test7's Settings launch is separate: the correct Android intent is recorded,
+but the cold Settings screen remains blank at the 15-second observation limit,
+with stock Settings/ConditionManager timeouts. Its later populated screen does
+not retroactively pass that wait. No Settings assertion or timeout changes, and
+no unmeasured speedup is claimed. Fixing the false geometry guards alone does
+not establish that every later test fits the suite budget.
+
+API 35 simulated 16 KB again admits complete ART regeneration and CC, then
+fails before APK installation with platform `InputReader` `std::bad_alloc`
+and a replacement process's NativeTombstone SIGSEGV. Artifact `11388322605`,
+ZIP SHA-256 `730fde8f479452d13e4cb0bfd2a86b06e942a1f69c95ee5f3db78c0880c2aa8c`,
+retains that failure. This does not establish ordinary memory exhaustion or a
+Jarvis defect. The failed required profiles continue to block release.
+
+The separate full-duplex documentation update credits existing simultaneous
+capture/playback and bounded speech-verified natural barge-in, with retained
+interruption audio. It introduces no voice runtime change or new physical-device
+claim; see the [current duplex contract](voice-audio-and-metrics.md#system-level-full-duplex).
+
+### Approved API 29 capacity and API 36 16 KB matrix change
+
+Build 1050 (head `388430dc4efd9a24e1bfc1ac58d3595c6607a8cf`, merge
+`3435dd66cdf239e71f62b7025a190cb8237c0e4c`) confirms API 29 host/guest 30 Hz
+at the unchanged 360×640 / 140 dpi. Full startup passes in 714.265 seconds;
+the previous-APK upgrade passes. Main instrumentation reaches its 900-second
+limit with 22 admitted passes, four failed assertions and a partial test 27.
+Tests 1–26 native start-to-finish spans total 831.863 seconds; controller startup,
+gaps and partial work consume the remainder. Later guest execution after the
+client deadline is not admitted coverage. Artifact `11389452621`, ZIP SHA-256
+`7f1c09b1a8382e0f1fa8e84564ac3d7144d2f0e0e9b31fab7eedd648447a9bdd`, retains
+this result. The larger suite budget cannot itself fix the separate 15-second
+stock Settings visibility failure.
+
+Following explicit approval on October 6, API 29 retains every named test and
+individual assertion with a 2,400-second main-suite budget and 90-minute job
+ceiling. Its startup remains 900 seconds, APK installation 180 seconds, and
+upgrade/lifecycle/layout limits are unchanged. All other main suites remain
+900 seconds. `instrumentation_timeout` is explicit in each profile and is
+validated and copied into same-build reports/receipts; only API 29 software
+emulation can declare the increased main/job capacity.
+
+The required 16 KB row moves from API 35 to `36-16k-normal`, using official
+stable `system-images;android-36;google_apis_ps16k;x86_64` revision 7 on the
+existing KVM runner. Metadata identifies SDK 36, build
+`BE2A.250530.026.F3/13894323`, ARM64 `libndk_translation.so`, and
+`page_shift=14`; it does not prove runtime health. Actual SDK/page size/ARM64
+ABI/bridge admission and the full native-loading, upgrade, main, lifecycle,
+layout and final receipt remain required. The historical API 35 collector
+workaround is dormant; API 36 uses stock runtime settings and unchanged KVM
+budgets. API 35 compact 4 KB remains required. Android 15-specific 16 KB
+coverage is explicitly lost by this approved replacement and must not be
+reported as fixed or passing. Fresh exact-revision CI is required before any
+release or candidate claim.
+
+Build 1050's API 35 16 KB image still fails before APK installation despite
+complete ART regeneration and observed CC. InputReader requests
+`malloc(0x0101010101010110)` before aborting, followed by a replacement
+system-server zlib fault at `0x02020202`; artifact `11388322605`, SHA-256
+`730fde8f479452d13e4cb0bfd2a86b06e942a1f69c95ee5f3db78c0880c2aa8c`.
+The paired API 35 compact profile passes all phases with no native SIGSEGV or
+SIGABRT in its retained log window; artifact `11388838257`, SHA-256
+`e6a3f6c6369388cf653b67e27f9018c54586322e8d305006ecd2e0007f1b1443`.
+Different jobs, variants and capture windows prevent proving an exact kernel,
+image or host cause from that contrast.
+
+The combined density-guard, documentation and approved matrix revision passes
+the architecture guard and all 271 Python helpers (91 + 180). The Kotlin guard
+source still matches the independently compiled and boundary-tested candidate.
+Workflow YAML parsing and whitespace checks pass. These local checks do not
+establish API 29 completion or API 36 16 KB runtime health; the new full
+same-revision release gate remains required.
 
 ## API 29 graphics boot loop — October 5, 2026
 

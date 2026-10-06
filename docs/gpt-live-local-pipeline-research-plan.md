@@ -32,7 +32,7 @@ Sources:
 
 ## Current Jarvis baseline
 
-The repository currently describes Moonshine Small Streaming or Whisper base.en -> Gemma through LiteRT-LM -> Piper TTS, with wake word, barge-in, and per-turn diagnostics.
+Jarvis already implements system-level full duplex: a call-owned microphone retains capture while Piper plays a reply, with bounded Moonshine/Whisper speech verification for natural barge-in and retained interruption audio. ASR, Gemma/LiteRT-LM and Piper remain separate stages. This is an implemented application-level capability; route reliability, acoustic echo rejection and latency still require matched device evidence. See the [current duplex contract](verification/voice-audio-and-metrics.md#system-level-full-duplex), including the captions-off direct-Gemma keyword path.
 
 README phone measurements currently report:
 - median TTFT: 740 ms;
@@ -43,7 +43,7 @@ That gap suggests endpointing, orchestration, TTS startup/buffering, and serial 
 
 ## Target architecture
 
-Keep microphone capture active for the entire call, including while Piper speaks.
+Preserve the existing capture/playback overlap and call-owned microphone handoff. Extend and validate it within the existing Pause/End, route and resource-ownership rules.
 
 Mic -> AEC/noise handling -> acoustic VAD + streaming ASR -> partial transcript -> semantic turn/interruption classifier.
 
@@ -64,7 +64,7 @@ Maintain two conversation views:
 ## Research hypotheses
 
 ### 1. Concurrency beats another model swap
-Profile serialization before replacing models. Keep ASR running, keep Gemma warm, prepare routing from stable partials, stream generation to TTS, and minimize buffering.
+Profile serialization before replacing models. Retain microphone capture, schedule bounded recognition without starving playback, keep Gemma warm, prepare routing from stable partials, stream generation to TTS, and minimize buffering.
 
 ### 2. Semantic endpointing improves latency and naturalness
 Combine acoustic VAD with a cheap semantic completion classifier. Test FAST, BALANCED, and PATIENT profiles. Measure premature endpoints and unnecessary post-speech waiting.
@@ -140,7 +140,7 @@ Measure premature endpoint rate and delay after genuinely completed speech. Avoi
 
 ## Phase 4: continuous capture and echo control
 
-Verify capture and ASR stay alive throughout TTS. Evaluate Android AcousticEchoCanceler and NoiseSuppressor where supported. Test Piper playback with no user speech and require zero tool executions/self-trigger commands on the fixed echo corpus while retaining intentional barge-in.
+Validate the already-implemented capture/playback overlap across supported routes. Measure microphone continuity and bounded recognition availability during TTS, rather than assuming continuous unrestricted ASR decoding. Evaluate Android AcousticEchoCanceler and NoiseSuppressor where supported. Test Piper playback with no user speech and require zero tool executions/self-trigger commands on the fixed echo corpus while retaining intentional barge-in.
 
 ## Phase 5: interruption/backchannel classifier
 

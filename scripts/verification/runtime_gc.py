@@ -20,6 +20,7 @@ try:
 except ImportError:
     from profiles import load_profiles
 
+# Historical API35-only repair; the required API36 image boots with stock runtime settings.
 PROFILE_ID = "35-16k-normal"
 NAMESPACE = "runtime_native_boot"
 FLAG = "force_disable_uffd_gc"
@@ -30,7 +31,7 @@ LOG_LINES = 20000
 PROFILE = {"id": PROFILE_ID, "api": 35, "apk": "app-release", "device_profile": "pixel_2",
            "screen_profile": "phone", "page_size": 16384, "target": "google_apis_ps16k",
            "runner": "ubuntu-latest", "arch": "x86_64", "acceleration": "kvm",
-           "boot_timeout": 300, "job_timeout": 40}
+           "boot_timeout": 300, "job_timeout": 40, "instrumentation_timeout": 900}
 
 
 def require_profile(profile):

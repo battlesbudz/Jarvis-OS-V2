@@ -384,7 +384,8 @@ class RuntimeGcTest(unittest.TestCase):
                     setup_context = patch("android.RuntimeGcSetup", wraps=RuntimeGcSetup)
                 else:
                     setup_context = patch("android.RuntimeGcSetup")
-                with patch("android.Device", return_value=device), setup_context as setup, redirect_stdout(io.StringIO()):
+                with patch("android.Device", return_value=device), setup_context as setup, \
+                        patch("android.load_profiles", return_value=[PROFILE]), redirect_stdout(io.StringIO()):
                     if error is not None:
                         setup.return_value.report = {"passed": False}
                         setup.return_value.prepare.side_effect = error

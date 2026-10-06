@@ -15,7 +15,7 @@ New maintainers should read [architecture](architecture/README.md),
 | Why one Gradle module | [ADR 001](architecture/adr-001-package-boundaries.md) |
 | Automated acceptance and its limits | [Verification workflow](verification/README.md), [feature map](verification/features.md) |
 | Model files, integrity and selection | [Model management](model-management.md), [Gemma switching](ai-model-switching.md), [Qwen catalog](qwen-model-selection.md) |
-| Voice behavior and device acceptance | [Current audio authority and checks](verification/voice-audio-and-metrics.md), [current diagnostics](current-diagnostics.md), [source owners](architecture/README.md) |
+| Voice behavior and device acceptance | [Full-duplex architecture and current audio checks](verification/voice-audio-and-metrics.md), [current diagnostics](current-diagnostics.md), [source owners](architecture/README.md) |
 | Conversation and voice presentation | [Architecture and entry points](architecture/README.md#entry-points-and-work-ownership), [UI change owners](architecture/change-guide.md) |
 | Memory storage and implemented milestones | [Memory OS checkpoints](memory-os-native.md), [memory wiki](memory-wiki.md) |
 | Supported native phone actions | [Short multi-action contract](verification/short-multi-action.md) |

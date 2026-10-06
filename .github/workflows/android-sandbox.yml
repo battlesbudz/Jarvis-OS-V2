@@ -200,13 +200,13 @@ jobs:
           emulator-boot-timeout: ${{ matrix.boot_timeout }}
           # This hook runs after the action installs the actual SDK emulator.
           # A failed loader receipt marks the action failed; it still tries boot.
-          # The 16 KB receipt starts ONE 300-second budget before the first boot;
-          # DeviceConfig, its single reboot and odrefresh consume that same budget.
+          # The historical API35-only collector repair is dormant for API36,
+          # which boots with its stock runtime configuration.
           pre-emulator-launch-script: ${{ matrix.screen_profile == 'foldable' && 'timeout --kill-after=2s 15s bash "$RUNNER_TEMP/jarvis-fold-display/gui-preflight.sh"' || matrix.id == '35-16k-normal' && 'python3 scripts/verification/runtime_gc.py --profile 35-16k-normal --out verification-evidence --source-commit "$GITHUB_SHA"' || '' }}
           # Only the foldable needs the Qt backend's configured folded-region path.
           # Stream guest INFO-and-above diagnostics even if 16 KB unlock fails before the controller.
           # This is evidence only; no startup wait, input retry, or boot-budget change.
-          emulator-options: ${{ matrix.screen_profile == 'foldable' && '-gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot' || '-no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot' }}${{ matrix.id == '35-16k-normal' && ' -logcat \*:i' || '' }}
+          emulator-options: ${{ matrix.screen_profile == 'foldable' && '-gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot' || '-no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot' }}${{ matrix.page_size == 16384 && ' -logcat \*:i' || '' }}
           script: python3 scripts/verification/android.py run --profile "${{ matrix.id }}" --apk inputs/jarvis-os-v2-release-apk/${{ matrix.apk }}.apk --test-apk inputs/jarvis-verification-test-apk/app-release-androidTest.apk --previous-apk inputs/jarvis-previous-release/app-release.apk --previous-metadata inputs/jarvis-previous-release/previous-release.json --out verification-evidence --source-commit "${{ github.sha }}" --pr-head "${{ github.event.pull_request.head.sha }}" --allow-emulator-reset
       - name: Verify release on a software-emulated ARM64 API 29 device
         if: matrix.acceleration == 'software'
