@@ -24,6 +24,7 @@ import com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException
 import com.battlesbudz.jarvis.v2.actions.ToolTaskStore
 import com.battlesbudz.jarvis.v2.actions.MissedRunDecision
 import com.battlesbudz.jarvis.v2.actions.UrlConnectionMcpHttpClient
+import com.battlesbudz.jarvis.v2.actions.WorkflowAlarmRunner
 import com.battlesbudz.jarvis.v2.actions.WorkflowAlarmScheduler
 import com.battlesbudz.jarvis.v2.actions.WorkflowEngine
 import com.battlesbudz.jarvis.v2.actions.WorkflowEventKind
@@ -62,6 +63,12 @@ internal class WorkflowCoordinator(
 ) : ReminderScheduling {
     /** M2: the workflow ledger shares the task ledger's durable store. */
     private val workflowLedger = WorkflowLedger(taskStore)
+    /** M2 alarm delivery: claim -> run -> terminal checkpoint, on the caller's thread. */
+    private val alarmRunner = WorkflowAlarmRunner(
+        claimDue = { id -> try { workflowLedger.claimDueOccurrence(id) } catch (_: ToolTaskStorageException) { null } },
+        claimResume = { id -> try { workflowLedger.claimResumeOccurrence(id) } catch (_: ToolTaskStorageException) { null } },
+        runOccurrence = { occurrence, resume -> runOrResume(occurrence, resume) }
+    )
     private val phoneActionLedger = ToolTaskLedger(taskStore)
 
     /**
@@ -201,17 +208,11 @@ internal class WorkflowCoordinator(
      */
     fun onWorkflowAlarm(occurrenceId: String, done: () -> Unit) {
         scope.launch(Dispatchers.Default) {
-            try {
-                val claimed = try { workflowLedger.claimDueOccurrence(occurrenceId) }
-                catch (_: ToolTaskStorageException) { null }
-                if (claimed != null) {
-                    runWorkflowOccurrence(claimed)
-                    return@launch
-                }
-                val resumed = try { workflowLedger.claimResumeOccurrence(occurrenceId) }
-                catch (_: ToolTaskStorageException) { null }
-                if (resumed != null) resumeWorkflowOccurrence(resumed)
-            } finally { done() }
+            // done() fires only after the run's terminal checkpoint (or
+            // resume re-arm) completes — the receiver's PendingResult is no
+            // longer finished while work is still detached.
+            try { alarmRunner.onAlarm(occurrenceId) }
+            finally { done() }
         }
     }
 

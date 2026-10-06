@@ -50,6 +50,16 @@ class ScreenControlService : AccessibilityService() {
         when (event?.eventType) {
             AccessibilityEvent.TYPE_TOUCH_INTERACTION_START -> sharedSession.noteTouchStart()
             AccessibilityEvent.TYPE_TOUCH_INTERACTION_END -> sharedSession.noteTouchEnd()
+            // A window from a different package becoming active invalidates
+            // the observation: approvals bind to one window identity and never
+            // cross windows. Jarvis's own stop-overlay/approval windows share
+            // the app package and never become the active window, so they
+            // neither invalidate nor inherit approvals. Content-change events
+            // are deliberately not invalidated here: too noisy, and
+            // dispatch-time re-verification covers them.
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ->
+                if (windowChangeInvalidatesObservation(event.packageName?.toString(), packageName))
+                    sharedSession.invalidateObservation()
             else -> Unit
         }
     }
@@ -66,25 +76,31 @@ class ScreenControlService : AccessibilityService() {
 fun extractScreenNodes(root: AccessibilityNodeInfo, maxNodes: Int = 200): List<ScreenNode> {
     val out = mutableListOf<ScreenNode>()
     val index = intArrayOf(0)
-    walkScreenNode(root, 0, out, index, maxNodes)
+    val windowIdentity = windowIdentityOf(root)
+    walkScreenNode(root, 0, out, index, maxNodes, windowIdentity)
     return out
 }
+
+/** Identity of the active window [root] came from: the package plus the active-window id. */
+private fun windowIdentityOf(root: AccessibilityNodeInfo): String =
+    "${root.packageName?.toString().orEmpty()}#${root.windowId}"
 
 private fun walkScreenNode(
     node: AccessibilityNodeInfo,
     depth: Int,
     out: MutableList<ScreenNode>,
     index: IntArray,
-    maxNodes: Int
+    maxNodes: Int,
+    windowIdentity: String
 ) {
     if (out.size >= maxNodes || depth > 25) return
     if (isScreenActionable(node)) {
-        out.add(toScreenNode(node, "n${index[0]++}"))
+        out.add(toScreenNode(node, "n${index[0]++}", windowIdentity))
     }
     for (i in 0 until node.childCount) {
         val child = node.getChild(i) ?: continue
         try {
-            walkScreenNode(child, depth + 1, out, index, maxNodes)
+            walkScreenNode(child, depth + 1, out, index, maxNodes, windowIdentity)
         } finally {
             child.recycle()
         }
@@ -107,7 +123,7 @@ private fun screenNodeRole(node: AccessibilityNodeInfo): String = when {
     else -> "image"
 }
 
-private fun toScreenNode(node: AccessibilityNodeInfo, id: String): ScreenNode {
+private fun toScreenNode(node: AccessibilityNodeInfo, id: String, windowIdentity: String): ScreenNode {
     return ScreenNode(
         id = id,
         label = screenNodeLabel(node),
@@ -115,7 +131,9 @@ private fun toScreenNode(node: AccessibilityNodeInfo, id: String): ScreenNode {
         bounds = screenNodeBounds(node),
         clickable = node.isClickable,
         editable = node.isEditable,
-        scrollable = node.isScrollable
+        scrollable = node.isScrollable,
+        viewId = node.viewIdResourceName,
+        windowIdentity = windowIdentity
     )
 }
 
@@ -151,7 +169,8 @@ private fun matchesSnapshot(live: AccessibilityNodeInfo, snapshot: ScreenNode): 
     snapshot.matchesLiveNode(
         screenNodeRole(live),
         screenNodeLabel(live),
-        screenNodeBounds(live)
+        screenNodeBounds(live),
+        live.viewIdResourceName
     )
 
 private class ServiceScreenBridge(
@@ -167,8 +186,20 @@ private class ServiceScreenBridge(
         return try {
             ScreenObservation(
                 packageName = root.packageName?.toString().orEmpty(),
-                nodes = extractScreenNodes(root)
+                nodes = extractScreenNodes(root),
+                windowIdentity = windowIdentityOf(root)
             )
+        } finally {
+            root.recycle()
+        }
+    }
+
+    /** Live identity of the active window; null when it cannot be established. */
+    override fun currentWindowIdentity(): String? {
+        val service = service() ?: return null
+        val root = service.rootInActiveWindow ?: return null
+        return try {
+            windowIdentityOf(root)
         } finally {
             root.recycle()
         }
@@ -199,13 +230,17 @@ private class ServiceScreenBridge(
 
     /**
      * Re-walks the live tree, re-verifies the node against the snapshot, then
-     * dispatches. A target whose label/role changed since observation is stale
-     * and never dispatches.
+     * dispatches. The live active window must still carry the observed window
+     * identity — an approval for one window never dispatches in another —
+     * and a target whose label/role/bounds/view id changed since observation
+     * is stale and never dispatches.
      */
     private inline fun withLiveNode(node: ScreenNode, perform: (AccessibilityNodeInfo) -> Boolean): Boolean {
         val service = service() ?: return false
         val root = service.rootInActiveWindow ?: return false
         try {
+            val liveIdentity = windowIdentityOf(root)
+            if (node.windowIdentity.isBlank() || node.windowIdentity != liveIdentity) return false
             val target = findScreenNodeById(root, node.id) ?: return false
             try {
                 if (!matchesSnapshot(target, node)) return false

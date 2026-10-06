@@ -19,8 +19,10 @@ class M1cScreenControlTest {
     private fun strict(name: String, args: Map<String, String>) =
         MobileToolCatalog.decodeStrict(name, JSONObject(args as Map<*, *>))
 
+    private val liveIdentity = "com.example.app#1"
+
     private fun observation(vararg nodes: ScreenNode) =
-        ScreenObservation(packageName = "com.example.app", nodes = nodes.toList())
+        ScreenObservation(packageName = "com.example.app", nodes = nodes.toList(), windowIdentity = liveIdentity)
 
     private fun button(id: String = "n0", label: String = "Search") =
         ScreenNode(id, label, "button", "10,20-100,80", clickable = true)
@@ -224,19 +226,19 @@ class M1cScreenControlTest {
         assertNotEquals(token1, token2)
         assertTrue(token1.matches(Regex("^[0-9a-f]{16}$")))
         // Old token is stale even for a target that still exists.
-        val stale = session.verifyTarget("n0", token1) { null }
+        val stale = session.verifyTarget("n0", token1, liveIdentity) { null }
         assertTrue("stale token must be rejected: $stale", stale is TargetVerification.Rejected)
         // Current token verifies; kind requirements are enforced.
-        val verified = session.verifyTarget("n0", token2) { node ->
+        val verified = session.verifyTarget("n0", token2, liveIdentity) { node ->
             if (!node.clickable) "not tappable" else null
         }
         assertTrue(verified is TargetVerification.Verified)
         assertEquals("Search", (verified as TargetVerification.Verified).node.label)
-        val wrongKind = session.verifyTarget("n0", token2) { node ->
+        val wrongKind = session.verifyTarget("n0", token2, liveIdentity) { node ->
             if (!node.editable) "not editable" else null
         }
         assertTrue(wrongKind is TargetVerification.Rejected)
-        val missing = session.verifyTarget("n9", token2) { null }
+        val missing = session.verifyTarget("n9", token2, liveIdentity) { null }
         assertTrue(missing is TargetVerification.Rejected)
     }
 
@@ -252,6 +254,20 @@ class M1cScreenControlTest {
             node.matchesLiveNode("button", "Send", "10,20-100,80"))
         assertFalse("same label with a different role must not bind",
             node.matchesLiveNode("text", "Search", "10,20-100,80"))
+        // View id binding: a snapshot that carries a view id binds only to
+        // the same live view id. A replaced view that kept the label, role
+        // and bounds but got a different view id is a different target.
+        val withId = button().copy(viewId = "com.example.app:id/search")
+        assertTrue("same view id binds",
+            withId.matchesLiveNode("button", "Search", "10,20-100,80", "com.example.app:id/search"))
+        assertFalse("different view id must not bind",
+            withId.matchesLiveNode("button", "Search", "10,20-100,80", "com.example.app:id/other"))
+        assertFalse("missing live view id must not bind a snapshot that has one",
+            withId.matchesLiveNode("button", "Search", "10,20-100,80", null))
+        // Snapshots without a view id (common in WebViews) keep the
+        // role/label/bounds check.
+        assertTrue("snapshot without a view id binds on role/label/bounds",
+            node.matchesLiveNode("button", "Search", "10,20-100,80", null))
     }
 
     // Session: touch pause and idle resume (T06)
@@ -277,9 +293,9 @@ class M1cScreenControlTest {
         assertEquals(DispatchGate.Allowed, session.dispatchGate())
         val fresh = session.recordObservation(observation(button()))
         assertNotEquals(token, fresh)
-        val stale = session.verifyTarget("n0", token) { null }
+        val stale = session.verifyTarget("n0", token, liveIdentity) { null }
         assertTrue("pre-touch token must be stale after resume re-observe: $stale", stale is TargetVerification.Rejected)
-        assertTrue(session.verifyTarget("n0", fresh) { null } is TargetVerification.Verified)
+        assertTrue(session.verifyTarget("n0", fresh, liveIdentity) { null } is TargetVerification.Verified)
     }
 
     // Session: stop and release
@@ -295,8 +311,195 @@ class M1cScreenControlTest {
         assertFalse(session.isStopRequested)
         assertEquals(DispatchGate.NeedsAdmission, session.dispatchGate())
         assertTrue(
-            session.verifyTarget("n0", token) { null } is TargetVerification.Rejected
+            session.verifyTarget("n0", token, liveIdentity) { null } is TargetVerification.Rejected
         )
+    }
+
+    // Window identity (finding F3): an approval binds to one window; a
+    // window switch after approval dispatches nothing.
+
+    /** Fake bridge modeling two windows with production-faithful live re-verification. */
+    private class TwoWindowFakeBridge : ScreenBridge {
+        data class Window(val identity: String, val nodes: List<ScreenNode>)
+
+        private val windows = mutableMapOf<String, Window>()
+        var activeWindowId: String? = null
+        val effects = mutableListOf<Pair<ScreenNode, String>>()
+
+        fun addWindow(window: Window) {
+            windows[window.identity] = window
+        }
+
+        fun setNodes(identity: String, nodes: List<ScreenNode>) {
+            windows[identity] = Window(identity, nodes)
+        }
+
+        override fun isAvailable(): Boolean = true
+
+        override fun observe(): ScreenObservation? {
+            val window = activeWindowId?.let { windows[it] } ?: return null
+            return ScreenObservation(
+                packageName = window.identity.substringBefore("#"),
+                nodes = window.nodes,
+                windowIdentity = window.identity
+            )
+        }
+
+        override fun currentWindowIdentity(): String? = activeWindowId
+
+        override fun tap(node: ScreenNode): Boolean {
+            // Production-faithful live re-verification: the node's window
+            // identity must be established and still be the active window.
+            val activeIdentity = activeWindowId ?: return false
+            if (node.windowIdentity.isBlank() || node.windowIdentity != activeIdentity) return false
+            val live = windows[activeIdentity]?.nodes?.firstOrNull { it.id == node.id } ?: return false
+            if (!node.matchesLiveNode(live.role, live.label, live.bounds, live.viewId)) return false
+            effects += node to activeIdentity
+            return true
+        }
+
+        override fun scroll(node: ScreenNode, direction: ScreenScrollDirection): Boolean = false
+        override fun type(node: ScreenNode, text: String): Boolean = false
+        override fun showStopOverlay(taskLabel: String): Boolean = false
+        override fun hideStopOverlay() {}
+    }
+
+    private sealed interface TapOutcome {
+        data class Rejected(val reason: String) : TapOutcome
+        data class BridgeFailed(val message: String) : TapOutcome
+        data class Dispatched(val node: ScreenNode) : TapOutcome
+    }
+
+    /**
+     * Test double of dispatchScreenMutation's dispatch order: dispatch gate,
+     * then verifyTarget with the bridge's live window identity, then the
+     * bridge tap on verification.
+     */
+    private fun dispatchTap(
+        session: ScreenControlSession,
+        bridge: ScreenBridge,
+        targetId: String,
+        token: String
+    ): TapOutcome {
+        if (session.dispatchGate() != DispatchGate.Allowed) {
+            return TapOutcome.Rejected("dispatch gate blocked the mutation")
+        }
+        val node = when (val verified = session.verifyTarget(targetId, token, bridge.currentWindowIdentity()) { node ->
+            if (!node.clickable) "Target ${node.id} (\"${node.label}\") is not tappable." else null
+        }) {
+            is TargetVerification.Verified -> verified.node
+            is TargetVerification.Rejected -> return TapOutcome.Rejected(verified.reason)
+        }
+        return if (bridge.tap(node)) TapOutcome.Dispatched(node)
+        else TapOutcome.BridgeFailed("the screen may have changed")
+    }
+
+    private fun admittedSession(): ScreenControlSession {
+        val session = ScreenControlSession()
+        assertEquals(AdmitResult.Admitted, session.admit("group-f3", userApproved = true))
+        return session
+    }
+
+    private fun okButton(identity: String, viewId: String, id: String = "n4", label: String = "OK") =
+        ScreenNode(
+            id = id,
+            label = label,
+            role = "button",
+            bounds = "100,400-300,460",
+            clickable = true,
+            viewId = viewId,
+            windowIdentity = identity
+        )
+
+    @Test fun windowSwitchAfterApprovalDispatchesNothingOnB() {
+        val windowA = "com.app.a#1"
+        val windowB = "com.app.b#7"
+        val bridge = TwoWindowFakeBridge()
+        bridge.addWindow(TwoWindowFakeBridge.Window(windowA, listOf(okButton(windowA, "com.app.a:id/ok"))))
+        // Same walk position, same role/label/bounds, different app, different view id.
+        bridge.addWindow(TwoWindowFakeBridge.Window(windowB, listOf(okButton(windowB, "com.app.b:id/ok"))))
+        val session = admittedSession()
+        bridge.activeWindowId = windowA
+        val token = session.recordObservation(checkNotNull(bridge.observe()))
+        // The window switches after approval.
+        bridge.activeWindowId = windowB
+        val outcome = dispatchTap(session, bridge, "n4", token)
+        assertTrue("dispatch after a window switch must be rejected, was: $outcome",
+            outcome is TapOutcome.Rejected)
+        assertTrue("the reason must name the window change, was: $outcome",
+            (outcome as TapOutcome.Rejected).reason.contains("different window"))
+        assertTrue("no effect may land on either window, was: ${bridge.effects}", bridge.effects.isEmpty())
+    }
+
+    @Test fun replacementTargetInSameWindowIsStale() {
+        val windowA = "com.app.a#1"
+        val bridge = TwoWindowFakeBridge()
+        bridge.addWindow(TwoWindowFakeBridge.Window(windowA, listOf(okButton(windowA, "com.app.a:id/ok_v1"))))
+        val session = admittedSession()
+        bridge.activeWindowId = windowA
+        val token = session.recordObservation(checkNotNull(bridge.observe()))
+        // Same window identity, but the target was replaced: same role,
+        // label and bounds, different view id.
+        bridge.setNodes(windowA, listOf(okButton(windowA, "com.app.a:id/ok_v2")))
+        val outcome = dispatchTap(session, bridge, "n4", token)
+        // Session verification passes (same window, same index), but the
+        // bridge's live re-verification sees the replaced view and refuses.
+        assertTrue("replaced view in the same window must not dispatch, was: $outcome",
+            outcome is TapOutcome.BridgeFailed)
+        assertTrue("no effect may be recorded, was: ${bridge.effects}", bridge.effects.isEmpty())
+    }
+
+    @Test fun unchangedWindowDispatchesExactlyOnce() {
+        val windowA = "com.app.a#1"
+        val bridge = TwoWindowFakeBridge()
+        val expectedNode = okButton(windowA, "com.app.a:id/ok")
+        bridge.addWindow(TwoWindowFakeBridge.Window(windowA, listOf(expectedNode)))
+        val session = admittedSession()
+        bridge.activeWindowId = windowA
+        val token = session.recordObservation(checkNotNull(bridge.observe()))
+        val outcome = dispatchTap(session, bridge, "n4", token)
+        assertTrue("unchanged window must dispatch, was: $outcome", outcome is TapOutcome.Dispatched)
+        assertEquals("exactly one effect must be recorded on window A",
+            listOf(expectedNode to windowA), bridge.effects)
+    }
+
+    @Test fun unestablishedIdentityFailsClosed() {
+        val session = admittedSession()
+        // Observation and nodes carry no window identity: fail closed even
+        // though the live identity is established.
+        val node = ScreenNode("n4", "OK", "button", "100,400-300,460", clickable = true)
+        val token = session.recordObservation(
+            ScreenObservation(packageName = "com.example.app", nodes = listOf(node))
+        )
+        val bridge = TwoWindowFakeBridge()
+        bridge.addWindow(TwoWindowFakeBridge.Window("com.app.a#1", listOf(node)))
+        bridge.activeWindowId = "com.app.a#1"
+        val unestablished = session.verifyTarget("n4", token, bridge.currentWindowIdentity()) { null }
+        assertTrue("blank observed identity must be rejected: $unestablished",
+            unestablished is TargetVerification.Rejected)
+        // A live identity that cannot be established fails closed too.
+        val noLive = session.verifyTarget("n4", token, null) { null }
+        assertTrue("null live identity must be rejected: $noLive",
+            noLive is TargetVerification.Rejected)
+        // The bridge also refuses nodes with no established identity.
+        assertFalse("bridge tap on an identity-less node must not dispatch", bridge.tap(node))
+        assertTrue(bridge.effects.isEmpty())
+    }
+
+    @Test fun windowStateChangeInvalidatesObservation() {
+        val session = admittedSession()
+        val token = session.recordObservation(observation(button()))
+        assertTrue(session.verifyTarget("n0", token, liveIdentity) { null } is TargetVerification.Verified)
+        session.invalidateObservation()
+        val stale = session.verifyTarget("n0", token, liveIdentity) { null }
+        assertTrue("invalidated observation must verify as stale: $stale",
+            stale is TargetVerification.Rejected)
+        assertTrue("invalidation must not release the grant", session.isAdmitted)
+        assertTrue(windowChangeInvalidatesObservation("com.other.app", "com.battlesbudz.jarvis.v2"))
+        assertFalse("Jarvis's own windows must not invalidate the observation",
+            windowChangeInvalidatesObservation("com.battlesbudz.jarvis.v2", "com.battlesbudz.jarvis.v2"))
+        assertTrue("an unidentifiable window fails closed",
+            windowChangeInvalidatesObservation(null, "com.battlesbudz.jarvis.v2"))
     }
 
     // Voice stays denied by design (FinalVoiceToolGuard untouched).

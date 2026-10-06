@@ -3240,6 +3240,7 @@ class ReleaseJourneyTest {
 
         override fun isAvailable(): Boolean = available
         override fun observe(): ScreenObservation? = observation
+        override fun currentWindowIdentity(): String? = observation?.windowIdentity
         override fun tap(node: ScreenNode): Boolean {
             tapped += node
             return true
@@ -3262,9 +3263,12 @@ class ReleaseJourneyTest {
     }
 
     private fun screenFixtureNodes() = listOf(
-        ScreenNode("n0", "Search", "button", "10,20-100,80", clickable = true),
-        ScreenNode("n1", "Name", "field", "10,100-400,160", editable = true),
-        ScreenNode("n2", "Results", "list", "0,200-1080,1800", scrollable = true)
+        ScreenNode("n0", "Search", "button", "10,20-100,80", clickable = true,
+            viewId = "com.example.app:id/search", windowIdentity = "com.example.app#1"),
+        ScreenNode("n1", "Name", "field", "10,100-400,160", editable = true,
+            viewId = "com.example.app:id/name", windowIdentity = "com.example.app#1"),
+        ScreenNode("n2", "Results", "list", "0,200-1080,1800", scrollable = true,
+            viewId = "com.example.app:id/results", windowIdentity = "com.example.app#1")
     )
 
     @Suppress("DEPRECATION")
@@ -3303,7 +3307,7 @@ class ReleaseJourneyTest {
     }
 
     @Test fun test56_screenTapNeedsVerifiedTarget() {
-        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes()))
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes(), windowIdentity = "com.example.app#1"))
         val session = ScreenControlSession()
         val pipeline = MobileActionPipeline(
             executor = AndroidMobileActionExecutor(context, screenBridge = bridge, screenSession = session)
@@ -3348,7 +3352,7 @@ class ReleaseJourneyTest {
 
     @Test fun test57_touchPauseAndIdleResumeReobserves() {
         var now = 10_000L
-        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes()))
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes(), windowIdentity = "com.example.app#1"))
         val session = ScreenControlSession(clock = { now }, touchIdleMs = 3_000L)
         val pipeline = MobileActionPipeline(
             executor = AndroidMobileActionExecutor(context, screenBridge = bridge, screenSession = session)
@@ -3370,7 +3374,9 @@ class ReleaseJourneyTest {
         now += 3_000L
         bridge.observation = ScreenObservation(
             "com.example.other",
-            listOf(ScreenNode("n0", "Other", "button", "0,0-50,50", clickable = true))
+            listOf(ScreenNode("n0", "Other", "button", "0,0-50,50", clickable = true,
+                viewId = "com.example.other:id/other", windowIdentity = "com.example.other#1")),
+            windowIdentity = "com.example.other#1"
         )
         val resumed = pipeline.execute(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to token)))
         assertFalse("pre-touch token must be stale after resume: ${resumed.message}", resumed.succeeded)
@@ -3412,7 +3418,7 @@ class ReleaseJourneyTest {
         val ledger = ToolTaskLedger(FileToolTaskStore(file))
         val approvals = ActionApprovalStore(FileToolTaskStore(file))
         val session = ScreenControlSession()
-        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes()))
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes(), windowIdentity = "com.example.app#1"))
         val token = session.recordObservation(checkNotNull(bridge.observation))
         val executor = AndroidMobileActionExecutor(context, screenBridge = bridge, screenSession = session)
         val admission = ScreenApprovalAdmission(session)
@@ -3476,7 +3482,7 @@ class ReleaseJourneyTest {
         // lease is denied a second grant and stays waiting for its turn; it is
         // never rejected and never steals the lease.
         val session = ScreenControlSession()
-        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes()))
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes(), windowIdentity = "com.example.app#1"))
         val token = session.recordObservation(checkNotNull(bridge.observation))
         val ledger = ToolTaskLedger()
         val admission = ScreenApprovalAdmission(session)
@@ -3545,7 +3551,7 @@ class ReleaseJourneyTest {
         // finishes, the screen lease releases, the Stop overlay hides, and
         // the ordered projection reports completion.
         val session = ScreenControlSession()
-        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes()))
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes(), windowIdentity = "com.example.app#1"))
         val token = session.recordObservation(checkNotNull(bridge.observation))
         val ledger = ToolTaskLedger()
         val admission = ScreenApprovalAdmission(session)
@@ -3691,7 +3697,7 @@ class ReleaseJourneyTest {
         // rejected before any adapter runs, so nothing changes on the device.
         val audio = context.getSystemService(AudioManager::class.java)
         val volumeBefore = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes()))
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes(), windowIdentity = "com.example.app#1"))
         val executor = AndroidMobileActionExecutor(context, screenBridge = bridge)
         val dispatched = AtomicInteger(0)
         val counting = MobileActionExecutor { action -> dispatched.incrementAndGet(); executor.execute(action) }

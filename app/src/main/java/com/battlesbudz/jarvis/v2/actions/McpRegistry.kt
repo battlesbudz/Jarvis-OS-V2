@@ -43,22 +43,53 @@ data class McpServerStatus(
     val tools: List<McpTool> = emptyList(),
     /** Tools the user enabled. Setup enables only FREE tools by default. */
     val enabledTools: Set<String> = emptySet(),
+    /**
+     * Whole-list fingerprint at the last explicit review point (setup or
+     * [McpRegistry.acknowledgeSchemaChange]). The newly discovered
+     * fingerprint lives in [pendingSchemaHash] until it is explicitly
+     * reviewed: a failed refresh or a disconnect must never promote it.
+     */
     val schemaHash: String? = null,
     /**
-     * Per-tool canonical schema hashes at the last review point. A schema
-     * change must never silently re-enable a changed tool: [changedToolNames]
-     * records exactly which tools changed since the user last reviewed them.
+     * Per-tool review fingerprints at the last explicit review point. A
+     * review-relevant change must never silently re-enable a changed tool:
+     * [changedToolNames] records exactly which tools changed since the user
+     * last reviewed them.
      */
     val toolSchemaHashes: Map<String, String> = emptyMap(),
-    /** Tool names whose schema changed (or which are new) since the last review. */
+    /** Tool names whose review surface changed (or which are new) since the last review. */
     val changedToolNames: Set<String> = emptySet(),
+    /**
+     * The newly discovered whole-list fingerprint awaiting explicit review.
+     * Non-null if and only if a review is pending: it is set when a refresh
+     * discovers a different tool list and cleared only by explicit
+     * acknowledgment (or an honest revert). Survives failed refreshes and
+     * disconnects, so recovery from a failure can never grant review.
+     */
+    val pendingSchemaHash: String? = null,
     val protocolVersion: String? = null,
     val sessionId: String? = null
 )
 
-/** Per-tool canonical schema hashes, for change detection finer than the whole-list hash. */
+/**
+ * Per-tool review fingerprint: covers the full review surface (input
+ * schema, description, scopes and pricing), not just the schema document.
+ * A scope-only change lands in [McpServerStatus.changedToolNames] and must
+ * be re-enabled explicitly, exactly like a schema change.
+ */
+private fun toolReviewFingerprint(tool: McpTool): String = McpProtocol.schemaHash(
+    listOf(
+        tool.name,
+        tool.description,
+        McpProtocol.canonicalSchema(tool.inputSchemaJson),
+        tool.scopes.sorted().joinToString(","),
+        tool.pricing.toString()
+    ).joinToString("\n")
+)
+
+/** Per-tool review fingerprints, for change detection finer than the whole-list hash. */
 private fun toolSchemaHashes(tools: List<McpTool>): Map<String, String> =
-    tools.associate { it.name to McpProtocol.schemaHash(McpProtocol.canonicalSchema(it.inputSchemaJson)) }
+    tools.associate { it.name to toolReviewFingerprint(it) }
 
 /**
  * Guided setup (D07): URL entry with validation, version negotiation,
@@ -214,6 +245,11 @@ class McpRegistry(
      * Re-run negotiation and discovery. A changed tool list moves the
      * server to SCHEMA_CHANGED and blocks calls until re-reviewed; network
      * or auth failures move it to UNAVAILABLE/DENIED with the reason.
+     *
+     * A pending review is independent of connection health: failure and
+     * disconnect paths keep [McpServerStatus.pendingSchemaHash],
+     * [McpServerStatus.changedToolNames] and the reviewed fingerprints, so
+     * recovering from a failure can never silently grant review.
      */
     fun refresh(serverId: String): McpServerStatus {
         val status = servers[serverId] ?: return McpServerStatus(
@@ -253,31 +289,47 @@ class McpRegistry(
                         status.copy(state = McpServerState.UNAVAILABLE, explanation = parsed.reason))
                     is McpProtocol.ToolsList.Ok -> parsed.tools
                 }
-                val hash = McpProtocol.toolListHash(tools)
-                val newHashes = toolSchemaHashes(tools)
+                val newListHash = McpProtocol.toolListHash(tools)
+                val newPerTool = toolSchemaHashes(tools)
+                // Compare against the REVIEWED per-tool map: the pending
+                // discovery must never become its own baseline.
                 val changed = tools.map { it.name }
-                    .filter { newHashes[it] != status.toolSchemaHashes[it] }.toSet()
-                return if (status.schemaHash != null && hash != status.schemaHash) {
+                    .filter { toolReviewFingerprint(it) != status.toolSchemaHashes[it] }.toSet()
+                val currentNames = tools.map { it.name }.toSet()
+                return if (status.schemaHash != null && newListHash != status.schemaHash) {
+                    // Review pending (or still pending): the reviewed
+                    // baseline is untouched and the discovery is parked in
+                    // pendingSchemaHash. The failure and disconnect paths
+                    // use status.copy without naming these fields, so they
+                    // survive them by construction.
                     put(serverId, status.copy(state = McpServerState.SCHEMA_CHANGED,
-                        explanation = "The server's tools changed since setup. Review them before any call runs.",
-                        tools = tools, schemaHash = hash, toolSchemaHashes = newHashes,
-                        changedToolNames = status.changedToolNames + changed))
-                } else if (status.state == McpServerState.SCHEMA_CHANGED) {
-                    // A refresh must never silently clear a pending review:
-                    // the tools still differ from the last reviewed state.
-                    put(serverId, status.copy(
-                        explanation = "Still waiting for review: the server's tools changed since setup.",
-                        tools = tools, schemaHash = hash, toolSchemaHashes = newHashes,
+                        explanation = if (status.pendingSchemaHash != null)
+                            "Still waiting for review: the server's tools changed since setup."
+                        else "The server's tools changed since setup. Review them before any call runs.",
+                        tools = tools, pendingSchemaHash = newListHash,
+                        changedToolNames = status.changedToolNames + changed,
                         protocolVersion = negotiation.protocolVersion,
-                        sessionId = negotiation.sessionId,
-                        changedToolNames = status.changedToolNames + changed))
+                        sessionId = negotiation.sessionId))
+                } else if (status.pendingSchemaHash != null) {
+                    // The discovered list matches the reviewed fingerprint
+                    // again (the server reverted): clear the pending review
+                    // honestly. Nothing new was granted; the reviewed
+                    // baseline simply holds.
+                    put(serverId, status.copy(state = McpServerState.CONNECTED,
+                        explanation = "Connected: ${tools.size} tool(s) available.",
+                        tools = tools,
+                        enabledTools = status.enabledTools.intersect(currentNames),
+                        schemaHash = newListHash, toolSchemaHashes = newPerTool,
+                        changedToolNames = emptySet(), pendingSchemaHash = null,
+                        protocolVersion = negotiation.protocolVersion,
+                        sessionId = negotiation.sessionId))
                 } else {
                     put(serverId, status.copy(state = McpServerState.CONNECTED,
                         explanation = "Connected: ${tools.size} tool(s) available.",
                         tools = tools,
-                        enabledTools = status.enabledTools.intersect(tools.map { it.name }.toSet()),
-                        schemaHash = hash, toolSchemaHashes = newHashes,
-                        changedToolNames = emptySet(),
+                        enabledTools = status.enabledTools.intersect(currentNames),
+                        schemaHash = newListHash, toolSchemaHashes = newPerTool,
+                        changedToolNames = emptySet(), pendingSchemaHash = null,
                         protocolVersion = negotiation.protocolVersion,
                         sessionId = negotiation.sessionId))
                 }
@@ -289,6 +341,11 @@ class McpRegistry(
      * Acknowledge a schema change after review: previously enabled tools
      * that are unchanged stay enabled; changed or new tools stay disabled
      * until explicitly enabled.
+     *
+     * The pending discovery parked in [McpServerStatus.pendingSchemaHash] is
+     * promoted to the reviewed baseline here, explicitly, and only here: a
+     * server that failed and recovered must refresh back to SCHEMA_CHANGED
+     * before it can be reviewed. Recovery never grants review on its own.
      */
     fun acknowledgeSchemaChange(serverId: String): Boolean {
         val status = servers[serverId] ?: return false
@@ -299,6 +356,11 @@ class McpRegistry(
         servers[serverId] = status.copy(state = McpServerState.CONNECTED,
             explanation = "Connected: schema change reviewed; changed tools need explicit re-enablement.",
             enabledTools = status.enabledTools.intersect(reviewable),
+            // The pending discovery becomes the reviewed baseline, by
+            // explicit user action. It is never promoted implicitly by a refresh.
+            schemaHash = status.pendingSchemaHash,
+            toolSchemaHashes = toolSchemaHashes(status.tools),
+            pendingSchemaHash = null,
             changedToolNames = emptySet())
         return true
     }

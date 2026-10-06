@@ -99,8 +99,13 @@ class WorkflowEngine(private val now: () -> Long = System::currentTimeMillis) {
             var i = if (path.isNotEmpty()) path[0] else 0
             while (i < steps.size) {
                 val step = steps[i]
-                val isResumeTarget = path.size == 1 && i == path[0]
-                val nestedPath = if (isResumeTarget) path.drop(1) else emptyList()
+                // Distinguish reaching the current path component from reaching the leaf:
+                // a resume path like [1,0] must forward its tail [0] when descending
+                // through the branch at index 1, so the nested wait sees itself as the
+                // leaf target instead of a fresh wait.
+                val onResumePath = path.isNotEmpty() && i == path[0]
+                val nestedPath = if (onResumePath) path.drop(1) else emptyList()
+                val isLeafTarget = onResumePath && path.size == 1
                 if (step.id in skipStepIds) { i++; continue }
                 when (step) {
                     is WorkflowStep.Tool -> {
@@ -123,8 +128,8 @@ class WorkflowEngine(private val now: () -> Long = System::currentTimeMillis) {
                         }
                     }
                     is WorkflowStep.Wait -> {
-                        // A resume target wait is already satisfied — continue past it.
-                        if (!isResumeTarget) return Flow.Suspend(step.wait, prefix + i)
+                        // A resume-target wait is already satisfied — continue past it.
+                        if (!isLeafTarget) return Flow.Suspend(step.wait, prefix + i)
                         completedStepIds += step.id
                     }
                     is WorkflowStep.Adaptive -> {

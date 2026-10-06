@@ -22,13 +22,30 @@ data class ScreenNode(
     val bounds: String,
     val clickable: Boolean = false,
     val editable: Boolean = false,
-    val scrollable: Boolean = false
+    val scrollable: Boolean = false,
+    /**
+     * Stable target identity from AccessibilityNodeInfo.viewIdResourceName,
+     * null when the platform provides none (common in WebViews). Dispatch
+     * binds a snapshot to the live node only when the two ids agree.
+     */
+    val viewId: String? = null,
+    /**
+     * Identity of the observed active window ("package#windowId"). Blank
+     * means unestablished: dispatch on such a node fails closed.
+     */
+    val windowIdentity: String = ""
 )
 
 data class ScreenObservation(
     val packageName: String,
     val nodes: List<ScreenNode>,
-    val observedAtMs: Long = System.currentTimeMillis()
+    val observedAtMs: Long = System.currentTimeMillis(),
+    /**
+     * Identity of the observed active window ("package#windowId"). Every
+     * dispatch must present this same identity or fail closed: an approval
+     * for one window never dispatches in another.
+     */
+    val windowIdentity: String = ""
 ) {
     /** Compact, model-readable snapshot. Bounded so receipts stay small. */
     fun compactText(token: String, maxNodes: Int = 64): String = buildString {
@@ -45,6 +62,12 @@ data class ScreenObservation(
 interface ScreenBridge {
     fun isAvailable(): Boolean
     fun observe(): ScreenObservation?
+
+    /**
+     * Live identity of the active window at dispatch time ("package#windowId").
+     * Null when it cannot be established; dispatch fails closed in that case.
+     */
+    fun currentWindowIdentity(): String?
     fun tap(node: ScreenNode): Boolean
     fun scroll(node: ScreenNode, direction: ScreenScrollDirection): Boolean
     fun type(node: ScreenNode, text: String): Boolean
@@ -83,9 +106,36 @@ sealed interface TargetVerification {
  * bounds must all agree, or the dispatch fails closed and the caller
  * re-observes. A scroll or re-layout changes bounds, which is the safe
  * direction — a wrong tap is never taken.
+ *
+ * When the snapshot carries a view id (AccessibilityNodeInfo
+ * viewIdResourceName), the live node must carry the same one: a replaced view
+ * that kept the label and bounds is a different target. Snapshots without a
+ * view id (common in WebViews) keep the role/label/bounds check.
  */
-fun ScreenNode.matchesLiveNode(role: String, label: String, bounds: String): Boolean =
-    this.role == role && this.label == label && this.bounds == bounds
+fun ScreenNode.matchesLiveNode(
+    role: String,
+    label: String,
+    bounds: String,
+    liveViewId: String? = null
+): Boolean =
+    this.role == role && this.label == label && this.bounds == bounds &&
+        (viewId == null || viewId == liveViewId)
+
+/**
+ * Whether a window-state change event invalidates the observation.
+ *
+ * Window-state events carry their own window's package name. Jarvis's own
+ * stop-overlay and approval windows share the app package and never become
+ * the active window, so they must neither invalidate the observation nor
+ * inherit its approvals — only a different package invalidates. A null
+ * event package means the window cannot be identified, which fails closed
+ * like any unestablished identity.
+ *
+ * Content-change events deliberately do not invalidate: they are too noisy,
+ * and dispatch-time re-verification already covers them.
+ */
+fun windowChangeInvalidatesObservation(eventPackageName: String?, ownPackageName: String): Boolean =
+    eventPackageName != ownPackageName
 
 /**
  * Session-scoped screen-control grant. One grant per task group: admitting a
@@ -139,19 +189,44 @@ class ScreenControlSession(
     }
 
     /**
+     * Drops the current observation and token without touching the grant:
+     * the group keeps the lease, touch state stays as-is, and the stop flag
+     * stays as-is. The next mutation must re-observe before dispatching.
+     */
+    fun invalidateObservation() {
+        observation = null
+        token = null
+    }
+
+    /**
      * Verifies a mutation target against the latest observation. [requireNode]
      * returns a rejection reason when the node cannot take this action
      * (not clickable/editable/scrollable), or null when it can.
+     *
+     * [liveWindowIdentity] is the bridge's read of the active window at
+     * dispatch time. When it is null, blank, or a different window than the
+     * observation's, verification fails closed: an approval for app A's
+     * window must never dispatch in app B's window.
      */
     fun verifyTarget(
         targetId: String,
         token: String,
+        liveWindowIdentity: String?,
         requireNode: (ScreenNode) -> String?
     ): TargetVerification {
         val observed = observation
         if (observed == null || token != this.token) {
             return TargetVerification.Rejected(
                 "That screen observation is stale — the screen changed. " +
+                    "Call screen_observe again for fresh targets."
+            )
+        }
+        if (observed.windowIdentity.isBlank() || liveWindowIdentity == null ||
+            liveWindowIdentity != observed.windowIdentity
+        ) {
+            return TargetVerification.Rejected(
+                "That screen observation is from a different window — the screen " +
+                    "changed or another window is now active. " +
                     "Call screen_observe again for fresh targets."
             )
         }

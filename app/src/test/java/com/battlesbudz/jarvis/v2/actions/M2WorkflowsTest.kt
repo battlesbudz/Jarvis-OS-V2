@@ -780,4 +780,272 @@ class M2WorkflowsTest {
                 fail("tampered workflow must be refused")
             } catch (_: ToolTaskStorageException) { }
     }
+
+    // -- Nested timer waits (repair round 3, finding F4) ---------------------------
+
+    @Test fun nestedTimerInThenBranchResumesToCompletion() {
+        // Jerry's minimal repro: a Wait nested inside a Branch's then-list
+        // must resume to completion. The resume path tail ([0] of [1,0])
+        // must survive the descent through the branch instead of being
+        // dropped, which previously re-suspended the nested wait forever.
+        val batteryId = uid()
+        val def = definition(steps = listOf(
+            batteryStep(batteryId),
+            WorkflowStep.Branch(uid(),
+                WorkflowCondition.GreaterThan(WorkflowBinding(batteryId, "battery_percent"), 0.0),
+                thenSteps = listOf(
+                    WorkflowStep.Wait(uid(), WorkflowWait.Timer(60_000)),
+                    volumeStep("20")))))
+        val l = ledger()
+        val saved = l.saveDraft(def)
+        l.enable(saved.id)
+        val occurrence = l.scheduleOccurrence(saved.id, 0, nowMs - 1_000, nowMs - 1_000, "nest-1")!!
+        val claimed = l.claimDueOccurrence(occurrence.id)!!
+        val dispatched = mutableListOf<String>()
+        val suspended = WorkflowEngine(now).run(def,
+            dispatch = { request ->
+                dispatched += request.name
+                if (request.name == "read_battery") ExecutionResult.battery(42) else ok()
+            })
+        assertTrue(suspended is WorkflowRunOutcome.Suspended)
+        val progress = suspended as WorkflowRunOutcome.Suspended
+        assertEquals(listOf(1, 0), progress.resumePath)
+        assertEquals(listOf("read_battery"), dispatched)
+        // Persist the suspend exactly like the coordinator does.
+        assertTrue(l.markWaiting(claimed.id, WorkflowOccurrenceState.WAITING_EVENT,
+            progress.resumePath, "Waiting: a timer",
+            resumeAtMs = nowMs + 60_000,
+            completedStepIds = progress.completedStepIds,
+            stepResults = progress.results))
+        nowMs += 61_000
+        val resumed = l.claimResumeOccurrence(claimed.id)!!
+        // The nested wait is the leaf target, so it is already satisfied and
+        // the run continues past it without re-running completed steps.
+        val outcome = WorkflowEngine(now).run(def,
+            startPath = resumed.resumePath,
+            skipStepIds = resumed.completedStepIds.toSet(),
+            initialResults = resumed.stepResults,
+            initialCompleted = resumed.completedStepIds.toSet(),
+            dispatch = { request -> dispatched += request.name; ok() })
+        assertTrue(outcome is WorkflowRunOutcome.Completed)
+        assertEquals("battery must not re-dispatch after a nested resume",
+            listOf("read_battery", "set_volume"), dispatched)
+    }
+
+    @Test fun nestedTimerInElseBranchTakesElsePath() {
+        // The nested wait keeps its position in the else-list, and the
+        // resume takes the same else path the original run chose.
+        val batteryId = uid()
+        val def = definition(steps = listOf(
+            batteryStep(batteryId),
+            WorkflowStep.Branch(uid(),
+                WorkflowCondition.GreaterThan(WorkflowBinding(batteryId, "battery_percent"), 0.0),
+                thenSteps = listOf(volumeStep("20")),
+                elseSteps = listOf(
+                    WorkflowStep.Wait(uid(), WorkflowWait.Timer(60_000)),
+                    volumeStep("10")))))
+        val dispatched = mutableListOf<ActionRequest>()
+        val suspended = WorkflowEngine(now).run(def,
+            dispatch = { request ->
+                dispatched += request
+                if (request.name == "read_battery") ExecutionResult.battery(0) else ok()
+            })
+        assertTrue(suspended is WorkflowRunOutcome.Suspended)
+        val progress = suspended as WorkflowRunOutcome.Suspended
+        assertEquals("the else-branch wait sits at nested index 0",
+            listOf(1, 0), progress.resumePath)
+        val outcome = WorkflowEngine(now).run(def,
+            startPath = progress.resumePath,
+            skipStepIds = progress.completedStepIds.toSet(),
+            initialResults = progress.results,
+            initialCompleted = progress.completedStepIds.toSet(),
+            dispatch = { request -> dispatched += request; ok() })
+        assertTrue(outcome is WorkflowRunOutcome.Completed)
+        assertEquals(listOf("read_battery", "set_volume"), dispatched.map { it.name })
+        assertEquals("the else branch ran, not the then branch",
+            "10", dispatched.last().arguments["level"])
+    }
+
+    @Test fun deeplyNestedUntilTimeResumes() {
+        // A wait two branches deep: the resume path tail must survive two
+        // descents. The leading battery step exists because branch
+        // conditions must bind an earlier step (definition validation), so
+        // the deep wait sits at [1,1,0]; both battery steps complete before
+        // the wait and neither re-runs on resume.
+        val batteryId = uid()
+        val innerBatteryId = uid()
+        val def = definition(steps = listOf(
+            batteryStep(batteryId),
+            WorkflowStep.Branch(uid(),
+                WorkflowCondition.GreaterThan(WorkflowBinding(batteryId, "battery_percent"), 0.0),
+                thenSteps = listOf(
+                    batteryStep(innerBatteryId),
+                    WorkflowStep.Branch(uid(),
+                        WorkflowCondition.GreaterThan(
+                            WorkflowBinding(innerBatteryId, "battery_percent"), 0.0),
+                        thenSteps = listOf(
+                            WorkflowStep.Wait(uid(), WorkflowWait.UntilTime(nowMs + 60_000)),
+                            volumeStep("7")))))))
+        val l = ledger()
+        val saved = l.saveDraft(def)
+        l.enable(saved.id)
+        val occurrence = l.scheduleOccurrence(saved.id, 0, nowMs - 1_000, nowMs - 1_000, "nest-deep")!!
+        val claimed = l.claimDueOccurrence(occurrence.id)!!
+        val dispatched = mutableListOf<ActionRequest>()
+        val suspended = WorkflowEngine(now).run(def,
+            dispatch = { request ->
+                dispatched += request
+                if (request.name == "read_battery") ExecutionResult.battery(42) else ok()
+            })
+        assertTrue(suspended is WorkflowRunOutcome.Suspended)
+        val progress = suspended as WorkflowRunOutcome.Suspended
+        assertEquals(listOf(1, 1, 0), progress.resumePath)
+        assertEquals(listOf("read_battery", "read_battery"), dispatched.map { it.name })
+        assertTrue(l.markWaiting(claimed.id, WorkflowOccurrenceState.WAITING_EVENT,
+            progress.resumePath, "Waiting: a scheduled time",
+            resumeAtMs = nowMs + 60_000,
+            completedStepIds = progress.completedStepIds,
+            stepResults = progress.results))
+        nowMs += 61_000
+        val resumed = l.claimResumeOccurrence(claimed.id)!!
+        val outcome = WorkflowEngine(now).run(def,
+            startPath = resumed.resumePath,
+            skipStepIds = resumed.completedStepIds.toSet(),
+            initialResults = resumed.stepResults,
+            initialCompleted = resumed.completedStepIds.toSet(),
+            dispatch = { request -> dispatched += request; ok() })
+        assertTrue(outcome is WorkflowRunOutcome.Completed)
+        assertEquals(listOf("read_battery", "read_battery", "set_volume"),
+            dispatched.map { it.name })
+        assertEquals("7", dispatched.last().arguments["level"])
+    }
+
+    @Test fun nestedResumePreservesPreWaitBindings() {
+        // A post-wait step bound to a pre-wait output must resolve from the
+        // saved results, not from a re-dispatch of the earlier step.
+        val batteryId = uid()
+        val boundVolume = WorkflowStep.Tool(uid(),
+            ActionRequest("set_volume", mapOf("level" to "0")),
+            bindings = mapOf("level" to WorkflowBinding(batteryId, "battery_percent")))
+        val def = definition(steps = listOf(
+            batteryStep(batteryId),
+            WorkflowStep.Branch(uid(),
+                WorkflowCondition.GreaterThan(WorkflowBinding(batteryId, "battery_percent"), 0.0),
+                thenSteps = listOf(
+                    WorkflowStep.Wait(uid(), WorkflowWait.Timer(60_000)),
+                    boundVolume))))
+        val dispatched = mutableListOf<ActionRequest>()
+        val suspended = WorkflowEngine(now).run(def,
+            dispatch = { request ->
+                dispatched += request
+                if (request.name == "read_battery") ExecutionResult.battery(42) else ok()
+            })
+        assertTrue(suspended is WorkflowRunOutcome.Suspended)
+        val progress = suspended as WorkflowRunOutcome.Suspended
+        assertEquals(listOf(1, 0), progress.resumePath)
+        val outcome = WorkflowEngine(now).run(def,
+            startPath = progress.resumePath,
+            skipStepIds = progress.completedStepIds.toSet(),
+            initialResults = progress.results,
+            initialCompleted = progress.completedStepIds.toSet(),
+            dispatch = { request -> dispatched += request; ok() })
+        assertTrue(outcome is WorkflowRunOutcome.Completed)
+        assertEquals("battery must not re-dispatch after a nested resume",
+            listOf("read_battery", "set_volume"), dispatched.map { it.name })
+        assertEquals("the level came from the saved pre-wait results",
+            "42", dispatched.last().arguments["level"])
+    }
+
+    @Test fun duplicateAlarmAfterNestedResumeDoesNothing() {
+        // A redelivered alarm for an already-claimed nested resume finds
+        // the occurrence RUNNING and does nothing: no double run.
+        val l = ledger()
+        val saved = l.saveDraft(definition())
+        l.enable(saved.id)
+        val occurrence = l.scheduleOccurrence(saved.id, 0, nowMs - 1_000, nowMs - 1_000, "nest-dup")!!
+        l.claimDueOccurrence(occurrence.id)
+        assertTrue(l.markWaiting(occurrence.id, WorkflowOccurrenceState.WAITING_EVENT, listOf(1, 0),
+            "Waiting: a timer", resumeAtMs = nowMs + 60_000))
+        nowMs += 61_000
+        val resumed = l.claimResumeOccurrence(occurrence.id)
+        assertNotNull(resumed)
+        assertEquals(WorkflowOccurrenceState.RUNNING, resumed!!.state)
+        assertNull("a redelivered alarm must not re-fire a claimed resume",
+            l.claimResumeOccurrence(occurrence.id))
+    }
+
+    @Test fun alarmRunnerCompletionFollowsTerminalCheckpoint() {
+        // Wiring regression test: the runner returns only after the
+        // terminal checkpoint completes, so done() - the receiver's
+        // PendingResult finish - can never fire while the run is detached.
+        val occurrence = WorkflowOccurrence(uid(), "w", 1, 0, "k-alarm",
+            scheduledForMs = nowMs, windowEndMs = nowMs,
+            state = WorkflowOccurrenceState.RUNNING,
+            createdAtMs = nowMs, updatedAtMs = nowMs)
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val events = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val runner = WorkflowAlarmRunner(
+            claimDue = { occurrence },
+            claimResume = { null },
+            runOccurrence = { _, _ ->
+                gate.await() // block the terminal checkpoint until released
+                events += "checkpoint"
+            })
+        val thread = Thread { try { runner.onAlarm(occurrence.id) } finally { events += "done" } }
+        thread.start()
+        Thread.sleep(300)
+        assertFalse("done() must not fire while the terminal checkpoint is blocked",
+            events.contains("done"))
+        gate.countDown()
+        thread.join(5_000)
+        assertEquals(listOf("checkpoint", "done"), events)
+    }
+
+    @Test fun alarmRunnerCoversResumeAndDuplicateAlarm() {
+        // A resume alarm runs with resume = true; an already-claimed alarm
+        // runs nothing and never throws.
+        val occurrence = WorkflowOccurrence(uid(), "w", 1, 0, "k-alarm-resume",
+            scheduledForMs = nowMs, windowEndMs = nowMs,
+            state = WorkflowOccurrenceState.WAITING_EVENT,
+            createdAtMs = nowMs, updatedAtMs = nowMs)
+        val runs = mutableListOf<Pair<String, Boolean>>()
+        val runner = WorkflowAlarmRunner(
+            claimDue = { null },
+            claimResume = { occurrence },
+            runOccurrence = { claimed, resume -> runs += claimed.id to resume })
+        runner.onAlarm(occurrence.id)
+        assertEquals(listOf(occurrence.id to true), runs)
+        val duplicate = WorkflowAlarmRunner(
+            claimDue = { null },
+            claimResume = { null },
+            runOccurrence = { _, _ -> fail("a duplicate alarm must not run") })
+        duplicate.onAlarm(occurrence.id) // must not throw
+        assertEquals("only the resume ran", 1, runs.size)
+    }
+
+    @Test fun processRecreationRearmsFutureTimerResume() = withFile { file ->
+        // A reboot wipes the process but not the file: the schedule
+        // receiver's rescheduleFromLedger re-arms exactly this timerResumes()
+        // list (the Android-only re-arm loop) and reports past-due ones
+        // missed via recordMissedEvaluation - the existing
+        // pastDueTimerResumeIsReportedMissed covers the missed policy.
+        val l = WorkflowLedger(FileToolTaskStore(file), now)
+        val saved = l.saveDraft(definition())
+        l.enable(saved.id)
+        val occurrence = l.scheduleOccurrence(saved.id, 0, nowMs - 1_000, nowMs - 1_000, "rt-nest")!!
+        l.claimDueOccurrence(occurrence.id)
+        assertTrue(l.markWaiting(occurrence.id, WorkflowOccurrenceState.WAITING_EVENT, listOf(1, 0),
+            "Waiting: a timer", resumeAtMs = nowMs + 60_000,
+            completedStepIds = listOf(uid())))
+        // "Process death": reopen the ledger from the same file.
+        val reopened = WorkflowLedger(FileToolTaskStore(file), now)
+        val resumes = reopened.timerResumes()
+        assertEquals(listOf(occurrence.id), resumes.map { it.id })
+        assertEquals(nowMs + 60_000, resumes.single().resumeAtMs)
+        assertNull("not yet due: still not claimable",
+            reopened.claimResumeOccurrence(occurrence.id))
+        nowMs += 61_000
+        assertNotNull("due after the advance: claimable again",
+            reopened.claimResumeOccurrence(occurrence.id))
+    }
 }

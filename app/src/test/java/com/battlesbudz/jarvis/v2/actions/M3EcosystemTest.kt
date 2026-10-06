@@ -904,4 +904,186 @@ class M3EcosystemTest {
         assertEquals("connected", row.state)
         assertTrue(row.explanation.contains("discovered"))
     }
+
+    // -- Finding 2: same-name / normalized-name MCP servers stay independent -------
+
+    /**
+     * MCP handler that routes by URL and enforces the per-URL bearer token:
+     * a request carrying the wrong server's token is rejected, so
+     * per-endpoint header correctness is proven by the flow succeeding.
+     */
+    private fun perUrlMcpHandler(
+        tools: List<JSONObject>,
+        tokens: Map<String, String>,
+        onCall: (url: String, body: String) -> Unit = { _, _ -> }
+    ): (String, String, Map<String, String>) -> McpHttpResponse = { url, body, headers ->
+        val expected = tokens[url]
+        if (expected != null && headers["Authorization"] != "Bearer $expected") {
+            McpHttpResponse(401, "unauthorized", emptyMap())
+        } else {
+            val payload = JSONObject(body)
+            when (payload.optString("method")) {
+                "initialize" -> initializeOk()
+                "tools/list" -> McpHttpResponse(200, stubToolsJson(*tools.toTypedArray()), emptyMap())
+                "tools/call" -> {
+                    onCall(url, body)
+                    McpHttpResponse(200, JSONObject().put("jsonrpc", "2.0")
+                        .put("id", payload.optInt("id"))
+                        .put("result", JSONObject().put("content", org.json.JSONArray().put(
+                            JSONObject().put("type", "text").put("text", "search results"))))
+                        .toString(), emptyMap())
+                }
+                else -> McpHttpResponse(200, JSONObject().put("jsonrpc", "2.0")
+                    .put("id", payload.optInt("id")).put("result", JSONObject()).toString(), emptyMap())
+            }
+        }
+    }
+
+    private fun lastAuthFor(
+        requests: List<Triple<String, String, Map<String, String>>>,
+        url: String,
+        method: String
+    ): String? = requests
+        .filter { it.first == url && JSONObject(it.second).optString("method") == method }
+        .lastOrNull()?.third?.get("Authorization")
+
+    @Test fun sameNameServersKeepIndependentSecrets() {
+        val credentials = InMemoryMcpCredentialStore()
+        val urlA = "https://a.example.com/mcp"
+        val urlB = "https://b.example.com/mcp"
+        val http = FakeHttp(perUrlMcpHandler(
+            tools = listOf(stubTool("search", "free")),
+            tokens = mapOf(urlA to "token-a", urlB to "token-b")))
+        val flow = McpSetupFlow(http, credentials)
+        // The same display name twice: both sanitize to "test_server", with
+        // different secrets under independent opaque references.
+        val statusA = (flow.run("Test Server", urlA, "token-a")
+            as McpSetupFlow.FlowResult.Connected).status
+        val statusB = (flow.run("Test Server", urlB, "token-b")
+            as McpSetupFlow.FlowResult.Connected).status
+        assertNotEquals(statusA.config.authRef, statusB.config.authRef)
+        val registry = McpRegistry(http, credentials)
+        val placedA = registry.add(statusA)
+        val placedB = registry.add(statusB)
+        // add() resolves the id collision with a "-2" suffix.
+        assertEquals("test_server", placedA.config.id)
+        assertEquals("test_server-2", placedB.config.id)
+
+        // Refresh: each endpoint gets exactly its own bearer token.
+        assertEquals(McpServerState.CONNECTED, registry.refresh(placedA.config.id).state)
+        assertEquals(McpServerState.CONNECTED, registry.refresh(placedB.config.id).state)
+        assertEquals("Bearer token-a", lastAuthFor(http.requests, urlA, "initialize"))
+        assertEquals("Bearer token-b", lastAuthFor(http.requests, urlB, "initialize"))
+        assertEquals("Bearer token-a", lastAuthFor(http.requests, urlA, "tools/list"))
+        assertEquals("Bearer token-b", lastAuthFor(http.requests, urlB, "tools/list"))
+
+        // Invocation: per-server Bearer headers on the tools/call posts.
+        val invoker = McpInvoker(registry, http, credentials)
+        val providerA = ProviderId.mcp(placedA.config.id)
+        val providerB = ProviderId.mcp(placedB.config.id)
+        assertTrue(invoker.invoke(ProviderCall(providerA, "search")) is ProviderCallResult.Success)
+        assertTrue(invoker.invoke(ProviderCall(providerB, "search")) is ProviderCallResult.Success)
+        assertEquals("Bearer token-a", lastAuthFor(http.requests, urlA, "tools/call"))
+        assertEquals("Bearer token-b", lastAuthFor(http.requests, urlB, "tools/call"))
+
+        // Removal deletes only its own secret; the survivor keeps working
+        // with its own token.
+        val refA = placedA.config.authRef!!
+        val refB = placedB.config.authRef!!
+        assertTrue(registry.remove(placedA.config.id))
+        assertFalse(credentials.hasSecret(refA))
+        assertTrue(credentials.hasSecret(refB))
+        assertEquals(McpServerState.CONNECTED, registry.refresh(placedB.config.id).state)
+        assertEquals("Bearer token-b", lastAuthFor(http.requests, urlB, "tools/list"))
+        assertTrue(invoker.invoke(ProviderCall(providerB, "search")) is ProviderCallResult.Success)
+        assertEquals("Bearer token-b", lastAuthFor(http.requests, urlB, "tools/call"))
+    }
+
+    @Test fun normalizedNameCollisionGetsUniqueId() {
+        val credentials = InMemoryMcpCredentialStore()
+        val urlA = "https://a.example.com/mcp"
+        val urlB = "https://b.example.com/mcp"
+        val http = FakeHttp(perUrlMcpHandler(
+            tools = listOf(stubTool("search", "free")),
+            tokens = mapOf(urlA to "token-a", urlB to "token-b")))
+        val flow = McpSetupFlow(http, credentials)
+        // ProviderId.sanitize maps both names to "test_server": the
+        // underscore and the space normalize identically.
+        val first = (flow.run("Test_Server", urlA, "token-a")
+            as McpSetupFlow.FlowResult.Connected).status
+        val second = (flow.run("Test Server", urlB, "token-b")
+            as McpSetupFlow.FlowResult.Connected).status
+        assertEquals("test_server", first.config.id)
+        assertEquals("test_server", second.config.id)
+        val registry = McpRegistry(http, credentials)
+        val placedFirst = registry.add(first)
+        val placedSecond = registry.add(second)
+        assertEquals("test_server", placedFirst.config.id)
+        assertEquals("test_server-2", placedSecond.config.id)
+        assertNotEquals(placedFirst.config.id, placedSecond.config.id)
+        // Secrets stay independent despite the shared base id.
+        assertNotEquals(placedFirst.config.authRef, placedSecond.config.authRef)
+        assertEquals("token-a", credentials.getSecret(placedFirst.config.authRef!!))
+        assertEquals("token-b", credentials.getSecret(placedSecond.config.authRef!!))
+    }
+
+    // -- Finding 5: parameter-bearing calls through dispatcher -> invoker ----------
+
+    @Test fun parameterBearingCallEmitsExactNestedJsonRpc() {
+        val credentials = InMemoryMcpCredentialStore()
+        val url = "https://mcp.example.com/rpc"
+        var capturedCall: Pair<String, String>? = null
+        val http = FakeHttp(perUrlMcpHandler(
+            tools = listOf(stubTool("search", "free")),
+            tokens = mapOf(url to "good-token"),
+            onCall = { callUrl, body -> capturedCall = callUrl to body }))
+        val flow = McpSetupFlow(http, credentials)
+        val connected = (flow.run("Stub", url, "good-token")
+            as McpSetupFlow.FlowResult.Connected).status
+        val mcp = McpRegistry(http, credentials)
+        val placed = mcp.add(connected.status)
+        val provider = ProviderId.mcp(placed.config.id)
+        val invoker = McpInvoker(mcp, http, credentials)
+        val dispatcher = dispatcherFor(ProviderRegistry(), mcp, mapOf(provider to invoker))
+        val args = mapOf(
+            "q" to "x",
+            "filter" to mapOf("a" to 1, "b" to listOf("x", "y")))
+        val result = dispatcher.dispatch(ProviderCall(provider, "search", args))
+        assertTrue("the parameter-bearing call must succeed: $result",
+            result is ProviderCallResult.Success)
+        // The real ProviderDispatcher -> McpInvoker ->
+        // McpProtocol.callToolRequest path: assert the exact nested
+        // arguments on the wire.
+        val (callUrl, body) = capturedCall ?: fail("no tools/call post was captured")
+        assertEquals(url, callUrl)
+        val params = JSONObject(body).getJSONObject("params")
+        assertEquals("search", params.getString("name"))
+        val sent = params.getJSONObject("arguments")
+        assertEquals("x", sent.getString("q"))
+        val filter = sent.getJSONObject("filter")
+        assertEquals(1, filter.getInt("a"))
+        val b = filter.getJSONArray("b")
+        assertEquals(2, b.length())
+        assertEquals("x", b.getString(0))
+        assertEquals("y", b.getString(1))
+    }
+
+    @Test fun strictSchemaRejectionPreserved() {
+        // The MCP adapter validates the call envelope with an open schema
+        // (Obj(emptyMap(), additionalProperties = true)), so no MCP argument
+        // can fail conversion by design; strict rejection is therefore
+        // exercised through an AppFunctions provider with a declared schema,
+        // on the identical ProviderDispatcher path.
+        val registry = registryWith(sampleMetadata())
+        val invoker = FakeInvoker()
+        val mcp = McpRegistry(
+            FakeHttp { _, _, _ -> McpHttpResponse(500, "", emptyMap()) },
+            InMemoryMcpCredentialStore())
+        val dispatcher = dispatcherFor(registry, mcp, mapOf(providerA to invoker))
+        val result = dispatcher.dispatchByAlias("echo", mapOf("text" to 42))
+        assertTrue(result is ProviderCallResult.TypedError)
+        assertEquals(ProviderErrorCode.INVALID_ARGUMENTS,
+            (result as ProviderCallResult.TypedError).code)
+        assertTrue("a strict-schema rejection dispatches nothing", invoker.calls.isEmpty())
+    }
 }
