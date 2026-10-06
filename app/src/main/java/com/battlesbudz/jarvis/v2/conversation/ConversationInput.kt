@@ -14,15 +14,22 @@ internal class ConversationInput(
     private val directAudio: Boolean,
     private val textInput: IncrementalVoiceInput?,
     val imageBytes: ByteArray?,
-    val attachedAudio: ByteArray?
+    val attachedAudio: ByteArray?,
+    private val sealedVoiceAudio: com.google.ai.edge.litertlm.Content.SealedAudioEmbeddings? = null
 ) {
+    init {
+        require(sealedVoiceAudio == null || directAudio && voiceAudio != null && textInput == null) {
+            "Sealed native audio requires one complete direct-audio request"
+        }
+    }
     var incrementalFallbackUsed = false
         private set
     val nativeConversationContainsTurn: Boolean get() = textInput == null || incrementalFallbackUsed
 
     suspend fun generate(engine: ConversationBackend, prompt: String, onToken: (String) -> Unit,
                          onIncrementalFallback: (Throwable) -> Unit): GenerationResult = when {
-        directAudio -> engine.generateAudio(prompt, requireNotNull(voiceAudio), onToken)
+        directAudio -> if (sealedVoiceAudio != null) engine.generateSealedAudio(prompt, sealedVoiceAudio, onToken)
+            else engine.generateAudio(prompt, requireNotNull(voiceAudio), onToken)
         textInput != null -> {
             engine.onPromptSubmitted(prompt, 0)
             textInput.answerWithTextFallback(prompt, onToken) { error ->
@@ -39,7 +46,8 @@ internal class ConversationInput(
 
     /** Retry keeps the authoritative direct-audio/image/file attachment, never a spent prefill. */
     suspend fun retry(engine: ConversationBackend, prompt: String, onToken: (String) -> Unit): GenerationResult = when {
-        directAudio -> engine.generateAudio(prompt, requireNotNull(voiceAudio), onToken)
+        directAudio -> if (sealedVoiceAudio != null) engine.generateSealedAudio(prompt, sealedVoiceAudio, onToken)
+            else engine.generateAudio(prompt, requireNotNull(voiceAudio), onToken)
         attachedAudio != null -> engine.generateAudio(prompt, attachedAudio, onToken)
         imageBytes != null -> engine.generate(prompt, imageBytes, onToken)
         else -> engine.generate(prompt, onToken)

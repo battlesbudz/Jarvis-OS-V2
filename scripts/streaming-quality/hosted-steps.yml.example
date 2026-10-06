@@ -1,0 +1,52 @@
+# Merge these sequential steps into build-streaming-sdk AFTER the exact reviewed
+# Android SDK build has successfully exited, before dependent APK quality gates.
+# Keep existing app tests, normal/compact builds, signing and packaging checks.
+# Copy this entire source-only recipe as scripts/streaming-quality/.
+- uses: actions/setup-python@v5
+  with:
+    python-version: '3.12'
+- name: Install pinned fixture derivation dependencies
+  run: |
+    python -m pip install --only-binary=:all: -r scripts/streaming-quality/requirements.txt
+- name: Test hosted quality orchestration contracts
+  run: python -m unittest discover -s scripts/streaming-quality -p 'test_*.py' -v
+- name: Build hosted native quality probes after Android compilation
+  timeout-minutes: 48
+  run: |
+    set -euo pipefail
+    python scripts/streaming-quality/build_probes.py \
+      --sdk "$RUNNER_TEMP/streaming-sdk/sdk" \
+      --android-receipt "$RUNNER_TEMP/streaming-sdk/source-receipt.json" \
+      --patch third_party/litert-lm-0.16.0/PATCH.diff \
+      --bazel "$RUNNER_TEMP/streaming-sdk/downloads/bazel-7.6.1-linux-x86_64" \
+      --bazel-root "$RUNNER_TEMP/streaming-sdk/bazel" \
+      --out "$RUNNER_TEMP/streaming-quality-build"
+- name: Run exact full-E2B native quality prerequisite
+  timeout-minutes: 50
+  env:
+    GEMMA_QUALITY_COMPUTE_SLOT: confirmed_by_owner
+  run: |
+    set -euo pipefail
+    python scripts/streaming-quality/run_quality.py \
+      --build-dir "$RUNNER_TEMP/streaming-quality-build" \
+      --out "$RUNNER_TEMP/streaming-quality-run"
+- name: Select weightless quality receipts even after failure
+  if: always()
+  run: |
+    python scripts/streaming-quality/export_evidence.py \
+      --build-dir "$RUNNER_TEMP/streaming-quality-build" \
+      --run-dir "$RUNNER_TEMP/streaming-quality-run" \
+      --out "$RUNNER_TEMP/streaming-quality-evidence"
+- name: Retain only selected hosted quality evidence
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: jarvis-streaming-quality-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+    path: ${{ runner.temp }}/streaming-quality-evidence/
+    if-no-files-found: error
+    retention-days: 14
+# Do not use continue-on-error or turn resource refusal into a successful gate.
+# Increase the enclosing existing job timeout to 160 minutes for this bounded
+# serial build+probe route. No weights, audio, Mel, activations, requests, or raw
+# run/build directory are an upload target. A resource failure needs a separate
+# owner decision, not larger limits or an automatic retry.

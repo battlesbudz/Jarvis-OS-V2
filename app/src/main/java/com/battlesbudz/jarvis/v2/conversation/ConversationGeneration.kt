@@ -57,7 +57,13 @@ internal class ConversationGeneration(
         validatePrompt(invocation, routed, prepared, promptHistory, turnPrompt, submission, contextLimit)
         val attachments = readConversationAttachments(invocation.imageUri, invocation.audioUri, reply.benchmark, openAttachment)
         val directAudio = invocation.directVoiceAudio || invocation.comparison?.request?.path == LiveComparison.Path.GEMMA_DIRECT
-        val input = ConversationInput(invocation.voiceAudio, directAudio, prepared.textInput, attachments.image, attachments.audio)
+        check(invocation.sealedVoiceAudio == null || invocation.voiceAudioIsComplete) { "Incomplete native audio cannot be submitted" }
+        val input = ConversationInput(invocation.voiceAudio, directAudio, prepared.textInput, attachments.image, attachments.audio, invocation.sealedVoiceAudio)
+        if (invocation.sealedVoiceAudio != null) {
+            reply.benchmark.configuration("native_audio_input_path", "incremental_encoder_sealed_conversation_v1")
+            reply.benchmark.metric("native_audio_pcm_samples", invocation.sealedVoiceAudio.pcmSampleCount)
+            reply.benchmark.metric("native_audio_token_rows", invocation.sealedVoiceAudio.audioTokenCount)
+        }
         telemetry.begin(engine)
         diagnostics.summary("Inference input: mode=" +
             (if (directAudio) if (invocation.directVoiceAudio) "gemma_direct_audio" else "diagnostic_direct_audio"

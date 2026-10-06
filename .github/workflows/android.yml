@@ -12,8 +12,136 @@ permissions:
   actions: read
 
 jobs:
+  build-streaming-sdk:
+    name: Build reviewed streaming SDK ARM64
+    if: >-
+      (github.event_name == 'push' &&
+       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/PR1' ||
+        github.ref == 'refs/heads/feature-tools' ||
+        startsWith(github.ref, 'refs/heads/feature/'))) ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 160
+    permissions:
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.sdk-artifact.outputs.artifact-id }}
+      aar_sha256: ${{ steps.sdk-digests.outputs.sha256 }}
+      provenance_sha256: ${{ steps.sdk-digests.outputs.provenance_sha256 }}
+      quality_artifact_id: ${{ steps.quality-artifact.outputs.artifact-id }}
+      producer_attempt: ${{ steps.sdk-digests.outputs.producer_attempt }}
+      artifact_name: ${{ steps.sdk-digests.outputs.artifact_name }}
+      quality_artifact_name: ${{ steps.sdk-digests.outputs.quality_artifact_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Require existing Android SDK license and install side-by-side native compiler
+        run: |
+          set -euo pipefail
+          # Presence is a prerequisite; sdkmanager still validates the applicable
+          # accepted fingerprint. EOF refuses a new license acceptance prompt.
+          test -s "${ANDROID_HOME}/licenses/android-sdk-license"
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+            "ndk;28.1.13356709" "platforms;android-35" < /dev/null
+          command -v clang
+          command -v clang++
+      - name: Verify packaging helper contracts
+        run: python3 -m unittest discover -s scripts/streaming-sdk -p 'test_*.py' -v
+      - name: Build and package the exact reviewed SDK
+        run: |
+          set -euo pipefail
+          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/28.1.13356709"
+          PATCH_SHA="$(python3 -c 'import json; print(json.load(open("third_party/litert-lm-0.16.0/reviewed-source.json"))["patch_sha256"])')"
+          python3 scripts/streaming-sdk/build_android_sdk.py --run \
+            --patch third_party/litert-lm-0.16.0/PATCH.diff \
+            --patch-sha256 "$PATCH_SHA" \
+            --reviewed-source third_party/litert-lm-0.16.0/reviewed-source.json \
+            --page-auditor scripts/check_page_sizes.py \
+            --out "$RUNNER_TEMP/streaming-sdk" 2>&1 | tee streaming-sdk-build.log
+      - name: Retain compiler and packaging evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-streaming-sdk-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            streaming-sdk-build.log
+            ${{ runner.temp }}/streaming-sdk/source-receipt.json
+            ${{ runner.temp }}/streaming-sdk/*.native-audit.json
+            ${{ runner.temp }}/streaming-sdk/*.provenance.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Bind exact SDK output digests
+        id: sdk-digests
+        run: |
+          python3 scripts/streaming-sdk/validate_artifact.py \
+            --aar "$RUNNER_TEMP/streaming-sdk/litertlm-android-0.16.0-sealed-audio-arm64.aar" \
+            --provenance "$RUNNER_TEMP/streaming-sdk/litertlm-android-0.16.0-sealed-audio-arm64.provenance.json" \
+            --check-workflow --github-output "$GITHUB_OUTPUT"
+          echo "producer_attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=jarvis-streaming-sdk-aar-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          echo "quality_artifact_name=jarvis-streaming-quality-evidence-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned fixture derivation dependencies
+        run: |
+          python -m pip install --only-binary=:all: -r scripts/streaming-quality/requirements.txt
+      - name: Test hosted quality orchestration contracts
+        run: python -m unittest discover -s scripts/streaming-quality -p 'test_*.py' -v
+      - name: Build hosted native quality probes after Android compilation
+        timeout-minutes: 48
+        run: |
+          set -euo pipefail
+          python scripts/streaming-quality/build_probes.py \
+            --sdk "$RUNNER_TEMP/streaming-sdk/sdk" \
+            --android-receipt "$RUNNER_TEMP/streaming-sdk/source-receipt.json" \
+            --patch third_party/litert-lm-0.16.0/PATCH.diff \
+            --bazel "$RUNNER_TEMP/streaming-sdk/downloads/bazel-7.6.1-linux-x86_64" \
+            --bazel-root "$RUNNER_TEMP/streaming-sdk/bazel" \
+            --out "$RUNNER_TEMP/streaming-quality-build"
+      - name: Run exact full-E2B native quality prerequisite
+        timeout-minutes: 50
+        env:
+          GEMMA_QUALITY_COMPUTE_SLOT: confirmed_by_owner
+        run: |
+          set -euo pipefail
+          python scripts/streaming-quality/run_quality.py \
+            --build-dir "$RUNNER_TEMP/streaming-quality-build" \
+            --out "$RUNNER_TEMP/streaming-quality-run"
+      - name: Select weightless quality receipts even after failure
+        if: always()
+        run: |
+          python scripts/streaming-quality/export_evidence.py \
+            --build-dir "$RUNNER_TEMP/streaming-quality-build" \
+            --run-dir "$RUNNER_TEMP/streaming-quality-run" \
+            --out "$RUNNER_TEMP/streaming-quality-evidence"
+      - name: Retain only selected hosted quality evidence
+        id: quality-artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-streaming-quality-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/streaming-quality-evidence/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain exact SDK AAR
+        id: sdk-artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-streaming-sdk-aar-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/streaming-sdk/*.aar
+            ${{ runner.temp }}/streaming-sdk/*.provenance.json
+          if-no-files-found: error
+          retention-days: 14
+
   build-release:
     name: Build signed release APK
+    needs: build-streaming-sdk
     if: >-
       (github.event_name == 'push' &&
        (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/PR1' ||
@@ -25,9 +153,30 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
+      actions: read
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
+
+      - name: Select this run's successful SDK producer artifact
+        id: sdk-input
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          PRODUCER_ARTIFACT_ID: ${{ needs.build-streaming-sdk.outputs.artifact_id }}
+          SDK_ARTIFACT_NAME: ${{ needs.build-streaming-sdk.outputs.artifact_name }}
+          STREAMING_PRODUCER_ATTEMPT: ${{ needs.build-streaming-sdk.outputs.producer_attempt }}
+        run: |
+          set -euo pipefail
+          python3 scripts/verification/artifacts.py fetch --out streaming-sdk-manifest.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"
+          python3 scripts/streaming-sdk/producer_identity.py --manifest streaming-sdk-manifest.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --head-sha "$EXPECTED_HEAD" \
+            --kind sdk --artifact-name "$SDK_ARTIFACT_NAME" --artifact-id "$PRODUCER_ARTIFACT_ID" \
+            --producer-attempt "$STREAMING_PRODUCER_ATTEMPT" --current-attempt "$GITHUB_RUN_ATTEMPT" --github-output "$GITHUB_OUTPUT"
+      - name: Download exact producer artifact ID
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/verification/artifacts.py download --manifest streaming-sdk-manifest.json --artifact-ids "${{ steps.sdk-input.outputs.artifact_ids }}" --out streaming-sdk-input --layout flat
 
       - name: Restore Kotlin incremental compilation state
         uses: actions/cache@v4
@@ -50,7 +199,9 @@ jobs:
           java-version: '21'  # LiteRT 0.16 SDK host tests load Java 21 class files.
 
       - name: Install speech runtime NDK
-        run: '"${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018"'
+        run: |
+          test -s "${ANDROID_HOME}/licenses/android-sdk-license"
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" < /dev/null
 
       - name: Cache shared speech runtime
         uses: actions/cache@v4
@@ -96,7 +247,15 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_VERSION_CODE: ${{ github.run_number }}
           ANDROID_VERSION_NAME: 0.1.0-build.${{ github.run_number }}
-        run: bash scripts/ci_gradle.sh release testReleaseUnitTest assembleRelease assembleReleaseAndroidTest
+          STREAMING_AAR_SHA256: ${{ needs.build-streaming-sdk.outputs.aar_sha256 }}
+          STREAMING_PROVENANCE_SHA256: ${{ needs.build-streaming-sdk.outputs.provenance_sha256 }}
+          STREAMING_PRODUCER_ATTEMPT: ${{ needs.build-streaming-sdk.outputs.producer_attempt }}
+        run: |
+          set -euo pipefail
+          AAR="$GITHUB_WORKSPACE/streaming-sdk-input/litertlm-android-0.16.0-sealed-audio-arm64.aar"
+          PROVENANCE="$GITHUB_WORKSPACE/streaming-sdk-input/litertlm-android-0.16.0-sealed-audio-arm64.provenance.json"
+          python3 scripts/streaming-sdk/validate_artifact.py --aar "$AAR" --provenance "$PROVENANCE" --expected-aar-sha256 "$STREAMING_AAR_SHA256" --expected-provenance-sha256 "$STREAMING_PROVENANCE_SHA256" --require-digests --check-workflow --producer-attempt "$STREAMING_PRODUCER_ATTEMPT" --app-ndk "$ANDROID_HOME/ndk/27.2.12479018"
+          bash scripts/ci_gradle.sh release -PlitertLmBridgeAar="$AAR" -PlitertLmBridgeProvenance="$PROVENANCE" -PlitertLmBridgeSha256="$STREAMING_AAR_SHA256" -PlitertLmBridgeProvenanceSha256="$STREAMING_PROVENANCE_SHA256" -PlitertLmBridgeProducerAttempt="$STREAMING_PRODUCER_ATTEMPT" testReleaseUnitTest assembleRelease assembleReleaseAndroidTest
 
       - name: Upload release instrumentation APK
         uses: actions/upload-artifact@v4
@@ -162,8 +321,15 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_VERSION_CODE: ${{ github.run_number }}
           ANDROID_VERSION_NAME: 0.1.0-build.${{ github.run_number }}
+          STREAMING_AAR_SHA256: ${{ needs.build-streaming-sdk.outputs.aar_sha256 }}
+          STREAMING_PROVENANCE_SHA256: ${{ needs.build-streaming-sdk.outputs.provenance_sha256 }}
+          STREAMING_PRODUCER_ATTEMPT: ${{ needs.build-streaming-sdk.outputs.producer_attempt }}
         run: |
-          bash scripts/ci_gradle.sh compact -PcompactApk=true assembleRelease
+          set -euo pipefail
+          AAR="$GITHUB_WORKSPACE/streaming-sdk-input/litertlm-android-0.16.0-sealed-audio-arm64.aar"
+          PROVENANCE="$GITHUB_WORKSPACE/streaming-sdk-input/litertlm-android-0.16.0-sealed-audio-arm64.provenance.json"
+          python3 scripts/streaming-sdk/validate_artifact.py --aar "$AAR" --provenance "$PROVENANCE" --expected-aar-sha256 "$STREAMING_AAR_SHA256" --expected-provenance-sha256 "$STREAMING_PROVENANCE_SHA256" --require-digests --check-workflow --producer-attempt "$STREAMING_PRODUCER_ATTEMPT" --app-ndk "$ANDROID_HOME/ndk/27.2.12479018"
+          bash scripts/ci_gradle.sh compact -PlitertLmBridgeAar="$AAR" -PlitertLmBridgeProvenance="$PROVENANCE" -PlitertLmBridgeSha256="$STREAMING_AAR_SHA256" -PlitertLmBridgeProvenanceSha256="$STREAMING_PROVENANCE_SHA256" -PlitertLmBridgeProducerAttempt="$STREAMING_PRODUCER_ATTEMPT" -PcompactApk=true assembleRelease
           cp app/build/outputs/apk/release/app-release.apk artifact/app-compact.apk
           python3 scripts/check_compact_apk.py artifact/app-release.apk artifact/app-compact.apk
           python3 scripts/check_asr_apk.py artifact/app-compact.apk
@@ -186,6 +352,17 @@ jobs:
           name: jarvis-os-v2-release-apk
           path: artifact/*.apk
           if-no-files-found: error
+
+      - name: Retain SDK consumer provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-streaming-sdk-consumer
+          path: |
+            streaming-sdk-manifest.json
+            streaming-sdk-input/*.provenance.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Retain build performance diagnostics
         if: always()
@@ -284,7 +461,7 @@ jobs:
   verification-receipt:
     name: Consolidate exact-build verification evidence
     if: always() && needs.build-release.result != 'skipped'
-    needs: [build-release, prepare-upgrade-baseline, verify-release, verify-native-pages, verify-recorded-audio]
+    needs: [build-streaming-sdk, build-release, prepare-upgrade-baseline, verify-release, verify-native-pages, verify-recorded-audio]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -298,9 +475,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          QUALITY_ARTIFACT_ID: ${{ needs.build-streaming-sdk.outputs.quality_artifact_id }}
+          QUALITY_ARTIFACT_NAME: ${{ needs.build-streaming-sdk.outputs.quality_artifact_name }}
+          STREAMING_PRODUCER_ATTEMPT: ${{ needs.build-streaming-sdk.outputs.producer_attempt }}
         run: |
           python3 scripts/verification/artifacts.py fetch --out artifact-manifest.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"
-          python3 scripts/verification/profiles.py select --manifest artifact-manifest.json --run-id "$GITHUB_RUN_ID" --head-sha "$EXPECTED_HEAD" --require 'jarvis-release-unit-tests=Build signed release APK' --require 'jarvis-verification-test-apk=Build signed release APK' --require 'jarvis-os-v2-release-apk=Build signed release APK' --require 'jarvis-native-page-sizes=Verify native 16 KB compatibility' --require 'jarvis-recorded-audio=Recorded speech recognition' --require 'jarvis-previous-release=Prepare upgrade baseline' --github-output "$GITHUB_OUTPUT"
+          python3 scripts/streaming-sdk/producer_identity.py --manifest artifact-manifest.json --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --head-sha "$EXPECTED_HEAD" \
+            --kind quality --artifact-name "$QUALITY_ARTIFACT_NAME" --artifact-id "$QUALITY_ARTIFACT_ID" \
+            --producer-attempt "$STREAMING_PRODUCER_ATTEMPT" --current-attempt "$GITHUB_RUN_ATTEMPT"
+          python3 scripts/verification/profiles.py select --manifest artifact-manifest.json --run-id "$GITHUB_RUN_ID" --head-sha "$EXPECTED_HEAD" --require 'jarvis-release-unit-tests=Build signed release APK' --require 'jarvis-verification-test-apk=Build signed release APK' --require 'jarvis-os-v2-release-apk=Build signed release APK' --require 'jarvis-native-page-sizes=Verify native 16 KB compatibility' --require 'jarvis-recorded-audio=Recorded speech recognition' --require 'jarvis-previous-release=Prepare upgrade baseline' --require 'jarvis-streaming-sdk-consumer=Build signed release APK' --require "$QUALITY_ARTIFACT_NAME=Build reviewed streaming SDK ARM64" --github-output "$GITHUB_OUTPUT"
       - name: Download exact same-run evidence
         if: steps.evidence.outcome == 'success'
         env:
@@ -311,6 +494,16 @@ jobs:
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
           VERIFICATION_NEEDS: ${{ toJSON(needs) }}
         run: python3 scripts/verification/receipt.py --inputs verification-inputs --out verification-receipt
+      - name: Bind reviewed SDK and actual host-model evidence to release receipt
+        env:
+          STREAMING_AAR_SHA256: ${{ needs.build-streaming-sdk.outputs.aar_sha256 }}
+          STREAMING_PROVENANCE_SHA256: ${{ needs.build-streaming-sdk.outputs.provenance_sha256 }}
+          STREAMING_PRODUCER_ATTEMPT: ${{ needs.build-streaming-sdk.outputs.producer_attempt }}
+          QUALITY_ARTIFACT_NAME: ${{ needs.build-streaming-sdk.outputs.quality_artifact_name }}
+        run: |
+          python3 scripts/streaming-sdk/bind_release_receipt.py --inputs verification-inputs --out verification-receipt \
+            --quality-dir "verification-inputs/$QUALITY_ARTIFACT_NAME" --producer-attempt "$STREAMING_PRODUCER_ATTEMPT" \
+            --expected-aar-sha256 "$STREAMING_AAR_SHA256" --expected-provenance-sha256 "$STREAMING_PROVENANCE_SHA256"
       - name: Retain verification receipt even on failure
         if: always()
         uses: actions/upload-artifact@v4

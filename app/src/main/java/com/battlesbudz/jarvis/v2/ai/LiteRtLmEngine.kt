@@ -5,12 +5,15 @@ import com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkPurpose
 import com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkSubmission
 import com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkWarmState
 import com.google.ai.edge.litertlm.*
+import com.battlesbudz.jarvis.v2.work.ProcessConversationAdmission
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import android.os.Looper
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
@@ -32,7 +35,21 @@ class LiteRtLmEngine(
     val audioEnabled: Boolean = false,
     private val speculativeDecoding: Boolean? = null
 ) : LocalModelEngine, Closeable {
-    private companion object { val initializationLock = Any() }
+    private companion object {
+        val initializationLock = Any()
+        val callbackDepth = ThreadLocal.withInitial { 0 }
+        val quarantineLock = Any()
+        val retainedNativeEngines = mutableSetOf<LiteRtLmEngine>()
+        var quarantineAdmissionRetained = false
+        fun checkNativeWorkerThread() {
+            check(callbackDepth.get() == 0) { "Native lifecycle control is forbidden in model callbacks" }
+            check(Looper.myLooper() != Looper.getMainLooper()) { "Native lifecycle control requires a worker thread" }
+        }
+        inline fun nativeCallback(block: () -> Unit) {
+            callbackDepth.set(callbackDepth.get() + 1)
+            try { block() } finally { callbackDepth.set(callbackDepth.get() - 1) }
+        }
+    }
     private val modelSpec = ModelCatalog.resolve(modelId)
     @OptIn(ExperimentalApi::class)
     private val engine = synchronized(initializationLock) {
@@ -52,8 +69,35 @@ class LiteRtLmEngine(
             ))
         } finally { ExperimentalFlags.enableBenchmark = previousBenchmark }
     }
-    private var conversation: com.google.ai.edge.litertlm.Conversation? = null
-    private val closed = AtomicBoolean(false)
+    private val lifecycle = CheckedConversationLifecycle(
+        createConversation = ::createConversation,
+        cancelConversation = { it.cancelProcess() },
+        awaitIdle = { it.awaitIdle() },
+        closeConversation = { it.close() },
+        closeEngine = { if (engine.isInitialized()) engine.close() },
+        checkWorkerThread = ::checkNativeWorkerThread,
+        onQuarantined = { retainProcessQuarantine() }
+    )
+
+    /**
+     * Ordinary text jobs release their admission count in invokeOnCompletion too. Keep one
+     * additional process reservation and the actual Engine strongly retained before that can
+     * happen. This safety latch deliberately lasts until process exit, including after an
+     * explicit disposal retry; it never permits a new inference or model-file replacement.
+     */
+    private fun retainProcessQuarantine() = synchronized(quarantineLock) {
+        if (!quarantineAdmissionRetained) {
+            ProcessConversationAdmission.activeJobs.incrementAndGet()
+            quarantineAdmissionRetained = true
+        }
+        retainedNativeEngines.add(this)
+        Unit
+    }
+
+    /** A terminal callback is never proof that the model lease can be released. */
+    val nativeResourcesSafeToRelease: Boolean get() = lifecycle.safeToRelease
+    val isNativeQuarantined: Boolean get() = lifecycle.isQuarantined
+    val requiresConfirmedHistoryRebuild: Boolean get() = lifecycle.requiresConfirmedHistoryRebuild
 
     /** Reports actual submissions, including incremental input, retries and recognition fallback. */
     var onPromptSubmitted: (String, Int) -> Unit = { _, _ -> }
@@ -74,7 +118,7 @@ class LiteRtLmEngine(
         "nativeSession=$nativeSession nativePriorSubmissions=$nativeSubmissions toolsEnabled=$toolsEnabled"
 
     internal fun createVoicePrefillSession(): com.battlesbudz.jarvis.v2.voice.VoicePrefillSession {
-        check(!closed.get())
+        checkNativeWorkerThread()
         val purpose = benchmarkPurpose
         val sink = onBenchmarkSubmission
         val progressSink = onInferenceProgress
@@ -87,10 +131,19 @@ class LiteRtLmEngine(
             }
         }
         // Voice owns this engine exclusively. Do not allocate a second idle KV cache.
-        conversation?.close()
-        conversation = null
+        lifecycle.resetForConfirmedHistory()
+        val child = lifecycle.createChild({ engine.createSession() }) { it.awaitIdle(); it.close() }
+        val native = LiteRtNativeVoiceSession(child.child,
+            checkWorkerThread = ::checkNativeWorkerThread,
+            runCallback = { block -> nativeCallback(block) })
         return LiteRtVoicePrefillSession(
-            session = LiteRtNativeVoiceSession(engine.createSession()),
+            session = object : VoiceNativeSession by native {
+                override fun awaitIdle() {
+                    try { native.awaitIdle() }
+                    catch (error: Throwable) { lifecycle.quarantineChild(child, error); throw error }
+                }
+                override fun close() = lifecycle.closeChild(child)
+            },
             benchmarkModelId = modelId,
             benchmarkPurpose = purpose,
             benchmarkSink = sink,
@@ -103,8 +156,8 @@ class LiteRtLmEngine(
     private var toolsEnabled = false
     suspend fun setToolsEnabled(enabled: Boolean): Boolean {
         if (toolsEnabled == enabled) return false
-        toolsEnabled = enabled
         resetConversation()
+        toolsEnabled = enabled
         return true
     }
 
@@ -114,26 +167,26 @@ class LiteRtLmEngine(
 
     @OptIn(ExperimentalApi::class)
     suspend fun initialize() {
-        // The SDK reads this process-global flag during initialize(), not in Engine's constructor.
-        // Serialize ALL adapter initializations and restore the default even on unsupported files.
+        currentCoroutineContext().ensureActive()
         val initializationBeganAt = System.nanoTime()
-        synchronized(initializationLock) {
-            val previous = ExperimentalFlags.enableSpeculativeDecoding
-            try {
-                ExperimentalFlags.enableSpeculativeDecoding = speculativeDecoding
-                engine.initialize()
-            } finally { ExperimentalFlags.enableSpeculativeDecoding = previous }
+        lifecycle.initialize {
+            // initialize(), rather than Engine's constructor, reads this process-global flag.
+            synchronized(initializationLock) {
+                val previous = ExperimentalFlags.enableSpeculativeDecoding
+                try {
+                    ExperimentalFlags.enableSpeculativeDecoding = speculativeDecoding
+                    engine.initialize()
+                } finally { ExperimentalFlags.enableSpeculativeDecoding = previous }
+            }
         }
         benchmarkInitializationMs = (System.nanoTime() - initializationBeganAt) / 1_000_000
-        conversation = createConversation()
     }
 
-    suspend fun resetConversation() {
+    /** The next prompt must be rebuilt from confirmed history and actual tool receipts. */
+    suspend fun resetConversation() = withContext(NonCancellable) {
+        lifecycle.resetForConfirmedHistory()
         nativeSession++
         nativeSubmissions = 0
-        conversation?.close()
-        // generateWithMessage recreates it when needed. Incremental voice uses its own Session.
-        conversation = null
     }
 
     override suspend fun generate(
@@ -169,6 +222,19 @@ class LiteRtLmEngine(
         onPromptSubmitted(prompt, audioBytes.size)
         return generateWithContents(audioMessageContents(prompt, audioBytes), onToken,
             prompt.length, "audio_text", audioBytes = audioBytes.size)
+    }
+
+    /** Consume only a completed, fenced capture; SDK validation also forbids automatic tools. */
+    suspend fun generateSealedAudio(
+        prompt: String,
+        artifact: Content.SealedAudioEmbeddings,
+        onToken: (String) -> Unit
+    ): GenerationResult {
+        require(audioEnabled && modelSpec.supportsAudio) { "$modelId does not support native audio input." }
+        val pcmBytes = artifact.pcmSampleCount * 2
+        onPromptSubmitted(prompt, pcmBytes)
+        return generateWithContents(Contents.of(Content.Text(prompt), artifact), onToken,
+            prompt.length, "sealed_audio_text", audioBytes = pcmBytes)
     }
 
     private suspend fun generateWithContents(
@@ -211,11 +277,8 @@ class LiteRtLmEngine(
         purpose: PipelineBenchmarkPurpose = benchmarkPurpose,
         sink: (PipelineBenchmarkSubmission) -> Unit = onBenchmarkSubmission
     ): GenerationResult {
-        nativeSubmissions++
-        if (conversation == null && !closed.get()) conversation = createConversation()
-        val activeConversation = requireNotNull(conversation) {
-            "LiteRT-LM engine must be initialized before generation."
-        }
+        checkNativeWorkerThread()
+        currentCoroutineContext().ensureActive()
         val startedAt = System.nanoTime()
         val progressSink = onInferenceProgress
         val benchmark = NativeInferenceBenchmark(modelId, purpose,
@@ -232,25 +295,30 @@ class LiteRtLmEngine(
         var nativeTokens: NativeTokenTelemetry? = null
 
         val responses = Channel<Message>(Channel.UNLIMITED)
-        val terminal = CompletableDeferred<Unit>()
+        val nativeTurn = lifecycle.beginTurn()
+        val activeConversation = nativeTurn.conversation
+        val ownerJob = currentCoroutineContext()[Job]
+        nativeSubmissions++
+        var completed = false
         try {
             try {
+            currentCoroutineContext().ensureActive()
             val submittedAt = System.nanoTime() / 1_000_000
             progressSink(InferenceProgress(submittedAtMs = submittedAt))
             val nativeSubmitBeganAt = System.nanoTime()
             try { activeConversation.sendMessageAsync(message, object : MessageCallback {
-                override fun onMessage(message: Message) {
+                override fun onMessage(message: Message) = nativeCallback {
                     val callbackAt = System.nanoTime()
                     benchmark.measurement.callback(message.toString().isNotEmpty())
                     if (firstCallbackAt.compareAndSet(0L, callbackAt))
                         progressSink(InferenceProgress(firstRawTokenAtMs = callbackAt / 1_000_000))
                     responses.trySend(message)
                 }
-                override fun onDone() { benchmark.measurement.terminal(); terminal.complete(Unit); responses.close() }
-                override fun onError(throwable: Throwable) {
-                    benchmark.measurement.terminal()
-                    terminal.complete(Unit)
-                    responses.close(throwable)
+                override fun onDone() = nativeCallback {
+                    try { benchmark.measurement.terminal() } finally { responses.close() }
+                }
+                override fun onError(throwable: Throwable) = nativeCallback {
+                    try { benchmark.measurement.terminal() } finally { responses.close(throwable) }
                 }
             }) } finally {
                 benchmark.measurement.submitted(nativeSubmitBeganAt)
@@ -258,7 +326,6 @@ class LiteRtLmEngine(
             }
             } catch (error: Throwable) {
                 benchmark.measurement.terminal()
-                terminal.complete(Unit)
                 throw error
             }
             for (response in responses) {
@@ -274,29 +341,35 @@ class LiteRtLmEngine(
                     onToken(messageText)
                 }
             }
-            benchmarkOutcome = PipelineBenchmarkOutcome.COMPLETE
-            // Read only after the terminal callback and before closing/resetting this
-            // exact conversation. Cancelled/error turns must not reuse prior counters.
-            nativeTokens = readNativeTelemetry(activeConversation)
+            completed = true
         } catch (error: Throwable) {
             benchmarkError = error
             benchmarkOutcome = if (error is CancellationException) PipelineBenchmarkOutcome.CANCELLED else PipelineBenchmarkOutcome.ERROR
             throw error
         } finally {
-            try { withContext(NonCancellable) {
-                if (!terminal.isCompleted) {
-                    // The SDK's Flow awaitClose does not cancel native inference.
-                    // Wait for the native terminal callback before freeing its conversation.
-                    try {
-                        activeConversation.cancelProcess()
-                        withTimeout(10_000) { terminal.await() }
-                    } finally {
-                        activeConversation.close()
-                        if (conversation === activeConversation) conversation = null
-                    }
+            try {
+                // This blocking SDK call includes the last native callback returning. Never
+                // replace it with a callback latch, coroutine timeout, or unchecked destructor.
+                val accepted = withContext(NonCancellable) {
+                    lifecycle.finishTurn(nativeTurn,
+                        successful = { completed && ownerJob?.isActive != false },
+                        onDrained = { nativeTokens = readNativeTelemetry(it) })
                 }
+                if (accepted) benchmarkOutcome = PipelineBenchmarkOutcome.COMPLETE
+                else if (benchmarkError == null) {
+                    throw CancellationException("Native turn cancelled while draining")
+                }
+            } catch (cleanupError: Throwable) {
+                if (benchmarkError != null) {
+                    if (cleanupError !== benchmarkError) benchmarkError.addSuppressed(cleanupError)
+                } else {
+                    benchmarkError = cleanupError
+                    benchmarkOutcome = if (cleanupError is CancellationException)
+                        PipelineBenchmarkOutcome.CANCELLED else PipelineBenchmarkOutcome.ERROR
+                    throw cleanupError
+                }
+            } finally {
                 responses.cancel()
-            } } finally {
                 benchmark.finish(benchmarkOutcome, output.length, promptChars, streamEvents, error = benchmarkError,
                     nativeTokens = nativeTokens)
             }
@@ -342,10 +415,9 @@ class LiteRtLmEngine(
         }.getOrNull()
     }
 
-    override fun close() {
-        if (closed.compareAndSet(false, true)) {
-            try { conversation?.close(); conversation = null }
-            finally { if (engine.isInitialized()) engine.close() }
-        }
-    }
+    /** Must be called by the resource owner after child jobs join, off UI and callbacks. */
+    override fun close() = lifecycle.close()
+
+    /** Explicit recovery only; a failed attempt keeps both native resources and leases retained. */
+    fun retryQuarantinedClose() = lifecycle.retryQuarantinedClose()
 }

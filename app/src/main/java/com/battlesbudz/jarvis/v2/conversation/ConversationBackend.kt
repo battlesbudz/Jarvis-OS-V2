@@ -18,6 +18,8 @@ internal interface ConversationBackend : LocalModelEngine {
     suspend fun setToolsEnabled(enabled: Boolean): Boolean
     suspend fun generate(prompt: String, imageBytes: ByteArray, onToken: (String) -> Unit): GenerationResult
     suspend fun generateAudio(prompt: String, audioBytes: ByteArray, onToken: (String) -> Unit): GenerationResult
+    suspend fun generateSealedAudio(prompt: String, audio: com.google.ai.edge.litertlm.Content.SealedAudioEmbeddings,
+                                    onToken: (String) -> Unit): GenerationResult = error("Sealed native audio is unsupported by this backend")
     suspend fun sendToolResults(results: List<Pair<ToolCall, String>>, onToken: (String) -> Unit): GenerationResult
 }
 
@@ -41,5 +43,7 @@ internal class LiteRtConversationBackend(private val engine: LiteRtLmEngine) : C
     override suspend fun generate(prompt: String, onToken: (String) -> Unit) = engine.generate(prompt, onToken)
     override suspend fun generate(prompt: String, imageBytes: ByteArray, onToken: (String) -> Unit) = engine.generate(prompt, imageBytes, onToken)
     override suspend fun generateAudio(prompt: String, audioBytes: ByteArray, onToken: (String) -> Unit) = engine.generateAudio(prompt, audioBytes, onToken)
+    override suspend fun generateSealedAudio(prompt: String, audio: com.google.ai.edge.litertlm.Content.SealedAudioEmbeddings,
+                                            onToken: (String) -> Unit) = engine.generateSealedAudio(prompt, audio, onToken)
     override suspend fun sendToolResults(results: List<Pair<ToolCall, String>>, onToken: (String) -> Unit) = engine.sendToolResults(results, onToken)
 }

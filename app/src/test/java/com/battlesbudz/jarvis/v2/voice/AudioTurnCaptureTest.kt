@@ -3,6 +3,7 @@ package com.battlesbudz.jarvis.v2.voice
 import kotlinx.coroutines.async
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -860,6 +861,146 @@ class AudioTurnCaptureTest {
         } finally { fixture.capture.stop() }
     }
 
+    @Test fun retainedPcmIncludesAcceptedPreRollOnceAndMatchesJoinedWav() = runBlocking<Unit> {
+        val observer = RecordingPcmObserver()
+        val fixture = CaptureFixture(this, factory = null, allowAudioOnlyTurns = true,
+            retainedPcmObserver = observer)
+        fixture.capture.start()
+        try {
+            repeat(15) { fixture.emit((it + 1) * 100L, it + 1, samples = 1600) }
+            assertTrue(observer.packets.isEmpty())
+            fixture.emit(1600, 1900, speech = true, samples = 1600)
+            assertEquals(38_400, observer.packets.single().size)
+            fixture.emit(2900, 0, samples = 1600)
+            assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+            val wav = fixture.capture.stop()
+            assertEquals(2, observer.packets.size)
+            assertArrayEquals(wav.copyOfRange(44, wav.size), observer.bytes())
+            assertEquals(0, observer.discards)
+            assertTrue(observer.invalidations.isEmpty())
+        } finally { fixture.capture.stop() }
+    }
+
+    @Test fun observerReceivesPrivatePcmCopiesAndCannotMutateTheRetainedRequest() = runBlocking<Unit> {
+        val observer = RecordingPcmObserver(mutateReceived = true)
+        val fixture = CaptureFixture(this, factory = null, allowAudioOnlyTurns = true,
+            retainedPcmObserver = observer)
+        fixture.capture.start()
+        try {
+            fixture.emit(100, 1900, speech = true, samples = 1600)
+            fixture.emit(1400, 0, samples = 1600)
+            assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+            val wav = fixture.capture.stop()
+            assertArrayEquals(wav.copyOfRange(44, wav.size), observer.bytes())
+            assertEquals(1900.toByte(), wav[44])
+        } finally { fixture.capture.stop() }
+    }
+
+    @Test fun discardedCandidateInvalidatesItsStreamBeforeReplacementPreRoll() = runBlocking<Unit> {
+        val observer = RecordingPcmObserver()
+        var loads = 0
+        val fixture = CaptureFixture(this,
+            factory = { if (loads++ == 0) FakeTranscriber("", "Thank you") else FakeTranscriber("Yes", "Yes") },
+            allowAudioOnlyTurns = true, guardFollowupSpeech = true, retainedPcmObserver = observer)
+        fixture.capture.start()
+        try {
+            fixture.emit(100, 1500, speech = true, samples = 1600)
+            fixture.emit(1400, 0, samples = 1600)
+            assertEquals(1, observer.discards)
+            assertTrue(observer.packets.isEmpty())
+            fixture.emit(1600, 2000, speech = true, samples = 1600)
+            fixture.emit(2900, 0, samples = 1600)
+            assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+            val wav = fixture.capture.stop()
+            assertArrayEquals(wav.copyOfRange(44, wav.size), observer.bytes())
+            assertEquals(2000.toByte(), observer.packets.first()[0])
+        } finally { fixture.capture.stop() }
+    }
+
+    @Test fun rolledCaptureInvalidatesRatherThanStreamingOnlyItsRetainedSuffix() = runBlocking<Unit> {
+        val observer = RecordingPcmObserver()
+        val fixture = CaptureFixture(this, factory = null, allowAudioOnlyTurns = true,
+            maxAudioDurationMs = 200, retainedPcmObserver = observer)
+        fixture.capture.start()
+        try {
+            fixture.emit(100, 1800, speech = true, samples = 1600)
+            fixture.emit(200, 1800, speech = true, samples = 1600)
+            fixture.emit(300, 1800, speech = true, samples = 1600)
+            assertFalse(fixture.capture.audioIsComplete)
+            assertEquals(listOf(RetainedPcmObserver.Invalidation.WINDOW_ROLLED), observer.invalidations)
+            assertEquals(6400, observer.bytes().size)
+        } finally { fixture.capture.stop() }
+    }
+
+    @Test fun exactAudioLimitStillInvalidatesEvenWithoutRolling() = runBlocking<Unit> {
+        val observer = RecordingPcmObserver()
+        val fixture = CaptureFixture(this, factory = null, allowAudioOnlyTurns = true,
+            maxAudioDurationMs = 200, rejectAtAudioLimit = true, retainedPcmObserver = observer)
+        fixture.capture.start()
+        try {
+            fixture.emit(100, 1800, speech = true, samples = 1600)
+            fixture.emit(200, 1800, speech = true, samples = 1600)
+            assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+            assertTrue(fixture.capture.audioIsComplete)
+            assertEquals(listOf(RetainedPcmObserver.Invalidation.AUDIO_LIMIT), observer.invalidations)
+        } finally { fixture.capture.stop() }
+    }
+
+    @Test fun observerAdmissionFailureRejectsCaptureInsteadOfDroppingPacket() = runBlocking<Unit> {
+        val observer = RecordingPcmObserver(failAdmission = true)
+        val fixture = CaptureFixture(this, factory = null, allowAudioOnlyTurns = true,
+            retainedPcmObserver = observer)
+        fixture.capture.start()
+        try {
+            fixture.emit(100, 1800, speech = true, samples = 1600)
+            val error = runCatching { withTimeout(1000) { fixture.capture.awaitTurnCompletion() } }.exceptionOrNull()
+            assertTrue(error is IllegalStateException)
+            assertEquals("bounded encoder queue full", error?.message)
+            assertEquals(listOf(RetainedPcmObserver.Invalidation.CAPTURE_FAILED), observer.invalidations)
+            assertTrue(fixture.metrics.isEmpty())
+        } finally { fixture.capture.stop() }
+    }
+
+    @Test fun cancellationInvalidatesTheUnsealedRetainedStream() = runBlocking<Unit> {
+        val observer = RecordingPcmObserver()
+        val fixture = CaptureFixture(this, factory = null, allowAudioOnlyTurns = true,
+            retainedPcmObserver = observer)
+        fixture.capture.start()
+        fixture.emit(100, 1800, speech = true, samples = 1600)
+        fixture.capture.stop()
+        assertEquals(listOf(RetainedPcmObserver.Invalidation.CANCELLED), observer.invalidations)
+        assertTrue(fixture.metrics.isEmpty())
+    }
+
+    @Test fun shortRetentionWindowPublishesItsExactAcceptedPreRoll() = runBlocking<Unit> {
+        val observer = RecordingPcmObserver()
+        val fixture = CaptureFixture(this, factory = null, allowAudioOnlyTurns = true,
+            maxAudioDurationMs = 200, retainedPcmObserver = observer)
+        fixture.capture.start()
+        repeat(4) { fixture.emit((it + 1) * 100L, it + 1, samples = 1600) }
+        fixture.emit(500, 1800, speech = true, samples = 1600)
+        val wav = fixture.capture.stop()
+        assertEquals(6400, observer.packets.single().size)
+        assertArrayEquals(wav.copyOfRange(44, wav.size), observer.bytes())
+    }
+
+    private class RecordingPcmObserver(
+        val mutateReceived: Boolean = false,
+        val failAdmission: Boolean = false,
+    ) : RetainedPcmObserver {
+        val packets = mutableListOf<ByteArray>()
+        val invalidations = mutableListOf<RetainedPcmObserver.Invalidation>()
+        var discards = 0
+        override fun onPcm(retainedPcm16: ByteArray) {
+            check(!failAdmission) { "bounded encoder queue full" }
+            packets += retainedPcm16.copyOf()
+            if (mutateReceived) retainedPcm16.fill(0)
+        }
+        override fun onCandidateDiscarded() { discards++; packets.clear() }
+        override fun onCaptureInvalidated(reason: RetainedPcmObserver.Invalidation) { invalidations += reason }
+        fun bytes(): ByteArray = java.io.ByteArrayOutputStream().apply { packets.forEach { write(it) } }.toByteArray()
+    }
+
     private class FakeTranscriber(
         private val partial: String = "story about pirates",
         private val final: String = "story about astronauts",
@@ -905,7 +1046,8 @@ class AudioTurnCaptureTest {
         maxAudioDurationMs: Int = 25000,
         rejectAtAudioLimit: Boolean = false,
         captionOnly: Boolean = false,
-        initialConfirmedSpeech: () -> String = { "" }
+        initialConfirmedSpeech: () -> String = { "" },
+        retainedPcmObserver: RetainedPcmObserver? = null
     ) {
         var microphoneStarts = 0
         var microphoneStops = 0
@@ -932,7 +1074,8 @@ class AudioTurnCaptureTest {
             onMetrics = { stats, text -> metrics.add(stats to text) }, trailingSilenceMs = trailingSilenceMs,
             onRecognitionRecovery = recoveryStates::add, allowAudioOnlyTurns = allowAudioOnlyTurns,
             maxAudioDurationMs = maxAudioDurationMs, rejectAtAudioLimit = rejectAtAudioLimit, captionOnly = captionOnly,
-            guardFollowupSpeech = guardFollowupSpeech, initialConfirmedSpeech = initialConfirmedSpeech, onSpeechResumed = { resumed++ })
+            guardFollowupSpeech = guardFollowupSpeech, initialConfirmedSpeech = initialConfirmedSpeech, onSpeechResumed = { resumed++ },
+            retainedPcmObserver = retainedPcmObserver)
 
         suspend fun emit(atMs: Long, sample: Int, speech: Boolean = false, samples: Int = 1, probability: Float = if (speech) 0.95f else 0.01f) {
             clock = atMs

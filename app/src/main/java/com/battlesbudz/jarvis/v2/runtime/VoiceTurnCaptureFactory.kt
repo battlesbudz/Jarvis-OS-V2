@@ -31,7 +31,8 @@ internal class VoiceTurnCaptureFactory(
     fun create(scope: CoroutineScope, input: AudioInput, models: VoiceModelSession,
                plan: VoiceCapturePlan, comparison: LiveComparison.Trial?, reportStatus: (String) -> Unit,
                onMetrics: (AsrCaptureMetrics, String) -> Unit,
-               onPartialTranscript: (String) -> Unit): AudioTurnCapture {
+               onPartialTranscript: (String) -> Unit,
+               retainedPcmObserver: com.battlesbudz.jarvis.v2.voice.RetainedPcmObserver? = null): AudioTurnCapture {
         return AudioTurnCapture(
             QuietSpeechAudioInput(input, maxGain = 1.0, log = {
                 diagnosticRecorder.record("Voice input: $it")
@@ -62,7 +63,8 @@ internal class VoiceTurnCaptureFactory(
                 { plan.asrEngine.create(requireNotNull(plan.asrDirectory), log = { diagnosticRecorder.recordSummary("Voice input: $it") }, modelSession = models) }
             },
             onMetrics = onMetrics,
-            onPartialTranscript = onPartialTranscript
+            onPartialTranscript = onPartialTranscript,
+            retainedPcmObserver = retainedPcmObserver
         )
     }
 }

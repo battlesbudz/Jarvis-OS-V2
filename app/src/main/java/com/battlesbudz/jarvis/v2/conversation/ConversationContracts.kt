@@ -29,7 +29,9 @@ internal data class ConversationInvocation(
     val frozenActionPlan: ActionTurnPlan.Ready? = null,
     val frozenVoiceFinal: Boolean = false,
     val callOwned: Boolean = false,
-    val benchmarkCapture: PipelineBenchmarkCapture? = null
+    val benchmarkCapture: PipelineBenchmarkCapture? = null,
+    /** Immutable, complete native encoder result; never provisional action authority. */
+    val sealedVoiceAudio: com.google.ai.edge.litertlm.Content.SealedAudioEmbeddings? = null
 )
 
 internal data class ConversationCallbacks(

@@ -142,6 +142,13 @@ class ModelStore @JvmOverloads constructor(
             spec == ModelCatalog.gemma4E2b && preferences.getBoolean("smoke_test_passed", false))
     }
 
+    /** Exact installed-byte identity, including user imports. Call while owning
+     * the existing model-operation lease; catalog selection alone is insufficient
+     * for a separately derived native audio encoder. */
+    internal fun matchesVerifiedArtifact(spec: LocalModelSpec, expectedSha256: String): Boolean =
+        verifyIntegrity(spec) &&
+            preferences.getString(fingerprintKey(spec), null)?.equals(expectedSha256, ignoreCase = true) == true
+
     fun smokeTestAttempted(): Boolean =
         preferences.getBoolean("smoke_test_attempted_${selectedModel().id}", false)
 

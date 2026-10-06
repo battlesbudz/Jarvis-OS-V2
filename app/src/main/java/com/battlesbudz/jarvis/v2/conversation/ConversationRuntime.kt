@@ -121,11 +121,17 @@ internal class ConversationCoordinator(
                 actions.cancel()
                 telemetry?.finishProgress()
                 input.comparison?.put("generation_error", error.message ?: error.javaClass.simpleName)
-                input.incrementalVoice?.close()
-                modelSession.close()
+                runCatching { input.incrementalVoice?.close() }.exceptionOrNull()?.let {
+                    if (it !== error) error.addSuppressed(it)
+                }
+                runCatching { modelSession.close() }.exceptionOrNull()?.let {
+                    if (it !== error) error.addSuppressed(it)
+                }
                 diagnostics.record("Turn failed\nuser=${input.prompt.take(1_000)}\nimageAttached=${input.imageUri != null}\n" +
                     "error=${error.stackTraceToString().take(4_000)}")
-                reply.postFinish("I could not load the local model: ${error.message ?: "unknown error"}")
+                reply.postFinish(if (modelSession.isNativeQuarantined)
+                    "The local model did not stop safely. Restart Jarvis before starting another request."
+                else "I could not load the local model: ${error.message ?: "unknown error"}")
             } finally {
                 try {
                     capture.mark("request_processing_finished")

@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "files": {
+    "README.md": {
+      "bytes": 8281,
+      "sha256": "36916397f5b692a415a8897057045e2a9054f3633ea7544f49391ab16133ed55"
+    },
+    "bounded_exec.py": {
+      "bytes": 3746,
+      "sha256": "b0fdf259ec69b820c81a45ae1a62d1e2ce3cf7a676887e25e785dc8fd3475221"
+    },
+    "build_probes.py": {
+      "bytes": 7698,
+      "sha256": "c9e0290c193eafac2c16b51f56fd9baf9b6a86c34b263d3f7aad90df14ae2bc2"
+    },
+    "common.py": {
+      "bytes": 4816,
+      "sha256": "a27d32c9253451b59dd470345ef4b4205649c3b7e39fa679270730929c75f4cc"
+    },
+    "compare_native_pair.py": {
+      "bytes": 2803,
+      "sha256": "2a03125976a40d2174266a5986176779215f3e86c3ef4c5507010921c34a12fe"
+    },
+    "export_evidence.py": {
+      "bytes": 3497,
+      "sha256": "c94bded1a3202a9fcfa2a6ce9d9f40330fa2acd63f92eff5a0c56790760547d1"
+    },
+    "host-prebuilts.json": {
+      "bytes": 1724,
+      "sha256": "97c312a507479aaa829f2356a36a8b4b002160111965f58ae95bebe218b356a0"
+    },
+    "hosted-steps.yml.example": {
+      "bytes": 2540,
+      "sha256": "f5c1803169db55c5354991b16759c92bf578bef93f8571b5db081d04ef9537cb"
+    },
+    "model-structure.json": {
+      "bytes": 12506,
+      "sha256": "0819df221b2ab2409c8f02778edcb8b923e5726a6c103a2d6aa155ebfc996a81"
+    },
+    "native/BUILD": {
+      "bytes": 2679,
+      "sha256": "f3450ad464e9b2a41213e896ef2e192d024581f74cf7cafff2b846187de47bc6"
+    },
+    "native/native_conversation_quality_probe.cc": {
+      "bytes": 13767,
+      "sha256": "4f928e29f61eb04eb623b878ec370a644d07c808df4a43a549003e7e370a8134"
+    },
+    "native/native_frontend_quality_probe.cc": {
+      "bytes": 4165,
+      "sha256": "325d791566aac1860620d082af383df17c0d8718091e2bcf7bbfa36b27eac09a"
+    },
+    "native/pinned_encoder_probe.cc": {
+      "bytes": 10218,
+      "sha256": "426322998b662cf5a37cb30e2c5f3bd7e2f1b30b6b175e8bfc271055563e6abf"
+    },
+    "prepare_inputs.py": {
+      "bytes": 8583,
+      "sha256": "2d4db474be1b1712102815466d9f88f32eaa004cecf08bf82435bc78c529e106"
+    },
+    "recipe/Apache-2.0.txt": {
+      "bytes": 11357,
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    "recipe/FORMAT.md": {
+      "bytes": 4645,
+      "sha256": "a707d7596b883b164bfe095cc6f335a772916d8941f2b1629ab11073b027edd8"
+    },
+    "recipe/MODEL-LICENSE-FACTS.md": {
+      "bytes": 3013,
+      "sha256": "bded71b9a0559c9530b8097d0dab76684b023cfff7a7faf8e5819a0956943381"
+    },
+    "recipe/MODEL-MODIFICATIONS.txt": {
+      "bytes": 1901,
+      "sha256": "343c23e2e1dc5b9482a465b4d4f6afdf521dc421b553bef9f2033b06da33eb4a"
+    },
+    "recipe/WeightlessEncoderRecipe.java": {
+      "bytes": 10393,
+      "sha256": "44f1459d6a1c1c7f811a6de2ca258dbb1d0181c5cb4bac07529dda127a975333"
+    },
+    "recipe/source-copy-recipe.bin": {
+      "bytes": 86196,
+      "sha256": "f41105fecf5a86c0ab2486182d4256b98bf33c3a71f58c2b4f8e9a37b5cd86cc"
+    },
+    "recipe/structural-literals.bin.gz": {
+      "bytes": 134002,
+      "sha256": "c3093aa1f9bd5ff9cfe3c0a61df722d0bce806a5a4f2f1b747b0ffd91d15d2f1"
+    },
+    "requirements.txt": {
+      "bytes": 27,
+      "sha256": "1668a3152e33680d94637b13421c15e68bd97cd8701f7f555c691f5bc5c0b9f3"
+    },
+    "run_quality.py": {
+      "bytes": 12801,
+      "sha256": "ca546df5509cd7004fd8665e67385b67a286d852fb452ad2c924102bdc05ac21"
+    },
+    "test_quality.py": {
+      "bytes": 16309,
+      "sha256": "906f54282804d76cd8b8b64e62f28081a0486a001c5fb7f21cde1dd9fb91aa18"
+    }
+  },
+  "scope": "Source, verified weightless structural recipe assets and metadata only; no model/audio/activation payload"
+}

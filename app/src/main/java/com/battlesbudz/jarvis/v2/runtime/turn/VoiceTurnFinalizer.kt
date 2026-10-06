@@ -23,6 +23,8 @@ internal class VoiceTurnFinalizer(
     private val recorder: DiagnosticRecorder
 ) {
     suspend fun close(request: VoiceTurnRequest, lifetime: VoiceTurnLifetime, cancelled: Boolean) = withContext(NonCancellable) {
+        var encoderDrained = lifetime.nativeAudioCapture == null
+        lifetime.nativeAudioCapture?.requestCancel()
         if (cancelled && !actions.queue.hasUnfinished()) { conversation.job?.cancel(); conversation.job?.join() }
         try {
             lifetime.promotionLease.releaseIfUnadmitted(actions::releaseAcceptedVoiceLeaseIfIdle)
@@ -30,6 +32,8 @@ internal class VoiceTurnFinalizer(
             lifetime.activePumpTypedInput.getAndSet(null)?.let(typedInputs::terminalize)
             runCatching { lifetime.capture?.stop() }
             runCatching { lifetime.microphone?.stop() }
+            encoderDrained = runCatching { lifetime.nativeAudioCapture?.closeAndDrain() ?: true }.getOrDefault(false)
+            if (encoderDrained) lifetime.nativeAudioArtifact?.close()
             lifetime.preparation?.close()
             if (!actions.queue.hasUnfinished()) nativeState.engine?.onPromptSubmitted = { _, _ -> }
         } finally {
@@ -57,9 +61,19 @@ internal class VoiceTurnFinalizer(
                 if (callEnded) {
                     LiveCallAudioEvidence.finish()
                     // A process-owned accepted native child must join before its resident models close.
-                    if (!actions.queue.hasUnfinished()) resources.resources.closeModels()
+                    if (!actions.queue.hasUnfinished() && encoderDrained && nativeState.engine?.nativeResourcesSafeToRelease != false)
+                        resources.resources.closeModels()
                 }
-            } finally { lifetime.modelLease.close() }
+            } finally {
+                // Accepted process work may already own the transferred lease and
+                // its busy engine. That is not this turn's failed native borrower.
+                if (encoderDrained && (!lifetime.modelLease.owned || nativeState.engine?.nativeResourcesSafeToRelease != false)) {
+                    lifetime.modelLease.close()
+                } else {
+                    NativeVoiceQuarantine.retain(lifetime.modelLease, lifetime.nativeAudioCapture, nativeState.engine)
+                    recorder.recordImportant("Native voice drain failed; model ownership retained, reuse disabled")
+                }
+            }
         }
     }
 }

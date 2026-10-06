@@ -84,6 +84,7 @@ playback evidence; unplayed generated text must not become heard conversation co
 | `ai/storage/` | Download transport, hash/integrity and Android Downloads lookup | `ModelDownloader`, `ModelFileHash`, `DownloadedModelLookup` |
 | `chat/` | Persistent threads, shared context and display/speech text formatting | `ConversationHistory`, `ShortTermConversationContext`, `AssistantText` |
 | `voice/` | Capture/ASR, turn timing, wake/interruption, call resource leases, synthesis/playback and saved call evidence | `AudioTurnCapture`, `VoiceCallResources`, `VoiceSession`, `PiperVoiceOutput` |
+| `ai/audio/` and native audio capture | Pinned local graph reconstruction, immutable artifact leases and bounded PCM-to-native worker; sealed inputs enter ordinary Conversation | `GemmaStreamingArtifactStore`, `WeightlessEncoderRecipe`, `RetainedPcmEncoderWorker`, `GemmaStreamingAudioCapture` |
 | `voice/comparison/` | Explicit live comparison trial data; does not replace normal turn ownership | `LiveComparison` |
 | `actions/` | Strict action contracts, complete plans, authority/approval, Android effects and durable journals | `ActionTurnPlan`, `ActionTurnRunner`, `JournaledActionPipeline`, `AndroidMobileActionExecutor` |
 | `eval/` | Offline tool-emission fixtures and strict-decoder scoring; no runtime registration, admission, permission or effect dispatch | `ToolReliabilityFixtures`, `ToolReliabilityScorer`, `ToolCallRunner` (currently a fake-backed test seam) |
@@ -128,6 +129,21 @@ releasing the owner and before rearming another turn. See the [audit](repository
 for why acoustic capture and the follow-up/report state machine remain cohesive.
 
 ## Conversation stage contracts
+
+`CheckedConversationLifecycle` owns the exact Conversation or legacy Session
+child of `LiteRtLmEngine`. Terminal callbacks are observations; checked native
+drain precedes reuse or destruction. Failed drain retains the native owners and
+a process admission reservation. `NativeVoiceQuarantine` likewise retains a
+failed encoder and its model-operation lease rather than rearming another turn.
+Neither quarantine automatically retries an action or trusts provisional history.
+
+For the exact pinned E2B ordinary direct-audio path, `RetainedPcmObserver` emits
+accepted pre-roll once and retained PCM chunks once. A bounded dedicated worker
+owns native encoder calls; discarded candidates get fresh owners. Capture joins,
+complete PCM count/hash and native output counts gate immutable sealed content.
+The encoder closes before Conversation prefill. Static comparison trials and
+previously recorded corrections keep their raw-audio path; Piper-overlap encoder
+capture and live LLM prefill are later, separate gates.
 
 `ConversationCoordinator.start` accepts `ConversationInvocation` and
 `ConversationCallbacks`. It owns shared admission and the exact returned child job;

@@ -24,6 +24,8 @@ internal interface VoiceNativeSession : AutoCloseable {
     fun runPrefill(input: List<String>)
     fun generateContentStream(input: List<String>, callback: VoiceNativeCallback)
     fun cancelProcess()
+    /** Includes native callbacks returning; terminal notification alone is insufficient. */
+    fun awaitIdle()
 }
 
 internal class LiteRtVoicePrefillSession(private val session: VoiceNativeSession,
@@ -33,6 +35,8 @@ internal class LiteRtVoicePrefillSession(private val session: VoiceNativeSession
     private val benchmarkInitializationMs: Long? = null,
     private val onBenchmarkNativeWorkStarted: () -> Unit = {},
     private val onInferenceProgress: (InferenceProgress) -> Unit = {}) : VoicePrefillSession {
+    private val accessLock = Any()
+    private var nativeBorrowed = false
     private var started = false
     private var closed = false
     private var decoding = false
@@ -42,7 +46,10 @@ internal class LiteRtVoicePrefillSession(private val session: VoiceNativeSession
     private var prefillFailure: Throwable? = null
     private var prefillReported = false
     override fun append(text: String) {
-        check(!closed && !decoding)
+        synchronized(accessLock) {
+            check(!closed && !decoding && !nativeBorrowed && prefillFailure == null)
+            nativeBorrowed = true
+        }
         val chunk = (if (!started) "<|turn>user\n" else "") + text
         val began = System.nanoTime()
         promptChars += text.length
@@ -54,11 +61,18 @@ internal class LiteRtVoicePrefillSession(private val session: VoiceNativeSession
         } catch (error: Throwable) {
             prefillFailure = error
             throw error
-        } finally { prefillNanos += (System.nanoTime() - began).coerceAtLeast(0) }
+        } finally {
+            prefillNanos += (System.nanoTime() - began).coerceAtLeast(0)
+            synchronized(accessLock) { nativeBorrowed = false }
+        }
     }
     override suspend fun decode(onToken: (String) -> Unit): GenerationResult {
-        check(started && !closed && !decoding)
-        decoding = true
+        currentCoroutineContext().ensureActive()
+        synchronized(accessLock) {
+            check(started && !closed && !decoding && !nativeBorrowed && prefillFailure == null)
+            decoding = true
+            nativeBorrowed = true
+        }
         // Native v0.12.0 GenerateContentStream calls RunPrefillAsync, which rejects
         // an empty input list. Submit the final turn boundary through that call,
         // exactly once, instead of prefilling it and requesting an empty decode.
@@ -68,7 +82,8 @@ internal class LiteRtVoicePrefillSession(private val session: VoiceNativeSession
             PipelineBenchmarkWarmState.UNKNOWN, "incremental_text", initializationMs = benchmarkInitializationMs,
             sink = benchmarkSink)
         val tokens = Channel<String>(Channel.UNLIMITED)
-        val terminal = CompletableDeferred<Unit>()
+        val ownerJob = currentCoroutineContext()[Job]
+        var completed = false
         var first: Long? = null
         val rawFirstReported = java.util.concurrent.atomic.AtomicBoolean(false)
         var events = 0
@@ -84,6 +99,7 @@ internal class LiteRtVoicePrefillSession(private val session: VoiceNativeSession
         }
         try {
             try {
+                currentCoroutineContext().ensureActive()
                 // This is the native submission, after final prefill has completed.
                 onInferenceProgress(InferenceProgress(submittedAtMs = System.nanoTime() / 1_000_000))
                 val nativeSubmitBeganAt = System.nanoTime()
@@ -96,13 +112,13 @@ internal class LiteRtVoicePrefillSession(private val session: VoiceNativeSession
                             onInferenceProgress(InferenceProgress(firstRawTokenAtMs = System.nanoTime() / 1_000_000))
                         tokens.trySend(response)
                     }
-                    override fun onDone() { benchmark.measurement.terminal(); terminal.complete(Unit); tokens.close() }
-                    override fun onError(throwable: Throwable) { benchmark.measurement.terminal(); terminal.complete(Unit); tokens.close(throwable) }
+                    override fun onDone() { benchmark.measurement.terminal(); tokens.close() }
+                    override fun onError(throwable: Throwable) { benchmark.measurement.terminal(); tokens.close(throwable) }
                 }) } finally {
                     benchmark.measurement.submitted(nativeSubmitBeganAt)
                     nativeSubmitMs = (System.nanoTime() - nativeSubmitBeganAt) / 1_000_000
                 }
-            } catch (error: Throwable) { benchmark.measurement.terminal(); terminal.complete(Unit); throw error }
+            } catch (error: Throwable) { benchmark.measurement.terminal(); throw error }
             for (token in tokens) {
                 if (token.isNotEmpty()) {
                     if (first == null) first = System.nanoTime()
@@ -113,21 +129,42 @@ internal class LiteRtVoicePrefillSession(private val session: VoiceNativeSession
                 }
             }
             visible.finish()
-            benchmarkOutcome = PipelineBenchmarkOutcome.COMPLETE
+            completed = true
         } catch (error: Throwable) {
             benchmarkError = error
             benchmarkOutcome = if (error is CancellationException) PipelineBenchmarkOutcome.CANCELLED else PipelineBenchmarkOutcome.ERROR
             throw error
         } finally {
-            try { withContext(NonCancellable) {
-                if (!terminal.isCompleted) {
-                    session.cancelProcess()
-                    terminal.await() // Never free a native session while callbacks still own it.
+            try {
+                withContext(NonCancellable) {
+                    var cancelFailure: Throwable? = null
+                    if (!completed || ownerJob?.isActive == false) {
+                        try { session.cancelProcess() } catch (error: Throwable) { cancelFailure = error }
+                    }
+                    try { session.awaitIdle() }
+                    catch (error: Throwable) {
+                        cancelFailure?.takeUnless { it === error }?.let(error::addSuppressed)
+                        throw error
+                    }
+                    cancelFailure?.let { throw it }
                 }
-                tokens.cancel()
-            } } finally {
-                benchmark.finish(benchmarkOutcome, text.length, promptChars, events,
-                    prefillMs = prefillNanos / 1_000_000, prefillChunks = prefillChunks, error = benchmarkError)
+                if (completed && ownerJob?.isActive != false) benchmarkOutcome = PipelineBenchmarkOutcome.COMPLETE
+                else if (benchmarkError == null) throw CancellationException("Voice turn cancelled while draining")
+            } catch (cleanupError: Throwable) {
+                if (benchmarkError != null) {
+                    if (cleanupError !== benchmarkError) benchmarkError.addSuppressed(cleanupError)
+                } else {
+                    benchmarkError = cleanupError
+                    benchmarkOutcome = if (cleanupError is CancellationException)
+                        PipelineBenchmarkOutcome.CANCELLED else PipelineBenchmarkOutcome.ERROR
+                    throw cleanupError
+                }
+            } finally {
+                try {
+                    tokens.cancel()
+                    benchmark.finish(benchmarkOutcome, text.length, promptChars, events,
+                        prefillMs = prefillNanos / 1_000_000, prefillChunks = prefillChunks, error = benchmarkError)
+                } finally { synchronized(accessLock) { nativeBorrowed = false } }
             }
         }
         val ended = System.nanoTime()
@@ -140,9 +177,19 @@ internal class LiteRtVoicePrefillSession(private val session: VoiceNativeSession
             firstCallbackMs = firstCallbackAt.get().takeUnless { it == Long.MIN_VALUE }?.let { (it - began) / 1_000_000 })
     }
     override fun close() {
-        if (!closed) {
-            closed = true
-            try { session.close() } finally {
+        synchronized(accessLock) {
+            if (closed) return
+            check(!nativeBorrowed) { "Native Session borrowers must join before close" }
+            nativeBorrowed = true
+        }
+        try {
+            session.close()
+            synchronized(accessLock) { closed = true }
+        } catch (error: Throwable) {
+            prefillFailure = prefillFailure ?: error
+            throw error
+        } finally {
+            try {
                 if (!decoding && !prefillReported && (prefillChunks > 0 || prefillFailure != null)) {
                     prefillReported = true
                     NativeInferenceBenchmark(benchmarkModelId, PipelineBenchmarkPurpose.DRAFT,
@@ -153,7 +200,7 @@ internal class LiteRtVoicePrefillSession(private val session: VoiceNativeSession
                         prefillMs = prefillNanos / 1_000_000, prefillChunks = prefillChunks, error = prefillFailure,
                         generationAttempted = false)
                 }
-            }
+            } finally { synchronized(accessLock) { nativeBorrowed = false } }
         }
     }
 }

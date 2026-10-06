@@ -91,7 +91,8 @@ internal class OrdinaryVoiceReplyStage(
                             voiceAudioIsComplete = finalized.audioIsComplete,
                             directVoiceAudio = prepared.directAudioTurn,
                             comparison = request.comparison,
-                            benchmarkCapture = observation.benchmark
+                            benchmarkCapture = observation.benchmark,
+                            sealedVoiceAudio = finalized.sealedVoiceAudio
                         ), ConversationCallbacks(
                             onLiveInference = { submittedAt, firstTokenAt, tokensPerSecond, durable ->
                                 call.controller.updateReplyMetrics(prepared.expectedCallId, request.asrTurnId, durable = durable) { current ->

@@ -35,6 +35,10 @@ class LiteRtVoicePrefillSessionTest {
             cancelled = true
             callback?.onError(CancellationException("cancelled"))
         }
+        var drains = 0
+        var drainFailure: Throwable? = null
+        var drainAction: () -> Unit = {}
+        override fun awaitIdle() { drains++; drainAction(); drainFailure?.let { throw it } }
         override fun close() { closes++ }
     }
 
@@ -52,6 +56,7 @@ class LiteRtVoicePrefillSessionTest {
         assertEquals(result.text, output.toString())
         session.close(); session.close()
         assertEquals(1, native.closes)
+        assertEquals(1, native.drains)
     }
 
     @Test fun rawNativeTimingPrecedesFilteredVisibleAnswer() = runBlocking {
@@ -85,6 +90,7 @@ class LiteRtVoicePrefillSessionTest {
             assertEquals("native submission failed", expected.message)
         } finally { session.close() }
         assertEquals(1, native.closes)
+        assertEquals(1, native.drains)
     }
 
     @Test fun cancellationStopsTheNativeStreamBeforeClose() = runBlocking {
@@ -98,6 +104,7 @@ class LiteRtVoicePrefillSessionTest {
         assertTrue(native.cancelled)
         session.close()
         assertEquals(1, native.closes)
+        assertEquals(1, native.drains)
     }
 
     @Test fun benchmarkSeparatesHiddenNativeTextFromVisibleAnswerAndCountsEmptyCallbacks() = runBlocking {
@@ -176,4 +183,65 @@ class LiteRtVoicePrefillSessionTest {
         assertEquals(14, failureRecords.single().promptCharacters)
         assertNull(failureRecords.single().estimatedOutputTokens)
     }
+    @Test fun successfulCallbackWaitsForNativeDrainBeforeReturningCandidate() = runBlocking {
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val native = Native().apply { drainAction = {
+            entered.countDown()
+            check(release.await(3, java.util.concurrent.TimeUnit.SECONDS))
+        } }
+        val session = LiteRtVoicePrefillSession(native)
+        session.append("Hello")
+        val result = async(Dispatchers.Default) { session.decode {} }
+        try {
+            assertTrue(entered.await(3, java.util.concurrent.TimeUnit.SECONDS))
+            assertFalse(result.isCompleted)
+            try { session.close(); fail("must not close while native drain is active") }
+            catch (_: IllegalStateException) { }
+            assertEquals(0, native.closes)
+        } finally { release.countDown() }
+        assertEquals("Certainly, sir.", result.await().text)
+        assertEquals(1, native.drains)
+        session.close()
+    }
+
+    @Test fun nativeDrainFailureDoesNotReturnCandidateOrReportComplete() = runBlocking {
+        val native = Native().apply { drainFailure = IllegalStateException("native drain timeout") }
+        val records = mutableListOf<PipelineBenchmarkSubmission>()
+        val session = LiteRtVoicePrefillSession(native, benchmarkSink = { records += it })
+        session.append("Hello")
+        try { session.decode {}; fail("expected checked drain failure") }
+        catch (expected: IllegalStateException) { assertEquals("native drain timeout", expected.message) }
+        assertEquals(PipelineBenchmarkOutcome.ERROR, records.single().outcome)
+        assertEquals(0, native.closes)
+        try { session.append("do not reuse"); fail("failed Session reused") }
+        catch (_: IllegalStateException) { }
+    }
+
+    @Test fun failedPrefillCannotBeAppendedOrDecodedAgain() = runBlocking {
+        val native = Native().apply { failPrefill = true }
+        val session = LiteRtVoicePrefillSession(native)
+        try { session.append("Hello"); fail("expected prefill failure") } catch (_: IllegalStateException) { }
+        native.failPrefill = false
+        try { session.append("retry"); fail("failed Session reused") } catch (_: IllegalStateException) { }
+        try { session.decode {}; fail("failed Session decoded") } catch (_: IllegalStateException) { }
+        assertEquals(0, native.calls)
+        session.close()
+    }
+
+    @Test fun alreadyCancelledOwnerCannotSubmitAnotherNativeDecode() = runBlocking {
+        val native = Native()
+        val session = LiteRtVoicePrefillSession(native)
+        session.append("Hello")
+        val job = launch(start = CoroutineStart.UNDISPATCHED) {
+            currentCoroutineContext().cancel()
+            session.decode {}
+        }
+        job.join()
+        assertTrue(job.isCancelled)
+        assertEquals(0, native.calls)
+        assertEquals(0, native.drains)
+        session.close()
+    }
+
 }

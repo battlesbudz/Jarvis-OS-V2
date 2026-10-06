@@ -25,6 +25,8 @@ internal class VoiceTurnLifetime(
     val promotionLease = CallPromotionLease()
     var preparation: IncrementalVoiceInput? = null
     var capture: AudioTurnCapture? = null
+    var nativeAudioCapture: com.battlesbudz.jarvis.v2.voice.GemmaStreamingAudioCapture? = null
+    @Volatile var nativeAudioArtifact: com.battlesbudz.jarvis.v2.ai.audio.GemmaStreamingArtifactStore.Lease? = null
     var microphone: AudioInput? = null
     var expectedResourceCall: String? = null
     var preserveCaptureOnCancellation = false

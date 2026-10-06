@@ -8,7 +8,7 @@ package com.battlesbudz.jarvis.v2.runtime.turn
  * Access is confined to the turn coroutine and its synchronous promotion callbacks.
  */
 internal class VoiceTurnModelLease(private val acquire: () -> Boolean, private val release: () -> Unit) {
-    var owned = false
+    @Volatile var owned = false
         private set
 
     fun acquireWhenIdle(noActiveConversation: Boolean): Boolean {

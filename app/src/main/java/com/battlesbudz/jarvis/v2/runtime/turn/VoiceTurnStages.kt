@@ -54,7 +54,8 @@ internal data class FinalizedVoiceTurn(
     val recognitionIssue: String?,
     val preparedText: IncrementalVoiceInput?,
     val endpointAt: Long,
-    val initialActionPlan: ActionTurnPlan
+    val initialActionPlan: ActionTurnPlan,
+    val sealedVoiceAudio: com.google.ai.edge.litertlm.Content.SealedAudioEmbeddings? = null
 )
 
 /** Intentional quiet/echo/control exits are distinct from stage exceptions/cancellation. */

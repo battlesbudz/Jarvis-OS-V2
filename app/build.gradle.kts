@@ -11,6 +11,31 @@ val moonshineSdk by configurations.creating { isTransitive = false }
 val sherpaSdk by configurations.creating { isTransitive = false }
 val sherpaDir = layout.buildDirectory.dir("sherpa-sdk")
 val sherpaNativeDir = layout.buildDirectory.dir("sherpa-native")
+// The streaming API and checked lifecycle ABI must come from one reviewed build.
+// A missing property deliberately fails; stock Maven 0.16.0 is not API-compatible.
+fun requiredStreamingProperty(name: String): String = providers.gradleProperty(name).orNull
+    ?.takeIf { it.isNotBlank() }
+    ?: throw GradleException("Missing -P$name. Build the reviewed SDK with scripts/streaming-sdk first.")
+val litertLmBridgeAar = rootProject.file(requiredStreamingProperty("litertLmBridgeAar"))
+val litertLmBridgeProvenance = rootProject.file(requiredStreamingProperty("litertLmBridgeProvenance"))
+val litertLmBridgeSha256 = requiredStreamingProperty("litertLmBridgeSha256")
+val litertLmBridgeProvenanceSha256 = requiredStreamingProperty("litertLmBridgeProvenanceSha256")
+val validateStreamingSdk by tasks.registering(Exec::class) {
+    // Always rehash both class/native payloads; a stale up-to-date result is not provenance.
+    outputs.upToDateWhen { false }
+    doFirst {
+        val arguments = mutableListOf<Any>("python3", rootProject.file("scripts/streaming-sdk/validate_artifact.py"),
+            "--aar", litertLmBridgeAar, "--provenance", litertLmBridgeProvenance,
+            "--expected-aar-sha256", litertLmBridgeSha256,
+            "--expected-provenance-sha256", litertLmBridgeProvenanceSha256,
+            "--require-digests", "--app-ndk", File(android.sdkDirectory, "ndk/27.2.12479018"))
+        if (System.getenv("GITHUB_ACTIONS") == "true") {
+            arguments += listOf("--check-workflow", "--producer-attempt",
+                requiredStreamingProperty("litertLmBridgeProducerAttempt"))
+        }
+        commandLine(arguments)
+    }
+}
 val extractSherpa by tasks.registering(Exec::class) {
     inputs.files(sherpaSdk)
     inputs.file(rootProject.file("scripts/prepare_sherpa_sdk.py"))
@@ -39,7 +64,7 @@ val extractMoonshine by tasks.registering(Exec::class) {
             moonshineSdk.singleFile, moonshineDir.get().asFile)
     }
 }
-tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(extractMoonshine, extractSherpa, buildSherpa) }
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(validateStreamingSdk, extractMoonshine, extractSherpa, buildSherpa) }
 android {
     sourceSets.getByName("main").jniLibs.srcDir(sherpaNativeDir.map { it.dir("jni") })
     namespace = "com.battlesbudz.jarvis.v2"
@@ -121,7 +146,10 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.16.0")
+    implementation(files(litertLmBridgeAar).builtBy(validateStreamingSdk))
+    // A local AAR carries no Maven POM/transitive metadata.
+    implementation("com.google.code.gson:gson:2.13.2")
+    implementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
     sherpaSdk("com.github.k2-fsa.sherpa-onnx:sherpa-onnx:v1.13.7@aar")
     implementation(files(sherpaDir.map { it.file("classes.jar") }).builtBy(extractSherpa))
     implementation("org.apache.commons:commons-compress:1.27.1")

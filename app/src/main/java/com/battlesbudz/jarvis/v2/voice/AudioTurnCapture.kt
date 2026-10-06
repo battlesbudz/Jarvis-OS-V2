@@ -40,7 +40,8 @@ class AudioTurnCapture(
     private val rejectAtAudioLimit: Boolean = false,
     /** Display-only recognition cannot veto acoustically confirmed native audio. */
     private val captionOnly: Boolean = false,
-    private val onAcousticDecision: (ByteArray, SpeechDecision, SpeechDecision, Double) -> Unit = { _, _, _, _ -> }
+    private val onAcousticDecision: (ByteArray, SpeechDecision, SpeechDecision, Double) -> Unit = { _, _, _, _ -> },
+    private val retainedPcmObserver: RetainedPcmObserver? = null
 ) {
     private val pcm = RollingAudioBuffer(maxDurationMs = maxAudioDurationMs.toLong())
     private var capturedPcmBytes = 0L
@@ -140,12 +141,16 @@ class AudioTurnCapture(
                         onSpeechResumed()
                         log("turn_endpoint_invalidated reason=resumed_speech")
                     }
+                    var retainedAudio: ByteArray? = null
+                    var retainedWindowRolled = false
                     synchronized(pcm) {
                         if (hasSpeech) {
                             pcm.append(chunk)
+                            if (retainedPcmObserver != null) retainedAudio = chunk.copyOf()
                             val wasComplete = audioIsComplete
                             capturedPcmBytes += chunk.size
                             if (wasComplete && !audioIsComplete) {
+                                retainedWindowRolled = true
                                 onSpeechResumed()
                                 log("audio_window_rolled full_request_text_required=true speculation_invalidated=true")
                             }
@@ -157,7 +162,9 @@ class AudioTurnCapture(
                             if (!hasSpeech) {
                                 firstSpeechAt = now
                                 firstSpeechCaptureAtMs = audioAt
-                                pcm.append(preRoll.snapshot())
+                                val acceptedPreRoll = preRoll.snapshot()
+                                pcm.append(acceptedPreRoll)
+                                if (retainedPcmObserver != null) retainedAudio = pcm.snapshot()
                                 capturedPcmBytes = pcm.sizeBytes()
                                 preRoll.clear()
                                 log("speech_started vad=silero elapsedMs=${now - startedAt}")
@@ -167,6 +174,12 @@ class AudioTurnCapture(
                             lastSpeechAtMs = audioAt
                         }
                     }
+                    // Observe the retained request, not raw/VAD frames. The copied
+                    // bytes leave the PCM lock before any external queue admission.
+                    if (retainedWindowRolled) {
+                        retainedPcmObserver?.onCaptureInvalidated(RetainedPcmObserver.Invalidation.WINDOW_ROLLED)
+                    }
+                    if (audioIsComplete) retainedAudio?.let { retainedPcmObserver?.onPcm(it) }
                     // ASR receives every frame from microphone startup. VAD controls
                     // submission and endpointing, not whether initial words reach the recognizer.
                     val decodeStartedAt = nowMs()
@@ -199,16 +212,19 @@ class AudioTurnCapture(
                         lastSpeechAtMs = audioAt
                     }
                     if (!hasSpeech && corroborated) {
+                        var acceptedPreRoll: ByteArray? = null
                         synchronized(pcm) {
                             firstSpeechAt = now
                                 firstSpeechCaptureAtMs = audioAt
                             pcm.append(preRoll.snapshot())
+                            if (retainedPcmObserver != null) acceptedPreRoll = pcm.snapshot()
                             capturedPcmBytes = pcm.sizeBytes()
                             preRoll.clear()
                             hasSpeech = true
                             lastSpeechAt = audioAt
                             lastSpeechAtMs = audioAt
                         }
+                        acceptedPreRoll?.let { retainedPcmObserver?.onPcm(it) }
                         log("speech_started source=asr_and_vad probability=${decision.probability} preRollMs=1200")
                     }
                     if (hasSpeech && partial != null) publishPartial(partial)
@@ -240,6 +256,7 @@ class AudioTurnCapture(
                             hasSpeech = false
                             finalTranscript = ""
                             synchronized(pcm) { pcm.clear(); capturedPcmBytes = 0; preRoll.clear() }
+                            retainedPcmObserver?.onCandidateDiscarded()
                             followupEvidence.reset(); initialEvidenceAvailable = false; recoveryAudio.clear()
                             pendingEndpoint = false; pendingAudio.clear(); recognitionIssue = null
                             firstSpeechCaptureAtMs = null; firstSpeechAt = null; firstPartialAfterSpeechMs = null; lastPartial = ""
@@ -267,6 +284,9 @@ class AudioTurnCapture(
                             recognitionIssue = if (reason == "audio_input_limit") "gemma_audio_request_exceeds_limit"
                                 else (transcriber as? SegmentedTranscriber)?.issue
                                     ?: if (reason == "utterance_capacity") "utterance_capacity" else null
+                            if (reason == "audio_input_limit" || reason == "utterance_capacity") {
+                                retainedPcmObserver?.onCaptureInvalidated(RetainedPcmObserver.Invalidation.AUDIO_LIMIT)
+                            }
                             if (!audioIsComplete && rawFinal.isBlank()) recognitionIssue = "missing_long_transcript"
                             // ASR finalization can take time. Consume new possible speech
                             // or unclassified hardware audio before accepting an old endpoint.
@@ -323,6 +343,7 @@ class AudioTurnCapture(
                                     preRoll.append(retained)
                                     retained
                                 }
+                                retainedPcmObserver?.onCandidateDiscarded()
                                 firstSpeechCaptureAtMs = null; firstSpeechAt = null
                                 firstPartialAfterSpeechMs = null
                                 lastPartial = ""
@@ -389,13 +410,16 @@ class AudioTurnCapture(
                 // in the call session's history for that reader.
                 if (acceptedTurn != null) turnCompleted.complete(acceptedTurn!!)
                 else if (!turnCompleted.isCompleted) {
+                    retainedPcmObserver?.onCaptureInvalidated(RetainedPcmObserver.Invalidation.CAPTURE_FAILED)
                     turnCompleted.completeExceptionally(IllegalStateException("Microphone stream ended before the turn completed."))
                 }
             } catch (cancelled: CancellationException) {
+                runCatching { retainedPcmObserver?.onCaptureInvalidated(RetainedPcmObserver.Invalidation.CANCELLED) }
                 turnCompleted.cancel()
                 throw cancelled
             } catch (error: Throwable) {
                 // Deliver model/stream failures to the owner, not the Activity's uncaught handler.
+                runCatching { retainedPcmObserver?.onCaptureInvalidated(RetainedPcmObserver.Invalidation.CAPTURE_FAILED) }
                 turnCompleted.completeExceptionally(error)
             }
         }

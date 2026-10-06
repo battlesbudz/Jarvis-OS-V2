@@ -1,5 +1,46 @@
 # Feature and acceptance map
 
+## Native incremental E2B audio candidate — October 6, 2026
+
+Implementation candidate, not yet an Android-verified feature. The ordinary
+direct-audio path for the exact pinned E2B bundle reconstructs a stateful encoder
+locally from 220,198 bytes of audited structural assets. No trained model weights
+are added to APK assets. Imports with a different verified fingerprint fail closed.
+The accepted pre-roll and retained PCM go to a bounded dedicated encoder worker;
+capture join, full PCM count/hash, generation identity and checked native close
+precede sealed Conversation input. Captions and provisional audio remain unable
+to authorize actions; existing manual tool and complete-plan admission are intact.
+
+Host evidence includes actual pinned native encoder byte parity, 54 injected JNI
+lifecycle checks and 14 actual JVM/native speech checks. Focused capture/worker
+tests cover exact PCM, candidate resets, capacity failure, cancellation and retained
+ownership. These do not prove Android library loading or language-model quality.
+The checked Conversation/legacy Session ownership changes must additionally pass
+their exact-source tests and the complete release matrix.
+
+The focused host JVM source set passes 106 tests, including the capture/worker
+and checked-engine regressions plus twelve new lifecycle/input checks.
+`RetainedPcmEncoderLifecycleTest` latches factory, seal and close operations:
+cancellation cannot publish completed content, discarded candidates receive a
+fresh owner only after checked close, and a failed discarded-owner close remains
+quarantined. `ConversationSealedAudioInputTest` exercises the actual immutable
+SDK content and Conversation input router: initial/retry requests retain the
+same sealed value, incompatible text/non-direct inputs fail, unsupported sealed
+submission never falls back to raw audio, and existing raw audio/ASR/attachment
+routes remain intact. These tests inject fake native encoders/backends and
+synthetic embedding rows; they do not run native inference or an Android runtime.
+The acquire-to-`withContext` cancellation window, ordinary exact-E2B eligibility
+gate and finalizer-to-model-lease quarantine were source-reviewed, not executed
+as complete preparation/finalizer integration tests. Those gaps remain open.
+
+Acceptance gates still open: production ARM64 AAR build/dependency closure and
+16 KB audit; signed normal/compact release builds; all five required emulator
+profiles; actual Gemma static-versus-streaming transcription/comprehension/tool
+quality; native input/output consumption; physical Fold6 latency, memory, thermal,
+echo and capture-while-Piper-playback behavior. The first path excludes explicit
+static comparisons and prerecorded correction buffers. It does not overlap LLM
+prefill with capture or claim a jointly full-duplex language model.
+
 ## Muse tools integration checkpoint — October 6, 2026
 
 The integration of Muse `9f965bad` retains all audio-pr2 verification boundaries:

@@ -199,11 +199,44 @@ internal class VoiceTurnPreparation(
             })
         lifetime.preparation = incremental
         diagnosticRecorder.recordSummary("Voice input: speaker_identity=disabled interruption_policy=recognized_non_echo_words")
+        val correction = request.queuedTypedInput?.let { typed ->
+            com.battlesbudz.jarvis.v2.voice.CapturedVoiceTurn(
+                typed.text, byteArrayOf(), utteranceId = typed.id, capturedAtMs = typed.capturedAtMs,
+                origin = com.battlesbudz.jarvis.v2.voice.TranscriptOrigin.TYPED
+            )
+        } ?: call.state.pendingVoiceCorrection.getAndSet(null)
+        if (correction?.origin == com.battlesbudz.jarvis.v2.voice.TranscriptOrigin.TYPED) directAudioTurn = false
+        if (directAudioTurn && selectedSpec == com.battlesbudz.jarvis.v2.ai.ModelCatalog.gemma4E2b &&
+            request.comparison == null && correction == null) {
+            val preparationContext = kotlin.coroutines.coroutineContext
+            val exactModelLease = lifetime.modelLease
+            val exactTurnJob = lifetime.scope.coroutineContext[kotlinx.coroutines.Job]
+            val artifact = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                com.battlesbudz.jarvis.v2.ai.audio.GemmaStreamingArtifactStore.acquire(
+                    modelStore.fileFor(selectedSpec), java.io.File(context.cacheDir, selectedSpec.id),
+                    readAsset = context.assets::open,
+                    exactSourceVerified = { modelStore.matchesVerifiedArtifact(selectedSpec,
+                        com.battlesbudz.jarvis.v2.ai.audio.WeightlessEncoderRecipe.SOURCE_SHA256) },
+                    modelLeaseHeld = { exactModelLease.owned },
+                    cancelled = { preparationContext[kotlinx.coroutines.Job]?.isActive != true })
+                    .also { lifetime.nativeAudioArtifact = it }
+            }
+            try {
+                lifetime.nativeAudioCapture = com.battlesbudz.jarvis.v2.voice.GemmaStreamingAudioCapture(
+                    artifact, request.asrTurnId,
+                    turnIsCurrent = { exactTurnJob?.isActive == true &&
+                        call.controller.currentCallId() == expectedCallId && call.state.armed })
+            } catch (error: Throwable) { artifact.close(); lifetime.nativeAudioArtifact = null; throw error }
+            observation.benchmark.configuration("native_audio_encoder", "gemma4_e2b_stateful_cpu_v1")
+            observation.benchmark.configuration("native_audio_encoder_sha256",
+                com.battlesbudz.jarvis.v2.ai.audio.WeightlessEncoderRecipe.OUTPUT_SHA256)
+        }
         val capturePlan = VoiceCapturePlan(
             request.asrTurnId, request.asrEngine, asrDirectory, directAudioTurn, request.captionAsrEnabled, followupBoundary != null)
         val activeCapture = VoiceTurnCaptureFactory(
             context, diagnosticRecorder
         ).create(lifetime.scope, input, models, capturePlan, request.comparison, call::status,
+            retainedPcmObserver = lifetime.nativeAudioCapture,
             onMetrics = { metrics, text -> observation.telemetry.recordAsr(metrics, text, lifetime.capture) },
             onPartialTranscript = { text ->
                 if (text.isNotBlank()) request.comparison?.mark("asr_first_partial")
@@ -215,13 +248,6 @@ internal class VoiceTurnPreparation(
             })
         lifetime.capture = activeCapture
         call.state.capture = activeCapture
-        val correction = request.queuedTypedInput?.let { typed ->
-            com.battlesbudz.jarvis.v2.voice.CapturedVoiceTurn(
-                typed.text, byteArrayOf(), utteranceId = typed.id, capturedAtMs = typed.capturedAtMs,
-                origin = com.battlesbudz.jarvis.v2.voice.TranscriptOrigin.TYPED
-            )
-        } ?: call.state.pendingVoiceCorrection.getAndSet(null)
-        if (correction?.origin == com.battlesbudz.jarvis.v2.voice.TranscriptOrigin.TYPED) directAudioTurn = false
         request.comparison?.put("input_is_interruption_correction", correction != null)
         request.comparison?.mark("capture_start")
         if (correction == null) activeCapture.start(com.battlesbudz.jarvis.v2.voice.CallLifetimePolicy.initialSilenceTimeoutMs())
