@@ -135,13 +135,15 @@ class ToolReliabilityBenchmark(
                         // benchmark halts before another native engine is
                         // allocated. When a primary failure already exists it
                         // propagates instead — the teardown failure is only
-                        // reported and never masks the original error. The
-                        // gate below is still released either way.
+                        // reported and never masks the original error,
+                        // including cancellation: rethrowing the close error
+                        // over a CancellationException would turn a
+                        // cooperative cancellation into a failure. The gate
+                        // below is still released either way.
                         owner.reportTeardownIssue(
                             "Tool reliability check: closing the ${spec.id} benchmark engine failed: ${error.message}"
                         )
-                        val primary = primaryFailure
-                        if (primary == null || primary is CancellationException) throw error
+                        if (primaryFailure == null) throw error
                     }
                 }
             } finally {
