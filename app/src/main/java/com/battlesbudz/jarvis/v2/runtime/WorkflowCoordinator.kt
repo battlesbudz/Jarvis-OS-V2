@@ -17,7 +17,6 @@ import com.battlesbudz.jarvis.v2.actions.ProviderSettings
 import com.battlesbudz.jarvis.v2.actions.ProviderWireNames
 import com.battlesbudz.jarvis.v2.actions.ReminderCoordinator
 import com.battlesbudz.jarvis.v2.actions.ReminderScheduling
-import com.battlesbudz.jarvis.v2.actions.ToolAuthority
 import com.battlesbudz.jarvis.v2.actions.ToolSourceAccess
 import com.battlesbudz.jarvis.v2.actions.ToolTaskLedger
 import com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException
@@ -38,7 +37,6 @@ import com.battlesbudz.jarvis.v2.actions.WorkflowTrigger
 import com.battlesbudz.jarvis.v2.actions.WorkflowWait
 import com.battlesbudz.jarvis.v2.actions.androidLockGate
 import com.battlesbudz.jarvis.v2.actions.describeForOverlay
-import com.battlesbudz.jarvis.v2.actions.isRoutineEligible
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -300,43 +298,26 @@ internal class WorkflowCoordinator(
     }
 
     /**
-     * Dispatch one routine-eligible step under the occurrence's routine
-     * grant. The grant is reused only when its exact request limits match
-     * (T11); a new tool can never broaden it. Each step is admitted as its
-     * own group so a failed step stops the run before later steps are
-     * admitted.
+     * Production routine-dispatch seam (finding 1): routine-grant admission
+     * followed by JournaledActionPipeline.executeAttempt. The seam lives in
+     * [com.battlesbudz.jarvis.v2.actions.RoutineStepDispatcher] so the
+     * regression test drives this exact path; see its KDoc for the claim
+     * discipline the test pins.
      */
+    private val routineStepDispatcher = com.battlesbudz.jarvis.v2.actions.RoutineStepDispatcher(
+        workflowLedger = workflowLedger,
+        phoneActionLedger = phoneActionLedger,
+        executorFactory = {
+            AndroidMobileActionExecutor(appContext,
+                canLaunchDirectly = { isActivityVisible() }, onDiagnostic = recordDiagnostic)
+        },
+        pipelineFactory = { executor -> phoneActionPipeline(executor) }
+    )
+
     private fun dispatchWorkflowStep(
         occurrence: WorkflowOccurrence,
         request: ActionRequest
-    ): ExecutionResult {
-        fun refusal(message: String) = ExecutionResult(false, message)
-        if (!request.isRoutineEligible()) {
-            return refusal("The routine asked for an action outside its granted limits. It didn't run.")
-        }
-        val grant = try {
-            workflowLedger.reusableGrant(occurrence.workflowId, listOf(request))
-                ?: workflowLedger.createGrant(occurrence.workflowId, listOf(request))
-        } catch (_: Exception) { return refusal("I couldn't save this routine's permission, so it didn't run.") }
-        val group = try {
-            phoneActionLedger.admit(listOf(request), "workflow:${occurrence.id}",
-                authority = ToolAuthority.ROUTINE, grantId = grant.id)
-        } catch (_: Exception) { return refusal("The routine's actions weren't admitted.") }
-        val executor = AndroidMobileActionExecutor(appContext,
-            canLaunchDirectly = { isActivityVisible() }, onDiagnostic = recordDiagnostic)
-        val id = group.attemptIds.single()
-        val attempt = phoneActionLedger.get(id)
-            ?: return refusal("The routine's action disappeared before it could run.")
-        // JournaledActionPipeline.executeAttempt owns the claim: it claims the
-        // admitted attempt atomically (eligibility, provider, schema, exact
-        // approval). A pre-claim here would leave the attempt RUNNING, so its
-        // claim — which only accepts QUEUED/READY/WAITING_APPROVAL — rejects
-        // and the step never executes.
-        return try { phoneActionPipeline(executor).executeAttempt(attempt) }
-        catch (_: Exception) { ExecutionResult(
-            ExecutionResult.Outcome.UNKNOWN_COMPLETION,
-            "The routine's action may have run; its outcome is unknown and it won't be repeated.") }
-    }
+    ): ExecutionResult = routineStepDispatcher.dispatch(occurrence, request)
 
     private fun phoneActionPipeline(executor: MobileActionExecutor) =
         JournaledActionPipeline(
