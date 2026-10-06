@@ -331,6 +331,91 @@ observer's 33 deterministic contracts and actual Android-library compilation
 remain separately retained. Independent reviews of both repairs found no
 blocking findings; the complete exact-head hosted gate remains required.
 
+### Build 1042 API 30 benchmark near-edge observation
+
+[Build 1042](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37404488065)
+tests head `531bb132ac26fee17183bd4f9bd9cb5192766202`, merge
+`2e79faffa368d93a3958241029dc94694b3d3270`. All 1,032 JVM tests pass with zero
+failures/errors/skips; artifact `11387725265`, ZIP SHA-256
+`36f5b6582458944b53fcbf13aa5103d389441add38167b7d77bc4f428de6c552`, retains the
+results. API 35 compact, API 36 phone and API 36 Pixel Fold pass complete profiles. Foldable artifact `11387199450`,
+ZIP SHA-256 `9148db813deaa7424c49648a710b02b8c8867c7bfcf2b5fae80782816ebb86a6`,
+confirms the controlled-fixture arrival correction on its previously failing
+profile.
+API 30 passes corrected Wisp test49 and 48 other main tests, but benchmark
+test45 cannot reveal `benchmark_quality_factuality_FAIL`; later layout phases
+do not run. Artifact `11387133676`, ZIP SHA-256
+`01d6ed9a90c809e16f173bdd0329302eb65b235cc37bb00237f9401022f77240`, retains
+the native screenshot/XML and navigation trace.
+
+The benchmark fixture has no Wisp chrome. Its target initially has positive
+bounds `(226,1782)–(378,1794)`, only 30 pixels below the list ending at 1752.
+The existing nearby-outside fine-alignment predicate excludes API 30, so the
+helper dispatches a 1,064-pixel blind swipe despite that known nearby target.
+The trace then shows metric rows below the desired controls, a bottom-edge
+reversal, and budget exhaustion after 12 gestures while returning to the top.
+No factuality tap occurs. Earlier passing API 30 runs entered this step with
+the button already visible; they did not exercise this geometry.
+
+The correction admits API 30 alongside API 35+ to that existing predicate,
+retaining its positive bounds, horizontal overlap, distance and one-fifth
+viewport cap. The exact failed observation now selects a 90-pixel fine stroke
+rather than the blind search stroke. The separate API 35+ edge-fragment rule,
+API 29/31–34 behavior, fresh safe/enabled bounds, 300 ms settling, one eventual
+tap and 15-second/14-gesture limits are unchanged. This is a test navigation
+correction, not a production layout or scoring change. Exact-source validation
+passes 29 explicit boundary cases and 8,000 deterministic old/new comparisons;
+the extracted navigation helpers compile against actual Android/UiAutomator
+classes. Fresh complete hosted verification remains required.
+
+The 16 KB compatibility setup successfully records both flag readbacks, one
+intentional reboot, current-boot complete ART compilation (`returned 80`) and
+`system_server` selecting `CollectorTypeCC`. It then correctly rejects the
+server disappearing after a `HeapTaskDaemon` SIGSEGV (`SI_KERNEL`, address
+zero) during boot. Artifact `11387725909`, ZIP SHA-256
+`8be407a0dca9faeefe32a15a2c0468038eaac4a5b4532753d2478f441bfad9a1`, retains
+the admitted collector and distinct runtime failure. No APK installation or
+app journey follows. Selecting the compatible collector is established here;
+a stable runtime or full 16 KB pass is not. No further runtime configuration
+change follows without supporting evidence.
+
+API 29 again misses current-process user0 BOOT_COMPLETED within 900 seconds.
+The first system server fails a 30-second default-permissions request; its
+replacement has a confirmed UI-watchdog restart, and the third does not finish.
+Artifact `11387264382`, ZIP SHA-256
+`9577b4f80fec3961c42bbf3513ef6856bea386c23044a7d0e77c1e43e4e87792`, retains
+that failure. Build 1041's complete admission is therefore not a reliable boot
+qualification. No app tests run on this API 29 attempt, and publication remains
+blocked by all required failed profiles.
+
+### API 29 display-cadence trial after Build 1042
+
+Build 1042 retained native host `Setting vsync to 60 hz`, the `qemu.vsync=60`
+boot parameter, and guest `DisplayDeviceInfo` reporting 60.000004 Hz at
+360×640 / 140 dpi. Its second system server had a 121,281 ms `android.ui`
+Choreographer dispatch; the 02:56:48–02:56:54 ANR sample reports 100% total
+guest CPU, including SystemUI 13%, SurfaceFlinger 5.7% and composer 4.5%.
+Display work participates in the overload but is not established as its cause.
+
+The isolated trial sets the API 29 software fixture's supported
+`hw.lcd.vsync` to 30. Emulator 32 uses it for both its host VsyncThread and
+`qemu.vsync`; Android init exposes the latter as `ro.kernel.qemu.vsync`.
+The revision-8 vendor composer contains that property and the corresponding
+EmuHWC2 display/VsyncThread symbols. The property-aware HWC uses the period
+for callbacks and its advertised display configuration independently of
+HostComposition. See [emulator property generation](https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/android/android-emu/android/userspace-boot-properties.cpp#325)
+and [property-aware HWC](https://android.googlesource.com/device/generic/goldfish-opengl/+/android11-release/system/hwc2/EmuHWC2.cpp#420).
+
+This changes the fixture's frame cadence, keeping physical resolution,
+density, microphone/audio configuration, all functional checks and deadlines.
+The expected effect is fewer periodic display wakeups and frame opportunities;
+CPU savings or improved startup/runtime reliability are not yet measured.
+Fresh evidence must show host 30 Hz, `qemu.vsync=30`, and guest display near
+30 Hz at the original dimensions/density. Compare wall-clock stalls and CPU,
+not skipped-frame counts, which also change with cadence. The full API 29
+profile and complete release gates remain required. No new boot probes,
+watchdog changes, timeout extensions or app changes accompany this trial.
+
 ## API 29 graphics boot loop — October 5, 2026
 
 [Build 986](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37236069164)

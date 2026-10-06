@@ -68,8 +68,15 @@ SOFTWARE_DISABLED_SENSORS = (
     "hw.sensors.magnetic_field_uncalibrated", "hw.sensors.pressure",
     "hw.sensors.humidity", "hw.sensors.temperature",
 )
+# Halve the software fixture's requested display cadence after Build 1042's
+# saturated guest CPU and prolonged UI dispatch. Emulator 32 passes this to
+# both its host VsyncThread and the API 29 composer's qemu.vsync property.
+# This is a load-reduction trial, not proof of improved boot/runtime health;
+# retained native and DisplayDeviceInfo logs establish the actual cadence.
+# https://android.googlesource.com/platform/external/qemu/+/35c71ce5114d90004f9109b25c0dc6434d41014d/android/android-emu/android/userspace-boot-properties.cpp#325
 SOFTWARE_AVD_SETTINGS = {"hw.cpu.ncore": str(SOFTWARE_CPU_COUNT), "hw.ramSize": "2048M", "vm.heapSize": "256M",
                          "hw.lcd.width": "360", "hw.lcd.height": "640", "hw.lcd.density": "140",
+                         "hw.lcd.vsync": "30",
                          "disk.dataPartition.size": "4096M",
                          **{sensor: "no" for sensor in SOFTWARE_DISABLED_SENSORS}}
 # Retain Build 963's requested selector. Its actual guest backend was

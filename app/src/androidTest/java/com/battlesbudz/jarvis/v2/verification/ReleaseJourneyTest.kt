@@ -2678,11 +2678,12 @@ class ReleaseJourneyTest {
                 // another full search stroke. Aim 24 pixels inside the viewport,
                 // add 24 pixels of room, and cap each adjustment at one fifth of it.
                 val fineLimit = viewport.height() / 5
-                // Modern accessibility can retain a positive rectangle just outside
+                // API 30 and modern accessibility can retain a positive rectangle just outside
                 // the viewport. Align that nearby known target with the same bounded
                 // fine gesture instead of another full search stroke. Fresh safe bounds still
                 // authorize the tap; unknown or distant targets retain discovery.
-                val nearbyOutside = android.os.Build.VERSION.SDK_INT >= 35 && knownBounds != null &&
+                val nearbyOutside = (android.os.Build.VERSION.SDK_INT == 30 || android.os.Build.VERSION.SDK_INT >= 35) &&
+                    knownBounds != null &&
                     knownBounds.left < viewport.right && knownBounds.right > viewport.left &&
                     ((knownBounds.bottom <= viewport.top && viewport.top - knownBounds.bottom <= fineLimit) ||
                         (knownBounds.top >= viewport.bottom && knownBounds.top - viewport.bottom <= fineLimit))

@@ -124,7 +124,12 @@ commits. Do not create or merge another PR without Justin's permission.
    heap request as zero and promoted it to its 512 MiB minimum; its generated
    hardware and kernel arguments record 512 MiB, not a verified 256 MiB guest
    heap. The next trial keeps the request unchanged. The framebuffer is
-   360×640 at 140 dpi. The same pinned binary advertises 140 dpi; actual fresh
+   360×640 at 140 dpi. The API 29-only `hw.lcd.vsync=30` trial requests a
+   30 Hz display cadence to reduce periodic work after retained 60 Hz CPU/UI
+   stalls. Host/native `qemu.vsync` and guest `DisplayDeviceInfo` observations
+   must establish the actual rate; the setting alone proves no improvement.
+   Resolution, density, functional assertions and all deadlines remain unchanged.
+   The same pinned binary advertises 140 dpi; actual fresh
    raster admission still needs observation. Build 962 rejected 210 dpi before
    guest startup. This trial preserves the exact physical dp
    extent and aspect ratio of Pixel 2 and Build 963's 720×1280 at 280 dpi,

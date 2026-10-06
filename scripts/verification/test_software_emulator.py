@@ -1172,7 +1172,7 @@ class SoftwareSessionTest(unittest.TestCase):
                     config = session.avd_home / "jarvis-api29-software.avd/config.ini"
                     config.parent.mkdir()
                     config.write_text("hw.cpu.ncore=1\nhw.ramSize=1536M\nvm.heapSize=256M\n"
-                                      "hw.lcd.width=1080\nhw.lcd.height=1920\nhw.lcd.density=420\n"
+                                      "hw.lcd.width=1080\nhw.lcd.height=1920\nhw.lcd.density=420\nhw.lcd.vsync=60\n"
                                       "hw.accelerometer=yes\nhw.accelerometer_uncalibrated=yes\n"
                                       "hw.gyroscope=yes\nhw.sensors.gyroscope_uncalibrated=yes\n"
                                       "hw.sensors.orientation=yes\nhw.sensors.light=yes\n"
@@ -1197,6 +1197,7 @@ class SoftwareSessionTest(unittest.TestCase):
             config = (session.diagnostics / "avd-config.ini").read_text()
             effective = dict(line.split("=", 1) for line in config.splitlines() if "=" in line)
             self.assertEqual("2", effective["hw.cpu.ncore"])
+            self.assertEqual("30", effective["hw.lcd.vsync"])
             command = emulator_command(Path("/sdk"), session.diagnostics)
             self.assertEqual(effective["hw.cpu.ncore"], command[command.index("-smp") + 1])
             for sensor in ("hw.accelerometer", "hw.accelerometer_uncalibrated", "hw.gyroscope",
@@ -1834,7 +1835,7 @@ class EmulatorPinTest(unittest.TestCase):
         self.assertTrue((self.session.diagnostics / "emulator-package.xml").exists())
         config = (self.session.diagnostics / "avd-config.ini").read_text()
         for setting in ("hw.cpu.ncore=2", "hw.ramSize=2048M", "vm.heapSize=256M", "hw.lcd.width=360",
-                        "hw.lcd.height=640", "hw.lcd.density=140", "disk.dataPartition.size=4096M"):
+                        "hw.lcd.height=640", "hw.lcd.density=140", "hw.lcd.vsync=30", "disk.dataPartition.size=4096M"):
             self.assertIn(setting, config)
         self.assertEqual(3600, self.session.deadline)
         self.assertFalse(self.session.report["passed"], "Provisioning does not establish test coverage")
