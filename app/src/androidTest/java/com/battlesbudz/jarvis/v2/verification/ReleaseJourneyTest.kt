@@ -3085,10 +3085,12 @@ class ReleaseJourneyTest {
             assertNotNull(find(By.textContains("Captions are display-only")))
             assertNotNull(find(By.text("Off")))
             // Exercise the actual dropdown and rebuild the UI for each persisted choice.
-            for ((tag, engine) in listOf("moonshine" to AsrEngine.MOONSHINE,
-                "whisper" to AsrEngine.WHISPER, "off" to null)) {
+            for (engine in listOf(AsrEngine.MOONSHINE, AsrEngine.WHISPER, null)) {
                 find(By.res("gemma_caption_engine")).click()
-                find(By.res("gemma_caption_$tag")).click()
+                // The separate popup window does not inherit testTagsAsResourceId.
+                // Each new label differs from the selected value; other controls
+                // use prefixed labels, so this targets the actual visible option.
+                find(By.text(engine?.label ?: "Off")).click()
                 assertEquals(engine, VoiceInputMode.captionEngine(context))
                 render()
                 assertNotNull(find(By.text(engine?.label ?: "Off")))
@@ -4024,41 +4026,34 @@ class ReleaseJourneyTest {
             assertEquals(ExecutionResult.Outcome.NEEDS_UNLOCK, volume.outcome)
             assertEquals("only the battery read dispatched", 0, dispatched.get())
         } finally {
-            // Unlock through the PIN pad: the keyguard UI does not refresh
-            // a locksettings clear issued while it is showing, so enter the
-            // PIN first, then clear it. The bouncer needs a swipe to reveal.
+            // Credential removal and keyguard UI dismissal are different events.
+            // Clear the known fixture PIN once, observe that it is no longer secure,
+            // then dismiss once. Do not rely on an unlocked-padlock state or retry PINs.
             val cleanupDeadline = android.os.SystemClock.uptimeMillis() + 10_000
-            device.wakeUp()
-            runCatching {
-                device.swipe(device.displayWidth / 2, device.displayHeight * 4 / 5,
-                    device.displayWidth / 2, device.displayHeight / 5, 20)
-                device.waitForIdle()
-                val digitDeadline = cleanupDeadline
-                var digit: UiObject2? = null
-                while (digit == null && android.os.SystemClock.uptimeMillis() < digitDeadline) {
-                    digit = device.findObject(By.desc("1"))
-                    if (digit == null) Thread.sleep(300)
-                }
-                if (digit != null) {
-                    for (d in "1234") {
-                        device.findObject(By.desc(d.toString()))?.click()
-                        device.waitForIdle()
-                    }
-                    device.findObject(By.res("com.android.systemui:id/key_enter"))?.click()
-                    device.waitForIdle()
+            runCatching { device.executeShellCommand("locksettings clear --old 1234") }
+            while (android.os.SystemClock.uptimeMillis() < cleanupDeadline &&
+                keyguard?.isDeviceSecure == true) {
+                Thread.sleep(100)
+            }
+            if (android.os.SystemClock.uptimeMillis() < cleanupDeadline &&
+                keyguard?.isDeviceSecure == false) {
+                device.wakeUp()
+                if (android.os.SystemClock.uptimeMillis() < cleanupDeadline) {
+                    runCatching { device.executeShellCommand("wm dismiss-keyguard") }
                 }
             }
-            runCatching { device.executeShellCommand("locksettings clear --old 1234") }
-            device.wakeUp()
-            runCatching { device.executeShellCommand("wm dismiss-keyguard") }
-            // Keyguard exit is asynchronous. Reuse this cleanup's fixed deadline
-            // rather than repeating PIN submission, effects or extending the suite.
-            while (keyguard?.isDeviceLocked == true && android.os.SystemClock.uptimeMillis() < cleanupDeadline) {
+            while (android.os.SystemClock.uptimeMillis() < cleanupDeadline &&
+                (keyguard?.isDeviceLocked == true || keyguard?.isKeyguardLocked == true ||
+                    !device.hasObject(By.res("model_browse")))) {
                 Thread.sleep(100)
             }
         }
         assertFalse("PIN must be cleared so later journeys run unlocked",
             keyguard?.isDeviceLocked == true)
+        assertFalse("The fixture PIN must no longer secure the device", keyguard?.isDeviceSecure == true)
+        assertFalse("Keyguard UI must be dismissed before later journeys", keyguard?.isKeyguardLocked == true)
+        assertNotNull("The owned setup screen must be accessible after lock cleanup",
+            device.findObject(By.res("model_browse")))
     }
 
     @Test fun test65_crossFamilyRegressionInvalidArgsProduceNoEffects() {

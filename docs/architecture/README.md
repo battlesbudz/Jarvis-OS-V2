@@ -86,6 +86,7 @@ playback evidence; unplayed generated text must not become heard conversation co
 | `voice/` | Capture/ASR, turn timing, wake/interruption, call resource leases, synthesis/playback and saved call evidence | `AudioTurnCapture`, `VoiceCallResources`, `VoiceSession`, `PiperVoiceOutput` |
 | `voice/comparison/` | Explicit live comparison trial data; does not replace normal turn ownership | `LiveComparison` |
 | `actions/` | Strict action contracts, complete plans, authority/approval, Android effects and durable journals | `ActionTurnPlan`, `ActionTurnRunner`, `JournaledActionPipeline`, `AndroidMobileActionExecutor` |
+| `eval/` | Offline tool-emission fixtures and strict-decoder scoring; no runtime registration, admission, permission or effect dispatch | `ToolReliabilityFixtures`, `ToolReliabilityScorer`, `ToolCallRunner` (currently a fake-backed test seam) |
 | `memory/` | Memory policy, reviewed facts, source archives, SQLite/migration, retrieval and delivery validity | `ConversationMemory`, `MemoryOs`, `SQLiteMemoryStore`, `MemoryDeliveryFence` |
 | `diagnostics/` | Per-reply latency, production benchmark capture/journals/exports and bounded diagnostic evidence | `PipelineBenchmarks`, `ReplyCaptureBenchmark`, `PipelineBenchmarkCapture`, `AndroidPipelineBenchmarkStore`, `DiagnosticRecorder`, `ConversationMetricsExport` |
 | `presentation/` | Model setup operations through a narrow session port; durable download work identity | `ModelSetupOperations`, `ModelSetupContract` |

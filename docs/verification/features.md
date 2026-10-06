@@ -3112,3 +3112,78 @@ recorder replacement on profile changes, and live model-detail sample updates.
 Standalone Compose runs required test-only official AAR string resources; full
 packaged themes/resources and release shrinking still require hosted acceptance.
 These local results do not replace the next exact-head release gate.
+
+
+### Final tool-evaluation history reconciliation
+
+The final synchronization candidate also retains Muse commit
+`15f3dd6ca493de80b8aa3d66d8afbfe62f8f4003`, a direct descendant of `ca2550d7`.
+Its four added files provide 32 canonical fixtures covering all 14 native catalog
+tools, an exact strict-decoder scorer, a runner interface/fake, and eight JVM
+regressions. The commit message's fixture count was 33; the inspected source
+contains 32. No production runtime, UI, approval, executor or release-gate entry
+point uses this package yet. A passing score means fixture agreement after strict
+decoding, not source permission, current screen approval, successful device
+execution or demonstrated real-model accuracy. The runner comment now states that
+boundary accurately instead of assigning gating/dispatch to the scorer.
+
+All eight new tests pass against the current production decoder/catalog. The
+focused compile uses the exact extracted ActionRequest data carrier and full
+LocalModelEngine/decoder/catalog source, with no model weights or Android effect
+adapter. Real on-device model execution remains a later runner implementation;
+these fake-backed tests must not be reported as measured model reliability.
+Some fixtures are not ordinary-chat journeys: notification posting is scheduled-
+only in the catalog, fixed reminder times can be past, and equivalent URLs or
+tool choices intentionally fail exact comparison. A future real-model assessment
+must account for those contexts rather than treating every mismatch as a model
+failure. The common merged head still requires its exact signed release and
+five-profile gate.
+
+### Build 1100 retained failures and test-only repairs
+
+Build 1100 (`a49562b8`, tested merge `2d323740`) passed both signed builds and
+1,413 JVM tests in 213 suites, but did not pass the device gate or publish.
+Its real previous baseline was released Build 1098. API35 failed before candidate
+installation because startup memory initialization raced the seed's assumption
+that an empty disposable install has no database file. The observed maintenance
+worker and startup timing explain the race; a specific boot-receiver delivery was
+not logged. The seed now opens one SQLite write transaction and accepts only a
+pristine schema-0 database or the exact known empty schema-2 contract. It rejects
+unknown versions/objects/columns/indexes, nonpristine metadata and any retained
+memory/tombstone/source data. The identical fixture is inserted atomically without
+deleting or resetting a database. All 29 embedded temporary-database admission,
+preservation and concurrency checks pass using API35 native SQLite; the existing
+required seed journey also executes them. Phone-journal fixture bytes and
+candidate preservation assertions remain unchanged.
+
+The other profiles completed the real 1098 upgrade. Test47's popup was visibly
+open with Off, Moonshine and Whisper base.en, but its separate Compose window did
+not export child test tags as Android resource IDs. The journey now selects the
+exact visible next label, which differs from the anchor value and the prefixed
+recognizer buttons; actual taps, persisted choices, UI reopening and timeouts
+remain required. No production dropdown behavior changes.
+
+API30 also passed the old test64 credential predicate while an unlocked-padlock
+PIN bouncer still covered the app, causing later setup failures. Fold lost its
+active UI after the same phase; its black capture does not establish an identical
+visual cause. Cleanup now clears the known fixture PIN once, observes that the device is no longer secure, issues the existing
+dismissal once, and then observes unlocked state, the keyguard UI gone and the
+owned setup screen accessible. The original locked-action
+assertions remain, with stronger cleanup assertions. No keypad retry or action
+replay is introduced; all polling shares one 10-second cleanup deadline and
+the 900-second main-suite cap is unchanged. Framework calls retain their own
+platform timeouts. Exact hosted verification is still
+required for these framework/UI synchronization changes.
+
+Retained artifacts: API35 `11408554842`, ZIP SHA-256
+`87f002cd8cc371102dbdb082c51aa99bef337e66dad2e691c42864f59eb10083`;
+API36 phone `11410646085`,
+`9ea2e7f2bc6b32348068b5ac83a8f2e90b4630e509cab4c46429c8d14eaf3225`;
+actual16KB `11410841088`,
+`e6e5f49d6b4261085e7d2dc13aee7c4a603f9a27c239da0f80b48ccddf256598`;
+API30 `11411051165`,
+`91c67b536ccbd73a8800bfaa81c9279084e4bd9a5fa0a33d1398878d14af51e8`;
+Fold `11410457443`,
+`e56de1d0c17ab35cd86d0d2fcdfd303ceb3053fbde6930ca13e50b04657a6b9e`;
+failed receipt `11410002487`,
+`7607614dde4b5295fab83973b3e73ba39c2a904277d3c783655c02a1eb796efc`.
