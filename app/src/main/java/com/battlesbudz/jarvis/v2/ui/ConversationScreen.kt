@@ -67,6 +67,13 @@ internal fun ConversationScreen(
     val taskError by (phoneTaskError?.collectAsState() ?: remember { mutableStateOf<String?>(null) })
     var hadCall by remember { mutableStateOf(false) }
     var voiceVisible by rememberSaveable { mutableStateOf(false) }
+    // The End-call control must be available for the whole live session, not
+    // just the armed call segment. Effective visibility ORs the manual flag
+    // (voice button / Back) with the live-session signals, so a farewell
+    // (armed true->false) or a passive-listening segment never hides the
+    // surface while the session is alive. Derived synchronously (no
+    // LaunchedEffect race) so the control is never missing for a live call.
+    val effectiveVoiceVisible = voiceVisible || armed || sessionAlive
     var callStartRequest by rememberSaveable { mutableLongStateOf(0L) }
     var wasArmed by remember { mutableStateOf(armed) }
     var settings by remember { mutableStateOf(false) }
@@ -88,15 +95,17 @@ internal fun ConversationScreen(
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     fun showVoice() {
-        if (sending || inputBusy || voiceVisible) return
+        if (sending || inputBusy || effectiveVoiceVisible) return
         voiceVisible = true
         if (!armed) callStartRequest++
     }
-    BackHandler(enabled = voiceVisible && !settings && !showHistory) {
+    BackHandler(enabled = effectiveVoiceVisible && !settings && !showHistory) {
         // While the session is alive the voice surface IS the call: Back
         // never dismisses it — the End-call control is the way out. Without
         // a live session Back dismisses the pre-call surface as before.
-        if (!sessionAlive) voiceVisible = false
+        // (When armed, effective visibility keeps the bubble even though the
+        // manual flag clears.)
+        if (!sessionAlive && !armed) voiceVisible = false
     }
     LaunchedEffect(voiceState) {
         if (voiceState != VoiceSessionState.PASSIVE_LISTENING) hadCall = true
@@ -123,21 +132,19 @@ internal fun ConversationScreen(
         }
     }
     LaunchedEffect(armed) {
-        if (armed) voiceVisible = true
-        // An armed true->false transition is a call-segment change, not a
-        // session end: while the session is alive the surface stays so the
-        // End-call control remains reachable.
-        else if (wasArmed && !sessionAlive) voiceVisible = false
+        // An armed true->false transition with no live session ends the
+        // call: clear a stale manual open. (While armed or sessionAlive the
+        // effective visibility already keeps the surface.)
+        if (!armed && wasArmed && !sessionAlive) voiceVisible = false
         wasArmed = armed
     }
-    // The voice surface follows the live session. A farewell (or any armed
-    // true->false transition) must not hide it while the session is alive;
-    // only a true session end dismisses it.
+    // A true session end dismisses the surface; the manual flag must not
+    // outlive the session.
     LaunchedEffect(sessionAlive) {
-        if (sessionAlive) voiceVisible = true else voiceVisible = false
+        if (!sessionAlive && !armed) voiceVisible = false
     }
-    LaunchedEffect(voiceVisible) {
-        if (voiceVisible) {
+    LaunchedEffect(effectiveVoiceVisible) {
+        if (effectiveVoiceVisible) {
             focusManager.clearFocus(force = true)
             keyboard?.hide()
         }
@@ -170,14 +177,14 @@ internal fun ConversationScreen(
                     PhoneTaskPanel(taskJournal, thread.id, taskError, onPhoneTaskAction)
                 }
                 LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().testTag("conversation_transcript"),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = if (voiceVisible) 280.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = if (effectiveVoiceVisible) 280.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(thread.messages, key = { it.id }) { message ->
                         Surface(color = if (message.role == "You") MaterialTheme.colorScheme.secondaryContainer
                             else MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium) {
                             Column(Modifier.fillMaxWidth().padding(14.dp)) {
                                 Text(message.role + if (message.spoken) " · Spoken transcript" else "",
                                     style = MaterialTheme.typography.labelMedium)
-                                message.attachment?.let { ChatAttachmentPreview(it, playbackEnabled = !dictating && !armed && !voiceVisible) }
+                                message.attachment?.let { ChatAttachmentPreview(it, playbackEnabled = !dictating && !armed && !effectiveVoiceVisible) }
                                 SelectionContainer {
                                     Text(message.text.ifBlank { if (sending) "Thinking…" else "No reply was saved." },
                                         fontStyle = if (message.spoken) FontStyle.Italic else FontStyle.Normal,
@@ -220,7 +227,7 @@ internal fun ConversationScreen(
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp))
 
                 key(thread.id) {
-                    ChatVoiceInput(enabled = !sending && !voiceVisible && !armed && !preparingAttachment,
+                    ChatVoiceInput(enabled = !sending && !effectiveVoiceVisible && !armed && !preparingAttachment,
                         canSendAudio = selectedModel.supportsAudio && pendingAttachment == null,
                         audioUnavailableReason = if (!selectedModel.supportsAudio) "This model accepts text only. Use Stop to transcribe."
                             else if (pendingAttachment != null) "Remove the existing attachment to send audio." else null,
@@ -249,10 +256,10 @@ internal fun ConversationScreen(
                         Row(Modifier.fillMaxWidth().imePadding().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             OutlinedTextField(value = draft, onValueChange = { draft = it }, placeholder = { Text("Message Jarvis") },
-                                modifier = Modifier.weight(1f).testTag("chat_composer"), maxLines = 5, enabled = !sending && !inputBusy && (!voiceVisible || armed),
+                                modifier = Modifier.weight(1f).testTag("chat_composer"), maxLines = 5, enabled = !sending && !inputBusy && (!effectiveVoiceVisible || armed),
                                 shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp), trailingIcon = voiceButton,
                                 leadingIcon = if (!armed && selectedModel.supportsVision) { {
-                                    ChatAttachmentPicker(selectedModel, enabled = !sending && !voiceVisible && !inputBusy,
+                                    ChatAttachmentPicker(selectedModel, enabled = !sending && !effectiveVoiceVisible && !inputBusy,
                                         onBusy = { preparingAttachment = it }, onError = { error = it }, onPrepared = { attached ->
                                             pendingAttachment?.let { ChatMediaStore.discard(context, it) }
                                             pendingKind = attached.kind; pendingUri = attached.uri; error = null
@@ -261,12 +268,12 @@ internal fun ConversationScreen(
                             IconButton(enabled = !sending && !inputBusy, onClick = { showVoice() },
                                 modifier = Modifier.testTag("voice_call_open")) {
                                 ComposerIcon(com.battlesbudz.jarvis.v2.R.drawable.ic_composer_call,
-                                    if (voiceVisible) "Show voice call" else "Start voice call")
+                                    if (effectiveVoiceVisible) "Show voice call" else "Start voice call")
                             }
                             val canSend = if (armed) draft.isNotBlank() && pendingAttachment == null
                             else (draft.isNotBlank() || pendingAttachment != null) &&
                                 (pendingAttachment == null || AttachmentPolicy.accepts(selectedModel, pendingAttachment.kind))
-                            FilledIconButton(enabled = canSend && !sending && !inputBusy && (!voiceVisible || armed), onClick = {
+                            FilledIconButton(enabled = canSend && !sending && !inputBusy && (!effectiveVoiceVisible || armed), onClick = {
                                 error = onSend(draft, if (armed) null else pendingAttachment)
                                 if (error == null) { draft = ""; pendingUri = null }
                             }, modifier = Modifier.testTag("chat_send")) {
@@ -277,7 +284,7 @@ internal fun ConversationScreen(
                 }
             }
             // Keep the voice controller and shared Settings alive in both modes.
-                voiceContent(voiceVisible, settings, { settings = false }, callStartRequest)
+                voiceContent(effectiveVoiceVisible, settings, { settings = false }, callStartRequest)
         }
     }
     if (showHistory) AlertDialog(onDismissRequest = { showHistory = false }, title = { Text("Conversations") },
