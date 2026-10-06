@@ -201,7 +201,7 @@ internal fun ModelSelectionSection(
             Text(it, style = MaterialTheme.typography.bodySmall)
         }
         Text(
-            "Runs 33 prompts per installed tool-capable model and scores tool-call accuracy. Takes several minutes; keep the app open.",
+            "Runs 32 prompts per installed tool-capable model and scores tool-call accuracy. Takes several minutes; keep the app open.",
             style = MaterialTheme.typography.bodySmall
         )
         state.selectionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
