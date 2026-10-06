@@ -964,14 +964,17 @@ class SoftwareSession:
                      timeout=remaining(deadline, self.now))
             wait_for_unlock(self.adb, lambda: self.emulator.poll() is None, deadline, now=self.now,
                             record=lambda raw: (self.diagnostics / "unlock-state.txt").write_text(raw))
+            # Apply the same required settings before waiting for boot receivers,
+            # so their work need not follow broadcast completion. This is not
+            # boot proof; every subsequent readiness gate still runs.
+            for setting in ("window_animation_scale", "transition_animation_scale", "animator_duration_scale"):
+                self.adb("shell", "settings", "put", "global", setting, "0.0",
+                         deadline=deadline, check=True, timeout=30)
             self.report["boot_broadcast"] = wait_for_boot_broadcast(
                 self.adb, lambda: self.emulator.poll() is None, deadline, now=self.now,
                 record=self.record_boot_broadcast,
                 log_reader=lambda deadline: read_native_boot_log(
                     self.diagnostics / "guest-startup-logcat.txt", deadline=deadline, now=self.now))
-            for setting in ("window_animation_scale", "transition_animation_scale", "animator_duration_scale"):
-                self.adb("shell", "settings", "put", "global", setting, "0.0",
-                         deadline=deadline, check=True, timeout=30)
             self.wait_ready(deadline)
             self.require_display(deadline)
             self.require_startup_ui(deadline)

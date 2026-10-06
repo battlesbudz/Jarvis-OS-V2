@@ -53,7 +53,11 @@ commits. Do not create or merge another PR without Justin's permission.
    output and guest logcat, and requires the boot flag, input/activity/package/
    window services, successful unlock and actual user0 BOOT_COMPLETED delivery
    for the current system_server before invoking the same full release
-   controller. Completion is read live from a bounded 256 KiB complete-line tail
+   controller. The three required zero-animation settings are checked after
+   successful unlock and before waiting for boot receivers, so they need not
+   run serially after broadcast delivery. Their existing command caps and the
+   shared boot deadline remain unchanged; these writes are not readiness proof.
+   Completion is read live from a bounded 256 KiB complete-line tail
    of that launch's native guest log. A local candidate scan avoids repeatedly
    launching guest PID probes while that completion marker is absent. A candidate
    alone cannot authorize readiness: the log is read again between fresh matching

@@ -1467,7 +1467,8 @@ class SoftwareSessionTest(unittest.TestCase):
 
             def adb(*args, deadline, **kwargs):
                 deadlines.append(deadline)
-                operations.append("settings" if "settings" in args else "display" if "wm" in args else args[0])
+                operations.append("settings" if "settings" in args else "display" if "wm" in args
+                                  else "unlock" if "dumpsys" in args else args[0])
                 if "input" in args:
                     self.assertEqual(99, kwargs["timeout"], "Resource receipts consume the existing boot budget")
                 if "settings" in args:
@@ -1499,13 +1500,95 @@ class SoftwareSessionTest(unittest.TestCase):
             self.assertEqual(279, session.report["boot_broadcast"]["system_server_pid"])
             self.assertNotIn("logcat", operations, "Native capture avoids repeated guest log downloads")
             completed = operations.index("boot-completed")
-            self.assertLess(completed, operations.index("settings"))
+            settings = [index for index, operation in enumerate(operations) if operation == "settings"]
+            self.assertEqual(3, len(settings))
+            self.assertLess(operations.index("unlock"), settings[0])
+            self.assertLess(settings[-1], completed)
             self.assertLess(completed, len(operations) - 1 - operations[::-1].index("services"))
             self.assertLess(completed, operations.index("display"))
             calls = [json.loads(line) for line in (session.diagnostics / "boot-broadcast.jsonl").read_text().splitlines()]
             self.assertTrue(calls[-1]["completed"])
 
-    def test_boot_delivery_timeout_retains_receipts_and_never_reaches_settings_or_controller(self):
+    def test_each_early_setting_failure_or_expiry_blocks_later_gates_and_retains_teardown_evidence(self):
+        settings = ("window_animation_scale", "transition_animation_scale", "animator_duration_scale")
+        for index, setting in enumerate(settings):
+            for mode in ("failed", "expired"):
+                with self.subTest(setting=setting, mode=mode), tempfile.TemporaryDirectory() as temporary:
+                    clock, commands = Clock(), []
+                    session = SoftwareSession(PROFILE, Path(temporary) / "evidence", "/sdk", now=clock.now)
+                    emulator = Mock(pid=12345, poll=Mock(return_value=None), returncode=-15)
+                    argv = ["software_emulator.py", "--profile", PROFILE["id"], "--out", str(session.out),
+                            "--", "controller"]
+
+                    def ready(deadline):
+                        self.assertEqual(900, deadline)
+                        clock.seconds = 899 - index if mode == "expired" else 800
+
+                    def run(command, **kwargs):
+                        commands.append(command)
+                        self.assertEqual(["/sdk/platform-tools/adb", "-s", "emulator-5554"], command[:3],
+                                         "A failed early setting must never admit the controller")
+                        args = command[3:]
+                        if "settings" in args:
+                            self.assertEqual(["shell", "settings", "put", "global"], args[:4])
+                            self.assertEqual("0.0", args[-1])
+                            if args[-2] == setting:
+                                self.assertEqual(1 if mode == "expired" else 30, kwargs["timeout"])
+                                if mode == "expired":
+                                    clock.pause(kwargs["timeout"])
+                                    raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+                                return subprocess.CompletedProcess(command, 17, "", "Setting write rejected")
+                            clock.pause(1)
+                        return reply(UNLOCKED if args == ["shell", "dumpsys", "activity", "activities"]
+                                     else "retained final diagnostics")
+
+                    def capture(command, path, **kwargs):
+                        self.assertTrue(session.boot_failed)
+                        self.assertEqual("failed", session.report["status"])
+                        self.assertEqual(clock.now() + 10, kwargs["deadline"])
+                        path.write_text("retained DropBox evidence")
+                        return {"status": "completed", "bytes": path.stat().st_size, "exit_code": 0}
+
+                    with patch("software_emulator.sys.argv", argv), \
+                            patch.dict("software_emulator.os.environ", {"ANDROID_HOME": "/sdk"}), \
+                            patch("software_emulator.require_software_profile"), \
+                            patch("software_emulator.SoftwareSession", return_value=session), \
+                            patch.object(session, "provision"), patch.object(session, "capture_host_resources"), \
+                            patch.object(session, "wait_ready", side_effect=ready) as readiness, \
+                            patch("software_emulator.wait_for_boot_broadcast") as broadcast, \
+                            patch.object(session, "require_display") as display, \
+                            patch.object(session, "require_startup_ui") as startup_ui, \
+                            patch("software_emulator.capture_bounded_output", side_effect=capture) as dropbox, \
+                            patch("software_emulator.subprocess.Popen", return_value=emulator), \
+                            patch("software_emulator.subprocess.run", side_effect=run), \
+                            patch("software_emulator.os.killpg") as kill:
+                        self.assertEqual(1, main())
+                    readiness.assert_called_once_with(900)
+                    broadcast.assert_not_called()
+                    display.assert_not_called()
+                    startup_ui.assert_not_called()
+                    self.assertEqual(list(settings[:index + 1]),
+                                     [command[-2] for command in commands if "settings" in command])
+                    self.assertEqual(2, dropbox.call_count)
+                    kill.assert_called_once_with(12345, 15)
+                    emulator.wait.assert_called_once_with(timeout=10)
+                    self.assertFalse(session.avd_home.exists())
+                    if mode == "expired":
+                        self.assertEqual(900, clock.now(), "Early settings cannot renew the boot budget")
+                    evidence = session.out / "software-emulator"
+                    report = json.loads((evidence / "startup.json").read_text())
+                    self.assertFalse(report["passed"])
+                    self.assertEqual("failed", report["status"])
+                    self.assertEqual(1, len(report["errors"]))
+                    self.assertIn(f"Command failed ({124 if mode == 'expired' else 17})", report["errors"][0])
+                    self.assertIn(setting, report["errors"][0])
+                    self.assertEqual(["completed", "completed"],
+                                     [receipt["status"] for receipt in report["failed_boot_dropbox"]])
+                    self.assertEqual(2, len(list(evidence.glob("dropbox-*.txt"))))
+                    self.assertTrue((evidence / "commands.jsonl").is_file())
+                    self.assertTrue((evidence / "emulator-stdout.txt").is_file())
+
+    def test_boot_delivery_timeout_after_early_settings_never_reaches_display_or_controller(self):
         clock, commands = Clock(), []
         with tempfile.TemporaryDirectory() as temporary:
             session = SoftwareSession(PROFILE, Path(temporary) / "evidence", "/sdk", now=clock.now)
@@ -1539,7 +1622,11 @@ class SoftwareSessionTest(unittest.TestCase):
             self.assertEqual(900, clock.now())
             self.assertEqual("booting", session.report["status"])
             self.assertFalse(session.report["passed"])
-            self.assertFalse(any("settings" in command or "wm" in command for command in commands))
+            self.assertEqual([("shell", "settings", "put", "global", name, "0.0")
+                              for name in ("window_animation_scale", "transition_animation_scale",
+                                           "animator_duration_scale")],
+                             [command for command in commands if "settings" in command])
+            self.assertFalse(any("wm" in command for command in commands))
             self.assertFalse(session.out.exists(), "Controller cannot be started after failed boot delivery")
             with patch.object(session, "adb", return_value=reply("raw final diagnostics")), \
                     patch("software_emulator.os.killpg"):

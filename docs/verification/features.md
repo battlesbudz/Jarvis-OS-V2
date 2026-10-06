@@ -167,6 +167,84 @@ stale-node reacquisition, bounded diagnostic failures and late-observation rejec
 These are helper checks, not a fresh Android pass. The complete exact-revision
 gate remains required.
 
+### Build 1038 fresh accessibility observations and retained runtime failures
+
+[Build 1038](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37395119386)
+tests head `a81ece1f70b4318e13c8f0a9c01847b45254531e`, merge
+`640f5f75a308de89c39d5fddb9cf2ef1f61e8ecf`. Both signed APK variants, 1,032
+release JVM tests (zero failures/errors/skips), 243 helpers, recorded speech and
+native checks pass. API 30,
+API 35 compact, API 36 phone and API 36 Pixel Fold pass their complete profiles.
+The overall run and its unchanged failed-profile retry remain failed.
+
+API 30 artifact `11383590310`, ZIP SHA-256
+`0306f07e1cb5145f015c710922941442571f393017bd6ccec76120b0b2d4e768`, directly
+confirms the observation correction. After Resume, the cached subtree retains
+`Resume microphone` and the play glyph; the fresh same package-owned
+`voice_call_pause` button exposes exact `Pause microphone` description and
+spoken name, with 4,930 ms remaining in the unchanged 5,000 ms budget. The
+preceding pause check leaves 4,493 ms. Exactly one tap occurs per toggle, and
+all existing action, 48 dp and on-screen assertions pass, along with all 50
+main and four layout methods. This establishes correct freshly queried data,
+not TalkBack event-delivery timing.
+
+API 29 first observes current-process user0 BOOT_COMPLETED, but exhausts the
+original boot deadline during final display verification before app tests.
+First artifact `11383921159`, ZIP SHA-256
+`7b885833d351854db78d39c69c1bbf441e68b2e29cf4e0a9b408ec53d925b3dc`, retains
+that late boot delivery. Its unchanged retry instead has two UI-thread watchdog restarts and no boot
+completion; both bounded DropBox queries time out. Retry artifact `11383948994`,
+ZIP SHA-256 `b46602f77acf3de272cf1b428d09338224c1629dc84499e5866076e6e9e2983d`,
+retains that incomplete startup and cannot authorize release.
+
+API 35 with 16 KB pages first suffers Android `system_server` SIGSEGV in
+`NetworkPolicyManagerService.setUidFirewallRuleUL` during APK upgrade, before
+main app tests. First artifact `11383163609`, ZIP SHA-256
+`ad5ea50df5aad3cb1ea1aaf54f7be1079d855874abd5f5ff50006b3b307533b7`, retains
+that platform crash. Its retry passes upgrade and tests 1–23, then Jarvis receives
+SIGSEGV while opening the existing memory-organizing dialog in test24. The
+current R8 mapping resolves the top JIT method to Compose UI 1.7.6
+`LayoutNodeDrawScope.drawDirect`, followed by `NodeCoordinator` drawing. The
+fixture mounts `MemoryScreen` alone, with Wisp absent. Independent GMS crashes
+in ART `NterpGetShorty` and `ReferenceQueueDaemon` precede it on the same image.
+These cross-process failures make runtime/image instability the leading
+hypothesis, but neither establish a shared root cause nor exclude every
+app/Compose/runtime interaction. The native JIT offset does not identify the
+precise failed object or Kotlin line. No speculative app change, JIT/GC toggle,
+keep rule or waived assertion follows from this evidence. Retry artifact
+`11383833940`, ZIP SHA-256
+`9eb4e140979879cb8ee290332b58d786c3e400371d7bc99128b00d9e9a80a860`, and R8
+artifact `11382858416`, ZIP SHA-256
+`52d77b4f233525e333815b449029b1347c456494c14e6173613ed13a8e7846e0`, retain the
+diagnosis. Later tests did not run; the exact same normal APK passes all 50
+main tests on API 30. The failed 16 KB gate remains required.
+
+### API 29 startup settings ordering
+
+Build 1038's retained startup receipts observed the actual user0 boot-completion
+candidate at 852.595 seconds of the original 900-second boot budget. The two
+fresh system-server PID probes then consumed 18.633 seconds, and the three
+already-required animation writes consumed another 15.322 seconds. Final
+readiness and physical-display verification exhausted the remaining budget
+before startup-UI verification could begin. These are command wall times, not
+measured recoverable CPU.
+
+The launcher now performs those same three checked writes after successful
+unlock and before waiting for real BOOT_COMPLETED delivery. This may overlap
+their work with the observed receiver-draining interval, reducing the serial
+work after delivery by about 15 seconds on that run's timings. Earlier guest
+contention could offset the gain; this does not establish a boot cure or enough
+headroom for the guarded startup-UI check. Each 30-second command cap, the
+original 900-second shared boot budget, current-PID/native-log proof, final
+readiness, physical display, guarded UI recovery, failure diagnostics and full
+release controller remain unchanged. Failed or expired settings still block
+all later admission and retain teardown evidence. Exact-head hosted validation
+is required before claiming any startup improvement or verified release.
+
+Local combined verification passes the architecture guard and all 244 Python
+helpers, including failure/expiry at each of the three early settings. No
+production app, Wisp visual or acceptance threshold changes in this revision.
+
 ## API 29 graphics boot loop — October 5, 2026
 
 [Build 986](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37236069164)
