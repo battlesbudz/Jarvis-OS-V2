@@ -8,8 +8,9 @@ package com.battlesbudz.jarvis.v2.actions
  * Four states, never conflated:
  * - local refusal: Jarvis never asked Android to launch anything because no
  *   supported route was established;
- * - submitted request: the launch was handed to the platform (the
- *   selected-assistant binding's own receipt);
+ * - submitted request: the launch was handed to the platform, but the
+ *   destination was never observed in the foreground — reported as unknown
+ *   completion, never as success;
  * - platform rejection: startActivity threw (ActivityNotFound,
  *   SecurityException);
  * - observed foreground transition: the destination package was seen in the
@@ -66,9 +67,20 @@ fun backgroundLaunchRefusal(label: String): ExecutionResult =
     )
 
 /**
- * Receipt for a launch that reached the platform. Success requires the
- * destination to be observed in the foreground — a submitted request alone
- * is reported honestly as unconfirmed.
+ * Receipt for a launch that reached the platform. The four outcomes stay
+ * distinct end to end:
+ * - platform rejection -> FAILED: Android threw;
+ * - observed foreground transition -> SUCCEEDED: the destination was
+ *   actually seen in the foreground, the only verified launch;
+ * - submitted without observation -> UNKNOWN_COMPLETION: the request was
+ *   handed to Android, but opening could not be confirmed. Journals record
+ *   this as unknown outcome, workflows stop without repeating it, and later
+ *   steps never inherit its success.
+ *
+ * A submitted request is never promoted to a verified launch. Callers that
+ * can observe the destination (e.g. instrumentation via UiDevice) pass
+ * foregroundObserved = true; production paths that cannot observe leave it
+ * false and report honestly.
  */
 fun verifiedLaunchReceipt(
     label: String,
@@ -77,11 +89,42 @@ fun verifiedLaunchReceipt(
     foregroundObserved: Boolean = false
 ): ExecutionResult {
     if (platformError != null) {
-        return ExecutionResult(false, "Could not open $label: $platformError")
+        return ExecutionResult(
+            ExecutionResult.Outcome.FAILED,
+            "Could not open $label: $platformError"
+        )
     }
-    // A submitted request is a successful launch action: Android accepted it.
-    // "Opening" describes the requested action, not a verified outcome — the
-    // diagnostics (result=submitted vs result=foreground_observed) carry the
-    // observation distinction. Only a platform rejection fails here.
-    return ExecutionResult(true, "Opening $label.")
+    if (foregroundObserved) {
+        // The destination was actually seen in the foreground after the
+        // request: the only state that counts as a verified launch.
+        return ExecutionResult(ExecutionResult.Outcome.SUCCEEDED, "Opened $label.")
+    }
+    // No platform error, but the destination was never observed. The request
+    // was handed to Android; whether it opened is unknown. This must not
+    // read as success anywhere: the journal, the workflow engine and the
+    // user report each treat unknown completion as unconfirmed.
+    return ExecutionResult(
+        ExecutionResult.Outcome.UNKNOWN_COMPLETION,
+        "The launch request for $label was sent, but opening could not be confirmed."
+    )
 }
+
+/**
+ * Selected-assistant route receipt. The assistant binding's startActivity
+ * cannot observe the destination either, so it follows the same contract:
+ * a handed-off request is submitted/unverified, a throw is a platform
+ * rejection. JVM-pure so the contract is unit-tested; the service delegates
+ * to these.
+ */
+fun assistantSubmittedLaunchReceipt(label: String): ExecutionResult =
+    ExecutionResult(
+        ExecutionResult.Outcome.UNKNOWN_COMPLETION,
+        "The launch request for $label was sent through the Jarvis assistant, " +
+            "but opening could not be confirmed."
+    )
+
+fun assistantRejectedLaunchReceipt(label: String, error: String): ExecutionResult =
+    ExecutionResult(
+        ExecutionResult.Outcome.FAILED,
+        "Android rejected the assistant launch of $label: $error"
+    )
