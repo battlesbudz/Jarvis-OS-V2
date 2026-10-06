@@ -28,6 +28,7 @@ class UpgradeVerificationTest {
         assertEquals(listOf("Upgrade fixture: keep my conversation", "Upgrade fixture reply"), history.current.value.messages.map { it.text })
         assertEquals("Gemma-4-E2B-it", ModelStore(context).selectedModel().id)
         assertEquals(VoiceInputMode.GEMMA_AUDIO, VoiceInputMode.selected(context))
+        assertNull(VoiceInputMode.captionEngine(context))
         assertFalse(VoiceInputMode.captions(context))
         val bytes = ByteArray(4097) { (it % 251).toByte() }
         val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }

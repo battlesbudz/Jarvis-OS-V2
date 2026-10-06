@@ -3,11 +3,13 @@ package com.battlesbudz.jarvis.v2.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import com.battlesbudz.jarvis.v2.voice.LiveCallAudioEvidence
 import kotlinx.coroutines.*
+import java.io.OutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -19,7 +21,7 @@ internal data class CallEvidenceActions(
     val snapshot: () -> CallEvidenceSnapshot,
 )
 
-/** Snapshot the latest call before opening the document picker. One ZIP per phone test. */
+/** Snapshot the latest call report and optional bounded audio sample before opening the document picker. */
 @Composable
 internal fun CallEvidenceExport(actions: CallEvidenceActions, enabled: Boolean) {
     val context = LocalContext.current
@@ -35,37 +37,54 @@ internal fun CallEvidenceExport(actions: CallEvidenceActions, enabled: Boolean) 
         if (uri != null && report != null) scope.launch {
             try {
                 withContext(Dispatchers.IO) {
-                    ZipOutputStream(checkNotNull(context.contentResolver.openOutputStream(uri))).use { zip ->
-                        zip.putNextEntry(ZipEntry("report.txt"))
-                        zip.write(report.toByteArray(Charsets.UTF_8))
-                        zip.closeEntry()
-                        if (audio != null) {
-                            zip.putNextEntry(ZipEntry("audio-evidence.txt"))
-                            zip.write(audio.report.toByteArray(Charsets.UTF_8)); zip.closeEntry()
-                            audio.files.forEach { (name, bytes) ->
-                                zip.putNextEntry(ZipEntry(name)); zip.write(bytes); zip.closeEntry()
-                            }
-                        }
-                    }
+                    writeCallEvidenceZip(CallEvidenceSnapshot(report, audio),
+                        checkNotNull(context.contentResolver.openOutputStream(uri)))
                 }
                 status = "Call test ZIP saved."
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { status = "Save failed: ${error.message}" }
         }
     }
+    Text("Diagnostic audio is off by default. Recording retains a bounded sample in memory, including nearby speech: up to 800 KB per stream and 4 MB total. Older audio may be dropped; this is not a whole-call recording. Audio is only written to a file when you export.", style = MaterialTheme.typography.bodySmall)
     TextButton(enabled = enabled, onClick = {
         actions.armAudio()
-        status = "Next call will retain a short audio sample in memory, including nearby speech. Export it with the call ZIP after ending the call."
+        pending = null
+        pendingAudio = null
+        status = "The next call will retain a bounded audio sample in memory. Export it after ending the call."
     }) { Text("Record next call audio for diagnosis") }
     TextButton(enabled = enabled, onClick = {
         actions.clearAudio()
+        pending = null
+        pendingAudio = null
         status = "Diagnostic audio cleared; recording disarmed."
     }) { Text("Clear diagnostic audio") }
     TextButton(enabled = enabled, onClick = {
         val snapshot = actions.snapshot()
         pendingAudio = snapshot.audio
         pending = snapshot.report
-        save.launch("jarvis-call-echo-${System.currentTimeMillis()}.zip")
+        try {
+            save.launch("jarvis-call-echo-${System.currentTimeMillis()}.zip")
+        } catch (error: Exception) {
+            pending = null
+            pendingAudio = null
+            status = "Save failed: ${error.message}"
+        }
     }) { Text("Save latest call test ZIP") }
     if (status.isNotEmpty()) Text(status)
+}
+
+/** The export contains only the frozen, explicitly requested sample, never an implicit recording. */
+internal fun writeCallEvidenceZip(snapshot: CallEvidenceSnapshot, output: OutputStream) {
+    ZipOutputStream(output).use { zip ->
+        zip.putNextEntry(ZipEntry("report.txt"))
+        zip.write(snapshot.report.toByteArray(Charsets.UTF_8))
+        zip.closeEntry()
+        snapshot.audio?.let { audio ->
+            zip.putNextEntry(ZipEntry("audio-evidence.txt"))
+            zip.write(audio.report.toByteArray(Charsets.UTF_8)); zip.closeEntry()
+            audio.files.forEach { (name, bytes) ->
+                zip.putNextEntry(ZipEntry(name)); zip.write(bytes); zip.closeEntry()
+            }
+        }
+    }
 }

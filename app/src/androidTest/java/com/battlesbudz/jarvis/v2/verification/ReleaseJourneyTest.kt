@@ -1552,13 +1552,12 @@ class ReleaseJourneyTest {
                         },
                         initialVoiceCalls = emptyList(), onRunModelSmokeTest = { done -> done("Ready-state fixture") },
                         onVoiceTurn = { _, _, _, done -> done("Voice is disabled in this route fixture.") },
-                        onWakeTest = { _, done -> done() }, onStopWakeTest = {},
                         onEndVoiceCall = { done -> ends.incrementAndGet(); done("") },
                         onResumeVoiceCall = { _, done -> done(null) }, onDeleteVoiceCall = {}, onRefreshVoiceCalls = { emptyList() },
                         onDownloadGemma = { _, _, _, done -> done("Downloads are disabled in this route fixture.") },
                         onCancelModelDownload = {},
                         onImportModel = { _, _, done -> done("Imports are disabled in this route fixture.") },
-                        onCopyDiagnostics = {}, onExportSpeechAudio = {},
+                        onCopyDiagnostics = {},
                     )
                 } }
             } }
@@ -1936,6 +1935,7 @@ class ReleaseJourneyTest {
                     phone = com.battlesbudz.jarvis.v2.ai.PhoneProfile("Release fixture", "Fixture", "Fixture",
                         12_000_000_000L, 8_000_000_000L, 20_000_000_000L, true),
                     selectedId = selectedId, isInstalled = { it.id == selectedId },
+                    benchmarkStore = AndroidPipelineBenchmarkStore(context),
                     onSelect = { choices.incrementAndGet(); null },
                     onDismiss = { dismissals.incrementAndGet() },
                     onDownload = { requested.set(it.id) })
@@ -3065,7 +3065,7 @@ class ReleaseJourneyTest {
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     @Test fun test47_audioInputChoiceAndDisplayCaptionTogglePersistWithoutLoadingModels() {
         val originalMode = VoiceInputMode.selected(context)
-        val originalCaptions = VoiceInputMode.captions(context)
+        val originalEngine = VoiceInputMode.captionEngine(context)
         fun render() {
             activity.onActivity { host -> host.setContent {
                 MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
@@ -3078,21 +3078,29 @@ class ReleaseJourneyTest {
         }
         try {
             VoiceInputMode.select(context, VoiceInputMode.TRANSCRIBED_TEXT)
-            VoiceInputMode.captions(context, true)
+            VoiceInputMode.captionEngine(context, null)
             render()
             find(By.text("Use Gemma audio understanding")).click()
             assertEquals(VoiceInputMode.GEMMA_AUDIO, VoiceInputMode.selected(context))
-            find(By.res("gemma_whisper_captions")).click()
+            assertNotNull(find(By.textContains("Captions are display-only")))
+            assertNotNull(find(By.text("Off")))
+            // Exercise the actual dropdown and rebuild the UI for each persisted choice.
+            for ((tag, engine) in listOf("moonshine" to AsrEngine.MOONSHINE,
+                "whisper" to AsrEngine.WHISPER, "off" to null)) {
+                find(By.res("gemma_caption_engine")).click()
+                find(By.res("gemma_caption_$tag")).click()
+                assertEquals(engine, VoiceInputMode.captionEngine(context))
+                render()
+                assertNotNull(find(By.text(engine?.label ?: "Off")))
+            }
             assertFalse(VoiceInputMode.captions(context))
-            render()
-            assertFalse(find(By.res("gemma_whisper_captions")).isChecked)
-            assertNotNull(find(By.textContains("Whisper captions are display-only")))
             captureEvidence("gemma_audio_display_caption_settings")
             find(By.text("Use Speech recognition")).click()
             assertEquals(VoiceInputMode.TRANSCRIBED_TEXT, VoiceInputMode.selected(context))
+            assertNull(VoiceInputMode.captionEngine(context))
         } finally {
             VoiceInputMode.select(context, originalMode)
-            VoiceInputMode.captions(context, originalCaptions)
+            VoiceInputMode.captionEngine(context, originalEngine)
         }
     }
 
@@ -4019,12 +4027,13 @@ class ReleaseJourneyTest {
             // Unlock through the PIN pad: the keyguard UI does not refresh
             // a locksettings clear issued while it is showing, so enter the
             // PIN first, then clear it. The bouncer needs a swipe to reveal.
+            val cleanupDeadline = android.os.SystemClock.uptimeMillis() + 10_000
             device.wakeUp()
             runCatching {
                 device.swipe(device.displayWidth / 2, device.displayHeight * 4 / 5,
                     device.displayWidth / 2, device.displayHeight / 5, 20)
                 device.waitForIdle()
-                val digitDeadline = android.os.SystemClock.uptimeMillis() + 10_000
+                val digitDeadline = cleanupDeadline
                 var digit: UiObject2? = null
                 while (digit == null && android.os.SystemClock.uptimeMillis() < digitDeadline) {
                     digit = device.findObject(By.desc("1"))
@@ -4042,6 +4051,11 @@ class ReleaseJourneyTest {
             runCatching { device.executeShellCommand("locksettings clear --old 1234") }
             device.wakeUp()
             runCatching { device.executeShellCommand("wm dismiss-keyguard") }
+            // Keyguard exit is asynchronous. Reuse this cleanup's fixed deadline
+            // rather than repeating PIN submission, effects or extending the suite.
+            while (keyguard?.isDeviceLocked == true && android.os.SystemClock.uptimeMillis() < cleanupDeadline) {
+                Thread.sleep(100)
+            }
         }
         assertFalse("PIN must be cleared so later journeys run unlocked",
             keyguard?.isDeviceLocked == true)

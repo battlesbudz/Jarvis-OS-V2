@@ -3030,3 +3030,85 @@ Phone and Fold Wisp public-progress/idle PNGs were visually inspected: the activ
 line fits below Wisp while busy and is absent while idle. These are controlled
 progress fixtures and remain candidate evidence, not a fully verified release.
 The next repaired head must pass the complete unchanged five-profile gate.
+
+### Shared audio/Muse head reconciliation (October 6)
+
+The follow-on integration includes the five Muse commits through
+`ca2550d733c69813a39fe4643335778cd95de711`, descending from the previously merged
+`9f965bad`. Both histories are retained by a real two-parent merge. The only
+textual conflict was in the app composition: retain the single conversation/Wisp
+frame and activity observer while adapting the simplified settings signatures.
+The audio branch's five required profiles, Android 11 minimum, actual 16 KB test,
+76 named journeys, 900-second main deadline and all action-safety fixes remain.
+
+Reconciliation preserves existing user choices rather than silently adopting
+newer settings defaults:
+
+- Keep the opt-in keyboard microphone handoff service registered, matching its
+  still-visible setup control. This does not enable accessibility automatically.
+- Keep both persisted microphone processing profiles and recorder-identity
+  behavior. The new caption dropdown offers Off, Moonshine and Whisper. Existing
+  Whisper/on and Off choices migrate; an Off selection made by an older APK is
+  respected when returning to this version. Selecting an engine synchronizes the
+  legacy Boolean. Off continues to avoid caption-recognizer loading; captions
+  remain display-only and never authorize phone actions.
+- Audio evidence remains opt-in, bounded in memory, and explicitly clearable.
+  Exports identify truncation and fixed limits instead of claiming a whole-call
+  recording. The existing per-stream/total/event limits are not expanded.
+- Compact model details distinguish observed first-token latency from estimated
+  decode throughput, show metric-specific sample counts and update from the
+  observed sample flow. Compatibility warnings and optional publisher/resource
+  evidence remain available; opening or dismissing details does not select a
+  different model.
+
+The real Android caption journey keeps its established test/evidence names and
+now operates every dropdown choice through UI before rebuilding the screen.
+Upgrade verification continues to require the previous APK's persisted Off
+choice. Focused JVM and Compose regressions cover migration, retained controls,
+bounded recording, empty/populated/live model samples and dismissal behavior.
+Their exact results and the full signed/device gate must be verified before this
+combined head is considered released.
+
+Build 1098 attempt 1 retained two additional failures: API35's stock Pixel
+Launcher ANR modal blocked all main-test setup; Fold passed its actual locked
+battery/sensitive-action checks but sampled keyguard state immediately after
+asynchronous PIN cleanup. Logs show successful credential removal, keyguard exit
+and subsequent unlocked state. The unchanged retry retains that failed evidence;
+no passing status is inferred from the diagnosis. This follow-on candidate also
+waits for the same unlocked condition using the existing fixed cleanup deadline,
+then keeps the original assertion. It repeats no PIN submission or action and
+does not extend the main-suite budget. API35 attempt-1 artifact `11405113553`, ZIP
+SHA-256 `93e6d6f9865e1ae7562d2a473e875c7458481ecad70f0e20af474b0b269d02e8`;
+Fold `11406388122`,
+`c0ceaf954e7f2dad61d0248a53c32c6af60d091ea13b26d44ed3ad0c6f43b7c5`;
+receipt `11406952952`,
+`d31d6f11ab6fd944feed52ceb23c34cb3da758db37c73437826b296dcec52be5`.
+
+Build 1098 is now the verified numbered release baseline:
+[release](https://github.com/battlesbudz/Jarvis-OS-V2/releases/tag/audio-pr2-pr6-build.1098),
+[run](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37447496353).
+Head `ee2128c0dc620bd8429722364b78df2ec0616936`, tested merge
+`f4f373aeba492e91726c41769c21c46d0a7939e2`. Attempt 2 finished successfully with
+1,385 JVM tests in 208 suites, both signed variants, all five profiles' 76 main
+journeys, 1086→1098 upgrades, lifecycle, layout/fold and native-loading phases.
+The receipt explicitly selects the passing retry artifacts for API35/Fold and
+the three original passing profiles; it does not substitute failed reports.
+Receipt artifact `11408046743`, ZIP SHA-256
+`1bd2b73a2670d0bc1a00786844d986170dc9f754f47734602f8c5dfb131fbdac`.
+Published normal APK SHA-256
+`befb872a14ec57ec9e527bf67fd8e711259d64db3d844d0e31c20341de403b06`;
+compact `104447d9e2b095b83819a798d2c34d7867a919833ef3bb36355c5f1c2b5b3f05`.
+Both asset digests match the same-run receipt. Phone/Fold Wisp progress and idle,
+and API35/actual16KB rotated controls, were visually inspected. Physical audio,
+real-model behavior and device-performance signoff remain separate. The newer
+shared-head settings reconciliation above is not covered by this earlier gate.
+
+Focused pre-publication evidence for the settings reconciliation: 29
+settings/export/profile/policy checks (including seven production Compose UI
+cases) and 54 existing AudioTurnCapture/RoutedAudioInput regressions pass;
+13 model-details checks (eight metrics and five production Compose UI cases)
+pass. Tests exercise real retained ZIP entries/bytes, no-recognizer direct audio,
+recorder replacement on profile changes, and live model-detail sample updates.
+Standalone Compose runs required test-only official AAR string resources; full
+packaged themes/resources and release shrinking still require hosted acceptance.
+These local results do not replace the next exact-head release gate.

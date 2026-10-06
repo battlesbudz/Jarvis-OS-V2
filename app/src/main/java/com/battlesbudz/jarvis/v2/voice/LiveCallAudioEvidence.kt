@@ -90,6 +90,7 @@ object LiveCallAudioEvidence {
             }
         }
         return Export(call, files, "call=$call active=$active truncated=$dropped memoryLimitBytes=4000000\n" +
+            "capture=opt_in_bounded_sample whole_call_recording=false perStreamLimitBytes=800000 retention=rolling_tail\n" +
             "microphone=post_platform_processing pre_platform_pcm=unavailable\n" +
             "probe=exact_submitted_pcm output=written_reference_not_acoustic_recording\n" +
             "clock=monotonic_ms microphone_time=read_time output_time=write_time\n" +

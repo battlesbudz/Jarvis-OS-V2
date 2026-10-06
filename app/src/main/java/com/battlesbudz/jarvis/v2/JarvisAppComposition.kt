@@ -23,9 +23,9 @@ internal fun WithPipelineDiagnostics(
             snapshot = {
                 val audio = LiveCallAudioEvidence.snapshot()
                 CallEvidenceSnapshot(
-                    report = "Jarvis live call echo test\n" +
-                        "scope=retained_call_diagnostics microphoneRecording=${audio != null} acousticCancellation=not_measured\n" +
-                        "Save one ZIP after each call test, before starting the next call.\n\n" +
+                    report = "Jarvis live call diagnostics\n" +
+                        "scope=bounded_retained_call_diagnostics microphoneRecording=${audio != null} acousticCancellation=not_measured\n" +
+                        "Audio is retained only when opted in, with fixed memory limits; long calls may be truncated.\n\n" +
                         runtime.diagnosticRecorder.snapshot() + "\n\n" + MicrophoneHandoff.diagnostics(),
                     audio = audio,
                 )

@@ -9,17 +9,22 @@ import androidx.compose.ui.platform.testTag
 import com.battlesbudz.jarvis.v2.voice.*
 import kotlinx.coroutines.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun VoiceInputSettings(enabled: Boolean, onBusy: (Boolean) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var inputMode by remember { mutableStateOf(VoiceInputMode.selected(context)) }
-    var captions by remember { mutableStateOf(VoiceInputMode.captions(context)) }
+    var captionEngine by remember { mutableStateOf(VoiceInputMode.captionEngine(context)) }
+    var captionMenuOpen by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(AsrEngine.selected(context)) }
     var captureProfile by remember { mutableStateOf(SpeechCaptureProfile.selected(context)) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     LaunchedEffect(busy) { onBusy(busy) }
+    LaunchedEffect(enabled, busy, inputMode) {
+        if (!enabled || busy || inputMode != VoiceInputMode.GEMMA_AUDIO) captionMenuOpen = false
+    }
     DisposableEffect(Unit) { onDispose { onBusy(false) } }
     var task by remember { mutableStateOf<Job?>(null) }
     Column {
@@ -31,12 +36,35 @@ internal fun VoiceInputSettings(enabled: Boolean, onBusy: (Boolean) -> Unit) {
             }) { Text("Use ${mode.label}") }
         }
         if (inputMode == VoiceInputMode.GEMMA_AUDIO) {
-            Text("Experimental: Gemma answers from your recording. Use speech recognition mode for phone actions. Whisper captions are display-only. Requests longer than 28 seconds are rejected with a request to speak in shorter parts.", style = MaterialTheme.typography.bodySmall)
-            androidx.compose.foundation.layout.Row {
-                Checkbox(modifier = Modifier.testTag("gemma_whisper_captions"), checked = captions, enabled = enabled && !busy, onCheckedChange = {
-                    VoiceInputMode.captions(context, it); captions = it
-                })
-                Text("Whisper live captions")
+            Text("Experimental: Gemma answers from your recording. Use speech recognition mode for phone actions. Captions are display-only. Requests longer than 28 seconds are rejected with a request to speak in shorter parts.", style = MaterialTheme.typography.bodySmall)
+            ExposedDropdownMenuBox(expanded = captionMenuOpen, onExpandedChange = { captionMenuOpen = enabled && !busy && it }) {
+                OutlinedTextField(
+                    value = captionEngine?.label ?: "Off",
+                    onValueChange = {},
+                    readOnly = true,
+                    enabled = enabled && !busy,
+                    label = { Text("Caption engine") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = captionMenuOpen) },
+                    modifier = Modifier.testTag("gemma_caption_engine").menuAnchor(androidx.compose.material3.MenuAnchorType.PrimaryNotEditable)
+                )
+                ExposedDropdownMenu(expanded = captionMenuOpen, onDismissRequest = { captionMenuOpen = false }) {
+                    (listOf<AsrEngine?>(null) + AsrEngine.entries).forEach { engine ->
+                        DropdownMenuItem(
+                            enabled = enabled && !busy,
+                            modifier = Modifier.testTag("gemma_caption_${when (engine) {
+                                null -> "off"
+                                AsrEngine.MOONSHINE -> "moonshine"
+                                AsrEngine.WHISPER -> "whisper"
+                            }}"),
+                            text = { Text(engine?.label ?: "Off") },
+                            onClick = {
+                                VoiceInputMode.captionEngine(context, engine); captionEngine = engine
+                                captionMenuOpen = false
+                                message = "${engine?.label ?: "Off"} captions will apply to the next captured turn."
+                            }
+                        )
+                    }
+                }
             }
             Text("Turn captions off to skip all Whisper/Moonshine loading and recognition. Interrupt using Hey Jarvis or stop; natural speech interruption is disabled in this benchmark mode. Gemma's final transcription updates your message after answer generation.", style = MaterialTheme.typography.bodySmall)
         }

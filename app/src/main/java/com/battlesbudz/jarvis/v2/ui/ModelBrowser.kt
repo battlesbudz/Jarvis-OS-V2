@@ -23,6 +23,10 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import com.battlesbudz.jarvis.v2.ai.*
+import com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore
+import com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome
+import com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkTurn
+import java.util.Locale
 
 /** Family first, then a bounded lazy list of model cards. Browsing never selects/downloads a model. */
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
@@ -31,6 +35,7 @@ internal fun ModelBrowser(
     phone: PhoneProfile,
     selectedId: String,
     isInstalled: (LocalModelSpec) -> Boolean,
+    benchmarkStore: AndroidPipelineBenchmarkStore,
     onSelect: (LocalModelSpec) -> String?,
     onDismiss: () -> Unit,
     selectionEnabled: Boolean = true,
@@ -58,7 +63,7 @@ internal fun ModelBrowser(
         }
         BackHandler { goBack() }
         detailId?.let { id -> ModelCatalog.find(id)?.let { spec ->
-            ModelDetails(spec, phone) { detailId = null }
+            ModelDetails(spec, phone, benchmarkStore, isInstalled(spec)) { detailId = null }
         } }
         warningId?.let { id -> ModelCatalog.find(id)?.let { spec ->
             AlertDialog(onDismissRequest = { warningId = null },
@@ -186,44 +191,109 @@ internal fun ModelCompatibilityLabel(spec: LocalModelSpec) {
 }
 
 
-/** Shared explanation, revealed on request instead of repeated throughout Settings. */
+/** Each valid metric counts completed native submissions, not turns or shared "runs". */
+internal fun modelSpeedLabel(samples: List<PipelineBenchmarkTurn>, spec: LocalModelSpec): String? {
+    val submissions = samples.flatMap { it.submissions }.filter {
+        it.modelId == spec.id && it.outcome == PipelineBenchmarkOutcome.COMPLETE
+    }
+    val ttfts = submissions.mapNotNull { it.firstTokenMs?.takeIf { ms -> ms >= 0 }?.toDouble() }
+    val decode = submissions.mapNotNull {
+        it.estimatedDecodeTokensPerSecond?.takeIf { speed -> speed.isFinite() && speed >= 0 }
+    }
+    if (ttfts.isEmpty() && decode.isEmpty()) return null
+    fun median(values: List<Double>): Double = values.sorted().let {
+        val middle = it.size / 2
+        if (it.size % 2 == 1) it[middle] else it[middle - 1] / 2 + it[middle] / 2
+    }
+    fun count(size: Int) = "$size ${if (size == 1) "sample" else "samples"}"
+    return listOfNotNull(
+        ttfts.takeIf { it.isNotEmpty() }?.let {
+            val ms = "%.1f".format(Locale.US, median(it)).removeSuffix(".0")
+            "Observed TTFT median: $ms ms (${count(it.size)})"
+        },
+        decode.takeIf { it.isNotEmpty() }?.let {
+            "Estimated decode median: ${"%.1f".format(Locale.US, median(it))} tok/s (${count(it.size)})"
+        }
+    ).joinToString("\n")
+}
+
+/** Compact facts first; detailed compatibility and resource provenance remain available. */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
-internal fun ModelDetails(spec: LocalModelSpec, phone: PhoneProfile, onDismiss: () -> Unit) {
-    val purpose = ModelGuide.purpose(spec)
+internal fun ModelDetails(
+    spec: LocalModelSpec,
+    phone: PhoneProfile,
+    benchmarkStore: AndroidPipelineBenchmarkStore,
+    installed: Boolean,
+    onDismiss: () -> Unit
+) {
     val fit = ModelGuidance.assess(spec, phone)
     val evidence = ModelCompatibility.assess(spec)
+    val purpose = ModelGuide.purpose(spec)
+    val samples by benchmarkStore.samples.collectAsState()
+    val speed = remember(samples, spec.id) { modelSpeedLabel(samples, spec) }
     val uriHandler = LocalUriHandler.current
-    var linkError by remember { mutableStateOf<String?>(null) }
+    var expanded by remember(spec.id) { mutableStateOf(false) }
+    var linkError by remember(spec.id) { mutableStateOf<String?>(null) }
     AlertDialog(
+        modifier = Modifier.testTag("model_details_dialog").semantics { testTagsAsResourceId = true },
         onDismissRequest = onDismiss,
         title = { Text("About this model") },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close details") } },
+        confirmButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.testTag("model_details_close")) { Text("Close details") }
+        },
         text = {
-            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())
+                .testTag("model_details_content"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(spec.id, style = MaterialTheme.typography.titleSmall)
-                Text(purpose.description)
-                Text("Inputs: ${ModelGuide.inputsLabel(spec)}")
-                if (spec.supportsAudio) Text("Audio clips: up to 30 seconds, 16 kHz mono PCM WAV. Voice calls still use your chosen speech recognizer.")
-                if (spec.supportsTools) Text("Jarvis tools: read battery, set volume and open apps. Availability does not mean this model has passed a tool-calling test. Calls are checked against your request before execution.")
-                if (purpose.caveat.isNotBlank()) Text(purpose.caveat)
-                HorizontalDivider()
-                Text(evidence.status.label, fontWeight = FontWeight.Bold)
-                Text(evidence.summary)
-                if (evidence.details.isNotBlank()) Text(evidence.details)
-                Text("An Android test is not a speed or reliability guarantee for your phone.")
-                HorizontalDivider()
-                Text("Phone estimate", fontWeight = FontWeight.Bold)
-                Text(fit.explanation)
-                Text(fit.workloadExplanation)
-                fit.deviceExperience?.let { Text(it) }
-                Text("${phone.name} · ${ModelGuidance.gb(phone.totalRamBytes)} RAM · ${ModelGuidance.gb(phone.freeStorageBytes)} free storage")
-                Text("Download size is not measured memory use. These estimates do not change when you install a model. Phone checks stay on your device.")
-                val source = evidence.source ?: spec.downloadUrl?.substringBefore("/resolve/")
-                if (source != null) TextButton(onClick = {
-                    runCatching { uriHandler.openUri(source) }.onFailure { linkError = "Could not open the publisher page." }
-                }) { Text("Publisher evidence") }
-                linkError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                // Keep issues and choice-changing limitations visible without opening the explanation.
+                ModelCompatibilityLabel(spec)
+                ModelGuide.visibleLimitation(spec)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                Text(
+                    (if (installed) "Installed" else "Not installed") +
+                        " · Download " + (spec.downloadBytes?.let(ModelGuidance::gb) ?: "size unknown"),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(fit.quickMemoryLabel,
+                    color = if (fit.memoryWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium)
+                Text("Audio input: ${if (spec.supportsAudio) "yes" else "no"}",
+                    style = MaterialTheme.typography.bodyMedium)
+                Text("Tool calling: ${if (spec.supportsTools) "yes" else "no"}",
+                    style = MaterialTheme.typography.bodyMedium)
+                Text(speed ?: "No completed speed samples for this model yet.",
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("model_details_speed"))
+                if (speed != null) Text(
+                    "Completed native submissions, including drafts and retries. TTFT times the first nonempty text callback. " +
+                        "Decode uses character-derived token estimates. Workloads, warm-up and configurations may differ.",
+                    style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { expanded = !expanded }, modifier = Modifier.testTag("model_details_evidence")) {
+                    Text(if (expanded) "Hide compatibility & guidance" else "Compatibility & guidance")
+                }
+                if (expanded) {
+                    Text(purpose.description, style = MaterialTheme.typography.bodySmall)
+                    Text("Inputs: ${ModelGuide.inputsLabel(spec)}", style = MaterialTheme.typography.bodySmall)
+                    if (spec.supportsAudio) Text("Audio clips: up to 30 seconds, 16 kHz mono PCM WAV. Voice calls use the selected voice input path.",
+                        style = MaterialTheme.typography.bodySmall)
+                    if (spec.supportsTools) Text("Tool support does not mean this model has passed a tool-calling test. Calls are checked against your request before execution.",
+                        style = MaterialTheme.typography.bodySmall)
+                    if (purpose.caveat.isNotBlank()) Text(purpose.caveat, style = MaterialTheme.typography.bodySmall)
+                    if (evidence.status != ModelEvidenceStatus.ISSUE) Text(evidence.summary, style = MaterialTheme.typography.bodySmall)
+                    if (evidence.details.isNotBlank()) Text(evidence.details, style = MaterialTheme.typography.bodySmall)
+                    Text("An Android test is not a speed or reliability guarantee for your phone.", style = MaterialTheme.typography.bodySmall)
+                    Text(fit.explanation, style = MaterialTheme.typography.bodySmall)
+                    Text(fit.workloadExplanation, style = MaterialTheme.typography.bodySmall)
+                    fit.deviceExperience?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    Text("${phone.name} · ${ModelGuidance.gb(phone.totalRamBytes)} RAM · ${ModelGuidance.gb(phone.freeStorageBytes)} free storage",
+                        style = MaterialTheme.typography.bodySmall)
+                    Text("Download size is not measured memory use. These estimates do not change when you install a model. Phone checks stay on your device.",
+                        style = MaterialTheme.typography.bodySmall)
+                    val source = evidence.source ?: spec.downloadUrl?.substringBefore("/resolve/")
+                    if (source != null) TextButton(onClick = {
+                        runCatching { uriHandler.openUri(source) }.onFailure { linkError = "Could not open the publisher page." }
+                    }, modifier = Modifier.testTag("model_details_publisher")) { Text("Publisher evidence") }
+                    linkError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
             }
         }
     )

@@ -655,12 +655,12 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             selectRequest = { typed ->
                 val comparison = com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.take(java.util.UUID.randomUUID().toString())
                 val inputMode = com.battlesbudz.jarvis.v2.voice.VoiceInputMode.selected(applicationContext)
-                val captions = com.battlesbudz.jarvis.v2.voice.VoiceInputMode.captions(applicationContext)
+                val captionEngine = com.battlesbudz.jarvis.v2.voice.VoiceInputMode.captionEngine(applicationContext)
                 val direct = comparison?.request?.path == com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison.Path.GEMMA_DIRECT ||
                     (comparison == null && typed == null && inputMode == com.battlesbudz.jarvis.v2.voice.VoiceInputMode.GEMMA_AUDIO)
                 val recognizer = com.battlesbudz.jarvis.v2.voice.GemmaAudioInputPolicy.usesRecognizer(
-                    direct, captions, comparison?.request?.path?.usesAudio == true)
-                val asr = comparison?.request?.path?.captureEngine ?: if (direct) com.battlesbudz.jarvis.v2.voice.AsrEngine.WHISPER
+                    direct, captionEngine != null, comparison?.request?.path?.usesAudio == true)
+                val asr = comparison?.request?.path?.captureEngine ?: if (direct) captionEngine ?: com.battlesbudz.jarvis.v2.voice.AsrEngine.WHISPER
                     else com.battlesbudz.jarvis.v2.voice.AsrEngine.selected(applicationContext)
                 VoiceTurnRequest(typed, comparison, direct, recognizer, asr, ttsComparisonStore.selectedEngine(),
                     comparison?.id ?: java.util.UUID.randomUUID().toString())

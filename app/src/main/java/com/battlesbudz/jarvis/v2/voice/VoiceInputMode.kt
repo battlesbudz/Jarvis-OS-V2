@@ -14,11 +14,29 @@ enum class VoiceInputMode(val id: String, val label: String) {
         fun select(context: Context, mode: VoiceInputMode) {
             context.getSharedPreferences("voice_input", Context.MODE_PRIVATE).edit().putString("input_mode", mode.id).apply()
         }
-        fun captions(context: Context): Boolean = context.getSharedPreferences("voice_input", Context.MODE_PRIVATE)
-            .getBoolean("gemma_whisper_captions", true)
+        /** A null engine means Off. Existing installs keep their Whisper on/off choice. */
+        fun captionEngine(context: Context): AsrEngine? {
+            val preferences = context.getSharedPreferences("voice_input", Context.MODE_PRIVATE)
+            return resolveCaptionEngine(preferences.getString("caption_engine", null),
+                preferences.getBoolean("gemma_whisper_captions", true))
+        }
+        fun captionEngine(context: Context, engine: AsrEngine?) {
+            context.getSharedPreferences("voice_input", Context.MODE_PRIVATE).edit()
+                .putString("caption_engine", engine?.id ?: "off")
+                // Preserve the old setting for callers and app versions that only know on/off.
+                .putBoolean("gemma_whisper_captions", engine != null).apply()
+        }
+        internal fun resolveCaptionEngine(storedId: String?, legacyEnabled: Boolean): AsrEngine? = when {
+            // An older APK may have changed only this Boolean after a downgrade.
+            !legacyEnabled -> null
+            storedId == "off" -> null
+            AsrEngine.entries.any { it.id == storedId } -> AsrEngine.entries.first { it.id == storedId }
+            legacyEnabled -> AsrEngine.WHISPER
+            else -> null
+        }
+        fun captions(context: Context): Boolean = captionEngine(context) != null
         fun captions(context: Context, enabled: Boolean) {
-            context.getSharedPreferences("voice_input", Context.MODE_PRIVATE).edit().putBoolean("gemma_whisper_captions", enabled).apply()
+            captionEngine(context, if (enabled) captionEngine(context) ?: AsrEngine.WHISPER else null)
         }
     }
 }
-
