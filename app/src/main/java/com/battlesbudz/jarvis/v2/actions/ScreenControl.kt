@@ -13,7 +13,11 @@ import java.util.UUID
  * Verified-target rule: every screen mutation (tap/scroll/type) must name a
  * target ID and observation token from the latest [ScreenObservation]. A token
  * rotates on every observation, so anything observed before the current screen
- * state is stale and can never dispatch.
+ * state is stale and can never dispatch. The approval additionally binds to
+ * the observed content generation ([ScreenObservation.contentFingerprint]):
+ * dispatch re-reads the live generation and fails closed when the window's
+ * content changed since the observation, even if the target kept its
+ * resource ID, walk position, role, label and bounds.
  */
 data class ScreenNode(
     val id: String,
@@ -48,7 +52,17 @@ data class ScreenObservation(
      * dispatch must present this same identity or fail closed: an approval
      * for one window never dispatches in another.
      */
-    val windowIdentity: String = ""
+    val windowIdentity: String = "",
+    /**
+     * Content generation the approval binds to: a fingerprint of the exact
+     * node content observed. Dispatch must present the live generation from
+     * the same window — a resource ID is a resource name, not a
+     * content-generation identifier, so an approval for record A's "OK"
+     * control can never dispatch after the window's content was replaced
+     * with record B, even when the control keeps its resource ID, walk
+     * position, role, label and bounds.
+     */
+    val contentFingerprint: String = contentFingerprintOf(nodes)
 ) {
     /** Compact, model-readable snapshot. Bounded so receipts stay small. */
     fun compactText(token: String, maxNodes: Int = 64): String = buildString {
@@ -61,6 +75,35 @@ data class ScreenObservation(
     }
 }
 
+/**
+ * Content generation of an observed window: a stable fingerprint of the
+ * exact node content (identity, role, label, bounds, view id, capabilities)
+ * the approval was granted against. Recomputed from the live tree at
+ * dispatch time; any visible content change since the observation — even
+ * one that preserves the target's resource ID, walk position, role, label
+ * and bounds — produces a different generation and fails the dispatch
+ * closed. The approval is bound to this generation, not to the resource ID.
+ */
+fun contentFingerprintOf(nodes: List<ScreenNode>): String {
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+    fun feed(text: String) {
+        digest.update(text.toByteArray(Charsets.UTF_8))
+        digest.update(0)
+    }
+    for (node in nodes) {
+        feed(node.id)
+        feed(node.role)
+        feed(node.label)
+        feed(node.bounds)
+        feed(node.viewId ?: "")
+        feed(node.windowIdentity)
+        feed(if (node.clickable) "1" else "0")
+        feed(if (node.editable) "1" else "0")
+        feed(if (node.scrollable) "1" else "0")
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }.take(16)
+}
+
 /** Android-facing screen operations. JVM tests inject a fake; production uses the accessibility service. */
 interface ScreenBridge {
     fun isAvailable(): Boolean
@@ -71,6 +114,15 @@ interface ScreenBridge {
      * Null when it cannot be established; dispatch fails closed in that case.
      */
     fun currentWindowIdentity(): String?
+
+    /**
+     * Content generation of the live active window at dispatch time: the
+     * fingerprint of the exact node content currently on screen. Null when
+     * it cannot be established; dispatch fails closed in that case, because
+     * an approval binds to the observed generation and a dispatch that
+     * cannot prove the content is unchanged must not proceed.
+     */
+    fun currentContentFingerprint(): String?
     fun tap(node: ScreenNode): Boolean
     fun scroll(node: ScreenNode, direction: ScreenScrollDirection): Boolean
     fun type(node: ScreenNode, text: String): Boolean
@@ -215,11 +267,20 @@ class ScreenControlSession(
      * dispatch time. When it is null, blank, or a different window than the
      * observation's, verification fails closed: an approval for app A's
      * window must never dispatch in app B's window.
+     *
+     * [liveContentFingerprint] is the bridge's read of the live window's
+     * content generation at dispatch time. It must equal the observed
+     * generation: an approval binds to the exact content it was granted
+     * against, so a window whose content was replaced since the observation
+     * — even when the target keeps its resource ID, walk position, role,
+     * label and bounds — fails closed and requires a fresh observation. A
+     * null live generation fails closed like any unestablished identity.
      */
     fun verifyTarget(
         targetId: String,
         token: String,
         liveWindowIdentity: String?,
+        liveContentFingerprint: String?,
         requireNode: (ScreenNode) -> String?
     ): TargetVerification {
         val observed = observation
@@ -236,6 +297,12 @@ class ScreenControlSession(
                 "That screen observation is from a different window — the screen " +
                     "changed or another window is now active. " +
                     "Call screen_observe again for fresh targets."
+            )
+        }
+        if (liveContentFingerprint == null || liveContentFingerprint != observed.contentFingerprint) {
+            return TargetVerification.Rejected(
+                "That screen observation is stale — the screen content changed " +
+                    "since it was observed. Call screen_observe again for fresh targets."
             )
         }
         val node = observed.nodes.firstOrNull { it.id == targetId }
