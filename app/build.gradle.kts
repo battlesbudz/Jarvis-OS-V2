@@ -77,6 +77,13 @@ android {
     }
     // Exercise the same signed, shrunk variant delivered to the user.
     testBuildType = "release"
+    // Robolectric needs the merged manifest/resources (the ComponentActivity
+    // declared for createAndroidComposeRule lives in the release manifest).
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = true
