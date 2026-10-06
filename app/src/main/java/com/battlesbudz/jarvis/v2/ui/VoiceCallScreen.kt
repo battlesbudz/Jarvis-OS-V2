@@ -121,7 +121,6 @@ internal fun VoiceCallScreen(
     onWorkflowSetEnabled: (String, Boolean) -> Unit = { _, _ -> },
     // M3 guided MCP setup (D07): custom server URL from the settings dialog.
     onConnectMcpServer: (String, String, String, (String) -> Unit) -> Unit = { _, _, _, done -> done("MCP setup is unavailable right now.") },
-    pipelineBenchmarkStore: com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore,
     callEvidenceActions: CallEvidenceActions,
 ) {
     val runtime = com.battlesbudz.jarvis.v2.voice.VoiceSessionUi
