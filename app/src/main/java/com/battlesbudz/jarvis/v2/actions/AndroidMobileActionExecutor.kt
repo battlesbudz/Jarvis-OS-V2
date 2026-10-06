@@ -37,7 +37,7 @@ class AndroidMobileActionExecutor(
         android.provider.Settings.canDrawOverlays(context)
     },
     private val foregroundObserver: (String) -> Boolean = { packageName ->
-        isPackageForeground(packageName)
+        isPackageForeground(context, packageName)
     },
     /** How long to wait for the destination to reach the foreground after a submitted launch. */
     private val launchPollMs: Long = 1200L,
@@ -304,15 +304,6 @@ class AndroidMobileActionExecutor(
         return false
     }
 
-    /** Production foreground check behind [foregroundObserver]. */
-    private fun isPackageForeground(packageName: String): Boolean {
-        val manager = context.getSystemService(android.app.ActivityManager::class.java) ?: return false
-        return manager.runningAppProcesses.orEmpty().any { proc ->
-            proc.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND &&
-                (proc.processName == packageName || proc.processName.startsWith("$packageName:"))
-        }
-    }
-
     /**
      * Dispatch a view intent through the same launch path as OpenApp: the
      * assistant service when the activity is not visible, otherwise a direct
@@ -422,5 +413,19 @@ class AndroidMobileActionExecutor(
             "I could not $verb \"${node.label}\" — the screen may have changed. " +
                 "Call screen_observe again for fresh targets."
         )
+    }
+}
+
+/**
+ * Production foreground check behind AndroidMobileActionExecutor's
+ * injectable [foregroundObserver] seam. File-level (not a member) so the
+ * constructor's default lambda can reference it alongside the `context`
+ * parameter.
+ */
+private fun isPackageForeground(context: Context, packageName: String): Boolean {
+    val manager = context.getSystemService(android.app.ActivityManager::class.java) ?: return false
+    return manager.runningAppProcesses.orEmpty().any { proc ->
+        proc.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND &&
+            (proc.processName == packageName || proc.processName.startsWith("$packageName:"))
     }
 }
