@@ -21,7 +21,27 @@ class AndroidMobileActionExecutor(
      * does), so production call sites need no changes; journeys pass an
      * explicit coordinator over a scratch store.
      */
-    reminderScheduling: ReminderScheduling? = null
+    reminderScheduling: ReminderScheduling? = null,
+    /**
+     * Background-launch seams (finding 3): injectable so the route matrix
+     * and the visibility observation are unit-testable. Defaults are the
+     * production Android checks.
+     */
+    private val assistantBindingAvailable: () -> Boolean = {
+        com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.isSelected(context)
+    },
+    private val assistantLaunch: (Intent, String) -> ExecutionResult? = { intent, label ->
+        com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.launch(context, intent, label)
+    },
+    private val overlayExempt: () -> Boolean = {
+        android.provider.Settings.canDrawOverlays(context)
+    },
+    private val foregroundObserver: (String) -> Boolean = { packageName ->
+        isPackageForeground(packageName)
+    },
+    /** How long to wait for the destination to reach the foreground after a submitted launch. */
+    private val launchPollMs: Long = 1200L,
+    private val launchPollStepMs: Long = 100L
 ) : MobileActionExecutor {
     private val scheduling: ReminderScheduling? = reminderScheduling ?: (context as? ReminderScheduling)
     private val appResolver = InstalledAppResolver(context)
@@ -71,38 +91,11 @@ class AndroidMobileActionExecutor(
                     resolution.app.packageName,
                     resolution.app.activityName
                 )
-                val visible = canLaunchDirectly()
-                val assistantSelected = com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.isSelected(context)
-                val assistantResult = if (!visible)
-                    com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.launch(context, launchIntent, resolution.app.label)
-                else null
-                if (assistantResult != null) {
-                    onDiagnostic("App launch route=selected_assistant visible=$visible selected=$assistantSelected app=${resolution.app.packageName} result=${assistantResult.succeeded}")
-                    assistantResult
-                } else {
-                    // Background activity starts are silently dropped by Android 10+
-                    // background activity-start (BAL) restrictions without an exemption.
-                    // The selected-assistant route above is one exemption;
-                    // "Display over other apps" (SYSTEM_ALERT_WINDOW, declared in the
-                    // manifest) is another. With neither, a raw background
-                    // startActivity can never arrive — report the block honestly
-                    // instead of the old optimistic "Requested opening X" success.
-                    val overlayExempt = android.provider.Settings.canDrawOverlays(context)
-                    if (!visible && !overlayExempt) {
-                        onDiagnostic("App launch result=blocked_background visible=false selected=$assistantSelected app=${resolution.app.packageName}")
-                        ExecutionResult(
-                            false,
-                            "I couldn't open ${resolution.app.label} while another app is in front — " +
-                                "Android blocked the background launch. Set Jarvis as your default assistant " +
-                                "or grant \"Display over other apps\" in Settings, then ask again."
-                        )
-                    } else submitLaunch(
-                        launchIntent,
-                        resolution.app.label,
-                        route = if (visible) "visible_activity" else "overlay_exempt",
-                        assistantSelected = assistantSelected
-                    )
-                }
+                // Background-launch reporting (finding 3): the route,
+                // refusal, platform verdict and foreground observation are
+                // reported distinctly — never an inferred "Android blocked"
+                // diagnosis.
+                launchViaRoute(launchIntent, resolution.app.label, resolution.app.packageName)
             }
         }
         is MobileAction.MediaControl -> {
@@ -218,74 +211,125 @@ class AndroidMobileActionExecutor(
     }
 
     /**
+     * One background-launch decision for app and view intents. The four
+     * outcomes are reported distinctly: local refusal (Jarvis never asked
+     * Android), submitted request (the assistant binding's own receipt),
+     * platform rejection (startActivity threw), and observed foreground
+     * transition (destination visibility confirmed — the only verified
+     * launch).
+     */
+    private fun launchViaRoute(intent: Intent, label: String, observePackage: String?): ExecutionResult {
+        val visible = canLaunchDirectly()
+        val bindingAvailable = assistantBindingAvailable()
+        val route = resolveBackgroundLaunchRoute(visible, bindingAvailable, overlayExempt())
+        onDiagnostic("App launch route=${route.name.lowercase()} visible=$visible binding=$bindingAvailable label=$label")
+        return when (route) {
+            BackgroundLaunchRoute.SELECTED_ASSISTANT -> {
+                val result = assistantLaunch(intent, label)
+                if (result != null) return result
+                // The binding was unavailable after all: fall through to the
+                // remaining routes rather than misreporting a refusal.
+                onDiagnostic("App launch route=assistant_binding_unavailable label=$label")
+                launchDirectOrRefuse(intent, label, observePackage, visible)
+            }
+            BackgroundLaunchRoute.DIRECT, BackgroundLaunchRoute.OVERLAY_EXEMPT ->
+                submitLaunch(intent, label, observePackage, route)
+            BackgroundLaunchRoute.NONE -> {
+                onDiagnostic("App launch result=local_refusal visible=$visible label=$label")
+                backgroundLaunchRefusal(label)
+            }
+        }
+    }
+
+    /** Non-assistant routes after the binding proved unavailable: direct, overlay-exempt, or local refusal. */
+    private fun launchDirectOrRefuse(
+        intent: Intent,
+        label: String,
+        observePackage: String?,
+        visible: Boolean
+    ): ExecutionResult {
+        val route = resolveBackgroundLaunchRoute(visible, assistantBindingAvailable = false, overlayExempt = overlayExempt())
+        return when (route) {
+            BackgroundLaunchRoute.DIRECT, BackgroundLaunchRoute.OVERLAY_EXEMPT ->
+                submitLaunch(intent, label, observePackage, route)
+            else -> {
+                onDiagnostic("App launch result=local_refusal visible=$visible label=$label")
+                backgroundLaunchRefusal(label)
+            }
+        }
+    }
+
+    /**
      * Fire a NEW_TASK launch and report the platform's verdict. Callers must
-     * only reach this when the launch is eligible: the activity is visible,
-     * the selected-assistant route handled it, or a BAL exemption (overlay
-     * grant) applies. startActivity returns void, so only the caught
-     * rejections are reported as failures; silent background drops are kept
-     * out by the eligibility check at the call sites.
+     * only reach this when the launch is eligible: the activity is visible
+     * or a background-activity-start exemption applies. startActivity
+     * returns void, so a clean return is only a submitted request — the
+     * destination must then be observed in the foreground before the launch
+     * counts as verified. Only the caught rejections are reported as
+     * platform rejections; silent background drops surface as
+     * submitted-but-unconfirmed, never as success.
      */
     private fun submitLaunch(
         intent: Intent,
         label: String,
-        route: String,
-        assistantSelected: Boolean
+        observePackage: String?,
+        route: BackgroundLaunchRoute
     ): ExecutionResult = try {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
-        onDiagnostic("App launch route=$route selected=$assistantSelected label=$label result=submitted")
-        ExecutionResult(true, "Opening $label.")
+        onDiagnostic("App launch route=${route.name.lowercase()} label=$label result=submitted")
+        val observed = observePackage != null && awaitForeground(observePackage)
+        onDiagnostic("App launch route=${route.name.lowercase()} label=$label " +
+            "result=${if (observed) "foreground_observed" else "foreground_unobserved"}")
+        verifiedLaunchReceipt(label, route, platformError = null, foregroundObserved = observed)
     } catch (cancelled: kotlinx.coroutines.CancellationException) {
         throw cancelled
     } catch (error: android.content.ActivityNotFoundException) {
-        onDiagnostic("App launch result=rejected type=ActivityNotFoundException label=$label")
-        ExecutionResult(false, "Could not open $label: ${error.message ?: "Android rejected the launch."}")
+        onDiagnostic("App launch result=platform_rejected type=ActivityNotFoundException label=$label")
+        verifiedLaunchReceipt(label, route,
+            platformError = error.message ?: "Android rejected the launch.", foregroundObserved = false)
     } catch (error: SecurityException) {
-        onDiagnostic("App launch result=rejected type=SecurityException label=$label")
-        ExecutionResult(false, "Could not open $label: ${error.message ?: "Android rejected the launch."}")
+        onDiagnostic("App launch result=platform_rejected type=SecurityException label=$label")
+        verifiedLaunchReceipt(label, route,
+            platformError = error.message ?: "Android rejected the launch.", foregroundObserved = false)
+    }
+
+    /** Poll briefly for the destination package to reach the foreground. */
+    private fun awaitForeground(packageName: String): Boolean {
+        val deadline = android.os.SystemClock.uptimeMillis() + launchPollMs
+        do {
+            if (foregroundObserver(packageName)) return true
+            android.os.SystemClock.sleep(launchPollStepMs.coerceAtLeast(1))
+        } while (android.os.SystemClock.uptimeMillis() < deadline)
+        return false
+    }
+
+    /** Production foreground check behind [foregroundObserver]. */
+    private fun isPackageForeground(packageName: String): Boolean {
+        val manager = context.getSystemService(android.app.ActivityManager::class.java) ?: return false
+        return manager.runningAppProcesses.orEmpty().any { proc ->
+            proc.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND &&
+                (proc.processName == packageName || proc.processName.startsWith("$packageName:"))
+        }
     }
 
     /**
      * Dispatch a view intent through the same launch path as OpenApp: the
      * assistant service when the activity is not visible, otherwise a direct
-     * startActivity. A background launch with no BAL exemption is reported as
-     * blocked, never as an optimistic "requested" success.
+     * or exemption-backed startActivity. A background launch with no
+     * supported route is a local refusal, never an optimistic "requested"
+     * success; a submitted launch only counts as verified when the resolved
+     * destination package is observed in the foreground.
      */
     private fun dispatchViewIntent(
         intent: Intent,
         label: String,
         openedText: String
     ): ExecutionResult {
-        val visible = canLaunchDirectly()
-        val assistantSelected = com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.isSelected(context)
-        val assistantResult = if (!visible)
-            com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService.launch(context, intent, label)
-        else null
-        if (assistantResult != null) {
-            onDiagnostic("View intent route=selected_assistant visible=$visible label=$label result=${assistantResult.succeeded}")
-            return assistantResult
-        }
-        val overlayExempt = android.provider.Settings.canDrawOverlays(context)
-        if (!visible && !overlayExempt) {
-            onDiagnostic("View intent result=blocked_background visible=false label=$label")
-            return ExecutionResult(
-                false,
-                "I couldn't open $label while another app is in front — " +
-                    "Android blocked the background launch. Set Jarvis as your default assistant " +
-                    "or grant \"Display over other apps\" in Settings, then ask again."
-            )
-        }
-        return submitLaunch(
-            intent,
-            label,
-            route = if (visible) "visible_activity" else "overlay_exempt",
-            assistantSelected = assistantSelected
-        ).let { result ->
-            // Preserve the caller's wording for the verified launch; the
-            // "requested" wording no longer occurs because unverified
-            // background submissions are blocked above.
-            if (result.succeeded) ExecutionResult(true, "$openedText $label.") else result
-        }
+        val observePackage = intent.resolveActivity(context.packageManager)?.packageName
+        val result = launchViaRoute(intent, label, observePackage)
+        // Preserve the caller's wording for the verified launch.
+        return if (result.succeeded) ExecutionResult(true, "$openedText $label.") else result
     }
 
     /**
