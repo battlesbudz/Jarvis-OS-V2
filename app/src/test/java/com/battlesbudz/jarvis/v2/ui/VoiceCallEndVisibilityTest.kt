@@ -6,6 +6,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.activity.OnBackPressedDispatcher
 import androidx.activity.OnBackPressedDispatcherOwner
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.result.ActivityResultRegistry
+import androidx.activity.result.ActivityResultRegistryOwner
+import androidx.activity.result.contract.ActivityResultContract
+import androidx.core.app.ActivityOptionsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -71,6 +76,26 @@ class VoiceCallEndVisibilityTest {
         override val onBackPressedDispatcher: OnBackPressedDispatcher get() = backDispatcher
     }
 
+    /**
+     * Activity-result double. VoiceCallScreen remembers permission/settings
+     * launchers at its top level, and rememberLauncherForActivityResult
+     * crashes without a LocalActivityResultRegistryOwner. The test registry
+     * never launches for real.
+     */
+    private val testActivityResultRegistry = object : ActivityResultRegistry() {
+        override fun <I, O> onLaunch(
+            requestCode: Int,
+            contract: ActivityResultContract<I, O>,
+            input: I,
+            options: ActivityOptionsCompat?
+        ) {
+        }
+    }
+    private val testActivityResultOwner = object : ActivityResultRegistryOwner {
+        override val activityResultRegistry: ActivityResultRegistry
+            get() = testActivityResultRegistry
+    }
+
     private val callState = MutableStateFlow(VoiceSessionState.PASSIVE_LISTENING)
     private val busy = MutableStateFlow(false)
     private var teardownCalls = 0
@@ -99,7 +124,10 @@ class VoiceCallEndVisibilityTest {
         )
         benchmarkStore = AndroidPipelineBenchmarkStore(context)
         compose.setContent {
-            CompositionLocalProvider(LocalOnBackPressedDispatcherOwner provides backOwner) {
+            CompositionLocalProvider(
+                LocalOnBackPressedDispatcherOwner provides backOwner,
+                LocalActivityResultRegistryOwner provides testActivityResultOwner
+            ) {
                 ConversationScreen(
                 history = history,
                 busy = busy,
