@@ -45,7 +45,7 @@
     "test41_taskRecoveryAndExactApprovalPreserveAndroidEffects",
     "test42_taskPanelShowsExactChoiceAndReconcilesWithoutRetry",
     "test43_conditionalAndCommaPlansUseRealAndroidWithoutModelCalls",
-    "test44_backgroundAssistantOpensAppAndFinishesOrderedPlanWithoutTap",
+    "test44_backgroundAssistantSubmitsLaunchAndStopsPlanWithoutTap",
     "test45_pipelineBenchmarksScoreOriginalAsrPersistAndExportRedactedEvidence",
     "test46_replyMetricsExportOnlyTheirConversationAcrossReload",
     "test47_audioInputChoiceAndDisplayCaptionTogglePersistWithoutLoadingModels",
