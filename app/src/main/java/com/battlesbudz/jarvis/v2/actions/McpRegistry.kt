@@ -293,8 +293,9 @@ class McpRegistry(
                 val newPerTool = toolSchemaHashes(tools)
                 // Compare against the REVIEWED per-tool map: the pending
                 // discovery must never become its own baseline.
-                val changed = tools.map { it.name }
-                    .filter { toolReviewFingerprint(it) != status.toolSchemaHashes[it] }.toSet()
+                val changed = tools
+                    .filter { toolReviewFingerprint(it) != status.toolSchemaHashes[it.name] }
+                    .map { it.name }.toSet()
                 val currentNames = tools.map { it.name }.toSet()
                 return if (status.schemaHash != null && newListHash != status.schemaHash) {
                     // Review pending (or still pending): the reviewed
