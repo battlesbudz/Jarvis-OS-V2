@@ -702,9 +702,20 @@ class ReleaseJourneyTest {
                     com.battlesbudz.jarvis.v2.ai.ToolCall("read_battery", "{}"),
                     com.battlesbudz.jarvis.v2.ai.ToolCall("set_volume", "{\"level\":30}"),
                     com.battlesbudz.jarvis.v2.ai.ToolCall("open_app", "{\"app\":\"Settings\"}"))))
-            assertTrue(outcome.message, outcome.completed)
+            // The first two steps use real Android state. The trailing launch
+            // is submitted but unconfirmed, so the turn stops instead of
+            // completing: the volume change is real, the opening is not
+            // claimed as verified.
             assertEquals(kotlin.math.round(audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .3).toInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
-            assertTrue(device.wait(Until.hasObject(By.pkg("com.android.settings").depth(0)), 15_000))
+            assertFalse("the turn must not complete on an unconfirmed launch: ${outcome.message}", outcome.completed)
+            assertTrue("the turn must stop at the unconfirmed launch: ${outcome.message}", outcome.stopped)
+            val launch = outcome.receipts.last()
+            assertEquals("open_app", launch.request.name)
+            assertEquals(ExecutionResult.Outcome.UNKNOWN_COMPLETION, launch.result.outcome)
+            assertTrue("the launch receipt must stay honest: ${launch.result.message}",
+                launch.result.message.contains("was sent") && launch.result.message.contains("could not be confirmed"))
+            assertTrue("Settings must actually appear, not merely be reported",
+                device.wait(Until.hasObject(By.pkg("com.android.settings").depth(0)), 15_000))
         } finally { audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0) }
     }
 
