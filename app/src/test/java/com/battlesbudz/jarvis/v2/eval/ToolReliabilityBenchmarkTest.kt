@@ -674,7 +674,8 @@ class ToolReliabilityBenchmarkTest {
         )
         val caught: Throwable = try {
             benchmark.runModels(listOf(spec, spec2))
-            throw AssertionError("expected init failure")
+            fail("expected init failure")
+            throw AssertionError("unreachable")
         } catch (e: RuntimeException) {
             e
         }
@@ -749,7 +750,8 @@ class ToolReliabilityBenchmarkTest {
         )
         val caught: Throwable = try {
             benchmark.runModels(listOf(spec, spec2))
-            throw AssertionError("expected the close failure to surface")
+            fail("expected the close failure to surface")
+            throw AssertionError("unreachable")
         } catch (e: RuntimeException) {
             e
         }
@@ -785,6 +787,7 @@ class ToolReliabilityBenchmarkTest {
         val caught: Throwable = try {
             benchmark.runModels(listOf(spec))
             fail("expected the shared failure to surface")
+            throw AssertionError("unreachable")
         } catch (e: RuntimeException) {
             e
         }
