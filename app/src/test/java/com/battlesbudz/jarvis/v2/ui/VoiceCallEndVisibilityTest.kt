@@ -38,7 +38,7 @@ import org.robolectric.annotation.Config
  * the point is the parent visibility behavior.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [34])
 class VoiceCallEndVisibilityTest {
 
     @get:Rule

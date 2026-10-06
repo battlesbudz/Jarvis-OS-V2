@@ -871,7 +871,10 @@ class M2WorkflowsTest {
         // descents. The leading battery step exists because branch
         // conditions must bind an earlier step (definition validation), so
         // the deep wait sits at [1,1,0]; both battery steps complete before
-        // the wait and neither re-runs on resume.
+        // the wait and neither re-runs on resume. Note: branch conditions
+        // can only bind steps visible in the enclosing scope — a sibling
+        // thenStep's output is not visible to a later sibling's condition,
+        // so the inner branch binds the top-level battery step.
         val batteryId = uid()
         val innerBatteryId = uid()
         val def = definition(steps = listOf(
@@ -882,7 +885,7 @@ class M2WorkflowsTest {
                     batteryStep(innerBatteryId),
                     WorkflowStep.Branch(uid(),
                         WorkflowCondition.GreaterThan(
-                            WorkflowBinding(innerBatteryId, "battery_percent"), 0.0),
+                            WorkflowBinding(batteryId, "battery_percent"), 0.0),
                         thenSteps = listOf(
                             WorkflowStep.Wait(uid(), WorkflowWait.UntilTime(nowMs + 60_000)),
                             volumeStep("7")))))))
