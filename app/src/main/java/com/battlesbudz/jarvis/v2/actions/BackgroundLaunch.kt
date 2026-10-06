@@ -74,7 +74,7 @@ fun verifiedLaunchReceipt(
     label: String,
     route: BackgroundLaunchRoute,
     platformError: String?,
-    foregroundObserved: Boolean
+    foregroundObserved: Boolean = false
 ): ExecutionResult {
     if (platformError != null) {
         return ExecutionResult(false, "Could not open $label: $platformError")
