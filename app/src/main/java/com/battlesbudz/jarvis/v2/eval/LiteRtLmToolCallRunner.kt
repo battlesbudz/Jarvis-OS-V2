@@ -2,6 +2,8 @@ package com.battlesbudz.jarvis.v2.eval
 
 import com.battlesbudz.jarvis.v2.ai.ToolCall
 import com.battlesbudz.jarvis.v2.ai.ToolCallEngine
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 /**
  * On-device [ToolCallRunner] backed by a [ToolCallEngine] (production: LiteRtLmEngine).
@@ -23,6 +25,9 @@ class LiteRtLmToolCallRunner(
 ) : ToolCallRunner {
     override suspend fun runUtterance(modelId: String, utterance: String): List<ToolCall> {
         engine.resetConversation()
+        // After fixture reset: a cancellation that landed during the reset
+        // must not be followed by native generation for the next utterance.
+        currentCoroutineContext().ensureActive()
         return engine.generate(utterance) {}.toolCalls
     }
 }

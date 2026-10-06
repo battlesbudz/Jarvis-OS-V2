@@ -4,6 +4,7 @@ import com.battlesbudz.jarvis.v2.ai.GenerationResult
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
 import com.battlesbudz.jarvis.v2.ai.ToolCall
 import com.battlesbudz.jarvis.v2.ai.ToolCallEngine
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
@@ -36,7 +37,7 @@ class ToolReliabilityBenchmarkTest {
             events += "tryBegin"
             return !busy
         }
-        override fun endModelOperation() {
+        override open fun endModelOperation() {
             events += "end"
         }
         override open fun closeIdleEngine() {
@@ -548,5 +549,95 @@ class ToolReliabilityBenchmarkTest {
         )
         assertEquals(ConversationAdmission.SESSION_BUSY, admitted)
         assertEquals(listOf("acquire", "mark", "release"), order)
+    }
+
+    @Test fun cancellationBetweenModelsStopsLoop() = runBlocking {
+        // Regression: a cancellation that lands between model attempts
+        // (after one model's gate release) must stop the loop at the
+        // model-loop entry check before the next model is admitted.
+        val spec2 = LocalModelSpec("TEST-MODEL-2", "test-model-2.litertlm", recommendedGpu = false)
+        val events = mutableListOf<String>()
+        var jobToCancel: Job? = null
+        var attempts = 0
+        val owner = object : FakeOwner(events = events) {
+            override fun endModelOperation() {
+                super.endModelOperation()
+                attempts++
+                if (attempts == 1) jobToCancel?.cancel()
+            }
+        }
+        var factoryCalls = 0
+        val benchmark = ToolReliabilityBenchmark(
+            owner = owner,
+            engineFactory = { spec -> factoryCalls++; RecordingEngine() },
+            reportStore = InMemoryReliabilityReportStore()
+        )
+        val job = launch { benchmark.runModels(listOf(spec, spec2)) }
+        jobToCancel = job
+        job.join()
+        assertTrue(job.isCancelled)
+        assertEquals(1, factoryCalls)
+        assertTrue(events.contains("end"))
+    }
+
+    @Test fun cancellationDuringAllocationNeverInitializes() = runBlocking {
+        // Regression: a cancellation that lands during the synchronous
+        // engine allocation must be caught by the initialization-boundary
+        // check before the native engine is initialized.
+        val events = mutableListOf<String>()
+        var jobToCancel: Job? = null
+        val owner = FakeOwner(events = events)
+        var factoryCalls = 0
+        val benchmark = ToolReliabilityBenchmark(
+            owner = owner,
+            engineFactory = { spec ->
+                factoryCalls++
+                jobToCancel?.cancel()
+                RecordingEngine(events = events)
+            },
+            reportStore = InMemoryReliabilityReportStore()
+        )
+        val job = launch { benchmark.runModels(listOf(spec)) }
+        jobToCancel = job
+        job.join()
+        assertTrue(job.isCancelled)
+        assertEquals(1, factoryCalls)
+        assertTrue(
+            "initialize must not run after cancellation during allocation",
+            events.none { it == "initialize" }
+        )
+        assertTrue(events.contains("end"))
+    }
+
+    @Test fun closeCancellationDoesNotReplacePrimaryFailure() = runBlocking {
+        // Ordinary primary failure plus cancellation during close: the
+        // primary propagates and the close cancellation is attached as
+        // suppressed, never replacing the primary.
+        val events = mutableListOf<String>()
+        val owner = FakeOwner(events = events)
+        val engine = object : ToolCallEngine by RecordingEngine(failOnInitialize = true, events = events) {
+            override fun close() {
+                events += "close"
+                throw CancellationException("close cancelled")
+            }
+        }
+        val benchmark = ToolReliabilityBenchmark(
+            owner = owner,
+            engineFactory = { engine },
+            reportStore = InMemoryReliabilityReportStore()
+        )
+        try {
+            benchmark.runModels(listOf(spec))
+            fail("expected init failure")
+        } catch (e: RuntimeException) {
+            assertEquals("init boom", e.message)
+            assertTrue(
+                "close cancellation must be suppressed on the primary",
+                e.suppressed.any { it is CancellationException && it.message == "close cancelled" }
+            )
+        }
+        assertEquals(1, owner.teardownIssues.size)
+        assertTrue(owner.teardownIssues[0].contains("close cancelled"))
+        assertTrue(events.contains("end"))
     }
 }

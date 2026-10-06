@@ -3,7 +3,6 @@ package com.battlesbudz.jarvis.v2.eval
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
 import com.battlesbudz.jarvis.v2.ai.ToolCall
 import com.battlesbudz.jarvis.v2.ai.ToolCallEngine
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
@@ -56,13 +55,13 @@ class ToolReliabilityBenchmark(
         fun modelFingerprint(spec: LocalModelSpec): String?
         /**
          * Records a teardown problem (for example an engine close failure)
-         * to diagnostics. A teardown failure is fatal to the benchmark run
-         * unless a primary failure is already in flight: with no primary
-         * failure the teardown error is reported here and then rethrown so
-         * the run stops before another native engine is allocated; when a
-         * primary failure already exists it propagates instead, and the
-         * teardown failure is only reported — never masking the original
-         * error. Cancellation from teardown is never swallowed.
+         * to diagnostics. Recording never replaces the failure being
+         * handled: with no primary failure in flight the teardown error is
+         * reported here and then rethrown so the run stops before another
+         * native engine is allocated; when a primary failure already exists
+         * it propagates and the teardown error is attached to it as
+         * suppressed instead of replacing it — even when either side is a
+         * cancellation.
          */
         fun reportTeardownIssue(message: String)
     }
@@ -87,15 +86,27 @@ class ToolReliabilityBenchmark(
         val reports = mutableMapOf<String, ModelReport>()
         val skipped = mutableListOf<String>()
         models.forEachIndexed { index, spec ->
+            // Model-loop entry and admission boundary: never start a model
+            // attempt for a cancelled run, and never consult admission state
+            // after cancellation.
+            currentCoroutineContext().ensureActive()
             if (!owner.tryBeginModel(spec)) {
                 skipped += spec.id
                 return@forEachIndexed
             }
             try {
+                // Before idle close: a cancellation that landed during
+                // admission must not be followed by tearing down the chat
+                // engine.
+                currentCoroutineContext().ensureActive()
                 // The idle chat engine is the live owner of the native
                 // runtime. Close it before allocating the benchmark engine so
                 // a second native engine is never allocated over it.
                 owner.closeIdleEngine()
+                // Before hashing: a cancellation that landed during the idle
+                // close must not be followed by the synchronous integrity
+                // verification.
+                currentCoroutineContext().ensureActive()
                 check(owner.verifyModelFile(spec)) {
                     "The ${spec.id} model file changed or failed integrity verification. Re-import it."
                 }
@@ -111,6 +122,10 @@ class ToolReliabilityBenchmark(
                     // during allocation must not be followed by init.
                     currentCoroutineContext().ensureActive()
                     engine.initialize()
+                    // Recheck after synchronous initialize: a cancellation
+                    // that landed during init must not be followed by
+                    // enabling tools or scoring.
+                    currentCoroutineContext().ensureActive()
                     engine.setToolsEnabled(true)
                     val report = runSingleModelReport(
                         spec,
@@ -126,24 +141,21 @@ class ToolReliabilityBenchmark(
                 } finally {
                     try {
                         engine.close()
-                    } catch (cancelled: CancellationException) {
-                        // Never swallow cancellation from teardown.
-                        throw cancelled
-                    } catch (error: Throwable) {
-                        // A close failure with no primary failure in flight
-                        // stops the run: it is reported, then rethrown so the
-                        // benchmark halts before another native engine is
-                        // allocated. When a primary failure already exists it
-                        // propagates instead — the teardown failure is only
-                        // reported and never masks the original error,
-                        // including cancellation: rethrowing the close error
-                        // over a CancellationException would turn a
-                        // cooperative cancellation into a failure. The gate
-                        // below is still released either way.
+                    } catch (teardown: Throwable) {
+                        // One teardown catch: any primary failure is preserved
+                        // and the close error is attached to it as suppressed,
+                        // never replacing it — not even when the primary is a
+                        // cancellation or the teardown threw one. The close
+                        // error is thrown only when there is no primary, so a
+                        // teardown failure still stops the run before another
+                        // native engine is allocated. Reporting never replaces
+                        // the primary either. The gate below is still released.
                         owner.reportTeardownIssue(
-                            "Tool reliability check: closing the ${spec.id} benchmark engine failed: ${error.message}"
+                            "Tool reliability check: closing the ${spec.id} benchmark engine failed: ${teardown.message}"
                         )
-                        if (primaryFailure == null) throw error
+                        val primary = primaryFailure
+                        if (primary == null) throw teardown
+                        primary.addSuppressed(teardown)
                     }
                 }
             } finally {
