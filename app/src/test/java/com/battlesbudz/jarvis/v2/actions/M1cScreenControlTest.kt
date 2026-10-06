@@ -242,32 +242,36 @@ class M1cScreenControlTest {
         assertTrue(missing is TargetVerification.Rejected)
     }
 
-    // Target binding (finding 3): the live node must match role, label AND
-    // bounds. The walk index is positional, so a shifted tree resolving the
-    // same index to a same-labeled node at a different position must not bind.
-    @Test fun liveNodeBindingRequiresRoleLabelAndBounds() {
-        val node = button() // n0, "Search", button, "10,20-100,80"
-        assertTrue(node.matchesLiveNode("button", "Search", "10,20-100,80"))
-        assertFalse("same label at a different position must not bind",
-            node.matchesLiveNode("button", "Search", "10,300-100,360"))
-        assertFalse("same position with a different label must not bind",
-            node.matchesLiveNode("button", "Send", "10,20-100,80"))
-        assertFalse("same label with a different role must not bind",
-            node.matchesLiveNode("text", "Search", "10,20-100,80"))
-        // View id binding: a snapshot that carries a view id binds only to
-        // the same live view id. A replaced view that kept the label, role
-        // and bounds but got a different view id is a different target.
+    // Target binding (finding 3, same-window hardening): a dispatch binds a
+    // snapshot to the live node only when a stable target identity agrees.
+    // A null view id is never permission to revert to positional
+    // (role/label/bounds) identity: a WebView can replace an "OK" control
+    // with another same-label/same-bounds/no-resource-ID control in the same
+    // window, preserving the walk index, and the old token, window identity
+    // and positional matcher would all still pass. Fail closed instead.
+    @Test fun liveNodeBindingRequiresStableIdentity() {
+        // A snapshot that carries a view id binds only to the same live view
+        // id; role, label AND bounds must also agree.
         val withId = button().copy(viewId = "com.example.app:id/search")
         assertTrue("same view id binds",
             withId.matchesLiveNode("button", "Search", "10,20-100,80", "com.example.app:id/search"))
+        assertFalse("same label at a different position must not bind",
+            withId.matchesLiveNode("button", "Search", "10,300-100,360", "com.example.app:id/search"))
+        assertFalse("same position with a different label must not bind",
+            withId.matchesLiveNode("button", "Send", "10,20-100,80", "com.example.app:id/search"))
+        assertFalse("same label with a different role must not bind",
+            withId.matchesLiveNode("text", "Search", "10,20-100,80", "com.example.app:id/search"))
         assertFalse("different view id must not bind",
             withId.matchesLiveNode("button", "Search", "10,20-100,80", "com.example.app:id/other"))
         assertFalse("missing live view id must not bind a snapshot that has one",
             withId.matchesLiveNode("button", "Search", "10,20-100,80", null))
-        // Snapshots without a view id (common in WebViews) keep the
-        // role/label/bounds check.
-        assertTrue("snapshot without a view id binds on role/label/bounds",
-            node.matchesLiveNode("button", "Search", "10,20-100,80", null))
+        // Snapshots without a view id (common in WebViews) fail closed: a
+        // null view id is not permission to revert to positional identity.
+        val noId = button()
+        assertFalse("snapshot without a view id must not bind on role/label/bounds alone",
+            noId.matchesLiveNode("button", "Search", "10,20-100,80", null))
+        assertFalse("snapshot without a view id must not bind even when the live node has one",
+            noId.matchesLiveNode("button", "Search", "10,20-100,80", "com.example.app:id/search"))
     }
 
     // Session: touch pause and idle resume (T06)
@@ -349,17 +353,37 @@ class M1cScreenControlTest {
 
         override fun tap(node: ScreenNode): Boolean {
             // Production-faithful live re-verification: the node's window
-            // identity must be established and still be the active window.
-            val activeIdentity = activeWindowId ?: return false
-            if (node.windowIdentity.isBlank() || node.windowIdentity != activeIdentity) return false
-            val live = windows[activeIdentity]?.nodes?.firstOrNull { it.id == node.id } ?: return false
-            if (!node.matchesLiveNode(live.role, live.label, live.bounds, live.viewId)) return false
-            effects += node to activeIdentity
+            // identity must be established and still be the active window,
+            // and the live node must still bind the snapshot's stable
+            // identity (see ScreenNode.matchesLiveNode).
+            val liveIdentity = liveVerifiedIdentity(node) ?: return false
+            effects += node to liveIdentity
             return true
         }
 
         override fun scroll(node: ScreenNode, direction: ScreenScrollDirection): Boolean = false
-        override fun type(node: ScreenNode, text: String): Boolean = false
+
+        override fun type(node: ScreenNode, text: String): Boolean {
+            val liveIdentity = liveVerifiedIdentity(node) ?: return false
+            val live = windows[liveIdentity]?.nodes?.firstOrNull { it.id == node.id } ?: return false
+            if (!live.editable) return false
+            effects += node to liveIdentity
+            return true
+        }
+
+        /**
+         * The active window identity when the snapshot still binds its live
+         * node, or null when dispatch must fail closed. Mirrors
+         * ServiceScreenBridge.withLiveNode: window identity, walk-index
+         * lookup, then the stable-identity re-verification.
+         */
+        private fun liveVerifiedIdentity(node: ScreenNode): String? {
+            val activeIdentity = activeWindowId ?: return null
+            if (node.windowIdentity.isBlank() || node.windowIdentity != activeIdentity) return null
+            val live = windows[activeIdentity]?.nodes?.firstOrNull { it.id == node.id } ?: return null
+            if (!node.matchesLiveNode(live.role, live.label, live.bounds, live.viewId)) return null
+            return activeIdentity
+        }
         override fun showStopOverlay(taskLabel: String): Boolean = false
         override fun hideStopOverlay() {}
     }
@@ -447,6 +471,79 @@ class M1cScreenControlTest {
         assertTrue("replaced view in the same window must not dispatch, was: $outcome",
             outcome is TapOutcome.BridgeFailed)
         assertTrue("no effect may be recorded, was: ${bridge.effects}", bridge.effects.isEmpty())
+    }
+
+    /**
+     * Test double of a screen_type dispatch through the same gate ->
+     * verifyTarget -> bridge order as dispatchTap.
+     */
+    private fun dispatchType(
+        session: ScreenControlSession,
+        bridge: ScreenBridge,
+        targetId: String,
+        token: String,
+        text: String
+    ): TapOutcome {
+        if (session.dispatchGate() != DispatchGate.Allowed) {
+            return TapOutcome.Rejected("dispatch gate blocked the mutation")
+        }
+        val node = when (val verified = session.verifyTarget(targetId, token, bridge.currentWindowIdentity()) { node ->
+            if (!node.editable) "Target ${node.id} (\"${node.label}\") is not an editable field." else null
+        }) {
+            is TargetVerification.Verified -> verified.node
+            is TargetVerification.Rejected -> return TapOutcome.Rejected(verified.reason)
+        }
+        return if (bridge.type(node, text)) TapOutcome.Dispatched(node)
+        else TapOutcome.BridgeFailed("the screen may have changed")
+    }
+
+    // Finding 3, same-window hardening: a WebView can replace a control with
+    // another same-label/same-bounds/no-resource-ID control in the same
+    // window, preserving the walk index. The old token, window identity and
+    // positional matcher all still pass — the safe-identity policy must fail
+    // the dispatch with zero stale tap/type effects.
+
+    @Test fun webViewDomReplacementInSameWindowDispatchesNothing() {
+        val window = "com.app.web#3"
+        // A WebView control carries no resource ID (viewId = null).
+        fun webNode(id: String = "n4", editable: Boolean = false) = ScreenNode(
+            id = id, label = "OK", role = if (editable) "field" else "button",
+            bounds = "100,400-300,460", clickable = !editable, editable = editable,
+            viewId = null, windowIdentity = window
+        )
+        val bridge = TwoWindowFakeBridge()
+        bridge.addWindow(TwoWindowFakeBridge.Window(window, listOf(webNode())))
+        val session = admittedSession()
+        bridge.activeWindowId = window
+        val token = session.recordObservation(checkNotNull(bridge.observe()))
+        // The WebView replaces the DOM node: same walk index, same window,
+        // same role/label/bounds, still no resource ID — but a different
+        // control underneath.
+        bridge.setNodes(window, listOf(webNode()))
+        val tapOutcome = dispatchTap(session, bridge, "n4", token)
+        assertTrue("DOM-replaced no-ID target must not dispatch a tap, was: $tapOutcome",
+            tapOutcome is TapOutcome.BridgeFailed)
+        assertTrue("zero stale tap effects, was: ${bridge.effects}", bridge.effects.isEmpty())
+    }
+
+    @Test fun webViewDomReplacementInSameWindowTypesNothing() {
+        val window = "com.app.web#3"
+        fun webField(id: String = "n4") = ScreenNode(
+            id = id, label = "OK", role = "field",
+            bounds = "100,400-300,460", editable = true,
+            viewId = null, windowIdentity = window
+        )
+        val bridge = TwoWindowFakeBridge()
+        bridge.addWindow(TwoWindowFakeBridge.Window(window, listOf(webField())))
+        val session = admittedSession()
+        bridge.activeWindowId = window
+        val token = session.recordObservation(checkNotNull(bridge.observe()))
+        // Same-window DOM replacement of the no-ID field.
+        bridge.setNodes(window, listOf(webField()))
+        val typeOutcome = dispatchType(session, bridge, "n4", token, "hello")
+        assertTrue("DOM-replaced no-ID field must not dispatch a type, was: $typeOutcome",
+            typeOutcome is TapOutcome.BridgeFailed)
+        assertTrue("zero stale type effects, was: ${bridge.effects}", bridge.effects.isEmpty())
     }
 
     @Test fun unchangedWindowDispatchesExactlyOnce() {

@@ -25,8 +25,11 @@ data class ScreenNode(
     val scrollable: Boolean = false,
     /**
      * Stable target identity from AccessibilityNodeInfo.viewIdResourceName,
-     * null when the platform provides none (common in WebViews). Dispatch
-     * binds a snapshot to the live node only when the two ids agree.
+     * null when the platform provides none (common in WebViews). A null view
+     * id NEVER binds: dispatch on such a node fails closed, because a null
+     * id is not permission to revert to positional (role/label/bounds)
+     * identity — a WebView can replace a control with another
+     * same-label/same-bounds/no-resource-ID control in the same window.
      */
     val viewId: String? = null,
     /**
@@ -102,15 +105,20 @@ sealed interface TargetVerification {
  * Binds a verified snapshot node to the live node at dispatch time.
  *
  * The walk index ("n7") is positional: a tree that shifted between observation
- * and dispatch can resolve the same index to a different node. Role, label AND
- * bounds must all agree, or the dispatch fails closed and the caller
+ * and dispatch can resolve the same index to a different node. Role, label
+ * AND bounds must all agree, or the dispatch fails closed and the caller
  * re-observes. A scroll or re-layout changes bounds, which is the safe
  * direction — a wrong tap is never taken.
  *
- * When the snapshot carries a view id (AccessibilityNodeInfo
- * viewIdResourceName), the live node must carry the same one: a replaced view
- * that kept the label and bounds is a different target. Snapshots without a
- * view id (common in WebViews) keep the role/label/bounds check.
+ * Safe-identity policy (finding 3, same-window hardening): the snapshot's
+ * view id (AccessibilityNodeInfo viewIdResourceName) must be non-null and
+ * equal to the live node's. A null view id fails closed — it is never
+ * permission to revert to positional identity, because a WebView can replace
+ * an old "OK" control with another same-label/same-bounds/no-resource-ID
+ * control in the same window, preserving the walk index, and the old token,
+ * window identity and positional matcher would all still pass. Targets
+ * without a stable identity cannot be tapped, scrolled or typed until a
+ * stable identity can be established.
  */
 fun ScreenNode.matchesLiveNode(
     role: String,
@@ -119,7 +127,7 @@ fun ScreenNode.matchesLiveNode(
     liveViewId: String? = null
 ): Boolean =
     this.role == role && this.label == label && this.bounds == bounds &&
-        (viewId == null || viewId == liveViewId)
+        viewId != null && viewId == liveViewId
 
 /**
  * Whether a window-state change event invalidates the observation.
