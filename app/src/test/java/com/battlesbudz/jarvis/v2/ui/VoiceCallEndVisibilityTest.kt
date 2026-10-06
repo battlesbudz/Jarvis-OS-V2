@@ -1,8 +1,15 @@
 package com.battlesbudz.jarvis.v2.ui
 
 import android.content.Context
-import androidx.activity.ComponentActivity
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.OnBackPressedDispatcherOwner
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.test.core.app.ApplicationProvider
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
@@ -42,7 +49,27 @@ import org.robolectric.annotation.Config
 class VoiceCallEndVisibilityTest {
 
     @get:Rule
-    val compose = createAndroidComposeRule<ComponentActivity>()
+    val compose = createComposeRule()
+
+    /**
+     * Back-press double. ConversationScreen's BackHandler reads
+     * LocalOnBackPressedDispatcherOwner, so the test provides its own
+     * dispatcher instead of launching an Activity: Robolectric cannot
+     * resolve a bare ComponentActivity from the manifest
+     * (robolectric/robolectric#4736). The lifecycle is held at RESUMED so
+     * the registered back callback actually fires.
+     */
+    private val backDispatcher = OnBackPressedDispatcher()
+    private val backLifecycleOwner = object : LifecycleOwner {
+        private val registry = LifecycleRegistry(this).apply {
+            currentState = Lifecycle.State.RESUMED
+        }
+        override val lifecycle: Lifecycle get() = registry
+    }
+    private val backOwner = object : OnBackPressedDispatcherOwner {
+        override val lifecycle: Lifecycle get() = backLifecycleOwner.lifecycle
+        override val onBackPressedDispatcher: OnBackPressedDispatcher get() = backDispatcher
+    }
 
     private val callState = MutableStateFlow(VoiceSessionState.PASSIVE_LISTENING)
     private val busy = MutableStateFlow(false)
@@ -66,13 +93,14 @@ class VoiceCallEndVisibilityTest {
         callState.value = VoiceSessionState.PASSIVE_LISTENING
         busy.value = false
         teardownCalls = 0
-        val context: Context = compose.activity
+        val context: Context = ApplicationProvider.getApplicationContext()
         history = ConversationHistory(
             context.getSharedPreferences("voice_call_end_visibility_test", Context.MODE_PRIVATE)
         )
         benchmarkStore = AndroidPipelineBenchmarkStore(context)
         compose.setContent {
-            ConversationScreen(
+            CompositionLocalProvider(LocalOnBackPressedDispatcherOwner provides backOwner) {
+                ConversationScreen(
                 history = history,
                 busy = busy,
                 callState = callState,
@@ -121,7 +149,8 @@ class VoiceCallEndVisibilityTest {
                         )
                     )
                 }
-            )
+                )
+            }
         }
         compose.waitForIdle()
     }
@@ -196,7 +225,7 @@ class VoiceCallEndVisibilityTest {
         compose.onNodeWithTag("voice_call_open").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("voice_call_overlay").assertExists()
-        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.runOnUiThread { backDispatcher.onBackPressed() }
         compose.waitForIdle()
         compose.onNodeWithTag("voice_call_overlay").assertDoesNotExist()
 
@@ -204,7 +233,7 @@ class VoiceCallEndVisibilityTest {
         // control is the way out.
         startArmedSession()
         compose.onNodeWithTag("voice_call_end").assertExists()
-        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.runOnUiThread { backDispatcher.onBackPressed() }
         compose.waitForIdle()
         compose.onNodeWithTag("voice_call_end")
             .assertExists("Back must not dismiss a live session's End-call control")
