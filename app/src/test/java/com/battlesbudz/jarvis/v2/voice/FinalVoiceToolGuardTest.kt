@@ -58,4 +58,19 @@ class FinalVoiceToolGuardTest {
         assertFalse("late cancellation must not pass",
             FinalVoiceToolGuard.allows("pause the music actually cancel that", "media_control", mapOf("action" to "pause")))
     }
+    @Test fun finalMediaCorrectionHonorsCorrectedVerb() {
+        // "play music actually pause music" must not pass as play: the final
+        // correction is honored (or safely rejected), never silently parsed
+        // as the first verb.
+        val text = "play music actually pause music"
+        assertFalse("stale verb must not pass",
+            FinalVoiceToolGuard.allows(text, "media_control", mapOf("action" to "play")))
+        assertTrue("corrected verb must pass",
+            FinalVoiceToolGuard.allows(text, "media_control", mapOf("action" to "pause")))
+        val reverse = "pause music actually play music"
+        assertFalse("stale verb must not pass",
+            FinalVoiceToolGuard.allows(reverse, "media_control", mapOf("action" to "pause")))
+        assertTrue("corrected verb must pass",
+            FinalVoiceToolGuard.allows(reverse, "media_control", mapOf("action" to "play")))
+    }
 }

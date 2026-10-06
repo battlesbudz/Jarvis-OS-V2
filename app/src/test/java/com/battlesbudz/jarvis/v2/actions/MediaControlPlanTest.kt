@@ -63,6 +63,21 @@ class MediaControlPlanTest {
         }
     }
 
+    @Test fun finalCorrectionHonorsCorrectedVerb() {
+        // "play music actually pause music" must not parse as play: the
+        // final correction wins (or the clause is safely rejected).
+        assertMedia("play music actually pause music", "pause")
+        assertMedia("pause music actually play music", "play")
+        assertMedia("play the song instead skip to the next song", "next")
+        assertMedia("play music, actually, pause music", "pause")
+    }
+
+    @Test fun correctionWithoutDirectedVerbStaysNotAction() {
+        // A correction marker followed by no directed media verb is a safe
+        // rejection, not a guess at the first verb.
+        assertTrue(ActionTurnPlan.parse("play music actually uh") is ActionTurnPlan.NotAction)
+    }
+
     @Test fun bareVerbsWithoutMediaNounStayNotAction() {
         // Bare verbs are too ambiguous to become phone actions.
         for (text in listOf("pause", "stop", "play", "next", "toggle")) {

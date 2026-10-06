@@ -47,12 +47,25 @@ internal object ActionRequestText {
         // A media noun is required: bare verbs like "stop" or "next" are too
         // ambiguous to become phone actions on their own.
         val noun = """(?:music|media|songs?|tracks?|playback|tunes?)"""
+        if (!Regex("""\b$noun\b""").containsMatchIn(text)) return null
+        // Final correction: the speaker can correct themselves mid-utterance
+        // ("play music actually pause music"). The first anchored verb must
+        // not silently win over the correction, so when a correction marker
+        // introduces a new directed clause, the verb is read from that
+        // clause — mirroring the open_app final-correction discipline in
+        // FinalVoiceToolGuard. Without this the correction is neither
+        // honored nor rejected: it parses as the first verb.
+        val correction = Regex("""\b(?:actually|instead|make that)\b""").findAll(text).lastOrNull()
+        val effective = correction
+            ?.takeIf { text.substring(it.range.last + 1).isNotBlank() }
+            ?.let { text.substring(it.range.last + 1).trim().trimStart(',', ';', ':').trim() }
+            ?: text
         return when {
-            Regex("""^(?:pause|stop)\b.*\b$noun\b""").containsMatchIn(text) -> "pause"
-            Regex("""^(?:play|resume)\b.*\b$noun\b""").containsMatchIn(text) -> "play"
-            Regex("""^toggle\b.*\b$noun\b""").containsMatchIn(text) -> "toggle"
-            Regex("""^(?:next|skip)\b.*\b$noun\b""").containsMatchIn(text) -> "next"
-            Regex("""^(?:previous|last|go\s+back)\b.*\b$noun\b""").containsMatchIn(text) -> "previous"
+            Regex("""^(?:pause|stop)\b""").containsMatchIn(effective) -> "pause"
+            Regex("""^(?:play|resume)\b""").containsMatchIn(effective) -> "play"
+            Regex("""^toggle\b""").containsMatchIn(effective) -> "toggle"
+            Regex("""^(?:next|skip)\b""").containsMatchIn(effective) -> "next"
+            Regex("""^(?:previous|last|go\s+back)\b""").containsMatchIn(effective) -> "previous"
             else -> null
         }
     }
