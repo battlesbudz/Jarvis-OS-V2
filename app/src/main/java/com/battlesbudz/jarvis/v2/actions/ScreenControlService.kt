@@ -47,16 +47,33 @@ class ScreenControlService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        when (event?.eventType) {
+        val type = event?.eventType ?: return
+        // Jarvis's own windows (the stop overlay, approval UI) share the app
+        // package: handle them explicitly first, so they can neither
+        // invalidate the observation nor inherit its approvals, regardless of
+        // what the generic rules below do. They still feed touch state like
+        // any window, because the user touching our own overlay is still the
+        // user touching the screen.
+        if (event.packageName?.toString() == packageName) {
+            when (type) {
+                AccessibilityEvent.TYPE_TOUCH_INTERACTION_START -> sharedSession.noteTouchStart()
+                AccessibilityEvent.TYPE_TOUCH_INTERACTION_END -> sharedSession.noteTouchEnd()
+                // Own-UI window and content events are explicitly ignored:
+                // the overlay is ours, never a dispatch target.
+                else -> Unit
+            }
+            return
+        }
+        when (type) {
             AccessibilityEvent.TYPE_TOUCH_INTERACTION_START -> sharedSession.noteTouchStart()
             AccessibilityEvent.TYPE_TOUCH_INTERACTION_END -> sharedSession.noteTouchEnd()
             // A window from a different package becoming active invalidates
             // the observation: approvals bind to one window identity and never
-            // cross windows. Jarvis's own stop-overlay/approval windows share
-            // the app package and never become the active window, so they
-            // neither invalidate nor inherit approvals. Content-change events
-            // are deliberately not invalidated here: too noisy, and
-            // dispatch-time re-verification covers them.
+            // cross windows. A null event package means the window cannot be
+            // identified, which fails closed like any unestablished identity.
+            // Content-change events deliberately do not invalidate here: they
+            // are too noisy, and dispatch-time content-generation verification
+            // already covers them.
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ->
                 if (windowChangeInvalidatesObservation(event.packageName?.toString(), packageName))
                     sharedSession.invalidateObservation()
@@ -200,6 +217,21 @@ private class ServiceScreenBridge(
         val root = service.rootInActiveWindow ?: return null
         return try {
             windowIdentityOf(root)
+        } finally {
+            root.recycle()
+        }
+    }
+
+    /**
+     * Content generation of the live active window: the fingerprint of the
+     * exact node content currently on screen. Null when the service or the
+     * active window is unavailable — dispatch fails closed in that case.
+     */
+    override fun currentContentFingerprint(): String? {
+        val service = service() ?: return null
+        val root = service.rootInActiveWindow ?: return null
+        return try {
+            contentFingerprintOf(extractScreenNodes(root))
         } finally {
             root.recycle()
         }
