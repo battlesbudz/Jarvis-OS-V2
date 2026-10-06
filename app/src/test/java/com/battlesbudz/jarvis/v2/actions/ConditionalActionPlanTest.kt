@@ -126,14 +126,14 @@ class ConditionalActionPlanTest {
             val ledger = ToolTaskLedger(FileToolTaskStore(file))
             val group = ledger.admit(listOf(ActionRequest("set_volume", mapOf("level" to "40")), ActionRequest("read_battery")),
                 "thread", resumeAfterRestart = false)
-            val running = JournaledActionPipeline(ledger) { ExecutionResult(true, "40%") }
+            val running = JournaledActionPipeline(ledger, MobileActionExecutor  { ExecutionResult(true, "40%") })
             assertTrue(running.executeAttempt(ledger.get(group.attemptIds.first())!!).succeeded)
             val recovered = ToolTaskLedger(FileToolTaskStore(file))
             assertFalse(recovered.journal().groups.single().resumeAfterRestart)
             recovered.recoverAfterRestart()
             assertEquals(ToolTaskState.SUCCEEDED, recovered.get(group.attemptIds.first())!!.state)
             assertEquals(ToolTaskState.PAUSED, recovered.get(group.attemptIds.last())!!.state)
-            assertFalse(JournaledActionPipeline(recovered) { error("Replayed stale condition") }
+            assertFalse(JournaledActionPipeline(recovered, MobileActionExecutor  { error("Replayed stale condition") })
                 .executeAttempt(recovered.get(group.attemptIds.last())!!).succeeded)
         } finally { directory.deleteRecursively() }
     }

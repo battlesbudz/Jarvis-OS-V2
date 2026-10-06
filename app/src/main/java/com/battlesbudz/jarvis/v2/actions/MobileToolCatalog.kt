@@ -77,6 +77,166 @@ object MobileToolCatalog {
                 minimum = 0,
                 maximum = 100
             ))
+        ),
+        Tool(
+            name = "media_control",
+            description = "Control media playback on the phone: play, pause, toggle play/pause, or skip to the next or previous track.",
+            parameters = listOf(Parameter(
+                name = "action",
+                type = ParameterType.STRING,
+                description = "The media command: one of play, pause, toggle, next, previous.",
+                minLength = 1,
+                pattern = "^(play|pause|toggle|next|previous)$"
+            ))
+        ),
+        Tool(
+            name = "open_website",
+            description = "Open a website URL in the phone browser.",
+            parameters = listOf(Parameter(
+                name = "url",
+                type = ParameterType.STRING,
+                description = "The website URL, e.g. https://example.com or example.com.",
+                minLength = 1
+            ))
+        ),
+        Tool(
+            name = "open_settings",
+            description = "Open an Android system settings screen.",
+            parameters = listOf(Parameter(
+                name = "screen",
+                type = ParameterType.STRING,
+                description = "The settings screen: one of wifi, bluetooth, display, sound, apps, battery, location, storage, network, general.",
+                minLength = 1,
+                pattern = "^(wifi|bluetooth|display|sound|apps|battery|location|storage|network|general)$"
+            ))
+        ),
+        Tool(
+            name = "navigate",
+            description = "Show map directions to a destination address or place name.",
+            parameters = listOf(Parameter(
+                name = "destination",
+                type = ParameterType.STRING,
+                description = "The destination address or place name.",
+                minLength = 1
+            ))
+        ),
+        Tool(
+            name = "screen_observe",
+            description = "Look at the current phone screen and return a compact list of the visible interactive elements with IDs and an observation token. Call this before screen_tap, screen_scroll, or screen_type; element IDs and tokens expire when the screen changes."
+        ),
+        Tool(
+            name = "screen_tap",
+            description = "Tap a screen element from the latest screen_observe result. The target ID and token must come from that observation; stale or mismatched targets are rejected and never tapped.",
+            parameters = listOf(
+                Parameter(
+                    name = "target",
+                    type = ParameterType.STRING,
+                    description = "The element ID from screen_observe, e.g. n3.",
+                    minLength = 1,
+                    pattern = "^n[0-9]{1,4}$"
+                ),
+                Parameter(
+                    name = "token",
+                    type = ParameterType.STRING,
+                    description = "The observation token from screen_observe.",
+                    minLength = 1,
+                    pattern = "^[0-9a-f]{16}$"
+                )
+            )
+        ),
+        Tool(
+            name = "screen_scroll",
+            description = "Scroll a scrollable element from the latest screen_observe result up or down. The target ID and token must come from that observation; stale targets are rejected.",
+            parameters = listOf(
+                Parameter(
+                    name = "target",
+                    type = ParameterType.STRING,
+                    description = "The element ID from screen_observe, e.g. n3.",
+                    minLength = 1,
+                    pattern = "^n[0-9]{1,4}$"
+                ),
+                Parameter(
+                    name = "direction",
+                    type = ParameterType.STRING,
+                    description = "The scroll direction: up or down.",
+                    minLength = 1,
+                    pattern = "^(up|down)$"
+                ),
+                Parameter(
+                    name = "token",
+                    type = ParameterType.STRING,
+                    description = "The observation token from screen_observe.",
+                    minLength = 1,
+                    pattern = "^[0-9a-f]{16}$"
+                )
+            )
+        ),
+        Tool(
+            name = "screen_type",
+            description = "Type text into an editable field from the latest screen_observe result. The target ID and token must come from that observation; stale targets are rejected.",
+            parameters = listOf(
+                Parameter(
+                    name = "target",
+                    type = ParameterType.STRING,
+                    description = "The element ID from screen_observe, e.g. n3.",
+                    minLength = 1,
+                    pattern = "^n[0-9]{1,4}$"
+                ),
+                Parameter(
+                    name = "text",
+                    type = ParameterType.STRING,
+                    description = "The text to type, 1 to 200 characters.",
+                    minLength = 1
+                ),
+                Parameter(
+                    name = "token",
+                    type = ParameterType.STRING,
+                    description = "The observation token from screen_observe.",
+                    minLength = 1,
+                    pattern = "^[0-9a-f]{16}$"
+                )
+            )
+        ),
+        Tool(
+            name = "create_reminder",
+            description = "Schedule a one-shot reminder that alerts the user at the requested time with the given message. Use when the user asks to be reminded of something at a specific time. The reminder is written to the workflow ledger and fires an Android alarm; the reply confirms only what was actually scheduled.",
+            parameters = listOf(
+                Parameter(
+                    name = "message",
+                    type = ParameterType.STRING,
+                    description = "The reminder message, 1 to 256 characters.",
+                    minLength = 1
+                ),
+                Parameter(
+                    name = "at_ms",
+                    type = ParameterType.STRING,
+                    description = "Absolute trigger time as epoch milliseconds, e.g. 1791230400000. Must be in the future.",
+                    minLength = 1,
+                    pattern = "^[0-9]+$"
+                )
+            )
+        ),
+        Tool(
+            name = "show_schedule",
+            description = "List the user's scheduled reminders and upcoming routine runs, or report honestly that nothing is scheduled. Use when the user asks what is scheduled or where a reminder went."
+        ),
+        Tool(
+            name = "post_notification",
+            description = "Post a notification to the user with a title and text. Used by scheduled reminders when they fire; not for ordinary chat.",
+            parameters = listOf(
+                Parameter(
+                    name = "title",
+                    type = ParameterType.STRING,
+                    description = "Notification title, 1 to 64 characters.",
+                    minLength = 1
+                ),
+                Parameter(
+                    name = "text",
+                    type = ParameterType.STRING,
+                    description = "Notification text, 1 to 256 characters.",
+                    minLength = 1
+                )
+            )
         )
     )
 

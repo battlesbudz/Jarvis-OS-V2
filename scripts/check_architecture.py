@@ -17,6 +17,8 @@ COMPOSITION = {
     "MainActivity.kt",
     "JarvisAppComposition.kt",
     "voice/VoiceCallService.kt",
+    # Android alarm/reboot entry point; ordinary actions still inject dependencies.
+    "actions/WorkflowScheduleReceiver.kt",
 }
 ACTIVITY_ENTRY_POINTS = {
     "MainActivity.kt",

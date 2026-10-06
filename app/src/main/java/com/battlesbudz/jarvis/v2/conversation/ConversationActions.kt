@@ -61,12 +61,14 @@ internal class ConversationActions(
     }
 
     suspend fun runNative(plan: ActionTurnPlan.Ready, initialCalls: List<ToolCall>,
-                          nextCalls: suspend (List<ActionTurnRunner.Receipt>) -> List<ToolCall>): ActionTurnRunner.Outcome {
+                          nextCalls: suspend (List<ActionTurnRunner.Receipt>) -> List<ToolCall>,
+                          onNeedsApproval: (suspend (ActionRequest) -> ExecutionResult)? = null): ActionTurnRunner.Outcome {
         val coordinator = ActionTurnRunner(MobileActionExecutor {
             error("ActionTurnRunner dispatch is supplied by the conversation runtime")
         })
         val outcome = coordinator.runNative(plan, initialCalls,
-            dispatch = { dispatch(plan, it) }, nextCalls = nextCalls)
+            dispatch = { dispatch(plan, it) }, nextCalls = nextCalls,
+            onNeedsApproval = onNeedsApproval)
         if (outcome.stopped) cancel()
         return outcome
     }

@@ -2,7 +2,9 @@ package com.battlesbudz.jarvis.v2.conversation
 
 import android.net.Uri
 import com.battlesbudz.jarvis.v2.ChatEntry
+import com.battlesbudz.jarvis.v2.actions.ActionRequest
 import com.battlesbudz.jarvis.v2.actions.ActionTurnPlan
+import com.battlesbudz.jarvis.v2.actions.ExecutionResult
 import com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder
 import com.battlesbudz.jarvis.v2.ai.GenerationResult
 import com.battlesbudz.jarvis.v2.ai.ToolCall
@@ -23,7 +25,12 @@ internal class ConversationGeneration(
     private val references: ConversationReferences,
     private val promptBuilder: ConversationPromptBuilder,
     private val openAttachment: (Uri) -> InputStream?,
-    private val diagnostics: ConversationDiagnostics
+    private val diagnostics: ConversationDiagnostics,
+    /**
+     * M1d: model-proposed screen mutations never auto-dispatch (D23); the
+     * runtime parks them for the user's explicit approval instead.
+     */
+    private val onNeedsApproval: (suspend (ActionRequest) -> ExecutionResult)? = null
 ) {
     suspend fun generate(invocation: ConversationInvocation, contextLimit: Int,
                          routed: RoutedConversation, prepared: PreparedConversation,
@@ -146,7 +153,7 @@ internal class ConversationGeneration(
             draft.generated = answer.engine.sendToolResults(results, answer.streamFilter::accept)
             answer.telemetry.record("tool response", draft.generated, answer.submittedPrompt.length)
             draft.generated.toolCalls
-        })
+        }, onNeedsApproval = onNeedsApproval)
         draft.actionName = plan.steps.joinToString(",") { it.request.name }
         draft.actionResultMessage = outcome.message
         diagnostics.important("Action turn\nuser=${invocation.prompt.take(500)}\nsteps=${plan.steps.map { it.request }}\n" +

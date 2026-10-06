@@ -20,19 +20,47 @@ class ActionTurnRunner(
     sealed interface Batch {
         data class Accepted(val requests: List<ActionRequest>, val reported: List<ActionRequest>) : Batch
         data class Rejected(val message: String = "I couldn't verify the requested phone actions.") : Batch
+        /**
+         * M1d: model-proposed screen mutations (D23). They never auto-dispatch:
+         * [accepted] companions (if any) dispatch normally, then each entry of
+         * [proposed] is handed to the caller's approval path instead of the
+         * Android executor.
+         */
+        data class NeedsApproval(val proposed: List<ActionRequest>, val accepted: Accepted? = null) : Batch
     }
 
     /** Validates every call before a caller is permitted to execute any of them. */
     fun validateBatch(plan: ActionTurnPlan.Ready, completed: List<Receipt>, calls: List<ToolCall>): Batch {
         if (plan.batteryCondition != null) return Batch.Rejected("A battery condition needs a fresh Android reading before dispatch.")
         val remaining = plan.steps.drop(completed.size)
-        if (calls.isEmpty() || remaining.isEmpty()) return Batch.Rejected()
-        val requests = calls.map { NativeActionDecoder.decodeStrict(it) }
-        if (requests.any { it == null }) return Batch.Rejected()
+        val decoded = calls.map { NativeActionDecoder.decodeStrict(it) }
+        if (decoded.any { it == null }) return Batch.Rejected()
+        val requests = decoded.filterNotNull()
+        // Screen mutations proposed by the model never auto-dispatch (D23):
+        // they are parked for the user's explicit approval while the other
+        // calls validate exactly as before.
+        val proposed = requests.filter { it.name in SCREEN_MUTATION_TOOLS }
+        val rest = requests.filter { it.name !in SCREEN_MUTATION_TOOLS }
+        val accepted: Batch.Accepted? = if (rest.isEmpty()) {
+            if (proposed.isEmpty()) return Batch.Rejected()
+            null
+        } else {
+            if (remaining.isEmpty()) return Batch.Rejected()
+            when (val validated = validateRest(remaining, completed, rest)) {
+                is Batch.Rejected -> return validated
+                is Batch.Accepted -> validated
+                is Batch.NeedsApproval -> return Batch.Rejected()
+            }
+        }
+        return if (proposed.isNotEmpty()) Batch.NeedsApproval(proposed, accepted)
+        else accepted ?: Batch.Rejected()
+    }
+
+    private fun validateRest(remaining: List<ActionTurnPlan.Step>, completed: List<Receipt>, requests: List<ActionRequest>): Batch {
         val accepted = mutableListOf<ActionRequest>()
         val reported = mutableListOf<ActionRequest>()
         var next = 0
-        for (request in requests.filterNotNull()) {
+        for (request in requests) {
             val expected = remaining.getOrNull(next)?.request
             if (expected != null && same(request, expected)) {
                 accepted += request; reported += request; next++ // explicit repeated user steps take precedence
@@ -58,10 +86,16 @@ class ActionTurnRunner(
         else "I completed ${receipts.size} action(s), but stopped before the rest.")
 
     fun same(left: ActionRequest, right: ActionRequest): Boolean = left.name == right.name && when (left.name) {
-        "read_battery" -> left.arguments.isEmpty() && right.arguments.isEmpty()
+        "read_battery", "screen_observe" -> left.arguments.isEmpty() && right.arguments.isEmpty()
         "set_volume" -> left.arguments["level"] == right.arguments["level"]
         "open_app" -> left.arguments.keys == setOf("app") && right.arguments.keys == setOf("app") &&
             left.arguments["app"]?.trim()?.equals(right.arguments["app"]?.trim(), ignoreCase = true) == true
+        "media_control" -> left.arguments["action"] == right.arguments["action"]
+        "show_schedule" -> left.arguments.isEmpty() && right.arguments.isEmpty()
+        "create_reminder" -> left.arguments["message"] == right.arguments["message"] &&
+            left.arguments["at_ms"] == right.arguments["at_ms"]
+        "post_notification" -> left.arguments["title"] == right.arguments["title"] &&
+            left.arguments["text"] == right.arguments["text"]
         else -> false
     }
 }
@@ -140,20 +174,20 @@ suspend fun ActionTurnRunner.runNative(
     plan: ActionTurnPlan,
     initialCalls: List<ToolCall>,
     dispatch: suspend (ActionRequest) -> ExecutionResult,
-    nextCalls: suspend (List<ActionTurnRunner.Receipt>) -> List<ToolCall>
+    nextCalls: suspend (List<ActionTurnRunner.Receipt>) -> List<ToolCall>,
+    /**
+     * M1d: handles model-proposed screen mutations. The default (null) keeps
+     * the historical behavior of rejecting them; production parks them for
+     * the user's explicit approval instead of dispatching.
+     */
+    onNeedsApproval: (suspend (ActionRequest) -> ExecutionResult)? = null
 ): ActionTurnRunner.Outcome {
     val ready = plan as? ActionTurnPlan.Ready
         ?: return ActionTurnRunner.Outcome(emptyList(), false, true, (plan as? ActionTurnPlan.Rejected)?.reason.orEmpty())
     val receipts = mutableListOf<ActionTurnRunner.Receipt>()
     var calls = initialCalls
-    // `initialCalls` comes from the first generation and consumes the first pass.
-    for (pass in 0 until maxModelPasses) {
-        currentCoroutineContext().ensureActive()
-        val batch = validateBatch(ready, receipts, calls)
-        if (batch is ActionTurnRunner.Batch.Rejected) return ActionTurnRunner.Outcome(receipts, false, true,
-            summary(receipts, ready.steps.drop(receipts.size), batch.message))
-        batch as ActionTurnRunner.Batch.Accepted
-        for (request in batch.requests) {
+    suspend fun dispatchAccepted(requests: List<ActionRequest>): ActionTurnRunner.Outcome? {
+        for (request in requests) {
             currentCoroutineContext().ensureActive()
             try {
                 val result = dispatch(request)
@@ -164,6 +198,32 @@ suspend fun ActionTurnRunner.runNative(
                 yield()
             } catch (cancelled: CancellationException) { throw cancelled }
         }
+        return null
+    }
+    // `initialCalls` comes from the first generation and consumes the first pass.
+    for (pass in 0 until maxModelPasses) {
+        currentCoroutineContext().ensureActive()
+        val batch = validateBatch(ready, receipts, calls)
+        if (batch is ActionTurnRunner.Batch.Rejected) return ActionTurnRunner.Outcome(receipts, false, true,
+            summary(receipts, ready.steps.drop(receipts.size), batch.message))
+        if (batch is ActionTurnRunner.Batch.NeedsApproval) {
+            batch.accepted?.let { dispatchAccepted(it.requests)?.let { outcome -> return outcome } }
+            val park = onNeedsApproval ?: return ActionTurnRunner.Outcome(receipts, false, true,
+                summary(receipts, ready.steps.drop(receipts.size)))
+            for (proposal in batch.proposed) {
+                currentCoroutineContext().ensureActive()
+                try {
+                    val result = park(proposal)
+                    receipts += ActionTurnRunner.Receipt(proposal, result)
+                    currentCoroutineContext().ensureActive()
+                    yield()
+                } catch (cancelled: CancellationException) { throw cancelled }
+            }
+            return ActionTurnRunner.Outcome(receipts, false, true,
+                receipts.joinToString(" ") { it.result.message }.ifBlank { "I couldn't verify the requested phone actions." })
+        }
+        batch as ActionTurnRunner.Batch.Accepted
+        dispatchAccepted(batch.requests)?.let { return it }
         if (receipts.size == ready.steps.size) return ActionTurnRunner.Outcome(receipts, true, false,
             receipts.joinToString(" ") { it.result.message })
         // Do not start another inference after the final configured model pass.

@@ -45,10 +45,16 @@ internal object VoiceCallOverlay {
     onToggleMicrophone: () -> Unit,
     onEndCall: () -> Unit,
     transcriptSpeaker: String = "",
-    transcript: String = ""
+    transcript: String = "",
+    // A call is in flight while the voice session is alive OR a voice turn is
+    // running. The end-call affordance must not depend on `active` (the armed
+    // flag) alone: on device the armed flag can drop during the farewell ->
+    // wake-listening phase while the session is fully alive, which left the
+    // bubble with no way to end it.
+    callInFlight: Boolean = active,
 ) {
-    // Wisp lives in the persistent app header. This compact pill retains the same
-    // call controls; the transcript stays in the conversation.
+    // Only the orb and its opaque control pill paint over the chat. The live
+    // transcript belongs to the conversation, rather than a duplicate overlay.
     Box(Modifier.fillMaxSize().testTag("voice_call_overlay_layer")) {
         Column(Modifier.align(Alignment.BottomEnd).imePadding()
             .padding(end = 16.dp, bottom = 104.dp).width(112.dp).testTag("voice_call_overlay"),
@@ -59,20 +65,28 @@ internal object VoiceCallOverlay {
                     Text(phase, style = MaterialTheme.typography.labelSmall, maxLines = 1,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             .testTag("voice_call_status").semantics { contentDescription = status.ifBlank { phase } })
-                    Row(horizontalArrangement = Arrangement.Center) {
+                    if (callInFlight) {
+                        // The call button becomes the end-call button while a call
+                        // is in flight, so there is always a visible way to end it.
+                        TextButton(onClick = onEndCall,
+                            modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
+                                .testTag("voice_call_end")
+                                .semantics { contentDescription = "End call" }) {
+                            Text("End call", color = MaterialTheme.colorScheme.error)
+                        }
                         if (active) {
-                            IconButton(onClick = onToggleMicrophone,
-                                modifier = Modifier.size(48.dp).testTag("voice_call_pause").semantics {
-                                    contentDescription = if (microphonePaused) "Resume microphone" else "Pause microphone"
-                                }) { Text(if (microphonePaused) "▶" else "Ⅱ") }
-                            IconButton(onClick = onEndCall,
-                                modifier = Modifier.size(48.dp).testTag("voice_call_end").semantics { contentDescription = "End call" }) {
-                                Text("×", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.titleLarge)
+                            TextButton(onClick = onToggleMicrophone,
+                                modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp)
+                                    .testTag("voice_call_pause").semantics {
+                                        contentDescription = if (microphonePaused) "Resume microphone" else "Pause microphone"
+                                    }) {
+                                Text(if (microphonePaused) "Resume microphone" else "Pause microphone",
+                                    style = MaterialTheme.typography.labelSmall)
                             }
-                        } else if (canStart) {
-                            TextButton(onClick = onStart, modifier = Modifier.testTag("voice_start")) { Text("Start") }
-                        } else Text("…", modifier = Modifier.padding(12.dp))
-                    }
+                        }
+                    } else if (canStart) {
+                        TextButton(onClick = onStart, modifier = Modifier.testTag("voice_start")) { Text("Start") }
+                    } else Text("…", modifier = Modifier.padding(12.dp))
                     if (stopReplyAvailable) TextButton(onClick = onStopReply,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                         modifier = Modifier.testTag("voice_call_stop_reply")) { Text("Stop reply", style = MaterialTheme.typography.labelSmall) }
@@ -101,6 +115,14 @@ internal fun VoiceCallScreen(
     onEndVoiceCall: ((String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
     onExportSpeechAudio: () -> Unit,
+    // M1d explicit silent work (D21/T05): toggle plus observable posture.
+    silentWork: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
+    onSilentWork: (Boolean) -> Unit = {},
+    // M2 saved workflows (D36): settings lists them with enable/disable; chat stays the operating surface.
+    workflowSettings: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection?>? = null,
+    onWorkflowSetEnabled: (String, Boolean) -> Unit = { _, _ -> },
+    // M3 guided MCP setup (D07): custom server URL from the settings dialog.
+    onConnectMcpServer: (String, String, String, (String) -> Unit) -> Unit = { _, _, _, done -> done("MCP setup is unavailable right now.") },
     pipelineBenchmarkStore: com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore,
     callEvidenceActions: CallEvidenceActions,
 ) {
@@ -108,9 +130,19 @@ internal fun VoiceCallScreen(
     val runtimePhase by runtime.phase.collectAsState()
     val runtimeStatus by runtime.status.collectAsState()
     val runtimeArmed by runtime.armed.collectAsState()
+    // Session aliveness, not the armed flag: the End-call button must survive
+    // the farewell -> "Waiting for Hey Jarvis" phase, where armed can drop
+    // while the session (wake listener, mic, foreground service) is alive.
+    val sessionAlive by runtime.sessionAlive.collectAsState()
     val microphonePaused by runtime.paused.collectAsState()
     val microphoneLevel by runtime.level.collectAsState()
     val chatSending by chatBusy.collectAsState()
+    // M1d: explicit silent work. While on, ordinary speech is ignored until
+    // the wake phrase; admitted tasks keep running and stop controls work.
+    val silentWorkFlow = remember(silentWork) {
+        silentWork ?: kotlinx.coroutines.flow.MutableStateFlow(false)
+    }
+    val silentWorkActive by silentWorkFlow.collectAsState()
     var wakeTesting by remember { mutableStateOf(false) }
     var wakeTestStatus by remember { mutableStateOf("") }
     val wakeContext = androidx.compose.ui.platform.LocalContext.current
@@ -210,6 +242,13 @@ internal fun VoiceCallScreen(
                 if (runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING) playback.level else microphoneLevel
             } else 0f,
             active = runtimeArmed,
+            // The session is in flight from the first arm() until a true stop,
+            // including the farewell -> "Waiting for Hey Jarvis" phase. The
+            // end-call button must not depend on the armed flag or the
+            // composable's turn state alone: on device, "hey Jarvis" rearms
+            // the call inside the runtime turn chain without touching either,
+            // which left the bubble with no way to end it.
+            callInFlight = sessionAlive || turnInFlight,
             microphonePaused = microphonePaused,
             canStart = !runtimeArmed && !chatSending && !turnInFlight && !wakeTesting && !inputTesting && !audioPathTesting,
             stopReplyAvailable = runtimeArmed && (
@@ -236,6 +275,22 @@ internal fun VoiceCallScreen(
         text = { Column(Modifier.verticalScroll(rememberScrollState())) {
             Text("One model for chat and voice", style = MaterialTheme.typography.bodySmall)
             modelSelector(!chatSending && !runtimeArmed && !turnInFlight && !wakeTesting && !audioPathTesting && !inputTesting)
+            // M1d explicit silent work (D21/T05): tasks continue while
+            // ordinary speech is ignored until "hey jarvis" wakes back up.
+            OutlinedButton(onClick = { onSilentWork(!silentWorkActive) },
+                modifier = Modifier.fillMaxWidth().testTag("silent_work_toggle")) {
+                Text(if (silentWorkActive) "Wake up — resume listening" else "Work silently")
+            }
+            if (silentWorkActive) {
+                Text("Working silently · say \"hey jarvis\" to wake",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("silent_work_status"))
+            }
+            // M2 saved workflows (D36): list with enable/disable; chat stays the operating surface.
+            val workflowProjection by (workflowSettings?.collectAsState()
+                ?: androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection?>(null) })
+            WorkflowSettingsSection(projection = workflowProjection, onSetEnabled = onWorkflowSetEnabled,
+                onConnectMcpServer = onConnectMcpServer)
         androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 16.dp))
         Text("Voice & microphone", style = MaterialTheme.typography.titleMedium)
         Text("Voice: Piper Northern English", style = MaterialTheme.typography.bodyMedium)

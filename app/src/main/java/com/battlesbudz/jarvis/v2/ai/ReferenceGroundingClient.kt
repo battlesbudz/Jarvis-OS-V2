@@ -8,7 +8,7 @@ data class ReferenceGrounding(val context: String, val sources: List<String>)
 
 class ReferenceGroundingClient(
     private val readBytes: ((URL) -> ByteArray)? = null,
-    private val onReadStarted: () -> (() -> Unit) = { {} },
+    private val onReadStarted: (publicActivity: String) -> (() -> Unit) = { {} },
     private val pdfText: (ByteArray) -> String = { "" },
 ) {
     private companion object {
@@ -191,7 +191,7 @@ class ReferenceGroundingClient(
                 "https://en.wikipedia.org/w/api.php?action=query&list=search" +
                     "&srsearch=$encoded&srnamespace=0&srlimit=3&format=json"
             )
-            val search = get(searchUrl).optJSONObject("query")?.optJSONArray("search")
+            val search = get(searchUrl, "Researching with Wikipedia").optJSONObject("query")?.optJSONArray("search")
             val parts = mutableListOf<String>()
             val sources = mutableListOf<String>()
             if (search != null) {
@@ -199,7 +199,7 @@ class ReferenceGroundingClient(
                     val item = search.optJSONObject(index) ?: continue
                     val title = item.optString("title")
                     if (title.isBlank()) continue
-                    val extract = requestPageExtract(title)
+                    val extract = requestPageExtract(title, index + 1, minOf(search.length(), 3))
                     val text = ReferenceEvidencePolicy.passage(query, title, extract, MAX_EXTRACT_CHARS).ifBlank {
                         item.optString("snippet").replace(Regex("<[^>]+>"), "").trim().takeIf { ReferenceEvidencePolicy.relevant(query, title, it) }.orEmpty()
                     }
@@ -212,14 +212,14 @@ class ReferenceGroundingClient(
             ReferenceGrounding(parts.joinToString("\n"), sources)
         }.getOrElse { ReferenceGrounding("", emptyList()) }
 
-    private fun requestPageExtract(title: String): String =
+    private fun requestPageExtract(title: String, index: Int, total: Int): String =
         runCatching {
             val encodedTitle = URLEncoder.encode(title, "UTF-8")
             val url = URL(
                 "https://en.wikipedia.org/w/api.php?action=query&prop=extracts" +
                     "&explaintext=1&exchars=20000&titles=$encodedTitle&format=json"
             )
-            val pages = get(url).optJSONObject("query")?.optJSONObject("pages")
+            val pages = get(url, "Reading Wikipedia result $index of $total").optJSONObject("query")?.optJSONObject("pages")
             pages?.keys()?.asSequence()?.mapNotNull { key ->
                 pages.optJSONObject(key)?.optString("extract")
             }?.firstOrNull { it.isNotBlank() }.orEmpty()
@@ -232,7 +232,7 @@ class ReferenceGroundingClient(
                 "https://www.wikidata.org/w/api.php?action=wbsearchentities" +
                     "&search=$encoded&language=en&format=json&limit=3"
             )
-            val json = get(url)
+            val json = get(url, "Researching with Wikidata")
             val search = json.optJSONArray("search")
             val parts = mutableListOf<String>()
             val sources = mutableListOf<String>()
@@ -254,9 +254,9 @@ class ReferenceGroundingClient(
         val urls = Regex("https://[^\\s<>]+", RegexOption.IGNORE_CASE).findAll(query)
             .map { it.value.trimEnd(')', ']', '.', ',') }.distinct().take(2).toList()
         val parts = mutableListOf<String>(); val sources = mutableListOf<String>()
-        for (raw in urls) runCatching {
+        for ((index, raw) in urls.withIndex()) runCatching {
             val url = URL(raw)
-            val bytes = read(url)
+            val bytes = read(url, "Reading supplied source ${index + 1} of ${urls.size}")
             val text = if (bytes.take(5).toByteArray().toString(Charsets.US_ASCII) == "%PDF-") pdfText(bytes)
                 else bytes.toString(Charsets.UTF_8).replace(Regex("(?is)<(?:script|style)[^>]*>.*?</(?:script|style)>"), "")
                     .replace(Regex("<[^>]+>"), " ").replace(Regex("[ \t]+"), " ")
@@ -268,12 +268,13 @@ class ReferenceGroundingClient(
         return ReferenceGrounding(parts.joinToString("\n"), sources)
     }
 
-    private fun get(url: URL): org.json.JSONObject = org.json.JSONObject(read(url).toString(Charsets.UTF_8))
+    private fun get(url: URL, publicActivity: String): org.json.JSONObject =
+        org.json.JSONObject(read(url, publicActivity).toString(Charsets.UTF_8))
 
-    private fun read(original: URL): ByteArray {
+    private fun read(original: URL, publicActivity: String): ByteArray {
         // Publish only at the real read boundary, not while deciding whether a lookup is needed.
-        // Observers receive no source data, and a presentation failure cannot change retrieval.
-        val finish = runCatching { onReadStarted() }.getOrNull()
+        // Observers receive only authored public operation metadata, never source data or queries.
+        val finish = runCatching { onReadStarted(publicActivity) }.getOrNull()
         try {
             return readReferenceBytes(original)
         } finally {

@@ -38,6 +38,7 @@
 
 # Explicit application boundary exercised by the release integration tests.
 -keep class com.battlesbudz.jarvis.v2.actions.MobileAction** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenScrollDirection { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.AndroidMobileActionExecutor { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ActionRequest { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ActionValidation** { *; }
@@ -57,6 +58,44 @@
 -keep class com.battlesbudz.jarvis.v2.actions.ApprovalDecision { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ActionDispatchGate { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.AuthorizedDispatch { *; }
+# M1e device validation: release journeys drive the permission, lock and
+# source-access gates directly from the instrumentation DEX.
+-keep class com.battlesbudz.jarvis.v2.actions.ToolSourceAccess { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ToolSourcePolicy { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ToolSourceAccessRecord { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.SourceAccessState { *; }
+# M2 workflows: release journeys drive the workflow ledger, scheduling
+# policy and engine directly from the instrumentation DEX.
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowAlarmScheduler$Scheduled { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.DisableResult { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowDefinition { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowStep** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowTrigger** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowCondition** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowWait** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowEventKind { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowValueType { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowBinding { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.EffortBudget { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowOrigin { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowLedger { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowOccurrence { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowOccurrenceState { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowReceipt { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowReceiptKind { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.MissedRunDecision** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowScheduling { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowScheduling** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowEngine { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowRunOutcome** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowAlarmScheduler { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.DeviceLockGate { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.OwnerRecognitionMode { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.LockVerdict { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ToolCapabilityProbe { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AndroidToolGatesKt { *; }
 -keep class com.battlesbudz.jarvis.v2.ui.PhoneTaskPanelKt { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.NativeActionDecoder { *; }
 -keep class com.battlesbudz.jarvis.v2.ai.ToolCall { *; }
@@ -244,6 +283,68 @@
 
 # Shared assistant readiness API used by the separately shrunk release journey.
 -keep class com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService** { *; }
+
+# M1c screen-control boundary exercised by the release integration tests
+# (test55-test58). The separately shrunk instrumentation DEX constructs
+# ScreenNode fixtures, calls the top-level extractor, and drives the session
+# through the service bridge; without these, R8 strips or renames them and the
+# tests fail with NoClassDefFoundError/NoSuchMethodError.
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenControlService { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenControlService$Companion { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenControlServiceKt { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenControlSession { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenNode { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenObservation { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenBridge { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AdmitResult** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.DispatchGate** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TargetVerification** { *; }
+# Round-4 findings 1+2: the release instrumentation DEX calls these top-level
+# functions directly through the target class loader (verifiedLaunchReceipt in
+# test07, contentFingerprintOf in FakeScreenBridge). Without a keep, R8
+# renames the file-facade classes and the tests crash with
+# NoClassDefFoundError — the same failure mode the M1c keeps above guard.
+-keep class com.battlesbudz.jarvis.v2.actions.BackgroundLaunchKt { *; }
+# The same test07 call crosses this enum in the retained function descriptor.
+-keep class com.battlesbudz.jarvis.v2.actions.BackgroundLaunchRoute { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenControlKt { *; }
+
+# M1d task/conversation scheduling boundary exercised by the release
+# integration tests (test59-test62). The instrumentation DEX drives the
+# scheduler, the approval admission, the progress projector and the
+# notification poster directly; without these, R8 renames them and the tests
+# fail with IncompatibleClassChangeError/NoSuchMethodError.
+-keep class com.battlesbudz.jarvis.v2.actions.TaskScheduler { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TaskResource** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScheduleDecision** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TaskStopRouter { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TaskStopScope** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenApprovalAdmission { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TaskStatusProjection { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TaskProjectionState { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TaskProgressProjector { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TaskProgressNotification { *; }
+# M3 ecosystem integrations: the release journeys drive the provider
+# registry, dispatcher, MCP flow and settings projection reflectively
+# through the shared test class loader; keep them unshrunk like the other
+# journey-driven action classes.
+-keep class com.battlesbudz.jarvis.v2.actions.Provider** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AppFunction** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.Mcp** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.Alias** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.Discovery** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.TypeConversion** { *; }
+# These two start with InMemory/UrlConnection so the Mcp** wildcard misses
+# them; the journeys instantiate both from the instrumentation DEX.
+-keep class com.battlesbudz.jarvis.v2.actions.InMemoryMcpCredentialStore { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.UrlConnectionMcpHttpClient { *; }
+# Reminder bug-fix slice: the release journeys drive the reminder coordinator
+# and the schedule/notification boundary from the instrumentation DEX.
+-keep class com.battlesbudz.jarvis.v2.actions.ReminderWorkflowKt { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ReminderSpec { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ReminderScheduling { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ReminderCoordinator { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ReminderNotification { *; }
 
 # Controlled release benchmark journey crosses the independently shrunk test
 # DEX into the shipping DTOs, persisted store, and dashboard composable.

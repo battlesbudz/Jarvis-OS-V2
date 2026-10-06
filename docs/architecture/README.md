@@ -28,7 +28,7 @@ for the decision to keep package/collaborator boundaries before adding build mod
 | `MainActivity` | Permissions, activity results, exports and attaching Compose; delegates feature work |
 | `ui/JarvisApp` | UI state/callback wiring and selecting conversation/setup/history/diagnostic surfaces inside persistent Wisp chrome |
 | `ui/WispPresence` / `WispPresenter` / `WispCharacter` | App-level observation, deterministic pose policy and native drawing; never owns or starts calls/actions |
-| `presentation/AgentActivityMonitor` | Ephemeral token-scoped observation of actual reference reads and terminal turn errors; no request content or operation authority |
+| `presentation/AgentActivityMonitor` | Ephemeral turn/read leases and sequence-fenced public progress; safe tool metadata and terminal errors, never answer/reasoning tokens or operation authority |
 | `JarvisAppComposition` | Compatibility composition adapter supplying only benchmark-store and call-evidence dependencies to UI |
 | `JarvisRuntime.get(applicationContext)` | Process composition/lifecycle facade wiring typed owners/ports, shared history and compatibility entry adapters |
 | `runtime/turn/VoiceTurnRunner` | Admits and orders typed voice stages, with error/rearm policy; resource release belongs to finalizer |
@@ -141,6 +141,7 @@ inputs and narrow collaborators, not the process runtime.
 | Generate | `ConversationGeneration`: selected multimodal input, safe stream/draft and strict native-tool receipt compatibility; returns `ConversationDraft` |
 | Recover | `ConversationRecovery`: bounded read-only factuality/reference/repetition work; cannot admit phone effects |
 | Finalize/publish | `ConversationFinalizer`: receipt-first visible text policy; `ConversationReply`: memory-valid token/completion, latency and benchmark finalization |
+| Public activity | `ConversationActivity`: admitted-turn, bounded public progress sentences; no model inference, private reasoning or operation authority |
 | Observe | `ConversationInferenceTelemetry`: exact submissions/progress; `ConversationBackend`: the resident LiteRT inference adapter |
 
 `ConversationSessionState` shares only the resident engine, context-seeded flag and
@@ -173,3 +174,22 @@ the guard is not a Kotlin parser or proof of an acyclic package graph.
 
 [Native/build details](development.md#native-and-release-boundaries),
 [change guide](change-guide.md), [verification](../verification/README.md).
+
+
+## Integrated Muse tools and workflows
+
+The audio branch includes Muse `9f965badaeab20dcd5973ddb7d55d5846f64ca3c`.
+`runtime/WorkflowCoordinator` owns reminder/workflow/provider composition;
+`actions/WorkflowScheduleReceiver` is an Android alarm/reboot entry point that
+enters that coordinator through the process runtime. `PhoneTaskCoordinator`
+retains phone admission, exact screen approval and task-progress projection.
+`ScreenControlService` owns the accessibility bridge and explicit screen session;
+content-generation checks invalidate stale approvals. `ToolSourceAccess` enforces
+persisted source denials, revocations and bounded scopes across dispatch adapters.
+
+The common `FileToolTaskStore` reads schemas 1–3 and writes schema 3, preserving
+workflow definitions, occurrences, resume progress, source permissions and receipts.
+Unknown journal content fails closed rather than being reset or downgraded.
+Submitted/unobserved app launches retain UNKNOWN_OUTCOME and cannot advance
+success-dependent steps. Wisp observation remains read-only and cannot authorize
+a phone action or extend an approval.

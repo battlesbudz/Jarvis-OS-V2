@@ -11,6 +11,74 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AgentActivityTest {
+
+    @Test fun openEndedPublicProgressUsesRealLeasesAndIgnoresReorderedOrEndedUpdates() {
+        val monitor = AgentActivityMonitor()
+        val work = monitor.beginWork("chat")
+        work.progress("Comparing the three selected routes", 2)
+        assertEquals("Comparing the three selected routes", monitor.state.value?.label)
+        work.progress("Preparing the comparison", 1)
+        assertEquals("Comparing the three selected routes", monitor.state.value?.label)
+        work.progress("Duplicate sequence must not replace the event", 2)
+        assertEquals("Comparing the three selected routes", monitor.state.value?.label)
+        work.close()
+        work.progress("This late callback must stay hidden", 3)
+        assertNull(monitor.state.value)
+    }
+
+    @Test fun actualReadOverridesTurnThenReturnsToItsLatestRealStage() {
+        val monitor = AgentActivityMonitor()
+        val work = monitor.beginWork("original-chat")
+        val read = monitor.beginTurnReferences("newly-opened-chat", "Reading supplied source 1 of 2")
+        assertEquals("original-chat", monitor.state.value?.conversationId)
+        assertEquals("Reading supplied source 1 of 2", monitor.state.value?.label)
+        work.progress("Checking your reply", 1)
+        assertEquals("Reading supplied source 1 of 2", monitor.state.value?.label)
+        read.close()
+        assertEquals("Checking your reply", monitor.state.value?.label)
+        work.close()
+        assertNull(monitor.state.value)
+    }
+
+    @Test fun endingOrReplacingATurnRemovesItsReadsAndStaleCallbacksCannotRestoreThem() {
+        val monitor = AgentActivityMonitor()
+        val old = monitor.beginWork("old")
+        val read = monitor.beginTurnReferences("old", "Researching with Wikipedia")
+        old.close()
+        assertNull(monitor.state.value)
+        val current = monitor.beginWork("new")
+        val snapshot = monitor.state.value
+        read.progress("Old progress", 1)
+        old.progress("Old turn", 2)
+        read.close()
+        old.close()
+        assertEquals(snapshot, monitor.state.value)
+        current.close()
+        assertNull(monitor.state.value)
+    }
+
+    @Test fun unsafePublicProgressIsNotEchoedOrPersisted() {
+        for (unsafe in listOf("Reading https://host/path?token=secret", "Email jane@example.com", "token=private",
+                "x".repeat(161), "Opening app\nsecret", "Hidden\u202esuffix")) {
+            val monitor = AgentActivityMonitor()
+            val work = monitor.beginWork("chat", unsafe)
+            assertEquals("Working on your request", monitor.state.value?.label)
+            work.close()
+        }
+    }
+
+    @Test fun actualReferenceEventsDescribeTheOperationWithoutQueryOrUrlData() = runBlocking {
+        val monitor = AgentActivityMonitor()
+        val labels = mutableListOf<String>()
+        val client = ReferenceGroundingClient(
+            readBytes = { labels += requireNotNull(monitor.state.value).label; "%PDF-fixture".toByteArray() },
+            onReadStarted = { publicActivity -> monitor.beginReferences("chat", publicActivity)::close },
+            pdfText = { "A document about apricot trees." })
+        assertNotNull(client.fetchIfRequested("https://example.org/private-reference.pdf?token=private"))
+        assertEquals(listOf("Reading supplied source 1 of 1"), labels)
+        assertNull(monitor.state.value)
+    }
+
     @Test fun onlyAnOwnedOperationPublishesActivityAndClosingItIsIdempotent() {
         val monitor = AgentActivityMonitor()
         assertNull(monitor.state.value)

@@ -57,6 +57,11 @@ fun JarvisApp(
     phoneTasks: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>? = null,
     phoneTaskError: kotlinx.coroutines.flow.StateFlow<String?>? = null,
     onPhoneTaskAction: (String, Long, String) -> Unit = { _, _, _ -> },
+    silentWork: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
+    onSilentWork: (Boolean) -> Unit = {},
+    workflowSettings: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.actions.WorkflowSettingsProjection?>? = null,
+    onWorkflowSetEnabled: (String, Boolean) -> Unit = { _, _ -> },
+    onConnectMcpServer: (String, String, String, (String) -> Unit) -> Unit = { _, _, _, done -> done("MCP setup is unavailable right now.") },
 ) {
     WithPipelineDiagnostics { benchmarkStore, callEvidence ->
         val setup = rememberModelSetupState(store, ModelSetupActions(
@@ -163,6 +168,11 @@ fun JarvisApp(
                                             onEndVoiceCall = onEndVoiceCall,
                                             onCopyDiagnostics = onCopyDiagnostics,
                                             onExportSpeechAudio = onExportSpeechAudio,
+                                            silentWork = silentWork,
+                                            onSilentWork = onSilentWork,
+                                            workflowSettings = workflowSettings,
+                                            onWorkflowSetEnabled = onWorkflowSetEnabled,
+                                            onConnectMcpServer = onConnectMcpServer,
                                             pipelineBenchmarkStore = benchmarkStore,
                                             callEvidenceActions = callEvidence,
                                         )

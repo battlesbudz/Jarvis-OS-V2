@@ -25,6 +25,18 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             "assistant/JarvisInteractionSessionService.kt": "MainActivity::class.java",
         }))
 
+    def test_workflow_receiver_is_a_narrow_runtime_composition_entry_point(self):
+        source = "import com.battlesbudz.jarvis.v2.JarvisRuntime\nJarvisRuntime.get(context)"
+        self.assertEqual([], self.violations({"actions/WorkflowScheduleReceiver.kt": source}))
+        for name in ("actions/WorkflowAlarmScheduler.kt", "actions/WorkflowEngine.kt",
+                     "actions/OrdinaryAction.kt", "actions/nested/WorkflowScheduleReceiver.kt"):
+            with self.subTest(name=name):
+                self.assertTrue(self.violations({name: source}))
+        # A receiver's runtime admission does not grant activity-launch authority.
+        self.assertTrue(self.violations({
+            "actions/WorkflowScheduleReceiver.kt": "MainActivity::class.java",
+        }))
+
     def test_feature_import_qualified_access_and_extension_are_rejected(self):
         for source in (
             "import com.battlesbudz.jarvis.v2.JarvisRuntime as Runtime\nval runtime = Runtime.get(context)",

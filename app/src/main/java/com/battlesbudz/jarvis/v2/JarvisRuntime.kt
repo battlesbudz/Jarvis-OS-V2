@@ -40,6 +40,7 @@ import com.battlesbudz.jarvis.v2.runtime.AcceptedVoiceInvocation
 import com.battlesbudz.jarvis.v2.runtime.PhoneTaskCoordinator
 import com.battlesbudz.jarvis.v2.runtime.RuntimeMemoryCoordinator
 import com.battlesbudz.jarvis.v2.runtime.RuntimeVoiceResources
+import com.battlesbudz.jarvis.v2.runtime.WorkflowCoordinator
 import com.battlesbudz.jarvis.v2.runtime.turn.AcceptedVoiceFollowupStage
 import com.battlesbudz.jarvis.v2.runtime.turn.OrdinaryVoiceReplyStage
 import com.battlesbudz.jarvis.v2.runtime.turn.TypedVoiceInputStage
@@ -72,7 +73,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Application-context runtime. The foreground service owns voice execution; UI only observes. */
-internal class JarvisRuntime private constructor(context: android.content.Context) : android.content.ContextWrapper(context) {
+internal class JarvisRuntime private constructor(context: android.content.Context) : android.content.ContextWrapper(context),
+    com.battlesbudz.jarvis.v2.actions.ReminderScheduling {
     internal val mainHandler = Handler(Looper.getMainLooper())
     internal val runtimeScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val voiceCallState = VoiceCallState()
@@ -129,8 +131,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         }
     }
     internal val referenceGrounding = ReferenceGroundingClient(
-        onReadStarted = {
-            val lease = agentActivityMonitor.beginReferences(conversationHistory.current.value.id)
+        onReadStarted = { publicActivity ->
+            val lease = agentActivityMonitor.beginTurnReferences(conversationHistory.current.value.id, publicActivity)
             val finish: () -> Unit = { lease.close() }
             finish
         },
@@ -165,12 +167,38 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         get() = memoryCoordinator.stateToken
         set(value) { memoryCoordinator.stateToken = value }
     internal val actionIntentRouter = com.battlesbudz.jarvis.v2.actions.ActionIntentRouter()
+    /**
+     * M1d explicit silent work (D21/T05). [com.battlesbudz.jarvis.v2.voice.ContinuousActionSession]
+     * classifies final captures through this controller: ordinary speech is ignored while silent,
+     * the wake phrase reopens conversation, and a required question may temporarily open an
+     * answer window. Tasks continue unaffected in every case.
+     */
+    internal val silentWork = com.battlesbudz.jarvis.v2.voice.SilentWorkController()
+
+    /** Puts Jarvis into (or out of) explicit silent work. Returns true when the mode changed. */
+    fun setSilentWork(enabled: Boolean): Boolean {
+        val changed = if (enabled) silentWork.enterSilentWork() else silentWork.exitSilentWork()
+        if (changed) {
+            silentWorkState.value = silentWork.isSilent
+            diagnosticRecorder.recordImportant("Silent work ${if (enabled) "entered" else "exited"} by user request.")
+        }
+        return changed
+    }
+
+    /** Observable silent-work posture for the UI toggle. */
+    val silentWorkState = kotlinx.coroutines.flow.MutableStateFlow(false)
+    /** Shared durable store for the phone-task journal and the workflow ledger. */
+    private val durableTaskRecovery = com.battlesbudz.jarvis.v2.runtime.DurableTaskRecovery()
+    internal val taskRecoveryReady get() = durableTaskRecovery.ready
+    private val phoneActionStore by lazy {
+        com.battlesbudz.jarvis.v2.actions.FileToolTaskStore(java.io.File(noBackupFilesDir, "phone-action-attempts.json"))
+    }
     private val phoneTaskCoordinator by lazy {
         PhoneTaskCoordinator(
             scope = runtimeScope,
+            appContext = this,
             ledgerFactory = {
-                com.battlesbudz.jarvis.v2.actions.ToolTaskLedger(
-                    com.battlesbudz.jarvis.v2.actions.FileToolTaskStore(java.io.File(noBackupFilesDir, "phone-action-attempts.json")))
+                com.battlesbudz.jarvis.v2.actions.ToolTaskLedger(phoneActionStore)
             },
             isDeviceLocked = { getSystemService(android.app.KeyguardManager::class.java)?.isDeviceLocked == true },
             createExecutor = {
@@ -180,7 +208,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             conversationExists = { id -> conversationHistory.list().any { it.id == id } },
             projectReply = { conversationId, replyId, text, receipts ->
                 conversationHistory.updateReply(conversationId, replyId, text, true, receipts)
-            })
+            },
+            silentWork = silentWork,
+            recordDiagnostic = diagnosticRecorder::recordImportant)
     }
     internal val phoneTasks get() = phoneTaskCoordinator.tasks
     internal val phoneTaskError get() = phoneTaskCoordinator.error
@@ -198,6 +228,59 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
     internal fun resumePhoneTasksAfterUnlock() = phoneTaskCoordinator.resumePhoneTasksAfterUnlock()
     internal fun phoneTaskAction(id: String, generation: Long, command: String) =
         phoneTaskCoordinator.phoneTaskAction(id, generation, command)
+    /**
+     * M1d: a model-proposed screen mutation never auto-dispatches (D23). Park
+     * it in the ledger awaiting the user's explicit approval.
+     */
+    internal fun parkScreenTaskForApproval(request: com.battlesbudz.jarvis.v2.actions.ActionRequest):
+        com.battlesbudz.jarvis.v2.actions.ExecutionResult =
+        phoneTaskCoordinator.parkScreenTaskForApproval(request, conversationHistory.current.value.id)
+    // -- M2 reusable workflows / M3 ecosystem providers / reminders --------
+    private val workflowCoordinator by lazy {
+        WorkflowCoordinator(
+            scope = runtimeScope,
+            appContext = this,
+            taskStore = phoneActionStore,
+            isActivityVisible = { activityVisible },
+            recordDiagnostic = diagnosticRecorder::recordImportant,
+            reportError = { message -> mainHandler.post { phoneTaskCoordinator.reportError(message) }; Unit },
+            // Workflow dispatch runs off Main. Snapshot its already-durable boundaries on
+            // the existing presentation dispatcher; observation never resumes a task.
+            onJournalChanged = { mainHandler.post { phoneTaskCoordinator.refreshPhoneTasks() }; Unit })
+    }
+    /** Settings projection: saved workflows plus connected tools. Chat stays the operating surface. */
+    internal val workflowSettings get() = workflowCoordinator.workflowSettings
+    internal fun refreshWorkflowSettings() = workflowCoordinator.refreshWorkflowSettings()
+    /** Settings toggle: explicit enable/disable; disabling pauses affected unfinished work (D17). */
+    internal fun setWorkflowEnabled(id: String, enabled: Boolean) =
+        workflowCoordinator.setWorkflowEnabled(id, enabled)
+    /**
+     * Alarm fire: claim the occurrence atomically, then run it. Redeliveries
+     * find it claimed and stop. Called by [com.battlesbudz.jarvis.v2.actions.WorkflowScheduleReceiver]
+     * and the reminder coordinator; the signature is a compatibility boundary.
+     */
+    internal fun onWorkflowAlarm(occurrenceId: String, done: () -> Unit) {
+        if (!durableTaskRecovery.runWhenReady { workflowCoordinator.onWorkflowAlarm(occurrenceId, done) }) {
+            phoneTaskCoordinator.reportError("Saved tasks could not be recovered. Workflow actions remain paused; restart after the journal problem is resolved.")
+            done()
+        }
+    }
+    /** Evaluate past-due occurrences against current circumstances (D33, T14). */
+    internal fun evaluateMissedWorkflowRuns() {
+        durableTaskRecovery.runWhenReady { workflowCoordinator.evaluateMissedWorkflowRuns() }
+    }
+    /** Guided MCP setup from settings (D07). */
+    internal fun connectMcpServer(name: String, url: String, token: String, done: (String) -> Unit) =
+        workflowCoordinator.connectMcpServer(name, url, token, done)
+    internal val providerRegistry get() = workflowCoordinator.providerRegistry
+    internal val mcpRegistry get() = workflowCoordinator.mcpRegistry
+    internal val appFunctionPlatformStatus get() = workflowCoordinator.appFunctionPlatformStatus
+    // ReminderScheduling: the Android executor reaches the reminder
+    // coordinator through the runtime as its context.
+    override fun createReminder(message: String, atMs: Long): com.battlesbudz.jarvis.v2.actions.ExecutionResult =
+        workflowCoordinator.createReminder(message, atMs)
+    override fun describeSchedule(): com.battlesbudz.jarvis.v2.actions.ExecutionResult =
+        workflowCoordinator.describeSchedule()
     internal lateinit var sessionPreferences: android.content.SharedPreferences
     internal lateinit var pipelineBenchmarkStore: com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore
     internal lateinit var diagnosticRecorder: com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
@@ -245,7 +328,16 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         pipelineBenchmarkStore = com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore(applicationContext)
         diagnosticRecorder.restore()
         diagnosticRecorder.recordPreviousProcessExit(applicationContext)
-        phoneTaskCoordinator.recoverAfterRestart()
+        // Construction is the publication barrier: no cold alarm sees this runtime until
+        // both durable recovery passes finish, and neither pass starts new task work.
+        if (durableTaskRecovery.recover(phoneTaskCoordinator::recoverAfterRestart, workflowCoordinator::recoverAfterRestart)) {
+            phoneTaskCoordinator.resumePhoneTasksAfterUnlock()
+        }
+        // M3 ecosystem providers (D05/D07, T16/T17): seed the T08 scope
+        // resolver before any provider grant is recorded, and probe the
+        // AppFunctions platform once with ordinary app access.
+        workflowCoordinator.seedProviderScopeResolver()
+        workflowCoordinator.probeAppFunctionPlatform()
         shortTermContext.restoreSummary(sessionPreferences.getString(ConversationPolicy.SHORT_TERM_SUMMARY_KEY, null))
         AndroidMemoryOs.get(applicationContext).addApprovedStateObserver {
             // Fence output immediately, then durably publish the context boundary off the caller
@@ -304,6 +396,10 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         returnToWakeCuePending.set(false)
         com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
         voiceSessionArmed = true
+        // The session now exists until a true stop: the End-call button gates
+        // on this, not on the armed flag, which can drop during the
+        // farewell -> "Waiting for Hey Jarvis" phase while the session lives.
+        com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.sessionAlive.value = true
         startVoiceDiagnostics("Jarvis session — awaiting wake word")
     }
     fun sendChat(text: String, attachment: com.battlesbudz.jarvis.v2.chat.ChatAttachment? = null): String? {
@@ -509,7 +605,14 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 openConversationAttachment(
                     primary = { contentResolver.openInputStream(uri) },
                     fallback = { contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream() })
-            }, diagnostics),
+            }, diagnostics,
+                // M1d: model-proposed screen mutations never auto-dispatch
+                // (D23); park them for the user's explicit approval.
+                onNeedsApproval = { request ->
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        parkScreenTaskForApproval(request)
+                    }
+                }),
             ConversationRecovery(models::reset, references, factualityVerifier, turnOrchestrator::automaticFallbackQuery, diagnostics),
             promptBuilder, { prompt, entries -> actionIntentRouter.classifyActionIntent(prompt, entries) != null },
             turnOrchestrator::recordResponse,
@@ -523,7 +626,14 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 pipelineBenchmarks.finishResources(capture)
                 capture.finish(outcome, callId = callId, failureCode = failure)?.let { pipelineBenchmarkStore.append(it) }
             }, diagnostics = diagnostics,
-            onTurnStarted = agentActivityMonitor::clearFailure, onTurnFailure = ::showAgentFailure)
+            onTurnStarted = agentActivityMonitor::clearFailure, onTurnFailure = ::showAgentFailure,
+            beginActivity = { id ->
+                val lease = agentActivityMonitor.beginWork(id)
+                object : com.battlesbudz.jarvis.v2.conversation.ConversationActivity {
+                    override fun progress(publicBlurb: String, sequence: Long) = lease.progress(publicBlurb, sequence)
+                    override fun close() = lease.close()
+                }
+            })
     }
     private val voiceTurns: VoiceTurnRunner by lazy {
         val call = VoiceCallAccess(voiceCallState, voiceSessionController, VoiceCallEvents(
@@ -567,7 +677,8 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             recognition = VoiceTurnRecognition(call, conversation, runtimeVoiceResources, conversationHistory, memory,
                 turnOrchestrator, diagnosticRecorder, asrComparisonStore),
             acceptedReplies = AcceptedVoiceFollowupStage(call, runtimeScope, acceptedActionCoordinator,
-                replyCaptureBenchmark, pipelineBenchmarks, runtimeVoiceResources, conversationHistory, memory, turnOrchestrator, diagnosticRecorder),
+                replyCaptureBenchmark, pipelineBenchmarks, runtimeVoiceResources, conversationHistory, memory, turnOrchestrator, diagnosticRecorder,
+                silentWork = silentWork, onSilentWorkExit = { silentWorkState.value = false }),
             ordinaryReplies = OrdinaryVoiceReplyStage(call, runtimeScope, conversation, replyCaptureBenchmark,
                 runtimeVoiceResources, conversationHistory, memory, turnOrchestrator, diagnosticRecorder, asrComparisonStore),
             finalizer = VoiceTurnFinalizer(call, conversation, nativeSessionState, acceptedActionCoordinator,
@@ -676,7 +787,11 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             runCatching { voiceSessionController.recordTerminalInputForCall(input.callId, input.id,
                 "Cancelled before processing typed message: ${input.text}") }
         }
-        if (stopSession) voiceSessionArmed = false
+        if (stopSession) {
+            voiceSessionArmed = false
+            // True session end: the End-call button's sessionAlive gate drops here.
+            com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.sessionAlive.value = false
+        }
         com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
         com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.liveTranscript.value = ""
         val status = if (stopSession) "Jarvis session stopped — microphone off."

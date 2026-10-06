@@ -1,5 +1,6 @@
 package com.battlesbudz.jarvis.v2.verification
 
+import android.app.NotificationManager
 import android.content.Intent
 import android.content.Context
 import android.content.ContextWrapper
@@ -57,6 +58,8 @@ import com.battlesbudz.jarvis.v2.presentation.AgentActivityKind
 import com.battlesbudz.jarvis.v2.ui.PipelineBenchmarkScreen
 import com.battlesbudz.jarvis.v2.diagnostics.*
 import com.battlesbudz.jarvis.v2.voice.*
+import java.net.ServerSocket
+import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
@@ -540,9 +543,24 @@ class ReleaseJourneyTest {
     @Test fun test07_settingsToolOpensAndroidSettings() {
         val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true }))
         val result = pipeline.execute(ActionRequest("open_app", mapOf("app" to "Settings", "package" to "com.android.settings")))
-        assertTrue(result.message, result.succeeded)
+        // A submitted launch is never promoted to a verified opening: the
+        // receipt reports the request as sent but unconfirmed.
+        assertEquals(ExecutionResult.Outcome.UNKNOWN_COMPLETION, result.outcome)
+        assertFalse("a submitted launch is not a verified opening: ${result.message}", result.succeeded)
+        assertTrue("the receipt must say the request was sent and opening could not be confirmed: ${result.message}",
+            result.message.contains("was sent") && result.message.contains("could not be confirmed"))
+        // Destination visibility is asserted independently with UiDevice:
+        // only an actually observed foreground package may claim a verified
+        // opening.
         assertTrue("Settings must actually appear, not merely report success",
             device.wait(Until.hasObject(By.pkg("com.android.settings").depth(0)), 15_000))
+        val foregroundObserved = device.currentPackageName == "com.android.settings"
+        assertTrue("Settings must be the foreground package to claim a verified opening", foregroundObserved)
+        val verified = verifiedLaunchReceipt(
+            "Settings", BackgroundLaunchRoute.DIRECT, platformError = null, foregroundObserved = true
+        )
+        assertEquals(ExecutionResult.Outcome.SUCCEEDED, verified.outcome)
+        assertTrue(verified.succeeded)
         // @After captures the launched Settings screen before closing Jarvis's scenario.
     }
 
@@ -688,9 +706,20 @@ class ReleaseJourneyTest {
                     com.battlesbudz.jarvis.v2.ai.ToolCall("read_battery", "{}"),
                     com.battlesbudz.jarvis.v2.ai.ToolCall("set_volume", "{\"level\":30}"),
                     com.battlesbudz.jarvis.v2.ai.ToolCall("open_app", "{\"app\":\"Settings\"}"))))
-            assertTrue(outcome.message, outcome.completed)
+            // The first two steps use real Android state. The trailing launch
+            // is submitted but unconfirmed, so the turn stops instead of
+            // completing: the volume change is real, the opening is not
+            // claimed as verified.
             assertEquals(kotlin.math.round(audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .3).toInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
-            assertTrue(device.wait(Until.hasObject(By.pkg("com.android.settings").depth(0)), 15_000))
+            assertFalse("the turn must not complete on an unconfirmed launch: ${outcome.message}", outcome.completed)
+            assertTrue("the turn must stop at the unconfirmed launch: ${outcome.message}", outcome.stopped)
+            val launch = outcome.receipts.last()
+            assertEquals("open_app", launch.request.name)
+            assertEquals(ExecutionResult.Outcome.UNKNOWN_COMPLETION, launch.result.outcome)
+            assertTrue("the launch receipt must stay honest: ${launch.result.message}",
+                launch.result.message.contains("was sent") && launch.result.message.contains("could not be confirmed"))
+            assertTrue("Settings must actually appear, not merely be reported",
+                device.wait(Until.hasObject(By.pkg("com.android.settings").depth(0)), 15_000))
         } finally { audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0) }
     }
 
@@ -774,7 +803,7 @@ class ReleaseJourneyTest {
     }
 
 
-    @Test fun test18_naturalActionRoutingOpensSettingsThenReadsBattery() {
+    @Test fun test18_naturalActionRoutingSubmitsSettingsAndStopsBeforeBattery() {
         val plan = com.battlesbudz.jarvis.v2.ai.TurnOrchestrator(com.battlesbudz.jarvis.v2.ai.ReferenceGroundingClient())
             .plan("Can you open up Settings and tell me what my battery percentage is?")
         assertEquals(com.battlesbudz.jarvis.v2.ai.TurnKind.NORMAL_CHAT, plan.kind)
@@ -782,12 +811,12 @@ class ReleaseJourneyTest {
         val outcome = ActionTurnRunner(AndroidMobileActionExecutor(context, canLaunchDirectly = { true })).run(plan.actionPlan, listOf(listOf(
             com.battlesbudz.jarvis.v2.ai.ToolCall("open_app", "{\"app\":\"Settings\"}"),
             com.battlesbudz.jarvis.v2.ai.ToolCall("read_battery", "{}"))))
-        assertTrue(outcome.completed)
-        assertEquals(listOf("open_app", "read_battery"), outcome.receipts.map { it.request.name })
-        assertTrue(outcome.receipts.all { it.result.succeeded })
+        // The launch is submitted but unconfirmed, so the turn stops here:
+        // the battery read must not inherit the unestablished opening.
+        assertFalse("the turn must not complete on an unconfirmed launch: ${outcome.message}", outcome.completed)
+        assertEquals(listOf("open_app"), outcome.receipts.map { it.request.name })
+        assertEquals(ExecutionResult.Outcome.UNKNOWN_COMPLETION, outcome.receipts.single().result.outcome)
         assertTrue(device.wait(Until.hasObject(By.pkg("com.android.settings").depth(0)), 15_000))
-        val percent = context.getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-        assertEquals("Battery is at $percent percent.", outcome.receipts.last().result.message)
     }
 
     @Test fun test19_retryLiteralUnknownAppStopsWithoutBattery() {
@@ -859,7 +888,7 @@ class ReleaseJourneyTest {
             val combinedReport = delivery.reports.joinToString(" ") { it.text }
             assertTrue(combinedReport.contains("Battery is at"))
             assertTrue(combinedReport.contains("Media volume set to 30 percent."))
-            assertTrue(combinedReport.contains("Opening Settings."))
+            assertTrue(combinedReport.contains("The launch request for Settings was sent, but opening could not be confirmed."))
             assertTrue(session.markDelivered(delivery.attemptId, delivery.reports.map { it.taskId }.toSet()))
             assertEquals(0, session.pendingReportCount())
         } finally {
@@ -2242,7 +2271,7 @@ class ReleaseJourneyTest {
             val a = ledger.get(id)?.takeIf { it.generation == generation }
             if (a != null) {
                 when (command) {
-                    "approve" -> JournaledActionPipeline(ledger) { effects.incrementAndGet(); ExecutionResult(true, "25%") }
+                    "approve" -> JournaledActionPipeline(ledger, executor = MobileActionExecutor { effects.incrementAndGet(); ExecutionResult(true, "25%") })
                         .executeAttempt(a, a.approvalId?.let { approvals.get(it) })
                     "deny" -> a.approvalId?.let { approvals.deny(it) }
                     "checked" -> ledger.reconcileUnknown(id, generation)
@@ -2312,9 +2341,15 @@ class ReleaseJourneyTest {
                 if (group == null) group = ledger.admit(plan.steps.map { it.request }, "conditional-thread", resumeAfterRestart = false)
                 pipeline.executeBound(checkNotNull(ledger.get(group!!.attemptIds[index++])), request)
             }, checkBattery = { MobileActionPipeline(executor = executor).execute(ActionRequest("read_battery")) })
-            assertTrue(outcome.message, outcome.completed)
+            // The trailing launch is submitted but unconfirmed, so the turn
+            // reports honestly instead of completing: every step dispatched,
+            // none of them over-claimed.
+            assertFalse("the turn must not complete on an unconfirmed launch: ${outcome.message}", outcome.completed)
             assertEquals(true, outcome.conditionMatched)
             assertEquals(listOf("set_volume", "read_battery", "open_app"), outcome.receipts.map { it.request.name })
+            assertEquals(ExecutionResult.Outcome.UNKNOWN_COMPLETION, outcome.receipts.last().result.outcome)
+            assertTrue("the last receipt must stay honest: ${outcome.receipts.last().result.message}",
+                outcome.receipts.last().result.message.contains("could not be confirmed"))
             assertEquals((audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .4).roundToInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
             assertEquals(percent, outcome.receipts[1].result.batteryPercent)
             assertTrue(device.wait(Until.hasObject(By.pkg("com.android.settings")), 10_000))
@@ -2327,14 +2362,16 @@ class ReleaseJourneyTest {
             assertEquals(false, skipped.conditionMatched)
             assertTrue(skipped.receipts.isEmpty())
             assertEquals((audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .4).roundToInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
-            assertEquals(3, ledger.snapshot().count { it.state == ToolTaskState.SUCCEEDED })
+            assertEquals(2, ledger.snapshot().count { it.state == ToolTaskState.SUCCEEDED })
+            assertEquals("the unconfirmed launch must be journaled as unknown, never succeeded",
+                1, ledger.snapshot().count { it.state == ToolTaskState.UNKNOWN_OUTCOME })
         } finally {
             audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
             directory.deleteRecursively()
         }
     }
 
-    @Test fun test44_backgroundAssistantOpensAppAndFinishesOrderedPlanWithoutTap() = runBlocking {
+    @Test fun test44_backgroundAssistantSubmitsLaunchAndStopsPlanWithoutTap() = runBlocking {
         val service = context.packageName + "/com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService"
         val keys = listOf("assistant", "voice_interaction_service", "voice_recognition_service")
         val saved = keys.associateWith { device.executeShellCommand("settings get secure $it").trim() }
@@ -2360,20 +2397,27 @@ class ReleaseJourneyTest {
                 dispatch = { request -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     MobileActionPipeline(executor = executor).execute(request)
                 } }, checkBattery = { error("No conditional reading requested") })
-            assertTrue(outcome.message, outcome.completed)
-            assertEquals(listOf("set_volume", "open_app", "read_battery"), outcome.receipts.map { it.request.name })
+            // The assistant route submits the launch but cannot observe the
+            // destination, so the plan stops here instead of treating the
+            // battery read as success-backed by an unconfirmed opening.
+            assertFalse("the plan must not complete on an unconfirmed launch: ${outcome.message}", outcome.completed)
+            assertEquals(listOf("set_volume", "open_app"), outcome.receipts.map { it.request.name })
+            assertEquals(ExecutionResult.Outcome.UNKNOWN_COMPLETION, outcome.receipts.last().result.outcome)
+            assertTrue("the assistant receipt must stay honest: ${outcome.receipts.last().result.message}",
+                outcome.receipts.last().result.message.contains("could not be confirmed"))
             assertEquals((audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .4).roundToInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
-            assertEquals(context.getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY), outcome.receipts.last().result.batteryPercent)
             assertTrue("Background app command must really open Settings without notification interaction",
                 device.wait(Until.hasObject(By.pkg("com.android.settings")), 10_000))
-            assertTrue(diagnostics.any { "route=selected_assistant visible=false selected=true" in it })
+            assertTrue(diagnostics.any { "route=selected_assistant visible=false binding=true" in it })
             captureEvidence("background_assistant_first_launch")
             // A second command while Jarvis is still hidden must not fall back to a tap.
             device.pressHome()
             val again = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 MobileActionPipeline(executor = executor).execute(ActionRequest("open_app", mapOf("app" to "Settings")))
             }
-            assertTrue(again.message, again.succeeded)
+            assertEquals("the assistant submission stays unconfirmed, never success",
+                ExecutionResult.Outcome.UNKNOWN_COMPLETION, again.outcome)
+            assertFalse(again.succeeded)
             assertFalse(again.message.contains("tap", ignoreCase = true))
             assertTrue(device.wait(Until.hasObject(By.pkg("com.android.settings")), 10_000))
             val missing = MobileActionPipeline(executor = executor).execute(ActionRequest("open_app", mapOf("app" to "jarvis nonexistent fixture app")))
@@ -3186,8 +3230,8 @@ class ReleaseJourneyTest {
     }
 
     private fun awaitWispFixtureReady(fixtureText: String) = observeWisp {
-        // Replace the initial Ready pose's existing ten-second wait. The setup shell has
-        // the same Ready label, so it cannot establish that setContent has committed.
+        // Idle has no status node. Require the fixture transcript and real character together
+        // so the previous setup shell cannot establish that setContent has committed.
         val deadline = SystemClock.uptimeMillis() + 10_000
         while (SystemClock.uptimeMillis() < deadline) {
             refreshWispObservation()
@@ -3196,16 +3240,17 @@ class ReleaseJourneyTest {
                 val transcript = device.findObject(By.res("conversation_transcript").pkg(context.packageName))
                 val fixture = transcript?.findObject(By.text(fixtureText))
                 val composer = device.findObject(By.res("chat_composer").pkg(context.packageName))
+                val character = device.findObject(By.res("jarvis_wisp").pkg(context.packageName))
                 val pose = device.findObject(By.res("jarvis_wisp_status").pkg(context.packageName))
                 if (fixture?.text == fixtureText && composer?.resourceName == "chat_composer" &&
-                    pose?.text == "Ready" && SystemClock.uptimeMillis() < deadline) return@observeWisp
+                    character != null && pose == null && SystemClock.uptimeMillis() < deadline) return@observeWisp
             } catch (_: StaleObjectException) {
                 // The old setup or fixture node was replaced. Observe again; never remount it.
             }
             val remaining = deadline - SystemClock.uptimeMillis()
             if (remaining > 0) SystemClock.sleep(remaining.coerceAtMost(25))
         }
-        throw AssertionError("The controlled Wisp conversation and Ready pose must mount within 10,000 ms")
+        throw AssertionError("The controlled Wisp conversation and idle character must mount within 10,000 ms")
     }
 
     private fun awaitWispGeometry(tag: String, message: String, timeoutMs: Long, stableMs: Long,
@@ -3275,6 +3320,13 @@ class ReleaseJourneyTest {
             VoiceSessionUi.level.value = 0f
             playback.value = VoicePlaybackFrame()
             call.value = VoiceSessionState.PASSIVE_LISTENING
+        }
+        fun idle() {
+            assertTrue("Idle Wisp must have no activity text or accessibility status node", device.wait(
+                Until.gone(By.res("jarvis_wisp_status")), 10_000))
+            assertNotNull("The character remains while idle", find(By.res("jarvis_wisp")))
+            if (taskError.value != null) assertTrue("The separate task warning remains visible", device.wait(
+                Until.hasObject(By.text("Phone tasks need attention")), 5_000))
         }
         fun pose(label: String) {
             assertTrue("Wisp should show $label", device.wait(
@@ -3349,6 +3401,13 @@ class ReleaseJourneyTest {
             observed.value = AgentActivitySnapshot(2, history.current.value.id, AgentActivityKind.CHECKING_REFERENCES, "Checking references")
             pose("Checking references")
             captureEvidence("test49_wispReferences")
+            observed.value = AgentActivitySnapshot(20, history.current.value.id, AgentActivityKind.WORKING,
+                "Comparing the three selected routes")
+            pose("Comparing the three selected routes")
+            captureEvidence("test49_wispPublicProgress")
+            observed.value = AgentActivitySnapshot(21, history.current.value.id, AgentActivityKind.WORKING,
+                "Reading https://example.org/private?token=secret")
+            pose("Working on your request")
             observed.value = null
             busy.value = false
             observed.value = AgentActivitySnapshot(3, history.current.value.id, AgentActivityKind.ERROR, "Something went wrong")
@@ -3357,7 +3416,7 @@ class ReleaseJourneyTest {
             pose("Thinking")
             observed.value = null
             busy.value = false
-            for ((tool, label) in listOf("open_app" to "Opening app", "read_battery" to "Checking battery", "set_volume" to "Adjusting volume")) {
+            for ((tool, label) in listOf("open_app" to "Opening app", "read_battery" to "Checking battery", "set_volume" to "Adjusting media volume to 25%")) {
                 task(ToolTaskState.RUNNING, tool)
                 pose(label)
                 captureEvidence("test49_wisp_$tool")
@@ -3369,17 +3428,17 @@ class ReleaseJourneyTest {
             task(ToolTaskState.SUCCEEDED, "set_volume", 2, ExecutionResult.Outcome.SUCCEEDED)
             pose("Task complete")
             captureEvidence("test49_wispSuccess")
-            pose("Ready")
+            idle()
             task(ToolTaskState.UNKNOWN_OUTCOME, "open_app", 3, ExecutionResult.Outcome.UNKNOWN_COMPLETION)
             pose("Check the task outcome")
             captureEvidence("test49_wispUnknownOutcome")
             assertEquals(0, approvals.get())
             journal.value = ToolTaskJournal()
-            pose("Ready")
+            idle()
             // Keep the same storage failure throughout real UI state transitions; animation must
             // neither hide the phone-action warning nor require clearing its process-owned state.
             taskError.value = journalWarning
-            pose("Task needs attention")
+            idle()
             clickEnabled(By.res("phone_tasks_open"))
             assertNotNull(find(By.text(journalWarning)))
             captureEvidence("test49_wispJournalWarning")
@@ -3390,7 +3449,7 @@ class ReleaseJourneyTest {
             pose("Checking references")
             observed.value = null
             busy.value = false
-            pose("Task needs attention")
+            idle()
             enterText(By.res("chat_composer"), "Keep my Wisp draft")
             hideKeyboardWithoutNavigating()
             repeat(2) {
@@ -3424,7 +3483,7 @@ class ReleaseJourneyTest {
                 pose("Listening")
                 awaitWispSize("Stopping a reply must not shrink an active call", ::isModestlyExpanded)
                 clickEnabled(By.res("voice_call_end"))
-                pose("Task needs attention")
+                idle()
                 awaitWispSize("Ending a call must return Wisp to its idle size") {
                     kotlin.math.abs(it.height() - idleViewport.height()) <= 1 && kotlin.math.abs(it.width() - idleViewport.width()) <= 1
                 }
@@ -3445,6 +3504,1343 @@ class ReleaseJourneyTest {
         }
     }
 
+    @Test fun test50_mediaControlDispatchesViaAudioManager() {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context))
+        try {
+            listOf("play", "pause", "toggle", "next", "previous").forEach { verb ->
+                val result = pipeline.execute(ActionRequest("media_control", mapOf("action" to verb)))
+                assertTrue("media_control $verb must dispatch: ${result.message}", result.succeeded)
+                assertTrue("receipt must describe the dispatch honestly, not claim a playback change",
+                    result.message.contains("active media session"))
+            }
+            val rejected = pipeline.execute(ActionRequest("media_control", mapOf("action" to "rewind")))
+            assertFalse("unknown media verb must not dispatch", rejected.succeeded)
+            assertEquals("media keys must not change the volume", before,
+                audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+        } finally {
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
+        }
+    }
+
+    @Test fun test51_mediaTextRequestParsesAndDispatches() {
+        // Regression for the Fold 6 report (2026-10-04): text "pause music" must
+        // become a Ready media_control plan and dispatch through the real
+        // executor. A NotAction plan would fall through to chat and let the
+        // model hallucinate success, which is the bug being fixed.
+        val plan = ActionTurnPlan.parse("pause music")
+        assertTrue("text 'pause music' must parse as an action plan, was $plan",
+            plan is ActionTurnPlan.Ready)
+        val request = (plan as ActionTurnPlan.Ready).steps.single().request
+        assertEquals("media_control", request.name)
+        assertEquals("pause", request.arguments["action"])
+        val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context))
+        val result = pipeline.execute(request)
+        assertTrue("parsed media_control must dispatch: ${result.message}", result.succeeded)
+        assertTrue("receipt must describe the dispatch honestly, not claim a playback change",
+            result.message.contains("active media session"))
+    }
+
+    @Test fun test52_openSettingsWifiShowsSettings() {
+        val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true }))
+        val result = pipeline.execute(ActionRequest("open_settings", mapOf("screen" to "wifi")))
+        // Submitted, never promoted: only an observed foreground package
+        // may claim a verified opening.
+        assertEquals(ExecutionResult.Outcome.UNKNOWN_COMPLETION, result.outcome)
+        assertFalse("a submitted launch is not a verified opening: ${result.message}", result.succeeded)
+        assertTrue("Wi-Fi settings must actually appear, not merely report success",
+            device.wait(Until.hasObject(By.pkg("com.android.settings").depth(0)), 15_000))
+        // @After captures the launched Settings screen before closing Jarvis's scenario.
+    }
+
+    @Test fun test53_openWebsiteDispatchesHonestReceipt() {
+        val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true }))
+        val result = pipeline.execute(ActionRequest("open_website", mapOf("url" to "example.com")))
+        assertEquals("an unobserved website launch stays unconfirmed: ${result.message}",
+            ExecutionResult.Outcome.UNKNOWN_COMPLETION, result.outcome)
+        assertTrue("receipt must name the normalized URL honestly",
+            result.message.contains("https://example.com"))
+        val rejected = pipeline.execute(ActionRequest("open_website", mapOf("url" to "javascript:alert(1)")))
+        assertFalse("dangerous URL scheme must not dispatch", rejected.succeeded)
+    }
+
+    @Test fun test54_navigateDispatchesHonestReceipt() {
+        val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true }))
+        val result = pipeline.execute(ActionRequest("navigate", mapOf("destination" to "1600 Amphitheatre Parkway")))
+        assertEquals("an unobserved navigation launch stays unconfirmed: ${result.message}",
+            ExecutionResult.Outcome.UNKNOWN_COMPLETION, result.outcome)
+        assertTrue("receipt must name the destination honestly",
+            result.message.contains("1600 Amphitheatre Parkway"))
+        val rejected = pipeline.execute(ActionRequest("navigate", mapOf("destination" to "   ")))
+        assertFalse("blank destination must not dispatch", rejected.succeeded)
+    }
+
+    // M1c screen control journeys.
+
+    private class FakeScreenBridge(
+        var observation: ScreenObservation? = null,
+        var available: Boolean = true
+    ) : ScreenBridge {
+        val tapped = mutableListOf<ScreenNode>()
+        val scrolled = mutableListOf<Pair<ScreenNode, ScreenScrollDirection>>()
+        val typed = mutableListOf<Pair<ScreenNode, String>>()
+        var overlayShown = false
+
+        override fun isAvailable(): Boolean = available
+        override fun observe(): ScreenObservation? = observation
+        override fun currentWindowIdentity(): String? = observation?.windowIdentity
+        override fun currentContentFingerprint(): String? =
+            observation?.let { contentFingerprintOf(it.nodes) }
+        override fun tap(node: ScreenNode): Boolean {
+            tapped += node
+            return true
+        }
+        override fun scroll(node: ScreenNode, direction: ScreenScrollDirection): Boolean {
+            scrolled += node to direction
+            return true
+        }
+        override fun type(node: ScreenNode, text: String): Boolean {
+            typed += node to text
+            return true
+        }
+        override fun showStopOverlay(taskLabel: String): Boolean {
+            overlayShown = true
+            return true
+        }
+        override fun hideStopOverlay() {
+            overlayShown = false
+        }
+    }
+
+    private fun screenFixtureNodes() = listOf(
+        ScreenNode("n0", "Search", "button", "10,20-100,80", clickable = true,
+            viewId = "com.example.app:id/search", windowIdentity = "com.example.app#1"),
+        ScreenNode("n1", "Name", "field", "10,100-400,160", editable = true,
+            viewId = "com.example.app:id/name", windowIdentity = "com.example.app#1"),
+        ScreenNode("n2", "Results", "list", "0,200-1080,1800", scrollable = true,
+            viewId = "com.example.app:id/results", windowIdentity = "com.example.app#1")
+    )
+
+    @Suppress("DEPRECATION")
+    @Test fun test55_screenObservationExtractsCompactSnapshot() {
+        // The real Android tree-walking logic against the live window tree:
+        // UiAutomation hands back genuine AccessibilityNodeInfo instances, so
+        // getChild/recycle follow the production path exactly.
+        val root = instrumentation.uiAutomation.rootInActiveWindow
+            ?: throw AssertionError("No active window for screen extraction")
+        try {
+            val nodes = extractScreenNodes(root)
+            assertTrue(
+                "the Jarvis screen must expose actionable nodes, got ${nodes.size}",
+                nodes.isNotEmpty()
+            )
+            assertTrue(
+                "node IDs must be n<index>",
+                nodes.all { it.id.matches(Regex("^n[0-9]{1,4}$")) }
+            )
+            assertTrue(
+                "every node must be actionable or labeled",
+                nodes.all { it.clickable || it.editable || it.scrollable || it.label.isNotBlank() }
+            )
+            val text = ScreenObservation("com.battlesbudz.jarvis.v2", nodes)
+                .compactText("abcdef1234567890")
+            assertTrue(text.contains("observation token: abcdef1234567890"))
+            assertTrue(text.lines().size <= nodes.size.coerceAtMost(64) + 3)
+        } finally {
+            root.recycle()
+        }
+        // The service must be declared with the accessibility binding permission.
+        val info = context.packageManager.getServiceInfo(
+            android.content.ComponentName(context, ScreenControlService::class.java), 0
+        )
+        assertEquals("android.permission.BIND_ACCESSIBILITY_SERVICE", info.permission)
+    }
+
+    @Test fun test56_screenTapNeedsVerifiedTarget() {
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes(), windowIdentity = "com.example.app#1"))
+        val session = ScreenControlSession()
+        val pipeline = MobileActionPipeline(
+            executor = AndroidMobileActionExecutor(context, screenBridge = bridge, screenSession = session)
+        )
+        // Mutations need an admitted session grant; without it nothing dispatches.
+        val denied = pipeline.execute(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to "abcdef1234567890")))
+        assertFalse("unadmitted tap must not dispatch: ${denied.message}", denied.succeeded)
+        assertTrue(denied.message.contains("approval"))
+        assertTrue(bridge.tapped.isEmpty())
+
+        assertEquals(AdmitResult.Admitted, session.admit("test-41", userApproved = true))
+        val observed = pipeline.execute(ActionRequest("screen_observe"))
+        assertTrue("observe must succeed: ${observed.message}", observed.succeeded)
+        val token = session.currentToken!!
+        assertTrue(observed.message.contains("observation token: $token"))
+
+        // A well-formed but stale token never dispatches.
+        val stale = pipeline.execute(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to "0000000000000000")))
+        assertFalse("stale token must not dispatch: ${stale.message}", stale.succeeded)
+        assertTrue(stale.message.contains("stale"))
+        assertTrue(bridge.tapped.isEmpty())
+
+        // Fresh token plus verified target dispatches with an honest receipt.
+        val tapped = pipeline.execute(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to token)))
+        assertTrue("verified tap must dispatch: ${tapped.message}", tapped.succeeded)
+        assertEquals(listOf("n0"), bridge.tapped.map { it.id })
+
+        // Wrong-kind target is rejected without dispatch.
+        val wrongKind = pipeline.execute(
+            ActionRequest("screen_type", mapOf("target" to "n0", "text" to "hi", "token" to token))
+        )
+        assertFalse("non-editable type target must not dispatch", wrongKind.succeeded)
+        assertTrue(bridge.typed.isEmpty())
+
+        // Release ends the grant; the overlay hides with it.
+        assertTrue(bridge.showStopOverlay("test-41"))
+        session.release()
+        bridge.hideStopOverlay()
+        assertFalse(session.isAdmitted)
+        assertFalse(bridge.overlayShown)
+    }
+
+    @Test fun test57_touchPauseAndIdleResumeReobserves() {
+        var now = 10_000L
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes(), windowIdentity = "com.example.app#1"))
+        val session = ScreenControlSession(clock = { now }, touchIdleMs = 3_000L)
+        val pipeline = MobileActionPipeline(
+            executor = AndroidMobileActionExecutor(context, screenBridge = bridge, screenSession = session)
+        )
+        session.admit("test-42", userApproved = true)
+        assertTrue(pipeline.execute(ActionRequest("screen_observe")).succeeded)
+        val token = session.currentToken!!
+
+        // Manual touch pauses dispatch.
+        session.noteTouchStart()
+        val paused = pipeline.execute(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to token)))
+        assertFalse("tap during manual touch must pause: ${paused.message}", paused.succeeded)
+        assertTrue(paused.message.contains("touching the screen"))
+        assertTrue(bridge.tapped.isEmpty())
+
+        // After the touch-idle interval the executor re-observes the changed
+        // screen without a countdown; the pre-touch token is stale by design.
+        session.noteTouchEnd()
+        now += 3_000L
+        bridge.observation = ScreenObservation(
+            "com.example.other",
+            listOf(ScreenNode("n0", "Other", "button", "0,0-50,50", clickable = true,
+                viewId = "com.example.other:id/other", windowIdentity = "com.example.other#1")),
+            windowIdentity = "com.example.other#1"
+        )
+        val resumed = pipeline.execute(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to token)))
+        assertFalse("pre-touch token must be stale after resume: ${resumed.message}", resumed.succeeded)
+        assertTrue(resumed.message.contains("stale"))
+        assertTrue(bridge.tapped.isEmpty())
+
+        // The resume re-observed: a fresh observation token dispatches.
+        val token2 = session.currentToken!!
+        assertNotEquals(token, token2)
+        val retried = pipeline.execute(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to token2)))
+        assertTrue("fresh token must dispatch after resume: ${retried.message}", retried.succeeded)
+        assertEquals(listOf("n0"), bridge.tapped.map { it.id })
+    }
+
+    @Test fun test58_screenToolsReportHonestlyWhenServiceDisabled() {
+        // Real service bridge; the service is not enabled on the emulator, so
+        // every screen tool must answer honestly instead of claiming effects.
+        val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context))
+        val observed = pipeline.execute(ActionRequest("screen_observe"))
+        assertFalse("observe without the enabled service must not succeed", observed.succeeded)
+        assertTrue(
+            "receipt must name the missing Accessibility enablement, was: ${observed.message}",
+            observed.message.contains("Accessibility")
+        )
+        val tap = pipeline.execute(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to "abcdef1234567890")))
+        assertFalse("tap without a grant must not dispatch", tap.succeeded)
+        assertTrue(tap.message.contains("approval"))
+    }
+
+    // M1d task/conversation scheduling journeys.
+
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @Test fun test59_panelApprovalAdmitsScreenSessionAndDispatchesExactly() {
+        // M1d approval-UI wiring (T07): approving a screen task in the task
+        // panel admits the screen-control session grant for its group, and the
+        // ledger claim consumes the approval atomically with dispatch
+        // eligibility. A changed target invalidates the prior approval (D13).
+        val file = File(context.cacheDir, "release-m1d-approval.json").apply { delete() }
+        val ledger = ToolTaskLedger(FileToolTaskStore(file))
+        val approvals = ActionApprovalStore(FileToolTaskStore(file))
+        val session = ScreenControlSession()
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes(), windowIdentity = "com.example.app#1"))
+        val token = session.recordObservation(checkNotNull(bridge.observation))
+        val executor = AndroidMobileActionExecutor(context, screenBridge = bridge, screenSession = session)
+        val admission = ScreenApprovalAdmission(session)
+        fun tapRequest(target: String) = ActionRequest("screen_tap", mapOf("target" to target, "token" to token))
+        val group = ledger.admit(listOf(tapRequest("n0")), "panel-thread")
+        val attempt = checkNotNull(ledger.get(group.attemptIds.single()))
+        val pending = ledger.requestApproval(attempt.id, attempt.generation, "native", MobileToolCatalog.VERSION)
+        // D13: the target changes before approval...
+        val changedOnce = checkNotNull(ledger.revise(pending.task.id, pending.task.generation, tapRequest("n1")))
+        // ...so the stale approval cannot admit the session.
+        assertTrue("changed target must invalidate the prior approval",
+            admission.admitForApproval(checkNotNull(ledger.get(changedOnce.id)), pending.approval) is AdmitResult.Denied)
+        // Fresh approval for the current action goes through the panel.
+        val changedBack = checkNotNull(ledger.revise(changedOnce.id, changedOnce.generation, tapRequest("n0")))
+        val fresh = ledger.requestApproval(changedBack.id, changedBack.generation, "native", MobileToolCatalog.VERSION)
+        val journal = MutableStateFlow<ToolTaskJournal?>(ledger.journal())
+        val decide: (String, Long, String) -> Unit = { id, generation, command ->
+            val a = ledger.get(id)?.takeIf { it.generation == generation }
+            if (a != null && command == "approve") {
+                val approval = a.approvalId?.let { approvals.get(it) }
+                if (approval != null) {
+                    // The M1d approval wiring: the panel approval admits the
+                    // session grant for this group before the ledger claim.
+                    admission.admitForApproval(a, approval)
+                    JournaledActionPipeline(ledger, executor).executeAttempt(a, approval)
+                    if (session.holderGroupId == a.groupId) bridge.showStopOverlay("test-45")
+                }
+            }
+            journal.value = ledger.journal()
+        }
+        try {
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                    val snapshot by journal.collectAsState()
+                    com.battlesbudz.jarvis.v2.ui.PhoneTaskPanel(snapshot, "panel-thread", null, decide)
+                } }
+            } }
+            find(By.res("phone_tasks_open")).click()
+            captureEvidence("m1d_screen_approval")
+            find(By.res("task_approve_${fresh.task.id}")).click()
+            device.waitForIdle()
+            val deadline = android.os.SystemClock.uptimeMillis() + 10_000
+            while (bridge.tapped.isEmpty() && android.os.SystemClock.uptimeMillis() < deadline) {
+                Thread.sleep(200)
+            }
+            assertEquals("approved tap must dispatch exactly once", listOf("n0"), bridge.tapped.map { it.id })
+            assertEquals("session grant must belong to the approved group", group.id, session.holderGroupId)
+            assertEquals(ToolTaskState.SUCCEEDED, ledger.get(fresh.task.id)?.state)
+            assertTrue("approval must be consumed", checkNotNull(approvals.get(fresh.approval.id)).consumed)
+            assertTrue("Stop overlay shows while the admitted group holds the lease", bridge.overlayShown)
+            // A finished group releases the lease and the overlay hides (T04).
+            assertTrue(session.releaseIf(group.id))
+            bridge.hideStopOverlay()
+            assertFalse(session.isAdmitted)
+            assertFalse(bridge.overlayShown)
+        } finally { file.delete() }
+    }
+
+    @Test fun test60_conflictingScreenTaskQueuesBehindTheLease() {
+        // T02: a follow-up screen task approved while another group holds the
+        // lease is denied a second grant and stays waiting for its turn; it is
+        // never rejected and never steals the lease.
+        val session = ScreenControlSession()
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes(), windowIdentity = "com.example.app#1"))
+        val token = session.recordObservation(checkNotNull(bridge.observation))
+        val ledger = ToolTaskLedger()
+        val admission = ScreenApprovalAdmission(session)
+        fun parkTap(): Triple<ToolTaskGroup, ToolTaskAttempt, ActionApprovalRequest> {
+            val group = ledger.admit(listOf(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to token))), "thread-1")
+            val attempt = checkNotNull(ledger.get(group.attemptIds.single()))
+            val pending = ledger.requestApproval(attempt.id, attempt.generation, "native", MobileToolCatalog.VERSION)
+            return Triple(group, pending.task, pending.approval)
+        }
+        val (groupA, _, approvalA) = parkTap()
+        val taskA = checkNotNull(ledger.get(groupA.attemptIds.single()))
+        assertEquals(AdmitResult.Admitted, admission.admitForApproval(taskA, approvalA))
+        val (groupB, _, approvalB) = parkTap()
+        val taskB = checkNotNull(ledger.get(groupB.attemptIds.single()))
+        val denied = admission.admitForApproval(taskB, approvalB)
+        assertTrue("second grant must be denied while the lease is held, was: $denied", denied is AdmitResult.Denied)
+        assertEquals("lease must stay with the first group", groupA.id, session.holderGroupId)
+        assertEquals("denied task stays waiting for its turn", ToolTaskState.WAITING_APPROVAL, ledger.get(taskB.id)?.state)
+        assertFalse("denied approval stays unconsumed",
+            checkNotNull(ledger.journal().approvals.find { it.id == approvalB.id }).consumed)
+        // The first group finishes: the lease releases and the queued task can
+        // take its turn.
+        assertTrue(session.releaseIf(groupA.id))
+        assertEquals(AdmitResult.Admitted, admission.admitForApproval(taskB, approvalB))
+        assertEquals(groupB.id, session.holderGroupId)
+        // Independent (non-screen) work is never blocked by the lease.
+        val scheduler = TaskScheduler()
+        assertEquals(ScheduleDecision.RunNow, scheduler.schedule(
+            scheduler.resourceFor(ActionRequest("read_battery")), listOf(TaskResource(TaskResourceKind.SCREEN_LEASE))))
+    }
+
+    @Test fun test61_progressNotificationPostsSilentlyDuringDnd() {
+        // T04/T15/D35: task progress posts to notifications immediately and
+        // silently, even during Do Not Disturb — never deferred.
+        val manager = context.getSystemService(NotificationManager::class.java)
+        runCatching {
+            device.executeShellCommand("pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS")
+        }
+        val dndBefore = runCatching { device.executeShellCommand("settings get global zen_mode").trim() }.getOrNull()
+        runCatching { device.executeShellCommand("settings put global zen_mode 1") }
+        try {
+            val dndOn = runCatching { device.executeShellCommand("settings get global zen_mode").trim() }.getOrNull() == "1"
+            val working = TaskStatusProjection("group-47", "Test task", TaskProjectionState.WORKING,
+                1, 3, "Test task: working (1 of 3 steps done).", listOf("step one done"))
+            assertTrue("progress must post", TaskProgressNotification.postProgress(context, working))
+            val id = 0x7a000000 or ("group-47".hashCode() and 0x00ffffff)
+            var posted = false
+            val deadline = android.os.SystemClock.uptimeMillis() + 10_000
+            while (!posted && android.os.SystemClock.uptimeMillis() < deadline) {
+                posted = manager.activeNotifications.any { it.id == id }
+                if (!posted) Thread.sleep(200)
+            }
+            assertTrue("progress notification must be posted immediately${if (dndOn) " during Do Not Disturb" else ""}", posted)
+            val finished = working.copy(state = TaskProjectionState.FINISHED, completedSteps = 3,
+                statusLine = "Test task: done (3 of 3 steps).",
+                stepReceipts = listOf("step one done", "step two done", "step three done"))
+            assertTrue("finished must post", TaskProgressNotification.postFinished(context, finished))
+            TaskProgressNotification.cancel(context, "group-47")
+        } finally {
+            runCatching { device.executeShellCommand("settings put global zen_mode ${dndBefore ?: 0}") }
+        }
+    }
+
+    @Test fun test62_finishedScreenGroupReleasesLeaseNotifiesAndProjects() {
+        // T04: ending a call does not cancel admitted work; when the group
+        // finishes, the screen lease releases, the Stop overlay hides, and
+        // the ordered projection reports completion.
+        val session = ScreenControlSession()
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes(), windowIdentity = "com.example.app#1"))
+        val token = session.recordObservation(checkNotNull(bridge.observation))
+        val ledger = ToolTaskLedger()
+        val admission = ScreenApprovalAdmission(session)
+        val group = ledger.admit(listOf(ActionRequest("screen_tap", mapOf("target" to "n0", "token" to token))), "thread-1")
+        val attempt = checkNotNull(ledger.get(group.attemptIds.single()))
+        val pending = ledger.requestApproval(attempt.id, attempt.generation, "native", MobileToolCatalog.VERSION)
+        assertEquals(AdmitResult.Admitted, admission.admitForApproval(pending.task, pending.approval))
+        // "Call ends": detaching audio never touches admitted work.
+        assertEquals(ToolTaskState.WAITING_APPROVAL, ledger.get(attempt.id)?.state)
+        assertEquals(group.id, session.holderGroupId)
+        val executor = AndroidMobileActionExecutor(context, screenBridge = bridge, screenSession = session)
+        assertTrue(bridge.showStopOverlay("test-48"))
+        val result = JournaledActionPipeline(ledger, executor).executeAttempt(pending.task, pending.approval)
+        assertTrue("approved tap must dispatch: ${result.message}", result.succeeded)
+        assertEquals(listOf("n0"), bridge.tapped.map { it.id })
+        // Finished group: release the lease, hide the overlay, project.
+        assertTrue(session.releaseIf(group.id))
+        bridge.hideStopOverlay()
+        assertFalse(session.isAdmitted)
+        assertFalse(bridge.overlayShown)
+        val projection = checkNotNull(TaskProgressProjector().project(ledger.journal(), group.id))
+        assertEquals(TaskProjectionState.FINISHED, projection.state)
+        assertTrue(projection.isTerminal)
+        assertEquals(listOf("Tapped \"Search\"."), projection.stepReceipts)
+        assertEquals(1, projection.completedSteps)
+    }
+
+    @Test fun test63_sourceAccessDenialBlocksDispatchAcrossAdapters() {
+        // T08: first-source access is remembered per family; a denial or
+        // revocation blocks dispatch on every adapter with a truthful
+        // receipt, and a new tool can never broaden an existing grant's
+        // scope. The approval claim path is blocked too.
+        val dispatched = AtomicInteger(0)
+        val executor = MobileActionExecutor { dispatched.incrementAndGet(); ExecutionResult(true, "ok") }
+        val ledger = ToolTaskLedger()
+        val access = ToolSourceAccess(ledger)
+        val pipeline = JournaledActionPipeline(ledger, executor,
+            sourceAccess = access,
+            capabilityProbe = ToolCapabilityProbe { null },
+            lockGate = DeviceLockGate(isLocked = { false }))
+        // First grant: read_battery succeeds and its family access is remembered.
+        assertTrue(pipeline.execute(ActionRequest("read_battery")).succeeded)
+        val record = ledger.journal().sourceAccess.single { it.family == "phone" }
+        assertEquals(SourceAccessState.GRANTED, record.state)
+        assertEquals(ToolSourcePolicy.familyScopes("phone"), record.scopes)
+        // Revocation blocks the direct path with an honest receipt.
+        assertTrue(access.revoke("phone"))
+        val denied = pipeline.execute(ActionRequest("set_volume", mapOf("level" to "25")))
+        assertFalse(denied.succeeded)
+        assertEquals(ExecutionResult.Outcome.DENIED_PERMISSION, denied.outcome)
+        // Revocation blocks the approval claim path too: no dispatch.
+        val group = ledger.admit(listOf(ActionRequest("read_battery")), "thread-49")
+        val attempt = checkNotNull(ledger.get(group.attemptIds.single()))
+        val pending = ledger.requestApproval(attempt.id, attempt.generation, "native", MobileToolCatalog.VERSION)
+        assertNull("revoked family must not claim",
+            ledger.claim(pending.task.id, pending.task.generation, approval = pending.approval))
+        assertEquals("exactly one real dispatch happened", 1, dispatched.get())
+        // A new tool can never broaden an existing grant's scope: a record
+        // claiming another family's scopes does not admit.
+        val tamperedStore = InMemoryToolTaskStore()
+        tamperedStore.updateJournal { j -> j.copy(sourceAccess = listOf(
+            ToolSourceAccessRecord("web", setOf("screen.control"), SourceAccessState.GRANTED, 0))) }
+        val tamperedDenial = ToolSourceAccess(ToolTaskLedger(tamperedStore))
+            .denial(ActionRequest("open_website", mapOf("url" to "https://example.com")))
+        assertNotNull("out-of-family scope must not admit", tamperedDenial)
+        assertEquals(ExecutionResult.Outcome.DENIED_PERMISSION, tamperedDenial!!.outcome)
+    }
+
+    @Test fun test64_lockedDeviceGatesSensitiveActions() {
+        // T09: on a locked device, sensitive actions hand off to unlock;
+        // owner recognition is gated (a voice match never authorizes); the
+        // non-sensitive battery read still dispatches through the real
+        // Android adapter. The CI emulator ships without a lock screen, so
+        // the journey sets a real PIN via locksettings first — the keyguard
+        // state below is genuine Android lock state, not a fixture.
+        val keyguard = context.getSystemService(android.app.KeyguardManager::class.java)
+        device.executeShellCommand("locksettings set-pin 1234")
+        try {
+            device.sleep()
+            val deadline = android.os.SystemClock.uptimeMillis() + 10_000
+            while (keyguard?.isDeviceLocked != true && android.os.SystemClock.uptimeMillis() < deadline) {
+                Thread.sleep(200)
+            }
+            assertTrue("device must be locked for this journey (locksettings PIN must take effect)",
+                keyguard?.isDeviceLocked == true)
+            val gate = androidLockGate(context)
+            assertEquals(OwnerRecognitionMode.GATED, gate.ownerRecognition)
+            val dispatched = AtomicInteger(0)
+            val fake = MobileActionExecutor { dispatched.incrementAndGet(); ExecutionResult(true, "ok") }
+            val realExecutor = AndroidMobileActionExecutor(context)
+            val pipeline = JournaledActionPipeline(ToolTaskLedger(), fake,
+                sourceAccess = null, capabilityProbe = null, lockGate = gate)
+            val realPipeline = JournaledActionPipeline(ToolTaskLedger(), realExecutor,
+                sourceAccess = null, capabilityProbe = null, lockGate = gate)
+            val battery = realPipeline.execute(ActionRequest("read_battery"))
+            assertTrue("non-sensitive read works while locked: ${battery.message}", battery.succeeded)
+            assertTrue("real battery receipt, was: ${battery.message}",
+                battery.message.startsWith("Battery is at"))
+            val tap = pipeline.execute(
+                ActionRequest("screen_tap", mapOf("target" to "n0", "token" to "0123456789abcdef")))
+            assertEquals(ExecutionResult.Outcome.NEEDS_UNLOCK, tap.outcome)
+            assertTrue("handoff must name the lock, was: ${tap.message}",
+                tap.message.contains("locked", ignoreCase = true))
+            assertFalse("never describe a voice match as authorization",
+                tap.message.contains("voice", ignoreCase = true))
+            val volume = pipeline.execute(ActionRequest("set_volume", mapOf("level" to "25")))
+            assertEquals(ExecutionResult.Outcome.NEEDS_UNLOCK, volume.outcome)
+            assertEquals("only the battery read dispatched", 0, dispatched.get())
+        } finally {
+            // Unlock through the PIN pad: the keyguard UI does not refresh
+            // a locksettings clear issued while it is showing, so enter the
+            // PIN first, then clear it. The bouncer needs a swipe to reveal.
+            device.wakeUp()
+            runCatching {
+                device.swipe(device.displayWidth / 2, device.displayHeight * 4 / 5,
+                    device.displayWidth / 2, device.displayHeight / 5, 20)
+                device.waitForIdle()
+                val digitDeadline = android.os.SystemClock.uptimeMillis() + 10_000
+                var digit: UiObject2? = null
+                while (digit == null && android.os.SystemClock.uptimeMillis() < digitDeadline) {
+                    digit = device.findObject(By.desc("1"))
+                    if (digit == null) Thread.sleep(300)
+                }
+                if (digit != null) {
+                    for (d in "1234") {
+                        device.findObject(By.desc(d.toString()))?.click()
+                        device.waitForIdle()
+                    }
+                    device.findObject(By.res("com.android.systemui:id/key_enter"))?.click()
+                    device.waitForIdle()
+                }
+            }
+            runCatching { device.executeShellCommand("locksettings clear --old 1234") }
+            device.wakeUp()
+            runCatching { device.executeShellCommand("wm dismiss-keyguard") }
+        }
+        assertFalse("PIN must be cleared so later journeys run unlocked",
+            keyguard?.isDeviceLocked == true)
+    }
+
+    @Test fun test65_crossFamilyRegressionInvalidArgsProduceNoEffects() {
+        // T01 regression across all M1 command families: invalid args are
+        // rejected before any adapter runs, so nothing changes on the device.
+        val audio = context.getSystemService(AudioManager::class.java)
+        val volumeBefore = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val bridge = FakeScreenBridge(observation = ScreenObservation("com.example.app", screenFixtureNodes(), windowIdentity = "com.example.app#1"))
+        val executor = AndroidMobileActionExecutor(context, screenBridge = bridge)
+        val dispatched = AtomicInteger(0)
+        val counting = MobileActionExecutor { action -> dispatched.incrementAndGet(); executor.execute(action) }
+        val ledger = ToolTaskLedger()
+        val pipeline = JournaledActionPipeline(ledger, counting,
+            sourceAccess = ToolSourceAccess(ledger),
+            capabilityProbe = ToolCapabilityProbe { null },
+            lockGate = DeviceLockGate(isLocked = { false }))
+        val invalid = listOf(
+            ActionRequest("set_volume", mapOf("level" to "999")),
+            ActionRequest("media_control", mapOf("action" to "explode")),
+            ActionRequest("open_app", mapOf("app" to "   ")),
+            ActionRequest("open_website", mapOf("url" to "javascript:alert(1)")),
+            ActionRequest("open_settings", mapOf("screen" to "nuclear")),
+            ActionRequest("navigate", mapOf("destination" to "   ")),
+            ActionRequest("screen_tap", mapOf("target" to "zzz", "token" to "bad")),
+            ActionRequest("screen_scroll", mapOf("target" to "n2", "direction" to "sideways", "token" to "bad")),
+            ActionRequest("screen_type", mapOf("target" to "n1", "text" to "", "token" to "bad"))
+        )
+        for (request in invalid) {
+            val rejected = pipeline.execute(request)
+            assertEquals("invalid ${request.name} must be rejected, was: ${rejected.message}",
+                ExecutionResult.Outcome.REJECTED_VALIDATION, rejected.outcome)
+        }
+        assertEquals("no adapter may run for invalid args", 0, dispatched.get())
+        assertEquals("volume must be unchanged", volumeBefore, audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+        assertTrue("no screen effects", bridge.tapped.isEmpty() && bridge.scrolled.isEmpty() && bridge.typed.isEmpty())
+        // Valid anchor: the real battery adapter still dispatches through the gate.
+        val battery = pipeline.execute(ActionRequest("read_battery"))
+        assertTrue("valid read_battery must dispatch: ${battery.message}", battery.succeeded)
+        assertEquals(1, dispatched.get())
+    }
+
+    @Test fun test66_crashBeforeAndAfterDispatchReconcilesWithoutRepeat() {
+        // T10: crash before dispatch and crash after dispatch both recover to
+        // an unknown outcome; stale callbacks are rejected and the unknown
+        // mutation is never blindly repeated.
+        val file = File(context.cacheDir, "release-m1e-crash.json").apply { delete() }
+        try {
+            val dispatched = AtomicInteger(0)
+            val executor = MobileActionExecutor {
+                dispatched.incrementAndGet()
+                ExecutionResult(true, "Battery 80%")
+            }
+            // Crash before dispatch: claimed RUNNING, then "process death".
+            var ledger = ToolTaskLedger(FileToolTaskStore(file))
+            val before = ledger.admit(listOf(ActionRequest("read_battery")), "thread-52")
+            val beforeAttempt = checkNotNull(ledger.get(before.attemptIds.single()))
+            val claimedBefore = checkNotNull(ledger.claim(beforeAttempt.id, beforeAttempt.generation))
+            ledger = ToolTaskLedger(FileToolTaskStore(file))
+            val recoveredBefore = ledger.recoverAfterRestart().single { it.id == claimedBefore.id }
+            assertEquals(ToolTaskState.UNKNOWN_OUTCOME, recoveredBefore.state)
+            assertNull("stale pre-crash callback must be rejected",
+                ledger.finish(claimedBefore, ExecutionResult(true, "late")))
+            assertEquals(ToolTaskState.UNKNOWN_OUTCOME, ledger.get(claimedBefore.id)?.state)
+            assertTrue(ledger.reconcileUnknown(recoveredBefore.id, recoveredBefore.generation))
+            // Crash after dispatch: the real effect happened once, then
+            // "death" before the receipt saved.
+            val after = ledger.admit(listOf(ActionRequest("read_battery")), "thread-52")
+            val afterAttempt = checkNotNull(ledger.get(after.attemptIds.single()))
+            val claimedAfter = checkNotNull(ledger.claim(afterAttempt.id, afterAttempt.generation))
+            val afterAction = (MobileActionValidator().validate(claimedAfter.request) as ActionValidation.Valid).action
+            executor.execute(afterAction)
+            assertEquals(1, dispatched.get())
+            ledger = ToolTaskLedger(FileToolTaskStore(file))
+            val recoveredAfter = ledger.recoverAfterRestart().single { it.id == claimedAfter.id }
+            assertEquals(ToolTaskState.UNKNOWN_OUTCOME, recoveredAfter.state)
+            assertTrue(ledger.reconcileUnknown(recoveredAfter.id, recoveredAfter.generation))
+            // Neither unknown mutation is ever repeated.
+            val pipeline = JournaledActionPipeline(ledger, executor)
+            for (id in listOf(claimedBefore.id, claimedAfter.id)) {
+                val retry = pipeline.executeAttempt(checkNotNull(ledger.get(id)))
+                assertFalse("reconciled attempt must not redispatch", retry.succeeded)
+            }
+            assertEquals("the effect happened exactly once", 1, dispatched.get())
+        } finally { file.delete() }
+    }
+
+    @Test fun test67_routineGrantReuseMatchesLimitsAndDisablePausesAffectedTasks() {
+        // T11: a saved workflow's routine steps run under a reusable routine
+        // grant whose exact limits must match; an approval wait blocks only
+        // its dependents; disabling the routine pauses affected work while
+        // unrelated tasks are untouched.
+        val dispatched = AtomicInteger(0)
+        val executor = MobileActionExecutor { dispatched.incrementAndGet(); ExecutionResult(true, "ok") }
+        val store = InMemoryToolTaskStore()
+        val tasks = ToolTaskLedger(store)
+        val workflows = WorkflowLedger(store)
+        val battery = ActionRequest("read_battery")
+        val volume20 = ActionRequest("set_volume", mapOf("level" to "20"))
+        val definition = WorkflowDefinition(UUID.randomUUID().toString(), "Evening check", "test",
+            listOf(WorkflowStep.Tool(UUID.randomUUID().toString(), battery),
+                WorkflowStep.Tool(UUID.randomUUID().toString(), volume20)),
+            listOf(WorkflowTrigger.Manual), WorkflowOrigin.CONVERSATION, createdAtMs = 0, updatedAtMs = 0)
+        val saved = workflows.saveDraft(definition)
+        workflows.enable(saved.id)
+        // Production-shaped dispatch: reuse the exact-limits grant, admit
+        // under ROUTINE authority, claim and dispatch through the pipeline —
+        // one step at a time, so a failure stops later steps.
+        fun dispatchStep(request: ActionRequest): ExecutionResult {
+            val grant = workflows.reusableGrant(saved.id, listOf(request))
+                ?: workflows.createGrant(saved.id, listOf(request))
+            val group = tasks.admit(listOf(request), "workflow:occ-53",
+                authority = ToolAuthority.ROUTINE, grantId = grant.id)
+            val attempt = checkNotNull(tasks.get(group.attemptIds.single()))
+            return JournaledActionPipeline(tasks, executor).executeAttempt(attempt)
+        }
+        val occurrence = checkNotNull(workflows.scheduleOccurrence(saved.id, 0,
+            System.currentTimeMillis() - 1, System.currentTimeMillis() - 1, "t53-1"))
+        val claimedOccurrence = checkNotNull(workflows.claimDueOccurrence(occurrence.id))
+        val outcome = WorkflowEngine().run(checkNotNull(workflows.definitionFor(claimedOccurrence)),
+            dispatch = ::dispatchStep)
+        assertTrue("routine occurrence completes under its grant", outcome is WorkflowRunOutcome.Completed)
+        assertEquals(2, dispatched.get())
+        // Each routine step ran under its own exact-limits grant (one grant
+        // per resolved request, so placeholder-resolved dispatches still
+        // match exactly). Those grants are reusable for identical limits —
+        // but never for changed limits, and a new tool can never broaden one.
+        val batteryGrant = checkNotNull(workflows.reusableGrant(saved.id, listOf(battery)))
+        val volumeGrant = checkNotNull(workflows.reusableGrant(saved.id, listOf(volume20)))
+        assertNotNull(volumeGrant)
+        assertNull("changed limits must not reuse the grant",
+            workflows.reusableGrant(saved.id, listOf(battery, ActionRequest("set_volume", mapOf("level" to "30")))))
+        // A second occurrence reuses the identical-limits grants; no new
+        // grants are minted for the same limits.
+        val grantsBefore = store.readJournal().grants.size
+        val occurrenceB = checkNotNull(workflows.scheduleOccurrence(saved.id, 0,
+            System.currentTimeMillis() - 1, System.currentTimeMillis() - 1, "t53-1b"))
+        val claimedB = checkNotNull(workflows.claimDueOccurrence(occurrenceB.id))
+        val outcomeB = WorkflowEngine().run(checkNotNull(workflows.definitionFor(claimedB)),
+            dispatch = ::dispatchStep)
+        assertTrue("second occurrence completes", outcomeB is WorkflowRunOutcome.Completed)
+        assertEquals("identical limits reuse the existing grants",
+            grantsBefore, store.readJournal().grants.size)
+        try {
+            tasks.admit(listOf(battery, ActionRequest("set_volume", mapOf("level" to "30"))),
+                "workflow:occ-x", authority = ToolAuthority.ROUTINE, grantId = batteryGrant.id)
+            fail("admit must reject requests outside the grant's exact limits")
+        } catch (_: IllegalArgumentException) { }
+        // Approval waits block dependents only.
+        val waiting = tasks.admit(listOf(battery, volume20), "chat-t53")
+        val first = checkNotNull(tasks.get(waiting.attemptIds[0]))
+        tasks.requestApproval(first.id, first.generation, "native", MobileToolCatalog.VERSION)
+        val second = checkNotNull(tasks.get(waiting.attemptIds[1]))
+        assertNull("dependent step cannot claim while its approval waits", tasks.claim(second.id, second.generation))
+        val independent = tasks.admit(listOf(battery), "chat-t53-free")
+        val freeAttempt = checkNotNull(tasks.get(independent.attemptIds.single()))
+        assertNotNull("independent work is unaffected", tasks.claim(freeAttempt.id, freeAttempt.generation))
+        // Disable pauses the routine's unfinished work, not the unrelated wait.
+        val occurrence2 = checkNotNull(workflows.scheduleOccurrence(saved.id, 0,
+            System.currentTimeMillis() + 600_000, System.currentTimeMillis() + 600_000, "t53-2"))
+        val disabled = workflows.disable(saved.id)
+        assertTrue(occurrence2.id in disabled.pausedOccurrenceIds)
+        assertEquals(WorkflowOccurrenceState.CANCELLED, workflows.occurrence(occurrence2.id)!!.state)
+        assertEquals("unrelated approval wait untouched",
+            ToolTaskState.WAITING_APPROVAL, tasks.get(first.id)!!.state)
+    }
+
+    @Test fun test68_workflowDraftNeedsEnablementAndRevisionKeepsRunningVersion() {
+        // T12: a conversation-created workflow shows its plain-language
+        // summary and cannot run until explicitly enabled; revising the
+        // definition never mutates an already-running occurrence's version.
+        val store = InMemoryToolTaskStore()
+        val workflows = WorkflowLedger(store)
+        val v1 = WorkflowDefinition(UUID.randomUUID().toString(), "Morning briefing", "test",
+            listOf(WorkflowStep.Tool(UUID.randomUUID().toString(), ActionRequest("read_battery"))),
+            listOf(WorkflowTrigger.Daily(7, 0)), WorkflowOrigin.CONVERSATION, createdAtMs = 0, updatedAtMs = 0)
+        val draft = workflows.saveDraft(v1)
+        val preview = workflows.preview(draft.id)
+        assertTrue(preview.contains("Morning briefing"))
+        assertTrue("preview names the step", preview.contains("battery"))
+        assertTrue("preview names the trigger", preview.contains("07:00"))
+        assertTrue("preview states the draft needs enabling", preview.contains("draft"))
+        assertNull("disabled drafts schedule nothing",
+            workflows.scheduleOccurrence(draft.id, 0, System.currentTimeMillis() + 60_000,
+                System.currentTimeMillis() + 60_000, "t54-1"))
+        // Capture path: a completed task becomes a disabled draft too.
+        val tasks = ToolTaskLedger(store)
+        val group = tasks.admit(listOf(ActionRequest("read_battery")), "chat-t54")
+        val attempt = checkNotNull(tasks.get(group.attemptIds.single()))
+        tasks.finish(checkNotNull(tasks.claim(attempt.id, attempt.generation)),
+            ExecutionResult(true, "Battery is at 80 percent."))
+        val captured = checkNotNull(workflows.captureFromTask(group.id, "Battery check"))
+        assertFalse("captured drafts start disabled", captured.enabled)
+        assertEquals(WorkflowOrigin.CAPTURED, captured.origin)
+        // Enable, start an occurrence, then revise: the running one keeps v1.
+        workflows.enable(draft.id)
+        val occurrence = checkNotNull(workflows.scheduleOccurrence(draft.id, 0,
+            System.currentTimeMillis() - 1, System.currentTimeMillis() - 1, "t54-2"))
+        val running = checkNotNull(workflows.claimDueOccurrence(occurrence.id))
+        val revised = workflows.revise(draft.id, v1.copy(name = "Morning briefing v2", steps = listOf(
+            WorkflowStep.Tool(UUID.randomUUID().toString(), ActionRequest("read_battery")),
+            WorkflowStep.Tool(UUID.randomUUID().toString(), ActionRequest("set_volume", mapOf("level" to "20"))))))
+        assertEquals(2, revised.version)
+        assertEquals("running occurrence keeps its pinned version",
+            1, checkNotNull(workflows.definitionFor(running)).version)
+        assertEquals(2, checkNotNull(workflows.current(draft.id)).version)
+        assertTrue(workflows.preview(draft.id).contains("Morning briefing v2"))
+    }
+
+    @Test fun test69_reminderTimingWindowsDstAndRebootDedup() {
+        // T13: reminders target the requested time; flexible routines use
+        // windows; DST shifts resolve forward; reboot recovery never replays
+        // a trigger and never duplicates an occurrence.
+        val file = File(context.cacheDir, "release-m2-schedule.json").apply { delete() }
+        try {
+            val store = FileToolTaskStore(file)
+            val workflows = WorkflowLedger(store)
+            val at = System.currentTimeMillis()
+            val definition = WorkflowDefinition(UUID.randomUUID().toString(), "Water reminder", "test",
+                listOf(WorkflowStep.Tool(UUID.randomUUID().toString(), ActionRequest("read_battery"))),
+                listOf(WorkflowTrigger.Reminder(at + 3_600_000),
+                    WorkflowTrigger.Window(at + 7_200_000, at + 10_800_000)),
+                WorkflowOrigin.CONVERSATION, createdAtMs = 0, updatedAtMs = 0)
+            val saved = workflows.saveDraft(definition)
+            val scheduled = workflows.enable(saved.id)
+            assertEquals(2, scheduled.size)
+            val reminder = scheduled.single { it.triggerIndex == 0 }
+            assertEquals("reminder targets the requested time", at + 3_600_000, reminder.scheduledForMs)
+            val window = scheduled.single { it.triggerIndex == 1 }
+            assertEquals(at + 7_200_000, window.scheduledForMs)
+            assertEquals(at + 10_800_000, window.windowEndMs)
+            // Exact-alarm honesty against the real Android alarm service.
+            val alarm = context.getSystemService(android.app.AlarmManager::class.java)
+            val canExact = if (android.os.Build.VERSION.SDK_INT >= 31) {
+                try { alarm!!.canScheduleExactAlarms() } catch (_: SecurityException) { false }
+            } else true
+            val alarmScheduler = WorkflowAlarmScheduler(context)
+            val scheduledAlarm = alarmScheduler.schedule(reminder)
+            assertEquals(if (canExact) WorkflowScheduling.AlarmMode.EXACT
+                else WorkflowScheduling.AlarmMode.INEXACT_FALLBACK, scheduledAlarm.mode)
+            if (!canExact) assertNotNull("fallback must say so honestly", scheduledAlarm.honestNote)
+            alarmScheduler.cancel(reminder.id)
+            // DST: a daily trigger across the spring-forward resolves forward.
+            val zone = java.time.ZoneId.of("America/New_York")
+            val before = java.time.ZonedDateTime.of(2026, 3, 7, 12, 0, 0, 0, zone).toInstant().toEpochMilli()
+            val next = WorkflowScheduling.nextDailyFire(WorkflowTrigger.Daily(2, 30), before, zone)
+            val zoned = java.time.ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(next), zone)
+            assertEquals(8, zoned.dayOfMonth)
+            // Reboot: reconstruct the ledger ("restart"), recover, and prove
+            // no trigger replays and no occurrence duplicates.
+            val rebooted = WorkflowLedger(FileToolTaskStore(file))
+            val recovered = rebooted.recoverAfterRestart()
+            assertEquals(2, recovered.filter { it.state == WorkflowOccurrenceState.SCHEDULED }.size)
+            assertNull("dedup key survives the restart",
+                rebooted.scheduleOccurrence(saved.id, 0, at + 3_600_000, at + 3_600_000, reminder.dedupKey))
+            val due = checkNotNull(rebooted.scheduleOccurrence(saved.id, 0, at - 1_000, at - 1_000, "t55-due"))
+            assertNotNull(rebooted.claimDueOccurrence(due.id))
+            assertNull("a redelivered claim cannot double-fire", rebooted.claimDueOccurrence(due.id))
+        } finally { file.delete() }
+    }
+
+    @Test fun test70_missedRunEvaluationAndBoundedEffort() {
+        // T14: a missed run is evaluated against current circumstances —
+        // run if relevant, report if not, ask if uncertain — with decision
+        // receipts; bounded effort asks the user instead of repeating
+        // completed work.
+        val store = InMemoryToolTaskStore()
+        val workflows = WorkflowLedger(store)
+        val at = System.currentTimeMillis()
+        val definition = WorkflowDefinition(UUID.randomUUID().toString(), "Missed routine", "test",
+            listOf(WorkflowStep.Tool(UUID.randomUUID().toString(), ActionRequest("read_battery"))),
+            listOf(WorkflowTrigger.Reminder(at - 5 * 60_000)),
+            WorkflowOrigin.CONVERSATION, createdAtMs = 0, updatedAtMs = 0)
+        val saved = workflows.saveDraft(definition)
+        workflows.enable(saved.id)
+        // enable() skips the past reminder; schedule it explicitly for evaluation.
+        val missed = checkNotNull(workflows.scheduleOccurrence(saved.id, 0,
+            at - 5 * 60_000, at - 5 * 60_000, "t56-1"))
+        val relevant = WorkflowScheduling.evaluateMissedRun(missed, checkNotNull(workflows.current(saved.id)),
+            WorkflowScheduling.MissedRunCircumstances(true, true, 5 * 60_000))
+        assertTrue("fresh and active: relevant", relevant is MissedRunDecision.Relevant)
+        val uncertain = WorkflowScheduling.evaluateMissedRun(missed, checkNotNull(workflows.current(saved.id)),
+            WorkflowScheduling.MissedRunCircumstances(true, false, 2 * 3_600_000))
+        assertTrue("stale and nobody around: ask", uncertain is MissedRunDecision.Uncertain)
+        assertTrue(workflows.recordMissedEvaluation(missed.id,
+            MissedRunDecision.Irrelevant("the moment has passed")))
+        assertEquals(WorkflowOccurrenceState.MISSED, workflows.occurrence(missed.id)!!.state)
+        assertTrue("decision receipts are kept",
+            workflows.receiptsFor(saved.id).any { it.kind == WorkflowReceiptKind.MISSED_IRRELEVANT })
+        // A stale duplicate slot coalesces to the latest — no catch-up storm.
+        val old1 = checkNotNull(workflows.scheduleOccurrence(saved.id, 0,
+            at - 90 * 60_000, at - 90 * 60_000, "t56-old1"))
+        val old2 = checkNotNull(workflows.scheduleOccurrence(saved.id, 0,
+            at - 60 * 60_000, at - 60 * 60_000, "t56-old2"))
+        val (keep, skipped) = WorkflowScheduling.coalesceMissed(
+            store.readJournal().occurrences.filter { it.state == WorkflowOccurrenceState.SCHEDULED })
+        assertTrue(old2.id in keep.map { it.id })
+        assertTrue(old1.id in skipped.map { it.id })
+        // Bounded effort: the adaptive step exhausts its budget and asks the
+        // user; completed steps are never re-run for the question.
+        val dispatched = AtomicInteger(0)
+        val adaptive = WorkflowDefinition(UUID.randomUUID().toString(), "Try quiet", "test", listOf(
+            WorkflowStep.Tool(UUID.randomUUID().toString(), ActionRequest("read_battery")),
+            WorkflowStep.Adaptive(UUID.randomUUID().toString(), "lower the volume",
+                listOf(ActionRequest("set_volume", mapOf("level" to "10"))),
+                EffortBudget(3, 60_000, 2))),
+            listOf(WorkflowTrigger.Manual), WorkflowOrigin.CONVERSATION, createdAtMs = 0, updatedAtMs = 0)
+        val outcome = WorkflowEngine().run(adaptive, dispatch = { request ->
+            dispatched.incrementAndGet()
+            if (request.name == "read_battery") ExecutionResult.battery(42)
+            else ExecutionResult(false, "denied")
+        })
+        assertTrue("budget exhaustion asks the user", outcome is WorkflowRunOutcome.NeedsUser)
+        val asked = outcome as WorkflowRunOutcome.NeedsUser
+        assertTrue(asked.question.contains("lower the volume"))
+        assertEquals("one battery read plus three bounded attempts", 4, dispatched.get())
+        assertEquals("only the completed battery read is recorded", 1, asked.completedStepIds.size)
+    }
+
+    // -- M3 ecosystem integrations (T16) --------------------------------------
+
+    private fun t71Metadata(
+        packageName: String,
+        functionId: String,
+        version: Long = 1,
+        params: AppFunctionType.Obj = AppFunctionType.Obj(
+            mapOf("text" to AppFunctionProperty(AppFunctionType.Text, true))),
+        scopeNames: Set<String> = setOf("read"),
+        description: String = "A controlled test function."
+    ): AppFunctionMetadata {
+        val provider = ProviderId.appFunctions(packageName)
+        return AppFunctionMetadata(
+            providerPackage = packageName,
+            functionId = functionId,
+            displayName = functionId,
+            description = description,
+            versionCode = version,
+            parameters = params,
+            resultType = AppFunctionType.Text,
+            scopes = scopeNames.map { ProviderWireNames.scopedName(provider, it) }.toSet()
+        )
+    }
+
+    private fun t71SeedResolver(registry: ProviderRegistry) {
+        ToolSourcePolicy.setProviderScopeResolver { wireName ->
+            ProviderWireNames.parseToolName(wireName)?.let { parsed ->
+                if (parsed.provider.kind == ProviderKind.APP_FUNCTIONS)
+                    registry.metadataFor(parsed.provider, parsed.functionId)?.scopes.orEmpty()
+                else emptySet()
+            }.orEmpty()
+        }
+    }
+
+    @Test fun test71_appFunctionsDiscoveryAndControlledJourney() {
+        // T16: AppFunctions nested schema/types, state/update/uninstall/name
+        // collisions; ordinary-app access vs ADB labeled. The platform probe
+        // below runs against the real PackageManager; the provider world is
+        // a controlled fake — the "one controlled dependent function
+        // journey" the plan requires before real priority apps.
+        val probe = AppFunctionPlatformProbe(context).probe()
+        assertEquals("discovery access must be labeled",
+            DiscoveryAccessMethod.ORDINARY_APP, probe.accessMethod)
+        assertTrue("provider count is never negative", probe.providersFound >= 0)
+        assertTrue("the probe note must be honest", probe.note.isNotBlank())
+
+        val pkgA = "com.example.sample"
+        val pkgB = "com.other.sample"
+        val providerA = ProviderId.appFunctions(pkgA)
+        val nestedParams = AppFunctionType.Obj(mapOf(
+            "user" to AppFunctionProperty(AppFunctionType.Obj(mapOf(
+                "id" to AppFunctionProperty(AppFunctionType.Integer, true),
+                "tags" to AppFunctionProperty(
+                    AppFunctionType.Arr(AppFunctionType.Text, maxItems = 3), false)
+            )), true)
+        ))
+        val registry = ProviderRegistry()
+        val firstDiff = registry.update(DiscoverySnapshot(listOf(
+            t71Metadata(pkgA, "echo", description = "Echoes the given text back."),
+            t71Metadata(pkgA, "shout", description = "Upper-cases the given text."),
+            t71Metadata(pkgA, "lookup_user", params = nestedParams,
+                description = "Looks up a user by id with optional tags."),
+            t71Metadata(pkgB, "echo", description = "Another app's echo.")
+        ), DiscoveryAccessMethod.ORDINARY_APP, 0L))
+        assertEquals("four functions discovered", 4, firstDiff.added.size)
+        t71SeedResolver(registry)
+
+        // Collision-safe aliases: one short alias per colliding name would
+        // be ambiguous, so the bindings stay unique and flagged.
+        val aliases = registry.aliasRegistry.all().map { it.alias }.toSet()
+        assertEquals(setOf("echo", "echo_sample", "shout", "lookup_user"), aliases)
+        val collided = (registry.aliasRegistry.resolve("echo_sample") as AliasResolution.Resolved).binding
+        assertEquals(pkgB, collided.identity.providerPackage)
+        assertTrue("collision must be flagged", collided.collided)
+        assertNotNull("collision must be explained", collided.collisionNote)
+        val plain = (registry.aliasRegistry.resolve("echo") as AliasResolution.Resolved).binding
+        assertEquals(pkgA, plain.identity.providerPackage)
+
+        // Task-relevant selection surfaces the user-lookup function first for
+        // the natural query, even though "look up" shares no whole token
+        // with the "lookup_user" alias.
+        val selected = AppFunctionTaskSelection.select(
+            "look up the user by id",
+            registry.aliasRegistry.all(),
+            metadataFor = { binding -> registry.metadataForWire(binding.wireName) })
+        assertEquals("lookup_user", selected.first().alias)
+
+        // The controlled dependent-function journey: shout consumes echo's
+        // output through a typed binding.
+        val dispatched = AtomicInteger(0)
+        val invoker = ProviderInvoker { call ->
+            dispatched.incrementAndGet()
+            val text = call.arguments["text"]?.toString().orEmpty()
+            when (call.functionId) {
+                "shout" -> ProviderCallResult.Success(mapOf("text" to text.uppercase()), "shouted")
+                "lookup_user" -> {
+                    @Suppress("UNCHECKED_CAST")
+                    val user = call.arguments["user"] as Map<String, Any?>
+                    ProviderCallResult.Success(mapOf("id" to user["id"].toString()), "found")
+                }
+                else -> ProviderCallResult.Success(mapOf("text" to text), "echoed")
+            }
+        }
+        val ledger = ToolTaskLedger()
+        val dispatcher = ProviderDispatcher(ledger, registry,
+            McpRegistry(McpHttpClient { _, _, _ -> McpHttpResponse(500, "", emptyMap()) },
+                InMemoryMcpCredentialStore()),
+            mapOf(providerA to invoker, ProviderId.appFunctions(pkgB) to invoker))
+        val journey = dispatcher.runJourney(listOf(
+            ProviderJourneyStep("s1", "echo", mapOf("text" to "hello")),
+            ProviderJourneyStep("s2", "shout", mapOf("text" to "\${s1.text}"))))
+        assertTrue("the dependent journey completes", journey.succeeded)
+        assertEquals("HELLO",
+            (journey.stepResults[1] as ProviderCallResult.Success).data["text"])
+
+        // Strict nested types: a valid nested call dispatches; a string id
+        // is rejected with no dispatch.
+        val nestedOk = dispatcher.dispatchByAlias("lookup_user",
+            mapOf("user" to mapOf("id" to 7, "tags" to listOf("a", "b"))))
+        assertTrue(nestedOk is ProviderCallResult.Success)
+        assertEquals("7", (nestedOk as ProviderCallResult.Success).data["id"])
+        val before = dispatched.get()
+        val nestedBad = dispatcher.dispatchByAlias("lookup_user",
+            mapOf("user" to mapOf("id" to "7")))
+        assertTrue(nestedBad is ProviderCallResult.TypedError)
+        assertEquals(ProviderErrorCode.INVALID_ARGUMENTS,
+            (nestedBad as ProviderCallResult.TypedError).code)
+        assertEquals("no dispatch on invalid nested args", before, dispatched.get())
+
+        // Update and uninstall invalidate exactly the affected bindings.
+        // (Descriptions are carried over so the only change is echo's
+        // version bump; shout disappears.)
+        val secondDiff = registry.update(DiscoverySnapshot(listOf(
+            t71Metadata(pkgA, "echo", version = 2,
+                description = "Echoes the given text back."),
+            t71Metadata(pkgA, "lookup_user", params = nestedParams,
+                description = "Looks up a user by id with optional tags."),
+            t71Metadata(pkgB, "echo", version = 1,
+                description = "Another app's echo.")
+        ), DiscoveryAccessMethod.ORDINARY_APP, 1L))
+        assertEquals(listOf("echo"), secondDiff.updated.map { it.functionId })
+        assertEquals(listOf("shout"), secondDiff.removed.map { it.functionId })
+        assertTrue(registry.aliasRegistry.resolve("shout") is AliasResolution.Unknown)
+        assertTrue(registry.aliasRegistry.resolve("echo") is AliasResolution.Resolved)
+
+        // T08 for the new provider family: the first successful call
+        // remembers the grant; revocation blocks every adapter while the
+        // independent provider keeps working.
+        val familyA = "provider:appfunctions:com.example.sample"
+        val record = ledger.journal().sourceAccess.single { it.family == familyA }
+        assertEquals(SourceAccessState.GRANTED, record.state)
+        assertTrue(ToolSourceAccess(ledger).revoke(familyA))
+        val blocked = dispatcher.dispatchByAlias("echo", mapOf("text" to "hi"))
+        assertTrue(blocked is ProviderCallResult.TypedError)
+        assertEquals(ProviderErrorCode.DENIED_PERMISSION,
+            (blocked as ProviderCallResult.TypedError).code)
+        val otherStillWorks = dispatcher.dispatchByAlias("echo_sample", mapOf("text" to "hi"))
+        assertTrue("an independent provider family is unaffected",
+            otherStillWorks is ProviderCallResult.Success)
+
+        // The settings surface labels ordinary-app access honestly.
+        val rows = ProviderSettings.rows(registry,
+            McpRegistry(McpHttpClient { _, _, _ -> McpHttpResponse(500, "", emptyMap()) },
+                InMemoryMcpCredentialStore()),
+            probe.let { AppFunctionPlatformStatus(it.accessMethod, it.platformServiceAvailable,
+                it.providersFound, it.note) })
+        val platformRow = rows.single { it.id == "appfunctions-platform" }
+        assertTrue("unavailable providers are explained, not implied",
+            platformRow.explanation.contains("ordinary app"))
+    }
+
+    // -- M3 MCP (T17) ----------------------------------------------------------
+
+    /** Minimal loopback HTTP/1.1 MCP stub: initialize, tools/list, tools/call. */
+    private class StubMcpServer : java.io.Closeable {
+        private val socket = ServerSocket(0)
+        val port: Int = socket.localPort
+        @Volatile var requireToken: String? = "good-token"
+        @Volatile var toolNames: List<String> = listOf("free_lookup", "paid_export")
+        private val running = AtomicBoolean(true)
+        private val worker = kotlin.concurrent.thread(isDaemon = true, name = "stub-mcp") {
+            while (running.get()) {
+                try {
+                    handle(socket.accept())
+                } catch (_: Exception) {
+                    if (!running.get()) return@thread
+                }
+            }
+        }
+
+        private fun toolJson(name: String): String {
+            val pricing = if (name == "paid_export") "paid" else "free"
+            return "{\"name\":\"$name\",\"description\":\"$name tool\"," +
+                "\"inputSchema\":{\"type\":\"object\"},\"x-jarvis-pricing\":\"$pricing\"," +
+                "\"x-jarvis-scopes\":[\"lookup\"]}"
+        }
+
+        private fun handle(client: java.net.Socket) {
+            client.use { sock ->
+                val input = sock.getInputStream().bufferedReader(Charsets.UTF_8)
+                val requestLine = input.readLine() ?: return
+                val headers = mutableMapOf<String, String>()
+                if (requestLine.startsWith("POST")) {
+                    while (true) {
+                        val line = input.readLine() ?: break
+                        if (line.isEmpty()) break
+                        val idx = line.indexOf(':')
+                        if (idx > 0) headers[line.substring(0, idx).trim().lowercase()] =
+                            line.substring(idx + 1).trim()
+                    }
+                }
+                val length = headers["content-length"]?.toIntOrNull() ?: 0
+                val chars = CharArray(length)
+                var read = 0
+                while (read < length) {
+                    val n = input.read(chars, read, length - read)
+                    if (n <= 0) break
+                    read += n
+                }
+                val body = String(chars, 0, read)
+                if (!requestLine.startsWith("POST")) {
+                    respond(sock, 404, ""); return
+                }
+                if (requireToken != null && headers["authorization"] != "Bearer $requireToken") {
+                    respond(sock, 401, "unauthorized"); return
+                }
+                val method = try { org.json.JSONObject(body).optString("method") } catch (_: Exception) { "" }
+                when (method) {
+                    "initialize" -> respond(sock, 200,
+                        "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{" +
+                            "\"protocolVersion\":\"2025-06-18\",\"capabilities\":{}}}",
+                        mapOf("Mcp-Session-Id" to "stub-session"))
+                    "notifications/initialized" -> respond(sock, 202, "")
+                    "tools/list" -> {
+                        val tools = toolNames.joinToString(",") { toolJson(it) }
+                        respond(sock, 200,
+                            "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":[$tools]}}")
+                    }
+                    "tools/call" -> respond(sock, 200,
+                        "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"content\":" +
+                            "[{\"type\":\"text\",\"text\":\"stub-result\"}]}}")
+                    else -> respond(sock, 404, "")
+                }
+            }
+        }
+
+        private fun respond(sock: java.net.Socket, status: Int, body: String,
+                             extraHeaders: Map<String, String> = emptyMap()) {
+            val bytes = body.toByteArray(Charsets.UTF_8)
+            val out = sock.getOutputStream()
+            val reason = when (status) {
+                200 -> "OK"; 202 -> "Accepted"; 401 -> "Unauthorized"; else -> "Not Found"
+            }
+            val head = buildString {
+                append("HTTP/1.1 $status $reason\r\n")
+                append("Content-Type: application/json\r\n")
+                append("Content-Length: ${bytes.size}\r\n")
+                for ((k, v) in extraHeaders) append("$k: $v\r\n")
+                append("Connection: close\r\n\r\n")
+            }
+            out.write(head.toByteArray(Charsets.UTF_8))
+            out.write(bytes)
+            out.flush()
+        }
+
+        override fun close() {
+            running.set(false)
+            try { socket.close() } catch (_: Exception) { }
+        }
+    }
+
+    @Test fun test72_mcpGuidedSetupAndServerStates() {
+        // T17: guided/custom connection, auth failure, disconnect, schema
+        // change, scope limits and paid-service default — against a real
+        // loopback HTTP server through the real HttpURLConnection transport.
+        val stub = StubMcpServer()
+        try {
+            val credentials = InMemoryMcpCredentialStore()
+            val http = UrlConnectionMcpHttpClient(connectTimeoutMs = 5_000, readTimeoutMs = 5_000)
+            val flow = McpSetupFlow(http, credentials)
+            // Custom URL validation happens before any network use.
+            val badUrl = flow.run("Stub", "ftp://example.com/", null)
+            assertTrue(badUrl is McpSetupFlow.FlowResult.Failed)
+            assertEquals(McpSetupFlow.Stage.URL, (badUrl as McpSetupFlow.FlowResult.Failed).stage)
+            // Guided setup connects; only free tools turn on by default and
+            // the secret never lands in the config.
+            val connected = flow.run("Stub", "http://127.0.0.1:${stub.port}/", "good-token")
+            assertTrue(connected is McpSetupFlow.FlowResult.Connected)
+            val status = (connected as McpSetupFlow.FlowResult.Connected).status
+            assertEquals(McpServerState.CONNECTED, status.state)
+            assertEquals(setOf("free_lookup"), status.enabledTools)
+            assertFalse("secret must not leak into the config",
+                status.config.redacted().contains("good-token"))
+            val registry = McpRegistry(http, credentials)
+            val placed = registry.add(status)
+            val serverId = placed.config.id
+            val provider = ProviderId.mcp(serverId)
+            ToolSourcePolicy.setProviderScopeResolver { wireName ->
+                ProviderWireNames.parseToolName(wireName)?.let { parsed ->
+                    if (parsed.provider.kind == ProviderKind.MCP)
+                        registry.toolsFor(parsed.provider.id)
+                            .firstOrNull { it.name == parsed.functionId }
+                            ?.scopes?.map { ProviderWireNames.scopedName(parsed.provider, it) }
+                            .orEmpty().toSet()
+                    else emptySet()
+                }.orEmpty()
+            }
+            val dispatcher = ProviderDispatcher(ToolTaskLedger(), ProviderRegistry(), registry,
+                mapOf(provider to McpInvoker(registry, http, credentials)))
+            // A free tool call dispatches through the real transport.
+            val ok = dispatcher.dispatch(ProviderCall(provider, "free_lookup", mapOf("q" to "x")))
+            assertTrue(ok is ProviderCallResult.Success)
+            assertEquals("stub-result", (ok as ProviderCallResult.Success).data["text"])
+            // Paid-service default: disabled until explicitly enabled, and
+            // even then purchase confirmation is never waived.
+            val paidDisabled = dispatcher.dispatch(ProviderCall(provider, "paid_export", mapOf("q" to "x")))
+            assertTrue(paidDisabled is ProviderCallResult.TypedError)
+            assertEquals(ProviderErrorCode.NOT_ENABLED,
+                (paidDisabled as ProviderCallResult.TypedError).code)
+            assertTrue(registry.setToolEnabled(serverId, "paid_export", true))
+            val paidConfirm = dispatcher.dispatch(ProviderCall(provider, "paid_export", mapOf("q" to "x")))
+            assertTrue("paid enablement never waives purchase confirmation",
+                paidConfirm is ProviderCallResult.NeedsPurchaseConfirmation)
+            // Schema change blocks calls until re-reviewed.
+            stub.toolNames = listOf("free_lookup", "paid_export_changed")
+            val changed = registry.refresh(serverId)
+            assertEquals(McpServerState.SCHEMA_CHANGED, changed.state)
+            val blocked = dispatcher.dispatch(ProviderCall(provider, "free_lookup", mapOf("q" to "x")))
+            assertTrue(blocked is ProviderCallResult.TypedError)
+            assertEquals(ProviderErrorCode.PROVIDER_UNAVAILABLE,
+                (blocked as ProviderCallResult.TypedError).code)
+            assertTrue(registry.acknowledgeSchemaChange(serverId))
+            assertEquals(McpServerState.CONNECTED, registry.status(serverId)!!.state)
+            // Auth failure is an explicit denied state, not a silent retry.
+            stub.toolNames = listOf("free_lookup", "paid_export")
+            stub.requireToken = "rotated-token"
+            val denied = registry.refresh(serverId)
+            assertEquals(McpServerState.DENIED, denied.state)
+            assertTrue(denied.explanation.contains("credentials"))
+            // Explicit disconnect makes calls honestly unavailable.
+            stub.requireToken = "good-token"
+            assertTrue(registry.disconnect(serverId))
+            assertEquals(McpServerState.DISABLED, registry.status(serverId)!!.state)
+            val gone = dispatcher.dispatch(ProviderCall(provider, "free_lookup", mapOf("q" to "x")))
+            assertTrue(gone is ProviderCallResult.TypedError)
+            val goneError = gone as ProviderCallResult.TypedError
+            assertEquals(ProviderErrorCode.PROVIDER_UNAVAILABLE, goneError.code)
+            assertTrue(goneError.message.contains("Disconnected"))
+        } finally {
+            stub.close()
+        }
+    }
+
+    // -- M3 provider grants and exposure gate (T08 for new providers) ------------
+
+    @Test fun test73_providerGrantDisciplineAndExposureGate() {
+        // T08 applied to new providers: first-source access is remembered per
+        // provider family, a grant can never broaden (in scope or across
+        // families), denial/revocation blocks every adapter, and provider
+        // tools stay structurally unavailable to the model until M7.
+        val pkg = "com.example.sample"
+        val provider = ProviderId.appFunctions(pkg)
+        val wire = ProviderWireNames.toolName(provider, "echo")
+        val registry = ProviderRegistry()
+        registry.update(DiscoverySnapshot(listOf(
+            AppFunctionMetadata(pkg, "echo", "Echo", "Echoes.", 1,
+                AppFunctionType.Obj(mapOf("text" to AppFunctionProperty(AppFunctionType.Text, true))),
+                AppFunctionType.Text,
+                setOf(ProviderWireNames.scopedName(provider, "read")))
+        ), DiscoveryAccessMethod.ORDINARY_APP, 0L))
+        ToolSourcePolicy.setProviderScopeResolver { wireName ->
+            if (wireName == wire) setOf(ProviderWireNames.scopedName(provider, "read")) else emptySet()
+        }
+        val ledger = ToolTaskLedger()
+        val dispatched = AtomicInteger(0)
+        val invoker = ProviderInvoker { call ->
+            dispatched.incrementAndGet()
+            ProviderCallResult.Success(mapOf("text" to call.arguments["text"].toString()), "echoed")
+        }
+        val dispatcher = ProviderDispatcher(ledger, registry,
+            McpRegistry(McpHttpClient { _, _, _ -> McpHttpResponse(500, "", emptyMap()) },
+                InMemoryMcpCredentialStore()),
+            mapOf(provider to invoker))
+        // The model-exposure gate is structural, not advisory.
+        val modelCall = dispatcher.dispatchByAlias("echo", mapOf("text" to "hi"),
+            ProviderCallerKind.MODEL)
+        assertTrue(modelCall is ProviderCallResult.TypedError)
+        assertEquals(ProviderErrorCode.DENIED_PERMISSION,
+            (modelCall as ProviderCallResult.TypedError).code)
+        assertEquals("no model dispatch while exposure is off", 0, dispatched.get())
+        // The first successful call remembers the grant within its scopes.
+        assertTrue(dispatcher.dispatchByAlias("echo", mapOf("text" to "hi"))
+            is ProviderCallResult.Success)
+        val family = "provider:appfunctions:com.example.sample"
+        val record = ledger.journal().sourceAccess.single { it.family == family }
+        assertEquals(SourceAccessState.GRANTED, record.state)
+        assertEquals(setOf("appfunctions:com.example.sample:read"), record.scopes)
+        // A later grant attempt can never broaden the scopes.
+        ToolSourceAccess(ledger).recordProviderGrant(wire, setOf("battery.read"))
+        assertEquals(setOf("appfunctions:com.example.sample:read"),
+            ledger.journal().sourceAccess.single { it.family == family }.scopes)
+        assertEquals("the narrowing attempt dispatched nothing new", 1, dispatched.get())
+        // Denial blocks the provider adapter with a truthful receipt.
+        ToolSourceAccess(ledger).recordDenial(family)
+        val denied = dispatcher.dispatchByAlias("echo", mapOf("text" to "hi"))
+        assertTrue(denied is ProviderCallResult.TypedError)
+        assertEquals(ProviderErrorCode.DENIED_PERMISSION,
+            (denied as ProviderCallResult.TypedError).code)
+        assertEquals("denied calls never reach the adapter", 1, dispatched.get())
+        // The settings surface stays honest about availability.
+        val rows = ProviderSettings.rows(registry,
+            McpRegistry(McpHttpClient { _, _, _ -> McpHttpResponse(500, "", emptyMap()) },
+                InMemoryMcpCredentialStore()),
+            AppFunctionPlatformStatus(DiscoveryAccessMethod.ORDINARY_APP, false, 0,
+                "No provider declarations found by the package scan."))
+        val platformRow = rows.single { it.id == "appfunctions-platform" }
+        assertEquals("unavailable", platformRow.state)
+        assertTrue("access method is labeled", platformRow.explanation.contains("ordinary app"))
+        val projection = WorkflowSettingsProjection.from(ledger.journal(), 0L, rows)
+        assertEquals("provider rows reach the settings projection", rows, projection.providers)
+    }
+
+    @Test fun test74_reminderTextRequestCreatesRealScheduleAndListsIt() {
+        // Regression for the Fold 6 report (build 1002): voice "remind me to
+        // go door dashing tomorrow at 4" produced a confabulated confirmation
+        // with nothing scheduled, and follow-ups looped "It is noted in your
+        // schedule" with no schedule in existence. A text "remind me" request
+        // must parse to a Ready create_reminder plan, write a real
+        // WorkflowLedger entry through the real Android executor, and
+        // show_schedule must list it.
+        val storeFile = File(context.cacheDir, "reminder-journey-${UUID.randomUUID()}.json")
+        try {
+            val ledger = WorkflowLedger(FileToolTaskStore(storeFile))
+            val coordinator = ReminderCoordinator(ledger, { occurrence ->
+                WorkflowAlarmScheduler(context).schedule(occurrence)
+            })
+            val plan = ActionTurnPlan.parse("remind me to go door dashing tomorrow at 4")
+            assertTrue("text reminder must parse as an action plan, was $plan",
+                plan is ActionTurnPlan.Ready)
+            val request = (plan as ActionTurnPlan.Ready).steps.single().request
+            assertEquals("create_reminder", request.name)
+            assertEquals("go door dashing", request.arguments["message"])
+            val pipeline = MobileActionPipeline(
+                executor = AndroidMobileActionExecutor(context, reminderScheduling = coordinator))
+            val created = pipeline.execute(request)
+            assertTrue("parsed create_reminder must dispatch: ${created.message}", created.succeeded)
+            assertTrue("receipt must claim the set honestly, not confabulate: ${created.message}",
+                created.message.startsWith("Reminder set for"))
+            assertTrue("receipt must name the requested time: ${created.message}",
+                created.message.contains("4:00 PM"))
+            assertFalse("receipt must not carry an alarm failure: ${created.message}",
+                created.message.contains("couldn't"))
+            val listed = pipeline.execute(ActionRequest("show_schedule"))
+            assertTrue("show_schedule must dispatch: ${listed.message}", listed.succeeded)
+            assertTrue("the schedule must list the reminder that was just set: ${listed.message}",
+                listed.message.contains("door dashing"))
+            assertFalse("the schedule must not claim emptiness after a reminder was set: ${listed.message}",
+                listed.message.contains("Nothing is scheduled"))
+        } finally {
+            storeFile.delete()
+        }
+    }
+
+    @Test fun test75_emptyScheduleRendersHonestEmptyState() {
+        // The other half of the build-1002 loop: with no reminders scheduled,
+        // asking for the schedule must say so plainly instead of inventing one.
+        val storeFile = File(context.cacheDir, "reminder-empty-${UUID.randomUUID()}.json")
+        try {
+            val ledger = WorkflowLedger(FileToolTaskStore(storeFile))
+            val coordinator = ReminderCoordinator(ledger, { occurrence ->
+                WorkflowAlarmScheduler(context).schedule(occurrence)
+            })
+            val pipeline = MobileActionPipeline(
+                executor = AndroidMobileActionExecutor(context, reminderScheduling = coordinator))
+            val result = pipeline.execute(ActionRequest("show_schedule"))
+            assertTrue("empty schedule read must succeed: ${result.message}", result.succeeded)
+            assertTrue("empty schedule must say so honestly: ${result.message}",
+                result.message.contains("Nothing is scheduled"))
+        } finally {
+            storeFile.delete()
+        }
+    }
     // Leave this selection in durable preferences for the controller's separate-process check.
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()

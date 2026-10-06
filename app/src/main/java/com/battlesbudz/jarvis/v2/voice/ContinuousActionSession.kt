@@ -76,7 +76,20 @@ suspend fun awaitActionPumpEvent(
 class ContinuousActionSession<T>(
     private val queue: AcceptedActionQueue<T>,
     private val captureHistoryCapacity: Int = 32,
-    private val reportCapacity: Int = 3
+    private val reportCapacity: Int = 3,
+    /**
+     * M1d explicit silent work (D21/T05). When present, final spoken captures
+     * are classified through it: ordinary speech is ignored while silently
+     * working, the wake phrase reopens conversation, and stop controls always
+     * pass through. Accepted tasks continue untouched in every case.
+     */
+    private val silentWork: SilentWorkController? = null,
+    /**
+     * M1d: fired when the wake phrase exits silent work inside the capture
+     * session, so the runtime can sync its observable posture (e.g. the UI
+     * toggle) with the controller's.
+     */
+    private val onSilentWorkExit: () -> Unit = {}
 ) {
     init {
         require(captureHistoryCapacity > 0) { "captureHistoryCapacity must be positive" }
@@ -125,7 +138,14 @@ class ContinuousActionSession<T>(
      * Stable IDs deduplicate callbacks independently of text. A recognition issue ends the floor
      * but never becomes a conversation/action request.
      */
-    fun onCaptured(capture: SessionCapture, kind: CapturedKind): CaptureOutcome = synchronized(lock) {
+    fun onCaptured(capture: SessionCapture, kind: CapturedKind): CaptureOutcome =
+        onCapturedInternal(capture, kind, applySilentGate = true)
+
+    private fun onCapturedInternal(
+        capture: SessionCapture,
+        kind: CapturedKind,
+        applySilentGate: Boolean
+    ): CaptureOutcome = synchronized(lock) {
         if (detached) return CaptureOutcome.Duplicate
         captureInProgress = false
         if (!rememberCaptureLocked(capture.utteranceId)) {
@@ -135,6 +155,23 @@ class ContinuousActionSession<T>(
         if (capture.recognitionIssue != null) {
             changedLocked()
             return CaptureOutcome.RecognitionIssue(capture)
+        }
+        // M1d: explicit silent work ignores ordinary speech until the wake
+        // phrase. Control kinds always pass through; the wake utterance itself
+        // is handled as ordinary conversation once silence is exited.
+        if (applySilentGate && kind !is CapturedKind.Control) {
+            when (silentWork?.classify(capture.text)) {
+                null, SilentSpeechDecision.Answer -> Unit
+                SilentSpeechDecision.Ignored -> {
+                    changedLocked()
+                    return CaptureOutcome.Duplicate
+                }
+                SilentSpeechDecision.Wake -> {
+                    silentWork?.exitSilentWork()
+                    onSilentWorkExit()
+                }
+                SilentSpeechDecision.Control -> Unit
+            }
         }
         val outcome = when (kind) {
             CapturedKind.AcceptedAction -> CaptureOutcome.AcceptedAction(capture)
@@ -161,11 +198,12 @@ class ContinuousActionSession<T>(
 
     /**
      * Classify a final typed call message through the same action/control/deferred queue without
-     * stealing an already-confirmed spoken floor. The runtime owns the actual queue admission.
+     * stealing an already-confirmed spoken floor. Typed input is deliberate, so the silent-work
+     * speech gate does not apply. The runtime owns the actual queue admission.
      */
     fun onTyped(capture: SessionCapture, kind: CapturedKind): CaptureOutcome = synchronized(lock) {
         val spokenFloorWasActive = captureInProgress
-        val outcome = onCaptured(capture, kind)
+        val outcome = onCapturedInternal(capture, kind, applySilentGate = false)
         captureInProgress = spokenFloorWasActive
         outcome
     }

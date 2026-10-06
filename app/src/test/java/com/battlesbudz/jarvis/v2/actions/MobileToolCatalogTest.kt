@@ -28,7 +28,7 @@ class MobileToolCatalogTest {
                 parameter.pattern?.let { assertEquals(it, property.getString("pattern")) }
             }
         }
-        assertEquals(listOf("read_battery", "open_app", "set_volume"), entries.map { it.name })
+        assertEquals(listOf("read_battery", "open_app", "set_volume", "media_control", "open_website", "open_settings", "navigate", "screen_observe", "screen_tap", "screen_scroll", "screen_type", "create_reminder", "show_schedule", "post_notification"), entries.map { it.name })
         assertTrue(entries.all { it.version == MobileToolCatalog.VERSION })
     }
 
@@ -43,6 +43,12 @@ class MobileToolCatalogTest {
         listOf("{\"level\":\"20\"}", "{\"level\":20.0}", "{\"level\":-1}", "{\"level\":101}", "{\"level\":null}")
             .forEach { assertNull(strict("set_volume", it)) }
         assertNull(strict("read_battery", "{\"unused\":true}"))
+        assertEquals(ActionRequest("media_control", mapOf("action" to "toggle")), strict("media_control", "{\"action\":\"toggle\"}"))
+        assertEquals(ActionRequest("media_control", mapOf("action" to "next")), strict("media_control", "{\"args\":{\"action\":\"next\"}}"))
+        listOf(
+            "{\"action\":\"rewind\"}", "{\"action\":\"PLAY\"}", "{\"action\":\"\"}", "{\"action\":\"   \"}",
+            "{\"action\":4}", "{\"action\":null}", "{\"action\":\"pause\",\"extra\":1}", "{}"
+        ).forEach { assertNull(strict("media_control", it)) }
     }
 
     @Test fun legacyDecodeRemainsTolerantAndSdkCallbackCannotClaimSuccess() {
@@ -50,6 +56,8 @@ class MobileToolCatalogTest {
             NativeActionDecoder.decode(ToolCall("open_app", "{\"app\":4}")))
         assertEquals(ActionRequest("set_volume", mapOf("level" to "20")),
             NativeActionDecoder.decode(ToolCall("set_volume", "{\"level\":20}")))
+        assertEquals(ActionRequest("media_control", mapOf("action" to "pause")),
+            NativeActionDecoder.decode(ToolCall("media_control", "{\"args\":{\"action\":\"pause\"}}")))
         MobileActionToolDefinitions.all().forEach { tool ->
             assertTrue(JSONObject(tool.execute("{}")).has("error"))
         }

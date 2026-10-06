@@ -23,13 +23,13 @@ class DurableToolTaskTest {
         val group = ledger.admit(listOf(volume, battery, volume), "conversation")
         assertNull(ledger.claim(group.attemptIds[1], 0))
         var effects = 0
-        val pipeline = JournaledActionPipeline(ledger) {
+        val pipeline = JournaledActionPipeline(ledger, MobileActionExecutor {
             effects++
             val reopened = ToolTaskLedger(FileToolTaskStore(file))
             assertEquals(3, reopened.journal().groups.single().attemptIds.size)
             assertEquals(ToolTaskState.RUNNING, reopened.get(group.attemptIds[effects - 1])?.state)
             ExecutionResult(true, "receipt $effects")
-        }
+        })
         for (index in 0..2) assertTrue(pipeline.executeAttempt(ledger.attempt(group, index)).succeeded)
         assertFalse(pipeline.executeAttempt(ledger.attempt(group)).succeeded)
         assertEquals(3, effects)
@@ -148,7 +148,7 @@ class DurableToolTaskTest {
         val group = ledger.admit(listOf(battery), "conversation", ToolAuthority.ROUTINE, grant.id)
         now = 21L
         var effects = 0
-        assertFalse(JournaledActionPipeline(ledger) { effects++; ExecutionResult(true, "effect") }.executeAttempt(ledger.attempt(group)).succeeded)
+        assertFalse(JournaledActionPipeline(ledger, MobileActionExecutor { effects++; ExecutionResult(true, "effect") }).executeAttempt(ledger.attempt(group)).succeeded)
         assertEquals(0, effects)
         assertThrows(IllegalArgumentException::class.java) { ledger.grant("unsafe", listOf(ActionRequest("send_message")), 100L) }
     }
@@ -162,7 +162,7 @@ class DurableToolTaskTest {
         assertEquals(ToolTaskState.SUCCEEDED, reopened.attempt(group).state)
         assertEquals(ToolTaskState.READY, reopened.attempt(group, 1).state)
         var effects = 0
-        val pipeline = JournaledActionPipeline(reopened) { effects++; ExecutionResult(true, "80%") }
+        val pipeline = JournaledActionPipeline(reopened, MobileActionExecutor { effects++; ExecutionResult(true, "80%") })
         assertFalse(pipeline.executeAttempt(reopened.attempt(group)).succeeded)
         assertTrue(pipeline.executeAttempt(reopened.attempt(group, 1)).succeeded)
         assertEquals(1, effects)
@@ -242,7 +242,7 @@ class DurableToolTaskTest {
         val ledger = ToolTaskLedger(FileToolTaskStore(file))
         ledger.recoverAfterRestart()
         assertEquals(ToolTaskState.UNKNOWN_OUTCOME, ledger.get(id)?.state)
-        assertEquals(2, JSONObject(file.readText()).getInt("schemaVersion"))
+        assertEquals(3, JSONObject(file.readText()).getInt("schemaVersion"))
         assertTrue(ledger.journal().groups.isEmpty())
     }
 
@@ -250,7 +250,7 @@ class DurableToolTaskTest {
         val ledger = ToolTaskLedger()
         val group = ledger.admit(listOf(ActionRequest("open_app", mapOf("app" to "maps"))), "conversation")
         var observed: MobileAction? = null
-        val pipeline = JournaledActionPipeline(ledger) { observed = it; ExecutionResult(true, "opened") }
+        val pipeline = JournaledActionPipeline(ledger, MobileActionExecutor { observed = it; ExecutionResult(true, "opened") })
         assertFalse(pipeline.executeBound(ledger.attempt(group), ActionRequest("open_app", mapOf("app" to "Facebook"))).succeeded)
         assertNull(observed)
         assertTrue(pipeline.executeBound(ledger.attempt(group), ActionRequest("open_app", mapOf("app" to "Maps"))).succeeded)

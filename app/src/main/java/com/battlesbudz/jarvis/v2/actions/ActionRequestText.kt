@@ -20,7 +20,7 @@ internal object ActionRequestText {
         val discourse = unquoted.replaceFirst(Regex("""(?i)^(?:(?:but\s+)?actually|and\s+then|then)\s+(?=$actionLead)"""), "")
         val retried = discourse.replaceFirst(Regex("""(?i)^(?:i\s+(?:said|asked)(?:\s+you)?[, ]+)(?=(?:can|could|would|will)\s+you\b|please\s+(?:open|launch|start|set|read|check|show|tell)\b)"""), "")
         val directed = lead.replaceFirst(retried, "").trim()
-        return directed.split(Regex("""(?i)[.!?;\n]+|,\s*(?=$actionLead|please\s+)|\s*(?:,?\s+and\s+then\s+|,?\s+then\s+|,?\s+and\s+)"""))
+        return directed.split(Regex("""(?i)(?:[!?;\n]|\.(?=\s|$))+|,\s*(?=$actionLead|please\s+)|\s*(?:,?\s+and\s+then\s+|,?\s+then\s+|,?\s+and\s+)"""))
             .map {
                 val normalized = trailing.replace(lead.replaceFirst(it.trim(), "").trim(), "").trim().trimEnd('.', '!', '?')
                 Regex("""(?i)\s+after that$""").replace(normalized, "").trim()
@@ -41,6 +41,87 @@ internal object ActionRequestText {
         ).any { Regex("^(?:$it)$").matches(text) }
     }
 
+    /** Bounded natural-language forms for media playback control. Returns the strict verb. */
+    fun mediaAction(clause: String): String? {
+        val text = clause.lowercase().trim()
+        // A media noun is required: bare verbs like "stop" or "next" are too
+        // ambiguous to become phone actions on their own.
+        val noun = """(?:music|media|songs?|tracks?|playback|tunes?)"""
+        if (!Regex("""\b$noun\b""").containsMatchIn(text)) return null
+        // Final correction: the speaker can correct themselves mid-utterance
+        // ("play music actually pause music"). The first anchored verb must
+        // not silently win over the correction, so when a correction marker
+        // introduces a new directed clause, the verb is read from that
+        // clause — mirroring the open_app final-correction discipline in
+        // FinalVoiceToolGuard. Without this the correction is neither
+        // honored nor rejected: it parses as the first verb.
+        val correction = Regex("""\b(?:actually|instead|make that)\b""").findAll(text).lastOrNull()
+        val effective = correction
+            ?.takeIf { text.substring(it.range.last + 1).isNotBlank() }
+            ?.let { text.substring(it.range.last + 1).trim().trimStart(',', ';', ':').trim() }
+            ?: text
+        return when {
+            Regex("""^(?:pause|stop)\b""").containsMatchIn(effective) -> "pause"
+            Regex("""^(?:play|resume)\b""").containsMatchIn(effective) -> "play"
+            Regex("""^toggle\b""").containsMatchIn(effective) -> "toggle"
+            Regex("""^(?:next|skip)\b""").containsMatchIn(effective) -> "next"
+            Regex("""^(?:previous|last|go\s+back)\b""").containsMatchIn(effective) -> "previous"
+            else -> null
+        }
+    }
+
+    /** Bounded natural-language forms for opening a website. Returns the raw URL-ish target. */
+    fun websiteTarget(clause: String): String? {
+        val text = clause.trim()
+        // A dot (or explicit scheme) distinguishes a website from an app name,
+        // so "open Chrome" still routes to open_app.
+        return Regex("""(?i)^(?:open|launch|visit|go\s+to)\s+(https?://\S+|\S*\.\S+.*)$""")
+            .matchEntire(text)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    /** Bounded natural-language forms for Android settings screens. Returns the screen key. */
+    fun settingsScreen(clause: String): String? {
+        val text = clause.lowercase().trim()
+        val name = Regex("""^(?:open|show|go\s+to)\s+(?:the\s+)?(wi-?fi|bluetooth|display|sound|apps?|battery|location|storage|network)\s+settings?$""")
+            .matchEntire(text)?.groupValues?.get(1) ?: return null
+        return when (name.replace("-", "").removeSuffix("s")) {
+            "wifi" -> "wifi"
+            "bluetooth" -> "bluetooth"
+            "display" -> "display"
+            "sound" -> "sound"
+            "app" -> "apps"
+            "battery" -> "battery"
+            "location" -> "location"
+            "storage" -> "storage"
+            "network" -> "network"
+            else -> null
+        }
+    }
+
+    /** Bounded natural-language forms for map directions. Returns the destination. */
+    fun navigationTarget(clause: String): String? {
+        val text = clause.trim()
+        return Regex("""(?i)^(?:navigate|drive)\s+to\s+(.+)$""")
+            .matchEntire(text)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
+            ?: Regex("""(?i)^(?:get|show(?: me)?)\s+directions\s+to\s+(.+)$""")
+                .matchEntire(text)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
+            ?: Regex("""(?i)^take\s+me\s+to\s+(.+)$""")
+                .matchEntire(text)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    /** Bounded natural-language forms for observing the phone screen. Mutations stay model-path only: targets must come from a fresh observation. */
+    fun screenObserveRequest(clause: String): Boolean {
+        val text = clause.lowercase().trim()
+        return listOf(
+            "what(?:'s| is) on (?:my |the )?screen",
+            "look at (?:my |the )?screen",
+            "read (?:my |the )?screen",
+            "describe (?:my |the )?screen",
+            "show me (?:my |the )?screen",
+            "tell me what(?:'s| is) on (?:my |the )?screen"
+        ).any { Regex("^$it$").matches(text) }
+    }
+
     fun appTarget(clause: String): String? {
         val target = Regex("""(?i)^(?:open|launch|start)\s+(?:up\s+)?(?:the\s+)?(.+)$""")
             .matchEntire(clause)?.groupValues?.get(1) ?: return null
@@ -53,6 +134,41 @@ internal object ActionRequestText {
             .matchEntire(unquoted)?.groupValues?.get(1) ?: return null
         return cleanTarget(target)
     }
+
+    /**
+     * Bounded natural-language forms for one-shot reminders. Follows the
+     * media_control parser-fix precedent: a strict verb phrase plus an
+     * explicit time, resolved deterministically against [nowMs]. Returns the
+     * message and absolute trigger time, or null when the clause is not a
+     * recognizable reminder request (notably when no time is given: the
+     * parser never invents one).
+     */
+    fun reminderRequest(clause: String, nowMs: Long): ReminderSpec? =
+        parseReminderRequest(clause, nowMs)
+
+    /**
+     * Bounded natural-language forms for viewing the schedule. Read-only:
+     * these become `show_schedule`, which lists what the ledger actually
+     * holds and says honestly when nothing is scheduled.
+     */
+    fun scheduleRequest(clause: String): Boolean {
+        val text = clause.lowercase().trim().trimEnd('.', '!', '?').trim()
+        return SCHEDULE_VIEWS.any { it.matches(text) }
+    }
+
+    private val SCHEDULE_VIEWS = listOf(
+        "show (?:me )?(?:my |the )?schedule",
+        "(?:what(?:'s| is)|show) (?:my |the )?schedule",
+        "what schedule",
+        "(?:list|show)(?: me)? (?:my )?reminders?",
+        "what reminders? do i have",
+        "do i have any reminders?",
+        "any reminders?",
+        "where did you set that reminder",
+        "where is that reminder",
+        "how do i see (?:it|my reminders?|the schedule)",
+        "how can i see (?:it|my reminders?|the schedule)"
+    ).map { Regex("^${it.trimEnd('?')}$") }
 
     private fun cleanTarget(text: String): String? {
         val target = trailing.replace(text.trim(), "").trim()

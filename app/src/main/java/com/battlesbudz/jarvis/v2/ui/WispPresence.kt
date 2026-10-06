@@ -5,15 +5,18 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.battlesbudz.jarvis.v2.actions.ToolTaskJournal
@@ -68,7 +71,11 @@ internal fun WispPresence(
     }
     val activity = observed?.takeIf { it.conversationId == thread.id }?.let {
         WispPresentation(
-            if (it.kind == com.battlesbudz.jarvis.v2.presentation.AgentActivityKind.ERROR) WispActivity.ERROR else WispActivity.CHECKING,
+            when (it.kind) {
+                com.battlesbudz.jarvis.v2.presentation.AgentActivityKind.ERROR -> WispActivity.ERROR
+                com.battlesbudz.jarvis.v2.presentation.AgentActivityKind.CHECKING_REFERENCES -> WispActivity.CHECKING
+                com.battlesbudz.jarvis.v2.presentation.AgentActivityKind.WORKING -> WispActivity.THINKING
+            },
             it.label, taskKey = "activity:${it.operationId}")
     } ?: setupActivity
     val presentation = WispPresenter.present(thread.id, journal, error, busy, armed, phase, call, paused, activity, receipt)
@@ -84,18 +91,24 @@ internal fun WispPresence(
     val height by if (durationScale > 0f) {
         animateDpAsState(viewport.heightDp.dp, tween(320), label = "Wisp viewport height")
     } else rememberUpdatedState(viewport.heightDp.dp)
-    Column(Modifier.fillMaxWidth().testTag("jarvis_wisp").semantics {
-        contentDescription = "Jarvis: ${presentation.label}"
-        stateDescription = presentation.activity.name
-    }, horizontalAlignment = Alignment.CenterHorizontally) {
+    val detailsAllowed by rememberWispDetailsAllowed()
+    val status = WispPresenter.statusText(presentation, detailsAllowed)
+    Column(Modifier.fillMaxWidth().testTag("jarvis_wisp"), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.size(width, height).testTag("jarvis_wisp_viewport")) {
             WispAudioCharacter(presentation, voicePlayback, armed, phase, paused, Modifier.fillMaxSize())
         }
-        Text(presentation.label, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 16.dp).testTag("jarvis_wisp_status").semantics {
-                contentDescription = listOfNotNull(presentation.label, presentation.detail).distinct().joinToString(". ")
-            })
+        if (status != null) {
+            // No marquee/typewriter/extra inference. Event updates replace one bounded public
+            // sentence; real approval/outcome transitions are never delayed to animate text.
+            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp).widthIn(max = 460.dp)) {
+                Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium, maxLines = 2,
+                    textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                        .testTag("jarvis_wisp_status").semantics { liveRegion = LiveRegionMode.Polite })
+            }
+        }
     }
 }
 

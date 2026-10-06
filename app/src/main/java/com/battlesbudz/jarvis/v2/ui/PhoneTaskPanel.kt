@@ -57,6 +57,8 @@ private fun ActionRequest.description() = when (name) {
     "read_battery" -> "Check battery"
     "set_volume" -> "Set media volume to ${arguments["level"]}%"
     "open_app" -> "Open ${arguments["app"] ?: arguments["package"]}"
+    "media_control" -> (MediaControlAction.fromVerb(arguments["action"].orEmpty())?.label
+        ?.replaceFirstChar { it.uppercase() } ?: "Control") + " media"
     else -> name
 }
 private fun ToolTaskState.description() = when (this) {

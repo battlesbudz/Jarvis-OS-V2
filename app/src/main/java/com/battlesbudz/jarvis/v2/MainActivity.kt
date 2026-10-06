@@ -88,6 +88,7 @@ class MainActivity : ComponentActivity() {
             runVoiceTurn(pending.start, pending.report, pending.onTranscript, pending.onFinished)
         } else {
             runtime.voiceSessionArmed = false
+            com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.sessionAlive.value = false
             pending.report("Microphone permission is required for Voice Calls.")
             pending.onFinished("Voice Call could not start because microphone permission was denied.")
         }
@@ -107,6 +108,10 @@ class MainActivity : ComponentActivity() {
             // torn down. The visible transcript remains recoverable.
             runtime.sessionPreferences.edit().remove(ConversationPolicy.SHORT_TERM_SUMMARY_KEY).apply()
         }
+        // M2: refresh the saved-workflow settings projection and evaluate
+        // past-due routine occurrences against current circumstances.
+        runtime.refreshWorkflowSettings()
+        runtime.evaluateMissedWorkflowRuns()
         setContent {
             JarvisApp(
                 store = runtime.modelStore,
@@ -116,6 +121,14 @@ class MainActivity : ComponentActivity() {
                 phoneTasks = runtime.phoneTasks,
                 phoneTaskError = runtime.phoneTaskError,
                 onPhoneTaskAction = runtime::phoneTaskAction,
+                // M1d explicit silent work (D21/T05).
+                silentWork = runtime.silentWorkState,
+                onSilentWork = runtime::setSilentWork,
+                // M2 saved workflows (D36): settings lists them; chat stays the operating surface.
+                workflowSettings = runtime.workflowSettings,
+                onWorkflowSetEnabled = runtime::setWorkflowEnabled,
+                // M3 guided MCP setup (D07): custom server URL from the settings dialog.
+                onConnectMcpServer = runtime::connectMcpServer,
                 callState = runtime.voiceSessionController.state,
                 onSendChat = runtime::sendChat,
                 onSelectConversation = runtime::selectConversation,

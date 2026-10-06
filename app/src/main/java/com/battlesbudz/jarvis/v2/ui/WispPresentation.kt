@@ -1,5 +1,6 @@
 package com.battlesbudz.jarvis.v2.ui
 
+import com.battlesbudz.jarvis.v2.presentation.ActivityText
 import com.battlesbudz.jarvis.v2.actions.ExecutionResult
 import com.battlesbudz.jarvis.v2.actions.ToolTaskAttempt
 import com.battlesbudz.jarvis.v2.actions.ToolTaskJournal
@@ -17,7 +18,8 @@ internal data class WispPresentation(
     val activity: WispActivity,
     val label: String,
     val detail: String? = null,
-    val taskKey: String? = null
+    val taskKey: String? = null,
+    val otherTaskCount: Int = 0
 )
 
 internal data class WispViewport(val widthDp: Int, val heightDp: Int)
@@ -51,19 +53,34 @@ internal object WispPresenter {
         observedActivity: WispPresentation? = null,
         receipt: WispPresentation? = null
     ): WispPresentation {
-        val attempts = relevantAttempts(journal, conversationId)
+        val attempts = relevantAttempts(journal, conversationId).sortedWith(compareBy({ it.updatedAtMs }, { it.id }))
+        fun selected(attempt: ToolTaskAttempt): WispPresentation = task(attempt).copy(
+            otherTaskCount = attempts.count { it.id != attempt.id && !it.reconciled && it.state in activeStates })
         // Specific task authority/outcomes take priority. Unknown outcomes must never look successful.
-        val urgent = attempts.lastOrNull { it.state == ToolTaskState.WAITING_APPROVAL }
+        val urgent = attempts.lastOrNull { it.state in setOf(ToolTaskState.WAITING_APPROVAL, ToolTaskState.WAITING_INPUT) && !it.reconciled }
             ?: attempts.lastOrNull { it.state == ToolTaskState.UNKNOWN_OUTCOME && !it.reconciled }
-        if (urgent != null) return task(urgent)
-        attempts.lastOrNull { it.state == ToolTaskState.RUNNING }?.let { return task(it) }
+        if (urgent != null) return selected(urgent)
+        attempts.lastOrNull { it.state == ToolTaskState.RUNNING && !it.reconciled }?.let { return selected(it) }
         val recentError = observedActivity?.takeIf { it.activity == WispActivity.ERROR }
-        if (observedActivity != null && recentError == null) return observedActivity
         if (armed && callState == VoiceSessionState.WAITING_FOR_CONFIRMATION)
             return WispPresentation(WispActivity.APPROVAL, "Waiting for you")
+        if (observedActivity != null && recentError == null) {
+            // Streaming speech/listening can overlap real work. Preserve the actual audio
+            // owner and name both observations instead of making an active microphone invisible.
+            val publicWork = ActivityText.publicBlurb(observedActivity.label)
+            return when {
+                armed && phase == VoicePhase.SPEAKING -> observedActivity.copy(
+                    activity = WispActivity.SPEAKING, label = "Speaking · $publicWork")
+                armed && (microphonePaused || phase == VoicePhase.PAUSED) -> observedActivity.copy(
+                    label = "Microphone paused · $publicWork")
+                armed && phase == VoicePhase.LISTENING -> observedActivity.copy(
+                    activity = WispActivity.LISTENING, label = "Listening · $publicWork")
+                else -> observedActivity
+            }
+        }
         if (armed && phase == VoicePhase.SPEAKING)
             return WispPresentation(WispActivity.SPEAKING, "Speaking")
-        attempts.lastOrNull { it.state in pendingStates && !it.reconciled }?.let { return task(it) }
+        attempts.lastOrNull { it.state in pendingStates && !it.reconciled }?.let { return selected(it) }
         if (chatBusy) return WispPresentation(WispActivity.THINKING, "Thinking")
         if (receipt != null) return receipt
         // A persistent journal failure remains visible in the task panel. It is the idle
@@ -101,16 +118,46 @@ internal object WispPresenter {
 
     internal fun relevantAttempts(journal: ToolTaskJournal?, conversationId: String): List<ToolTaskAttempt> {
         val groups = journal?.groups.orEmpty().filter { it.conversationId == conversationId }.mapTo(hashSetOf()) { it.id }
-        return journal?.attempts.orEmpty().filter { it.groupId in groups || it.groupId == null && !it.reconciled }
+        val workflowGroups = journal?.groups.orEmpty().filter { it.conversationId.startsWith("workflow:") }
+            .mapTo(hashSetOf()) { it.id }
+        return journal?.attempts.orEmpty().filter {
+            it.groupId in groups || it.groupId == null && !it.reconciled ||
+                it.authority == com.battlesbudz.jarvis.v2.actions.ToolAuthority.ROUTINE && it.groupId in workflowGroups
+        }
     }
 
     internal fun task(attempt: ToolTaskAttempt): WispPresentation {
         val key = "${attempt.id}:${attempt.generation}:${attempt.state}"
         val description = when (attempt.request.name) {
             "read_battery" -> "Checking battery"
-            "set_volume" -> "Adjusting volume"
-            "open_app" -> "Opening app"
-            else -> "Working on a task"
+            "set_volume" -> attempt.request.arguments["level"]?.toIntOrNull()?.takeIf { it in 0..100 }
+                ?.let { "Adjusting media volume to $it%" } ?: "Adjusting volume"
+            "open_app" -> ActivityText.appName(attempt.request.arguments["app"])
+                ?.let { "Opening $it" } ?: "Opening app"
+            "media_control" -> when (attempt.request.arguments["action"]) {
+                "play" -> "Starting media playback"
+                "pause" -> "Pausing media playback"
+                "toggle" -> "Toggling media playback"
+                "next" -> "Skipping to the next track"
+                "previous" -> "Returning to the previous track"
+                else -> "Controlling media playback"
+            }
+            "open_settings" -> settingsScreens[attempt.request.arguments["screen"]]
+                ?.let { "Opening $it settings" } ?: "Opening settings"
+            "open_website" -> "Opening a website"
+            "navigate" -> "Opening directions"
+            "screen_observe" -> "Reading the current screen"
+            "screen_tap" -> "Tapping the selected screen control"
+            "screen_scroll" -> when (attempt.request.arguments["direction"]) {
+                "up" -> "Scrolling the screen up"
+                "down" -> "Scrolling the screen down"
+                else -> "Scrolling the screen"
+            }
+            "screen_type" -> "Typing into the selected field"
+            "create_reminder" -> "Scheduling your reminder"
+            "show_schedule" -> "Checking your scheduled reminders"
+            "post_notification" -> "Posting your reminder notification"
+            else -> if (attempt.provider != "native") "Running a connected tool" else "Working on a task"
         }
         val (activity, label) = when (attempt.state) {
             ToolTaskState.WAITING_APPROVAL -> WispActivity.APPROVAL to "Waiting for your approval"
@@ -124,15 +171,32 @@ internal object WispPresenter {
             ToolTaskState.SUCCEEDED -> if (attempt.resultOutcome == ExecutionResult.Outcome.SUCCEEDED)
                 WispActivity.SUCCESS to "Task complete" else WispActivity.ERROR to "Check the task outcome"
             ToolTaskState.RUNNING -> when (attempt.request.name) {
-                "read_battery" -> WispActivity.CHECKING to description
-                "set_volume" -> WispActivity.EDITING to description
-                "open_app" -> WispActivity.CONNECTING to description
+                "read_battery", "screen_observe", "show_schedule" -> WispActivity.CHECKING to description
+                "set_volume", "media_control", "screen_tap", "screen_scroll", "screen_type", "create_reminder" -> WispActivity.EDITING to description
+                "open_app", "open_website", "open_settings", "navigate" -> WispActivity.CONNECTING to description
                 else -> WispActivity.THINKING to description
             }
         }
-        return WispPresentation(activity, label, attempt.result ?: description, key)
+        // Executor receipt bodies can contain private request/result data. The header only uses the
+        // authored operation summary; detailed receipts remain in the existing task panel.
+        return WispPresentation(activity, label, description, key)
     }
 
+    /** The character remains visible while idle; the under-character activity node does not. */
+    fun statusText(presentation: WispPresentation, detailsAllowed: Boolean = true): String? {
+        if (!detailsAllowed || presentation.activity == WispActivity.READY ||
+            presentation.taskKey == null && presentation.label == "Task needs attention") return null
+        val label = ActivityText.publicBlurb(presentation.label)
+        return if (presentation.otherTaskCount > 0) "$label · ${presentation.otherTaskCount} other task${if (presentation.otherTaskCount == 1) "" else "s"}"
+            else label
+    }
+
+    private val settingsScreens = mapOf("wifi" to "Wi-Fi", "bluetooth" to "Bluetooth", "display" to "display",
+        "sound" to "sound", "apps" to "app", "battery" to "battery", "location" to "location",
+        "storage" to "storage", "network" to "network", "general" to "general")
+    private val activeStates = setOf(ToolTaskState.RUNNING, ToolTaskState.QUEUED, ToolTaskState.READY,
+        ToolTaskState.WAITING_APPROVAL, ToolTaskState.WAITING_INPUT, ToolTaskState.WAITING_RESOURCE,
+        ToolTaskState.PAUSED)
     private val pendingStates = setOf(ToolTaskState.QUEUED, ToolTaskState.READY,
         ToolTaskState.WAITING_INPUT, ToolTaskState.WAITING_RESOURCE, ToolTaskState.PAUSED)
 }

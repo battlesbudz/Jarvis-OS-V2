@@ -12,6 +12,7 @@ import com.battlesbudz.jarvis.v2.runtime.AcceptedVoiceActionCoordinator
 import com.battlesbudz.jarvis.v2.runtime.AcceptedVoiceInvocation
 import com.battlesbudz.jarvis.v2.runtime.RuntimeVoiceResources
 import com.battlesbudz.jarvis.v2.voice.PiperVoiceOutput
+import com.battlesbudz.jarvis.v2.voice.SilentWorkController
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
@@ -31,7 +32,9 @@ internal class AcceptedVoiceFollowupStage(
     private val conversationHistory: ConversationHistory,
     private val memory: VoiceMemoryAccess,
     private val turnOrchestrator: TurnOrchestrator,
-    private val diagnosticRecorder: DiagnosticRecorder
+    private val diagnosticRecorder: DiagnosticRecorder,
+    private val silentWork: SilentWorkController? = null,
+    private val onSilentWorkExit: () -> Unit = {}
 ) {
     suspend fun run(request: VoiceTurnRequest, prepared: PreparedVoiceTurn, finalized: FinalizedVoiceTurn, observation: VoiceTurnObservation, lifetime: VoiceTurnLifetime): AcceptedVoiceStageResult {
         val initialActionPlan = finalized.initialActionPlan
@@ -45,7 +48,8 @@ internal class AcceptedVoiceFollowupStage(
                 lifetime.modelLease.transfer { actions.transferAcceptedVoiceLease() }
             } else actions.retainAcceptedVoiceLease() != null
         }
-        val actionSession = com.battlesbudz.jarvis.v2.voice.ContinuousActionSession(actions.queue)
+        val actionSession = com.battlesbudz.jarvis.v2.voice.ContinuousActionSession(
+            actions.queue, silentWork = silentWork, onSilentWorkExit = onSilentWorkExit)
         val actionInvocation = AcceptedVoiceInvocation(
             prepared.expectedCallId, request.asrTurnId, prepared.correction?.utteranceId ?: request.asrTurnId, finalized.transcript, prepared.voiceHistory, initialActionPlan
         )

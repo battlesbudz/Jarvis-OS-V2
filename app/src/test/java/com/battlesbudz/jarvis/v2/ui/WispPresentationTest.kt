@@ -7,6 +7,71 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WispPresentationTest {
+
+    @Test fun streamingAudioAndApprovalRemainTruthfulWhilePublicWorkIsActive() {
+        val work = WispPresentation(WispActivity.THINKING, "Writing your reply")
+        val speaking = present(armed = true, phase = VoicePhase.SPEAKING, observed = work)
+        assertEquals(WispActivity.SPEAKING, speaking.activity)
+        assertEquals("Speaking · Writing your reply", speaking.label)
+        assertEquals(.8f, WispPresenter.audioLevel(speaking.activity, VoicePhase.SPEAKING, true, false, .2f, .8f), 0f)
+        val listening = present(armed = true, phase = VoicePhase.LISTENING, observed = work)
+        assertEquals(WispActivity.LISTENING, listening.activity)
+        assertEquals("Listening · Writing your reply", listening.label)
+        assertEquals("Microphone paused · Writing your reply", present(armed = true,
+            phase = VoicePhase.LISTENING, paused = true, observed = work).label)
+        assertEquals(WispActivity.APPROVAL, present(armed = true, phase = VoicePhase.SPEAKING,
+            callState = VoiceSessionState.WAITING_FOR_CONFIRMATION, observed = work).activity)
+    }
+
+    @Test fun idleAndPersistentJournalWarningHaveNoActivityTextButCharacterRemains() {
+        assertNull(WispPresenter.statusText(present()))
+        assertEquals(WispActivity.READY, present().activity)
+        assertNull(WispPresenter.statusText(present(taskError = journalError)))
+        assertEquals("Listening", WispPresenter.statusText(present(armed = true, phase = VoicePhase.LISTENING)))
+        assertNull(WispPresenter.statusText(present(armed = true, phase = VoicePhase.LISTENING), detailsAllowed = false))
+    }
+
+    @Test fun actualToolArgumentsProduceSpecificPublicBlurbsWithoutRawResults() {
+        fun task(name: String, args: Map<String, String>, result: String? = null) = WispPresenter.task(
+            attempt(ToolTaskState.RUNNING, name).copy(request = ActionRequest(name, args), result = result))
+        assertEquals("Adjusting media volume to 25%", task("set_volume", mapOf("level" to "25")).label)
+        assertEquals("Opening YouTube", task("open_app", mapOf("app" to "YouTube")).label)
+        for (privateValue in listOf("https://example.org/private", "a@private.org", "secret=abcd", "123456789", "App\u202eName")) {
+            assertEquals("Opening app", task("open_app", mapOf("app" to privateValue)).label)
+        }
+        assertEquals("Adjusting volume", task("set_volume", mapOf("level" to "999")).label)
+        assertEquals("Working on a task", task("future_tool", mapOf("body" to "private message")).label)
+        assertEquals("Opening Wi-Fi settings", task("open_settings", mapOf("screen" to "wifi")).label)
+        assertEquals("Scrolling the screen down", task("screen_scroll", mapOf("direction" to "down", "token" to "secret")).label)
+        assertEquals("Typing into the selected field", task("screen_type", mapOf("text" to "private message", "token" to "secret")).label)
+        assertEquals("Scheduling your reminder", task("create_reminder", mapOf("message" to "private medical detail")).label)
+        assertEquals("Opening directions", task("navigate", mapOf("destination" to "private home address")).label)
+        assertEquals("Opening a website", task("open_website", mapOf("url" to "https://private/?token=secret")).label)
+        val result = task("read_battery", emptyMap(), "private receipt payload")
+        assertFalse(result.toString().contains("private receipt"))
+    }
+
+    @Test fun concurrentTasksUseStablePriorityAndAnHonestCount() {
+        val running = attempt(ToolTaskState.RUNNING).copy(id = "running", updatedAtMs = 4)
+        val older = running.copy(id = "older", updatedAtMs = 3)
+        val approval = attempt(ToolTaskState.WAITING_APPROVAL).copy(id = "approval", updatedAtMs = 2)
+        val result = present(ToolTaskJournal(attempts = listOf(running, approval, older)))
+        assertEquals(WispActivity.APPROVAL, result.activity)
+        assertEquals(2, result.otherTaskCount)
+        assertEquals("Waiting for your approval · 2 other tasks", WispPresenter.statusText(result))
+        val mostRecent = present(ToolTaskJournal(attempts = listOf(running, older)))
+        assertEquals("running:0:RUNNING", mostRecent.taskKey)
+        assertEquals(1, mostRecent.otherTaskCount)
+    }
+
+    @Test fun openEndedStatusIsBoundedAndLockGatedWithoutChangingOperationState() {
+        val work = WispPresentation(WispActivity.THINKING, "Comparing the selected routes for your trip")
+        assertEquals(work.label, WispPresenter.statusText(work))
+        assertNull(WispPresenter.statusText(work, false))
+        assertEquals("Working on your request", WispPresenter.statusText(work.copy(label = "secret=private")))
+        assertEquals(WispActivity.THINKING, work.activity)
+    }
+
     private val journalError = "The action journal is unavailable. Phone actions are paused."
     private fun attempt(state: ToolTaskState, name: String = "read_battery", generation: Long = 0,
         outcome: ExecutionResult.Outcome? = null, group: String? = null) = ToolTaskAttempt(
@@ -193,6 +258,16 @@ class WispPresentationTest {
         val unknown = ToolTaskJournal(attempts = listOf(attempt(ToolTaskState.UNKNOWN_OUTCOME)))
         assertEquals(WispActivity.ERROR, present(unknown, busy = true).activity)
         assertEquals(WispActivity.READY, present(unknown.copy(attempts = listOf(unknown.attempts.single().copy(reconciled = true)))).activity)
+    }
+
+    @Test fun acceptedRoutineActivityIsAppWideButOtherConversationsRemainPrivate() {
+        val routine = attempt(ToolTaskState.RUNNING, group = "routine").copy(authority = ToolAuthority.ROUTINE)
+        val journal = ToolTaskJournal(attempts = listOf(routine),
+            groups = listOf(ToolTaskGroup("routine", "workflow:occurrence", "Private routine title", listOf("task"), 1, 10)))
+        assertEquals(WispActivity.CHECKING, present(journal).activity)
+        assertEquals("Checking battery", WispPresenter.statusText(present(journal)))
+        assertEquals(WispActivity.READY, present(journal.copy(attempts = listOf(routine.copy(authority = ToolAuthority.USER_REQUEST)))).activity)
+        assertEquals(WispActivity.READY, present(journal.copy(groups = listOf(journal.groups.single().copy(conversationId = "other-chat")))).activity)
     }
 
     @Test fun anotherConversationCannotDriveTheCharacter() {

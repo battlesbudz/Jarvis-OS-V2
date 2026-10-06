@@ -34,6 +34,46 @@ object NativeActionDecoder {
                 name = call.name,
                 arguments = mapOf("level" to args.optString("level"))
             )
+            "media_control" -> ActionRequest(
+                name = call.name,
+                arguments = mapOf("action" to args.optString("action"))
+            )
+            "open_website" -> ActionRequest(
+                name = call.name,
+                arguments = mapOf("url" to args.optString("url"))
+            )
+            "open_settings" -> ActionRequest(
+                name = call.name,
+                arguments = mapOf("screen" to args.optString("screen"))
+            )
+            "navigate" -> ActionRequest(
+                name = call.name,
+                arguments = mapOf("destination" to args.optString("destination"))
+            )
+            "screen_observe" -> ActionRequest(call.name)
+            "screen_tap" -> ActionRequest(
+                name = call.name,
+                arguments = mapOf(
+                    "target" to args.optString("target"),
+                    "token" to args.optString("token")
+                )
+            )
+            "screen_scroll" -> ActionRequest(
+                name = call.name,
+                arguments = mapOf(
+                    "target" to args.optString("target"),
+                    "direction" to args.optString("direction"),
+                    "token" to args.optString("token")
+                )
+            )
+            "screen_type" -> ActionRequest(
+                name = call.name,
+                arguments = mapOf(
+                    "target" to args.optString("target"),
+                    "text" to args.optString("text"),
+                    "token" to args.optString("token")
+                )
+            )
             else -> null
         }
     }
