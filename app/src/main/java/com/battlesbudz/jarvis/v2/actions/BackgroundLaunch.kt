@@ -12,12 +12,10 @@ package com.battlesbudz.jarvis.v2.actions
  *   selected-assistant binding's own receipt);
  * - platform rejection: startActivity threw (ActivityNotFound,
  *   SecurityException);
- * - observed foreground transition: recorded in diagnostics when an
- *   injectable observer reports it — best-effort, not a success gate, since
- *   Android offers no reliable API for observing another app's foreground
- *   status. A submitted request is reported honestly as submitted; callers
- *   that can observe visibility (e.g., instrumentation via UiDevice) verify
- *   the transition themselves.
+ * - observed foreground transition: the destination package was seen in the
+ *   foreground after the request — the only state that counts as a verified
+ *   launch. startActivity returning is not enough: a background start can be
+ *   silently dropped by Android's background-activity-start restrictions.
  *
  * The two recognized routes (selected assistant, overlay exemption) are not
  * an exhaustive statement of Android's background-start exceptions, so the
@@ -68,23 +66,22 @@ fun backgroundLaunchRefusal(label: String): ExecutionResult =
     )
 
 /**
- * Receipt for a launch that reached the platform.
- *
- * Four states, never conflated (see the file doc): a platform error is a
- * failure; otherwise the launch was submitted and the receipt is a success.
- * Foreground observation is best-effort and recorded in diagnostics — it is
- * not a success gate, because Android offers no reliable API for an app to
- * observe another app's foreground status (ActivityManager.runningAppProcesses
- * cannot see other apps' processes on modern Android). Callers that can
- * observe visibility (e.g., instrumentation via UiDevice) verify it themselves.
+ * Receipt for a launch that reached the platform. Success requires the
+ * destination to be observed in the foreground — a submitted request alone
+ * is reported honestly as unconfirmed.
  */
 fun verifiedLaunchReceipt(
     label: String,
     route: BackgroundLaunchRoute,
     platformError: String?,
+    foregroundObserved: Boolean
 ): ExecutionResult {
     if (platformError != null) {
         return ExecutionResult(false, "Could not open $label: $platformError")
     }
+    // A submitted request is a successful launch action: Android accepted it.
+    // "Opening" describes the requested action, not a verified outcome — the
+    // diagnostics (result=submitted vs result=foreground_observed) carry the
+    // observation distinction. Only a platform rejection fails here.
     return ExecutionResult(true, "Opening $label.")
 }

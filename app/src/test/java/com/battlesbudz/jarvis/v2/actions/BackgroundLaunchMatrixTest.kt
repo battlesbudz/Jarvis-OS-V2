@@ -82,26 +82,37 @@ class BackgroundLaunchMatrixTest {
         )
     }
 
-    // Receipts: submitted request vs platform rejection vs observed foreground.
+    // Receipts: submitted request vs platform rejection. A submitted request
+    // is a successful launch action ("Opening X."); only a platform
+    // rejection fails. The observation distinction lives in diagnostics
+    // (result=submitted vs result=foreground_observed).
 
-    @Test fun verifiedLaunchReceiptSucceedsOnSubmission() {
-        // A submitted request without a platform error is a success. Foreground
-        // observation is best-effort (Android offers no reliable API for it),
-        // so it is recorded in diagnostics, not gated on in the receipt.
-        // Callers that can observe visibility (e.g., instrumentation via
-        // UiDevice) verify the transition themselves.
-        val receipt = verifiedLaunchReceipt(
+    @Test fun submittedLaunchSucceedsAsOpening() {
+        val observed = verifiedLaunchReceipt(
             "Example App", BackgroundLaunchRoute.DIRECT,
-            platformError = null
+            platformError = null, foregroundObserved = true
         )
-        assertTrue("a submitted launch without platform error succeeds", receipt.succeeded)
-        assertEquals("Opening Example App.", receipt.message)
+        assertTrue("an observed foreground transition is a successful launch", observed.succeeded)
+        assertEquals("Opening Example App.", observed.message)
+
+        val unobserved = verifiedLaunchReceipt(
+            "Example App", BackgroundLaunchRoute.DIRECT,
+            platformError = null, foregroundObserved = false
+        )
+        assertTrue(
+            "a submitted request is a successful launch action even without an observed transition",
+            unobserved.succeeded
+        )
+        assertEquals(
+            "the submitted receipt describes the requested action: ${unobserved.message}",
+            "Opening Example App.", unobserved.message
+        )
     }
 
     @Test fun platformRejectionIsDistinctFromLocalRefusal() {
         val rejected = verifiedLaunchReceipt(
             "Example App", BackgroundLaunchRoute.DIRECT,
-            platformError = "Activity not found"
+            platformError = "Activity not found", foregroundObserved = false
         )
         assertFalse(rejected.succeeded)
         assertTrue(
@@ -114,12 +125,12 @@ class BackgroundLaunchMatrixTest {
         )
     }
 
-    @Test fun overlayExemptSubmittedSucceeds() {
+    @Test fun overlayExemptSubmittedIsOpening() {
         val receipt = verifiedLaunchReceipt(
             "Example App", BackgroundLaunchRoute.OVERLAY_EXEMPT,
-            platformError = null
+            platformError = null, foregroundObserved = false
         )
-        assertTrue("a submitted overlay-exempt launch succeeds", receipt.succeeded)
+        assertTrue("a submitted overlay-exempt request succeeds", receipt.succeeded)
         assertEquals("Opening Example App.", receipt.message)
     }
 }
