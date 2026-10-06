@@ -2926,7 +2926,10 @@ class ReleaseJourneyTest {
             // A completed pipeline can still have an incorrect result: human review is independent.
             benchmarkClickEnabled(By.res("benchmark_quality_task_FAIL"), holdDiscovery = true,
                 sparseHeldDiscovery = android.os.Build.VERSION.SDK_INT >= 35)
-            benchmarkClickEnabled(By.res("benchmark_quality_intent_PASS"))
+            // These adjacent controls may start just below the viewport. Use the existing
+            // overlapping discovery path instead of a blind fling across the review section.
+            benchmarkClickEnabled(By.res("benchmark_quality_intent_PASS"), holdDiscovery = true,
+                sparseHeldDiscovery = android.os.Build.VERSION.SDK_INT >= 35)
             benchmarkClickEnabled(By.res("benchmark_quality_factuality_FAIL"))
             assertFalse(benchmarkScrollTo(By.res("pipeline_benchmark_quality_save"),
                 sparseHeldDiscovery = android.os.Build.VERSION.SDK_INT >= 35).isEnabled)
@@ -2977,7 +2980,8 @@ class ReleaseJourneyTest {
             assertEquals(PipelineBenchmarkOutcome.CANCELLED, restored.samples.value.single { it.turnId == cancelledId }.outcome)
             render(restored)
             benchmarkClickEnabled(By.res("pipeline_benchmark_sample_$completedId"))
-            assertFalse(benchmarkScrollTo(By.res("pipeline_benchmark_reference")).isEnabled)
+            assertFalse(benchmarkScrollTo(By.res("pipeline_benchmark_reference"), holdDiscovery = true,
+                sparseHeldDiscovery = android.os.Build.VERSION.SDK_INT >= 35).isEnabled)
             captureEvidence("pipeline_benchmark_restored_redacted_scores")
             benchmarkClickEnabled(By.res("pipeline_benchmark_reset"), towardTop = true)
             benchmarkClickEnabled(By.res("pipeline_benchmark_reset_confirm"), inDialog = true)

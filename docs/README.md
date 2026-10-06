@@ -28,6 +28,10 @@ same file. Check their dates and the exact-build receipt before relying on a sta
 
 ## Plans and product decisions
 
+- [Wisp assistant-character research](research/wisp-character-research.md) and
+  [Wisp transparency implementation queue](plans/wisp-transparency-improvements.md)
+  preserve the October 6 report and separate the verified character, unreleased
+  activity text, and improvements queued after the current integration.
 - [Local voice implementation plan](local-voice-implementation-plan.md) and
   [Jarvis roadmap](jarvis-roadmap.md) preserve the evolution and remaining acceptance.
 - [Tools implementation plan](plans/tools-implementation-plan.md),

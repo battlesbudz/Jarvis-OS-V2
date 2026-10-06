@@ -2976,3 +2976,57 @@ required. Failed evidence includes API30 artifact `11400344618` (ZIP SHA-256
 and actual 16KB artifact `11401335891`
 (`4663ae1d3b22de1195d04021a6d602f630e2ebcf89b21caabdeec0afe6de3355`). No APK from
 this failed candidate is called verified or used as the new upgrade baseline.
+
+Build 1096 (`4672942c`, tested merge `df5519d7`) confirms the journal repair on
+all five actual 1086→1096 upgrade paths. It passed 1,379 JVM tests in 207 suites,
+both signed builds, native and recorded-speech checks. The Fold profile passed
+all 76 main journeys (793.5 seconds), real fold/unfold, layout, lifecycle and
+platform phases. API35 compact and API36 actual16KB passed all 76 main journeys,
+including the new Wisp text and Muse cases; their landscape layout check exposed
+a clipped pause control. API30 and API36 phone passed 75/76 main journeys, with
+only the existing benchmark navigation test failing. Publication was skipped.
+
+Repair 2 keeps the failures separate:
+
+- Harness discovery defect: the unchanged benchmark helper/test block (same
+  SHA-256 `c849ea31d6321f30dbe0b4a82674f1a11378d7e0861f67e9f6c2ffcd65c7b93c` as
+  baseline 1086) made blind long swipes that skipped controls just below the
+  viewport. API30 skipped Intent PASS after a low-positioned Task FAIL control;
+  API36 skipped the disabled reference control after restoring the sample.
+  Only those two lookups opt into the existing overlapping held discovery.
+  No benchmark product code, safe-bound/stable-enabled check, exactly-once tap,
+  disabled-reference assertion, 15-second/14-gesture limit or main-suite timeout
+  changes. API35's passing trace starts the latter search just 16 pixels higher,
+  explaining why the same large swipe happened to reveal it there.
+- Product layout defect: after real rotation the call-overlay slot was 424 px
+  (161.5 dp). Existing 104 dp composer clearance left 57.5 dp for a vertically
+  stacked status plus End and Pause actions. Pixels and XML show missing Pause
+  text and a clipped End target; refreshing accessibility could not fix the
+  missing space. The production overlay now measures its unchanged controls:
+  it keeps the 112 dp vertical pill when that fits and uses a single horizontal
+  row in short, sufficiently wide slots. Names, callbacks, live-session End
+  behavior, Wisp placement and composer clearance remain unchanged. A focused
+  Compose regression covers the measured landscape slot and portrait return;
+  all original device accessibility/layout assertions remain required.
+  Six real Compose/Robolectric native-graphics cases pass, covering the measured
+  compact slot, speaking at normal and 2× font, live-session End, paused-state
+  rotation/portrait return and narrow large-font portrait. They require complete
+  label glyphs without ellipsis, nonoverlapping targets of at least 48 dp and
+  the original 104 dp composer clearance. The original fixed-column overlay
+  fails five of those six unchanged tests. The focused run also exposed and
+  corrected Stop reply's 40 dp visual target with an explicit 48 dp minimum.
+  The SDK-free architecture and all 177 helper checks pass. Full signed release
+  and device verification remain required for the exact repaired head.
+
+Retained 1096 evidence: API30 artifact `11402048093`, ZIP SHA-256
+`b7eed353e641b12a01434f241055672c8fbaec325a19683f9b7d9c6cae061344`;
+API36 `11402203278`, `4176e2b3ff614874b32f445204adcd2364e68f404d23ddb840673e3cbf52b991`;
+API35 `11402133509`, `6d0592084ab4f730f83999859f7295331da04e4583724f40d448bb0249001e95`;
+16KB `11402547679`, `c7f4b64aee1428f23f921e731156c1b4231e4c3aa1f2f99c551106aa1da4fa1a`;
+Fold `11402868152`, `147ced55a96eb2dd177649bbdc5b8a2f015c1de98da6fdf1bd436655688b4b41`;
+failed receipt `11402678147`,
+`e284970559c96076538719860e2a43857d37fbae98df28444175d380c3800be5`.
+Phone and Fold Wisp public-progress/idle PNGs were visually inspected: the activity
+line fits below Wisp while busy and is absent while idle. These are controlled
+progress fixtures and remain candidate evidence, not a fully verified release.
+The next repaired head must pass the complete unchanged five-profile gate.

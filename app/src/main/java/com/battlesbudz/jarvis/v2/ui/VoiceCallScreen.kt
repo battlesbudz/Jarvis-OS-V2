@@ -23,9 +23,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.constrainHeight
+import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.unit.dp
 
 
@@ -57,11 +61,11 @@ internal object VoiceCallOverlay {
     // transcript belongs to the conversation, rather than a duplicate overlay.
     Box(Modifier.fillMaxSize().testTag("voice_call_overlay_layer")) {
         Column(Modifier.align(Alignment.BottomEnd).imePadding()
-            .padding(end = 16.dp, bottom = 104.dp).width(112.dp).testTag("voice_call_overlay"),
+            .padding(end = 16.dp, bottom = 104.dp).testTag("voice_call_overlay"),
             horizontalAlignment = Alignment.CenterHorizontally) {
             androidx.compose.material3.Surface(shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 3.dp) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                VoiceCallControlsLayout {
                     Text(phase, style = MaterialTheme.typography.labelSmall, maxLines = 1,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             .testTag("voice_call_status").semantics { contentDescription = status.ifBlank { phase } })
@@ -89,11 +93,49 @@ internal object VoiceCallOverlay {
                     } else Text("…", modifier = Modifier.padding(12.dp))
                     if (stopReplyAvailable) TextButton(onClick = onStopReply,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                        modifier = Modifier.testTag("voice_call_stop_reply")) { Text("Stop reply", style = MaterialTheme.typography.labelSmall) }
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("voice_call_stop_reply")) {
+                        Text("Stop reply", style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
         }
     }
+    }
+}
+
+/** Keep the labeled pill above the composer without squeezing its actions after rotation. */
+@Composable
+private fun VoiceCallControlsLayout(content: @Composable () -> Unit) {
+    Layout(content = content) { controls, constraints ->
+        val columnWidth = minOf(112.dp.roundToPx(), constraints.maxWidth)
+        val columnHeight = controls.sumOf { it.maxIntrinsicHeight(columnWidth) }
+        val rowWidths = controls.map { it.maxIntrinsicWidth(Constraints.Infinity) }
+        // The actual text/font/action measurements decide whether a short, wide
+        // slot can use one row. Status stays inline; no extra row consumes the
+        // 48 dp needed by the controls. The parent retains its 104 dp clearance.
+        val horizontal = columnHeight > constraints.maxHeight && rowWidths.sum() <= constraints.maxWidth
+        var remainingHeight = constraints.maxHeight
+        val children = controls.mapIndexed { index, control ->
+            control.measure(Constraints(maxWidth = if (horizontal) rowWidths[index] else columnWidth,
+                maxHeight = if (horizontal) constraints.maxHeight else remainingHeight)).also {
+                if (!horizontal) remainingHeight = (remainingHeight - it.height).coerceAtLeast(0)
+            }
+        }
+        val width = constraints.constrainWidth(if (horizontal) children.sumOf { it.width } else columnWidth)
+        val height = constraints.constrainHeight(if (horizontal) children.maxOfOrNull { it.height } ?: 0
+            else children.sumOf { it.height })
+        layout(width, height) {
+            var offset = 0
+            children.forEach { child ->
+                if (horizontal) {
+                    child.placeRelative(offset, (height - child.height) / 2)
+                    offset += child.width
+                } else {
+                    child.placeRelative((width - child.width) / 2, offset)
+                    offset += child.height
+                }
+            }
+        }
     }
 }
 
