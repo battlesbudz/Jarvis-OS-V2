@@ -15,7 +15,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
-import kotlin.coroutines.cancellation.CancellationException
 
 class ToolReliabilityBenchmarkTest {
 
@@ -411,36 +410,86 @@ class ToolReliabilityBenchmarkTest {
         )
         val job = launch { benchmark.runModels(listOf(spec)) }
         jobToCancel = job
-        try {
-            job.join()
-            fail("expected cancellation")
-        } catch (e: CancellationException) {
-            // expected: the post-verification ensureActive() fired
-        }
+        job.join()
+        // The post-verification ensureActive() fired: cancelling the child
+        // does not make the active parent's join() throw, so cancellation is
+        // asserted directly — and no native engine was allocated afterwards.
+        assertTrue(job.isCancelled)
         assertEquals(0, factoryCalls)
         assertEquals(listOf("tryBegin", "closeIdle", "verify", "end"), events)
     }
 
-    @Test fun engineCloseFailureIsReportedAndGateStillReleased() = runBlocking {
-        // A close failure is non-fatal to the check result: the measured
-        // report still stands, the failure is reported to diagnostics, and
-        // the gate is still released.
-        val store = InMemoryReliabilityReportStore()
+    @Test fun engineCloseFailureStopsRunAndSurfacesError() = runBlocking {
+        // A close failure with no primary failure in flight stops the
+        // benchmark run and surfaces: the error propagates, the failure is
+        // reported to diagnostics, and the gate is still released.
         val events = mutableListOf<String>()
         val owner = FakeOwner(events = events)
         val engine = RecordingEngine(failOnClose = true, events = events)
         val benchmark = ToolReliabilityBenchmark(
             owner = owner,
             engineFactory = { engine },
-            reportStore = store
+            reportStore = InMemoryReliabilityReportStore()
         )
-        val result = benchmark.runModels(listOf(spec))
-        assertEquals(1, result.reports.size)
-        assertNotNull(store.load(spec.id))
+        try {
+            benchmark.runModels(listOf(spec))
+            fail("expected the close failure to surface")
+        } catch (e: RuntimeException) {
+            assertEquals("close boom", e.message)
+        }
         assertEquals(1, owner.teardownIssues.size)
         assertTrue(owner.teardownIssues.single().contains("TEST-MODEL"))
         assertTrue(events.contains("end"))
         assertTrue(events.indexOf("close") < events.indexOf("end"))
+    }
+
+    @Test fun engineCloseFailureStopsBenchmarkBeforeNextEngineAllocated() = runBlocking {
+        // Regression (item 6): a teardown failure must stop the benchmark
+        // before another native engine is allocated.
+        val spec2 = LocalModelSpec(
+            id = "TEST-MODEL-2",
+            fileName = "test-model-2.litertlm",
+            recommendedGpu = false
+        )
+        val owner = FakeOwner()
+        var factoryCalls = 0
+        val failingEngine = RecordingEngine(failOnClose = true)
+        val benchmark = ToolReliabilityBenchmark(
+            owner = owner,
+            engineFactory = { spec ->
+                factoryCalls++
+                if (factoryCalls == 1) failingEngine else error("no engine")
+            },
+            reportStore = InMemoryReliabilityReportStore()
+        )
+        try {
+            benchmark.runModels(listOf(spec, spec2))
+            fail("expected the close failure to surface")
+        } catch (e: RuntimeException) {
+            assertEquals("close boom", e.message)
+        }
+        assertEquals(1, factoryCalls)
+        assertEquals(1, owner.teardownIssues.size)
+    }
+
+    @Test fun engineCloseFailureDoesNotMaskCancellation() = runBlocking {
+        // Cancellation is the primary failure: the close failure is reported
+        // but must not mask the cancellation.
+        val events = mutableListOf<String>()
+        val owner = FakeOwner(events = events)
+        val engine = RecordingEngine(generateDelayMs = 10_000L, failOnClose = true, events = events)
+        val benchmark = ToolReliabilityBenchmark(
+            owner = owner,
+            engineFactory = { engine },
+            reportStore = InMemoryReliabilityReportStore()
+        )
+        val job = launch { benchmark.runModels(listOf(spec)) }
+        delay(100)
+        job.cancelAndJoin()
+        assertTrue(job.isCancelled)
+        assertEquals(1, owner.teardownIssues.size)
+        assertTrue(owner.teardownIssues.single().contains("close boom"))
+        assertTrue(events.contains("end"))
     }
 
     @Test fun engineCloseFailureDoesNotMaskOriginalFailure() = runBlocking {
@@ -463,5 +512,41 @@ class ToolReliabilityBenchmarkTest {
         assertEquals(1, owner.teardownIssues.size)
         assertTrue(owner.teardownIssues.single().contains("close boom"))
         assertTrue(events.contains("end"))
+    }
+
+    @Test fun conversationAdmissionAcquiresGateBeforeMarkingActive() {
+        // The gate must be acquired BEFORE the session marks itself active,
+        // and released once the claim is taken: this is the single atomic
+        // admission mechanism shared with the reliability check.
+        val order = mutableListOf<String>()
+        val admitted = admitConversationTurn(
+            acquireGate = { order += "acquire"; true },
+            releaseGate = { order += "release" },
+            markActive = { order += "mark"; true }
+        )
+        assertEquals(ConversationAdmission.ADMITTED, admitted)
+        assertEquals(listOf("acquire", "mark", "release"), order)
+    }
+
+    @Test fun conversationAdmissionReportsGateBusyWithoutMarking() {
+        var marked = false
+        val admitted = admitConversationTurn(
+            acquireGate = { false },
+            releaseGate = { fail("gate was never acquired") },
+            markActive = { marked = true; true }
+        )
+        assertEquals(ConversationAdmission.GATE_BUSY, admitted)
+        assertTrue(!marked)
+    }
+
+    @Test fun conversationAdmissionReleasesGateWhenSessionBusy() {
+        val order = mutableListOf<String>()
+        val admitted = admitConversationTurn(
+            acquireGate = { order += "acquire"; true },
+            releaseGate = { order += "release" },
+            markActive = { order += "mark"; false }
+        )
+        assertEquals(ConversationAdmission.SESSION_BUSY, admitted)
+        assertEquals(listOf("acquire", "mark", "release"), order)
     }
 }

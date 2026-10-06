@@ -55,9 +55,14 @@ class ToolReliabilityBenchmark(
         /** Identity of the actual installed model file, used to bind saved scores; null when unknown. */
         fun modelFingerprint(spec: LocalModelSpec): String?
         /**
-         * Records a non-fatal teardown problem (for example an engine close
-         * failure) to diagnostics. Called from cleanup paths where throwing
-         * would discard an already-computed result or break gate release.
+         * Records a teardown problem (for example an engine close failure)
+         * to diagnostics. A teardown failure is fatal to the benchmark run
+         * unless a primary failure is already in flight: with no primary
+         * failure the teardown error is reported here and then rethrown so
+         * the run stops before another native engine is allocated; when a
+         * primary failure already exists it propagates instead, and the
+         * teardown failure is only reported — never masking the original
+         * error. Cancellation from teardown is never swallowed.
          */
         fun reportTeardownIssue(message: String)
     }
@@ -94,12 +99,17 @@ class ToolReliabilityBenchmark(
                 check(owner.verifyModelFile(spec)) {
                     "The ${spec.id} model file changed or failed integrity verification. Re-import it."
                 }
-                // Verification is synchronous and slow (a multi-GB hash); a
-                // cancellation that landed during it must never be followed
-                // by native allocation or initialization.
+                // Verification is synchronous and slow (a multi-GB hash). This is
+                // the allocation boundary too: a cancellation that landed
+                // during verification must never be followed by native engine
+                // allocation or initialization.
                 currentCoroutineContext().ensureActive()
                 val engine = engineFactory(spec)
+                var primaryFailure: Throwable? = null
                 try {
+                    // Initialization boundary: a cancellation that landed
+                    // during allocation must not be followed by init.
+                    currentCoroutineContext().ensureActive()
                     engine.initialize()
                     engine.setToolsEnabled(true)
                     val report = runSingleModelReport(
@@ -110,6 +120,9 @@ class ToolReliabilityBenchmark(
                         onProgress(Progress(spec.id, index, models.size, done, total))
                     }
                     reports[spec.id] = report
+                } catch (failure: Throwable) {
+                    primaryFailure = failure
+                    throw failure
                 } finally {
                     try {
                         engine.close()
@@ -117,14 +130,18 @@ class ToolReliabilityBenchmark(
                         // Never swallow cancellation from teardown.
                         throw cancelled
                     } catch (error: Throwable) {
-                        // A close failure is non-fatal to the check result:
-                        // the score (or failure) already stands on its own
-                        // and the gate below is still released. It must be
-                        // visible in diagnostics, never silently swallowed —
-                        // a failed close can mean leaked native resources.
+                        // A close failure with no primary failure in flight
+                        // stops the run: it is reported, then rethrown so the
+                        // benchmark halts before another native engine is
+                        // allocated. When a primary failure already exists it
+                        // propagates instead — the teardown failure is only
+                        // reported and never masks the original error. The
+                        // gate below is still released either way.
                         owner.reportTeardownIssue(
                             "Tool reliability check: closing the ${spec.id} benchmark engine failed: ${error.message}"
                         )
+                        val primary = primaryFailure
+                        if (primary == null || primary is CancellationException) throw error
                     }
                 }
             } finally {
@@ -147,11 +164,16 @@ class ToolReliabilityBenchmark(
         val fixtures = ToolReliabilityFixtures.all()
         var finished = 0
         val counting = object : ToolCallRunner {
-            override suspend fun runUtterance(modelId: String, utterance: String): List<ToolCall> =
-                runner.runUtterance(modelId, utterance).also {
+            override suspend fun runUtterance(modelId: String, utterance: String): List<ToolCall> {
+                // Fixture boundary: a cancellation that landed while the
+                // previous fixture was scored stops the suite before the
+                // next utterance runs.
+                currentCoroutineContext().ensureActive()
+                return runner.runUtterance(modelId, utterance).also {
                     finished++
                     onProgress(finished, fixtures.size)
                 }
+            }
         }
         val report = ToolReliabilityScorer.scoreModel(
             spec.id, fixtures, counting, modelFingerprint = modelFingerprint
@@ -170,7 +192,9 @@ class ToolReliabilityBenchmark(
  * the acquisition, and the check would then close the idle engine out from
  * under a live session. Holding the gate while checking makes
  * check-and-acquire atomic with respect to every other gate holder. The gate
- * is released when the session is busy.
+ * is released when the session is busy. The conversation side admits through
+ * [admitConversationTurn] on this same gate, so the two admissions serialize
+ * against each other instead of racing as two independent checks.
  */
 internal fun admitReliabilityCheck(
     acquireGate: () -> Boolean,
@@ -193,5 +217,46 @@ internal fun admitReliabilityCheck(
 internal fun checkIdleBeforeClose(isBusy: () -> Boolean) {
     check(!isBusy()) {
         "The Jarvis session became busy after the reliability check was admitted. Aborting the check."
+    }
+}
+
+/** Outcome of [admitConversationTurn]. */
+internal enum class ConversationAdmission {
+    /** The turn was admitted: the gate was acquired and the session marked active. */
+    ADMITTED,
+    /** A model operation (for example the reliability check) holds the gate. */
+    GATE_BUSY,
+    /** The gate was acquired but a conversation was already active. */
+    SESSION_BUSY
+}
+
+/**
+ * The single atomic admission mechanism shared with [admitReliabilityCheck].
+ *
+ * The conversation side must not read the model gate's state and then mark
+ * itself active as two separate steps: on Dispatchers.Default the
+ * reliability check can acquire the gate, observe idle, and close the idle
+ * engine after the read but before the mark — starting a conversation on a
+ * closed engine. Acquiring the gate first makes the whole check-and-mark
+ * atomic with respect to the check's admission window (which holds the same
+ * gate from acquisition through the idle-engine close): either this turn wins
+ * the gate and the check later observes the active session, or the check
+ * holds the gate and this acquire fails. A second independent busy check
+ * cannot close this race; the gate is the one serialization point.
+ *
+ * The gate is held only for the admission instant and released before this
+ * returns. Afterwards the active-session flag is what the check's [isBusy]
+ * observes, so the run still refuses to start over a live session.
+ */
+internal fun admitConversationTurn(
+    acquireGate: () -> Boolean,
+    releaseGate: () -> Unit,
+    markActive: () -> Boolean
+): ConversationAdmission {
+    if (!acquireGate()) return ConversationAdmission.GATE_BUSY
+    return try {
+        if (markActive()) ConversationAdmission.ADMITTED else ConversationAdmission.SESSION_BUSY
+    } finally {
+        releaseGate()
     }
 }

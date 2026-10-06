@@ -20,7 +20,7 @@ class ConversationModelSessionTest {
         val saved = mutableListOf<String?>()
         var persistenceFailure = false
         val model = LocalModelSpec("test", "test.litertlm", recommendedGpu = false)
-        val session = ConversationModelSession(state, { model }, { false }, { true }, { "unused" },
+        val session = ConversationModelSession(state, { model }, { true }, { }, { true }, { "unused" },
             "unused", context, persistSummary = {
                 if (persistenceFailure) error("summary_storage_failed")
                 saved.add(it)

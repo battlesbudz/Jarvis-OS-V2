@@ -17,7 +17,16 @@ internal interface ConversationSessionState {
 internal class ConversationModelSession(
     private val state: ConversationSessionState,
     val selectedModel: () -> LocalModelSpec,
-    val operationActive: () -> Boolean,
+    /**
+     * The single atomic admission mechanism shared with the tool reliability
+     * check: a conversation turn acquires the model gate before it marks
+     * itself active (see admitConversationTurn), so the check's admission
+     * window and the turn's check-and-mark cannot interleave. Reading the
+     * gate's state without acquiring it leaves the race where the check
+     * closes the idle engine after the read but before the turn starts.
+     */
+    val tryBeginModelOperation: () -> Boolean,
+    val endModelOperation: () -> Unit,
     private val verifyModel: (LocalModelSpec) -> Boolean,
     private val modelPath: (LocalModelSpec) -> String,
     private val cachePath: String,
