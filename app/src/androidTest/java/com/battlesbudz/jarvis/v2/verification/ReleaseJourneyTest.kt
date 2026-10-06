@@ -3162,12 +3162,97 @@ class ReleaseJourneyTest {
         }
     }
 
+    /** Test49 observations own their deadlines; a replaced node never causes another action. */
+    private inline fun <T> observeWisp(block: () -> T): T {
+        val configuration = Configurator.getInstance()
+        val savedIdleTimeout = configuration.getWaitForIdleTimeout()
+        configuration.setWaitForIdleTimeout(0)
+        return try { block() } finally { configuration.setWaitForIdleTimeout(savedIdleTimeout) }
+    }
+
+    private fun refreshWispObservation() {
+        val automation = instrumentation.uiAutomation
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            assertTrue("Wisp discovery requires a fresh accessibility cache", automation.clearCache())
+        } else {
+            // Reapply the current service info unchanged, as in benchmark/layout observations.
+            automation.serviceInfo = checkNotNull(automation.serviceInfo)
+        }
+    }
+
+    private fun awaitWispFixtureReady(fixtureText: String) = observeWisp {
+        // Replace the initial Ready pose's existing ten-second wait. The setup shell has
+        // the same Ready label, so it cannot establish that setContent has committed.
+        val deadline = SystemClock.uptimeMillis() + 10_000
+        while (SystemClock.uptimeMillis() < deadline) {
+            refreshWispObservation()
+            if (SystemClock.uptimeMillis() >= deadline) break
+            try {
+                val transcript = device.findObject(By.res("conversation_transcript").pkg(context.packageName))
+                val fixture = transcript?.findObject(By.text(fixtureText))
+                val composer = device.findObject(By.res("chat_composer").pkg(context.packageName))
+                val pose = device.findObject(By.res("jarvis_wisp_status").pkg(context.packageName))
+                if (fixture?.text == fixtureText && composer?.resourceName == "chat_composer" &&
+                    pose?.text == "Ready" && SystemClock.uptimeMillis() < deadline) return@observeWisp
+            } catch (_: StaleObjectException) {
+                // The old setup or fixture node was replaced. Observe again; never remount it.
+            }
+            val remaining = deadline - SystemClock.uptimeMillis()
+            if (remaining > 0) SystemClock.sleep(remaining.coerceAtMost(25))
+        }
+        throw AssertionError("The controlled Wisp conversation and Ready pose must mount within 10,000 ms")
+    }
+
+    private fun awaitWispGeometry(tag: String, message: String, timeoutMs: Long, stableMs: Long,
+        expected: (android.graphics.Rect) -> Boolean): android.graphics.Rect = observeWisp {
+        val deadline = SystemClock.uptimeMillis() + timeoutMs
+        var previous: android.graphics.Rect? = null
+        var stableSince: Long? = null
+        var lastObservation = "missing"
+        while (SystemClock.uptimeMillis() < deadline) {
+            refreshWispObservation()
+            if (SystemClock.uptimeMillis() >= deadline) break
+            val bounds = try {
+                val control = device.findObject(By.res(tag).pkg(context.packageName))
+                if (control != null && control.resourceName == tag && control.applicationPackage == context.packageName) {
+                    android.graphics.Rect(control.visibleBounds).also { lastObservation = it.toString() }
+                } else {
+                    lastObservation = "missing"
+                    null
+                }
+            } catch (_: StaleObjectException) {
+                lastObservation = "stale"
+                null
+            }
+            val now = SystemClock.uptimeMillis()
+            if (now >= deadline) break
+            if (bounds != null && bounds.width() > 0 && bounds.height() > 0 && expected(bounds)) {
+                if (bounds != previous) stableSince = now
+                previous = bounds
+                if (now - checkNotNull(stableSince) >= stableMs && SystemClock.uptimeMillis() < deadline) {
+                    return@observeWisp bounds
+                }
+            } else {
+                // Neither missing/stale reads nor an out-of-range tween can count as stable.
+                previous = null
+                stableSince = null
+            }
+            val remaining = deadline - SystemClock.uptimeMillis()
+            if (remaining > 0) SystemClock.sleep(remaining.coerceAtMost(25))
+        }
+        throw AssertionError("$message; target=$tag last observation=$lastObservation")
+    }
+
+    private fun awaitWispBounds(tag: String): android.graphics.Rect =
+        awaitWispGeometry(tag, "Missing fresh Wisp geometry", 15_000, 0) { true }
+
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     @Test fun test49_wispStaysPresentAndReflectsOnlyObservedWork() {
         val prefs = context.getSharedPreferences("release-wisp", Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
         val history = ConversationHistory(prefs)
-        history.appendUser("Keep this conversation visible while Jarvis works.")
+        val fixtureText = "Keep this conversation visible while Jarvis works."
+        history.appendUser(fixtureText)
         val busy = MutableStateFlow(false)
         val call = MutableStateFlow(VoiceSessionState.PASSIVE_LISTENING)
         val playback = MutableStateFlow(VoicePlaybackFrame())
@@ -3188,24 +3273,8 @@ class ReleaseJourneyTest {
             assertTrue("Wisp should show $label", device.wait(
                 Until.hasObject(By.res("jarvis_wisp_status").text(label)), 10_000))
         }
-        fun awaitWispSize(message: String, expected: (android.graphics.Rect) -> Boolean): android.graphics.Rect {
-            val deadline = SystemClock.uptimeMillis() + 5_000
-            var bounds = android.graphics.Rect()
-            var previous: android.graphics.Rect? = null
-            var stableSince = 0L
-            while (SystemClock.uptimeMillis() < deadline) {
-                bounds = find(By.res("jarvis_wisp_viewport")).visibleBounds
-                val now = SystemClock.uptimeMillis()
-                if (expected(bounds) && bounds == previous) {
-                    if (stableSince != 0L && now - stableSince >= 200) return bounds
-                } else {
-                    stableSince = if (expected(bounds)) now else 0L
-                }
-                previous = android.graphics.Rect(bounds)
-                SystemClock.sleep(25)
-            }
-            throw AssertionError("$message; actual viewport=$bounds")
-        }
+        fun awaitWispSize(message: String, expected: (android.graphics.Rect) -> Boolean): android.graphics.Rect =
+            awaitWispGeometry("jarvis_wisp_viewport", message, 5_000, 200, expected)
         fun task(state: ToolTaskState, tool: String = "read_battery", generation: Long = 0,
             outcome: ExecutionResult.Outcome? = null) {
             journal.value = ToolTaskJournal(attempts = listOf(ToolTaskAttempt(
@@ -3251,13 +3320,13 @@ class ReleaseJourneyTest {
                     }
                 }
             } }
-            pose("Ready")
-            val wisp = find(By.res("jarvis_wisp")).visibleBounds
-            val idleViewport = find(By.res("jarvis_wisp_viewport")).visibleBounds
+            awaitWispFixtureReady(fixtureText)
+            val wisp = awaitWispBounds("jarvis_wisp")
+            val idleViewport = awaitWispBounds("jarvis_wisp_viewport")
             fun isModestlyExpanded(bounds: android.graphics.Rect) =
                 bounds.width() >= idleViewport.width() * 1.15f && bounds.width() <= idleViewport.width() * 1.35f &&
                     bounds.height() >= idleViewport.height() * 1.15f && bounds.height() <= idleViewport.height() * 1.35f
-            val transcript = find(By.res("conversation_transcript")).visibleBounds
+            val transcript = awaitWispBounds("conversation_transcript")
             assertTrue("Wisp stays above the transcript", wisp.bottom <= transcript.top)
             assertEquals("Wisp is centered", device.displayWidth / 2, wisp.centerX())
             assertFalse("There is no visual-mode setting", device.hasObject(By.text("Visual mode")))
@@ -3302,9 +3371,9 @@ class ReleaseJourneyTest {
                 clickEnabled(By.res("voice_call_open"))
                 pose("Listening")
                 awaitWispSize("An active call must give Wisp modestly more room", ::isModestlyExpanded)
-                val expanded = find(By.res("jarvis_wisp")).visibleBounds
+                val expanded = awaitWispBounds("jarvis_wisp")
                 assertTrue("The enlarged call character must remain above the transcript",
-                    expanded.bottom <= find(By.res("conversation_transcript")).visibleBounds.top)
+                    expanded.bottom <= awaitWispBounds("conversation_transcript").top)
                 VoiceSessionUi.level.value = .7f
                 assertNotNull(find(By.res("conversation_transcript")))
                 device.pressBack()

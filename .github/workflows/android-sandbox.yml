@@ -200,7 +200,9 @@ jobs:
           emulator-boot-timeout: ${{ matrix.boot_timeout }}
           # This hook runs after the action installs the actual SDK emulator.
           # A failed loader receipt marks the action failed; it still tries boot.
-          pre-emulator-launch-script: ${{ matrix.screen_profile == 'foldable' && 'timeout --kill-after=2s 15s bash "$RUNNER_TEMP/jarvis-fold-display/gui-preflight.sh"' || '' }}
+          # The 16 KB receipt starts ONE 300-second budget before the first boot;
+          # DeviceConfig, its single reboot and odrefresh consume that same budget.
+          pre-emulator-launch-script: ${{ matrix.screen_profile == 'foldable' && 'timeout --kill-after=2s 15s bash "$RUNNER_TEMP/jarvis-fold-display/gui-preflight.sh"' || matrix.id == '35-16k-normal' && 'python3 scripts/verification/runtime_gc.py --profile 35-16k-normal --out verification-evidence --source-commit "$GITHUB_SHA"' || '' }}
           # Only the foldable needs the Qt backend's configured folded-region path.
           # Stream guest INFO-and-above diagnostics even if 16 KB unlock fails before the controller.
           # This is evidence only; no startup wait, input retry, or boot-budget change.
@@ -256,6 +258,14 @@ jobs:
             cp -a "$jarvis_display_dir/." verification-evidence/fold-display/
           fi
           exit "$jarvis_cleanup_failed"
+      - name: Retain both 16 KB setup boots even on failure
+        if: always() && matrix.id == '35-16k-normal'
+        run: |
+          # The controller retains ownership of its fresh output directory.
+          if [ -d verification-evidence-16kb-boot ]; then
+            mkdir -p verification-evidence/16kb-boot
+            cp -a verification-evidence-16kb-boot/. verification-evidence/16kb-boot/
+          fi
       - name: Retain evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4

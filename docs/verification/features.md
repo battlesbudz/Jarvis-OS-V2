@@ -245,6 +245,92 @@ Local combined verification passes the architecture guard and all 244 Python
 helpers, including failure/expiry at each of the three early settings. No
 production app, Wisp visual or acceptance threshold changes in this revision.
 
+### Build 1041 Wisp fixture-arrival observation and platform failures
+
+[Build 1041](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37400442110)
+tests head `a7f60827c17d8c2bc3820dbafdc2341f35efc5a5`, merge
+`8eed1aae72bcb4ccb5498aee79e415647c8543ea`. Both signed APKs, all 1,032 JVM
+tests (zero failures/errors/skips), 244 helpers, recorded speech and native
+audits pass. JVM artifact `11385840806`, ZIP SHA-256
+`f7baa2ac68790e60a7de69495535b02dc1f43e7e574d79c670e30ea432427cd2`, retains
+those test results. API 30, API 35 compact and API 36 phone pass their complete
+profiles. The foldable runs all 50 main methods,
+with only test49 failing on its initial header `getVisibleBounds()` read with
+`StaleObjectException`; later lifecycle/layout phases do not run. Artifact
+`11386385468`, ZIP SHA-256
+`52d1c2015b73c401a712eeedd764d720620e8547f92ef21db107d269acdfec9d`, retains the
+failure. The PNG still shows the setup screen's Ready character while the later
+XML has the controlled conversation. The Ready wait could match the previous
+composition while `setContent` replaced its accessibility node; the retained
+frames and stale-node exception support that race without proving exact scheduling.
+
+The corrected test replaces its original ten-second initial Ready wait with
+one shared-deadline observation of the unique fixture text inside its transcript,
+the composer and Ready pose. It never remounts the fixture or retries a tap.
+Geometry queries reacquire the exact package-owned tags and reset stability on
+missing, stale, nonpositive, changed or out-of-range bounds. Standalone discovery
+retains its 15-second limit; each size assertion retains a single five-second
+limit and a fresh uninterrupted 200 ms stable span. Direct discovery replaces the
+old nested 15-second `find()` within the size waiter, and late geometry cannot
+pass. Centering, above-transcript placement, 15–35% call expansion, pause/stop
+retention, post-end size and repeated-call/draft assertions remain unchanged.
+The helper compiles against actual API 35/UiAutomator 2.3.0 and passes 33
+exact-source deterministic contracts; independent review finds no blocker.
+These targeted checks do not replace the fresh full Android matrix.
+
+API 29 completes its entire startup admission in 670.387 seconds, with 229.6
+seconds left in the original boot budget. The current-process boot candidate
+arrives at 585.565 seconds, and the existing guarded System UI recovery uses
+exactly one Wait. The previous Build 907 APK upgrade and main tests 1–4 pass.
+During test5, Android `system_server` dies after `FinalizerWatchdogDaemon`
+reports that `ApkAssets.nativeDestroy/finalize` exceeded its ten-second limit.
+No app failure is identified before that system death. Artifact `11385798450`,
+ZIP SHA-256 `77a93885b77f860eaadef9e80916ae1a463537914abae156c385ab33e5ea2086`,
+retains this first complete admission with guarded UI recovery and the distinct
+runtime failure. It is
+not a passing API 29 profile or proof of reliable startup across future runs;
+no watchdog, boot, install or test deadline is extended.
+
+The API 35 16 KB profile passes upgrade and tests 1–4, then `system_server`
+receives SIGSEGV at address `0x18` in the platform AppSearch protobuf
+`MessageSchema.writeTo` / `IcingSearchEngine.get` path. Artifact `11385169027`,
+ZIP SHA-256 `291d9e1dfcf84290c382855a200414faf70bfc3489d60a42fe35defbc0a144b3`,
+retains the platform crash. This is another independent system-process fault,
+not evidence that Wisp drawing caused the earlier managed-code crashes.
+Publication remains blocked by the failed required profiles.
+
+### API 35 simulated 16 KB collector compatibility trial
+
+Stock platform and Jarvis logs in the retained failures use `CollectorTypeCMC`.
+The [AOSP kernel fix](https://android.googlesource.com/kernel/common/+/38447e018c92f6ae182067a02a6954fa92b33a73)
+identifies UFFD incompatibility with x86-64 16 KB simulation and specifies CC as
+the compatible collector. The supported DeviceConfig flag and reboot are
+exercised in [ART's regression test](https://android.googlesource.com/platform/art/+/8222aa2d2df6273da689f0edd3913e8370c0c1c2).
+This is stronger evidence for a targeted environment correction than the earlier
+stack-only hypothesis; it still requires successful hosted admission and all
+app gates. The implementation and evidence contract are in the
+[runbook](README.md#api-35-16-kb-emulator-art-compatibility-trial).
+
+| Layer | Acceptance and failure cases | Preserved coverage |
+| --- | --- | --- |
+| Android emulator setup | API 35 simulated 16 KB selects CC through the supported DeviceConfig override and one reboot within the original 300-second boot deadline. Missing/partial ART regeneration, failing odsign, wrong flag/collector, stale boot/process identity or late readiness blocks APK installation; wrong current Jarvis collector blocks journeys. | Same API 35, runtime page size, ARM64 translation, native-loading, upgrade, lifecycle, layout and release gates; SELinux and ordinary permissions; other profiles. |
+
+The initial launch, flag propagation, intentional reboot, complete ART artifact
+regeneration and fresh readiness share the original boot budget. Exact CC logs
+are retained for the current system server and first-launch Jarvis process.
+This does not disable garbage collection, JIT, watchdogs or SELinux, skip any
+app assertion, change the device image or widen a deadline. API 29's now-admitted
+startup settings remain unchanged; its separate platform finalizer failure
+still needs a successful exact-revision run. Physical-device audio/model and
+16 KB hardware/performance coverage remain unverified.
+
+Combined local validation passes the architecture guard and all 268 Python
+helper tests, including 23 runtime-setup and 27 controller-phase tests. Workflow
+YAML parsing, patch-hash verification and whitespace checks also pass. The Wisp
+observer's 33 deterministic contracts and actual Android-library compilation
+remain separately retained. Independent reviews of both repairs found no
+blocking findings; the complete exact-head hosted gate remains required.
+
 ## API 29 graphics boot loop — October 5, 2026
 
 [Build 986](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37236069164)

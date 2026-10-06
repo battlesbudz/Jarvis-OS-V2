@@ -109,7 +109,7 @@ class InstallTransportTest(unittest.TestCase):
                 with self.assertRaises(subprocess.TimeoutExpired):
                     device.install("candidate.apk", "-r", profile=profile)
 
-    def exercise_upgrade(self, profile, *, reject_candidate=False):
+    def exercise_upgrade(self, profile, *, reject_candidate=False, collector_error=False):
         """Exercise the real controller's upgrade ordering, then deliberately stop."""
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
@@ -158,8 +158,29 @@ class InstallTransportTest(unittest.TestCase):
                         raise RuntimeError("Controlled stop after upgrade; later Android gates are not simulated")
                     return "<hierarchy />"
 
-            with patch("android.Device", UpgradeDevice), redirect_stdout(io.StringIO()):
+            # This fixture owns upgrade ordering; the separate ART setup suite
+            # exercises readiness/admission and collector failure behavior.
+            with patch("android.Device", UpgradeDevice), patch("android.RuntimeGcSetup") as setup, redirect_stdout(io.StringIO()):
+                setup.return_value.report = {}
+                setup.return_value.prepare.side_effect = lambda: calls.append((("gc_prepare",), {}))
+                def app_collector(package):
+                    calls.append((("gc_app", package), {}))
+                    if collector_error:
+                        raise RuntimeError("Controlled current-app collector rejection")
+                setup.return_value.verify_app.side_effect = app_collector
                 self.assertEqual(1, verify(args))
+                if profile["id"] == "35-16k-normal":
+                    setup.assert_called_once()
+                    setup.return_value.prepare.assert_called_once()
+                    prepare_index = next(i for i, (argv, _) in enumerate(calls) if argv[0] == "gc_prepare")
+                    install_index = next(i for i, (argv, _) in enumerate(calls) if argv[0] == "install")
+                    self.assertLess(prepare_index, install_index)
+                    if not reject_candidate:
+                        setup.return_value.verify_app.assert_called_once_with(PACKAGE)
+                        app_index = next(i for i, (argv, _) in enumerate(calls) if argv[0] == "gc_app")
+                        self.assertEqual(["am", "start", "-W"], shlex.split(calls[app_index - 1][0][1])[:3])
+                else:
+                    setup.assert_not_called()
             report = json.loads((Path(args.out) / "report.json").read_text())
             self.assertFalse(report["passed"])
             installs = [(argv[1:], kwargs) for argv, kwargs in calls if argv[0] == "install"]
@@ -185,6 +206,14 @@ class InstallTransportTest(unittest.TestCase):
                 self.assertEqual(907, report["upgrade"]["previous_version_code"])
                 self.assertEqual(931, report["upgrade"]["candidate_version_code"])
                 self.assertIn("Controlled stop after upgrade", report["errors"][0])
+
+    def test_current_app_collector_failure_prevents_main_journeys(self):
+        profile = next(profile for profile in load_profiles() if profile["id"] == "35-16k-normal")
+        report, calls = self.exercise_upgrade(profile, collector_error=True)
+        self.assertTrue(report["upgrade"]["passed"])
+        self.assertNotIn("instrumentation", report)
+        self.assertEqual(2, sum(argv[0] == "instrument" for argv, _ in calls))
+        self.assertIn("Controlled current-app collector rejection", report["errors"][0])
 
     def test_rejected_update_does_not_run_upgrade_verification_or_pass(self):
         for profile in load_profiles():

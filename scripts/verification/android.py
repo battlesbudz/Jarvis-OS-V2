@@ -17,8 +17,10 @@ import xml.etree.ElementTree as ET
 
 try:
     from .profiles import load_profiles
+    from .runtime_gc import PROFILE_ID as GC_PROFILE_ID, RuntimeGcSetup
 except ImportError:
     from profiles import load_profiles
+    from runtime_gc import PROFILE_ID as GC_PROFILE_ID, RuntimeGcSetup
 
 PACKAGE = "com.battlesbudz.jarvis.v2"
 ACTIVITY = f"{PACKAGE}/.MainActivity"
@@ -364,6 +366,7 @@ def verify(args):
               "coverage": "release UI + Android actions + previous-APK upgrade + external process/permission recovery + layout/accessibility; no model inference",
               "not_covered": scenarios["not_covered"], "device_evidence_folder": evidence_folder, "errors": []}
     report["profile"] = profile
+    gc_setup = None
     evidence_tests = (list(scenarios["tests"]) + list(layout["tests"]) +
                       [phase["test"] for phase in lifecycle["upgrade"].values()] +
                       [phase["test"] for phase in lifecycle["phases"].values()])
@@ -437,6 +440,10 @@ def verify(args):
             raise RuntimeError("Provisioned emulator API/page size disagrees with its required profile")
         if "arm64-v8a" not in report["device"]["abi"]:
             raise RuntimeError("Emulator cannot run the release ARM64 APK: missing arm64-v8a ABI/native bridge")
+        if profile["id"] == GC_PROFILE_ID:
+            gc_setup = RuntimeGcSetup(device, profile, args.source_commit)
+            report["runtime_gc_setup"] = gc_setup.report
+            gc_setup.prepare()
         # Seed OLD installed application storage, then replace package bytes without reset.
         # Android install -r also requires the original package signing identity.
         report["upgrade"] = {"passed": False, "previous_apk_sha256": sha256(args.previous_apk)}
@@ -475,6 +482,8 @@ def verify(args):
         device.shell("input", "keyevent", "KEYCODE_WAKEUP")
         device.shell("wm", "dismiss-keyguard", check=False)
         device.shell("am", "start", "-W", "-n", ACTIVITY)
+        if gc_setup is not None:
+            gc_setup.verify_app(PACKAGE)
         device.snapshot("first-launch")
         report["instrumentation"], _ = instrument_phase(scenarios, "instrumentation.txt", timeout=900)
         device.shell("am", "force-stop", PACKAGE)

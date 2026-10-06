@@ -83,6 +83,7 @@ release contract. These helpers each validate a specific boundary:
 | `check_compact_apk.py` | Compare normal and compact APK contents against the existing variant contract. |
 | `apk_size_report.py` | Produce APK component-size evidence and baseline comparisons. |
 | `verification/android.py` | Execute named release journeys on a disposable emulator; retain commands, screenshots, UI XML, logs and results. |
+| `verification/runtime_gc.py` | Own API 35 simulated 16 KB DeviceConfig, the one-reboot shared boot deadline and process collector receipts; `android.py` retains APK installation, upgrade and all release phases. |
 | `verification/artifacts.py` | Select/download exact-run artifacts using producer-attempt timestamps, revision binding and archive checks. |
 | `verification/receipt.py` | Consolidate APK hashes, JVM/model/native results and every required emulator profile and phase before publication. |
 | `verification/profiles.json`, `profiles.py` | One device provisioning, artifact-selection and receipt contract for the required matrix. |

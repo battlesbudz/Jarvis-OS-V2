@@ -172,6 +172,42 @@ referenced by instrumentation, including lazy-layout methods. Recheck this ABI
 boundary when moving classes or changing test dependencies. Do not substitute
 an unshrunk/debug build for release verification.
 
+## API 35 16 KB emulator ART compatibility trial
+
+The `35-16k-normal` profile retains API 35, `google_apis_ps16k`, x86-64 with
+ARM64 translation, runtime `PAGE_SIZE=16384`, SELinux enforcing, and every
+release/upgrade/native/layout/lifecycle gate. Stock revision 5
+(`AE3A.240806.043/12960925`) repeatedly crashed platform processes while reporting
+`CollectorTypeCMC`. The [AOSP kernel compatibility fix](https://android.googlesource.com/kernel/common/+/38447e018c92f6ae182067a02a6954fa92b33a73)
+explains that x86-64 16 KB page-size simulation is incompatible with UFFD/CMC.
+AOSP ART's [odrefresh regression test](https://android.googlesource.com/platform/art/+/8222aa2d2df6273da689f0edd3913e8370c0c1c2)
+exercises the supported `runtime_native_boot/force_disable_uffd_gc=true`
+DeviceConfig override followed by a reboot to select concurrent copying (CC).
+
+This profile alone records its original 300-second deadline immediately before
+initial emulator launch. `scripts/verification/runtime_gc.py`, called by the
+existing Android controller, writes the flag once, requires both DeviceConfig
+and persisted-property readback, and reboots once. The initial boot, propagation,
+reboot, complete ART regeneration, odsign verification and fresh service/input readiness
+all consume that same deadline. A changed boot ID, unchanged API/page-size/ABI/
+bridge/SELinux identity, the current system server's exact CC log and current
+zygote parent (including process start ticks) are required before any APK installation.
+Because odsign can verify partially compiled artifacts, its success property alone
+is insufficient: the current boot must also log the exact `odrefresh compiled all artifacts, returned 80` success. Partial or failed compilation is rejected, following the distinct
+[odsign result branches](https://android.googlesource.com/platform/system/security/+/android-15.0.0_r1/ondevice-signing/odsign_main.cpp#588). Its real first-launch
+Jarvis PID must independently report CC before the ordinary journeys run.
+Missing, wrong, stale or late evidence fails; it never selects a replacement
+image, retries a reboot, relaxes a timeout or skips an existing check.
+
+The artifact retains the prelaunch receipt, bounded logs from each setup boot,
+intentional reboot boundary, identities/readbacks, complete-compilation and system collector receipts, and
+immediate first-launch Jarvis collector receipt. The foldable prelaunch hook and
+all other profiles keep their behavior. This is a configuration trial pending a
+fresh full hosted result; local helper tests do not establish that ART's work
+fits 300 seconds. A pass establishes the simulated runtime's 16 KB compatibility
+and native loading checks, not physical 16 KB hardware, OEM/ARM64 behavior,
+acoustic/model correctness, or device performance.
+
 ## Run identity and evidence
 
 Find the run for the exact changed branch head. Record its URL, job conclusions,
