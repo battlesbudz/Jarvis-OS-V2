@@ -44,10 +44,6 @@
 -keep class com.battlesbudz.jarvis.v2.actions.ActionValidation** { *; }
 # Release test DEX references the typed outcome enum as well as the existing constructor.
 -keep class com.battlesbudz.jarvis.v2.actions.ExecutionResult** { *; }
-# Release instrumentation calls the launch receipt constructors directly
-# (test07 asserts the submitted/unverified contract); without this, R8
-# removes the overloads and the tests fail with NoSuchMethodError.
--keep class com.battlesbudz.jarvis.v2.actions.BackgroundLaunchKt { *; }
 # Release instrumentation reaches the multi-action contract through the shared test DEX.
 -keep class com.battlesbudz.jarvis.v2.actions.ActionTurnPlan** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.BatteryCondition** { *; }
@@ -293,10 +289,6 @@
 -keep class com.battlesbudz.jarvis.v2.actions.ScreenControlService { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ScreenControlService$Companion { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ScreenControlServiceKt { *; }
-# The release-test fake bridge computes the live content generation through
-# this facade (test56/57/59); without it R8 strips the class and the tests
-# fail with NoClassDefFoundError.
--keep class com.battlesbudz.jarvis.v2.actions.ScreenControlKt { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ScreenControlSession { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ScreenNode { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ScreenObservation { *; }
@@ -304,6 +296,13 @@
 -keep class com.battlesbudz.jarvis.v2.actions.AdmitResult** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.DispatchGate** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.TargetVerification** { *; }
+# Round-4 findings 1+2: the release instrumentation DEX calls these top-level
+# functions directly through the target class loader (verifiedLaunchReceipt in
+# test07, contentFingerprintOf in FakeScreenBridge). Without a keep, R8
+# renames the file-facade classes and the tests crash with
+# NoClassDefFoundError — the same failure mode the M1c keeps above guard.
+-keep class com.battlesbudz.jarvis.v2.actions.BackgroundLaunchKt { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenControlKt { *; }
 
 # M1d task/conversation scheduling boundary exercised by the release
 # integration tests (test45-test48). The instrumentation DEX drives the
