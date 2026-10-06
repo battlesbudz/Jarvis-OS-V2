@@ -224,4 +224,41 @@ class ActionTurnRunnerTest {
         assertTrue(source.all { com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard.allows(it.sourceClause, it.request.name, it.request.arguments) })
     }
 
+    @Test fun unconfirmedLaunchStopsTurnBeforeDependentStep() = kotlinx.coroutines.runBlocking {
+        // A launch submitted without foreground evidence is unknown
+        // completion: the turn stops instead of treating the dependent step
+        // as success-backed, and the uncertain launch is never repeated.
+        val plan = ActionTurnPlan.parse("Open Settings then read battery") as ActionTurnPlan.Ready
+        val dispatched = mutableListOf<String>()
+        val outcome = ActionTurnRunner(object : MobileActionExecutor {
+            override fun execute(action: MobileAction) = ExecutionResult(true, "unused")
+        }).runValidated(
+            plan,
+            dispatch = { request ->
+                dispatched += request.name
+                if (request.name == "open_app") verifiedLaunchReceipt(
+                    "Settings", BackgroundLaunchRoute.DIRECT,
+                    platformError = null, foregroundObserved = false
+                )
+                else ExecutionResult(true, "Battery is at 73 percent.")
+            },
+            checkBattery = { ExecutionResult(true, "Battery is at 73 percent.") }
+        )
+        assertFalse("the turn must not complete on an unconfirmed launch", outcome.completed)
+        assertTrue("the turn must stop: ${outcome.message}", outcome.stopped)
+        assertEquals(
+            "the dependent step must not inherit the unestablished launch",
+            listOf("open_app"), dispatched
+        )
+        assertEquals(1, outcome.receipts.size)
+        assertEquals(
+            ExecutionResult.Outcome.UNKNOWN_COMPLETION,
+            outcome.receipts.single().result.outcome
+        )
+        assertTrue(
+            "the user report must stay honest: ${outcome.message}",
+            outcome.message.contains("could not be confirmed")
+        )
+    }
+
 }
