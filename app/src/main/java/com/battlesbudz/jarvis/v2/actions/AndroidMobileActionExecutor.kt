@@ -36,12 +36,6 @@ class AndroidMobileActionExecutor(
     private val overlayExempt: () -> Boolean = {
         android.provider.Settings.canDrawOverlays(context)
     },
-    private val foregroundObserver: (String) -> Boolean = { packageName ->
-        isPackageForeground(context, packageName)
-    },
-    /** How long to wait for the destination to reach the foreground after a submitted launch. */
-    private val launchPollMs: Long = 1200L,
-    private val launchPollStepMs: Long = 100L
 ) : MobileActionExecutor {
     private val scheduling: ReminderScheduling? = reminderScheduling ?: (context as? ReminderScheduling)
     private val appResolver = InstalledAppResolver(context)
@@ -278,30 +272,23 @@ class AndroidMobileActionExecutor(
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
         onDiagnostic("App launch route=${route.name.lowercase()} label=$label result=submitted")
-        val observed = observePackage != null && awaitForeground(observePackage)
-        onDiagnostic("App launch route=${route.name.lowercase()} label=$label " +
-            "result=${if (observed) "foreground_observed" else "foreground_unobserved"}")
-        verifiedLaunchReceipt(label, route, platformError = null, foregroundObserved = observed)
+        // Foreground observation is not attempted here: Android offers no
+        // reliable API for an app to observe another app's foreground
+        // status, so a blocking poll would only add latency and false
+        // negatives. The launch is reported honestly as submitted; visibility
+        // is verified by callers that can observe it (e.g., instrumentation
+        // via UiDevice).
+        verifiedLaunchReceipt(label, route, platformError = null)
     } catch (cancelled: kotlinx.coroutines.CancellationException) {
         throw cancelled
     } catch (error: android.content.ActivityNotFoundException) {
         onDiagnostic("App launch result=platform_rejected type=ActivityNotFoundException label=$label")
         verifiedLaunchReceipt(label, route,
-            platformError = error.message ?: "Android rejected the launch.", foregroundObserved = false)
+            platformError = error.message ?: "Android rejected the launch.")
     } catch (error: SecurityException) {
         onDiagnostic("App launch result=platform_rejected type=SecurityException label=$label")
         verifiedLaunchReceipt(label, route,
-            platformError = error.message ?: "Android rejected the launch.", foregroundObserved = false)
-    }
-
-    /** Poll briefly for the destination package to reach the foreground. */
-    private fun awaitForeground(packageName: String): Boolean {
-        val deadline = android.os.SystemClock.uptimeMillis() + launchPollMs
-        do {
-            if (foregroundObserver(packageName)) return true
-            android.os.SystemClock.sleep(launchPollStepMs.coerceAtLeast(1))
-        } while (android.os.SystemClock.uptimeMillis() < deadline)
-        return false
+            platformError = error.message ?: "Android rejected the launch.")
     }
 
     /**
@@ -309,8 +296,7 @@ class AndroidMobileActionExecutor(
      * assistant service when the activity is not visible, otherwise a direct
      * or exemption-backed startActivity. A background launch with no
      * supported route is a local refusal, never an optimistic "requested"
-     * success; a submitted launch only counts as verified when the resolved
-     * destination package is observed in the foreground.
+     * success.
      */
     private fun dispatchViewIntent(
         intent: Intent,
@@ -413,19 +399,5 @@ class AndroidMobileActionExecutor(
             "I could not $verb \"${node.label}\" — the screen may have changed. " +
                 "Call screen_observe again for fresh targets."
         )
-    }
-}
-
-/**
- * Production foreground check behind AndroidMobileActionExecutor's
- * injectable [foregroundObserver] seam. File-level (not a member) so the
- * constructor's default lambda can reference it alongside the `context`
- * parameter.
- */
-private fun isPackageForeground(context: Context, packageName: String): Boolean {
-    val manager = context.getSystemService(android.app.ActivityManager::class.java) ?: return false
-    return manager.runningAppProcesses.orEmpty().any { proc ->
-        proc.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND &&
-            (proc.processName == packageName || proc.processName.startsWith("$packageName:"))
     }
 }
