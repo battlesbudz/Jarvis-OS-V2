@@ -57,6 +57,7 @@ class ToolReliabilityBenchmarkTest {
     ) : ToolCallEngine {
         val historyAtGenerate = mutableListOf<List<String>>()
         private val history = mutableListOf<String>()
+        private var generateCalls = 0
         var resets = 0
         var closes = 0
 
@@ -76,7 +77,11 @@ class ToolReliabilityBenchmarkTest {
         override suspend fun generate(prompt: String, onToken: (String) -> Unit): GenerationResult {
             events += "generate"
             if (generateDelayMs > 0) delay(generateDelayMs)
-            if (history.size == failAtGenerate) throw RuntimeException("boom")
+            // Trigger on call count, not history size: the runner resets the
+            // conversation before every utterance, so history never
+            // accumulates and a history-size trigger would never fire.
+            if (generateCalls == failAtGenerate) throw RuntimeException("boom")
+            generateCalls++
             historyAtGenerate += history.toList()
             history += prompt
             return GenerationResult(
