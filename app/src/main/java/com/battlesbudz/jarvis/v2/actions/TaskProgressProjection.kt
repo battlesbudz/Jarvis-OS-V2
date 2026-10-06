@@ -33,6 +33,10 @@ class TaskProgressProjector {
         if (attempts.isEmpty()) return null
         val completed = attempts.count { it.state.isTerminal() }
         val receipts = attempts.mapNotNull { it.result?.takeIf { r -> r.isNotBlank() } }
+        // An unconfirmed step is terminal for the journal but must never
+        // read as "done": the status line says what was confirmed and what
+        // was not, instead of promoting submission to completion.
+        val unconfirmed = attempts.count { it.state == ToolTaskState.UNKNOWN_OUTCOME }
         val state = when {
             group.cancelled || attempts.any { it.state == ToolTaskState.CANCELLED } -> TaskProjectionState.CANCELLED
             attempts.any { it.state == ToolTaskState.FAILED } -> TaskProjectionState.FAILED
@@ -44,7 +48,8 @@ class TaskProgressProjector {
         }
         val label = group.summary.ifBlank { "Phone task" }
         val statusLine = when (state) {
-            TaskProjectionState.FINISHED -> "$label: done ($completed of ${attempts.size} steps)."
+            TaskProjectionState.FINISHED -> if (unconfirmed == 0) "$label: done ($completed of ${attempts.size} steps)."
+            else "$label: finished, but $unconfirmed of ${attempts.size} step(s) could not be confirmed."
             TaskProjectionState.CANCELLED -> "$label: cancelled ($completed of ${attempts.size} steps completed)."
             TaskProjectionState.FAILED -> "$label: could not complete ($completed of ${attempts.size} steps completed)."
             TaskProjectionState.WAITING_APPROVAL -> "$label: waiting for your approval ($completed of ${attempts.size} steps done)."
