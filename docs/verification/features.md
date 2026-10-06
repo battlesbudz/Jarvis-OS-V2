@@ -3228,3 +3228,36 @@ actual16KB `11413187238`,
 `ebf76bddc218aa4c676dbce7f7c6969983a7f37d902f61ec0a5f7ec3a311c908`;
 receipt `11414388237`,
 `16af1d7b38d55a791dd3bcba324c656836bdb0e2d162b59f058cfa0e19fee8a7`.
+
+### Build 1103 API30 authenticated fixture cleanup
+
+Build 1103 (`63cb1a22`, tested merge `16d26e31`) passed 1,421 JVM tests, both
+signed builds/audits, all five upgrade phases, and the complete API35, API36,
+Fold and actual 16KB profiles. The explicit caption-label repair now passes.
+API30 alone still fails test64 cleanup: Android accepts the Activity-owned
+dismissal request, but its callback remains pending and the retained PNG/XML
+show a focused PIN keypad beneath an unlocked padlock after credential removal.
+The final observed-keyguard assertion correctly blocks publication.
+
+The next instrumentation-only correction authenticates the known disposable PIN
+before clearing it. It requests the credential UI once, positively observes the
+enabled focused SystemUI PIN field and expected keypad controls through the
+framework accessibility snapshot, and submits one hardware-key sequence. There
+are no per-digit idle waits, coordinate guesses or repeated PIN submissions.
+Both actual lock states must become unlocked before the credential is cleared;
+a separate assertion records that ordering. The fixture PIN is still removed
+once on failure, without treating removal as successful authentication.
+
+This ordering follows Android 11's
+[PIN input handling](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-11.0.0_r1/packages/SystemUI/src/com/android/keyguard/KeyguardPinBasedInputView.java)
+and [security-screen transition](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-11.0.0_r1/packages/SystemUI/src/com/android/keyguard/KeyguardSecurityContainer.java):
+a showing PIN screen needs the authenticated transition; changing the stored
+credential alone does not establish that transition. The existing ten-second
+polling deadline, all real locked-action assertions, final nonsecure/unlocked/UI
+readiness assertions and 900-second suite cap remain. Framework calls retain
+their own platform timeouts. Exact-head Android verification is still required.
+
+Failed API30 artifact `11416466950` has ZIP SHA-256
+`7756f9179a3f746aae73c9622f95e694315d89ef2210d1ac6c4ff9734dd764fb`;
+failed receipt `11417500689` has ZIP SHA-256
+`70b4921e5a7159be44a5a2f4809b1874e1bdd11e611572d39fc4309df15ee9a9`.

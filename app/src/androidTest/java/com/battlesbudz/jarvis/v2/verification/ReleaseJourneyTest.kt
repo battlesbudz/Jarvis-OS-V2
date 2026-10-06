@@ -3997,6 +3997,7 @@ class ReleaseJourneyTest {
         // state below is genuine Android lock state, not a fixture.
         val keyguard = context.getSystemService(android.app.KeyguardManager::class.java)
         val keyguardDismissal = AtomicReference("not_requested")
+        var authenticatedBeforeClear = false
         device.executeShellCommand("locksettings set-pin 1234")
         try {
             device.sleep()
@@ -4030,46 +4031,65 @@ class ReleaseJourneyTest {
             assertEquals(ExecutionResult.Outcome.NEEDS_UNLOCK, volume.outcome)
             assertEquals("only the battery read dispatched", 0, dispatched.get())
         } finally {
-            // Credential removal and keyguard UI dismissal are different events.
-            // Clear the known fixture PIN once, observe that it is no longer secure,
-            // then dismiss once. Do not rely on an unlocked-padlock state or retry PINs.
+            // Authenticate the known disposable fixture before removing its PIN.
+            // Clearing credentials while the PIN view is already showing can leave
+            // SystemUI in that stale security mode even when isDeviceSecure is false.
             val cleanupDeadline = android.os.SystemClock.uptimeMillis() + 10_000
-            runCatching { device.executeShellCommand("locksettings clear --old 1234") }
-            while (android.os.SystemClock.uptimeMillis() < cleanupDeadline &&
-                keyguard?.isDeviceSecure == true) {
-                Thread.sleep(100)
-            }
-            if (android.os.SystemClock.uptimeMillis() < cleanupDeadline &&
-                keyguard?.isDeviceSecure == false) {
+            var pinSubmitted = false
+            try {
                 device.wakeUp()
                 if (android.os.SystemClock.uptimeMillis() < cleanupDeadline) {
-                    runCatching {
-                        // Use the current owned Activity without forcing RESUMED behind
-                        // keyguard or retaining an Activity across lifecycle transitions.
-                        activity.onActivity { host ->
-                            if (android.os.SystemClock.uptimeMillis() < cleanupDeadline &&
-                                keyguard?.isDeviceSecure == false) {
-                                keyguardDismissal.set("requested")
-                                keyguard.requestDismissKeyguard(host,
-                                    object : android.app.KeyguardManager.KeyguardDismissCallback() {
-                                        override fun onDismissSucceeded() { keyguardDismissal.set("succeeded") }
-                                        override fun onDismissError() { keyguardDismissal.set("error") }
-                                        override fun onDismissCancelled() { keyguardDismissal.set("cancelled") }
-                                    })
-                            } else keyguardDismissal.set("precondition_changed")
-                        }
-                    }.onFailure { keyguardDismissal.set("request_failed:${it.javaClass.simpleName}") }
+                    activity.onActivity { host ->
+                        if (android.os.SystemClock.uptimeMillis() < cleanupDeadline &&
+                            keyguard?.isDeviceSecure == true) {
+                            keyguardDismissal.set("requested")
+                            keyguard.requestDismissKeyguard(host,
+                                object : android.app.KeyguardManager.KeyguardDismissCallback() {
+                                    override fun onDismissSucceeded() { keyguardDismissal.set("succeeded") }
+                                    override fun onDismissError() { keyguardDismissal.set("error") }
+                                    override fun onDismissCancelled() { keyguardDismissal.set("cancelled") }
+                                })
+                        } else keyguardDismissal.set("precondition_changed")
+                    }
                 }
+                var pinReady = false
+                while (android.os.SystemClock.uptimeMillis() < cleanupDeadline && !pinReady) {
+                    pinReady = fixturePinEntryReady()
+                    if (!pinReady) Thread.sleep(100)
+                }
+                if (android.os.SystemClock.uptimeMillis() < cleanupDeadline && pinReady &&
+                    keyguard?.isDeviceSecure == true && keyguard.isKeyguardLocked) {
+                    // Hardware digit/confirm events follow SystemUI's real PIN path.
+                    // Submit exactly once, only to the observed focused PIN field;
+                    // no coordinate assumptions, repeated guesses or per-key idle waits.
+                    pinSubmitted = true
+                    device.executeShellCommand("input keyevent 8 9 10 11 66")
+                }
+                while (android.os.SystemClock.uptimeMillis() < cleanupDeadline &&
+                    (keyguard?.isDeviceLocked == true || keyguard?.isKeyguardLocked == true)) {
+                    Thread.sleep(100)
+                }
+                authenticatedBeforeClear = pinSubmitted && keyguard?.isDeviceLocked == false &&
+                    keyguard.isKeyguardLocked == false
+            } catch (error: Exception) {
+                keyguardDismissal.set("cleanup_failed:${error.javaClass.simpleName}")
+            } finally {
+                // Always remove the disposable credential, including a failed unlock.
+                // The explicit authentication assertion below prevents this removal
+                // from disguising a failed real keyguard transition.
+                runCatching { device.executeShellCommand("locksettings clear --old 1234") }
             }
             while (android.os.SystemClock.uptimeMillis() < cleanupDeadline &&
-                (keyguard?.isDeviceLocked == true || keyguard?.isKeyguardLocked == true ||
-                    !device.hasObject(By.res("model_browse")))) {
+                (keyguard?.isDeviceSecure == true || keyguard?.isDeviceLocked == true ||
+                    keyguard?.isKeyguardLocked == true || !device.hasObject(By.res("model_browse")))) {
                 Thread.sleep(100)
             }
             android.util.Log.i("JarvisVerification", "test64 dismissal=${keyguardDismissal.get()} " +
+                "pinSubmitted=$pinSubmitted authenticatedBeforeClear=$authenticatedBeforeClear " +
                 "secure=${keyguard?.isDeviceSecure} deviceLocked=${keyguard?.isDeviceLocked} " +
                 "keyguardShowing=${keyguard?.isKeyguardLocked}")
         }
+        assertTrue("The fixture PIN must authenticate before credential removal", authenticatedBeforeClear)
         assertFalse("PIN must be cleared so later journeys run unlocked",
             keyguard?.isDeviceLocked == true)
         assertFalse("The fixture PIN must no longer secure the device", keyguard?.isDeviceSecure == true)
@@ -4077,6 +4097,27 @@ class ReleaseJourneyTest {
             keyguard?.isKeyguardLocked == true)
         assertNotNull("The owned setup screen must be accessible after lock cleanup",
             device.findObject(By.res("model_browse")))
+    }
+
+    @Suppress("DEPRECATION")
+    private fun fixturePinEntryReady(): Boolean {
+        // Read the framework snapshot directly so each poll does not introduce
+        // UiAutomator's unrelated idle-wait timeout into the cleanup deadline.
+        val root = instrumentation.uiAutomation.rootInActiveWindow ?: return false
+        try {
+            fun ready(id: String, field: Boolean = false): Boolean {
+                val nodes = root.findAccessibilityNodeInfosByViewId("com.android.systemui:id/$id")
+                return try {
+                    nodes.any { node ->
+                        node.packageName?.toString() == "com.android.systemui" &&
+                            node.isVisibleToUser && node.isEnabled &&
+                            if (field) node.isFocused && node.isPassword else node.isClickable
+                    }
+                } finally { nodes.forEach { it.recycle() } }
+            }
+            return ready("pinEntry", field = true) &&
+                listOf("key1", "key2", "key3", "key4", "key_enter").all { ready(it) }
+        } finally { root.recycle() }
     }
 
     @Test fun test65_crossFamilyRegressionInvalidArgsProduceNoEffects() {
