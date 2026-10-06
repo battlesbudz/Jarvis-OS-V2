@@ -22,7 +22,8 @@ class ProfileContractTest(unittest.TestCase):
         for profile, (name, producer) in zip(profiles, requirements):
             self.assertEqual(artifact_name(profile), name)
             self.assertIn(f"{profile['id']} / {profile['apk']}", producer)
-        self.assertTrue(any(p['api'] == 29 for p in profiles))
+        self.assertEqual({30, 35, 36}, {p['api'] for p in profiles})
+        self.assertEqual(5, len(profiles))
         self.assertTrue(any(p['api'] == 36 for p in profiles))
         self.assertTrue(any(p['screen_profile'] == 'foldable' for p in profiles))
         foldable = next(profile for profile in profiles if profile['screen_profile'] == 'foldable')
@@ -33,23 +34,13 @@ class ProfileContractTest(unittest.TestCase):
                          tuple(large_page[0][key] for key in ('id', 'api', 'target', 'apk')))
         self.assertTrue(any(p['api'] == 35 and p['page_size'] == 4096 for p in profiles))
         for profile in profiles:
-            self.assertEqual(2400 if profile['api'] == 29 else 900, profile['instrumentation_timeout'])
-        oldest = next(profile for profile in profiles if profile['api'] == 29)
-        self.assertEqual(('default', 4096, 'macos-15', 'arm64-v8a', 'software', 900, 90),
-                         tuple(oldest[key] for key in ('target', 'page_size', 'runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout')))
-        for profile in profiles:
-            if profile['api'] != 29:
-                self.assertEqual(('ubuntu-latest', 'x86_64', 'kvm', 300, 40),
-                                 tuple(profile[key] for key in ('runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout')))
+            self.assertEqual(900, profile['instrumentation_timeout'])
+            self.assertEqual(('ubuntu-latest', 'x86_64', 'kvm', 300, 40),
+                             tuple(profile[key] for key in ('runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout')))
 
-    def test_default_image_is_required_only_for_native_api29(self):
-        for index, target in ((0, 'google_apis'), (0, 'google_apis_ps16k'), (1, 'default')):
-            contract = copy.deepcopy(self.original)
-            contract['profiles'][index]['target'] = target
-            self.path.write_text(json.dumps(contract))
-            with self.subTest(index=index, target=target), self.assertRaisesRegex(ValueError, 'system image target'):
-                load_profiles(self.path)
-        for changes in ({'arch': 'x86_64'}, {'runner': 'ubuntu-latest'}, {'acceleration': 'kvm'}, {'page_size': 16384}):
+    def test_retired_api29_and_default_software_image_are_rejected(self):
+        for changes in ({'api': 29}, {'target': 'default'}, {'runner': 'macos-15'},
+                        {'arch': 'arm64-v8a'}, {'acceleration': 'software'}):
             contract = copy.deepcopy(self.original)
             contract['profiles'][0].update(changes)
             self.path.write_text(json.dumps(contract))
@@ -98,28 +89,17 @@ class ProfileContractTest(unittest.TestCase):
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                 load_profiles(self.path)
 
-    def test_main_and_job_budget_expansion_is_limited_to_api29_software(self):
-        for index, key, value in ((0, 'instrumentation_timeout', True),
-                                  (0, 'instrumentation_timeout', 2400.0),
-                                  (0, 'instrumentation_timeout', '2400'),
-                                  (0, 'instrumentation_timeout', 2399),
-                                  (0, 'instrumentation_timeout', 2401),
-                                  (1, 'instrumentation_timeout', 2400),
-                                  (1, 'job_timeout', 90), (5, 'job_timeout', 90)):
-            contract = copy.deepcopy(self.original)
-            contract['profiles'][index][key] = value
-            self.path.write_text(json.dumps(contract))
-            with self.subTest(index=index, key=key, value=value), self.assertRaises(ValueError):
-                load_profiles(self.path)
-
-    def test_unsafe_or_mismatched_host_guest_acceleration_rejected(self):
-        for changes in ({'runner': 'ubuntu-latest'}, {'arch': 'x86_64'}, {'acceleration': 'kvm'},
-                        {'runner': 'ubuntu-latest', 'arch': 'x86_64', 'acceleration': 'kvm'}):
-            contract = copy.deepcopy(self.original)
-            contract['profiles'][0].update(changes)
-            self.path.write_text(json.dumps(contract))
-            with self.subTest(changes=changes), self.assertRaises(ValueError):
-                load_profiles(self.path)
+    def test_retired_software_budgets_cannot_reenter_supported_profiles(self):
+        for index in range(len(self.original['profiles'])):
+            for key, value in (('instrumentation_timeout', True), ('instrumentation_timeout', 900.0),
+                               ('instrumentation_timeout', '900'), ('instrumentation_timeout', 899),
+                               ('instrumentation_timeout', 901), ('instrumentation_timeout', 2400),
+                               ('job_timeout', 60), ('job_timeout', 90), ('boot_timeout', 900)):
+                contract = copy.deepcopy(self.original)
+                contract['profiles'][index][key] = value
+                self.path.write_text(json.dumps(contract))
+                with self.subTest(index=index, key=key, value=value), self.assertRaises(ValueError):
+                    load_profiles(self.path)
 
     def test_provisioning_fields_are_required_and_cannot_be_silently_defaulted(self):
         for key in ('runner', 'arch', 'acceleration', 'boot_timeout', 'job_timeout', 'instrumentation_timeout'):

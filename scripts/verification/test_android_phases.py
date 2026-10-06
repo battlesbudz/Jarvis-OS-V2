@@ -83,32 +83,25 @@ class InstallTransportTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             device = Device("emulator-5554", temporary)
             for profile in load_profiles():
-                transport = ["--no-streaming"] if profile["id"] == "29-phone-normal" else []
                 for apk, flags in (("previous.apk", ()), ("tests.apk", ("-r", "-t")),
                                    ("candidate.apk", ("-r",))):
                     with self.subTest(profile=profile["id"], apk=apk), patch(
                             "android.subprocess.run", return_value=subprocess.CompletedProcess([], 0, b"Success", b"")) as run:
-                        self.assertEqual("Success", device.install(apk, *flags, profile=profile))
+                        self.assertEqual("Success", device.install(apk, *flags))
                     run.assert_called_once_with(
-                        ["adb", "-s", "emulator-5554", "install", *transport, *flags, apk],
+                        ["adb", "-s", "emulator-5554", "install", *flags, apk],
                         capture_output=True, timeout=180)
 
-    def test_transport_is_scoped_to_api29_software_and_install_failures_propagate(self):
-        profile = next(p for p in load_profiles() if p["id"] == "29-phone-normal")
+    def test_install_failures_and_deadlines_propagate(self):
         with tempfile.TemporaryDirectory() as temporary:
             device = Device("emulator-5554", temporary)
-            for changed in (dict(profile, api=30), dict(profile, acceleration="kvm")):
-                with self.subTest(profile=changed), patch(
-                        "android.subprocess.run", return_value=subprocess.CompletedProcess([], 0, b"Success", b"")) as run:
-                    device.install("candidate.apk", "-r", profile=changed)
-                self.assertEqual(["adb", "-s", "emulator-5554", "install", "-r", "candidate.apk"], run.call_args.args[0])
             with patch("android.subprocess.run", return_value=subprocess.CompletedProcess(
                     [], 1, b"", b"Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]")):
                 with self.assertRaisesRegex(RuntimeError, "INSTALL_FAILED_UPDATE_INCOMPATIBLE"):
-                    device.install("candidate.apk", "-r", profile=profile)
+                    device.install("candidate.apk", "-r")
             with patch("android.subprocess.run", side_effect=subprocess.TimeoutExpired("adb", 180)):
                 with self.assertRaises(subprocess.TimeoutExpired):
-                    device.install("candidate.apk", "-r", profile=profile)
+                    device.install("candidate.apk", "-r")
 
     def exercise_upgrade(self, profile, *, reject_candidate=False, collector_error=False,
                          stop_at_main=False, identity_override=None):
@@ -195,10 +188,9 @@ class InstallTransportTest(unittest.TestCase):
                 self.assertFalse(any(argv[0] in ("install", "instrument") for argv, _ in calls))
                 return report, calls
             installs = [(argv[1:], kwargs) for argv, kwargs in calls if argv[0] == "install"]
-            transport = ("--no-streaming",) if profile["id"] == "29-phone-normal" else ()
-            self.assertEqual([(transport + (str(previous),), {"timeout": 180}),
-                              (transport + ("-r", "-t", str(tests)), {"timeout": 180}),
-                              (transport + ("-r", str(candidate)), {"timeout": 180})], installs)
+            self.assertEqual([((str(previous),), {"timeout": 180}),
+                              (("-r", "-t", str(tests)), {"timeout": 180}),
+                              (("-r", str(candidate)), {"timeout": 180})], installs)
             return report, calls
 
     def test_controller_routes_all_upgrade_installs_without_clearing_seeded_storage(self):

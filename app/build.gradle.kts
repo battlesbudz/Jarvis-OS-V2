@@ -61,7 +61,7 @@ android {
     }
     defaultConfig {
         applicationId = "com.battlesbudz.jarvis.v2"
-        minSdk = 29
+        minSdk = 30
         targetSdk = 35
         // Jarvis is currently shipped for modern ARM64 Android phones.
         // Excluding unused x86/32-bit native runtimes keeps the APK much smaller.

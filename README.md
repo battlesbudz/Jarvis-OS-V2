@@ -74,9 +74,9 @@ Kokoro and Pocket/Paul are retired; historical evidence keeps its original label
 
 The hosted `Android APK` workflow runs native/helper checks, release JVM tests,
 signed normal and compact ARM64 builds, recorded speech, native page-size checks,
-API 29/30/35/36, foldable and genuine 16 KB emulator journeys, and an
+API 30/35/36, foldable and Android 16 16 KB emulator journeys, and an
 exact-build evidence receipt before publishing GitHub Release APKs.
-The app targets Android 10+; the shipped native ABI is `arm64-v8a`.
+The app supports Android 11+ (API 30); the shipped native ABI is `arm64-v8a`.
 
 Use the [GitHub Releases page](https://github.com/battlesbudz/Jarvis-OS-V2/releases)
 for installable APKs. A green emulator run is a release candidate: real model,

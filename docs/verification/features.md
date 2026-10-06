@@ -608,6 +608,47 @@ assertion is included. The consolidated receipt fails and publication is skipped
 The separate phone-reported Wisp priority correction requires a new exact-head
 run; Build 1068 does not verify that later change.
 
+### Android 11 minimum and Android 10 retirement
+
+Android 11/API 30 is now the minimum supported OS (`minSdk=30`). At the user's
+explicit direction on October 6, Android 10/API 29 support, its required matrix
+row, dedicated software-emulator workflow/launcher and launcher-only helper
+tests are removed. Its earlier 40-minute main-suite/90-minute job allowance is
+retired, not transferred to another profile. Historical API 29 failures remain
+recorded and are not described as repaired or passing.
+
+The five retained profiles are unchanged: API 30 normal phone, API 35 compact
+phone, API 36 normal phone, API 36 compact foldable and API 36 normal true 16 KB.
+Each retains KVM/x86-64 with observed ARM64 capability, 300-second startup,
+180-second installs, 900-second main instrumentation and 40-minute job ceiling.
+Every named journey, upgrade/lifecycle/layout assertion, native-loading proof,
+APK/merge binding and final receipt remains required on these supported profiles.
+The API 35-specific 16 KB gap remains explicit; actual API 36 runtime 16 KB
+verification does not fill that version-specific gap.
+
+Build 1068 completed all five retained device profiles successfully, including
+actual SDK 36/PAGE_SIZE=16384/ARM64 translation and all nine shipping native
+libraries in the 16 KB profile. Artifact `11395087011`, ZIP SHA-256
+`bfabf163354d5835e7b1fd6c24094602a0803120f7a313e6a7267286e4d5e087`, retains
+the full 50-main-test, upgrade, lifecycle and layout result. Its API 29 startup
+passed in 753.252 seconds but vold's FUSE/sdcard startup timed out, leaving
+`external_primary` unavailable. Previous-APK seed evidence failed; main
+instrumentation never began. Artifact `11394687449`, ZIP SHA-256
+`f9d986aab9f1bb26c496f85c57e1f81fe41a3d5521081730f32f6fbd5a787310`, preserves
+that failure. Receipt/publication remained blocked for that revision.
+
+After retirement, local architecture and 172 remaining Python helper checks
+pass. The reduction from 271 reflects removal of dedicated retired-software
+coverage and its obsolete profile case; no supported Android journey is removed.
+A fresh signed APK/manifest and complete five-profile run for the combined Wisp
+revision are required before release. Build 1068 is preceding evidence, not a
+passing result for the new commit.
+
+The retired API 29-only pixel conversion is also removed from the UI test
+helpers. Exact supported-path comparison and compilation against real Android/
+UiAutomator classes confirm unchanged API 30+ geometry, deadlines, gesture
+counts and stability. The reviewed persistent-warning test49 body is unchanged.
+
 ## API 29 graphics boot loop — October 5, 2026
 
 [Build 986](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37236069164)

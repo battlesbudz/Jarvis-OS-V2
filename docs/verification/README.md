@@ -18,147 +18,27 @@ commits. Do not create or merge another PR without Justin's permission.
 2. Build the compact APK; verify native/DEX/asset equivalence, speech packaging,
    Piper callback ABI and signatures. Both variants have increasing build codes
    and use the existing signing identity.
-3. Run `.github/workflows/android-sandbox.yml` on disposable Android
-   emulators from `scripts/verification/profiles.json`: API 29/30/35/36,
-   an API 36 foldable and an API 36 true 16 KB system image. The foldable uses the SDK's
-   genuine `pixel_fold` hardware definition from pinned command-line tools
-   23.0, build 16111833: a 2208×1840 inner screen, a 1080×2092 cover display and
-   a 0–180° hinge. The fold job promotes the verified pinned tools directory to
-   `cmdline-tools/latest`, which emulator-runner actually consumes, and retains
-   its catalog receipt. The controller still requires real fold/unfold commands and
-   actual display-size changes. API 30 and newer use
-   accelerated x86-64 images with ARM64 translation. The current API 29 x86
-   Google APIs and Play images contain no ARM64 bridge, so that profile uses
-   the official AOSP `system-images;android-29;default;arm64-v8a` image on a
-   standard `macos-15` ARM64 runner with explicit
-   software emulation (`-accel off -feature HostComposition,-HVF,-Vulkan`). GitHub's M1 VMs do not
-   support nested hardware virtualization. This profile alone uses the official
-   [Emulator archive](https://developer.android.com/studio/emulator_archive)
-   Stable 32.1.15 Apple Silicon package, build 10696886, as a controlled
-   API 29 compatibility trial after Build 958's host GLES 2 context failed
-   SurfaceFlinger's GLES 3 initialization. Build 963 initialized guest GLES 3
-   through ANGLE/Vulkan SwiftShader; it did not establish a direct-only path
-   or complete boot. Official indexed archive metadata
-   binds the version/build/filename, 265,751,100-byte size and SHA-256
-   `f70d764fd756664bc782bb24f8da67cbaa51d7e5ffac732108b9e6545cd9faf4`;
-   its size/hash are checked before safe staged extraction. Executable modes and
-   SDK package metadata are preserved, `source.properties` must match, and both
-   staged and installed binaries must report version 32.1.15/build 10696886 before
-   boot. Invalid input retains the previous emulator; a failed installed-version
-   check restores it. Download, verification and replacement share one 600-second
-   provisioning budget within the approved 90-minute API 29 job limit. This is a
-   hypothesis requiring a complete device pass, not evidence that the emulator
-   version caused or repairs the failure. The software-specific launcher
-   `scripts/verification/software_emulator.py` retains provisioning/emulator
-   output and guest logcat, and requires the boot flag, input/activity/package/
-   window services, successful unlock and actual user0 BOOT_COMPLETED delivery
-   for the current system_server before invoking the same full release
-   controller. The three required zero-animation settings are checked after
-   successful unlock and before waiting for boot receivers, so they need not
-   run serially after broadcast delivery. Their existing command caps and the
-   shared boot deadline remain unchanged; these writes are not readiness proof.
-   Completion is read live from a bounded 256 KiB complete-line tail
-   of that launch's native guest log. A local candidate scan avoids repeatedly
-   launching guest PID probes while that completion marker is absent. A candidate
-   alone cannot authorize readiness: the log is read again between fresh matching
-   system_server PID probes. The exact user0 completion marker, a running emulator and observation
-   before the original deadline remain required; a retained artifact alone cannot
-   authorize readiness. This avoids Build 944's repeatedly timed-out guest logcat
-   dumps without extending a deadline. All readiness and unlock checks share the 15-minute boot budget;
-   the API 29 launcher explicitly adds `HostComposition` to its feature request.
-   Emulator 32 disables that capability by default below API 32, although the
-   inspected API 29 revision 8 image's `advancedFeatures.ini` declares it supported. Build 986
-   lacked the host-composition extensions and repeatedly crashed the guest
-   composer in `GoldfishGralloc::getHostHandle`, then lost SurfaceFlinger and
-   restarted Android. Build 1003 and its unchanged-code retry advertised both
-   host-composition extensions and no longer hit that native crash loop; services,
-   input and unlock succeeded, but final user0 boot delivery still timed out.
-   Full startup passed in Builds 1041 and 1050; complete API 29 release-controller coverage remains unverified. The requested
-   enabled and disabled features are retained separately from actual startup
-   output. Those graphics settings do not disable watchdogs or change readiness/individual assertion deadlines.
-   After full boot delivery, the launcher checks for a retained cold-start
-   System UI ANR dialog before installing any Jarvis APK. It may select Wait
-   once only for the exact Android-owned System UI dialog, retaining its UI
-   evidence and requiring dismissal plus fresh readiness. Other, ambiguous or
-   repeated error dialogs fail; no recovery runs during app tests. All of this
-   consumes the original boot deadline. The retained cold-start ANR remains
-   evidence and is never converted into app-test coverage.
-   Software rendering requests `-gpu swiftshader_indirect`, with the
-   installed binary's raw GPU/feature help and actual startup backend retained as
-   diagnostics. Both help commands share the original provisioning budget and
-   are individually bounded by 15 seconds; help text does not authorize readiness.
-   Build 946's `software` selector chose GLES SwANGLE and Vulkan
-   Lavapipe; Android's system process was killed twice before boot completion,
-   with UI and foreground handlers blocked. Builds 947/948 requested SwiftShader
-   and selected Vulkan SwiftShader while GLES remained SwANGLE; Android 10 still
-   suffered platform ANRs/watchdogs. The next API 29-only compatibility trial
-   disables the guest Vulkan feature using the documented `-feature -Vulkan`
-   option. It retains SwiftShader and disabled HVF. Requested features and the
-   actual backend are separate receipts: this does not prove Vulkan caused the
-   failure or that all host Vulkan use disappears. See the official
-   [troubleshooting guide](https://developer.android.com/studio/run/emulator-troubleshooting).
-   The older ARM64 TCG source omits its generated SMP argument when HVF is
-   disabled; trailing `-qemu -smp 2` preserves the requested two-vCPU setting.
-   Actual installed execution, backend/GLES capability, CPU count and complete
-   device coverage remain fresh-run requirements. The AVD returns to the more
-   stable two-vCPU baseline after one-/three-vCPU trials also failed boot delivery
-   and incurred system-server restarts. The API 29-only trial disables all 12
-   optional emulated sensor flags: accelerometer/uncalibrated accelerometer,
-   gyroscope/uncalibrated gyroscope, orientation, light, proximity,
-   magnetic field/uncalibrated magnetic field, pressure, humidity and temperature.
-   Jarvis has no SensorManager consumers; the pinned emulator and Android 10
-   framework support an empty sensor list. Automatic-brightness/proximity sensor
-   availability changes on this fixture, while microphone/audio configuration and all
-   other profiles remain unchanged. The existing UIAutomator display-rotation,
-   actual-dimension and continuity assertions remain required; they do not depend
-   on sensor-driven auto-rotation. Cleanup retains a bounded read-only sensorservice
-   receipt after the verdict. After a failed boot only, separate read-only
-   `system_app_anr` and `system_server_watchdog` DropBox traces are also retained,
-   capped at 2 MiB/1 MiB and ten seconds each within the existing session deadline.
-   Partial/missing traces remain diagnostic gaps; collection cannot change the
-   failed verdict or authorize tests. This is a load-reduction trial, not a proven startup
-   fix: actual admission, boot and the complete exact-head gate must pass. No
-   larger runner, hardware acceleration or relaxed deadline is used.
-   The unchanged memory requests are
-   2 GiB RAM and `vm.heapSize=256M`. Build 962's older wrapper interpreted that
-   heap request as zero and promoted it to its 512 MiB minimum; its generated
-   hardware and kernel arguments record 512 MiB, not a verified 256 MiB guest
-   heap. The next trial keeps the request unchanged. The framebuffer is
-   360×640 at 140 dpi. The API 29-only `hw.lcd.vsync=30` trial requests a
-   30 Hz display cadence to reduce periodic work after retained 60 Hz CPU/UI
-   stalls. Host/native `qemu.vsync` and guest `DisplayDeviceInfo` observations
-   must establish the actual rate; the setting alone proves no improvement.
-   Resolution, density, functional assertions and all deadlines remain unchanged.
-   The same pinned binary advertises 140 dpi; actual fresh
-   raster admission still needs observation. Build 962 rejected 210 dpi before
-   guest startup. This trial preserves the exact physical dp
-   extent and aspect ratio of Pixel 2 and Build 963's 720×1280 at 280 dpi,
-   with one-quarter of Build 963's pixels. Density-specific resources, pixel
-   rounding and window insets can still change layout, so the full layout gates
-   remain required. Build 963's first system_server fatal was a permission-policy
-   initialization timeout; this raster experiment does not establish its cause,
-   a performance improvement or a boot cure.
-   Physical size/density are observed before ready; optional read-only host
-   resource receipts consume the existing deadline. These provisioning settings
-   are experiments pending a complete passing run, not evidence of a memory cause.
-   The API 29 job is bounded by 90 minutes, with a 40-minute main instrumentation
-   budget declared in the profile. Its existing 900-second startup, 180-second
-   APK installs and all individual assertions/lifecycle/layout limits remain unchanged. A boot flag alone is not a passing
-   device result. Missing services, ABI/page-size compatibility, a failed test
-   or a timeout fails rather than skips. Linux profiles retain emulator-runner.
-   The API 29 target is AOSP `default`; the approved API 36 16 KB
-   replacement is described below. Google's official Android system-image catalog currently lists
-   stable revision 8 (`arm64-v8a-29_r08.zip`, 498,049,256 bytes, SHA-1
-   `fa0d67d7430fcc84b2fe2508ea81e92ac644e264`). This avoids the Google APIs
-   bundle whose framework permission initialization and watchdog failed under
-   software emulation in Build 923. Faster usable startup is an inference to
-   verify in a fresh run; the actual API, ARM64 ABI, services, cold input,
-   observed unlock, full controller and both time limits remain required.
-   Catalog: https://dl.google.com/android/repository/sys-img/android/sys-img2-1.xml
-   Genuine Pixel Fold transitions may show the disposable keyguard. After the
-   actual display-size change, the layout journey wakes the device and observes
-   keyguard dismissal within the same transition deadline before checking call
-   and draft continuity. It never relaunches the activity to restore those states.
+3. Run `.github/workflows/android-sandbox.yml` on the five disposable Android
+   profiles in `scripts/verification/profiles.json`: API 30 normal phone,
+   API 35 compact phone, API 36 normal phone, API 36 compact foldable and
+   API 36 normal 16 KB. Android 11/API 30 is the minimum supported OS;
+   the APK declares `minSdk=30`. Android 10/API 29 support and its software
+   emulator job/launcher are retired. Historical failed results remain in the
+   feature map; removing support is not a claim that those failures were fixed.
+   Every current profile uses the existing Ubuntu/KVM x86-64 runner with
+   observed ARM64 translation. All retain the 300-second boot, 180-second
+   install, 900-second main-suite and 40-minute job limits. The retired API 29
+   2,400-second/90-minute allowances cannot be selected by this contract.
+
+   The foldable uses the SDK's genuine `pixel_fold` hardware definition from
+   pinned command-line tools 23.0, build 16111833: a 2208×1840 inner screen,
+   a 1080×2092 cover display and a 0–180° hinge. Its verified pinned catalog
+   is promoted to `cmdline-tools/latest`, which emulator-runner consumes;
+   the catalog and owned X-display receipts are retained. Real fold/unfold
+   commands, actual display-size changes and state continuity remain required.
+   After a real transition the journey wakes the device and observes keyguard
+   dismissal within its existing deadline; it never relaunches the activity
+   to restore call/draft state. The actual 16 KB profile is described below.
 4. Run every named method in `scripts/verification/scenarios.json`, retain a
    screenshot and UI hierarchy per scenario, then run the separately retained
    external process-loss, upgrade, platform and layout phases. The previous
@@ -178,7 +58,7 @@ referenced by instrumentation, including lazy-layout methods. Recheck this ABI
 boundary when moving classes or changing test dependencies. Do not substitute
 an unshrunk/debug build for release verification.
 
-## API 36 16 KB coverage and API 29 capacity
+## API 36 16 KB coverage
 
 The required `36-16k-normal` profile uses API 36 `google_apis_ps16k` on the
 existing x86-64/KVM runner. Official stable revision 7 metadata identifies
@@ -200,14 +80,11 @@ physical 16 KB ARM64 hardware, OEM behavior, real acoustics/models or device
 performance follows from this x86-64 simulated-page test. Revision metadata
 establishes feasibility, not successful boot or full release verification.
 
-Every profile declares `instrumentation_timeout` in the same contract used by
-provisioning, artifact selection and receipts. Only API 29 software emulation
-uses 2,400 seconds for the unchanged main suite and a 90-minute job ceiling;
-all other profiles retain 900-second main suites and their previous job limits.
-API 29's 900-second boot, 180-second installs, every named test and all individual
-assertion/upgrade/lifecycle/layout deadlines remain intact. The larger capacity
-is not a latency-performance pass or a guarantee that stock Settings meets its
-separate 15-second visibility assertion.
+Every supported profile declares `instrumentation_timeout=900` in the same
+contract used by provisioning, artifact selection and receipts. All named
+main tests and individual assertion/upgrade/lifecycle/layout deadlines remain
+required. Android 10/API 29 was subsequently removed from the supported matrix
+on October 6; its earlier capacity trial is historical only.
 
 ### Historical API 35 collector trial
 

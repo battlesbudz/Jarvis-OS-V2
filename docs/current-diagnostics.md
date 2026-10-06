@@ -82,7 +82,8 @@ Implemented the D2 phone-speaker profile in real Voice Calls on Android 12+:
 `MODE_IN_COMMUNICATION`, built-in communication speaker, `VOICE_COMMUNICATION`
 capture with platform AEC/NS requested, and `USAGE_VOICE_COMMUNICATION` for both
 Piper answers and cached filler. Cues follow the owned route too. Call volume now
-controls playback; no volume is forced. Android 10/11 retain the legacy media route.
+controls playback; no volume is forced. With the current Android 11/API 30 minimum,
+Android 11 retains the legacy media route; Android 10 support was retired on October 6.
 This iteration targets the phone speaker, not Bluetooth/headset route selection.
 
 The route belongs to the hardware capture session and survives command/reply/

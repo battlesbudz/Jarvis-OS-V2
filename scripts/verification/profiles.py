@@ -29,7 +29,7 @@ def load_profiles(path=PROFILES):
             raise ValueError('Invalid emulator profile fields')
         if not isinstance(profile['id'], str) or not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', profile['id']):
             raise ValueError('Invalid emulator profile ID')
-        if isinstance(profile['api'], bool) or not isinstance(profile['api'], int) or not 29 <= profile['api'] <= 99:
+        if isinstance(profile['api'], bool) or not isinstance(profile['api'], int) or not 30 <= profile['api'] <= 99:
             raise ValueError('Invalid emulator API')
         if profile['apk'] not in ('app-release', 'app-compact'):
             raise ValueError('Invalid APK variant')
@@ -40,31 +40,23 @@ def load_profiles(path=PROFILES):
             raise ValueError('Invalid screen profile')
         if isinstance(profile['page_size'], bool) or profile['page_size'] not in (4096, 16384):
             raise ValueError('Invalid emulator page size')
-        allowed_targets = ('default',) if profile['api'] == 29 else ('google_apis', 'google_apis_ps16k')
+        allowed_targets = ('google_apis', 'google_apis_ps16k')
         if profile['target'] not in allowed_targets:
             raise ValueError('Invalid system image target')
         if (profile['target'] == 'google_apis_ps16k') != (profile['page_size'] == 16384):
             raise ValueError('Page size disagrees with system image target')
-        if profile['runner'] not in ('ubuntu-latest', 'macos-15'):
+        if profile['runner'] != 'ubuntu-latest':
             raise ValueError('Invalid emulator runner')
-        if profile['arch'] not in ('x86_64', 'arm64-v8a'):
+        if profile['arch'] != 'x86_64':
             raise ValueError('Invalid emulator architecture')
-        if profile['acceleration'] not in ('kvm', 'software'):
+        if profile['acceleration'] != 'kvm':
             raise ValueError('Invalid emulator acceleration')
-        expected_host = {'kvm': ('ubuntu-latest', 'x86_64'), 'software': ('macos-15', 'arm64-v8a')}
-        if (profile['runner'], profile['arch']) != expected_host[profile['acceleration']]:
-            raise ValueError('Runner and guest architecture do not match acceleration policy')
-        if profile['api'] == 29 and profile['acceleration'] != 'software':
-            raise ValueError('API 29 requires the native ARM64 software-emulation profile')
-        software_api29 = profile['api'] == 29 and profile['acceleration'] == 'software'
-        # Approved software-runner capacity; boot and other profiles keep their limits.
-        for key, lower, upper in (('boot_timeout', 300, 900),
-                                  ('job_timeout', 40, 90 if software_api29 else 60)):
+        for key, lower, upper in (('boot_timeout', 300, 300), ('job_timeout', 40, 40)):
             if isinstance(profile[key], bool) or not isinstance(profile[key], int) or not lower <= profile[key] <= upper:
                 raise ValueError(f'Invalid or out-of-bounds emulator {key}')
         main_timeout = profile['instrumentation_timeout']
         if (isinstance(main_timeout, bool) or not isinstance(main_timeout, int) or
-                main_timeout != (2400 if software_api29 else 900)):
+                main_timeout != 900):
             raise ValueError('Invalid or out-of-scope main instrumentation timeout')
         configuration = tuple(profile[key] for key in sorted(FIELDS - {'id'}))
         if profile['id'] in ids or configuration in configurations:

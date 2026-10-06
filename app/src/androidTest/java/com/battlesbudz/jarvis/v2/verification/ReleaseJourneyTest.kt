@@ -242,23 +242,10 @@ class ReleaseJourneyTest {
             ?: find(selector)
     }
 
-    /** Preserve the original 420 dpi Pixel 2 navigation margins on the API 29 raster. */
-    private fun referenceNavigationPixels(referencePx: Int): Int {
-        if (android.os.Build.VERSION.SDK_INT != 29) return referencePx
-        val densityDpi = context.resources.displayMetrics.densityDpi
-        require(densityDpi > 0) { "Navigation geometry requires a positive display density" }
-        require(referencePx >= 0) { "Navigation pixel reference must be nonnegative" }
-        // Positive Int operands fit in Long, including the ceiling adjustment. Round up
-        // so conversion cannot make the reference margin logically smaller.
-        val scaled = (referencePx.toLong() * densityDpi + 419L) / 420L
-        require(scaled <= Int.MAX_VALUE) { "Navigation pixel reference exceeds integer bounds" }
-        return scaled.toInt()
-    }
-
     /** Requires a non-edge, non-empty visible area before a single physical tap. */
     private fun hasSafeTapBounds(control: UiObject2): Boolean {
         val bounds = control.visibleBounds
-        val safeInset = referenceNavigationPixels(24)
+        val safeInset = 24
         return bounds.width() > 0 && bounds.height() > 0 &&
             bounds.left >= safeInset && bounds.right <= device.displayWidth - safeInset &&
             bounds.top >= safeInset && bounds.bottom <= device.displayHeight - safeInset
@@ -2463,8 +2450,8 @@ class ReleaseJourneyTest {
     private fun benchmarkHasSafeBounds(control: UiObject2): Boolean {
         benchmarkRefreshNavigationCache()
         val bounds = control.visibleBounds
-        val safeInset = referenceNavigationPixels(24)
-        val edgeRoom = referenceNavigationPixels(12)
+        val safeInset = 24
+        val edgeRoom = 12
         val viewport = android.graphics.Rect(safeInset, safeInset,
             device.displayWidth - safeInset, device.displayHeight - safeInset)
         var ancestor = control.parent
@@ -2676,7 +2663,7 @@ class ReleaseJourneyTest {
                 // An empty accessibility rectangle has no useful direction. UiAutomator
                 // also retains off-viewport bounds when clipping has no intersection.
                 val knownBounds = bounds?.takeIf { it.width() > 0 && it.height() > 0 }
-                val alignmentInset = referenceNavigationPixels(24)
+                val alignmentInset = 24
                 if (knownBounds != null) direction = when {
                     knownBounds.top < viewport.top + alignmentInset && knownBounds.bottom <= viewport.bottom - alignmentInset -> Direction.UP
                     knownBounds.bottom > viewport.bottom - alignmentInset && knownBounds.top >= viewport.top + alignmentInset -> Direction.DOWN
@@ -2692,7 +2679,7 @@ class ReleaseJourneyTest {
                 val lowY = viewport.top + viewport.height() * 85 / 100
                 val highY = viewport.top + viewport.height() * 15 / 100
                 // Once the target overlaps the viewport, align it instead of taking
-                // another full search stroke. Aim 24 reference pixels inside the viewport,
+                // another full search stroke. Aim 24 pixels inside the viewport,
                 // add the same room, and cap each adjustment at one fifth of it.
                 val fineLimit = viewport.height() / 5
                 // API 30 and modern accessibility can retain a positive rectangle just outside
@@ -2722,7 +2709,7 @@ class ReleaseJourneyTest {
                     ((direction == Direction.UP && knownBounds.top <= viewport.top) ||
                         (direction == Direction.DOWN && knownBounds.bottom >= viewport.bottom))
                 val stroke = if (edgeFragmentForTap) fineLimit
-                    else if (fine) (gap + alignmentInset).coerceIn(referenceNavigationPixels(48).coerceAtMost(fineLimit), fineLimit)
+                    else if (fine) (gap + alignmentInset).coerceIn(48.coerceAtMost(fineLimit), fineLimit)
                     else if (hold) viewport.height() / 2 else lowY - highY
                 val fromY = if (direction == Direction.DOWN) lowY else highY
                 val toY = fromY + if (direction == Direction.DOWN) -stroke else stroke

@@ -28,30 +28,6 @@ jobs:
       matrix: ${{ fromJSON(needs.profiles.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
-      - name: Verify native ARM64 software-emulation host
-        if: matrix.acceleration == 'software'
-        run: |
-          test "$(uname -s)" = Darwin
-          test "$(uname -m)" = arm64
-      - name: Set up Java for the ARM64 Android SDK
-        if: matrix.acceleration == 'software'
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          architecture: aarch64
-      - name: Set up Python for the ARM64 verification controller
-        if: matrix.acceleration == 'software'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Set up the ARM64 Android SDK
-        if: matrix.acceleration == 'software'
-        uses: android-actions/setup-android@v3
-        with:
-          # setup-android v3 defaults to the retired "tools" package. Native ARM64
-          # hosts need current adb only here; the profile step installs emulator/images.
-          packages: platform-tools
       - name: Set up Java for the pinned Pixel Fold SDK
         if: matrix.screen_profile == 'foldable'
         uses: actions/setup-java@v4
@@ -208,13 +184,6 @@ jobs:
           # This is evidence only; no startup wait, input retry, or boot-budget change.
           emulator-options: ${{ matrix.screen_profile == 'foldable' && '-gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot' || '-no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot' }}${{ matrix.page_size == 16384 && ' -logcat \*:i' || '' }}
           script: python3 scripts/verification/android.py run --profile "${{ matrix.id }}" --apk inputs/jarvis-os-v2-release-apk/${{ matrix.apk }}.apk --test-apk inputs/jarvis-verification-test-apk/app-release-androidTest.apk --previous-apk inputs/jarvis-previous-release/app-release.apk --previous-metadata inputs/jarvis-previous-release/previous-release.json --out verification-evidence --source-commit "${{ github.sha }}" --pr-head "${{ github.event.pull_request.head.sha }}" --allow-emulator-reset
-      - name: Verify release on a software-emulated ARM64 API 29 device
-        if: matrix.acceleration == 'software'
-        # Same required controller; startup additionally requires actual Android
-        # services and successful input within the profile's existing boot budget.
-        run: >-
-          python3 scripts/verification/software_emulator.py --profile "${{ matrix.id }}" --out verification-evidence --
-          python3 scripts/verification/android.py run --profile "${{ matrix.id }}" --apk inputs/jarvis-os-v2-release-apk/${{ matrix.apk }}.apk --test-apk inputs/jarvis-verification-test-apk/app-release-androidTest.apk --previous-apk inputs/jarvis-previous-release/app-release.apk --previous-metadata inputs/jarvis-previous-release/previous-release.json --out verification-evidence --source-commit "${{ github.sha }}" --pr-head "${{ github.event.pull_request.head.sha }}" --allow-emulator-reset
       - name: Stop the owned foldable X display and retain diagnostics
         if: always() && matrix.screen_profile == 'foldable'
         run: |
