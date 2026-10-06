@@ -14,13 +14,17 @@ class AndroidReliabilityReportStore(context: Context) : ReliabilityReportStore {
     private fun key(modelId: String, field: String) = "reliability_${modelId}_$field"
 
     override fun save(report: ModelReport, ranAtMs: Long) {
-        prefs.edit()
+        val editor = prefs.edit()
             .putInt(key(report.modelId, "percent"), report.percent.roundToInt())
             .putInt(key(report.modelId, "passed"), report.passed)
             .putInt(key(report.modelId, "total"), report.total)
             .putString(key(report.modelId, "summary"), report.renderSummary())
             .putLong(key(report.modelId, "ran_at"), ranAtMs)
-            .apply()
+            .putInt(key(report.modelId, "suite_version"), report.suiteVersion)
+        val fingerprint = report.modelFingerprint
+        if (fingerprint != null) editor.putString(key(report.modelId, "fingerprint"), fingerprint)
+        else editor.remove(key(report.modelId, "fingerprint"))
+        editor.apply()
     }
 
     override fun load(modelId: String): StoredReliabilityReport? {
@@ -31,7 +35,10 @@ class AndroidReliabilityReportStore(context: Context) : ReliabilityReportStore {
             passed = prefs.getInt(key(modelId, "passed"), 0),
             total = prefs.getInt(key(modelId, "total"), 0),
             summary = prefs.getString(key(modelId, "summary"), "") ?: "",
-            ranAtMs = prefs.getLong(key(modelId, "ran_at"), 0L)
+            ranAtMs = prefs.getLong(key(modelId, "ran_at"), 0L),
+            modelFingerprint = prefs.getString(key(modelId, "fingerprint"), null),
+            // Entries saved before version binding default to -1 and never match.
+            suiteVersion = prefs.getInt(key(modelId, "suite_version"), -1)
         )
     }
 
@@ -42,6 +49,8 @@ class AndroidReliabilityReportStore(context: Context) : ReliabilityReportStore {
             .remove(key(modelId, "total"))
             .remove(key(modelId, "summary"))
             .remove(key(modelId, "ran_at"))
+            .remove(key(modelId, "fingerprint"))
+            .remove(key(modelId, "suite_version"))
             .apply()
     }
 }

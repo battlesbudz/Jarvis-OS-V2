@@ -22,7 +22,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import com.battlesbudz.jarvis.v2.ai.*
+import com.battlesbudz.jarvis.v2.eval.InMemoryReliabilityReportStore
 import com.battlesbudz.jarvis.v2.eval.ReliabilityReportStore
+import com.battlesbudz.jarvis.v2.eval.ToolReliabilityFixtures
 
 /** Family first, then a bounded lazy list of model cards. Browsing never selects/downloads a model. */
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
@@ -37,7 +39,9 @@ internal fun ModelBrowser(
     selectionEnabled: Boolean = true,
     downloadingId: String? = null,
     onDownload: ((LocalModelSpec) -> Unit)? = null,
-    reliabilityStore: ReliabilityReportStore = InMemoryReliabilityReportStore()
+    reliabilityStore: ReliabilityReportStore = InMemoryReliabilityReportStore(),
+    /** Identity of each spec's installed model file; scores only show for a matching fingerprint. */
+    reliabilityFingerprint: (LocalModelSpec) -> String? = { null }
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var family by rememberSaveable { mutableStateOf<String?>(null) }
@@ -60,7 +64,8 @@ internal fun ModelBrowser(
         }
         BackHandler { goBack() }
         detailId?.let { id -> ModelCatalog.find(id)?.let { spec ->
-            ModelDetails(spec, phone, benchmarkStore, isInstalled(spec), reliabilityStore) { detailId = null }
+            ModelDetails(spec, phone, benchmarkStore, isInstalled(spec), reliabilityStore,
+                reliabilityFingerprint = reliabilityFingerprint) { detailId = null }
         } }
         warningId?.let { id -> ModelCatalog.find(id)?.let { spec ->
             AlertDialog(onDismissRequest = { warningId = null },
@@ -139,8 +144,12 @@ internal fun ModelBrowser(
                                     Text("Download: " + (spec.downloadBytes?.let(ModelGuidance::gb) ?: "Size unknown") +
                                         if (installed) " · Installed" else "",
                                         style = MaterialTheme.typography.bodySmall)
-                                    reliabilityStore.load(spec.id)?.let { stored ->
-                                        Text("Tool reliability: ${stored.percent}% (${stored.passed}/${stored.total})",
+                                    reliabilityStore.loadCurrent(
+                                        spec.id,
+                                        reliabilityFingerprint(spec),
+                                        ToolReliabilityFixtures.SUITE_VERSION
+                                    )?.let { stored ->
+                                        Text("Tool-call fixture agreement: ${stored.percent}% (${stored.passed}/${stored.total})",
                                             style = MaterialTheme.typography.bodySmall)
                                     }
                                     Text(fit.quickMemoryLabel,
@@ -227,6 +236,7 @@ internal fun ModelDetails(
     benchmarkStore: com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore,
     installed: Boolean,
     reliabilityStore: ReliabilityReportStore,
+    reliabilityFingerprint: (LocalModelSpec) -> String? = { null },
     onDismiss: () -> Unit
 ) {
     val fit = ModelGuidance.assess(spec, phone)
@@ -251,10 +261,18 @@ internal fun ModelDetails(
                     style = MaterialTheme.typography.bodyMedium)
                 Text("Tool calling: ${if (spec.supportsTools) "yes" else "no"}",
                     style = MaterialTheme.typography.bodyMedium)
-                val reliability = reliabilityStore.load(spec.id)
+                val reliability = reliabilityStore.loadCurrent(
+                    spec.id,
+                    reliabilityFingerprint(spec),
+                    ToolReliabilityFixtures.SUITE_VERSION
+                )
                 if (reliability != null) {
-                    Text("Tool reliability: ${reliability.percent}% (${reliability.passed}/${reliability.total})",
+                    Text("Tool-call fixture agreement: ${reliability.percent}% (${reliability.passed}/${reliability.total})",
                         style = MaterialTheme.typography.bodyMedium)
+                    Text("Exact agreement with the fixture set and tool schema. This does not prove " +
+                        "a requested phone action would succeed.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(reliability.summary, style = MaterialTheme.typography.bodySmall)
                 } else if (installed && spec.supportsTools) {
                     Text("Tool reliability: not yet measured.",

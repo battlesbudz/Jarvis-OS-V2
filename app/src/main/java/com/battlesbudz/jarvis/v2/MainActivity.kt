@@ -118,6 +118,7 @@ class MainActivity : ComponentActivity() {
                 voiceModelStore = runtime.ttsModels,
                 initialVoiceCalls = runtime.voiceCallStore.list(),
                 onRunModelSmokeTest = { modelSetup.test(it) },
+                onRunReliabilityCheck = modelSetup::runReliabilityCheck,
                 onVoiceTurn = { start, report, onTranscript, onFinished ->
                     com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
                     com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.report("Preparing microphone…")

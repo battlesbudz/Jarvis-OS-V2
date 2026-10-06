@@ -31,7 +31,7 @@ class LiteRtLmEngine(
     val visionEnabled: Boolean = false,
     val audioEnabled: Boolean = false,
     private val speculativeDecoding: Boolean? = null
-) : LocalModelEngine, Closeable {
+) : LocalModelEngine, Closeable, ToolCallEngine {
     private companion object { val initializationLock = Any() }
     private val modelSpec = ModelCatalog.resolve(modelId)
     @OptIn(ExperimentalApi::class)
@@ -101,7 +101,7 @@ class LiteRtLmEngine(
     }
 
     private var toolsEnabled = false
-    suspend fun setToolsEnabled(enabled: Boolean): Boolean {
+    override suspend fun setToolsEnabled(enabled: Boolean): Boolean {
         if (toolsEnabled == enabled) return false
         toolsEnabled = enabled
         resetConversation()
@@ -113,7 +113,7 @@ class LiteRtLmEngine(
     )
 
     @OptIn(ExperimentalApi::class)
-    suspend fun initialize() {
+    override suspend fun initialize() {
         // The SDK reads this process-global flag during initialize(), not in Engine's constructor.
         // Serialize ALL adapter initializations and restore the default even on unsupported files.
         val initializationBeganAt = System.nanoTime()
@@ -128,7 +128,7 @@ class LiteRtLmEngine(
         conversation = createConversation()
     }
 
-    suspend fun resetConversation() {
+    override suspend fun resetConversation() {
         nativeSession++
         nativeSubmissions = 0
         conversation?.close()

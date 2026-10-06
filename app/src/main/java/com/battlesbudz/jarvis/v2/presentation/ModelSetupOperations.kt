@@ -13,6 +13,8 @@ import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
 import com.battlesbudz.jarvis.v2.ai.ModelStore
 import com.battlesbudz.jarvis.v2.chat.AssistantText
+import com.battlesbudz.jarvis.v2.eval.ReliabilityReportStore
+import com.battlesbudz.jarvis.v2.eval.ToolReliabilityBenchmark
 import com.battlesbudz.jarvis.v2.voice.JarvisModelSetupWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -115,6 +117,55 @@ internal class ModelSetupOperations(
 
     fun cancelDownload() {
         WorkManager.getInstance(context).cancelUniqueWork(MODEL_SETUP_WORK_NAME)
+    }
+
+    /**
+     * User-triggered tool-call reliability check over [specs], routed through
+     * the same ownership path as the model test: exclusive admission (the
+     * session must not be busy and the model-operation gate must be free),
+     * the retained idle chat engine closed before the benchmark allocates its
+     * own native engine — a second native engine is never allocated over the
+     * live owner — model-file integrity verified before the engine loads, and
+     * the gate released afterwards. Scores are bound to the verified
+     * model-file identity and the suite version. Cancellation propagates; the
+     * engine is always closed and the gate always released.
+     */
+    fun runReliabilityCheck(
+        specs: List<LocalModelSpec>,
+        reportStore: ReliabilityReportStore,
+        onProgress: suspend (ToolReliabilityBenchmark.Progress) -> Unit,
+        onFinished: (kotlin.Result<ToolReliabilityBenchmark.Result>) -> Unit
+    ) {
+        scope.launch(Dispatchers.Default) {
+            val result = runCatching {
+                ToolReliabilityBenchmark(
+                    owner = object : ToolReliabilityBenchmark.ModelOwner {
+                        override fun tryBeginModel(spec: LocalModelSpec): Boolean {
+                            if (session.busy()) return false
+                            return store.tryBeginModelSelection(spec)
+                        }
+                        override fun endModelOperation() = store.endModelOperation()
+                        override fun closeIdleEngine() =
+                            session.closeConversation(resetCharacters = false)
+                        override fun verifyModelFile(spec: LocalModelSpec): Boolean =
+                            store.verifyIntegrity(spec)
+                        override fun modelFingerprint(spec: LocalModelSpec): String? =
+                            store.modelFingerprint(spec)
+                    },
+                    engineFactory = { spec ->
+                        LiteRtLmEngine(
+                            spec.id,
+                            store.fileFor(spec).path,
+                            context.cacheDir.path,
+                            useGpu = spec.recommendedGpu,
+                            tools = MobileActionToolDefinitions.all()
+                        )
+                    },
+                    reportStore = reportStore
+                ).runModels(specs, onProgress)
+            }
+            withContext(Dispatchers.Main) { onFinished(result) }
+        }
     }
 
     fun download(

@@ -11,6 +11,11 @@ package com.battlesbudz.jarvis.v2.eval
  * Fixtures cover every tool in MobileToolCatalog. They are model-input
  * prompts for measurement only: nothing here dispatches, approves, gates,
  * or executes anything.
+ *
+ * Scores measure exact agreement with these fixtures and the tool schema;
+ * they do not prove a requested phone action would succeed. Some fixtures
+ * are not ordinary-chat-admissible (observation tokens are stated, not
+ * observed) and fixed dates can go stale.
  */
 data class ReliabilityFixture(
     val id: String,
@@ -20,6 +25,13 @@ data class ReliabilityFixture(
 )
 
 object ToolReliabilityFixtures {
+    /**
+     * Bump whenever fixtures, the catalog's strict-decode boundary, or
+     * scoring semantics change. Saved scores pin this version; scores from an
+     * older version are never presented as current.
+     */
+    const val SUITE_VERSION = 1
+
     fun all(): List<ReliabilityFixture> = listOf(
         // read_battery (no parameters)
         ReliabilityFixture(

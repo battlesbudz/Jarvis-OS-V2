@@ -14,6 +14,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.work.WorkManager
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
 import com.battlesbudz.jarvis.v2.ai.ModelStore
+import com.battlesbudz.jarvis.v2.eval.ReliabilityReportStore
+import com.battlesbudz.jarvis.v2.eval.ToolReliabilityBenchmark
 import com.battlesbudz.jarvis.v2.presentation.MODEL_SETUP_WORK_NAME
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -27,6 +29,17 @@ internal data class ModelSetupActions(
     val download: (LocalModelSpec, (Long, Long) -> Unit, (String) -> Unit, (String) -> Unit) -> Unit,
     val cancelDownload: () -> Unit,
     val importModel: (Uri, LocalModelSpec, (String) -> Unit) -> Unit,
+    /**
+     * User-triggered tool-call reliability check, routed through the
+     * ModelSetupOperations ownership path (exclusive admission, idle chat
+     * engine closed first, model-file integrity verified, gate released).
+     */
+    val runReliabilityCheck: (
+        specs: List<LocalModelSpec>,
+        reportStore: ReliabilityReportStore,
+        onProgress: suspend (ToolReliabilityBenchmark.Progress) -> Unit,
+        onFinished: (kotlin.Result<ToolReliabilityBenchmark.Result>) -> Unit
+    ) -> Unit,
 )
 
 /** One owner for setup state shared by first-run setup and the in-call model settings. */
@@ -118,6 +131,13 @@ internal class ModelSetupState(
             smokeTestPassed = store.isUsable() && store.smokeTestPassed()
         }
     }
+
+    fun runReliabilityCheck(
+        specs: List<LocalModelSpec>,
+        reportStore: ReliabilityReportStore,
+        onProgress: suspend (ToolReliabilityBenchmark.Progress) -> Unit,
+        onFinished: (kotlin.Result<ToolReliabilityBenchmark.Result>) -> Unit
+    ) = actions().runReliabilityCheck(specs, reportStore, onProgress, onFinished)
 }
 
 @Composable

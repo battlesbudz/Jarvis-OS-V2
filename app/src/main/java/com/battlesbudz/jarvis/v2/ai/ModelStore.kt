@@ -83,6 +83,14 @@ class ModelStore @JvmOverloads constructor(
     fun isReady(): Boolean =
         hasModel(selectedModel())
 
+    /**
+     * Pinned SHA-256 of the installed model file, or null when the file was
+     * never integrity-verified. Saved reliability scores bind to this so a
+     * replaced weight file never keeps an old score presented as current.
+     */
+    fun modelFingerprint(spec: LocalModelSpec): String? =
+        preferences.getString(fingerprintKey(spec), null)
+
     fun isUsable(spec: LocalModelSpec = selectedModel()): Boolean {
         val file = fileFor(spec)
         val key = fingerprintKey(spec)
