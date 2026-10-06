@@ -94,9 +94,21 @@ class FileToolTaskStore(
             val version = root.getInt("schemaVersion")
             require(root.get("schemaVersion") is Int)
             if (version !in 1..3) throw ToolTaskStorageException(ToolTaskStorageFailure.UNSUPPORTED_SCHEMA, version)
-            if (version >= 2) root.getJSONArray("attempts").objects { a ->
-                require(setOf("authority", "provider", "toolSchemaVersion", "stepId", "groupId",
-                    "grantId", "approvalId", "actionRevision", "reconciled").all(a::has))
+            if (version >= 2) {
+                val authorityFields = setOf("authority", "provider", "toolSchemaVersion", "stepId", "groupId",
+                    "grantId", "approvalId", "actionRevision", "reconciled")
+                // The published prior-APK upgrade seed uses schema 2 but omits all later
+                // ownership fields, a shape older readers accepted. Terminal, unlinked receipts carry
+                // no dispatch authority. Never extend this migration to active or partially
+                // annotated records, where a missing field could erase an approval requirement.
+                val legacyReceipts = version == 2 && root.nullString("activeQuestionId") == null &&
+                    listOf("groups", "approvals", "grants", "events").all { root.getJSONArray(it).length() == 0 }
+                root.getJSONArray("attempts").objects { a ->
+                    val complete = authorityFields.all(a::has)
+                    val terminalLegacy = legacyReceipts && authorityFields.none(a::has) &&
+                        a.getString("state") in setOf("SUCCEEDED", "FAILED", "CANCELLED", "UNKNOWN_OUTCOME")
+                    require(complete || terminalLegacy)
+                }
             }
             if (version == 3) {
                 require(root.has("sourceAccess"))

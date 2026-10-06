@@ -20,3 +20,11 @@ permissions, denied/revoked other-source records, approvals, grants and receipts
 The schema-3 positive fixture also retains a genuine workflow, waiting occurrence,
 completed-step IDs, step results, resume time/path and workflow receipts. Native
 compatibility does not imply that this branch runs those workflows.
+
+`schema2-upgrade-terminal-receipt.json` reproduces the exact field shape written
+by Build 1086's `UpgradeFixtureTest.kt:74–80` during actual replacement-install
+verification (fixed synthetic timestamp). This legacy terminal-only schema-2
+packet intentionally omits the later optional authority/ownership fields and
+active-question key. It has no groups, approvals, grants or events. It is
+source-derived; unlike the six fixtures above, it is not an original codec-writer
+output. Active or partially annotated variants must be rejected without a write.

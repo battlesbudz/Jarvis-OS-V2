@@ -145,4 +145,52 @@ class ToolTaskVersionCompatibilityTest {
         assertNull(ledger.claim(running.attemptIds.single(), checkNotNull(ledger.get(running.attemptIds.single())).generation))
     }
 
+    @Test fun previousApkTerminalOnlySchema2ReceiptRemainsReadableAndNeverReplays() = withFile { file ->
+        val raw = fixture("schema2-upgrade-terminal-receipt.json")
+        file.writeText(raw)
+        val ledger = ToolTaskLedger(FileToolTaskStore(file)) { 1700000000100L }
+        val receipt = ledger.snapshot().single()
+        assertEquals(ToolTaskState.SUCCEEDED, receipt.state)
+        assertEquals(2L, receipt.generation)
+        assertEquals("Battery level is 73%.", receipt.result)
+        assertEquals(raw, file.readText())
+        assertEquals(listOf(receipt), ledger.recoverAfterRestart())
+        assertNull(ledger.claim(receipt.id, receipt.generation))
+        assertNull(ledger.transition(receipt.id, receipt.generation, ToolTaskState.RUNNING))
+        assertNull(ledger.revise(receipt.id, receipt.generation, ActionRequest("read_battery")))
+        var effects = 0
+        assertFalse(JournaledActionPipeline(ledger) { effects++; ExecutionResult(true, "must not replay") }
+            .executeAttempt(receipt).succeeded)
+        assertEquals(0, effects)
+        ledger.create(ActionRequest("read_battery"))
+        assertEquals(3, JSONObject(file.readText()).getInt("schemaVersion"))
+        assertEquals(receipt, FileToolTaskStore(file).read().first())
+    }
+
+    @Test fun legacyReceiptExceptionCannotDefaultActiveOrPartiallyAnnotatedAuthority() = withFile { file ->
+        val raw = fixture("schema2-upgrade-terminal-receipt.json")
+        for (state in ToolTaskState.entries.map { it.name }.filterNot { it in setOf("SUCCEEDED", "FAILED", "CANCELLED", "UNKNOWN_OUTCOME") }) {
+            val root = JSONObject(raw)
+            root.getJSONArray("attempts").getJSONObject(0).put("state", state)
+            assertProtected(file, root, ToolTaskStorageFailure.INVALID_CONTENT)
+        }
+        for (field in listOf("authority", "provider", "toolSchemaVersion", "stepId", "groupId", "grantId", "approvalId", "actionRevision", "reconciled")) {
+            val partial = JSONObject(raw)
+            partial.getJSONArray("attempts").getJSONObject(0).put(field, JSONObject.NULL)
+            assertProtected(file, partial, ToolTaskStorageFailure.INVALID_CONTENT)
+        }
+        for (collection in listOf("groups", "approvals", "grants", "events")) {
+            val linked = JSONObject(raw)
+            linked.getJSONArray(collection).put(JSONObject())
+            assertProtected(file, linked, ToolTaskStorageFailure.INVALID_CONTENT)
+        }
+        val future = JSONObject(raw)
+        future.getJSONArray("attempts").getJSONObject(0).put("futureApprovalContext", JSONObject())
+        assertProtected(file, future, ToolTaskStorageFailure.UNSUPPORTED_CONTENT)
+        val newer = JSONObject(raw).put("schemaVersion", 3)
+        assertProtected(file, newer, ToolTaskStorageFailure.INVALID_CONTENT)
+        val linked = JSONObject(raw).put("activeQuestionId", "unresolved-choice")
+        assertProtected(file, linked, ToolTaskStorageFailure.INVALID_CONTENT)
+    }
+
 }

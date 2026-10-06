@@ -2959,3 +2959,20 @@ pass release compilation/JVM/native checks, all 76 named Android journeys,
 upgrade/process/platform/layout phases on all five profiles, and the consolidated
 receipt before its APK is called verified. Physical audio, actual model tool
 selection, OEM accessibility and device performance remain unverified.
+
+Build 1092 (`f295e666`, tested merge `72ec83b1`) passed 1,377 release JVM tests
+across 207 suites, signed normal/compact builds and native/recorded-speech checks,
+but failed the actual 1086→1092 upgrade on all five profiles before main journeys.
+The preserved prior-APK seed is a terminal-only schema-2 receipt with all later
+optional authority fields absent. The new strict reader incorrectly rejected
+that existing supported legacy shape. Repair 1 permits only completely unannotated
+terminal receipts in schema 2 with no groups, approvals, grants, events or active
+question. Schema 3, active work and partially missing authority remain strict.
+The upgrade harness and every assertion remain unchanged. Two focused regressions
+pin read/no-replay/migration and unsafe look-alike rejection; fresh full CI is
+required. Failed evidence includes API30 artifact `11400344618` (ZIP SHA-256
+`7ac6b5d276c4924561ef726781d854caac4e9fa69beddbdc5fd53bd08bcfb16b`), Fold artifact
+`11400274972` (`a7f82fca0ca5db2d7a39a7ae0c7ab4de3dbb05ee1a0fe9e892e488284fccbddc`),
+and actual 16KB artifact `11401335891`
+(`4663ae1d3b22de1195d04021a6d602f630e2ebcf89b21caabdeec0afe6de3355`). No APK from
+this failed candidate is called verified or used as the new upgrade baseline.
