@@ -1548,13 +1548,12 @@ class ReleaseJourneyTest {
                         },
                         initialVoiceCalls = emptyList(), onRunModelSmokeTest = { done -> done("Ready-state fixture") },
                         onVoiceTurn = { _, _, _, done -> done("Voice is disabled in this route fixture.") },
-                        onWakeTest = { _, done -> done() }, onStopWakeTest = {},
                         onEndVoiceCall = { done -> ends.incrementAndGet(); done("") },
                         onResumeVoiceCall = { _, done -> done(null) }, onDeleteVoiceCall = {}, onRefreshVoiceCalls = { emptyList() },
                         onDownloadGemma = { _, _, _, done -> done("Downloads are disabled in this route fixture.") },
                         onCancelModelDownload = {},
                         onImportModel = { _, _, done -> done("Imports are disabled in this route fixture.") },
-                        onCopyDiagnostics = {}, onExportSpeechAudio = {},
+                        onCopyDiagnostics = {},
                     )
                 } }
             } }
@@ -1930,6 +1929,7 @@ class ReleaseJourneyTest {
                     phone = com.battlesbudz.jarvis.v2.ai.PhoneProfile("Release fixture", "Fixture", "Fixture",
                         12_000_000_000L, 8_000_000_000L, 20_000_000_000L, true),
                     selectedId = selectedId, isInstalled = { it.id == selectedId },
+                    benchmarkStore = AndroidPipelineBenchmarkStore(context),
                     onSelect = { choices.incrementAndGet(); null },
                     onDismiss = { dismissals.incrementAndGet() },
                     onDownload = { requested.set(it.id) })
@@ -3049,9 +3049,9 @@ class ReleaseJourneyTest {
     }
 
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-    @Test fun test47_audioInputChoiceAndDisplayCaptionTogglePersistWithoutLoadingModels() {
+    @Test fun test47_audioInputChoiceAndCaptionEnginePersistWithoutLoadingModels() {
         val originalMode = VoiceInputMode.selected(context)
-        val originalCaptions = VoiceInputMode.captions(context)
+        val originalEngine = VoiceInputMode.captionEngine(context)
         fun render() {
             activity.onActivity { host -> host.setContent {
                 MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
@@ -3064,21 +3064,21 @@ class ReleaseJourneyTest {
         }
         try {
             VoiceInputMode.select(context, VoiceInputMode.TRANSCRIBED_TEXT)
-            VoiceInputMode.captions(context, true)
+            VoiceInputMode.captionEngine(context, AsrEngine.MOONSHINE)
             render()
             find(By.text("Use Gemma audio understanding")).click()
             assertEquals(VoiceInputMode.GEMMA_AUDIO, VoiceInputMode.selected(context))
-            find(By.res("gemma_whisper_captions")).click()
-            assertFalse(VoiceInputMode.captions(context))
-            render()
-            assertFalse(find(By.res("gemma_whisper_captions")).isChecked)
-            assertNotNull(find(By.textContains("Whisper captions are display-only")))
+            assertNotNull(find(By.textContains("Captions are display-only")))
+            assertNotNull(find(By.text("Moonshine")))
             captureEvidence("gemma_audio_display_caption_settings")
             find(By.text("Use Speech recognition")).click()
             assertEquals(VoiceInputMode.TRANSCRIBED_TEXT, VoiceInputMode.selected(context))
+            assertEquals(AsrEngine.MOONSHINE, VoiceInputMode.captionEngine(context))
+            VoiceInputMode.captionEngine(context, AsrEngine.WHISPER)
+            assertEquals(AsrEngine.WHISPER, VoiceInputMode.captionEngine(context))
         } finally {
             VoiceInputMode.select(context, originalMode)
-            VoiceInputMode.captions(context, originalCaptions)
+            VoiceInputMode.captionEngine(context, originalEngine)
         }
     }
 
