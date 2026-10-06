@@ -1041,7 +1041,7 @@ class M3EcosystemTest {
         val connected = (flow.run("Stub", url, "good-token")
             as McpSetupFlow.FlowResult.Connected).status
         val mcp = McpRegistry(http, credentials)
-        val placed = mcp.add(connected.status)
+        val placed = mcp.add(connected)
         val provider = ProviderId.mcp(placed.config.id)
         val invoker = McpInvoker(mcp, http, credentials)
         val dispatcher = dispatcherFor(ProviderRegistry(), mcp, mapOf(provider to invoker))
@@ -1054,7 +1054,10 @@ class M3EcosystemTest {
         // The real ProviderDispatcher -> McpInvoker ->
         // McpProtocol.callToolRequest path: assert the exact nested
         // arguments on the wire.
-        val (callUrl, body) = capturedCall ?: fail("no tools/call post was captured")
+        // JUnit's fail() is Kotlin Unit, not Nothing: throw so the elvis
+        // branch keeps the Pair type for destructuring.
+        val (callUrl, body) = capturedCall
+            ?: throw AssertionError("no tools/call post was captured")
         assertEquals(url, callUrl)
         val params = JSONObject(body).getJSONObject("params")
         assertEquals("search", params.getString("name"))
