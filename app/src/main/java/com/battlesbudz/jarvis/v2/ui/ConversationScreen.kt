@@ -57,6 +57,11 @@ internal fun ConversationScreen(
     val sending by busy.collectAsState()
     val liveTranscript by VoiceSessionUi.liveTranscript.collectAsState()
     val armed by VoiceSessionUi.armed.collectAsState()
+    // The live session, not the armed flag or the call segment: the voice
+    // surface (and its End-call control) follows this. A farewell can drop
+    // the call segment and the armed flag while the session — wake listener,
+    // mic, foreground service — stays fully alive.
+    val sessionAlive by VoiceSessionUi.sessionAlive.collectAsState()
     val voiceState by callState.collectAsState()
     val taskJournal by (phoneTasks?.collectAsState() ?: remember { mutableStateOf<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>(null) })
     val taskError by (phoneTaskError?.collectAsState() ?: remember { mutableStateOf<String?>(null) })
@@ -87,12 +92,20 @@ internal fun ConversationScreen(
         voiceVisible = true
         if (!armed) callStartRequest++
     }
-    BackHandler(enabled = voiceVisible && !settings && !showHistory) { if (!armed) voiceVisible = false }
+    BackHandler(enabled = voiceVisible && !settings && !showHistory) {
+        // While the session is alive the voice surface IS the call: Back
+        // never dismisses it — the End-call control is the way out. Without
+        // a live session Back dismisses the pre-call surface as before.
+        if (!sessionAlive) voiceVisible = false
+    }
     LaunchedEffect(voiceState) {
         if (voiceState != VoiceSessionState.PASSIVE_LISTENING) hadCall = true
         else if (hadCall) {
             hadCall = false
-            voiceVisible = false
+            // A farewell returns the call segment to PASSIVE_LISTENING while
+            // the session stays alive: keep the surface (and its End-call
+            // control) until the session truly ends.
+            if (!sessionAlive) voiceVisible = false
         }
     }
     LaunchedEffect(resumedVoice) { if (resumedVoice) voiceVisible = true }
@@ -111,8 +124,17 @@ internal fun ConversationScreen(
     }
     LaunchedEffect(armed) {
         if (armed) voiceVisible = true
-        else if (wasArmed) voiceVisible = false
+        // An armed true->false transition is a call-segment change, not a
+        // session end: while the session is alive the surface stays so the
+        // End-call control remains reachable.
+        else if (wasArmed && !sessionAlive) voiceVisible = false
         wasArmed = armed
+    }
+    // The voice surface follows the live session. A farewell (or any armed
+    // true->false transition) must not hide it while the session is alive;
+    // only a true session end dismisses it.
+    LaunchedEffect(sessionAlive) {
+        if (sessionAlive) voiceVisible = true else voiceVisible = false
     }
     LaunchedEffect(voiceVisible) {
         if (voiceVisible) {

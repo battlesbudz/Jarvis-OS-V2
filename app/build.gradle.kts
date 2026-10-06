@@ -125,4 +125,9 @@ dependencies {
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+    // End-call visibility regression (round-two review): mounts the shipping
+    // ConversationScreen/VoiceCallScreen composables on the JVM.
+    testImplementation(platform("androidx.compose:compose-bom:2024.12.01"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("org.robolectric:robolectric:4.14.1")
 }
