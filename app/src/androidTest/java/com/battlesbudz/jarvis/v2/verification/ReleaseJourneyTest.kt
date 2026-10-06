@@ -1547,6 +1547,9 @@ class ReleaseJourneyTest {
                             combinedJournal.value = combinedLedger.journal()
                         },
                         initialVoiceCalls = emptyList(), onRunModelSmokeTest = { done -> done("Ready-state fixture") },
+                        onRunReliabilityCheck = { _, _, _, done ->
+                            done(kotlin.Result.failure(IllegalStateException("Reliability checks are disabled in this route fixture.")))
+                        },
                         onVoiceTurn = { _, _, _, done -> done("Voice is disabled in this route fixture.") },
                         onEndVoiceCall = { done -> ends.incrementAndGet(); done("") },
                         onResumeVoiceCall = { _, done -> done(null) }, onDeleteVoiceCall = {}, onRefreshVoiceCalls = { emptyList() },
