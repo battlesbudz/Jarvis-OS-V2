@@ -207,10 +207,10 @@ class AndroidMobileActionExecutor(
     /**
      * One background-launch decision for app and view intents. The four
      * outcomes are reported distinctly: local refusal (Jarvis never asked
-     * Android), submitted request (the assistant binding's own receipt),
-     * platform rejection (startActivity threw), and observed foreground
-     * transition (destination visibility confirmed — the only verified
-     * launch).
+     * Android), submitted/unverified request (handed to the platform, never
+     * promoted to success), platform rejection (startActivity threw), and
+     * observed foreground transition (destination visibility confirmed —
+     * the only verified launch).
      */
     private fun launchViaRoute(intent: Intent, label: String, observePackage: String?): ExecutionResult {
         val visible = canLaunchDirectly()
@@ -258,9 +258,12 @@ class AndroidMobileActionExecutor(
      * only reach this when the launch is eligible: the activity is visible
      * or a background-activity-start exemption applies. startActivity
      * returns void, so a clean return is only a submitted request — the
-     * destination must then be observed in the foreground before the launch
-     * counts as verified. Only the caught rejections are reported as
-     * platform rejections; silent background drops surface as
+     * destination must be observed in the foreground before the launch
+     * counts as verified, and this path performs no observation. The result
+     * is unknown completion: the journal records it as unconfirmed, the
+     * workflow engine stops without repeating it, and success-dependent
+     * steps never inherit its success. Only the caught rejections are
+     * reported as platform rejections; silent background drops surface as
      * submitted-but-unconfirmed, never as success.
      */
     private fun submitLaunch(
@@ -305,7 +308,9 @@ class AndroidMobileActionExecutor(
     ): ExecutionResult {
         val observePackage = intent.resolveActivity(context.packageManager)?.packageName
         val result = launchViaRoute(intent, label, observePackage)
-        // Preserve the caller's wording for the verified launch.
+        // Preserve the caller's wording only for a genuinely verified
+        // launch. A submitted-but-unconfirmed launch keeps its honest
+        // receipt so the turn never claims an opening it did not observe.
         return if (result.succeeded) ExecutionResult(true, "$openedText $label.") else result
     }
 
