@@ -44,6 +44,10 @@
 -keep class com.battlesbudz.jarvis.v2.actions.ActionValidation** { *; }
 # Release test DEX references the typed outcome enum as well as the existing constructor.
 -keep class com.battlesbudz.jarvis.v2.actions.ExecutionResult** { *; }
+# Release instrumentation calls the launch receipt constructors directly
+# (test07 asserts the submitted/unverified contract); without this, R8
+# removes the overloads and the tests fail with NoSuchMethodError.
+-keep class com.battlesbudz.jarvis.v2.actions.BackgroundLaunchKt { *; }
 # Release instrumentation reaches the multi-action contract through the shared test DEX.
 -keep class com.battlesbudz.jarvis.v2.actions.ActionTurnPlan** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.BatteryCondition** { *; }
@@ -289,6 +293,10 @@
 -keep class com.battlesbudz.jarvis.v2.actions.ScreenControlService { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ScreenControlService$Companion { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ScreenControlServiceKt { *; }
+# The release-test fake bridge computes the live content generation through
+# this facade (test56/57/59); without it R8 strips the class and the tests
+# fail with NoClassDefFoundError.
+-keep class com.battlesbudz.jarvis.v2.actions.ScreenControlKt { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ScreenControlSession { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ScreenNode { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ScreenObservation { *; }
