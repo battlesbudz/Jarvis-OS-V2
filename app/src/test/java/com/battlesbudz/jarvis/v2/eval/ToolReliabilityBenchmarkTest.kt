@@ -640,4 +640,158 @@ class ToolReliabilityBenchmarkTest {
         assertTrue(owner.teardownIssues[0].contains("close cancelled"))
         assertTrue(events.contains("end"))
     }
+
+    @Test fun primaryFailureCloseErrorAndThrowingDiagnosticsKeepWinnerIdentity() = runBlocking {
+        // Primary failure + close error + a diagnostics recorder that throws:
+        // the exact primary instance propagates, and the close error and the
+        // diagnostic error are attached to it as distinct suppressed errors —
+        // a throwing recorder never replaces the primary. The gate is still
+        // released and no further engine is allocated.
+        val events = mutableListOf<String>()
+        val primary = RuntimeException("init boom")
+        val closeError = RuntimeException("close boom")
+        val diagnostic = IllegalStateException("diagnostics boom")
+        val owner = object : FakeOwner(events = events) {
+            override fun reportTeardownIssue(message: String) {
+                throw diagnostic
+            }
+        }
+        val spec2 = LocalModelSpec("TEST-MODEL-2", "test-model-2.litertlm", recommendedGpu = false)
+        val engine = object : ToolCallEngine by RecordingEngine(events = events) {
+            override suspend fun initialize() {
+                throw primary
+            }
+            override fun close() {
+                events += "close"
+                throw closeError
+            }
+        }
+        var factoryCalls = 0
+        val benchmark = ToolReliabilityBenchmark(
+            owner = owner,
+            engineFactory = { factoryCalls++; engine },
+            reportStore = InMemoryReliabilityReportStore()
+        )
+        val caught: Throwable = try {
+            benchmark.runModels(listOf(spec, spec2))
+            fail("expected init failure")
+        } catch (e: RuntimeException) {
+            e
+        }
+        assertTrue("the exact primary instance must propagate", caught === primary)
+        assertEquals(2, caught.suppressed.size)
+        assertTrue("close error must be suppressed on the primary", caught.suppressed[0] === closeError)
+        assertTrue("diagnostic error must be suppressed on the primary", caught.suppressed[1] === diagnostic)
+        assertTrue(caught.suppressed[0] !== caught.suppressed[1])
+        assertEquals("no next native engine is allocated after the teardown failure", 1, factoryCalls)
+        assertTrue(events.contains("end"))
+        assertTrue(events.indexOf("close") < events.indexOf("end"))
+    }
+
+    @Test fun cancellationCloseErrorAndThrowingDiagnosticsKeepCancellation() = runBlocking {
+        // Cancellation is the primary failure: with a close error and a
+        // throwing diagnostics recorder, the cancellation still propagates —
+        // neither the close error nor the diagnostic error may replace it.
+        val events = mutableListOf<String>()
+        val closeError = RuntimeException("close boom")
+        val diagnostic = IllegalStateException("diagnostics boom")
+        val owner = object : FakeOwner(events = events) {
+            override fun reportTeardownIssue(message: String) {
+                throw diagnostic
+            }
+        }
+        val spec2 = LocalModelSpec("TEST-MODEL-2", "test-model-2.litertlm", recommendedGpu = false)
+        val engine = object : ToolCallEngine by RecordingEngine(generateDelayMs = 10_000L, events = events) {
+            override fun close() {
+                events += "close"
+                throw closeError
+            }
+        }
+        var factoryCalls = 0
+        val benchmark = ToolReliabilityBenchmark(
+            owner = owner,
+            engineFactory = { factoryCalls++; engine },
+            reportStore = InMemoryReliabilityReportStore()
+        )
+        val job = launch { benchmark.runModels(listOf(spec, spec2)) }
+        delay(100)
+        job.cancelAndJoin()
+        assertTrue("the primary cancellation must survive the close and diagnostic errors", job.isCancelled)
+        assertEquals(1, factoryCalls)
+        assertTrue(events.contains("end"))
+    }
+
+    @Test fun closeOnlyFailureWithThrowingDiagnosticsSurfacesTeardown() = runBlocking {
+        // No primary failure: the close error is thrown, and the diagnostic
+        // error from the throwing recorder is suppressed on it — never
+        // replacing it. The gate is released and the run stops before the
+        // next engine is allocated.
+        val events = mutableListOf<String>()
+        val closeError = RuntimeException("close boom")
+        val diagnostic = IllegalStateException("diagnostics boom")
+        val owner = object : FakeOwner(events = events) {
+            override fun reportTeardownIssue(message: String) {
+                throw diagnostic
+            }
+        }
+        val spec2 = LocalModelSpec("TEST-MODEL-2", "test-model-2.litertlm", recommendedGpu = false)
+        val engine = object : ToolCallEngine by RecordingEngine(events = events) {
+            override fun close() {
+                events += "close"
+                throw closeError
+            }
+        }
+        var factoryCalls = 0
+        val benchmark = ToolReliabilityBenchmark(
+            owner = owner,
+            engineFactory = { factoryCalls++; engine },
+            reportStore = InMemoryReliabilityReportStore()
+        )
+        val caught: Throwable = try {
+            benchmark.runModels(listOf(spec, spec2))
+            fail("expected the close failure to surface")
+        } catch (e: RuntimeException) {
+            e
+        }
+        assertTrue("the exact teardown error must be thrown when there is no primary", caught === closeError)
+        assertEquals(1, caught.suppressed.size)
+        assertTrue("the diagnostic error must be suppressed on the teardown error", caught.suppressed[0] === diagnostic)
+        assertEquals("no next native engine is allocated after the teardown failure", 1, factoryCalls)
+        assertTrue(events.contains("end"))
+        assertTrue(events.indexOf("close") < events.indexOf("end"))
+    }
+
+    @Test fun identicalPrimaryAndTeardownIsNotSelfSuppressed() = runBlocking {
+        // The close throws the identical Throwable instance as the primary
+        // failure: self-suppression is guarded, so the winner propagates
+        // unchanged instead of the guard itself throwing and masking it.
+        val events = mutableListOf<String>()
+        val shared = RuntimeException("shared boom")
+        val owner = FakeOwner(events = events)
+        val engine = object : ToolCallEngine by RecordingEngine(events = events) {
+            override suspend fun initialize() {
+                throw shared
+            }
+            override fun close() {
+                events += "close"
+                throw shared
+            }
+        }
+        val benchmark = ToolReliabilityBenchmark(
+            owner = owner,
+            engineFactory = { engine },
+            reportStore = InMemoryReliabilityReportStore()
+        )
+        val caught: Throwable = try {
+            benchmark.runModels(listOf(spec))
+            fail("expected the shared failure to surface")
+        } catch (e: RuntimeException) {
+            e
+        }
+        assertTrue("the exact winner instance must propagate", caught === shared)
+        assertEquals("identical primary and teardown must not be attached", 0, caught.suppressed.size)
+        assertEquals(1, owner.teardownIssues.size)
+        assertTrue(owner.teardownIssues[0].contains("shared boom"))
+        assertTrue(events.contains("end"))
+    }
 }
