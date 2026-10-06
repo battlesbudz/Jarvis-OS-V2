@@ -61,7 +61,9 @@ class ToolReliabilityBenchmark(
          * native engine is allocated; when a primary failure already exists
          * it propagates and the teardown error is attached to it as
          * suppressed instead of replacing it — even when either side is a
-         * cancellation.
+         * cancellation. The call is fully guarded: if recording itself throws,
+         * the recording error is attached to the winning exception as
+         * suppressed instead of replacing it.
          */
         fun reportTeardownIssue(message: String)
     }
@@ -142,20 +144,38 @@ class ToolReliabilityBenchmark(
                     try {
                         engine.close()
                     } catch (teardown: Throwable) {
-                        // One teardown catch: any primary failure is preserved
-                        // and the close error is attached to it as suppressed,
-                        // never replacing it — not even when the primary is a
-                        // cancellation or the teardown threw one. The close
-                        // error is thrown only when there is no primary, so a
-                        // teardown failure still stops the run before another
-                        // native engine is allocated. Reporting never replaces
-                        // the primary either. The gate below is still released.
-                        owner.reportTeardownIssue(
-                            "Tool reliability check: closing the ${spec.id} benchmark engine failed: ${teardown.message}"
-                        )
+                        // One teardown catch. The winner is chosen first: the
+                        // primary failure (or cancellation) outranks the close
+                        // error, and the close error is thrown only when there
+                        // is no primary, so a teardown failure still stops the
+                        // run before another native engine is allocated. A
+                        // distinct close error is attached to the primary as
+                        // suppressed; when close threw the identical Throwable
+                        // the identity is guarded, because self-suppression
+                        // would itself throw and mask the winner. The whole
+                        // diagnostic report call is guarded too: production
+                        // recording allocates JSON/preferences with no
+                        // no-throw guarantee, and a recording failure must
+                        // never replace the winner — any distinct recording
+                        // error is attached to the same winner as suppressed.
+                        // The thrown winner keeps its exact identity, so a
+                        // primary cancellation still cancels. The gate below is
+                        // still released.
                         val primary = primaryFailure
-                        if (primary == null) throw teardown
-                        primary.addSuppressed(teardown)
+                        val winner: Throwable = primary ?: teardown
+                        if (primary != null && teardown !== primary) {
+                            primary.addSuppressed(teardown)
+                        }
+                        try {
+                            owner.reportTeardownIssue(
+                                "Tool reliability check: closing the ${spec.id} benchmark engine failed: ${teardown.message}"
+                            )
+                        } catch (diagnostic: Throwable) {
+                            if (diagnostic !== winner) {
+                                winner.addSuppressed(diagnostic)
+                            }
+                        }
+                        throw winner
                     }
                 }
             } finally {
