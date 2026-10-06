@@ -22,6 +22,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import com.battlesbudz.jarvis.v2.ai.*
+import com.battlesbudz.jarvis.v2.eval.ReliabilityReportStore
 
 /** Family first, then a bounded lazy list of model cards. Browsing never selects/downloads a model. */
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
@@ -35,7 +36,8 @@ internal fun ModelBrowser(
     onDismiss: () -> Unit,
     selectionEnabled: Boolean = true,
     downloadingId: String? = null,
-    onDownload: ((LocalModelSpec) -> Unit)? = null
+    onDownload: ((LocalModelSpec) -> Unit)? = null,
+    reliabilityStore: ReliabilityReportStore = InMemoryReliabilityReportStore()
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var family by rememberSaveable { mutableStateOf<String?>(null) }
@@ -58,7 +60,7 @@ internal fun ModelBrowser(
         }
         BackHandler { goBack() }
         detailId?.let { id -> ModelCatalog.find(id)?.let { spec ->
-            ModelDetails(spec, phone, benchmarkStore, isInstalled(spec)) { detailId = null }
+            ModelDetails(spec, phone, benchmarkStore, isInstalled(spec), reliabilityStore) { detailId = null }
         } }
         warningId?.let { id -> ModelCatalog.find(id)?.let { spec ->
             AlertDialog(onDismissRequest = { warningId = null },
@@ -137,6 +139,10 @@ internal fun ModelBrowser(
                                     Text("Download: " + (spec.downloadBytes?.let(ModelGuidance::gb) ?: "Size unknown") +
                                         if (installed) " · Installed" else "",
                                         style = MaterialTheme.typography.bodySmall)
+                                    reliabilityStore.load(spec.id)?.let { stored ->
+                                        Text("Tool reliability: ${stored.percent}% (${stored.passed}/${stored.total})",
+                                            style = MaterialTheme.typography.bodySmall)
+                                    }
                                     Text(fit.quickMemoryLabel,
                                         color = if (fit.memoryWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                         style = MaterialTheme.typography.bodySmall)
@@ -220,6 +226,7 @@ internal fun ModelDetails(
     phone: PhoneProfile,
     benchmarkStore: com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore,
     installed: Boolean,
+    reliabilityStore: ReliabilityReportStore,
     onDismiss: () -> Unit
 ) {
     val fit = ModelGuidance.assess(spec, phone)
@@ -244,6 +251,16 @@ internal fun ModelDetails(
                     style = MaterialTheme.typography.bodyMedium)
                 Text("Tool calling: ${if (spec.supportsTools) "yes" else "no"}",
                     style = MaterialTheme.typography.bodyMedium)
+                val reliability = reliabilityStore.load(spec.id)
+                if (reliability != null) {
+                    Text("Tool reliability: ${reliability.percent}% (${reliability.passed}/${reliability.total})",
+                        style = MaterialTheme.typography.bodyMedium)
+                    Text(reliability.summary, style = MaterialTheme.typography.bodySmall)
+                } else if (installed && spec.supportsTools) {
+                    Text("Tool reliability: not yet measured.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 speed?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
         }

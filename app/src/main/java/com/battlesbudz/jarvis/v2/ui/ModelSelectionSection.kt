@@ -10,12 +10,22 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import com.battlesbudz.jarvis.v2.actions.MobileActionToolDefinitions
+import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
+import com.battlesbudz.jarvis.v2.ai.ModelCatalog
 import com.battlesbudz.jarvis.v2.ai.PhoneCheck
+import com.battlesbudz.jarvis.v2.eval.AndroidReliabilityReportStore
+import com.battlesbudz.jarvis.v2.eval.ToolReliabilityBenchmark
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 /** Model browsing/storage UI reused by first-run setup and conversation settings. */
 @Composable
@@ -34,6 +44,15 @@ internal fun ModelSelectionSection(
         var confirmingDelete by remember { mutableStateOf(false) }
         var detailsOpen by remember(state.selectedModel.id) { mutableStateOf(false) }
         var storageRevision by remember { mutableStateOf(0) }
+        val reliabilityStore = remember(phoneContext) { AndroidReliabilityReportStore(phoneContext) }
+        var reliabilityRunning by remember { mutableStateOf(false) }
+        var reliabilityProgress by remember { mutableStateOf<String?>(null) }
+        var reliabilityRevision by remember { mutableStateOf(0) }
+        val reliabilityScope = rememberCoroutineScope()
+        // reliabilityRevision is read to refresh scores after a run completes.
+        val toolCapableInstalled = remember(state.selectedModel, storageRevision, reliabilityRevision) {
+            ModelCatalog.all.filter { state.store.hasModel(it) && it.supportsTools }
+        }
         val canBrowse = !state.modelImportRunning
         val canManage = enabled && !state.smokeTestRunning && !state.modelImportRunning
         val storedBytes = remember(state.selectedModel, storageRevision, state.modelImportRunning, state.modelDownloadRunning) {
@@ -58,7 +77,8 @@ internal fun ModelSelectionSection(
             downloadingId = state.downloadingModelId,
             onDownload = state::download,
             onDismiss = { expanded = false },
-            onSelect = state::select
+            onSelect = state::select,
+            reliabilityStore = reliabilityStore
         )
         Text(if (state.store.hasModel(state.selectedModel)) "Installed" else "Not installed")
         if (state.downloadingModelId != null) {
@@ -120,7 +140,70 @@ internal fun ModelSelectionSection(
         androidx.compose.material3.TextButton(onClick = { detailsOpen = true }, modifier = Modifier.testTag("selected_model_details")) {
             Text("Model details")
         }
-        if (detailsOpen) ModelDetails(state.selectedModel, phone, benchmarkStore, state.store.hasModel(state.selectedModel)) { detailsOpen = false }
+        if (detailsOpen) ModelDetails(state.selectedModel, phone, benchmarkStore, state.store.hasModel(state.selectedModel), reliabilityStore) { detailsOpen = false }
+        // Tool-call reliability check (M8 early enabler). User-triggered only:
+        // never runs on launch. Scores persist per model in the reliability
+        // store and surface in the model browser cards and details above.
+        OutlinedButton(
+            enabled = canManage && !state.modelDownloadRunning && !reliabilityRunning && toolCapableInstalled.isNotEmpty(),
+            onClick = {
+                reliabilityRunning = true
+                reliabilityProgress = "Starting reliability check…"
+                reliabilityScope.launch {
+                    try {
+                        withContext(Dispatchers.Default) {
+                            val benchmark = ToolReliabilityBenchmark(
+                                tryBeginModel = state.store::tryBeginModelSelection,
+                                endModelOperation = state.store::endModelOperation,
+                                engineFactory = { spec ->
+                                    LiteRtLmEngine(
+                                        spec.id,
+                                        state.store.fileFor(spec).path,
+                                        phoneContext.cacheDir.path,
+                                        useGpu = spec.recommendedGpu,
+                                        tools = MobileActionToolDefinitions.all()
+                                    )
+                                },
+                                reportStore = reliabilityStore
+                            )
+                            val result = benchmark.runModels(toolCapableInstalled) { progress ->
+                                withContext(Dispatchers.Main) {
+                                    reliabilityProgress =
+                                        "Checking ${progress.modelId}… ${progress.finishedFixtures}/${progress.totalFixtures} prompts " +
+                                            "(model ${progress.finishedModels + 1} of ${progress.totalModels})"
+                                }
+                            }
+                            withContext(Dispatchers.Main) {
+                                reliabilityProgress = buildString {
+                                    append("Done: ")
+                                    append(result.reports.entries.joinToString { (_, report) ->
+                                        "${report.modelId} ${report.percent.roundToInt()}%"
+                                    })
+                                    if (result.skipped.isNotEmpty()) {
+                                        append(" · skipped (busy): ${result.skipped.joinToString()}")
+                                    }
+                                }
+                                reliabilityRevision++
+                            }
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            reliabilityProgress = "Reliability check failed: ${(e.message ?: "unknown error").take(120)}"
+                        }
+                    } finally {
+                        withContext(Dispatchers.Main) { reliabilityRunning = false }
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth().testTag("tool_reliability_run")
+        ) { Text(if (reliabilityRunning) "Running reliability check…" else "Run tool reliability check") }
+        reliabilityProgress?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall)
+        }
+        Text(
+            "Runs 33 prompts per installed tool-capable model and scores tool-call accuracy. Takes several minutes; keep the app open.",
+            style = MaterialTheme.typography.bodySmall
+        )
         state.selectionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
 }

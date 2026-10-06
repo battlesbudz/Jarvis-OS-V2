@@ -4,9 +4,11 @@ import com.battlesbudz.jarvis.v2.actions.ActionRequest
 import com.battlesbudz.jarvis.v2.actions.MobileToolCatalog
 import com.battlesbudz.jarvis.v2.actions.NativeActionDecoder
 import com.battlesbudz.jarvis.v2.ai.ToolCall
+import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -55,7 +57,7 @@ class ToolReliabilitySuiteTest {
         }
     }
 
-    @Test fun perfectRunScores100Percent() {
+    @Test fun perfectRunScores100Percent() = runBlocking {
         val report = ToolReliabilityScorer.scoreModel(
             "TESTMODEL", ToolReliabilityFixtures.all(), perfectRunner()
         )
@@ -64,7 +66,7 @@ class ToolReliabilitySuiteTest {
         assertTrue(report.failedCases.isEmpty())
     }
 
-    @Test fun wrongToolNameFailsTheCase() {
+    @Test fun wrongToolNameFailsTheCase() = runBlocking {
         val fixture = ToolReliabilityFixtures.all().first { it.id == "set_volume_1" }
         val runner = FakeToolCallRunner(
             mapOf(fixture.utterance to listOf(ToolCall("media_control", "{\"action\":\"pause\"}")))
@@ -76,7 +78,7 @@ class ToolReliabilitySuiteTest {
         assertFalse(result.passed)
     }
 
-    @Test fun outOfRangeArgumentFailsTheCase() {
+    @Test fun outOfRangeArgumentFailsTheCase() = runBlocking {
         val fixture = ToolReliabilityFixtures.all().first { it.id == "set_volume_1" }
         val runner = FakeToolCallRunner(
             mapOf(fixture.utterance to listOf(ToolCall("set_volume", "{\"level\":999}")))
@@ -88,7 +90,7 @@ class ToolReliabilitySuiteTest {
         assertFalse(result.passed)
     }
 
-    @Test fun extraCallFailsTheCase() {
+    @Test fun extraCallFailsTheCase() = runBlocking {
         val fixture = ToolReliabilityFixtures.all().first { it.id == "read_battery_1" }
         val call = canonicalCall(fixture)
         val runner = FakeToolCallRunner(mapOf(fixture.utterance to listOf(call, call)))
@@ -107,7 +109,7 @@ class ToolReliabilitySuiteTest {
         assertFalse(result.passed)
     }
 
-    @Test fun summaryRendersPercentagesAndFailures() {
+    @Test fun summaryRendersPercentagesAndFailures() = runBlocking {
         val fixtures = ToolReliabilityFixtures.all().filter { it.expectedTool == "read_battery" }
         val good = fixtures[0]
         val bad = fixtures[1]
@@ -121,5 +123,23 @@ class ToolReliabilitySuiteTest {
         assertTrue(summary.contains("TESTMODEL: 50% (1/2)"))
         assertTrue(summary.contains("read_battery: 50% (1/2)"))
         assertTrue(summary.contains("FAIL ${bad.id}"))
+    }
+
+    @Test fun inMemoryStoreRoundTripsReport() = runBlocking {
+        val store = InMemoryReliabilityReportStore()
+        assertNull(store.load("M"))
+        val report = ToolReliabilityScorer.scoreModel(
+            "M", ToolReliabilityFixtures.all(), perfectRunner()
+        )
+        store.save(report, ranAtMs = 12345L)
+        val stored = store.load("M")!!
+        assertEquals("M", stored.modelId)
+        assertEquals(100, stored.percent)
+        assertEquals(report.passed, stored.passed)
+        assertEquals(report.total, stored.total)
+        assertEquals(12345L, stored.ranAtMs)
+        assertTrue(stored.summary.contains("M: 100%"))
+        store.clear("M")
+        assertNull(store.load("M"))
     }
 }

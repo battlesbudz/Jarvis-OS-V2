@@ -88,7 +88,7 @@ object ToolReliabilityScorer {
         )
     }
 
-    fun scoreModel(
+    suspend fun scoreModel(
         modelId: String,
         fixtures: List<ReliabilityFixture>,
         runner: ToolCallRunner
