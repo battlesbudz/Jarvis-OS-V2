@@ -380,7 +380,12 @@ class AndroidMobileActionExecutor(
             DispatchGate.Allowed -> Unit
         }
         val liveWindowIdentity = screenBridge.currentWindowIdentity()
-        val node = when (val verified = screenSession.verifyTarget(targetId, token, liveWindowIdentity, requireNode)) {
+        // The approval binds to the observed content generation: the live
+        // generation must still match, or the window's content changed since
+        // the observation and the dispatch fails closed.
+        val node = when (val verified = screenSession.verifyTarget(
+            targetId, token, liveWindowIdentity, screenBridge.currentContentFingerprint(), requireNode
+        )) {
             is TargetVerification.Verified -> verified.node
             is TargetVerification.Rejected -> {
                 onDiagnostic("screen_$verb result=rejected reason=${verified.reason.take(80)}")
