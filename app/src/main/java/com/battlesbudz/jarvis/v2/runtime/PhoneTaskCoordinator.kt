@@ -219,7 +219,12 @@ internal class PhoneTaskCoordinator(
         val attempts = group.attemptIds.mapNotNull { id -> j.attempts.find { it.id == id } }
         val receipts = attempts.mapNotNull { a -> a.result?.let {
             ActionReceipt(a.request.name, it, a.state == ToolTaskState.SUCCEEDED) } }
-        val status = if (attempts.any { !it.state.isTerminalForUi() }) "Some steps are still waiting." else "Task finished."
+        val status = when {
+            attempts.any { !it.state.isTerminalForUi() } -> "Some steps are still waiting."
+            attempts.any { it.state == ToolTaskState.UNKNOWN_OUTCOME } ->
+                "Task finished, but some steps could not be confirmed."
+            else -> "Task finished."
+        }
         projectReply(group.conversationId, "phone-task:$groupId",
             (if (recovered) "Recovered phone task. " else "Phone task. ") + status, receipts)
         // M1d: one addressable task-status projection feeds chat, the panel and
