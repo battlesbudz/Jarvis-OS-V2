@@ -4,6 +4,7 @@ import com.battlesbudz.jarvis.v2.ai.GenerationResult
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
 import com.battlesbudz.jarvis.v2.ai.ToolCall
 import com.battlesbudz.jarvis.v2.ai.ToolCallEngine
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -14,6 +15,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import kotlin.coroutines.cancellation.CancellationException
 
 class ToolReliabilityBenchmarkTest {
 
@@ -24,27 +26,31 @@ class ToolReliabilityBenchmarkTest {
     )
 
     /** Owner-path fake mirroring the ModelSetupOperations ownership contract. */
-    private class FakeOwner(
+    private open class FakeOwner(
         var busy: Boolean = false,
         var integrityOk: Boolean = true,
         var fingerprint: String? = "fingerprint",
-        val events: MutableList<String> = mutableListOf()
+        val events: MutableList<String> = mutableListOf(),
+        val teardownIssues: MutableList<String> = mutableListOf()
     ) : ToolReliabilityBenchmark.ModelOwner {
-        override fun tryBeginModel(spec: LocalModelSpec): Boolean {
+        override open fun tryBeginModel(spec: LocalModelSpec): Boolean {
             events += "tryBegin"
             return !busy
         }
         override fun endModelOperation() {
             events += "end"
         }
-        override fun closeIdleEngine() {
+        override open fun closeIdleEngine() {
             events += "closeIdle"
         }
-        override fun verifyModelFile(spec: LocalModelSpec): Boolean {
+        override open fun verifyModelFile(spec: LocalModelSpec): Boolean {
             events += "verify"
             return integrityOk
         }
         override fun modelFingerprint(spec: LocalModelSpec): String? = fingerprint
+        override fun reportTeardownIssue(message: String) {
+            teardownIssues += message
+        }
     }
 
     /** Engine fake that records conversation history to detect leakage. */
@@ -52,6 +58,7 @@ class ToolReliabilityBenchmarkTest {
         private val script: Map<String, List<ToolCall>> = emptyMap(),
         private val failAtGenerate: Int = -1,
         private val failOnInitialize: Boolean = false,
+        private val failOnClose: Boolean = false,
         private val generateDelayMs: Long = 0L,
         private val events: MutableList<String> = mutableListOf()
     ) : ToolCallEngine {
@@ -94,6 +101,7 @@ class ToolReliabilityBenchmarkTest {
         override fun close() {
             events += "close"
             closes++
+            if (failOnClose) throw RuntimeException("close boom")
         }
     }
 
@@ -303,5 +311,157 @@ class ToolReliabilityBenchmarkTest {
         val legacy = ToolReliabilityScorer.scoreModel("L", ToolReliabilityFixtures.all(), FakeToolCallRunner())
         store.save(legacy, ranAtMs = 1L)
         assertNull(store.loadCurrent("L", "fp-1", version))
+    }
+
+    @Test fun admissionAcquiresGateBeforeConsultingBusy() {
+        // Regression for the admission race: the gate must be acquired BEFORE
+        // the session-busy state is consulted, so the two cannot interleave on
+        // Dispatchers.Default and the check can never close the idle engine
+        // out from under a session that became busy between check and acquire.
+        val order = mutableListOf<String>()
+        val admitted = admitReliabilityCheck(
+            acquireGate = { order += "acquire"; true },
+            releaseGate = { order += "release" },
+            isBusy = { order += "busy"; false }
+        )
+        assertTrue(admitted)
+        assertEquals(listOf("acquire", "busy"), order)
+    }
+
+    @Test fun admissionReleasesGateWhenSessionBusy() {
+        val order = mutableListOf<String>()
+        val admitted = admitReliabilityCheck(
+            acquireGate = { order += "acquire"; true },
+            releaseGate = { order += "release" },
+            isBusy = { order += "busy"; true }
+        )
+        assertTrue(!admitted)
+        assertEquals(listOf("acquire", "busy", "release"), order)
+    }
+
+    @Test fun admissionSkipsBusyCheckWhenGateUnavailable() {
+        var busyConsulted = false
+        val admitted = admitReliabilityCheck(
+            acquireGate = { false },
+            releaseGate = { fail("gate was never acquired") },
+            isBusy = { busyConsulted = true; false }
+        )
+        assertTrue(!admitted)
+        assertTrue(!busyConsulted)
+    }
+
+    @Test fun idleRecheckAbortsWhenSessionBecameBusy() {
+        try {
+            checkIdleBeforeClose { true }
+            fail("expected abort when the session became busy after admission")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message!!.contains("became busy"))
+        }
+        // Idle still passes silently.
+        checkIdleBeforeClose { false }
+    }
+
+    @Test fun busyAfterAdmissionAbortsBeforeEngineClose() = runBlocking {
+        // The session became busy between admission and the idle-engine close:
+        // the check must abort instead of tearing down the live engine.
+        val events = mutableListOf<String>()
+        val owner = object : FakeOwner(events = events) {
+            override fun tryBeginModel(spec: LocalModelSpec): Boolean {
+                events += "tryBegin"
+                return true
+            }
+            override fun closeIdleEngine() {
+                events += "closeIdle"
+                checkIdleBeforeClose { true } // session went busy after admission
+            }
+        }
+        var factoryCalls = 0
+        val benchmark = ToolReliabilityBenchmark(
+            owner = owner,
+            engineFactory = { spec -> factoryCalls++; error("no engine") },
+            reportStore = InMemoryReliabilityReportStore()
+        )
+        try {
+            benchmark.runModels(listOf(spec))
+            fail("expected abort")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message!!.contains("became busy"))
+        }
+        assertEquals(0, factoryCalls)
+        assertEquals(listOf("tryBegin", "closeIdle", "end"), events)
+    }
+
+    @Test fun cancellationDuringVerificationNeverAllocatesEngine() = runBlocking {
+        // Regression: a cancellation landing during the synchronous model-file
+        // verification must not be followed by native engine allocation/init.
+        val events = mutableListOf<String>()
+        var jobToCancel: Job? = null
+        val owner = object : FakeOwner(events = events) {
+            override fun verifyModelFile(spec: LocalModelSpec): Boolean {
+                events += "verify"
+                jobToCancel?.cancel()
+                return true
+            }
+        }
+        var factoryCalls = 0
+        val benchmark = ToolReliabilityBenchmark(
+            owner = owner,
+            engineFactory = { spec -> factoryCalls++; error("no engine") },
+            reportStore = InMemoryReliabilityReportStore()
+        )
+        val job = launch { benchmark.runModels(listOf(spec)) }
+        jobToCancel = job
+        try {
+            job.join()
+            fail("expected cancellation")
+        } catch (e: CancellationException) {
+            // expected: the post-verification ensureActive() fired
+        }
+        assertEquals(0, factoryCalls)
+        assertEquals(listOf("tryBegin", "closeIdle", "verify", "end"), events)
+    }
+
+    @Test fun engineCloseFailureIsReportedAndGateStillReleased() = runBlocking {
+        // A close failure is non-fatal to the check result: the measured
+        // report still stands, the failure is reported to diagnostics, and
+        // the gate is still released.
+        val store = InMemoryReliabilityReportStore()
+        val events = mutableListOf<String>()
+        val owner = FakeOwner(events = events)
+        val engine = RecordingEngine(failOnClose = true, events = events)
+        val benchmark = ToolReliabilityBenchmark(
+            owner = owner,
+            engineFactory = { engine },
+            reportStore = store
+        )
+        val result = benchmark.runModels(listOf(spec))
+        assertEquals(1, result.reports.size)
+        assertNotNull(store.load(spec.id))
+        assertEquals(1, owner.teardownIssues.size)
+        assertTrue(owner.teardownIssues.single().contains("TEST-MODEL"))
+        assertTrue(events.contains("end"))
+        assertTrue(events.indexOf("close") < events.indexOf("end"))
+    }
+
+    @Test fun engineCloseFailureDoesNotMaskOriginalFailure() = runBlocking {
+        // Init fails AND close fails: the original failure propagates, the
+        // close failure is reported, and the gate is still released.
+        val events = mutableListOf<String>()
+        val owner = FakeOwner(events = events)
+        val engine = RecordingEngine(failOnInitialize = true, failOnClose = true, events = events)
+        val benchmark = ToolReliabilityBenchmark(
+            owner = owner,
+            engineFactory = { engine },
+            reportStore = InMemoryReliabilityReportStore()
+        )
+        try {
+            benchmark.runModels(listOf(spec))
+            fail("expected init failure")
+        } catch (e: RuntimeException) {
+            assertEquals("init boom", e.message)
+        }
+        assertEquals(1, owner.teardownIssues.size)
+        assertTrue(owner.teardownIssues.single().contains("close boom"))
+        assertTrue(events.contains("end"))
     }
 }

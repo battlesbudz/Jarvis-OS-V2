@@ -3,6 +3,8 @@ package com.battlesbudz.jarvis.v2.eval
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
 import com.battlesbudz.jarvis.v2.ai.ToolCall
 import com.battlesbudz.jarvis.v2.ai.ToolCallEngine
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 
 /**
  * On-device driver for the tool-call reliability suite (M8 early enabler).
@@ -51,6 +53,12 @@ class ToolReliabilityBenchmark(
         fun verifyModelFile(spec: LocalModelSpec): Boolean
         /** Identity of the actual installed model file, used to bind saved scores; null when unknown. */
         fun modelFingerprint(spec: LocalModelSpec): String?
+        /**
+         * Records a non-fatal teardown problem (for example an engine close
+         * failure) to diagnostics. Called from cleanup paths where throwing
+         * would discard an already-computed result or break gate release.
+         */
+        fun reportTeardownIssue(message: String)
     }
 
     data class Progress(
@@ -85,6 +93,10 @@ class ToolReliabilityBenchmark(
                 check(owner.verifyModelFile(spec)) {
                     "The ${spec.id} model file changed or failed integrity verification. Re-import it."
                 }
+                // Verification is synchronous and slow (a multi-GB hash); a
+                // cancellation that landed during it must never be followed
+                // by native allocation or initialization.
+                coroutineContext.ensureActive()
                 val engine = engineFactory(spec)
                 try {
                     engine.initialize()
@@ -98,7 +110,21 @@ class ToolReliabilityBenchmark(
                     }
                     reports[spec.id] = report
                 } finally {
-                    runCatching { engine.close() }
+                    try {
+                        engine.close()
+                    } catch (cancelled: CancellationException) {
+                        // Never swallow cancellation from teardown.
+                        throw cancelled
+                    } catch (error: Throwable) {
+                        // A close failure is non-fatal to the check result:
+                        // the score (or failure) already stands on its own
+                        // and the gate below is still released. It must be
+                        // visible in diagnostics, never silently swallowed —
+                        // a failed close can mean leaked native resources.
+                        owner.reportTeardownIssue(
+                            "Tool reliability check: closing the ${spec.id} benchmark engine failed: ${error.message}"
+                        )
+                    }
                 }
             } finally {
                 owner.endModelOperation()
@@ -131,5 +157,40 @@ class ToolReliabilityBenchmark(
         )
         reportStore.save(report)
         return report
+    }
+}
+
+/**
+ * Atomic admission for the reliability check.
+ *
+ * The gate MUST be acquired before the session-busy state is consulted:
+ * checking busy first and acquiring second leaves a race on
+ * Dispatchers.Default where the session becomes busy between the check and
+ * the acquisition, and the check would then close the idle engine out from
+ * under a live session. Holding the gate while checking makes
+ * check-and-acquire atomic with respect to every other gate holder. The gate
+ * is released when the session is busy.
+ */
+internal fun admitReliabilityCheck(
+    acquireGate: () -> Boolean,
+    releaseGate: () -> Unit,
+    isBusy: () -> Boolean
+): Boolean {
+    if (!acquireGate()) return false
+    if (isBusy()) {
+        releaseGate()
+        return false
+    }
+    return true
+}
+
+/**
+ * Aborts the check when the session became busy between admission and the
+ * idle-engine close. Closing the conversation under a live session would tear
+ * down its engine mid-turn; failing loudly here is always safer.
+ */
+internal fun checkIdleBeforeClose(isBusy: () -> Boolean) {
+    check(!isBusy()) {
+        "The Jarvis session became busy after the reliability check was admitted. Aborting the check."
     }
 }

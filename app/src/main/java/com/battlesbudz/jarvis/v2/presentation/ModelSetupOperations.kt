@@ -15,6 +15,8 @@ import com.battlesbudz.jarvis.v2.ai.ModelStore
 import com.battlesbudz.jarvis.v2.chat.AssistantText
 import com.battlesbudz.jarvis.v2.eval.ReliabilityReportStore
 import com.battlesbudz.jarvis.v2.eval.ToolReliabilityBenchmark
+import com.battlesbudz.jarvis.v2.eval.admitReliabilityCheck
+import com.battlesbudz.jarvis.v2.eval.checkIdleBeforeClose
 import com.battlesbudz.jarvis.v2.voice.JarvisModelSetupWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -140,17 +142,23 @@ internal class ModelSetupOperations(
             val result = runCatching {
                 ToolReliabilityBenchmark(
                     owner = object : ToolReliabilityBenchmark.ModelOwner {
-                        override fun tryBeginModel(spec: LocalModelSpec): Boolean {
-                            if (session.busy()) return false
-                            return store.tryBeginModelSelection(spec)
-                        }
+                        override fun tryBeginModel(spec: LocalModelSpec): Boolean =
+                            admitReliabilityCheck(
+                                acquireGate = { store.tryBeginModelSelection(spec) },
+                                releaseGate = { store.endModelOperation() },
+                                isBusy = { session.busy() }
+                            )
                         override fun endModelOperation() = store.endModelOperation()
-                        override fun closeIdleEngine() =
+                        override fun closeIdleEngine() {
+                            checkIdleBeforeClose { session.busy() }
                             session.closeConversation(resetCharacters = false)
+                        }
                         override fun verifyModelFile(spec: LocalModelSpec): Boolean =
                             store.verifyIntegrity(spec)
                         override fun modelFingerprint(spec: LocalModelSpec): String? =
                             store.modelFingerprint(spec)
+                        override fun reportTeardownIssue(message: String) =
+                            session.record(message)
                     },
                     engineFactory = { spec ->
                         LiteRtLmEngine(
