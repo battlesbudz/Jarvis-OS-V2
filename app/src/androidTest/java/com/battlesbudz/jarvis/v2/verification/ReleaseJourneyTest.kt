@@ -2363,7 +2363,7 @@ class ReleaseJourneyTest {
             assertEquals(context.getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY), outcome.receipts.last().result.batteryPercent)
             assertTrue("Background app command must really open Settings without notification interaction",
                 device.wait(Until.hasObject(By.pkg("com.android.settings")), 10_000))
-            assertTrue(diagnostics.any { "route=selected_assistant visible=false selected=true" in it })
+            assertTrue(diagnostics.any { "route=selected_assistant visible=false binding=true" in it })
             captureEvidence("background_assistant_first_launch")
             // A second command while Jarvis is still hidden must not fall back to a tap.
             device.pressHome()
