@@ -19,7 +19,12 @@ import com.battlesbudz.jarvis.v2.ai.PhoneCheck
 
 /** Model browsing/storage UI reused by first-run setup and conversation settings. */
 @Composable
-internal fun ModelSelectionSection(state: ModelSetupState, enabled: Boolean, onOpenMemory: () -> Unit) {
+internal fun ModelSelectionSection(
+    state: ModelSetupState,
+    enabled: Boolean,
+    benchmarkStore: com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore,
+    onOpenMemory: () -> Unit
+) {
     val phoneContext = LocalContext.current
     val uriHandler = LocalUriHandler.current
     var phone by remember { mutableStateOf(PhoneCheck.read(phoneContext)) }
@@ -48,6 +53,7 @@ internal fun ModelSelectionSection(state: ModelSetupState, enabled: Boolean, onO
         if (expanded && canBrowse) ModelBrowser(
             phone = phone, selectedId = state.selectedModel.id,
             isInstalled = { state.store.hasModel(it) },
+            benchmarkStore = benchmarkStore,
             selectionEnabled = canManage,
             downloadingId = state.downloadingModelId,
             onDownload = state::download,
@@ -114,7 +120,7 @@ internal fun ModelSelectionSection(state: ModelSetupState, enabled: Boolean, onO
         androidx.compose.material3.TextButton(onClick = { detailsOpen = true }, modifier = Modifier.testTag("selected_model_details")) {
             Text("Model details")
         }
-        if (detailsOpen) ModelDetails(state.selectedModel, phone) { detailsOpen = false }
+        if (detailsOpen) ModelDetails(state.selectedModel, phone, benchmarkStore, state.store.hasModel(state.selectedModel)) { detailsOpen = false }
         state.selectionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
 }

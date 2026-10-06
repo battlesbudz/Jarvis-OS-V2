@@ -30,18 +30,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 
-@Composable
-internal fun PipelineBenchmarkCard(store: AndroidPipelineBenchmarkStore, enabled: Boolean) {
-    val samples by store.samples.collectAsState()
-    var open by remember { mutableStateOf(false) }
-    TextButton(onClick = { open = true }, modifier = Modifier.testTag("pipeline_benchmark_open")) {
-        Text("Pipeline benchmarks · ${samples.size} retained attempts")
-    }
-    if (open) Dialog(onDismissRequest = { open = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize()) { PipelineBenchmarkScreen(store, onClose = { open = false }, resetEnabled = enabled) }
-    }
-}
-
 /** Metrics are redacted; entering a reference explicitly scores the original ASR output only. */
 @Composable
 @OptIn(ExperimentalComposeUiApi::class)

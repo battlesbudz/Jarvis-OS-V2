@@ -18,14 +18,12 @@ internal fun WithPipelineDiagnostics(
     val runtime = remember(context) { JarvisRuntime.get(context) }
     val callEvidence = remember(runtime) {
         CallEvidenceActions(
-            armAudio = LiveCallAudioEvidence::arm,
-            clearAudio = LiveCallAudioEvidence::clear,
             snapshot = {
                 val audio = LiveCallAudioEvidence.snapshot()
                 CallEvidenceSnapshot(
-                    report = "Jarvis live call echo test\n" +
-                        "scope=retained_call_diagnostics microphoneRecording=${audio != null} acousticCancellation=not_measured\n" +
-                        "Save one ZIP after each call test, before starting the next call.\n\n" +
+                    report = "Jarvis live call diagnostics\n" +
+                        "scope=whole_call_audio_diagnostics microphoneRecording=${audio != null} acousticCancellation=not_measured\n" +
+                        "Audio capture is always on; the ZIP holds the whole call's turns.\n\n" +
                         runtime.diagnosticRecorder.snapshot() + "\n\n" + MicrophoneHandoff.diagnostics(),
                     audio = audio,
                 )

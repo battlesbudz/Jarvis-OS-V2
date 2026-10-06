@@ -18,7 +18,6 @@ import com.battlesbudz.jarvis.v2.voice.AndroidAudioInput
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Job
 
 class MainActivity : ComponentActivity() {
 
@@ -33,8 +32,7 @@ class MainActivity : ComponentActivity() {
                 override fun busy(): Boolean =
                     runtime.chatBusy.value || runtime.voiceSessionArmed ||
                         runtime.voiceSessionController.currentCallId() != null ||
-                        runtime.voiceTurnJob?.isCompleted == false || ConversationWork.activeJobs.get() != 0 ||
-                        wakeTestJob?.isActive == true
+                        runtime.voiceTurnJob?.isCompleted == false || ConversationWork.activeJobs.get() != 0
 
                 override fun closeConversation(resetCharacters: Boolean) {
                     runtime.conversationEngine?.close()
@@ -48,23 +46,6 @@ class MainActivity : ComponentActivity() {
         )
     }
     private var notificationPermissionAsked = false
-    private var pendingSpeechAudio: ByteArray? = null
-    private val speechAudioExport = registerForActivityResult(ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
-        val bytes = pendingSpeechAudio
-        pendingSpeechAudio = null
-        if (uri != null && bytes != null) lifecycleScope.launch {
-            try {
-                withContext(Dispatchers.IO) {
-                    val stream = contentResolver.openOutputStream(uri) ?: error("Could not open destination")
-                    stream.use { it.write(bytes) }
-                }
-                android.widget.Toast.makeText(this@MainActivity, "Reply audio saved", android.widget.Toast.LENGTH_SHORT).show()
-            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (error: Exception) {
-                android.widget.Toast.makeText(this@MainActivity, "Could not save reply audio: ${error.message}", android.widget.Toast.LENGTH_LONG).show()
-            }
-        }
-    }
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     private val voiceCallResumer by lazy {
@@ -145,8 +126,6 @@ class MainActivity : ComponentActivity() {
                     runtime.sessionReport = report
                     runVoiceTurn(start, report, onTranscript, onFinished)
                 },
-                onWakeTest = { report, finished -> runWakeTest(report, finished) },
-                onStopWakeTest = { wakeTestJob?.cancel() },
                 onEndVoiceCall = { report -> endVoiceCall(report) },
                 onResumeVoiceCall = { call, onComplete ->
                     lifecycleScope.launch {
@@ -180,7 +159,6 @@ class MainActivity : ComponentActivity() {
                 onCancelModelDownload = modelSetup::cancelDownload,
                 onImportModel = modelSetup::importModel,
                 onCopyDiagnostics = { _ -> copyDiagnostics() },
-                onExportSpeechAudio = { exportSpeechAudio() },
             )
         }
     }
@@ -222,80 +200,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private var wakeTestJob: Job? = null
-
-    private fun runWakeTest(report: (String) -> Unit, finished: () -> Unit) {
-        if (wakeTestJob?.isActive == true || runtime.voiceSessionArmed || !runtime.modelStore.tryBeginModelOperation()) {
-            report("Stop the current session or model operation before testing the wake word.")
-            finished()
-            return
-        }
-        startVoiceDiagnostics("microWakeWord microphone test")
-        wakeTestJob = lifecycleScope.launch(Dispatchers.Default) {
-            fun status(message: String) { runtime.mainHandler.post { report(message) } }
-            val input = AndroidAudioInput(this,
-                audioManager = getSystemService(android.media.AudioManager::class.java),
-                onWaiting = { status("Wake test paused — another app is using the microphone.") })
-            try {
-                val directory = com.battlesbudz.jarvis.v2.voice.WakeWordModelStore(applicationContext).ensureReady(::status)
-                val detected = kotlinx.coroutines.withTimeoutOrNull(30_000) {
-                    com.battlesbudz.jarvis.v2.voice.PassiveWakeListener(directory,
-                        log = { runtime.diagnosticRecorder.record("Wake test: $it") },
-                        onReady = { status("Say Hey Jarvis — testing microphone and wake model only.") },
-                        onLevel = { rms, score -> status("Microphone level: $rms · Wake score: ${"%.3f".format(java.util.Locale.US, score)} / 0.97") }
-                    ).use { wake -> input.start(); wake.awaitWake(input) }
-                    true
-                } == true
-                if (detected) {
-                    runtime.diagnosticRecorder.recordImportant("Wake test passed: Hey Jarvis matched without ASR or Gemma.")
-                    status("Hey Jarvis detected! Wake test passed.")
-                    com.battlesbudz.jarvis.v2.voice.VoiceCues.play(
-                        com.battlesbudz.jarvis.v2.voice.VoiceCues.Cue.COMMAND_READY,
-                        log = { runtime.diagnosticRecorder.recordImportant(it) })
-                } else {
-                    runtime.diagnosticRecorder.recordImportant("Wake test ended: no match in 30 seconds.")
-                    status("No wake detected in 30 seconds. Copy diagnostics to share this test.")
-                }
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                runtime.diagnosticRecorder.recordImportant("Wake test stopped.")
-                status("Wake test stopped — microphone off.")
-                throw cancelled
-            } catch (error: Throwable) {
-                runtime.diagnosticRecorder.recordImportant("Wake test failed: ${error.message}")
-                status("Wake test failed: ${error.message}")
-            } finally {
-                withContext(kotlinx.coroutines.NonCancellable) { input.stop() }
-                runtime.modelStore.endModelOperation()
-                runtime.mainHandler.post { finished() }
-            }
-        }
-    }
-
     private fun endVoiceCall(report: (String) -> Unit) {
         pendingVoiceTurn = null
         runtime.endVoiceCall(report)
     }
 
     private fun startVoiceDiagnostics(label: String) = runtime.startVoiceDiagnostics(label)
-
-    private fun exportSpeechAudio() {
-        lifecycleScope.launch {
-            try {
-                val bytes = withContext(Dispatchers.IO) {
-                    java.io.File(cacheDir, "latest-jarvis-speech.wav").takeIf { it.isFile }?.readBytes()
-                }
-                if (bytes == null) {
-                    android.widget.Toast.makeText(this@MainActivity, "No completed reply audio yet", android.widget.Toast.LENGTH_SHORT).show()
-                } else {
-                    pendingSpeechAudio = bytes // Snapshot before the chooser; later turns may replace the cache.
-                    speechAudioExport.launch("jarvis-speech-${System.currentTimeMillis()}.wav")
-                }
-            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (error: Exception) {
-                android.widget.Toast.makeText(this@MainActivity, "Could not read reply audio: ${error.message}", android.widget.Toast.LENGTH_LONG).show()
-            }
-        }
-    }
 
     private fun copyDiagnostics() {
         // The runtime ring contains the latest call's ASR, inference and playback events.
@@ -323,7 +233,6 @@ class MainActivity : ComponentActivity() {
         super.onPause()
     }
     override fun onDestroy() {
-        wakeTestJob?.cancel()
         runtime.detachUi()
         // Voice jobs and models belong to the service runtime, including during Activity recreation.
         super.onDestroy()

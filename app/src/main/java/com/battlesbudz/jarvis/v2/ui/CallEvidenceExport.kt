@@ -14,12 +14,10 @@ import java.util.zip.ZipOutputStream
 /** Call evidence is supplied by composition; rendering has no authority to locate the runtime. */
 internal data class CallEvidenceSnapshot(val report: String, val audio: LiveCallAudioEvidence.Export?)
 internal data class CallEvidenceActions(
-    val armAudio: () -> Unit,
-    val clearAudio: () -> Unit,
     val snapshot: () -> CallEvidenceSnapshot,
 )
 
-/** Snapshot the latest call before opening the document picker. One ZIP per phone test. */
+/** Snapshot the latest whole call before opening the document picker. Audio capture is always on. */
 @Composable
 internal fun CallEvidenceExport(actions: CallEvidenceActions, enabled: Boolean) {
     val context = LocalContext.current
@@ -53,14 +51,6 @@ internal fun CallEvidenceExport(actions: CallEvidenceActions, enabled: Boolean) 
             catch (error: Exception) { status = "Save failed: ${error.message}" }
         }
     }
-    TextButton(enabled = enabled, onClick = {
-        actions.armAudio()
-        status = "Next call will retain a short audio sample in memory, including nearby speech. Export it with the call ZIP after ending the call."
-    }) { Text("Record next call audio for diagnosis") }
-    TextButton(enabled = enabled, onClick = {
-        actions.clearAudio()
-        status = "Diagnostic audio cleared; recording disarmed."
-    }) { Text("Clear diagnostic audio") }
     TextButton(enabled = enabled, onClick = {
         val snapshot = actions.snapshot()
         pendingAudio = snapshot.audio

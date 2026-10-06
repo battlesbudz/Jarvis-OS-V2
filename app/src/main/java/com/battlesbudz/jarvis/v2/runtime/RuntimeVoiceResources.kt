@@ -17,12 +17,12 @@ internal class RuntimeVoiceResources(
     private val recordDiagnostic: (String) -> Unit,
     private val onLevel: (Float) -> Unit
 ) {
-    @Volatile var appliedSpeechCaptureProfile = SpeechCaptureProfile.SPEECH_PRESERVING
+    @Volatile var appliedSpeechCaptureProfile = SpeechCaptureProfile.COMMUNICATION_NOISE_FILTERED
     val resources by lazy {
         VoiceCallResources(
-            captureIdentity = { SpeechCaptureProfile.selected(context).id },
+            captureIdentity = { SpeechCaptureProfile.COMMUNICATION_NOISE_FILTERED.id },
             createAudio = { communication ->
-                val profile = SpeechCaptureProfile.selected(context)
+                val profile = SpeechCaptureProfile.COMMUNICATION_NOISE_FILTERED
                 appliedSpeechCaptureProfile = profile
                 val duplexRoute = communication && android.os.Build.VERSION.SDK_INT >= 31
                 val useCommunication = duplexRoute && profile.communicationInput

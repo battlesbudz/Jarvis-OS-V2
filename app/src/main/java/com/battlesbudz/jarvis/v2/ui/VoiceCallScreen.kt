@@ -111,11 +111,8 @@ internal fun VoiceCallScreen(
     onResumeConsumed: () -> Unit,
     voicePlayback: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame>,
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
-    onWakeTest: ((String) -> Unit, () -> Unit) -> Unit,
-    onStopWakeTest: () -> Unit,
     onEndVoiceCall: ((String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
-    onExportSpeechAudio: () -> Unit,
     // M1d explicit silent work (D21/T05): toggle plus observable posture.
     silentWork: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
     onSilentWork: (Boolean) -> Unit = {},
@@ -144,23 +141,7 @@ internal fun VoiceCallScreen(
         silentWork ?: kotlinx.coroutines.flow.MutableStateFlow(false)
     }
     val silentWorkActive by silentWorkFlow.collectAsState()
-    var wakeTesting by remember { mutableStateOf(false) }
-    var wakeTestStatus by remember { mutableStateOf("") }
     val wakeContext = androidx.compose.ui.platform.LocalContext.current
-    fun startWakeTest() {
-        wakeTesting = true
-        wakeTestStatus = "Preparing wake test…"
-        onWakeTest({ wakeTestStatus = it }, { wakeTesting = false })
-    }
-    val wakePermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) startWakeTest() else wakeTestStatus = "Microphone permission is required for the wake test."
-    }
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose { onStopWakeTest() }
-    }
-    var audioPathTesting by remember { mutableStateOf(false) }
     var inputTesting by remember { mutableStateOf(false) }
     val playback by voicePlayback.collectAsState()
     var listening by remember { mutableStateOf(false) }
@@ -251,7 +232,7 @@ internal fun VoiceCallScreen(
             // which left the bubble with no way to end it.
             callInFlight = sessionAlive || turnInFlight,
             microphonePaused = microphonePaused,
-            canStart = !runtimeArmed && !chatSending && !turnInFlight && !wakeTesting && !inputTesting && !audioPathTesting,
+            canStart = !runtimeArmed && !chatSending && !turnInFlight && !inputTesting,
             stopReplyAvailable = runtimeArmed && (
                 runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.SPEAKING ||
                     runtimePhase == com.battlesbudz.jarvis.v2.voice.VoicePhase.THINKING
@@ -270,12 +251,12 @@ internal fun VoiceCallScreen(
         )
     }
     if (settingsOpen) androidx.compose.material3.AlertDialog(
-        onDismissRequest = { onStopWakeTest(); onDismissSettings() },
+        onDismissRequest = { onDismissSettings() },
         title = { Text("Settings") },
-        confirmButton = { TextButton(onClick = { onStopWakeTest(); onDismissSettings() }) { Text("Done") } },
+        confirmButton = { TextButton(onClick = { onDismissSettings() }) { Text("Done") } },
         text = { Column(Modifier.verticalScroll(rememberScrollState())) {
             Text("One model for chat and voice", style = MaterialTheme.typography.bodySmall)
-            modelSelector(!chatSending && !runtimeArmed && !turnInFlight && !wakeTesting && !audioPathTesting && !inputTesting)
+            modelSelector(!chatSending && !runtimeArmed && !turnInFlight && !inputTesting)
             // M1d explicit silent work (D21/T05): tasks continue while
             // ordinary speech is ignored until "hey jarvis" wakes back up.
             OutlinedButton(onClick = { onSilentWork(!silentWorkActive) },
@@ -296,7 +277,7 @@ internal fun VoiceCallScreen(
         Text("Voice & microphone", style = MaterialTheme.typography.titleMedium)
         Text("Voice: Piper Northern English", style = MaterialTheme.typography.bodyMedium)
         val assistantContext = androidx.compose.ui.platform.LocalContext.current
-        VoiceInputSettings(enabled = !chatSending && !runtimeArmed && !turnInFlight && !wakeTesting && !audioPathTesting, onBusy = { inputTesting = it })
+        VoiceInputSettings(enabled = !chatSending && !runtimeArmed && !turnInFlight && !inputTesting, onBusy = { inputTesting = it })
         var assistantSettingsMessage by remember { mutableStateOf(
             if (assistantContext.getSystemService(android.app.role.RoleManager::class.java)
                 .isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT)) "Jarvis is your default assistant."
@@ -361,32 +342,17 @@ internal fun VoiceCallScreen(
         }) { Text(if (helperConnected) "Keyboard handoff settings" else "Enable keyboard microphone handoff") }
         if (keyboardSetupError.isNotBlank()) Text(keyboardSetupError, style = MaterialTheme.typography.bodySmall)
         var diagnosticsOpen by remember { mutableStateOf(false) }
-        TextButton(onClick = { diagnosticsOpen = !diagnosticsOpen }, enabled = !wakeTesting && !audioPathTesting) {
+        TextButton(onClick = { diagnosticsOpen = !diagnosticsOpen }) {
             Text(if (diagnosticsOpen) "Hide development diagnostics" else "Development diagnostics")
         }
         if (diagnosticsOpen) {
-            PipelineBenchmarkCard(store = pipelineBenchmarkStore, enabled = !chatSending && !runtimeArmed && !turnInFlight)
             CallEvidenceExport(actions = callEvidenceActions, enabled = !chatSending && !runtimeArmed && !turnInFlight)
-            LiveComparisonCard(enabled = !chatSending && !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting)
-            AudioPathDiagnosticCard(enabled = !chatSending && !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting,
-                onBusyChanged = { audioPathTesting = it })
-            DuplexEchoDiagnosticCard(enabled = !chatSending && !runtimeArmed && !wakeTesting && !turnInFlight && !inputTesting && !audioPathTesting,
-                onBusyChanged = { audioPathTesting = it })
-            TextButton(onClick = {
-                if (wakeTesting) onStopWakeTest()
-                else if (wakeContext.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startWakeTest()
-                else wakePermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-            }, enabled = !chatSending && !runtimeArmed && !turnInFlight && !audioPathTesting && !inputTesting) {
-                Text(if (wakeTesting) "Stop wake test" else "Test wake word")
-            }
-            if (wakeTestStatus.isNotBlank()) Text(wakeTestStatus, style = MaterialTheme.typography.bodySmall)
             TextButton(
                 onClick = { onCopyDiagnostics(turns + if (provisionalUser.isNotBlank()) listOf(ChatEntry("You", provisionalUser)) else emptyList()) },
                 modifier = Modifier.padding(top = 4.dp)
             ) {
                 Text("Copy diagnostics")
             }
-            TextButton(onClick = onExportSpeechAudio) { Text("Save latest reply audio") }
         }
         } }
     )

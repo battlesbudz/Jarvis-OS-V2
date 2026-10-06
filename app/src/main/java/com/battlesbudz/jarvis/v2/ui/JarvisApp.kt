@@ -42,8 +42,6 @@ fun JarvisApp(
     initialVoiceCalls: List<VoiceCallRecord>,
     onRunModelSmokeTest: ((String) -> Unit) -> Unit,
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
-    onWakeTest: ((String) -> Unit, () -> Unit) -> Unit,
-    onStopWakeTest: () -> Unit,
     onEndVoiceCall: ((String) -> Unit) -> Unit,
     onResumeVoiceCall: (VoiceCallRecord, (String?) -> Unit) -> Unit,
     onDeleteVoiceCall: (String) -> Unit,
@@ -52,7 +50,6 @@ fun JarvisApp(
     onCancelModelDownload: () -> Unit,
     onImportModel: (Uri, com.battlesbudz.jarvis.v2.ai.LocalModelSpec, (String) -> Unit) -> Unit,
     onCopyDiagnostics: (List<ChatEntry>) -> Unit,
-    onExportSpeechAudio: () -> Unit,
     phoneTasks: kotlinx.coroutines.flow.StateFlow<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>? = null,
     phoneTaskError: kotlinx.coroutines.flow.StateFlow<String?>? = null,
     onPhoneTaskAction: (String, Long, String) -> Unit = { _, _, _ -> },
@@ -84,7 +81,7 @@ fun JarvisApp(
         val activeVoiceCall by com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.armed.collectAsState()
         val activeVoiceStatus by com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.status.collectAsState()
         val modelSelector: @Composable (Boolean) -> Unit = { enabled ->
-            ModelSelectionSection(setup, enabled, onOpenMemory = { showingMemory = true })
+            ModelSelectionSection(setup, enabled, benchmarkStore, onOpenMemory = { showingMemory = true })
         }
         val gemmaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             setup.importModel(uri, ModelCatalog.resolve(pickerModelId))
@@ -156,11 +153,8 @@ fun JarvisApp(
                                         onResumeConsumed = { resumedVoiceCall = null },
                                         voicePlayback = voicePlayback,
                                         onVoiceTurn = onVoiceTurn,
-                                        onWakeTest = onWakeTest,
-                                        onStopWakeTest = onStopWakeTest,
                                         onEndVoiceCall = onEndVoiceCall,
                                         onCopyDiagnostics = onCopyDiagnostics,
-                                        onExportSpeechAudio = onExportSpeechAudio,
                                         silentWork = silentWork,
                                         onSilentWork = onSilentWork,
                                         // M2 saved workflows (D36).
@@ -168,7 +162,6 @@ fun JarvisApp(
                                         onWorkflowSetEnabled = onWorkflowSetEnabled,
                                         // M3 guided MCP setup (D07).
                                         onConnectMcpServer = onConnectMcpServer,
-                                        pipelineBenchmarkStore = benchmarkStore,
                                         callEvidenceActions = callEvidence,
                                     )
                                 }

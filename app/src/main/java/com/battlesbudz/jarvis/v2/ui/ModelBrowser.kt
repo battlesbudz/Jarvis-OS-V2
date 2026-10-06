@@ -15,7 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -31,6 +30,7 @@ internal fun ModelBrowser(
     phone: PhoneProfile,
     selectedId: String,
     isInstalled: (LocalModelSpec) -> Boolean,
+    benchmarkStore: com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore,
     onSelect: (LocalModelSpec) -> String?,
     onDismiss: () -> Unit,
     selectionEnabled: Boolean = true,
@@ -58,7 +58,7 @@ internal fun ModelBrowser(
         }
         BackHandler { goBack() }
         detailId?.let { id -> ModelCatalog.find(id)?.let { spec ->
-            ModelDetails(spec, phone) { detailId = null }
+            ModelDetails(spec, phone, benchmarkStore, isInstalled(spec)) { detailId = null }
         } }
         warningId?.let { id -> ModelCatalog.find(id)?.let { spec ->
             AlertDialog(onDismissRequest = { warningId = null },
@@ -186,14 +186,44 @@ internal fun ModelCompatibilityLabel(spec: LocalModelSpec) {
 }
 
 
-/** Shared explanation, revealed on request instead of repeated throughout Settings. */
+/** Compact model facts: identity, install state, fit, capabilities and measured speed. */
+internal fun measuredSpeedLabel(
+    store: com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore,
+    spec: LocalModelSpec
+): String? {
+    val ttfts = mutableListOf<Long>()
+    val tokps = mutableListOf<Double>()
+    for (turn in store.samples.value) {
+        for (s in turn.submissions) {
+            if (s.modelId == spec.id && s.outcome == com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome.COMPLETE) {
+                s.firstTokenMs?.let { ttfts.add(it) }
+                s.estimatedDecodeTokensPerSecond?.let { tokps.add(it) }
+            }
+        }
+    }
+    if (ttfts.isEmpty() && tokps.isEmpty()) return null
+    fun medianLong(v: List<Long>): Long = v.sorted().let { it[it.size / 2] }
+    fun medianDouble(v: List<Double>): Double = v.sorted().let { it[it.size / 2] }
+    return buildString {
+        if (ttfts.isNotEmpty()) append("Measured on this phone: TTFT ${medianLong(ttfts)}ms")
+        if (tokps.isNotEmpty()) {
+            if (isNotEmpty()) append(" · ")
+            append("decode ${"%.1f".format(java.util.Locale.US, medianDouble(tokps))} tok/s")
+        }
+        append(" (${ttfts.size.coerceAtLeast(tokps.size)} runs)")
+    }
+}
+
 @Composable
-internal fun ModelDetails(spec: LocalModelSpec, phone: PhoneProfile, onDismiss: () -> Unit) {
-    val purpose = ModelGuide.purpose(spec)
+internal fun ModelDetails(
+    spec: LocalModelSpec,
+    phone: PhoneProfile,
+    benchmarkStore: com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore,
+    installed: Boolean,
+    onDismiss: () -> Unit
+) {
     val fit = ModelGuidance.assess(spec, phone)
-    val evidence = ModelCompatibility.assess(spec)
-    val uriHandler = LocalUriHandler.current
-    var linkError by remember { mutableStateOf<String?>(null) }
+    val speed = remember(benchmarkStore, spec.id) { measuredSpeedLabel(benchmarkStore, spec) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("About this model") },
@@ -202,28 +232,19 @@ internal fun ModelDetails(spec: LocalModelSpec, phone: PhoneProfile, onDismiss: 
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(spec.id, style = MaterialTheme.typography.titleSmall)
-                Text(purpose.description)
-                Text("Inputs: ${ModelGuide.inputsLabel(spec)}")
-                if (spec.supportsAudio) Text("Audio clips: up to 30 seconds, 16 kHz mono PCM WAV. Voice calls still use your chosen speech recognizer.")
-                if (spec.supportsTools) Text("Jarvis tools: read battery, set volume and open apps. Availability does not mean this model has passed a tool-calling test. Calls are checked against your request before execution.")
-                if (purpose.caveat.isNotBlank()) Text(purpose.caveat)
-                HorizontalDivider()
-                Text(evidence.status.label, fontWeight = FontWeight.Bold)
-                Text(evidence.summary)
-                if (evidence.details.isNotBlank()) Text(evidence.details)
-                Text("An Android test is not a speed or reliability guarantee for your phone.")
-                HorizontalDivider()
-                Text("Phone estimate", fontWeight = FontWeight.Bold)
-                Text(fit.explanation)
-                Text(fit.workloadExplanation)
-                fit.deviceExperience?.let { Text(it) }
-                Text("${phone.name} · ${ModelGuidance.gb(phone.totalRamBytes)} RAM · ${ModelGuidance.gb(phone.freeStorageBytes)} free storage")
-                Text("Download size is not measured memory use. These estimates do not change when you install a model. Phone checks stay on your device.")
-                val source = evidence.source ?: spec.downloadUrl?.substringBefore("/resolve/")
-                if (source != null) TextButton(onClick = {
-                    runCatching { uriHandler.openUri(source) }.onFailure { linkError = "Could not open the publisher page." }
-                }) { Text("Publisher evidence") }
-                linkError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                Text(
+                    (if (installed) "Installed" else "Not installed") +
+                        " · Download " + (spec.downloadBytes?.let(ModelGuidance::gb) ?: "size unknown"),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(fit.quickMemoryLabel,
+                    color = if (fit.memoryWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium)
+                Text("Audio input: ${if (spec.supportsAudio) "yes" else "no"}",
+                    style = MaterialTheme.typography.bodyMedium)
+                Text("Tool calling: ${if (spec.supportsTools) "yes" else "no"}",
+                    style = MaterialTheme.typography.bodyMedium)
+                speed?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
         }
     )

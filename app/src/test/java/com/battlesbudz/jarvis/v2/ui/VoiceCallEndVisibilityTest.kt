@@ -19,7 +19,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
 import com.battlesbudz.jarvis.v2.chat.ConversationHistory
-import com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore
 import com.battlesbudz.jarvis.v2.voice.VoicePhase
 import com.battlesbudz.jarvis.v2.voice.VoicePlaybackFrame
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionState
@@ -100,7 +99,6 @@ class VoiceCallEndVisibilityTest {
     private val busy = MutableStateFlow(false)
     private var teardownCalls = 0
     private lateinit var history: ConversationHistory
-    private lateinit var benchmarkStore: AndroidPipelineBenchmarkStore
 
     private fun resetVoiceRuntime() {
         VoiceSessionUi.armed.value = false
@@ -122,7 +120,6 @@ class VoiceCallEndVisibilityTest {
         history = ConversationHistory(
             context.getSharedPreferences("voice_call_end_visibility_test", Context.MODE_PRIVATE)
         )
-        benchmarkStore = AndroidPipelineBenchmarkStore(context)
         compose.setContent {
             CompositionLocalProvider(
                 LocalOnBackPressedDispatcherOwner provides backOwner,
@@ -156,8 +153,6 @@ class VoiceCallEndVisibilityTest {
                         onResumeConsumed = {},
                         voicePlayback = MutableStateFlow(VoicePlaybackFrame()),
                         onVoiceTurn = { _, _, _, _ -> },
-                        onWakeTest = { _, _ -> },
-                        onStopWakeTest = {},
                         onEndVoiceCall = { report ->
                             teardownCalls++
                             // The real teardown (MainActivity.endVoiceCall ->
@@ -168,11 +163,7 @@ class VoiceCallEndVisibilityTest {
                             report("Jarvis session stopped — microphone off.")
                         },
                         onCopyDiagnostics = {},
-                        onExportSpeechAudio = {},
-                        pipelineBenchmarkStore = benchmarkStore,
                         callEvidenceActions = CallEvidenceActions(
-                            armAudio = {},
-                            clearAudio = {},
                             snapshot = { CallEvidenceSnapshot("", null) }
                         )
                     )

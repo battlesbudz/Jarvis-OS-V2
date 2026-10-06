@@ -14,11 +14,12 @@ enum class VoiceInputMode(val id: String, val label: String) {
         fun select(context: Context, mode: VoiceInputMode) {
             context.getSharedPreferences("voice_input", Context.MODE_PRIVATE).edit().putString("input_mode", mode.id).apply()
         }
-        fun captions(context: Context): Boolean = context.getSharedPreferences("voice_input", Context.MODE_PRIVATE)
-            .getBoolean("gemma_whisper_captions", true)
-        fun captions(context: Context, enabled: Boolean) {
-            context.getSharedPreferences("voice_input", Context.MODE_PRIVATE).edit().putBoolean("gemma_whisper_captions", enabled).apply()
+        /** Engine used for display-only captions in Gemma-audio mode. Captions are always on; there is no off setting. */
+        fun captionEngine(context: Context): AsrEngine = AsrEngine.entries.firstOrNull {
+            it.id == context.getSharedPreferences("voice_input", Context.MODE_PRIVATE).getString("caption_engine", null)
+        } ?: AsrEngine.MOONSHINE
+        fun captionEngine(context: Context, engine: AsrEngine) {
+            context.getSharedPreferences("voice_input", Context.MODE_PRIVATE).edit().putString("caption_engine", engine.id).apply()
         }
     }
 }
-

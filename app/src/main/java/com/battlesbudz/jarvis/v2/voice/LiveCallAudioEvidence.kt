@@ -1,6 +1,6 @@
 package com.battlesbudz.jarvis.v2.voice
 
-/** Explicitly armed, bounded RAM evidence. Disk/network writes belong only to user export. */
+/** Always armed, bounded RAM evidence. Every call is captured; disk/network writes belong only to user export. */
 object LiveCallAudioEvidence {
     data class Export(val call: String, val files: Map<String, ByteArray>, val report: String)
     private data class Chunk(val start: Long, val pcm: ByteArray)
@@ -16,19 +16,12 @@ object LiveCallAudioEvidence {
     private var call = ""
     private var bytes = 0
     private var dropped = false
-    @Volatile var armed = false
-        private set
     @Volatile var active = false
         private set
-    @Synchronized fun arm() { clear(); armed = true }
-    @Synchronized fun clear() {
-        armed = false; active = false; call = ""; bytes = 0; dropped = false
-        streams.clear(); events.clear(); names.clear()
-    }
     @Synchronized fun begin(label: String) {
-        val requested = armed
-        clear()
-        if (requested) { active = true; call = label; event("capture_started") }
+        active = false; call = ""; bytes = 0; dropped = false
+        streams.clear(); events.clear(); names.clear()
+        active = true; call = label; event("capture_started")
     }
     @Synchronized fun finish() { if (active) event("capture_finished"); active = false }
     @Synchronized fun newStream(kind: String): String {

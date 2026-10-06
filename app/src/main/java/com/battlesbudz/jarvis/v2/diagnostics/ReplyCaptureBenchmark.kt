@@ -73,7 +73,7 @@ internal class ReplyCaptureBenchmark(
         var failureCode: String? = null
         var resultSpeechEnd: Long? = null
         runCatching {
-            val profile = SpeechCaptureProfile.selected(applicationContext)
+            val profile = SpeechCaptureProfile.COMMUNICATION_NOISE_FILTERED
             benchmark?.configuration("benchmark_unit", "independent_capture_no_answer_generation")
             benchmark?.configuration("capture_role", if (asrOnly) "accepted_followup" else "reply_interruption")
             benchmark?.configuration("capture_profile_requested", profile.id)

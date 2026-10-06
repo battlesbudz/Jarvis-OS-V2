@@ -21,7 +21,7 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                        onMetrics: (AsrCaptureMetrics, String, Long?) -> Unit = { _, _, _ -> }): CapturedVoiceTurn = recoverReplyListener(log) {
         supervisorScope {
             MicrophoneInterruptionMonitor.awaitAvailable()
-            val profile = SpeechCaptureProfile.selected(context)
+            val profile = SpeechCaptureProfile.COMMUNICATION_NOISE_FILTERED
             val input = inputFactory?.invoke() ?: AndroidAudioInput(this,
                 audioManager = context.getSystemService(AudioManager::class.java),
                 echoCancellation = true, communicationInput = profile.communicationInput,
