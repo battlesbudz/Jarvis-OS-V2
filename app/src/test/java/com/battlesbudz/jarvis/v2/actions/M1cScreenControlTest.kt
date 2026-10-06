@@ -221,24 +221,26 @@ class M1cScreenControlTest {
     @Test fun observationRotatesTokenAndVerifiesTargets() {
         val session = ScreenControlSession()
         session.admit("group-1", userApproved = true)
-        val token1 = session.recordObservation(observation(button(), field(), list()))
-        val token2 = session.recordObservation(observation(button()))
+        val obs1 = observation(button(), field(), list())
+        val obs2 = observation(button())
+        val token1 = session.recordObservation(obs1)
+        val token2 = session.recordObservation(obs2)
         assertNotEquals(token1, token2)
         assertTrue(token1.matches(Regex("^[0-9a-f]{16}$")))
         // Old token is stale even for a target that still exists.
-        val stale = session.verifyTarget("n0", token1, liveIdentity) { null }
+        val stale = session.verifyTarget("n0", token1, liveIdentity, obs1.contentFingerprint) { null }
         assertTrue("stale token must be rejected: $stale", stale is TargetVerification.Rejected)
         // Current token verifies; kind requirements are enforced.
-        val verified = session.verifyTarget("n0", token2, liveIdentity) { node ->
+        val verified = session.verifyTarget("n0", token2, liveIdentity, obs2.contentFingerprint) { node ->
             if (!node.clickable) "not tappable" else null
         }
         assertTrue(verified is TargetVerification.Verified)
         assertEquals("Search", (verified as TargetVerification.Verified).node.label)
-        val wrongKind = session.verifyTarget("n0", token2, liveIdentity) { node ->
+        val wrongKind = session.verifyTarget("n0", token2, liveIdentity, obs2.contentFingerprint) { node ->
             if (!node.editable) "not editable" else null
         }
         assertTrue(wrongKind is TargetVerification.Rejected)
-        val missing = session.verifyTarget("n9", token2, liveIdentity) { null }
+        val missing = session.verifyTarget("n9", token2, liveIdentity, obs2.contentFingerprint) { null }
         assertTrue(missing is TargetVerification.Rejected)
     }
 
@@ -280,7 +282,8 @@ class M1cScreenControlTest {
         var now = 1_000L
         val session = ScreenControlSession(clock = { now }, touchIdleMs = 3_000L)
         session.admit("group-1", userApproved = true)
-        val token = session.recordObservation(observation(button()))
+        val obs = observation(button())
+        val token = session.recordObservation(obs)
         assertEquals(DispatchGate.Allowed, session.dispatchGate())
 
         session.noteTouchStart()
@@ -295,11 +298,12 @@ class M1cScreenControlTest {
         // The gate fires once; the caller re-observes, which rotates the token
         // and makes the pre-touch token stale by design.
         assertEquals(DispatchGate.Allowed, session.dispatchGate())
-        val fresh = session.recordObservation(observation(button()))
+        val freshObs = observation(button())
+        val fresh = session.recordObservation(freshObs)
         assertNotEquals(token, fresh)
-        val stale = session.verifyTarget("n0", token, liveIdentity) { null }
+        val stale = session.verifyTarget("n0", token, liveIdentity, obs.contentFingerprint) { null }
         assertTrue("pre-touch token must be stale after resume re-observe: $stale", stale is TargetVerification.Rejected)
-        assertTrue(session.verifyTarget("n0", fresh, liveIdentity) { null } is TargetVerification.Verified)
+        assertTrue(session.verifyTarget("n0", fresh, liveIdentity, freshObs.contentFingerprint) { null } is TargetVerification.Verified)
     }
 
     // Session: stop and release
@@ -307,7 +311,8 @@ class M1cScreenControlTest {
     @Test fun stopRequestBlocksDispatchAndReleaseClearsEverything() {
         val session = ScreenControlSession()
         session.admit("group-1", userApproved = true)
-        val token = session.recordObservation(observation(button()))
+        val obs = observation(button())
+        val token = session.recordObservation(obs)
         session.requestStop()
         assertTrue(session.isStopRequested)
         assertEquals(DispatchGate.Stopped, session.dispatchGate())
@@ -315,7 +320,7 @@ class M1cScreenControlTest {
         assertFalse(session.isStopRequested)
         assertEquals(DispatchGate.NeedsAdmission, session.dispatchGate())
         assertTrue(
-            session.verifyTarget("n0", token, liveIdentity) { null } is TargetVerification.Rejected
+            session.verifyTarget("n0", token, liveIdentity, obs.contentFingerprint) { null } is TargetVerification.Rejected
         )
     }
 
@@ -350,6 +355,11 @@ class M1cScreenControlTest {
         }
 
         override fun currentWindowIdentity(): String? = activeWindowId
+
+        override fun currentContentFingerprint(): String? {
+            val activeIdentity = activeWindowId ?: return null
+            return contentFingerprintOf(windows[activeIdentity]?.nodes.orEmpty())
+        }
 
         override fun tap(node: ScreenNode): Boolean {
             // Production-faithful live re-verification: the node's window
@@ -408,7 +418,9 @@ class M1cScreenControlTest {
         if (session.dispatchGate() != DispatchGate.Allowed) {
             return TapOutcome.Rejected("dispatch gate blocked the mutation")
         }
-        val node = when (val verified = session.verifyTarget(targetId, token, bridge.currentWindowIdentity()) { node ->
+        val node = when (val verified = session.verifyTarget(
+            targetId, token, bridge.currentWindowIdentity(), bridge.currentContentFingerprint()
+        ) { node ->
             if (!node.clickable) "Target ${node.id} (\"${node.label}\") is not tappable." else null
         }) {
             is TargetVerification.Verified -> verified.node
@@ -487,7 +499,9 @@ class M1cScreenControlTest {
         if (session.dispatchGate() != DispatchGate.Allowed) {
             return TapOutcome.Rejected("dispatch gate blocked the mutation")
         }
-        val node = when (val verified = session.verifyTarget(targetId, token, bridge.currentWindowIdentity()) { node ->
+        val node = when (val verified = session.verifyTarget(
+            targetId, token, bridge.currentWindowIdentity(), bridge.currentContentFingerprint()
+        ) { node ->
             if (!node.editable) "Target ${node.id} (\"${node.label}\") is not an editable field." else null
         }) {
             is TargetVerification.Verified -> verified.node
@@ -546,6 +560,101 @@ class M1cScreenControlTest {
         assertTrue("zero stale type effects, was: ${bridge.effects}", bridge.effects.isEmpty())
     }
 
+    // Finding 3 residual (same-window content replacement): an "OK" control
+    // observed for record A, then the displayed record/action context is
+    // asynchronously replaced with B while the control keeps its resource
+    // ID, walk position, role, label and bounds. Content-change events are
+    // ignored, so the old token, window identity and positional matcher all
+    // still pass — only the content generation changed. The approval binds
+    // to the observed generation, so dispatch must fail closed with zero
+    // stale effects, for tap and for type.
+
+    /** One record screen: a context text node plus the OK control acting on it. */
+    private fun recordScreen(contextLabel: String, window: String, viewId: String, editable: Boolean = false) =
+        listOf(
+            ScreenNode(
+                "n0", contextLabel, "text", "10,20-500,80",
+                windowIdentity = window
+            ),
+            ScreenNode(
+                "n4", "OK", if (editable) "field" else "button", "100,400-300,460",
+                clickable = !editable, editable = editable,
+                viewId = viewId, windowIdentity = window
+            )
+        )
+
+    @Test fun sameWindowContentReplacementTapDispatchesNothing() {
+        val window = "com.app.records#1"
+        val viewId = "com.app.records:id/ok"
+        val bridge = TwoWindowFakeBridge()
+        bridge.addWindow(TwoWindowFakeBridge.Window(window, recordScreen("Record A", window, viewId)))
+        val session = admittedSession()
+        bridge.activeWindowId = window
+        val token = session.recordObservation(checkNotNull(bridge.observe()))
+        // The record context is replaced asynchronously: the OK control
+        // keeps its resource ID, walk position, role, label and bounds.
+        bridge.setNodes(window, recordScreen("Record B", window, viewId))
+        val outcome = dispatchTap(session, bridge, "n4", token)
+        assertTrue("content-replaced target must not dispatch a tap, was: $outcome",
+            outcome is TapOutcome.Rejected)
+        assertTrue("the reason must name the content change, was: $outcome",
+            (outcome as TapOutcome.Rejected).reason.contains("content changed"))
+        assertTrue("zero stale tap effects, was: ${bridge.effects}", bridge.effects.isEmpty())
+    }
+
+    @Test fun sameWindowContentReplacementTypeDispatchesNothing() {
+        val window = "com.app.records#1"
+        val viewId = "com.app.records:id/note"
+        val bridge = TwoWindowFakeBridge()
+        bridge.addWindow(TwoWindowFakeBridge.Window(window, recordScreen("Record A", window, viewId, editable = true)))
+        val session = admittedSession()
+        bridge.activeWindowId = window
+        val token = session.recordObservation(checkNotNull(bridge.observe()))
+        // Same-window replacement of the context around an identical field.
+        bridge.setNodes(window, recordScreen("Record B", window, viewId, editable = true))
+        val outcome = dispatchType(session, bridge, "n4", token, "hello")
+        assertTrue("content-replaced field must not dispatch a type, was: $outcome",
+            outcome is TapOutcome.Rejected)
+        assertTrue("the reason must name the content change, was: $outcome",
+            (outcome as TapOutcome.Rejected).reason.contains("content changed"))
+        assertTrue("zero stale type effects, was: ${bridge.effects}", bridge.effects.isEmpty())
+    }
+
+    @Test fun unchangedContentStillDispatchesTapAndType() {
+        // Positive control: with no content change, the generation still
+        // matches and verified targets dispatch exactly once.
+        val window = "com.app.records#1"
+        val viewId = "com.app.records:id/ok"
+        val bridge = TwoWindowFakeBridge()
+        bridge.addWindow(TwoWindowFakeBridge.Window(window, recordScreen("Record A", window, viewId)))
+        val session = admittedSession()
+        bridge.activeWindowId = window
+        val token = session.recordObservation(checkNotNull(bridge.observe()))
+        val tapOutcome = dispatchTap(session, bridge, "n4", token)
+        assertTrue("unchanged content must dispatch, was: $tapOutcome",
+            tapOutcome is TapOutcome.Dispatched)
+        val fieldViewId = "com.app.records:id/note"
+        bridge.setNodes(window, recordScreen("Record A", window, fieldViewId, editable = true))
+        val token2 = session.recordObservation(checkNotNull(bridge.observe()))
+        val typeOutcome = dispatchType(session, bridge, "n4", token2, "hello")
+        assertTrue("unchanged content must dispatch a type, was: $typeOutcome",
+            typeOutcome is TapOutcome.Dispatched)
+        assertEquals(2, bridge.effects.size)
+    }
+
+    @Test fun fingerprintDistinguishesContentGenerations() {
+        val window = "com.app.records#1"
+        val viewId = "com.app.records:id/ok"
+        val before = contentFingerprintOf(recordScreen("Record A", window, viewId))
+        val after = contentFingerprintOf(recordScreen("Record B", window, viewId))
+        assertNotEquals("replaced content must be a different generation", before, after)
+        assertEquals(
+            "identical content must be the same generation",
+            before, contentFingerprintOf(recordScreen("Record A", window, viewId))
+        )
+        assertTrue(before.matches(Regex("^[0-9a-f]{16}$")))
+    }
+
     @Test fun unchangedWindowDispatchesExactlyOnce() {
         val windowA = "com.app.a#1"
         val bridge = TwoWindowFakeBridge()
@@ -565,19 +674,22 @@ class M1cScreenControlTest {
         // Observation and nodes carry no window identity: fail closed even
         // though the live identity is established.
         val node = ScreenNode("n4", "OK", "button", "100,400-300,460", clickable = true)
-        val token = session.recordObservation(
-            ScreenObservation(packageName = "com.example.app", nodes = listOf(node))
-        )
+        val obs = ScreenObservation(packageName = "com.example.app", nodes = listOf(node))
+        val token = session.recordObservation(obs)
         val bridge = TwoWindowFakeBridge()
         bridge.addWindow(TwoWindowFakeBridge.Window("com.app.a#1", listOf(node)))
         bridge.activeWindowId = "com.app.a#1"
-        val unestablished = session.verifyTarget("n4", token, bridge.currentWindowIdentity()) { null }
+        val unestablished = session.verifyTarget("n4", token, bridge.currentWindowIdentity(), obs.contentFingerprint) { null }
         assertTrue("blank observed identity must be rejected: $unestablished",
             unestablished is TargetVerification.Rejected)
         // A live identity that cannot be established fails closed too.
-        val noLive = session.verifyTarget("n4", token, null) { null }
+        val noLive = session.verifyTarget("n4", token, null, obs.contentFingerprint) { null }
         assertTrue("null live identity must be rejected: $noLive",
             noLive is TargetVerification.Rejected)
+        // A live content generation that cannot be established fails closed too.
+        val noFingerprint = session.verifyTarget("n4", token, bridge.currentWindowIdentity(), null) { null }
+        assertTrue("null live content generation must be rejected: $noFingerprint",
+            noFingerprint is TargetVerification.Rejected)
         // The bridge also refuses nodes with no established identity.
         assertFalse("bridge tap on an identity-less node must not dispatch", bridge.tap(node))
         assertTrue(bridge.effects.isEmpty())
@@ -585,10 +697,11 @@ class M1cScreenControlTest {
 
     @Test fun windowStateChangeInvalidatesObservation() {
         val session = admittedSession()
-        val token = session.recordObservation(observation(button()))
-        assertTrue(session.verifyTarget("n0", token, liveIdentity) { null } is TargetVerification.Verified)
+        val obs = observation(button())
+        val token = session.recordObservation(obs)
+        assertTrue(session.verifyTarget("n0", token, liveIdentity, obs.contentFingerprint) { null } is TargetVerification.Verified)
         session.invalidateObservation()
-        val stale = session.verifyTarget("n0", token, liveIdentity) { null }
+        val stale = session.verifyTarget("n0", token, liveIdentity, obs.contentFingerprint) { null }
         assertTrue("invalidated observation must verify as stale: $stale",
             stale is TargetVerification.Rejected)
         assertTrue("invalidation must not release the grant", session.isAdmitted)
