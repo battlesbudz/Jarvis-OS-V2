@@ -475,13 +475,16 @@ class M1cScreenControlTest {
         bridge.activeWindowId = windowA
         val token = session.recordObservation(checkNotNull(bridge.observe()))
         // Same window identity, but the target was replaced: same role,
-        // label and bounds, different view id.
+        // label and bounds, different view id. The content generation changed
+        // with the replacement, so the session fails the dispatch closed on
+        // the generation binding before the bridge is consulted — the
+        // approval binds to the observed generation, not the resource ID.
         bridge.setNodes(windowA, listOf(okButton(windowA, "com.app.a:id/ok_v2")))
         val outcome = dispatchTap(session, bridge, "n4", token)
-        // Session verification passes (same window, same index), but the
-        // bridge's live re-verification sees the replaced view and refuses.
         assertTrue("replaced view in the same window must not dispatch, was: $outcome",
-            outcome is TapOutcome.BridgeFailed)
+            outcome is TapOutcome.Rejected)
+        assertTrue("the reason must name the content change, was: $outcome",
+            (outcome as TapOutcome.Rejected).reason.contains("content changed"))
         assertTrue("no effect may be recorded, was: ${bridge.effects}", bridge.effects.isEmpty())
     }
 
