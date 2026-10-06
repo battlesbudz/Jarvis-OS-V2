@@ -59,7 +59,7 @@ class ConversationGenerationTest {
             override var characters = 0
         }
         val model = LocalModelSpec("test", "test.litertlm", recommendedGpu = false)
-        val session = ConversationModelSession(state, { model }, { false }, { true }, { "unused" },
+        val session = ConversationModelSession(state, { model }, { true }, { }, { true }, { "unused" },
             "unused", shortTerm, {})
         val references = object : ConversationReferences {
             override suspend fun fetch(query: String): String? = error("Generation must not fetch")
