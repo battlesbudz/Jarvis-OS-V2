@@ -1,15 +1,18 @@
 package com.battlesbudz.jarvis.v2.actions
 
+import com.battlesbudz.jarvis.v2.actions.ExecutionResult.Outcome
 import org.junit.Assert.*
 import org.junit.Test
 
 /**
- * Finding 3 (background-launch reporting) matrix. The route decision and
- * the receipt wording are JVM-pure and tested here for every combination:
- * foreground, selected assistant, granted/revoked overlay, unavailable
- * assistant binding, and denied/no-supported-route. A launch only counts as
- * verified when the destination is observed in the foreground — a submitted
- * request alone is reported honestly as unconfirmed.
+ * Finding 3 (background-launch reporting) matrix, corrected: a submitted
+ * request is NEVER a verified launch. The route decision and the receipt
+ * wording are JVM-pure and tested here for every combination: foreground,
+ * selected assistant, granted/revoked overlay, unavailable assistant
+ * binding, and denied/no-supported-route. Only an observed foreground
+ * transition counts as a verified launch; a submitted request is reported
+ * honestly as unconfirmed (unknown completion) so journals, workflows and
+ * user reports never promote submission to success.
  */
 class BackgroundLaunchMatrixTest {
 
@@ -67,6 +70,7 @@ class BackgroundLaunchMatrixTest {
 
     @Test fun localRefusalWordingIsHonest() {
         val receipt = backgroundLaunchRefusal("Example App")
+        assertEquals(Outcome.FAILED, receipt.outcome)
         assertFalse("a local refusal is not success", receipt.succeeded)
         assertTrue(
             "must use the honest refusal wording: ${receipt.message}",
@@ -82,31 +86,67 @@ class BackgroundLaunchMatrixTest {
         )
     }
 
-    // Receipts: submitted request vs platform rejection. A submitted request
-    // is a successful launch action ("Opening X."); only a platform
-    // rejection fails. The observation distinction lives in diagnostics
-    // (result=submitted vs result=foreground_observed).
+    // Receipts: submitted/unverified vs observed vs platform rejection.
+    // A submitted request is unknown completion — never success.
 
-    @Test fun submittedLaunchSucceedsAsOpening() {
+    @Test fun submittedLaunchWithoutObservationIsUnverified() {
+        val submitted = verifiedLaunchReceipt(
+            "Example App", BackgroundLaunchRoute.DIRECT,
+            platformError = null, foregroundObserved = false
+        )
+        assertEquals(
+            "a no-exception submission without foreground evidence stays submitted/unverified",
+            Outcome.UNKNOWN_COMPLETION, submitted.outcome
+        )
+        assertFalse("a submitted request is not a verified launch", submitted.succeeded)
+        assertTrue(
+            "must say the request was sent and opening could not be confirmed: ${submitted.message}",
+            submitted.message.contains("was sent") && submitted.message.contains("could not be confirmed")
+        )
+    }
+
+    @Test fun observedForegroundTransitionIsTheOnlyVerifiedLaunch() {
         val observed = verifiedLaunchReceipt(
             "Example App", BackgroundLaunchRoute.DIRECT,
             platformError = null, foregroundObserved = true
         )
-        assertTrue("an observed foreground transition is a successful launch", observed.succeeded)
-        assertEquals("Opening Example App.", observed.message)
+        assertEquals(Outcome.SUCCEEDED, observed.outcome)
+        assertTrue("an observed foreground transition is a verified launch", observed.succeeded)
+        assertEquals("Opened Example App.", observed.message)
+    }
 
-        val unobserved = verifiedLaunchReceipt(
+    @Test fun observedOpeningYieldsCompletionExactlyOnce() {
+        // The receipt is a pure function of its inputs: computing it again
+        // — as a delayed or duplicate observation callback would — yields
+        // the identical single completion and performs no side effect, so
+        // the launch is never repeated by re-computation.
+        val first = verifiedLaunchReceipt(
+            "Example App", BackgroundLaunchRoute.DIRECT,
+            platformError = null, foregroundObserved = true
+        )
+        val second = verifiedLaunchReceipt(
+            "Example App", BackgroundLaunchRoute.DIRECT,
+            platformError = null, foregroundObserved = true
+        )
+        assertEquals(Outcome.SUCCEEDED, first.outcome)
+        assertEquals(first.outcome, second.outcome)
+        assertEquals(first.message, second.message)
+    }
+
+    @Test fun delayedOrDuplicateUnobservedSubmissionNeverPromotesToSuccess() {
+        // A late duplicate of an unobserved submission stays unconfirmed:
+        // re-computing the receipt must not promote it to success.
+        val submitted = verifiedLaunchReceipt(
             "Example App", BackgroundLaunchRoute.DIRECT,
             platformError = null, foregroundObserved = false
         )
-        assertTrue(
-            "a submitted request is a successful launch action even without an observed transition",
-            unobserved.succeeded
+        val duplicate = verifiedLaunchReceipt(
+            "Example App", BackgroundLaunchRoute.DIRECT,
+            platformError = null, foregroundObserved = false
         )
-        assertEquals(
-            "the submitted receipt describes the requested action: ${unobserved.message}",
-            "Opening Example App.", unobserved.message
-        )
+        assertEquals(Outcome.UNKNOWN_COMPLETION, submitted.outcome)
+        assertEquals(submitted.outcome, duplicate.outcome)
+        assertFalse(duplicate.succeeded)
     }
 
     @Test fun platformRejectionIsDistinctFromLocalRefusal() {
@@ -114,6 +154,7 @@ class BackgroundLaunchMatrixTest {
             "Example App", BackgroundLaunchRoute.DIRECT,
             platformError = "Activity not found", foregroundObserved = false
         )
+        assertEquals(Outcome.FAILED, rejected.outcome)
         assertFalse(rejected.succeeded)
         assertTrue(
             "a platform rejection names the platform error: ${rejected.message}",
@@ -123,14 +164,46 @@ class BackgroundLaunchMatrixTest {
             "a platform rejection is not a local refusal: ${rejected.message}",
             rejected.message.contains("could not establish a supported background-launch route")
         )
+        val refused = backgroundLaunchRefusal("Example App")
+        assertFalse(
+            "a local refusal is not a platform rejection: ${refused.message}",
+            refused.message.contains("Activity not found")
+        )
     }
 
-    @Test fun overlayExemptSubmittedIsOpening() {
+    @Test fun overlayExemptSubmittedIsUnverified() {
         val receipt = verifiedLaunchReceipt(
             "Example App", BackgroundLaunchRoute.OVERLAY_EXEMPT,
             platformError = null, foregroundObserved = false
         )
-        assertTrue("a submitted overlay-exempt request succeeds", receipt.succeeded)
-        assertEquals("Opening Example App.", receipt.message)
+        assertEquals(
+            "a submitted overlay-exempt request is unconfirmed, not success",
+            Outcome.UNKNOWN_COMPLETION, receipt.outcome
+        )
+        assertFalse(receipt.succeeded)
+    }
+
+    @Test fun selectedAssistantSubmissionFollowsTheSameContract() {
+        val submitted = assistantSubmittedLaunchReceipt("Example App")
+        assertEquals(
+            "an assistant-route submission is unconfirmed, not success",
+            Outcome.UNKNOWN_COMPLETION, submitted.outcome
+        )
+        assertFalse(submitted.succeeded)
+        assertTrue(
+            "must say the request was sent and opening could not be confirmed: ${submitted.message}",
+            submitted.message.contains("was sent") && submitted.message.contains("could not be confirmed")
+        )
+        val rejected = assistantRejectedLaunchReceipt("Example App", "SecurityException: denied")
+        assertEquals(Outcome.FAILED, rejected.outcome)
+        assertFalse(rejected.succeeded)
+        assertTrue(
+            "an assistant rejection names the platform error: ${rejected.message}",
+            rejected.message.contains("SecurityException: denied")
+        )
+        assertFalse(
+            "an assistant rejection is not a local refusal: ${rejected.message}",
+            rejected.message.contains("could not establish a supported background-launch route")
+        )
     }
 }
