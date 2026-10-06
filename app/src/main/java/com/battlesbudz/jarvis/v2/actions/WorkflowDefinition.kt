@@ -274,19 +274,8 @@ fun validateWorkflowDefinition(definition: WorkflowDefinition) {
                 require(step.thenSteps.isNotEmpty() && step.thenSteps.size + step.elseSteps.size <= 8) {
                     "A branch needs 1-8 nested steps."
                 }
-                // Branch children run in list order, so a nested step (or a
-                // nested branch's condition) may bind the declared outputs of
-                // earlier siblings in the same list — e.g. a branch at
-                // then[1] conditioning on the tool at then[0], which has
-                // already completed when the condition is evaluated. Thread
-                // one shared map through each list in order instead of an
-                // isolated copy per step. Then and else are mutually exclusive
-                // at runtime, so each gets its own copy; nothing inside the
-                // branch leaks into the steps after it.
-                val thenOutputs = seenOutputs.toMutableMap()
-                step.thenSteps.forEach { checkStep(it, depth + 1, thenOutputs) }
-                val elseOutputs = seenOutputs.toMutableMap()
-                step.elseSteps.forEach { checkStep(it, depth + 1, elseOutputs) }
+                step.thenSteps.forEach { checkStep(it, depth + 1, seenOutputs.toMutableMap()) }
+                step.elseSteps.forEach { checkStep(it, depth + 1, seenOutputs.toMutableMap()) }
             }
             is WorkflowStep.Wait -> checkWait(step.wait)
             is WorkflowStep.Adaptive -> {
