@@ -1,6 +1,7 @@
 """Software boot must not turn a stale boot flag or failed unlock into test coverage."""
 import json
 import hashlib
+import os
 from pathlib import Path
 import shutil
 import stat
@@ -8,6 +9,7 @@ import subprocess
 import struct
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import Mock, patch
 from xml.dom import minidom
@@ -16,6 +18,7 @@ import zlib
 
 from profiles import load_profiles
 from software_emulator import (EMULATOR_PIN, SERVICES, SoftwareSession, emulator_command, main,
+                               capture_bounded_output,
                                keyguard_dismissed, read_native_boot_log, require_software_profile,
                                wait_for_android, wait_for_boot_broadcast, wait_for_unlock,
                                startup_error_window, startup_wait_target, startup_anr_history, require_startup_png)
@@ -944,6 +947,187 @@ class StartupUiSessionTest(unittest.TestCase):
             self.run_recovery()
         self.assertEqual(1, len(self.taps()))
         self.assertFalse(self.session.report['startup_ui']['verified'])
+
+
+class BoundedDiagnosticTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.path = Path(self.temporary.name) / "capture.txt"
+        self.children = []
+
+    def capture(self, script, *, max_bytes=128, timeout=2):
+        popen = subprocess.Popen
+
+        def launch(*args, **kwargs):
+            process = popen(*args, **kwargs)
+            self.children.append(process)
+            return process
+
+        with patch("software_emulator.subprocess.Popen", side_effect=launch), \
+                patch("software_emulator.os.killpg") as kill_group:
+            receipt = capture_bounded_output([sys.executable, "-c", script], self.path,
+                environment=os.environ, deadline=time.monotonic() + timeout, max_bytes=max_bytes)
+        kill_group.assert_not_called()
+        for process in self.children:
+            self.assertIsNotNone(process.returncode)
+            self.assertTrue(process.stdout.closed)
+            with self.assertRaises(ChildProcessError):
+                os.waitpid(process.pid, os.WNOHANG)
+        return receipt
+
+    def test_combined_stdout_stderr_has_strict_byte_cap_and_child_is_reaped(self):
+        receipt = self.capture("import os,time; os.write(1,b'a'*80); os.write(2,b'b'*4096); time.sleep(30)")
+        self.assertEqual("truncated", receipt["status"])
+        self.assertEqual(128, receipt["bytes"])
+        self.assertEqual(b"a" * 80 + b"b" * 48, self.path.read_bytes())
+        self.assertLess(receipt["seconds"], 2)
+        self.assertLess(receipt["exit_code"], 0)
+        self.assertNotIn("stdout", receipt)
+        self.assertNotIn("stderr", receipt)
+
+    def test_timeout_retains_partial_bytes_and_reaps_client(self):
+        receipt = self.capture("import os,time; os.write(1,b'partial trace\\n'); os.write(2,b'stalled binder'); time.sleep(30)",
+                               timeout=2)
+        self.assertEqual("timeout", receipt["status"])
+        self.assertEqual(b"partial trace\nstalled binder", self.path.read_bytes())
+        self.assertEqual(self.path.stat().st_size, receipt["bytes"])
+        self.assertLess(receipt["seconds"], 4)
+        self.assertLess(receipt["exit_code"], 0)
+
+    def test_nonzero_exit_preserves_error_output(self):
+        receipt = self.capture("import os,sys; os.write(2,b'Permission Denial'); sys.exit(7)")
+        self.assertEqual("nonzero_exit", receipt["status"])
+        self.assertEqual(7, receipt["exit_code"])
+        self.assertEqual(b"Permission Denial", self.path.read_bytes())
+
+    def test_exact_cap_and_empty_success_do_not_claim_truncation_or_readiness(self):
+        for payload in (b"x" * 128, b"", b"No entries found.\n"):
+            with self.subTest(payload=payload):
+                receipt = self.capture(f"import os; os.write(1,{payload!r})")
+                self.assertEqual("completed", receipt["status"])
+                self.assertEqual(0, receipt["exit_code"])
+                self.assertEqual(payload, self.path.read_bytes())
+                self.assertNotIn("passed", receipt)
+
+    def test_expired_deadline_never_launches_a_client(self):
+        with patch("software_emulator.subprocess.Popen") as popen:
+            receipt = capture_bounded_output(["adb"], self.path, environment={},
+                                            deadline=10, max_bytes=128, now=lambda: 10)
+        popen.assert_not_called()
+        self.assertEqual("skipped_deadline", receipt["status"])
+        self.assertEqual(0, receipt["bytes"])
+        self.assertIsNone(receipt["exit_code"])
+
+    def test_missing_client_is_a_diagnostic_error(self):
+        receipt = capture_bounded_output([str(self.path / "missing-adb")], self.path,
+            environment={}, deadline=time.monotonic() + 2, max_bytes=128)
+        self.assertEqual("error", receipt["status"])
+        self.assertEqual(0, receipt["bytes"])
+        self.assertIsNone(receipt["exit_code"])
+        self.assertIn("error", receipt)
+
+    def test_read_error_still_reaps_only_the_diagnostic_client(self):
+        # Popen also reads its exec-error pipe; fail only the diagnostic pipe.
+        original_read = os.read
+
+        def read(fd, count):
+            if self.children and fd == self.children[-1].stdout.fileno():
+                raise OSError("read unavailable")
+            return original_read(fd, count)
+
+        with patch("software_emulator.os.read", side_effect=read):
+            receipt = self.capture("import os,time; os.write(1,b'trace'); time.sleep(30)")
+        self.assertEqual("error", receipt["status"])
+        self.assertEqual("read unavailable", receipt["error"])
+
+
+class FailedBootDiagnosticTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.clock = Clock()
+        self.session = SoftwareSession(PROFILE, Path(self.temporary.name) / "evidence", "/sdk", now=self.clock.now)
+
+    def test_separate_tag_caps_share_original_session_deadline(self):
+        self.clock.seconds = 95
+        self.session.deadline = 100
+
+        def capture(command, path, **kwargs):
+            self.assertEqual(100, kwargs["deadline"])
+            self.clock.pause(3)
+            return {"status": "timeout", "bytes": 7, "exit_code": -9}
+
+        with patch("software_emulator.capture_bounded_output", side_effect=capture) as capture:
+            self.session.capture_boot_failure()
+        self.assertEqual([2 * 1024 * 1024, 1024 * 1024],
+                         [call.kwargs["max_bytes"] for call in capture.call_args_list])
+        self.assertEqual([["/sdk/platform-tools/adb", "-s", "emulator-5554", "shell", "dumpsys", "dropbox", "--print", tag]
+                          for tag in ("system_app_anr", "system_server_watchdog")],
+                         [call.args[0] for call in capture.call_args_list])
+        self.assertEqual(100, self.session.deadline)
+        self.assertEqual(900, self.session.report["boot_timeout_seconds"])
+
+    def test_each_capture_is_limited_to_ten_seconds(self):
+        with patch("software_emulator.capture_bounded_output", return_value={}) as capture:
+            self.session.capture_boot_failure()
+        self.assertEqual([10, 10], [call.kwargs["deadline"] for call in capture.call_args_list])
+
+    def test_only_failed_boot_captures_after_verdict_and_cannot_mask_failure_or_teardown(self):
+        session = self.session
+        emulator = Mock(pid=12345, poll=Mock(return_value=None), returncode=-15)
+        argv = ["software_emulator.py", "--profile", PROFILE["id"], "--out", str(session.out), "--", "controller"]
+
+        def failed_boot(deadline):
+            self.assertEqual(900, deadline)
+            self.assertNotIn("failed_boot_dropbox", session.report)
+            self.assertFalse(session.boot_failed)
+            self.clock.seconds = 900
+            raise TimeoutError("Original boot failure")
+
+        def failed_capture(*args, **kwargs):
+            self.assertTrue(session.boot_failed)
+            self.assertEqual("failed", session.report["status"])
+            self.assertEqual(["Original boot failure"], session.report["errors"])
+            raise OSError("Trace collection unavailable")
+
+        with patch("software_emulator.sys.argv", argv), \
+                patch.dict("software_emulator.os.environ", {"ANDROID_HOME": "/sdk"}), \
+                patch("software_emulator.require_software_profile"), \
+                patch("software_emulator.SoftwareSession", return_value=session), \
+                patch.object(session, "provision"), patch.object(session, "capture_host_resources"), \
+                patch.object(session, "wait_ready", side_effect=failed_boot), \
+                patch.object(session, "adb", return_value=reply("final diagnostics")), \
+                patch("software_emulator.capture_bounded_output", side_effect=failed_capture) as capture, \
+                patch("software_emulator.subprocess.Popen", return_value=emulator), \
+                patch("software_emulator.subprocess.run") as controller, \
+                patch("software_emulator.os.killpg") as kill:
+            self.assertEqual(1, main())
+        controller.assert_not_called()
+        self.assertEqual(2, capture.call_count)
+        self.assertEqual([910, 910], [call.kwargs["deadline"] for call in capture.call_args_list])
+        kill.assert_called_once_with(12345, 15)
+        emulator.wait.assert_called_once_with(timeout=10)
+        self.assertFalse(session.avd_home.exists())
+        report = json.loads((session.out / "software-emulator/startup.json").read_text())
+        self.assertFalse(report["passed"])
+        self.assertEqual("failed", report["status"])
+        self.assertEqual(["Original boot failure"], report["errors"])
+        self.assertEqual(["error", "error"], [row["status"] for row in report["failed_boot_dropbox"]])
+
+    def test_provisioning_and_controller_verdicts_never_capture_boot_traces(self):
+        for status, passed in (("provisioning", False), ("ready", False), ("completed", True), ("failed", False)):
+            with self.subTest(status=status, passed=passed), tempfile.TemporaryDirectory() as temporary:
+                session = SoftwareSession(PROFILE, Path(temporary) / "evidence", "/sdk")
+                session.report.update(status=status, passed=passed)
+                session.emulator = Mock(pid=12345, poll=Mock(return_value=None), returncode=-15)
+                with patch.object(session, "adb", return_value=reply("final")), \
+                        patch("software_emulator.capture_bounded_output") as capture, \
+                        patch("software_emulator.os.killpg"):
+                    session.close()
+                capture.assert_not_called()
+                self.assertEqual(passed, session.report["passed"])
+                self.assertEqual(status, session.report["status"])
 
 
 class SoftwareSessionTest(unittest.TestCase):

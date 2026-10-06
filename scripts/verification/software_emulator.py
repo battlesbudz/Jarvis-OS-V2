@@ -13,6 +13,7 @@ import os
 from pathlib import Path, PurePosixPath
 import platform
 import re
+import selectors
 import shutil
 import signal
 import stat
@@ -100,6 +101,67 @@ def remaining(deadline, now=time.monotonic):
     if seconds <= 0:
         raise TimeoutError("Declared emulator deadline expired")
     return seconds
+
+
+def capture_bounded_output(command, path, *, environment, deadline, max_bytes, now=time.monotonic):
+    """Stream a diagnostic's combined output; never buffer or duplicate its payload.
+
+    Killing/reaping only this client avoids waiting on inherited pipes or touching
+    the emulator's process group. Capture limits cannot authorize readiness.
+    """
+    receipt = {"command": command, "file": path.name, "status": "error", "bytes": 0,
+               "max_bytes": max_bytes, "exit_code": None, "deadline_monotonic_seconds": deadline}
+    process = None
+    started = now()
+    try:
+        with path.open("wb") as output:
+            remaining(deadline, now)
+            process = subprocess.Popen(command, env=environment, stdin=subprocess.DEVNULL,
+                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0)
+            os.set_blocking(process.stdout.fileno(), False)
+            with selectors.DefaultSelector() as selector:
+                selector.register(process.stdout, selectors.EVENT_READ)
+                while True:
+                    events = selector.select(remaining(deadline, now))
+                    remaining(deadline, now)
+                    if not events:
+                        continue
+                    # One extra byte distinguishes a full file from truncated output.
+                    space = max_bytes - receipt["bytes"]
+                    try:
+                        chunk = os.read(process.stdout.fileno(), min(65536, space + 1))
+                    except BlockingIOError:
+                        continue
+                    if not chunk:
+                        process.wait(timeout=remaining(deadline, now))
+                        receipt["status"] = "completed" if process.returncode == 0 else "nonzero_exit"
+                        break
+                    output.write(chunk[:space])
+                    receipt["bytes"] += min(len(chunk), space)
+                    if len(chunk) > space:
+                        receipt["status"] = "truncated"
+                        break
+    except (TimeoutError, subprocess.TimeoutExpired):
+        receipt["status"] = "timeout" if process is not None else "skipped_deadline"
+    except (OSError, ValueError) as error:
+        receipt["error"] = str(error)
+    finally:
+        if process is not None:
+            try:
+                if process.poll() is None:
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        pass
+                # SIGKILL then reap, without communicate() draining inherited pipes
+                # or granting a fresh timeout after the collection deadline.
+                process.wait()
+                receipt["exit_code"] = process.returncode
+            finally:
+                if process.stdout is not None:
+                    process.stdout.close()
+        receipt["seconds"] = round(now() - started, 3)
+    return receipt
 
 
 def extract_emulator(archive, destination, deadline, now):
@@ -557,6 +619,7 @@ class SoftwareSession:
                                                    str(self.sdk / "cmdline-tools/latest/bin"),
                                                    self.environment.get("PATH", "")))
         self.emulator = None
+        self.boot_failed = False
         self.report = {"schema": 1, "passed": False, "profile": profile,
                        "acceleration": "software", "boot_timeout_seconds": profile["boot_timeout"],
                        "status": "provisioning", "errors": [],
@@ -913,6 +976,9 @@ class SoftwareSession:
             self.require_display(deadline)
             self.require_startup_ui(deadline)
             self.report["status"] = "ready"
+        except (OSError, ValueError, RuntimeError, TimeoutError, subprocess.TimeoutExpired):
+            self.boot_failed = True
+            raise
         finally:
             self.capture_graphics_backend()
             self.capture_host_resources("boot-ready" if self.report["status"] == "ready" else "boot-failed", deadline)
@@ -929,11 +995,32 @@ class SoftwareSession:
         return wait_for_android(self.adb, lambda: self.emulator.poll() is None, deadline,
                                 now=self.now, record=record)
 
+    def capture_boot_failure(self):
+        # Android 10 shell DUMP access suffices; exact tag filters are ANDed, so
+        # collect the two tags separately. Missing/partial traces prove no readiness.
+        # https://github.com/aosp-mirror/platform_frameworks_base/blob/android10-release/services/core/java/com/android/server/DropBoxManagerService.java
+        receipts = self.report["failed_boot_dropbox"] = []
+        for tag, max_bytes in (("system_app_anr", 2 * 1024 * 1024),
+                               ("system_server_watchdog", 1024 * 1024)):
+            command = [str(self.sdk / "platform-tools/adb"), "-s", SERIAL,
+                       "shell", "dumpsys", "dropbox", "--print", tag]
+            deadline = min(self.deadline, self.now() + 10)
+            try:
+                receipts.append(capture_bounded_output(command, self.diagnostics / f"dropbox-{tag}.txt",
+                    environment=self.environment, deadline=deadline, max_bytes=max_bytes, now=self.now))
+            except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+                # Optional diagnostics must not replace the boot verdict or skip
+                # owned-emulator teardown even if the collector itself fails.
+                receipts.append({"command": command, "status": "error", "error": str(error),
+                                 "deadline_monotonic_seconds": deadline})
+
     def close(self):
         cleanup_error = None
         try:
             if self.emulator is not None:
                 if self.emulator.poll() is None:
+                    if self.boot_failed:
+                        self.capture_boot_failure()
                     # These read-only receipts run after the boot/controller verdict;
                     # they never authorize tests or extend a readiness deadline.
                     diagnostics = (

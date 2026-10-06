@@ -11,6 +11,7 @@ import android.os.SystemClock
 import android.provider.MediaStore
 import android.system.Os
 import android.system.OsConstants
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -31,6 +32,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Configurator
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -206,8 +208,10 @@ class ReleaseLayoutAccessibilityTest {
         assertEquals("$label callback count", expected, counter.get())
     }
 
-    private fun assertAction(tag: String, description: String? = null): UiObject2 {
-        val control = find(By.res(tag))
+    private fun assertAction(tag: String, description: String? = null): UiObject2 =
+        assertAction(find(By.res(tag)), tag, description)
+
+    private fun assertAction(control: UiObject2, tag: String, description: String?): UiObject2 {
         assertTrue("$tag is disabled", control.isEnabled)
         assertTrue("$tag is not exposed as an actionable accessibility node", control.isClickable)
         val label = accessibleName(control)
@@ -236,6 +240,110 @@ class ReleaseLayoutAccessibilityTest {
     private fun actionLabelNodes(control: UiObject2): List<UiObject2> = listOf(control) +
         control.children.filter { !it.isClickable }.flatMap { actionLabelNodes(it) }
 
+    /** Read-only settlement of the two microphone labels, within their original five seconds. */
+    private fun awaitMicrophoneDescription(expected: String) {
+        val tag = "voice_call_pause"
+        val deadline = SystemClock.uptimeMillis() + 5_000
+        val configuration = Configurator.getInstance()
+        val savedIdleTimeout = configuration.getWaitForIdleTimeout()
+        configuration.setWaitForIdleTimeout(0)
+        try {
+            // Preserve the raw client observation before any UiObject2 getter refreshes it.
+            val cachedBefore = cachedActionObservation(tag, deadline)
+            var freshAfter = "unobserved"
+            var matchedInTime = false
+            try {
+                while (SystemClock.uptimeMillis() < deadline) {
+                    val automation = instrumentation.uiAutomation
+                    if (android.os.Build.VERSION.SDK_INT >= 34) {
+                        assertTrue("Microphone discovery requires a fresh accessibility cache", automation.clearCache())
+                    } else {
+                        // Same public, version-scoped refresh as benchmark navigation. Preserve
+                        // all service flags; do not change application semantics or replay a tap.
+                        automation.serviceInfo = checkNotNull(automation.serviceInfo)
+                    }
+                    if (SystemClock.uptimeMillis() >= deadline) break
+                    try {
+                        val control = device.findObject(By.res(tag).pkg(context.packageName))
+                        freshAfter = "missing"
+                        if (control != null) {
+                            val descriptions = actionLabelNodes(control).mapNotNull { it.contentDescription }
+                                .filter { it.isNotBlank() }.distinct()
+                            val name = accessibleName(control)
+                            val resource = control.resourceName
+                            val owner = control.applicationPackage
+                            freshAfter = "resource=$resource package=$owner class=${control.className} " +
+                                "descriptions=$descriptions name=$name bounds=${control.visibleBounds}"
+                            if (name == expected && expected in descriptions) {
+                                assertEquals("Microphone action identity", tag, resource)
+                                assertEquals("Microphone action owner", context.packageName, owner)
+                                assertAction(control, tag, expected)
+                                matchedInTime = SystemClock.uptimeMillis() < deadline
+                                break
+                            }
+                        }
+                    } catch (_: StaleObjectException) {
+                        freshAfter = "action replaced during observation"
+                    }
+                    val remaining = deadline - SystemClock.uptimeMillis()
+                    if (remaining > 0) SystemClock.sleep(remaining.coerceAtMost(100))
+                }
+            } finally {
+                val diagnostic = "layout_microphone_observation api=${android.os.Build.VERSION.SDK_INT} " +
+                    "target=$tag expected=$expected cachedBefore=[$cachedBefore] freshAfter=[$freshAfter] " +
+                    "matchedInTime=$matchedInTime remainingMs=${deadline - SystemClock.uptimeMillis()}"
+                android.util.Log.i("JarvisVerification", diagnostic)
+                instrumentation.sendStatus(1, Bundle().apply { putString("jarvisLayoutMicrophoneObservation", diagnostic) })
+            }
+            assertTrue("$tag must expose the exact description '$expected' within 5,000 ms: $freshAfter", matchedInTime)
+        } finally {
+            configuration.setWaitForIdleTimeout(savedIdleTimeout)
+        }
+    }
+
+    /** Diagnostics only: no refresh, mutation, or borrowing labels from another clickable action. */
+    @Suppress("DEPRECATION")
+    private fun cachedActionObservation(tag: String, deadline: Long): String {
+        var remainingNodes = 256
+        fun checkBudget(depth: Int) {
+            check(SystemClock.uptimeMillis() < deadline) { "snapshot deadline reached" }
+            check(depth <= 32) { "snapshot depth budget reached" }
+            check(remainingNodes-- > 0) { "snapshot node budget reached" }
+        }
+        fun labels(node: AccessibilityNodeInfo, depth: Int): List<String> {
+            checkBudget(depth)
+            val result = mutableListOf("description=${node.contentDescription} text=${node.text}")
+            for (index in 0 until node.childCount) {
+                checkBudget(depth + 1)
+                val child = node.getChild(index) ?: continue
+                try { if (!child.isClickable) result.addAll(labels(child, depth + 1)) } finally { child.recycle() }
+            }
+            return result
+        }
+        fun locate(node: AccessibilityNodeInfo, depth: Int): String? {
+            checkBudget(depth)
+            if (node.viewIdResourceName == tag && node.packageName?.toString() == context.packageName) {
+                val bounds = android.graphics.Rect().also { node.getBoundsInScreen(it) }
+                return "resource=${node.viewIdResourceName} package=${node.packageName} " +
+                    "class=${node.className} labels=${labels(node, depth)} bounds=$bounds"
+            }
+            for (index in 0 until node.childCount) {
+                checkBudget(depth + 1)
+                val child = node.getChild(index) ?: continue
+                try { locate(child, depth + 1)?.let { return it } } finally { child.recycle() }
+            }
+            return null
+        }
+        return try {
+            checkBudget(0)
+            val root = instrumentation.uiAutomation.rootInActiveWindow ?: return "missing root"
+            try { locate(root, 0) ?: "missing action" } finally { root.recycle() }
+        } catch (failure: Exception) {
+            // A diagnostic read must not prevent the required fresh-provider observation.
+            "unavailable (${failure.javaClass.simpleName}: ${failure.message})"
+        }
+    }
+
     private fun assertCallActions() {
         val wisp = find(By.res("jarvis_wisp")).visibleBounds
         val transcript = find(By.res("conversation_transcript")).visibleBounds
@@ -260,9 +368,9 @@ class ReleaseLayoutAccessibilityTest {
         assertAction("voice_call_open", "Start voice call").click()
         assertCallActions()
         assertAction("voice_call_pause", "Pause microphone").click()
-        assertTrue(device.wait(Until.hasObject(By.desc("Resume microphone")), 5_000))
+        awaitMicrophoneDescription("Resume microphone")
         assertAction("voice_call_pause", "Resume microphone").click()
-        assertTrue(device.wait(Until.hasObject(By.desc("Pause microphone")), 5_000))
+        awaitMicrophoneDescription("Pause microphone")
         assertAction("voice_call_end", "End call").click()
         assertTrue(device.wait(Until.gone(By.res("voice_call_end")), 5_000))
         assertCallbackCount("End call", ends, 1)

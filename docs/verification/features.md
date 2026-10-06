@@ -119,6 +119,54 @@ and complete exact-revision matrix must rerun successfully. API 30 separately
 failed to download a valid Emulator archive before startup; that infrastructure
 failure ran no app tests and cannot be treated as Wisp evidence.
 
+### Build 1032 call-growth coverage and API 30 accessibility observation
+
+[Build 1032](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37388436317)
+tests head `cae607b0027ed02f9eb48561e888abdc7ff6b558`, merge
+`fea42d4a975d6ca33eddd912171206b5ae768b26`. Both signed APKs, all 1,032 JVM
+tests (zero failures/errors/skips), 232 helpers, recorded speech and native
+checks pass. API 35 compact, API 36 phone and the actual Pixel Fold profile
+pass their complete gates. The old `VoicePhase.getLabel()` failure is resolved.
+
+The fold profile passes all 50 main methods, real fold/unfold continuity,
+large-font/small-screen controls, upgrade and other required phases. Artifact
+`11380409400`, ZIP SHA-256
+`e020c1ee0ee95239916975f378a5f4b9f063b6bb1c1532dc9563aafb3a939912`, retains
+native screenshots/XML. Wisp's drawing viewport grows from 441×273 to 536×336
+pixels during both controlled calls and returns to idle afterward. Unfolded and
+folded captures retain the draft, transcript and call actions. These fixtures
+verify UI/state integration, not physical microphone/speaker behavior.
+
+API 30 passes all 50 main tests and the large-font, rotation and native-load
+layout cases, but layout test01's second microphone toggle fails its exact
+five-second `Pause microphone` description wait. The PNG shows the resumed
+pause-bar icon and Wisp Listening, while the later XML retains both the old
+`Resume microphone` description and play glyph under the same action. The
+unchanged retry repeats that mismatch. First artifact `11381475636`, ZIP SHA-256
+`21ae83853a6312b928844f93d1f04f7ebd7ab1578f000d215473a6afee5472c2`; retry artifact
+`11381288607`, ZIP SHA-256
+`82bec248054ea18ed024c0d56ec864281bd86163ba2c327254e16156b56d8838`.
+
+Exact-source inspection shows that Compose 1.7.6 exports a merging button's
+spoken description through a synthetic child. UiAutomator 2.3.0 selector/XML
+traversal can reuse cached child nodes, whereas its property getters refresh
+nodes. This supports a stale-observation diagnosis; the failed captures alone
+do not prove the accessibility provider's event-delivery behavior.
+
+The next correction is confined to the layout test's two label observations.
+It reuses the existing version-scoped public cache refresh, preserving the old
+API's service configuration unchanged. It records bounded cached-before and
+fresh-after evidence, re-finds the exact package-owned microphone action, and
+requires its exact description plus the existing actionable/name/48 dp/on-screen
+checks. Each wait still starts one 5,000 ms deadline and rejects late matches.
+There is no extra tap, activity restart, timeout extension or production change;
+fresh wrong state still fails. Actual API 35/UiAutomator 2.3.0 helper compilation
+and 20 deterministic exact-source contract cases pass locally, including wrong
+labels/owners, text-only substitutes, invalid action/bounds, failed refresh,
+stale-node reacquisition, bounded diagnostic failures and late-observation rejection.
+These are helper checks, not a fresh Android pass. The complete exact-revision
+gate remains required.
+
 ## API 29 graphics boot loop — October 5, 2026
 
 [Build 986](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37236069164)
@@ -308,6 +356,17 @@ The next API 29-only load-reduction trial also disables `hw.sensors.light`, `hw.
 This is a supported device variation, not the emulator default or a proven boot fix. Jarvis has no SensorManager consumers, sensor-feature requirements, proximity wake locks or implemented brightness-control coupling. Microphone/audio configuration, other Android profiles and the actual UIAutomator rotation/dimension/continuity assertions remain intact. Platform automatic-brightness/proximity availability changes on this software fixture; physical sensor/device behavior remains outside emulator coverage. Genuine API 29 ARM64, two guest CPUs, 2 GiB RAM, 360x640@140, HostComposition, the 900-second boot/instrumentation budgets and every acceptance assertion remain required.
 
 Cleanup retains `final-sensorservice.txt` through one additional read-only `dumpsys sensorservice` query bounded to ten seconds within the original overall session deadline. It runs after the boot/controller verdict, cannot authorize app tests or make a failed boot pass, and supplements native parsed-configuration receipts. Fresh hosted evidence must establish actual sensor admission, boot completion and the complete release gate; publication stays blocked until then.
+
+
+### Build 1032 retry: retain earlier Android hang traces
+
+[Build 1032 attempt 2](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37388436317) tests head `cae607b0027ed02f9eb48561e888abdc7ff6b558`, merge `fea42d4a975d6ca33eddd912171206b5ae768b26`. API 29 again fails the original 900-second user-0 BOOT_COMPLETED barrier before app instrumentation. Artifact `11381109655`, ZIP SHA-256 `881f728be345abb2ec2d613869c8ff5e6f9ccc7baf28d1bca911226b7c82cb47`, confirms the sensorless configuration (`No Sensors on the device`, `devInitCheck: 0`) and another system-server UI watchdog restart. The late watchdog stack is in `MessageQueue.nativePollOnce` and `Looper.loop`; it does not identify the earlier stall. A logged DropBox add attempt does not prove that the report was persisted or that its earlier stacks are complete.
+
+After a failed boot verdict only, the software-emulator teardown now captures two separate, read-only Android DropBox tags: `system_app_anr` (at most 2 MiB) and `system_server_watchdog` (at most 1 MiB). Android 10's ordinary shell diagnostic permissions suffice. Its app-ANR traces can include system_server, potentially providing earlier context than the late watchdog snapshot. Separate tag queries are necessary because multiple DropBox search arguments are ANDed. Sources: [DropBox dump/filtering](https://github.com/aosp-mirror/platform_frameworks_base/blob/android10-release/services/core/java/com/android/server/DropBoxManagerService.java#L535), [shell diagnostic permissions](https://github.com/aosp-mirror/platform_frameworks_base/blob/android10-release/core/java/com/android/internal/util/DumpUtils.java#L114), [ANR trace selection](https://github.com/aosp-mirror/platform_frameworks_base/blob/android10-release/services/core/java/com/android/server/am/ProcessRecord.java#L1427), and [watchdog reporting](https://github.com/aosp-mirror/platform_frameworks_base/blob/android10-release/services/core/java/com/android/server/Watchdog.java#L615).
+
+Each collection is limited to ten seconds within the original session deadline. Output streams directly to capped files; partial bytes and explicit timeout, truncation, exit, or error metadata are retained. Only the launched adb client is killed/reaped when necessary, and the existing owned-emulator cleanup remains intact. The original failed boot verdict is already final. Successful boot/controller paths and controller failures do not invoke this capture. No configuration, recovery action, watchdog, boot/instrumentation deadline, or acceptance assertion changes.
+
+Local architecture checks and all 243 Python helper tests pass, including eleven new cases for byte/time limits, partial output, process cleanup and invocation only after failed boot. Missing or incomplete DropBox entries remain possible. Fresh hosted execution must verify collection and every required release gate; this diagnostic change establishes no APK pass or new startup success.
 
 
 ## Spoken farewell returns to wake listening

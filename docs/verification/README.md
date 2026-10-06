@@ -108,7 +108,11 @@ commits. Do not create or merge another PR without Justin's permission.
    other profiles remain unchanged. The existing UIAutomator display-rotation,
    actual-dimension and continuity assertions remain required; they do not depend
    on sensor-driven auto-rotation. Cleanup retains a bounded read-only sensorservice
-   receipt after the verdict. This is a load-reduction trial, not a proven startup
+   receipt after the verdict. After a failed boot only, separate read-only
+   `system_app_anr` and `system_server_watchdog` DropBox traces are also retained,
+   capped at 2 MiB/1 MiB and ten seconds each within the existing session deadline.
+   Partial/missing traces remain diagnostic gaps; collection cannot change the
+   failed verdict or authorize tests. This is a load-reduction trial, not a proven startup
    fix: actual admission, boot and the complete exact-head gate must pass. No
    larger runner, hardware acceleration or relaxed deadline is used.
    The unchanged memory requests are
