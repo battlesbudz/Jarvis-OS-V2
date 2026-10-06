@@ -539,9 +539,24 @@ class ReleaseJourneyTest {
     @Test fun test07_settingsToolOpensAndroidSettings() {
         val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true }))
         val result = pipeline.execute(ActionRequest("open_app", mapOf("app" to "Settings", "package" to "com.android.settings")))
-        assertTrue(result.message, result.succeeded)
+        // A submitted launch is never promoted to a verified opening: the
+        // receipt reports the request as sent but unconfirmed.
+        assertEquals(ExecutionResult.Outcome.UNKNOWN_COMPLETION, result.outcome)
+        assertFalse("a submitted launch is not a verified opening: ${result.message}", result.succeeded)
+        assertTrue("the receipt must say the request was sent and opening could not be confirmed: ${result.message}",
+            result.message.contains("was sent") && result.message.contains("could not be confirmed"))
+        // Destination visibility is asserted independently with UiDevice:
+        // only an actually observed foreground package may claim a verified
+        // opening.
         assertTrue("Settings must actually appear, not merely report success",
             device.wait(Until.hasObject(By.pkg("com.android.settings").depth(0)), 15_000))
+        val foregroundObserved = device.currentPackageName == "com.android.settings"
+        assertTrue("Settings must be the foreground package to claim a verified opening", foregroundObserved)
+        val verified = verifiedLaunchReceipt(
+            "Settings", BackgroundLaunchRoute.DIRECT, platformError = null, foregroundObserved = true
+        )
+        assertEquals(ExecutionResult.Outcome.SUCCEEDED, verified.outcome)
+        assertTrue(verified.succeeded)
         // @After captures the launched Settings screen before closing Jarvis's scenario.
     }
 
@@ -781,12 +796,12 @@ class ReleaseJourneyTest {
         val outcome = ActionTurnRunner(AndroidMobileActionExecutor(context, canLaunchDirectly = { true })).run(plan.actionPlan, listOf(listOf(
             com.battlesbudz.jarvis.v2.ai.ToolCall("open_app", "{\"app\":\"Settings\"}"),
             com.battlesbudz.jarvis.v2.ai.ToolCall("read_battery", "{}"))))
-        assertTrue(outcome.completed)
-        assertEquals(listOf("open_app", "read_battery"), outcome.receipts.map { it.request.name })
-        assertTrue(outcome.receipts.all { it.result.succeeded })
+        // The launch is submitted but unconfirmed, so the turn stops here:
+        // the battery read must not inherit the unestablished opening.
+        assertFalse("the turn must not complete on an unconfirmed launch: ${outcome.message}", outcome.completed)
+        assertEquals(listOf("open_app"), outcome.receipts.map { it.request.name })
+        assertEquals(ExecutionResult.Outcome.UNKNOWN_COMPLETION, outcome.receipts.single().result.outcome)
         assertTrue(device.wait(Until.hasObject(By.pkg("com.android.settings").depth(0)), 15_000))
-        val percent = context.getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-        assertEquals("Battery is at $percent percent.", outcome.receipts.last().result.message)
     }
 
     @Test fun test19_retryLiteralUnknownAppStopsWithoutBattery() {
@@ -858,7 +873,7 @@ class ReleaseJourneyTest {
             val combinedReport = delivery.reports.joinToString(" ") { it.text }
             assertTrue(combinedReport.contains("Battery is at"))
             assertTrue(combinedReport.contains("Media volume set to 30 percent."))
-            assertTrue(combinedReport.contains("Opening Settings."))
+            assertTrue(combinedReport.contains("The launch request for Settings was sent, but opening could not be confirmed."))
             assertTrue(session.markDelivered(delivery.attemptId, delivery.reports.map { it.taskId }.toSet()))
             assertEquals(0, session.pendingReportCount())
         } finally {
@@ -2309,9 +2324,15 @@ class ReleaseJourneyTest {
                 if (group == null) group = ledger.admit(plan.steps.map { it.request }, "conditional-thread", resumeAfterRestart = false)
                 pipeline.executeBound(checkNotNull(ledger.get(group!!.attemptIds[index++])), request)
             }, checkBattery = { MobileActionPipeline(executor = executor).execute(ActionRequest("read_battery")) })
-            assertTrue(outcome.message, outcome.completed)
+            // The trailing launch is submitted but unconfirmed, so the turn
+            // reports honestly instead of completing: every step dispatched,
+            // none of them over-claimed.
+            assertFalse("the turn must not complete on an unconfirmed launch: ${outcome.message}", outcome.completed)
             assertEquals(true, outcome.conditionMatched)
             assertEquals(listOf("set_volume", "read_battery", "open_app"), outcome.receipts.map { it.request.name })
+            assertEquals(ExecutionResult.Outcome.UNKNOWN_COMPLETION, outcome.receipts.last().result.outcome)
+            assertTrue("the last receipt must stay honest: ${outcome.receipts.last().result.message}",
+                outcome.receipts.last().result.message.contains("could not be confirmed"))
             assertEquals((audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .4).roundToInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
             assertEquals(percent, outcome.receipts[1].result.batteryPercent)
             assertTrue(device.wait(Until.hasObject(By.pkg("com.android.settings")), 10_000))
@@ -2324,14 +2345,16 @@ class ReleaseJourneyTest {
             assertEquals(false, skipped.conditionMatched)
             assertTrue(skipped.receipts.isEmpty())
             assertEquals((audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .4).roundToInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
-            assertEquals(3, ledger.snapshot().count { it.state == ToolTaskState.SUCCEEDED })
+            assertEquals(2, ledger.snapshot().count { it.state == ToolTaskState.SUCCEEDED })
+            assertEquals("the unconfirmed launch must be journaled as unknown, never succeeded",
+                1, ledger.snapshot().count { it.state == ToolTaskState.UNKNOWN_OUTCOME })
         } finally {
             audio.setStreamVolume(AudioManager.STREAM_MUSIC, before, 0)
             directory.deleteRecursively()
         }
     }
 
-    @Test fun test44_backgroundAssistantOpensAppAndFinishesOrderedPlanWithoutTap() = runBlocking {
+    @Test fun test44_backgroundAssistantSubmitsLaunchAndStopsPlanWithoutTap() = runBlocking {
         val service = context.packageName + "/com.battlesbudz.jarvis.v2.assistant.JarvisInteractionService"
         val keys = listOf("assistant", "voice_interaction_service", "voice_recognition_service")
         val saved = keys.associateWith { device.executeShellCommand("settings get secure $it").trim() }
@@ -2357,10 +2380,15 @@ class ReleaseJourneyTest {
                 dispatch = { request -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     MobileActionPipeline(executor = executor).execute(request)
                 } }, checkBattery = { error("No conditional reading requested") })
-            assertTrue(outcome.message, outcome.completed)
-            assertEquals(listOf("set_volume", "open_app", "read_battery"), outcome.receipts.map { it.request.name })
+            // The assistant route submits the launch but cannot observe the
+            // destination, so the plan stops here instead of treating the
+            // battery read as success-backed by an unconfirmed opening.
+            assertFalse("the plan must not complete on an unconfirmed launch: ${outcome.message}", outcome.completed)
+            assertEquals(listOf("set_volume", "open_app"), outcome.receipts.map { it.request.name })
+            assertEquals(ExecutionResult.Outcome.UNKNOWN_COMPLETION, outcome.receipts.last().result.outcome)
+            assertTrue("the assistant receipt must stay honest: ${outcome.receipts.last().result.message}",
+                outcome.receipts.last().result.message.contains("could not be confirmed"))
             assertEquals((audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * .4).roundToInt(), audio.getStreamVolume(AudioManager.STREAM_MUSIC))
-            assertEquals(context.getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY), outcome.receipts.last().result.batteryPercent)
             assertTrue("Background app command must really open Settings without notification interaction",
                 device.wait(Until.hasObject(By.pkg("com.android.settings")), 10_000))
             assertTrue(diagnostics.any { "route=selected_assistant visible=false binding=true" in it })
@@ -2370,7 +2398,9 @@ class ReleaseJourneyTest {
             val again = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 MobileActionPipeline(executor = executor).execute(ActionRequest("open_app", mapOf("app" to "Settings")))
             }
-            assertTrue(again.message, again.succeeded)
+            assertEquals("the assistant submission stays unconfirmed, never success",
+                ExecutionResult.Outcome.UNKNOWN_COMPLETION, again.outcome)
+            assertFalse(again.succeeded)
             assertFalse(again.message.contains("tap", ignoreCase = true))
             assertTrue(device.wait(Until.hasObject(By.pkg("com.android.settings")), 10_000))
             val missing = MobileActionPipeline(executor = executor).execute(ActionRequest("open_app", mapOf("app" to "jarvis nonexistent fixture app")))
@@ -3201,7 +3231,10 @@ class ReleaseJourneyTest {
     @Test fun test52_openSettingsWifiShowsSettings() {
         val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true }))
         val result = pipeline.execute(ActionRequest("open_settings", mapOf("screen" to "wifi")))
-        assertTrue(result.message, result.succeeded)
+        // Submitted, never promoted: only an observed foreground package
+        // may claim a verified opening.
+        assertEquals(ExecutionResult.Outcome.UNKNOWN_COMPLETION, result.outcome)
+        assertFalse("a submitted launch is not a verified opening: ${result.message}", result.succeeded)
         assertTrue("Wi-Fi settings must actually appear, not merely report success",
             device.wait(Until.hasObject(By.pkg("com.android.settings").depth(0)), 15_000))
         // @After captures the launched Settings screen before closing Jarvis's scenario.
@@ -3210,7 +3243,8 @@ class ReleaseJourneyTest {
     @Test fun test53_openWebsiteDispatchesHonestReceipt() {
         val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true }))
         val result = pipeline.execute(ActionRequest("open_website", mapOf("url" to "example.com")))
-        assertTrue("open_website must dispatch: ${result.message}", result.succeeded)
+        assertEquals("an unobserved website launch stays unconfirmed: ${result.message}",
+            ExecutionResult.Outcome.UNKNOWN_COMPLETION, result.outcome)
         assertTrue("receipt must name the normalized URL honestly",
             result.message.contains("https://example.com"))
         val rejected = pipeline.execute(ActionRequest("open_website", mapOf("url" to "javascript:alert(1)")))
@@ -3220,7 +3254,8 @@ class ReleaseJourneyTest {
     @Test fun test54_navigateDispatchesHonestReceipt() {
         val pipeline = MobileActionPipeline(executor = AndroidMobileActionExecutor(context, canLaunchDirectly = { true }))
         val result = pipeline.execute(ActionRequest("navigate", mapOf("destination" to "1600 Amphitheatre Parkway")))
-        assertTrue("navigate must dispatch: ${result.message}", result.succeeded)
+        assertEquals("an unobserved navigation launch stays unconfirmed: ${result.message}",
+            ExecutionResult.Outcome.UNKNOWN_COMPLETION, result.outcome)
         assertTrue("receipt must name the destination honestly",
             result.message.contains("1600 Amphitheatre Parkway"))
         val rejected = pipeline.execute(ActionRequest("navigate", mapOf("destination" to "   ")))
@@ -3241,6 +3276,8 @@ class ReleaseJourneyTest {
         override fun isAvailable(): Boolean = available
         override fun observe(): ScreenObservation? = observation
         override fun currentWindowIdentity(): String? = observation?.windowIdentity
+        override fun currentContentFingerprint(): String? =
+            observation?.let { contentFingerprintOf(it.nodes) }
         override fun tap(node: ScreenNode): Boolean {
             tapped += node
             return true
