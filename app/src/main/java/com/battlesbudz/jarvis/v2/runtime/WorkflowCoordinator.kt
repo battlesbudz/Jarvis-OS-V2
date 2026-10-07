@@ -70,7 +70,7 @@ internal class WorkflowCoordinator(
     private val alarmRunner = WorkflowAlarmRunner(
         claimDue = { id -> try { workflowLedger.claimDueOccurrence(id) } catch (_: ToolTaskStorageException) { null } },
         claimResume = { id -> try { workflowLedger.claimResumeOccurrence(id) } catch (_: ToolTaskStorageException) { null } },
-        runOccurrence = { occurrence, resume -> runOrResume(occurrence, resume) }
+        runOccurrence = { occurrence, resume -> runOrResume(occurrence, resume, isCancelled = { false }) }
     )
     private val phoneActionLedger = ToolTaskLedger(taskStore)
 

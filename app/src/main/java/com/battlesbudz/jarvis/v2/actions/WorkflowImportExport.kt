@@ -476,6 +476,9 @@ private val IDENTIFIER_KEYS = setOf(
 )
 private val EMAIL_LIKE = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
 
+/** Variable-name hints that a string literal holds a secret (API key, token, password). */
+private val SECRET_VAR_HINTS = setOf("password", "passwd", "secret", "token", "api_key", "apikey", "auth")
+
 private fun bindingNameFor(key: String): String {
     val clean = key.lowercase().map { if (it.isLetterOrDigit()) it else '_' }.joinToString("").trim('_')
     return clean.ifEmpty { "value" }.take(48)
