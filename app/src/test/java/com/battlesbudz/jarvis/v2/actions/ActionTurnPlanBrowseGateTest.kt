@@ -30,7 +30,7 @@ class ActionTurnPlanBrowseGateTest {
         try {
             val plan = ActionTurnPlan.parse("browse to example.com")
             val ready = plan as? ActionTurnPlan.Ready
-                ?: fail("A wired browse request must plan, got $plan")
+                ?: throw AssertionError("A wired browse request must plan, got $plan")
             assertEquals(1, ready.steps.size)
             assertEquals("browse_open", ready.steps.single().request.name)
             assertEquals("example.com", ready.steps.single().request.arguments["url"])
@@ -45,7 +45,7 @@ class ActionTurnPlanBrowseGateTest {
         try {
             val plan = ActionTurnPlan.parse("read this page")
             val ready = plan as? ActionTurnPlan.Ready
-                ?: fail("A wired page-read request must plan, got $plan")
+                ?: throw AssertionError("A wired page-read request must plan, got $plan")
             assertEquals("browse_read", ready.steps.single().request.name)
         } finally {
             gate.wired = false
@@ -56,7 +56,7 @@ class ActionTurnPlanBrowseGateTest {
         MobileToolCatalog.BrowserRuntimeGate.wired = false
         val plan = ActionTurnPlan.parse("open youtube.com")
         val ready = plan as? ActionTurnPlan.Ready
-            ?: fail("open_website must still plan while browse is gated, got $plan")
+            ?: throw AssertionError("open_website must still plan while browse is gated, got $plan")
         assertEquals("open_website", ready.steps.single().request.name)
     }
 }
