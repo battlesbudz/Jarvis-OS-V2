@@ -1,5 +1,17 @@
 # Feature and acceptance map
 
+## Streaming Gradle configuration repair — October 7, 2026
+
+[Build 1132](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37572005554)
+passed the SDK producer, recorded speech and upgrade-baseline jobs. Its APK job
+then failed while compiling the Gradle Kotlin DSL, before app compilation or APK
+output: appending a string list with `+=` to the heterogeneous validator argument
+list was resolved as an invalid reassignment. The repair uses explicit `addAll`,
+preserving the same three workflow/provenance arguments. A standalone check of
+the verbatim mutation lines reproduced the original compile failure and compiled
+and executed the corrected form; this does not replace the hosted Gradle build.
+Full-E2B quality was continuing independently when APK configuration failed.
+
 ## Parallel streaming build candidate — October 7, 2026
 
 [Build 1127](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37560739072)

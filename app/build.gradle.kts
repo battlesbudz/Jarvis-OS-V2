@@ -30,8 +30,8 @@ val validateStreamingSdk by tasks.registering(Exec::class) {
             "--expected-provenance-sha256", litertLmBridgeProvenanceSha256,
             "--require-digests", "--app-ndk", File(android.sdkDirectory, "ndk/27.2.12479018"))
         if (System.getenv("GITHUB_ACTIONS") == "true") {
-            arguments += listOf("--check-workflow", "--producer-attempt",
-                requiredStreamingProperty("litertLmBridgeProducerAttempt"))
+            arguments.addAll(listOf("--check-workflow", "--producer-attempt",
+                requiredStreamingProperty("litertLmBridgeProducerAttempt")))
         }
         commandLine(arguments)
     }
