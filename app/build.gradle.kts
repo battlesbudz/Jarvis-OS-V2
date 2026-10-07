@@ -132,6 +132,12 @@ android {
     packaging.jniLibs.useLegacyPackaging = providers.gradleProperty("compactApk")
         .map { it.toBooleanStrict() }.getOrElse(false)
     packaging.jniLibs.excludes += setOf("**/libsherpa-onnx-c-api.so", "**/libsherpa-onnx-cxx-api.so")
+    // These two reviewed ELF derivations must reach the APK byte-for-byte.
+    // A second stripping pass can move their added read-only metadata segment.
+    packaging.jniLibs.keepDebugSymbols.addAll(setOf(
+        "**/libLiteRtTopKOpenClSampler.so",
+        "**/libLiteRtTopKWebGpuSampler.so",
+    ))
     buildFeatures { compose = true; buildConfig = true }
 }
 dependencies {

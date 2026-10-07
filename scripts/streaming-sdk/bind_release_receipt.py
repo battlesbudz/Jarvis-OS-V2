@@ -11,6 +11,7 @@ import sys
 import zipfile
 from package_android_aar import sha256
 from producer_identity import workflow_identity
+from verify_packaged_samplers import verify as verify_packaged_samplers
 
 ROOT = Path(__file__).resolve().parents[2]
 QUALITY_FILES = {'build/build-status.json', 'build/source-snapshot.json',
@@ -74,7 +75,10 @@ def bind(inputs, out, quality, expected_aar, expected_provenance, identity,
     candidates=list((inputs/'jarvis-streaming-sdk-consumer').rglob('*.provenance.json'))
     if len(candidates)!=1 or sha256(candidates[0])!=expected_provenance:
         raise ValueError('Missing, ambiguous or changed SDK consumer provenance')
-    provenance=load(candidates[0]);source=provenance['source']
+    provenance=load(candidates[0])
+    if not isinstance(provenance,dict) or not isinstance(provenance.get('source'),dict):
+        raise ValueError('SDK consumer provenance and source must be objects')
+    source=provenance['source']
     source_receipt=inputs/'jarvis-streaming-sdk-consumer/source-receipt.json'
     if not source_receipt.is_file() or sha256(source_receipt)!=expected_source_receipt or load(source_receipt)!=source:
         raise ValueError('SDK source receipt does not match exact producer/AAR provenance')
@@ -85,11 +89,10 @@ def bind(inputs, out, quality, expected_aar, expected_provenance, identity,
             or source.get('reviewed_patch_sha256')!=reviewed['patch_sha256']
             or source.get('reviewed_source_sha256')!=sha256(ROOT/'third_party/litert-lm-0.16.0/reviewed-source.json')):
         raise ValueError('SDK provenance is not the exact reviewed producer result')
+    packaged_samplers = []
     for name in ('app-release.apk','app-compact.apk'):
-        with zipfile.ZipFile(inputs/'jarvis-os-v2-release-apk'/name) as archive:
-            asset='assets/litert-lm-source-provenance.json'
-            if archive.namelist().count(asset)!=1 or json.loads(archive.read(asset))!={k:v for k,v in provenance.items() if k!='aar_sha256'}:
-                raise ValueError('APK does not embed the reviewed SDK provenance: '+name)
+        packaged_samplers.append(verify_packaged_samplers(
+            inputs/'jarvis-os-v2-release-apk'/name, candidates[0], expected_provenance))
     quality_name=f"jarvis-streaming-quality-evidence-{quality_identity['GITHUB_RUN_ID']}-{quality_identity['GITHUB_RUN_ATTEMPT']}"
     if quality.name!=quality_name:
         raise ValueError('Quality artifact directory differs from retained producer name')
@@ -106,6 +109,7 @@ def bind(inputs, out, quality, expected_aar, expected_provenance, identity,
             'quality_artifact_name':quality_name, 'producer_attempt':identity['GITHUB_RUN_ATTEMPT'],
             'quality_workflow_identity':quality_identity, 'quality_producer_attempt':quality_identity['GITHUB_RUN_ATTEMPT'],
             'source_receipt_sha256':expected_source_receipt,
+            'packaged_sampler_identity': packaged_samplers,
             'host_native_quality':quality_result,
             'scope':'Same-run SDK package and host native full-model prerequisite; Android/JNI full-model and physical audio remain unverified.'}
 

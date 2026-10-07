@@ -32,6 +32,14 @@ descriptors, thirty-one SDK JNI exports and six normal-owner methods/exports. Th
 unchanged page auditor checks every selected native object for ARM64/16KB safety.
 It retains the upstream manifest/notices and embeds a complete source receipt.
 
+The app preserves the two derived TopK sampler binaries through AGP's
+`keepDebugSymbols` copy path. Their added read-only metadata segment must not be
+relocated by a second strip operation. `verify_packaged_samplers.py` checks the
+exact fixed output hashes, producer provenance and modification notice in both
+final APKs before upload; the final release binder repeats it. Other libraries
+keep their existing strip policy. The independent final APK page audit remains
+required, including ZIP offsets and both sampler ELF LOADs.
+
 `validate_artifact.py` rehashes the AAR, classes, all native entries and external
 provenance, verifies its embedded receipt, source patch, manifest, production
 inventory, native closure and the current run/source plus original successful

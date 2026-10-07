@@ -1,5 +1,28 @@
 # Feature and acceptance map
 
+## Preserve repaired sampler bytes through APK packaging — 7 October 2026
+
+Build 1158 passed the SDK producer, its native audit and all 1,471 JVM tests, then
+produced both signed APKs. The independent final-package audit rejected both
+samplers: the added read-only metadata LOAD segment's file offset changed while
+its virtual address stayed fixed, breaking the required 16 KB congruence. The
+APK samplers also lost debug/symbol sections and no longer matched the reviewed
+SDK output hashes. These APKs are not qualified for native phone testing.
+
+The app now preserves debug symbols for exactly the two repaired sampler names.
+AGP's documented `keepDebugSymbols` copy path avoids the second strip operation;
+all other native libraries retain their existing packaging policy. This retains
+additional upstream symbol bytes and may increase APK size. A bounded final ZIP
+check now requires both APK sampler payloads and modification notices to match
+the exact producer and reviewed output pins before artifact upload. The final
+release receipt repeats that check independently of the earlier package result.
+
+Sixty-nine SDK helper tests pass. Both actual signed Build1158 APKs are rejected
+by the new check, while stored and compressed ZIP fixtures containing the exact
+reviewed sampler bytes pass. These fixtures are not signed app builds or Android
+execution. The new candidate still requires full APK assembly, unchanged 16 KB
+and device loading gates, numerical/model quality and final release binding.
+
 
 ## Streaming sampler dependency checkpoint — 7 October 2026
 

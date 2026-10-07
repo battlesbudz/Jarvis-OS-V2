@@ -3,7 +3,9 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
+import verify_packaged_samplers
 from bind_release_receipt import quality_receipt, QUALITY_FILES, bind, ROOT
 from package_android_aar import sha256
 from producer_identity import workflow_identity
@@ -71,6 +73,10 @@ class QualityEvidenceBinding(unittest.TestCase):
 
 
     def test_both_apks_must_embed_exact_producer_provenance(self):
+        payloads = {name: ('test-' + name).encode() for name in verify_packaged_samplers.OUTPUTS}
+        pins = {name: hashlib.sha256(data).hexdigest() for name, data in payloads.items()}
+        override = patch.object(verify_packaged_samplers, 'OUTPUTS', pins)
+        override.start(); self.addCleanup(override.stop)
         newer=self.root.with_name('jarvis-streaming-quality-evidence-123-2');self.root.rename(newer);self.root=newer
         self.quality_identity['GITHUB_RUN_ATTEMPT']='2'
         inputs=self.root/'inputs';out=self.root/'out';out.mkdir()
@@ -82,6 +88,10 @@ class QualityEvidenceBinding(unittest.TestCase):
         self.write()
         p={'aar_sha256':'d'*64,'source':{'workflow_identity':self.identity,
             'reviewed_patch_sha256':self.patch,'reviewed_source_sha256':sha256(manifest)}}
+        notice = (ROOT/'scripts/streaming-sdk/SAMPLER-DEPENDENCY-NOTICE.md').read_bytes()
+        p.update(native_sha256=pins, sampler_dependency_derivations={
+            name: {'output_sha256': digest} for name, digest in pins.items()},
+            sampler_modifications_notice_sha256=hashlib.sha256(notice).hexdigest())
         provenance=consumer/'sdk.provenance.json';provenance.write_text(json.dumps(p))
         (consumer/'streaming-sdk-manifest.json').write_text('{}')
         source_receipt=consumer/'source-receipt.json';source_receipt.write_text(json.dumps(p['source']))
@@ -90,14 +100,34 @@ class QualityEvidenceBinding(unittest.TestCase):
         apks=inputs/'jarvis-os-v2-release-apk';apks.mkdir()
         for name in ('app-release.apk','app-compact.apk'):
             with zipfile.ZipFile(apks/name,'w') as z:
-                z.writestr('assets/litert-lm-source-provenance.json',json.dumps({'source':p['source']}))
+                z.writestr('assets/litert-lm-source-provenance.json',json.dumps({k:v for k,v in p.items() if k!='aar_sha256'}))
+                z.writestr('assets/litert-lm-sampler-modifications.md',notice)
+                for library, payload in payloads.items(): z.writestr('lib/arm64-v8a/'+library,payload)
         consumer=dict(self.identity,GITHUB_RUN_ATTEMPT='3')
+        original_provenance = provenance.read_bytes()
+        for malformed in ([], {'source': []}):
+            provenance.write_text(json.dumps(malformed))
+            with self.assertRaisesRegex(ValueError, 'must be objects'):
+                bind(inputs,out,self.root,'d'*64,sha256(provenance),workflow_identity(consumer,'1'),
+                     workflow_identity(consumer,'2'),sha256(source_receipt))
+        provenance.write_bytes(original_provenance)
+        # The binder must delegate before opening any APK payload itself, so the
+        # size limits in the shared verifier cannot be preceded by an unbounded read.
+        with patch('bind_release_receipt.verify_packaged_samplers',
+                   side_effect=ValueError('bounded_verifier_first')) as verifier, \
+                patch('bind_release_receipt.zipfile.ZipFile',
+                      side_effect=AssertionError('unbounded APK read before verifier')):
+            with self.assertRaisesRegex(ValueError, 'bounded_verifier_first'):
+                bind(inputs,out,self.root,'d'*64,sha256(provenance),workflow_identity(consumer,'1'),
+                     workflow_identity(consumer,'2'),sha256(source_receipt))
+            verifier.assert_called_once()
         result=bind(inputs,out,self.root,'d'*64,sha256(provenance),workflow_identity(consumer,'1'),
             workflow_identity(consumer,'2'),sha256(source_receipt))
         self.assertTrue(result['passed'])
         self.assertEqual('1',result['producer_attempt'])
         self.assertEqual('jarvis-streaming-quality-evidence-123-2',result['quality_artifact_name'])
         self.assertEqual('2',result['quality_producer_attempt'])
+        self.assertEqual(2,len(result['packaged_sampler_identity']))
         self.assertTrue((out/'streaming-quality/EVIDENCE-INDEX.json').is_file())
         # A successful retry may not report quality from a different SDK producer.
         self.data['build/build-status.json']['android_source_receipt_sha256']='0'*64;self.write()
@@ -114,6 +144,9 @@ class QualityEvidenceBinding(unittest.TestCase):
         self.assertNotIn('implementation("com.google.ai.edge.litertlm:litertlm-android',gradle)
         self.assertIn('throw GradleException',gradle)
         self.assertIn('ndkVersion = "27.2.12479018"',gradle)
+        self.assertIn('packaging.jniLibs.keepDebugSymbols.addAll(setOf(',gradle)
+        for name in verify_packaged_samplers.OUTPUTS:
+            self.assertIn('"**/'+name+'"',gradle)
         for dependency in ['gson:2.13.2','kotlin-reflect:2.3.21','kotlinx-coroutines-android:1.9.0']:
             self.assertIn(dependency,gradle)
         workflow=(ROOT/'.github/workflows/android.yml').read_text()
@@ -150,6 +183,9 @@ class QualityEvidenceBinding(unittest.TestCase):
         self.assertNotIn('needs: [build-streaming-sdk, verify-streaming-quality]',release)
         self.assertIn('artifact/UNVERIFIED-CANDIDATE.txt',release)
         self.assertIn('Authoritative run:',release)
+        self.assertLess(release.index('- name: Verify final sampler bytes and notices'),
+                        release.index('- name: Upload unverified APK build artifacts'))
+        self.assertIn('--apk artifact/app-release.apk --apk artifact/app-compact.apk',release)
         for section in ('publish:', 'publish-memory-test:', 'publish-pr-test:'):
             publishing=workflow.split('  '+section,1)[1].split('    steps:',1)[0]
             self.assertIn('verify-streaming-quality',publishing)

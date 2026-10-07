@@ -445,6 +445,24 @@ jobs:
           path: artifact/compact-size/
           if-no-files-found: error
 
+      - name: Verify final sampler bytes and notices
+        env:
+          STREAMING_PROVENANCE_SHA256: ${{ needs.build-streaming-sdk.outputs.provenance_sha256 }}
+        run: |
+          python3 scripts/streaming-sdk/verify_packaged_samplers.py \
+            --apk artifact/app-release.apk --apk artifact/app-compact.apk \
+            --provenance streaming-sdk-input/litertlm-android-0.16.0-sealed-audio-arm64.provenance.json \
+            --expected-provenance-sha256 "$STREAMING_PROVENANCE_SHA256" \
+            --out artifact/packaged-sampler-identity.json
+
+      - name: Retain final sampler identity
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-packaged-sampler-identity
+          path: artifact/packaged-sampler-identity.json
+          if-no-files-found: warn
+
       - name: Upload unverified APK build artifacts
         uses: actions/upload-artifact@v4
         with:
