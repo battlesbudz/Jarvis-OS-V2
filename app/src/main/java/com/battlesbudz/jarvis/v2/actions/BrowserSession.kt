@@ -112,9 +112,13 @@ object BrowserNavigationPolicy {
         val withScheme = if (lower.startsWith("http://") || lower.startsWith("https://")) trimmed
         else "https://$trimmed"
         val scheme = withScheme.substringBefore("://").lowercase()
-        val host = withScheme.substringAfter("://").substringBefore("/").lowercase()
-        if ('.' !in host || host.startsWith(".") || host.endsWith(".")) return null
-        if (scheme == "http" && !isLoopbackHost(host)) return null
+        val hostPort = withScheme.substringAfter("://").substringBefore("/").lowercase()
+        val host = if (hostPort.startsWith("[")) hostPort.substringBefore("]") + "]"
+        else hostPort.substringBefore(":")
+        if (host.startsWith(".") || host.endsWith(".")) return null
+        val loopback = isLoopbackHost(host)
+        if (!loopback && '.' !in host) return null
+        if (scheme == "http" && !loopback) return null
         if (scheme != "http" && scheme != "https") return null
         return withScheme
     }
