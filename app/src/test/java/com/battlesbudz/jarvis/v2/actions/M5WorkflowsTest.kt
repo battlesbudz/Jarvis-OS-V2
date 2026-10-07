@@ -117,11 +117,11 @@ class M5WorkflowsTest {
     }
 
     @Test fun manifestRejectsInvalidWorkflow() {
-        val json = """{"manifestVersion":1,"workflow":{"id":"${uid()}","name":"x","description":"",` +
-            `"version":1,"maxStepsPerRun":16,"origin":"conversation","createdAtMs":1,"updatedAtMs":1,` +
-            `"steps":[],"triggers":[{"kind":"manual"}]},"requiredTools":[],"permittedScopes":[],` +
-            `"scriptRuntime":null,"setupBindings":[],` +
-            `"provenance":{"author":"a","source":"s","createdAtMs":1},"documentation":""}`
+        val json = "{\"manifestVersion\":1,\"workflow\":{\"id\":\"" + uid() + "\",\"name\":\"x\"," +
+            "\"description\":\"\",\"version\":1,\"maxStepsPerRun\":16,\"origin\":\"conversation\"," +
+            "\"createdAtMs\":1,\"updatedAtMs\":1,\"steps\":[],\"triggers\":[{\"kind\":\"manual\"}]}," +
+            "\"requiredTools\":[],\"permittedScopes\":[],\"scriptRuntime\":null,\"setupBindings\":[]," +
+            "\"provenance\":{\"author\":\"a\",\"source\":\"s\",\"createdAtMs\":1},\"documentation\":\"\"}"
         try {
             parseWorkflowManifest(json)
             fail("expected validation failure for empty steps")
