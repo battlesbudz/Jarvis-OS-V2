@@ -316,7 +316,7 @@ private fun parseStep(node: MNode, path: String): WorkflowStep {
                     }?.values?.toMap() ?: emptyMap(),
                 outputs = o.optObj("outputs", path)
                     ?.mapValues { (k, v) ->
-                        k to when ((v as? MNode.Str)?.value) {
+                        when ((v as? MNode.Str)?.value) {
                             "TEXT" -> WorkflowValueType.TEXT
                             "NUMBER" -> WorkflowValueType.NUMBER
                             "BOOLEAN" -> WorkflowValueType.BOOLEAN
@@ -364,7 +364,7 @@ private fun parseStep(node: MNode, path: String): WorkflowStep {
             },
             outputs = o.optObj("outputs", path)
                 ?.mapValues { (k, v) ->
-                    k to when ((v as? MNode.Str)?.value) {
+                    when ((v as? MNode.Str)?.value) {
                         "TEXT" -> WorkflowValueType.TEXT
                         "NUMBER" -> WorkflowValueType.NUMBER
                         "BOOLEAN" -> WorkflowValueType.BOOLEAN
