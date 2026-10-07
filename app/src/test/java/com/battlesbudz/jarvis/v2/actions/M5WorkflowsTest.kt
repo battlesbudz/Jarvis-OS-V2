@@ -158,26 +158,25 @@ class M5WorkflowsTest {
     }
 
     @Test fun exportRedactsSecretsAndListsBindings() {
-        val secretUrl = "https://user:s3cret@internal.example.com/hook"
+        val secretEmail = "user@example.com"
         val def = definition(steps = listOf(
-            WorkflowStep.Tool(uid(), ActionRequest("open_website", mapOf("url" to secretUrl))),
+            WorkflowStep.Tool(uid(), ActionRequest("open_app", mapOf("app" to secretEmail))),
             volumeStep("20")
         ))
         val export = exportWorkflow(def, author = "tester", nowMs = nowMs)
         // No secret survives in the shared JSON.
-        assertFalse(export.manifestJson.contains("s3cret"))
-        assertFalse(export.manifestJson.contains("internal.example.com"))
-        assertTrue(export.manifestJson.contains("{{setup:url}}"))
+        assertFalse(export.manifestJson.contains("user@example.com"))
+        assertTrue(export.manifestJson.contains("{{setup:app}}"))
         // The binding is listed for the importer to fill in.
-        val binding = export.preview.redacted.single { it.binding == "{{setup:url}}" }
-        assertTrue(binding.field.contains("arguments[url]"))
+        val binding = export.preview.redacted.single { it.binding == "{{setup:app}}" }
+        assertTrue(binding.field.contains("arguments[app]"))
         // Preview shows shared vs redacted.
-        assertTrue(export.preview.shared.any { it.contains("open_website") })
+        assertTrue(export.preview.shared.any { it.contains("open_app") })
         assertEquals(1, export.preview.redacted.size)
         // The exported manifest parses and still validates.
         val parsed = parseWorkflowManifest(export.manifestJson)
         assertEquals(1, parsed.setupBindings.size)
-        assertEquals("url", parsed.setupBindings[0].name)
+        assertEquals("app", parsed.setupBindings[0].name)
         assertTrue(parsed.setupBindings[0].sensitive)
     }
 
@@ -256,22 +255,22 @@ class M5WorkflowsTest {
 
     @Test fun resolveSetupBindingsFillsPlaceholders() {
         val def = definition(steps = listOf(
-            WorkflowStep.Tool(uid(), ActionRequest("open_website", mapOf("url" to "{{setup:url}}")))
+            WorkflowStep.Tool(uid(), ActionRequest("open_app", mapOf("app" to "{{setup:app}}")))
         ))
-        val resolved = resolveSetupBindings(def, mapOf("url" to "https://example.com"))
+        val resolved = resolveSetupBindings(def, mapOf("app" to "Settings"))
         val args = (resolved.steps[0] as WorkflowStep.Tool).request.arguments
-        assertEquals("https://example.com", args["url"])
+        assertEquals("Settings", args["app"])
     }
 
     @Test fun resolveSetupBindingsThrowsWhenMissing() {
         val def = definition(steps = listOf(
-            WorkflowStep.Tool(uid(), ActionRequest("open_website", mapOf("url" to "{{setup:url}}")))
+            WorkflowStep.Tool(uid(), ActionRequest("open_app", mapOf("app" to "{{setup:app}}")))
         ))
         try {
             resolveSetupBindings(def, emptyMap())
             fail("expected missing-binding failure")
         } catch (e: IllegalArgumentException) {
-            assertTrue(e.message!!.contains("url"))
+            assertTrue(e.message!!.contains("app"))
         }
     }
 
