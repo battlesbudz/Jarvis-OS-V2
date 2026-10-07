@@ -321,13 +321,20 @@ private class ScriptParser(source: String) {
                 p++
                 val c = parseExpr()
                 val th = parseBlock()
-                val el = if (matchIdent("else")) parseBlock() else emptyList()
+                if (peek().kind == Tk.SEMI) p++ // tolerate "};"
+                val el = if (matchIdent("else")) {
+                    val b = parseBlock()
+                    if (peek().kind == Tk.SEMI) p++
+                    b
+                } else emptyList()
                 return Stmt.If(c, th, el)
             }
             "while" -> {
                 p++
                 val c = parseExpr()
-                return Stmt.While(c, parseBlock())
+                val b = parseBlock()
+                if (peek().kind == Tk.SEMI) p++ // tolerate "};"
+                return Stmt.While(c, b)
             }
             "return" -> {
                 p++
