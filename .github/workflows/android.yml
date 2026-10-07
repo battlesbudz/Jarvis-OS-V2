@@ -212,7 +212,8 @@ jobs:
           set -euo pipefail
           python scripts/streaming-quality/run_quality.py \
             --build-dir "$RUNNER_TEMP/streaming-quality-build" \
-            --out "$RUNNER_TEMP/streaming-quality-run"
+            --out "$RUNNER_TEMP/streaming-quality-run" \
+            --diagnostic-on-known-reference-mismatch
       - name: Select weightless quality receipts even after failure
         if: always()
         run: |

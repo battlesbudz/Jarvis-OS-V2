@@ -9,6 +9,7 @@ from common import *
 
 BUILD_FILES = ('build-status.json', 'source-snapshot.json', 'diagnostic-status.json')
 RUN_FILES = ('summary.json', 'input-identity.json', 'frontend.json', 'encoder-oracle.json', 'comparison.json',
+    'diagnostic-pair.json',
     'reassembly/process.json', 'frontend/process.json',
     *[f'encoder-{s}/process.json' for s in ('stateful','static','adapter','eoa')],
     'projected_null/process.json', 'projected_null/result.json', 'raw/process.json', 'raw/result.json')
@@ -40,6 +41,9 @@ def select(build, run):
                 sys.path.insert(0, str(HERE/'encoder-replay'))
                 from diagnostic_status import read as read_diagnostic_status
                 value = read_diagnostic_status(path)
+            elif prefix == 'run' and name == 'diagnostic-pair.json':
+                from diagnostic_pair import read_public
+                value = read_public(path)
             else:
                 value = load(path)
             validate_json(value)

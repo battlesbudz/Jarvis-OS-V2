@@ -1,5 +1,54 @@
 # Feature and acceptance map
 
+## Android model-free timing handshake proposal — 7 October 2026
+
+The existing five-profile layout `test04_nativeLibrariesLoadAtExpectedPageSize`
+adds a dedicated non-Looper worker that calls the shipping public
+`NativeAudioOwner.createOnWorker` with a test-only lease. The reviewed SDK runs
+three timing-v1 JNI handshakes and validates their schema before the first lease
+check. That check throws a unique sentinel; success requires that exact instance,
+exactly one lease check, zero immutable-path reads, no returned native owner and
+a terminated worker. Missing JNI symbols, rejected schemas, another exception,
+unexpected artifact access and timeout/interruption fail the existing test.
+Its library/page-size and real installed-APK asset checks remain required.
+
+The worker has a five-second join and at most one one-second interrupt/join
+cleanup. A still-live worker fails; Java cannot safely terminate a wedged JNI
+call, so process teardown remains the outer instrumentation/controller boundary.
+The existing native JSON gains a bounded fixed-field `timing_preflight` object,
+and its overall pass predicate also requires the new probe. Existing broad SDK
+release keeps cover the public ABI; no production source, SDK API, new layout
+scenario or fake JNI is introduced.
+
+This isolated proposal has not run on Android and does not qualify Build1174.
+A narrow helper-only Kotlin check passes against the actual Build1174 AAR
+classes and Android 15 framework headers; the complete Compose test-file compilation,
+minified release/test APK build and exact next-candidate five-profile execution
+remain required. Even an Android pass proves only handshake/schema compatibility:
+it does not prove usable clock calibration, timing snapshots, native owner
+lifecycle, model inference, physical audio or device performance. The explicit
+`UNVERIFIED` clock contract and receipt preserve those limits.
+
+## Failed-reference decoder diagnostic proposal — 7 October 2026
+
+The hosted candidate explicitly selects the otherwise default-off
+`run_quality.py --diagnostic-on-known-reference-mismatch` option. It may enter the existing bounded Conversation pair only after the exact known
+historical encoder reference failure and freshly verified same-run row/EOA
+equality. Pure Python tests cover a successful diagnostic preserving the strict
+failed receipt/error/exit, rejection of copied/edited/stale prerequisites, other
+numerical/identity/cleanup/resource failures, all emitted-output validity and
+supported state transitions, bounded public export, and release binding refusal.
+These are host harness logic tests, with injected process/model boundaries.
+
+Strict success behavior, reference hashes, native source, resource profiles and
+release acceptance are unchanged. The workflow opt-in adds diagnostic evidence
+while preserving the failed quality job and blocked release. All 98 state files
+can be validated for schema/finiteness/history/retention; newly computed cache
+rows lack a fresh observed-static `raw_00` through `raw_11` oracle. Structural
+validity does not prove cache equivalence. No native/model execution, hosted
+decoder pass, phone-quality claim, APK verification or Build1174 change follows
+from this proposal. Exact-candidate execution remains a separate review step.
+
 ## Hosted full-E2B context and resource control — 7 October 2026
 
 The selected CPU prefill128 graph has a fixed local-attention update width639,

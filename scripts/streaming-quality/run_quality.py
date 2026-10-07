@@ -15,6 +15,8 @@ from bounded_exec import BUDGET, FULL_E2B_BUDGET, FULL_E2B_PROFILE, run, run_ful
 from build_probes import PACKAGE, TARGETS
 from compare_native_pair import compare
 from prepare_inputs import derive_pcm, extract_sections, encoder_cases, compare_encoder
+from diagnostic_pair import (DiagnosticSession, HistoricalReferenceMismatch, KNOWN_ROWS_SHA,
+    FAILURE_CODE, ERROR_CLASSES, stage_artifacts, validate_state_outputs, public_receipt)
 
 REFERENCE = {'text': 'Roses are red, violets are blue.',
     'source_url': 'https://ai.google.dev/gemma/docs/capabilities/audio',
@@ -96,7 +98,7 @@ def verify_build(build_dir):
     return receipt, sdk
 
 
-def lane_request(mode, work, build, identity):
+def lane_request(mode, work, build, identity, *, projected_sha256=ROWS_SHA):
     projected = (work/'inputs/projected.f32le').read_bytes()
     audio = {'type': 'audio', 'blob': base64.b64encode(projected if mode == 'projected_null' else
                                                    (work/'inputs/matched.wav').read_bytes()).decode()}
@@ -108,7 +110,7 @@ def lane_request(mode, work, build, identity):
         bundle_sha256=BUNDLE['sha256'], producer_sha256=PRODUCER,
         model_path=str(work/'inputs/full.litertlm'), projected_tokens_path=str(work/'inputs/projected.f32le'),
         wav_path=str(work/'inputs/matched.wav'), manifest_sha256=digest(identity), pcm_sha256=PCM_SHA,
-        projected_tokens_sha256=ROWS_SHA, native_binary_sha256=build['binaries']['native_conversation_quality_probe']['sha256'],
+        projected_tokens_sha256=projected_sha256, native_binary_sha256=build['binaries']['native_conversation_quality_probe']['sha256'],
         native_source_snapshot_sha256=build['source_snapshot_sha256'], full_bundle_hash_reverified_before_launch=True,
         context_tokens=640, max_output_tokens=64, audio_embedding_tap=True, resource_profile=FULL_E2B_PROFILE,
         message={'role': 'user', 'content': [{'type': 'text', 'text': 'Transcribe the spoken words in this audio. Return only the transcription.'}, audio]})
@@ -131,10 +133,84 @@ def final_comparison(raw, projected):
     return pair
 
 
+def run_diagnostic_pair(a, work, build, sdk, identity, stages, session, error):
+    """Never return a release pass or alter the strict oracle, summary or exit."""
+    receipt = dict(schema_version=1, purpose='historical_reference_mismatch_diagnostic_only',
+        strict_gate_passed=False, strict_exit_code=2, strict_failure_code=FAILURE_CODE,
+        strict_oracle_sha256=error.receipt_fingerprint[1]['sha256'] if error.receipt_fingerprint else None,
+        prerequisite_binding_sha256=None, actual_rows_sha256=KNOWN_ROWS_SHA, historical_rows_sha256=ROWS_SHA,
+        input_identity_sha256=None, resource_profile=FULL_E2B_PROFILE, state='blocked', failure_class=None,
+        checks={}, lanes={}, native_pair_passed=None, documentation_example_match=None,
+        cache_state_reference_equivalence_proven=False)
+    target = work/'diagnostic-pair.json'
+    try:
+        oracle = session.authorize(error)
+        inputs = work/'inputs'
+        receipt['checks'] = validate_state_outputs(inputs, stages)
+        receipt['prerequisite_binding_sha256'] = session.public_binding()
+        diagnostic = work/'diagnostic-pair'; diagnostic.mkdir()
+        identity = dict(identity, pcm=describe(inputs/'pcm.f32le'), mel=describe(inputs/'mel.f32le'),
+            wav=describe(inputs/'matched.wav'), projected=oracle['projected_rows'],
+            frontend_receipt_sha256=sha(work/'frontend.json'),
+            oracle_receipt_sha256=receipt['strict_oracle_sha256'],
+            diagnostic_only=True, prerequisite_binding_sha256=receipt['prerequisite_binding_sha256'])
+        write(diagnostic/'input-identity.json', identity)
+        session.watch([diagnostic/'input-identity.json'])
+        receipt.update(input_identity_sha256=digest(identity), state='running')
+        write(target, public_receipt(receipt))
+        for mode in ('projected_null', 'raw'):
+            verify_cleanup(a.build_dir)
+            current_build, current_sdk = verify_build(a.build_dir)
+            need(current_build == build and current_sdk == sdk, 'Diagnostic build identity changed')
+            verify(inputs/'full.litertlm', BUNDLE)
+            verify(inputs/'public.wav', WAV)
+            for name, pin in load(HERE/'model-structure.json').items():
+                verify(inputs/(name+'.tflite'), pin)
+            for name, file in [('pcm','pcm.f32le'), ('mel','mel.f32le'), ('wav','matched.wav'), ('projected','projected.f32le')]:
+                verify(inputs/file, identity[name])
+            session.verify_unchanged()
+            request = diagnostic/(mode+'-request.json')
+            write(request, lane_request(mode, work, build, identity, projected_sha256=identity['projected']['sha256']))
+            session.watch([request])
+            process, result = checked_full_e2b(sdk/'bazel-bin'/PACKAGE/'native_conversation_quality_probe',
+                request, diagnostic/mode, binary_identity=build['binaries']['native_conversation_quality_probe'],
+                cleanup_root=a.build_dir)
+            # A native echo cannot substitute the historical hash or another input identity.
+            expected = load(request)
+            need(all(result.get(key) == expected[key] for key in (
+                'mode', 'case', 'sdk_commit', 'litert_workspace_pin', 'bundle_sha256', 'producer_sha256',
+                'manifest_sha256', 'pcm_sha256', 'projected_tokens_sha256', 'native_binary_sha256',
+                'native_source_snapshot_sha256', 'context_tokens', 'max_output_tokens', 'resource_profile')),
+                'Diagnostic native result identity differs', 'identity_failure')
+            # Check the first lane before starting another model; no pair is
+            # claimed until both independently executed results are compared.
+            need(all(result.get(k) is True for k in ('fresh_process','fresh_conversation','checked_drain_delete')),
+                 'Diagnostic native lifecycle is not verified', 'model_cleanup_failure')
+            tap = result.get('audio_embedding_tap', {})
+            need(tap.get('bitwise_equal') is True and tap.get('calls') == 1 and
+                 tap.get('valid_tokens') == 77 and tap.get('bytes_compared') == 473088 and 'error' not in tap,
+                 'Diagnostic embedding tap failed', 'numerical_failure')
+            session.watch([diagnostic/mode/'result.json', diagnostic/mode/'process.json'])
+            session.verify_unchanged()
+            receipt['lanes'][mode] = dict(request_sha256=sha(request),
+                result_sha256=sha(diagnostic/mode/'result.json'), process_sha256=sha(diagnostic/mode/'process.json'))
+            write(target, public_receipt(receipt))
+        pair = final_comparison(load(diagnostic/'raw/result.json'), load(diagnostic/'projected_null/result.json'))
+        receipt.update(state='completed', native_pair_passed=pair['native_pair_passed'],
+            documentation_example_match=pair['documentation_example_match'],
+            failure_class=None if pair['passed'] else pair['classification'])
+    except Exception as failure:
+        kind = failure.classification if isinstance(failure, GateError) else 'orchestration_failure'
+        receipt.update(state='blocked', failure_class=kind if kind in ERROR_CLASSES else 'orchestration_failure')
+    write(target, public_receipt(receipt))
+    return receipt
+
+
 def run_gate(a):
     work = a.out.resolve()
     need(not work.exists(), 'Use a fresh quality run directory; stale receipts are forbidden')
     work.mkdir(parents=True)
+    diagnostic_session = DiagnosticSession(work) if getattr(a, 'diagnostic_on_known_reference_mismatch', False) else None
     summary = {'schema_version': 1, 'classification': 'pending', 'passed': False,
                'android_full_model_proven': False, 'jni_full_model_proven': False,
                'budget': FULL_E2B_BUDGET, 'resource_profile': FULL_E2B_PROFILE,
@@ -158,14 +234,15 @@ def run_gate(a):
                     'source_snapshot_sha256': build['source_snapshot_sha256']}
         summary['stage'] = 'weightless_reassembly'; write(work/'summary.json', summary)
         java = Path(os.environ['JAVA_HOME'])/'bin/java'
-        checked_process([java, '-Xms16m', '-Xmx128m', '-XX:+UseSerialGC', '-XX:ActiveProcessorCount=1',
+        process, _ = checked_process([java, '-Xms16m', '-Xmx128m', '-XX:+UseSerialGC', '-XX:ActiveProcessorCount=1',
             '-XX:CompressedClassSpaceSize=32m', '-XX:MaxMetaspaceSize=128m', '-XX:ReservedCodeCacheSize=64m',
             '-Xss512k', HERE/'recipe/WeightlessEncoderRecipe.java', inputs/'full.litertlm',
             HERE/'recipe/source-copy-recipe.bin', HERE/'recipe/structural-literals.bin.gz', inputs/'stateful.tflite'], work/'reassembly', cleanup_root=a.build_dir)
         verify(inputs/'stateful.tflite', load(HERE/'model-structure.json')['stateful'])
+        if diagnostic_session: diagnostic_session.process_completed('reassembly', process)
         identity['models']['stateful'] = describe(inputs/'stateful.tflite')
         summary['stage'] = 'native_frontend'; write(work/'summary.json', summary)
-        checked_process([sdk/'bazel-bin'/PACKAGE/'native_frontend_quality_probe', inputs/'matched.wav',
+        process, _ = checked_process([sdk/'bazel-bin'/PACKAGE/'native_frontend_quality_probe', inputs/'matched.wav',
                          inputs/'pcm.f32le', inputs/'mel.f32le'], work/'frontend', cleanup_root=a.build_dir)
         frontend = json.loads((work/'frontend/stdout.log').read_text().splitlines()[-1])
         need(frontend.get('passed') is True and frontend.get('decode_pcm_bitwise') is True and
@@ -175,14 +252,35 @@ def run_gate(a):
                         mel=describe(inputs/'mel.f32le'), wav=describe(inputs/'matched.wav'),
                         binary=build['binaries']['native_frontend_quality_probe'])
         write(work/'frontend.json', frontend)
+        if diagnostic_session:
+            diagnostic_session.process_completed('frontend', process, [work/'frontend.json',
+                inputs/'pcm.f32le', inputs/'mel.f32le', inputs/'matched.wav'])
         stages = encoder_cases(inputs)
+        if diagnostic_session:
+            diagnostic_session.watch({inputs/s['file'] for cases in stages.values() for case in cases
+                for s in case['inputs'] if not s['file'].startswith('actual/')})
         summary['stage'] = 'native_encoder_oracle'; write(work/'summary.json', summary)
         (inputs/'actual').mkdir()
         for stage in ('stateful', 'static', 'adapter', 'eoa'):
             target = inputs/'actual'/stage; target.mkdir()
-            checked_process([sdk/'bazel-bin'/PACKAGE/'pinned_encoder_probe', inputs/(stage+'.tflite'),
+            process, _ = checked_process([sdk/'bazel-bin'/PACKAGE/'pinned_encoder_probe', inputs/(stage+'.tflite'),
                              inputs/(stage+'.tsv'), inputs, target], work/('encoder-'+stage), cleanup_root=a.build_dir)
-        oracle = compare_encoder(inputs, stages, work/'encoder-oracle.json')
+            if diagnostic_session:
+                diagnostic_session.process_completed('encoder-'+stage, process, stage_artifacts(inputs, stage, stages[stage]))
+        try:
+            if diagnostic_session:
+                oracle = compare_encoder(inputs, stages, work/'encoder-oracle.json',
+                    continuation_ticket=diagnostic_session.comparison_ticket())
+            else:
+                oracle = compare_encoder(inputs, stages, work/'encoder-oracle.json')
+        except HistoricalReferenceMismatch as error:
+            if diagnostic_session:
+                # The strict failure is unconditionally re-raised, even after successful diagnostics.
+                try:
+                    run_diagnostic_pair(a, work, build, sdk, identity, stages, diagnostic_session, error)
+                finally:
+                    raise error
+            raise
         oracle['binary'] = build['binaries']['pinned_encoder_probe']
         write(work/'encoder-oracle.json', oracle)
         identity.update(pcm=describe(inputs/'pcm.f32le'), mel=describe(inputs/'mel.f32le'),
@@ -220,6 +318,8 @@ def run_gate(a):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--build-dir', type=Path, required=True); p.add_argument('--out', type=Path, required=True)
+    p.add_argument('--diagnostic-on-known-reference-mismatch', action='store_true',
+        help='Diagnostic pair only for the known live encoder mismatch; strict gate and exit remain failed.')
     a = p.parse_args()
     result = run_gate(a); print(json.dumps(result, indent=2))
     return 0 if result['passed'] else 3 if result['classification'] == 'resource_constrained' else 2

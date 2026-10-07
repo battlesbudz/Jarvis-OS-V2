@@ -2,8 +2,8 @@
   "schema_version": 1,
   "files": {
     "README.md": {
-      "bytes": 12210,
-      "sha256": "122362ad994a6ae9503f206e1f7ae46452cc0d0fac524c0d35b182ce1dae6695"
+      "bytes": 15776,
+      "sha256": "b8440b13ddf27dc8678b0d5654be2c299a522abefe95df8319efd9ba0c1af328"
     },
     "bounded_exec.py": {
       "bytes": 16104,
@@ -62,8 +62,8 @@
       "sha256": "4b39b4b7c099d743d90c985c452dcdf523d14f3356a7739d95e1e508f50fda79"
     },
     "export_evidence.py": {
-      "bytes": 4838,
-      "sha256": "09e0b67354eba6652edfb9aa41c25046ea6db1f5b2832c9909b4fed46643552a"
+      "bytes": 5033,
+      "sha256": "69676347558db961bd51b78ff10766fd7d3c678e073755bf51a8f9f2973611a7"
     },
     "host-prebuilts.json": {
       "bytes": 1724,
@@ -94,8 +94,8 @@
       "sha256": "426322998b662cf5a37cb30e2c5f3bd7e2f1b30b6b175e8bfc271055563e6abf"
     },
     "prepare_inputs.py": {
-      "bytes": 9707,
-      "sha256": "48e0e877c74e0ccac4bdc90718297737cef62349918e44bd3841527dace3b260"
+      "bytes": 10281,
+      "sha256": "eee60f3679b2296f399c54ff2a7e75c52d363e988886f9d18a664578cc0b374f"
     },
     "prepare_sdk_source.py": {
       "bytes": 5289,
@@ -134,8 +134,8 @@
       "sha256": "1668a3152e33680d94637b13421c15e68bd97cd8701f7f555c691f5bc5c0b9f3"
     },
     "run_quality.py": {
-      "bytes": 14458,
-      "sha256": "23e04c19a5888dcff80bd43f286e5c5f90ff3e5c2dfad31391f1f0496d26ea5d"
+      "bytes": 21628,
+      "sha256": "dc640ac3ee5376d20f986c9527860e61e70796c78bcf5ec5113be2e44409ed44"
     },
     "test_build_supervisor.py": {
       "bytes": 13295,
@@ -168,6 +168,14 @@
     "test_model_supervisor.py": {
       "bytes": 20548,
       "sha256": "660da58a40b19cba9aef42393de29415c739e2c578b8e8917633ee09c9488fc2"
+    },
+    "diagnostic_pair.py": {
+      "bytes": 19227,
+      "sha256": "fe0ce451f369eec0d203b0c87f180233b25a232a99a96367499eebfda884795a"
+    },
+    "test_diagnostic_pair.py": {
+      "bytes": 22246,
+      "sha256": "d65a9d4b680030cc41fcb0ea4a0c0679863c25e3f07151c0bbc2e159bbc92cb8"
     }
   },
   "scope": "Source, verified weightless structural recipe assets and metadata only; no model/audio/activation payload"

@@ -1,5 +1,57 @@
 # Hosted full-Gemma E2B native quality prerequisite
 
+## Source-only failed-reference diagnostic proposal — 7 October 2026
+
+`--diagnostic-on-known-reference-mismatch` defaults off for standalone calls.
+The hosted quality workflow explicitly selects it in this candidate. It may
+continue only after a newly executed oracle reaches
+the exact historical `e51d19c6…` versus known `33bf34b9…` projected-row mismatch.
+That mismatch remains `numerical_failure`, with the original error, failed
+oracle bytes, strict summary stage and exit 2 retained. A diagnostic result can
+never supply the strict `comparison.json` or a release pass. Unknown hashes,
+row/EOA/count/mask failures and other exceptions do not enter the continuation.
+
+Continuation requires successful same-invocation reassembly/frontend/four-model
+process witnesses, exact unchanged receipt/file identities and a live single-use
+comparison ticket. There is no receipt replay/resume command. Replaced, copied,
+edited or stale oracle/prerequisite receipts cannot grant continuation. The
+ticket protects orchestration provenance, not against arbitrary trusted Python
+code execution in the orchestrator. Input/output manifests and native receipt
+inventories are independently checked against pinned tensor metadata, accepting
+the runtime's output ordering while rejecting missing, duplicate or extra rows.
+
+Before either diagnostic lane, a pure validator checks all 131 emitted outputs
+for exact schema/size and float finiteness. For all 98 emitted state files it
+checks history counts `[12,24,24,24,24,24,24]`, exact last-four-valid-Mel retention,
+all 12 retained layer prefixes and byte-exact positive-zero invalid tails. These
+rules derive from the pinned stateful constructor's count/slice/select graph;
+they are state-transition validity checks. Newly computed layer rows have no
+fresh static value oracle. The earlier `raw_00` through `raw_11` observed-static
+export is absent from this four-model recipe. Consequently the strict field
+`cache_state_all_layers_checked` remains false, and diagnostic
+`cache_state_reference_equivalence_proven` is always false.
+
+Both requests and embedding taps use the actual same-run `33bf34b9…` projected
+rows, with the original failed oracle and prerequisite hashes bound into the
+request identity. Models, full bundle, public WAV/PCM/Mel, SDK source, binaries,
+build receipt and cleanup latch are rechecked before the first lane and again
+before the second. Each uses existing `checked_full_e2b` and the unchanged native
+probe in a fresh process/engine/Conversation, with no persistent cache or effects.
+Context 640, max output 64, CPU 1, 6 GiB inherited per-process VAS, 4 GiB sampled
+whole-tree RSS, at least 6 GiB effective admission, 1 GiB reserve, 240-second wall
+and CPU hard deadlines, 239-second CPU soft limit and 128 MiB file cap remain
+fixed. Prerequisite/build budgets, workflow timeouts and release dependencies
+do not change; the only workflow execution change is the explicit diagnostic opt-in.
+
+The only additional public export is an 8 KiB fixed-schema `diagnostic-pair.json`:
+hashes, enum failure classes, check booleans, and public-documentation comparison
+booleans. Diagnostic requests, native result text, process logs, local paths,
+weights, audio and activations stay outside the export. The unchanged release
+binder rejects this diagnostic export and still requires strict quality success.
+Synthetic tests establish orchestration and rejection behavior only. Native
+rebuilds, hosted execution, actual decoder parity and Android/device quality are
+not established by this source-only proposal.
+
 The optional encoder capsule has a separate bounded public diagnostic-status
 receipt. It retains only fixed phase/error codes, reviewed module/line and scalar
 producer/process observations; private logs and exception strings stay excluded.

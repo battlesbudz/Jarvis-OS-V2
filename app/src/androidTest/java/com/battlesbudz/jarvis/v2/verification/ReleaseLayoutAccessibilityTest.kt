@@ -455,6 +455,7 @@ class ReleaseLayoutAccessibilityTest {
         val priority = listOf("c++_shared", "onnxruntime", "ms_ort_1232", "moonshine", "moonshine-jni")
         val loaded = mutableListOf<String>()
         var encoderAssets: Map<String, String>? = null
+        var timingPreflight: NativeAudioTimingPreflightProbe.Result? = null
         try {
             for (name in names.sortedWith(compareBy<String> { priority.indexOf(it).let { position -> if (position < 0) priority.size else position } }.thenBy { it })) {
                 try { System.loadLibrary(name) } catch (error: UnsatisfiedLinkError) {
@@ -468,18 +469,22 @@ class ReleaseLayoutAccessibilityTest {
             encoderAssets = GemmaStreamingArtifactStore.verifyPackagedAssets { path ->
                 context.assets.open(path)
             }
+            timingPreflight = NativeAudioTimingPreflightProbe.run()
+            timingPreflight.assertPassed()
         } finally {
             val report = JSONObject().put("page_size", actualPageSize).put("expected_page_size", expectedPageSize)
                 .put("shipping_libraries", org.json.JSONArray(names)).put("loaded_libraries", org.json.JSONArray(loaded))
                 .put("encoder_assets_verified", encoderAssets != null)
                 .put("encoder_assets", encoderAssets?.let { JSONObject(it) } ?: JSONObject.NULL)
-                .put("passed", loaded.size == names.size && encoderAssets != null)
-                .put("coverage", "Native library loading and installed-APK encoder AssetManager read/decode; no model reconstruction or speech/model inference")
+                .put("timing_preflight", timingPreflight?.let { JSONObject(it.reportFields()) } ?: JSONObject.NULL)
+                .put("passed", loaded.size == names.size && encoderAssets != null && timingPreflight?.passed == true)
+                .put("coverage", "Native library loading, installed-APK encoder AssetManager read/decode and timing-v1 JNI/schema preflight; no usable clock calibration, timing snapshot, model reconstruction or speech/model inference")
             val file = File(context.cacheDir, "${testName.methodName}-native.json").apply { writeText(report.toString(2)) }
             export(file, "application/json")
         }
         assertEquals("Every shipped native library must actually load", names.toSet(), loaded.toSet())
         assertNotNull("Installed encoder assets must pass the production reader", encoderAssets)
+        assertTrue("Shipping timing-v1 JNI must pass the public owner preflight", timingPreflight?.passed == true)
     }
 
     private fun requestPosture(posture: String) {

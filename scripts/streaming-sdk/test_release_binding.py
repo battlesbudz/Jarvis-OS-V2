@@ -78,6 +78,19 @@ class QualityEvidenceBinding(unittest.TestCase):
             with self.subTest(mode=mode),self.assertRaisesRegex(ValueError,'did not explicitly pass'):
                 quality_receipt(self.root,self.identity,self.patch)
 
+    def test_successful_diagnostic_pair_never_rescues_failed_strict_oracle(self):
+        self.data['run/summary.json'].update(passed=False,classification='numerical_failure',stage='native_encoder_oracle')
+        self.data['run/encoder-oracle.json']={'passed':False,'complete_reference_hash_match':False}
+        self.write()
+        with self.assertRaisesRegex(ValueError,'did not explicitly pass'):
+            quality_receipt(self.root,self.identity,self.patch)
+
+    def test_diagnostic_export_cannot_be_bound_as_strict_quality(self):
+        self.data['run/diagnostic-pair.json']={'strict_gate_passed':False,'native_pair_passed':True}
+        self.write()
+        with self.assertRaisesRegex(ValueError,'Missing or unexpected'):
+            quality_receipt(self.root,self.identity,self.patch)
+
     def test_failed_native_lane_or_semantic_reference_rejected(self):
         self.data['run/raw/process.json']['exit_code']=1;self.write()
         with self.assertRaisesRegex(ValueError,'inference did not complete'):quality_receipt(self.root,self.identity,self.patch)
