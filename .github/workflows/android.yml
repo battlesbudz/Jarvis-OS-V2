@@ -463,6 +463,20 @@ jobs:
           path: artifact/packaged-sampler-identity.json
           if-no-files-found: warn
 
+      - name: Verify final encoder assets and notices
+        run: |
+          python3 scripts/streaming-sdk/verify_packaged_encoder_assets.py \
+            --apk artifact/app-release.apk --apk artifact/app-compact.apk \
+            --check-workflow --out artifact/packaged-encoder-assets.json
+
+      - name: Retain final encoder asset identity
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-packaged-encoder-assets
+          path: artifact/packaged-encoder-assets.json
+          if-no-files-found: warn
+
       - name: Upload unverified APK build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -470,6 +484,7 @@ jobs:
           path: |
             artifact/*.apk
             artifact/UNVERIFIED-CANDIDATE.txt
+            artifact/packaged-encoder-assets.json
           if-no-files-found: error
 
       - name: Retain SDK consumer provenance

@@ -62,6 +62,7 @@ internal fun ConversationScreen(
     // the call segment and the armed flag while the session — wake listener,
     // mic, foreground service — stays fully alive.
     val sessionAlive by VoiceSessionUi.sessionAlive.collectAsState()
+    val voiceFailure by VoiceSessionUi.failure.collectAsState()
     val voiceState by callState.collectAsState()
     val taskJournal by (phoneTasks?.collectAsState() ?: remember { mutableStateOf<com.battlesbudz.jarvis.v2.actions.ToolTaskJournal?>(null) })
     val taskError by (phoneTaskError?.collectAsState() ?: remember { mutableStateOf<String?>(null) })
@@ -208,6 +209,13 @@ internal fun ConversationScreen(
                                     modifier = Modifier.padding(top = 6.dp).testTag("voice_call_live_transcript"))
                             }
                         }
+                    }
+                }
+                voiceFailure?.takeIf { it.conversationId == thread.id }?.let { failure ->
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("voice_call_failure")) {
+                        Text(failure.message, color = MaterialTheme.colorScheme.error)
+                        TextButton(onClick = { VoiceSessionUi.dismissFailure(failure) },
+                            modifier = Modifier.testTag("voice_call_failure_dismiss")) { Text("Dismiss") }
                     }
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp)) }

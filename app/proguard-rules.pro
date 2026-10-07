@@ -13,6 +13,11 @@
 -keep class ai.moonshine.voice.SpeechClip { *; }
 -keep class ai.moonshine.voice.TtsChunk { *; }
 -keep class com.google.ai.edge.litertlm.** { *; }
+# Release instrumentation calls this exact production asset-reader boundary.
+-keep class com.battlesbudz.jarvis.v2.ai.audio.GemmaStreamingArtifactStore {
+    public static final com.battlesbudz.jarvis.v2.ai.audio.GemmaStreamingArtifactStore INSTANCE;
+    public java.util.Map verifyPackagedAssets(kotlin.jvm.functions.Function1);
+}
 -keepattributes Signature,InnerClasses,EnclosingMethod,*Annotation*
 
 -keep class com.battlesbudz.jarvis.v2.voice.MicroWakeWord { *; }

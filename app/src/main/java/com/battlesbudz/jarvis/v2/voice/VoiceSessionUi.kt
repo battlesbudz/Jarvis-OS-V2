@@ -10,6 +10,13 @@ enum class VoicePhase(val label: String) {
 enum class VoiceControl { STOP_REPLY, END_CONVERSATION, PAUSE, RESUME }
 class VoiceControlCancellation(val control: VoiceControl) : kotlinx.coroutines.CancellationException("Voice control: $control")
 
+/** A failed call remains explainable after its microphone/service and overlay have stopped. */
+internal data class VoiceCallFailure(
+    val conversationId: String,
+    val message: String,
+    val id: String = java.util.UUID.randomUUID().toString()
+)
+
 /** Runtime feedback survives navigation away from the voice screen. */
 object VoiceSessionUi {
     val phase = MutableStateFlow(VoicePhase.IDLE)
@@ -26,6 +33,18 @@ object VoiceSessionUi {
      */
     val sessionAlive = MutableStateFlow(false)
     val paused = MutableStateFlow(false)
+    internal val failure = MutableStateFlow<VoiceCallFailure?>(null)
+    internal fun reportFailure(conversationId: String, message: String) {
+        failure.value = VoiceCallFailure(conversationId, message)
+        report(message)
+    }
+    internal fun dismissFailure(expected: VoiceCallFailure) {
+        failure.compareAndSet(expected, null)
+    }
+    /** Retrying another conversation must not erase an unseen failure in this one. */
+    internal fun clearFailure(conversationId: String) {
+        failure.update { it?.takeUnless { error -> error.conversationId == conversationId } }
+    }
     internal val liveReplyMetrics = MutableStateFlow<LiveReplyMetrics?>(null)
     internal fun beginLiveMetrics(metrics: LiveReplyMetrics) { liveReplyMetrics.value = metrics }
     fun beginLiveMetrics(turnId: String, conversationId: String, submittedAtMs: Long? = null, firstTokenAtMs: Long? = null) {

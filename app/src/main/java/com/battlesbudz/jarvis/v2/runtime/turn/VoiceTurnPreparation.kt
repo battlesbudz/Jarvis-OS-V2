@@ -38,6 +38,26 @@ internal class VoiceTurnPreparation(
     private val memory: VoiceMemoryAccess,
     private val diagnosticRecorder: DiagnosticRecorder
 ) {
+    companion object {
+        /** Bind ownership before checkpoint/diagnostic/microphone setup can fail. */
+        internal fun beginOwnedCall(
+            controller: com.battlesbudz.jarvis.v2.voice.VoiceSessionController,
+            conversationId: String,
+            lifetime: VoiceTurnLifetime,
+        ): com.battlesbudz.jarvis.v2.voice.VoiceCallRecord = synchronized(controller) {
+            // A replacement that appeared during wake must never be adopted.
+            if (controller.currentCallId() != null) {
+                throw kotlinx.coroutines.CancellationException("voice_call_replaced_during_wake")
+            }
+            try {
+                controller.beginCall(conversationId)
+            } finally {
+                // beginCall sets the identity before saving its checkpoint.
+                lifetime.expectedResourceCall = controller.currentCallId()
+            }
+        }
+    }
+
     suspend fun prepare(request: VoiceTurnRequest, observation: VoiceTurnObservation, lifetime: VoiceTurnLifetime): PreparedVoiceTurn {
         var directAudioTurn = request.directAudioTurn
         while (com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value) {
@@ -116,7 +136,8 @@ internal class VoiceTurnPreparation(
                 call.status("Preparing wake detector — microphone warming up…")
                 wake.awaitWake(input)
             }
-            call.controller.beginCall(conversationHistory.current.value.id).also { call.events.startDiagnostics("Voice Call ${it.id}") }
+            beginOwnedCall(call.controller, conversationHistory.current.value.id, lifetime)
+                .also { call.events.startDiagnostics("Voice Call ${it.id}") }
             input.stop()
             input = resources.resources.borrowMicrophone("command", communication = true)
             lifetime.microphone = input

@@ -29,6 +29,10 @@ import java.util.zip.GZIPInputStream;
  * This is a host-tested integration primitive, not a tested Android app release.
  */
 public final class WeightlessEncoderRecipe {
+    public static final int RECIPE_BYTES = 86_196;
+    public static final int LITERALS_BYTES = 134_002;
+    public static final int LITERALS_DECODED_BYTES = 1_068_632;
+    public static final String LITERALS_DECODED_SHA256 = "e87747bc9d1289ff15fdf0f49a4834ecc849823fe11bb4671fb11921fa0b9cb0";
     public static final long SOURCE_BYTES = 2588147712L;
     public static final long OUTPUT_BYTES = 103668112L;
     public static final String SOURCE_SHA256 = "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c";
@@ -162,7 +166,7 @@ public final class WeightlessEncoderRecipe {
     }
     public static void main(String[] args) throws Exception {
         if(args.length!=4 && args.length!=5)
-            throw new IllegalArgumentException("bundle.litertlm source-copy-recipe.bin structural-literals.bin.gz output.tflite [cancel]");
+            throw new IllegalArgumentException("bundle.litertlm source-copy-recipe.bin structural-literals.bin.gzip output.tflite [cancel]");
         long started=System.nanoTime();final boolean cancel=args.length==5 && args[4].equals("cancel");
         reconstruct(new File(args[0]),new File(args[1]),new File(args[2]),new File(args[3]),()->cancel);
         System.out.println("Reconstructed "+OUTPUT_BYTES+" bytes; SHA-256 "+OUTPUT_SHA256+

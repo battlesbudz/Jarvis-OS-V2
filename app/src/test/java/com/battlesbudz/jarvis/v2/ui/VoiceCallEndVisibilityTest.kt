@@ -16,6 +16,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.test.core.app.ApplicationProvider
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
 import com.battlesbudz.jarvis.v2.chat.ConversationHistory
@@ -108,6 +109,7 @@ class VoiceCallEndVisibilityTest {
         VoiceSessionUi.paused.value = false
         VoiceSessionUi.liveTranscript.value = ""
         VoiceSessionUi.level.value = 0f
+        VoiceSessionUi.failure.value = null
     }
 
     @Before
@@ -257,5 +259,35 @@ class VoiceCallEndVisibilityTest {
         compose.waitForIdle()
         compose.onNodeWithTag("voice_call_end")
             .assertExists("Back must not dismiss a live session's End-call control")
+    }
+
+    @Test
+    fun terminalFailureRemainsVisibleAfterTheCallOverlayClosesUntilDismissed() {
+        startArmedSession()
+        val message = "Voice Call turn failed: required audio asset is missing"
+        VoiceSessionUi.reportFailure(history.current.value.id, message)
+        VoiceSessionUi.armed.value = false
+        VoiceSessionUi.sessionAlive.value = false
+        callState.value = VoiceSessionState.PASSIVE_LISTENING
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("voice_call_overlay").assertDoesNotExist()
+        compose.onNodeWithText(message).assertExists()
+        // A service teardown status cannot erase the failure explanation.
+        VoiceSessionUi.report("Jarvis session stopped — microphone off.")
+        compose.waitForIdle()
+        compose.onNodeWithText(message).assertExists()
+        compose.onNodeWithTag("voice_call_failure_dismiss").performClick()
+        compose.onNodeWithTag("voice_call_failure").assertDoesNotExist()
+    }
+
+    @Test
+    fun explicitEndDoesNotCreateAFailureAndAnotherConversationDoesNotShowIt() {
+        startArmedSession()
+        compose.onNodeWithTag("voice_call_end").performClick()
+        compose.onNodeWithTag("voice_call_failure").assertDoesNotExist()
+        VoiceSessionUi.reportFailure("another-conversation", "Voice Call turn failed: unrelated")
+        compose.waitForIdle()
+        compose.onNodeWithTag("voice_call_failure").assertDoesNotExist()
     }
 }

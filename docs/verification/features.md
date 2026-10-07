@@ -3498,3 +3498,50 @@ Failed API30 artifact `11416466950` has ZIP SHA-256
 `7756f9179a3f746aae73c9622f95e694315d89ef2210d1ac6c4ff9734dd764fb`;
 failed receipt `11417500689` has ZIP SHA-256
 `70b4921e5a7159be44a5a2f4809b1874e1bdd11e611572d39fc4309df15ee9a9`.
+
+
+### 2026-10-07: real-call startup asset and visible-error repair (pending hosted verification)
+
+A physical-phone report on Build 1161 identified a startup `FileNotFoundException`
+for `gemma_streaming/structural-literals.bin.gz`, before any Gemma submission. Both
+retained signed APKs confirm that packaging instead installed the decompressed
+`structural-literals.bin` (1,068,632 bytes). The recipe file and notices were
+present. All five existing emulator profiles had passed because native loading
+did not exercise the actual encoder asset reader; those earlier results do not
+establish successful real-model call startup. Build 1168 changes only diagnostic
+infrastructure and retains this app defect.
+
+The repair names the unchanged 134,002-byte gzip payload
+`structural-literals.bin.gzip`, keeping its pinned compressed SHA-256 and the
+reconstructed encoder hash unchanged. Both signed APKs must now pass an exact
+asset inventory, byte/hash, bounded gzip-decode and notice check before upload;
+the final binder independently reopens them and binds that receipt to their
+exact identities. The native-loading device journey also calls the production
+asset reader through the installed application's `AssetManager`, including the
+bounded gzip decode. It does not download weights or claim model inference.
+
+A terminal startup error is retained for its conversation after the voice
+overlay closes, with explicit dismissal or clearing on retry. Actual cancellation
+and stale call/turn callbacks do not publish errors or stop a replacement call.
+Post-wake call identity is registered under the controller monitor before
+checkpoint/diagnostic/microphone failures can escape; a pre-existing replacement
+is never adopted. Resource release remains with the existing finalizer.
+
+Current local evidence: 6 real-source asset-reader JVM checks, 5 voice UI state
+checks on the release Kotlin 2.3.21/coroutines 1.9.0 versions, and 85 SDK/packaging
+helper checks pass. The new gate rejects both actual Build 1161 APKs. Ten
+production-runner and two additional screen regressions are source-ready; their
+full release compilation/execution, the repaired signed APKs, installed-asset
+journey, and physical-model call startup remain pending. Failed preparatory
+compiler launches (missing `javac` executable and unavailable `--release` symbol
+archive) are retained; the successful check uses the installed JDK compiler
+module with Java 17 source/target and does not replace Android API compilation.
+The real artifact-store recovery check also passed against the existing pinned
+2,588,147,712-byte official bundle: the old APK's missing-asset failure left its
+partial cache, then the corrected assets reconstructed exactly 103,668,112 bytes
+with SHA-256 `d5c50b140ace235717e6713d287e73ccfa4f32d0090e1cceb9d00714da850a1b`.
+The valid cache was reused without reopening assets. This file/hash-only check
+used a separate reviewed 256 MiB Java heap / 512 MiB whole-tree RSS / 2 GiB
+admission profile, with one CPU, 90 seconds, 1 GiB reserve and checked cleanup.
+No model inference, Android execution or physical call-start result is implied.
+The strict hosted numerical oracle and all existing release gates remain intact.

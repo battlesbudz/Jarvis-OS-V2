@@ -40,6 +40,18 @@ final APKs before upload; the final release binder repeats it. Other libraries
 keep their existing strip policy. The independent final APK page audit remains
 required, including ZIP offsets and both sampler ELF LOADs.
 
+`verify_packaged_encoder_assets.py` independently opens both final signed APKs
+before upload. It requires the exact runtime recipe and `.bin.gzip` literal paths,
+byte counts and SHA-256 pins, bounded single-member gzip decoding and its decoded
+hash, and both reviewed encoder notices. Duplicate entries, legacy `.gz` names,
+packager-transformed `.bin` files and alternate copies fail closed. The report
+binds both complete APK hashes, the reviewed Java/Kotlin constants and notices,
+and the actual APK producer's run/source/attempt. It travels with the APK artifact;
+the final release binder requires it and independently repeats every asset check.
+A later receipt retry can retain the original successful APK producer attempt.
+Signer, sampler, page-size, model-quality and device gates remain separately
+required. Synthetic ZIP fixtures test packaging checks, not signed app execution.
+
 `validate_artifact.py` rehashes the AAR, classes, all native entries and external
 provenance, verifies its embedded receipt, source patch, manifest, production
 inventory, native closure and the current run/source plus original successful

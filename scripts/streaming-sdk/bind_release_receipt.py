@@ -12,6 +12,7 @@ import zipfile
 from package_android_aar import sha256
 from producer_identity import workflow_identity
 from verify_packaged_samplers import verify as verify_packaged_samplers
+from verify_packaged_encoder_assets import bind_report as bind_encoder_assets
 
 ROOT = Path(__file__).resolve().parents[2]
 QUALITY_FILES = {'build/build-status.json', 'build/source-snapshot.json', 'build/diagnostic-status.json',
@@ -78,7 +79,7 @@ def quality_receipt(folder, identity, patch_sha, expected_source_receipt=None):
 
 
 def bind(inputs, out, quality, expected_aar, expected_provenance, identity,
-         quality_identity, expected_source_receipt):
+         quality_identity, expected_source_receipt, current_identity):
     for value in (expected_aar,expected_provenance,expected_source_receipt):
         if not re.fullmatch('[0-9a-f]{64}',value or ''):
             raise ValueError('Exact SDK producer digests required')
@@ -103,6 +104,12 @@ def bind(inputs, out, quality, expected_aar, expected_provenance, identity,
     for name in ('app-release.apk','app-compact.apk'):
         packaged_samplers.append(verify_packaged_samplers(
             inputs/'jarvis-os-v2-release-apk'/name, candidates[0], expected_provenance))
+    # The retained report travelled with these exact APK bytes. Independently
+    # reopen both packages and recheck source pins, bounded gzip and notices.
+    if any(current_identity.get(k) != identity.get(k)
+           for k in ('GITHUB_RUN_ID', 'GITHUB_SHA', 'GITHUB_REPOSITORY')):
+        raise ValueError('APK consumer and SDK do not share the same run/source/repository')
+    packaged_encoder = bind_encoder_assets(inputs/'jarvis-os-v2-release-apk', current_identity)
     quality_name=f"jarvis-streaming-quality-evidence-{quality_identity['GITHUB_RUN_ID']}-{quality_identity['GITHUB_RUN_ATTEMPT']}"
     if quality.name!=quality_name:
         raise ValueError('Quality artifact directory differs from retained producer name')
@@ -120,6 +127,7 @@ def bind(inputs, out, quality, expected_aar, expected_provenance, identity,
             'quality_workflow_identity':quality_identity, 'quality_producer_attempt':quality_identity['GITHUB_RUN_ATTEMPT'],
             'source_receipt_sha256':expected_source_receipt,
             'packaged_sampler_identity': packaged_samplers,
+            'packaged_encoder_assets': packaged_encoder,
             'host_native_quality':quality_result,
             'scope':'Same-run SDK package and host native full-model prerequisite; Android/JNI full-model and physical audio remain unverified.'}
 
@@ -137,8 +145,8 @@ def main():
         quality_identity=workflow_identity(os.environ,a.quality_producer_attempt)
         if receipt.get('passed') is not True:raise ValueError('Existing release checks did not pass')
         receipt['streaming_sdk']=bind(a.inputs,a.out,a.quality_dir,a.expected_aar_sha256,a.expected_provenance_sha256,identity,
-            quality_identity,a.expected_source_receipt_sha256)
-        note='\n\nReviewed SDK provenance and bounded host full-model quality prerequisite: PASS. Android/JNI full-model inference and physical audio remain unverified.\n'
+            quality_identity,a.expected_source_receipt_sha256,workflow_identity(os.environ))
+        note='\n\nReviewed SDK provenance, exact packaged encoder assets and bounded host full-model quality prerequisite: PASS. Android/JNI full-model inference and physical audio remain unverified.\n'
     except (ValueError,OSError,KeyError,TypeError,zipfile.BadZipFile) as error:
         receipt['passed']=False;receipt.setdefault('errors',[]).append('Streaming SDK evidence: '+str(error))
         note='\n\nStreaming SDK evidence: FAIL: '+str(error)+'\n'

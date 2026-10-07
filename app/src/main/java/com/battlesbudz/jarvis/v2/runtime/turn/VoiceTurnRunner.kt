@@ -9,6 +9,7 @@ import com.battlesbudz.jarvis.v2.voice.CallFinalInput
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -24,14 +25,15 @@ internal class VoiceTurnRunner(
     private val createModelLease: () -> VoiceTurnModelLease,
     private val typedStage: TypedVoiceInputStage,
     private val typedInputs: VoiceTypedInputOwnership,
-    private val preparation: VoiceTurnPreparation,
+    private val preparation: suspend (VoiceTurnRequest, VoiceTurnObservation, VoiceTurnLifetime) -> PreparedVoiceTurn,
     private val recognition: VoiceTurnRecognition,
     private val acceptedReplies: AcceptedVoiceFollowupStage,
     private val ordinaryReplies: OrdinaryVoiceReplyStage,
     private val finalizer: VoiceTurnFinalizer,
     private val diagnosticRecorder: DiagnosticRecorder,
+    private val currentConversationId: () -> String,
     private val onTurnStarted: () -> Unit = {},
-    private val onTerminalFailure: () -> Unit = {}
+    private val onTerminalFailure: (String) -> Unit = {}
 ) {
     fun start() {
         if (!call.state.armed || call.state.turnJob?.isCompleted == false || actions.queue.hasUnfinished() ||
@@ -49,13 +51,25 @@ internal class VoiceTurnRunner(
         }
         val request = selectRequest(queued)
         val observation = createObservation(request)
+        val conversationId = currentConversationId()
+        val startingCallId = call.controller.currentCallId()
         runCatching { onTurnStarted() }
         call.state.turnJob = applicationScope.launch(Dispatchers.Default) {
+            val exactTurnJob = kotlin.coroutines.coroutineContext[Job]
             val lifetime = VoiceTurnLifetime(this, createModelLease(), call.controller.currentCallId() != null)
             var terminalFailure = false
             fun relinquishTyped() = typedInputs.relinquish(request.queuedTypedInput)
+            fun interruptOwnedCall() {
+                val failedCallId = lifetime.expectedResourceCall ?: startingCallId
+                // Controller lifecycle methods use this same monitor; identity cannot
+                // change between this check and interrupt's durable end checkpoint.
+                synchronized(call.controller) {
+                    if (failedCallId != null && call.controller.currentCallId() == failedCallId)
+                        runCatching { call.controller.interrupt() }
+                }
+            }
             try {
-                val prepared = preparation.prepare(request, observation, lifetime)
+                val prepared = preparation(request, observation, lifetime)
                 val finalized = when (val result = recognition.recognize(request, prepared, observation, lifetime)) {
                     is VoiceStageResult.Ready -> result.value
                     is VoiceStageResult.Finished -> { lifetime.finalMessage = result.message; return@launch }
@@ -72,7 +86,7 @@ internal class VoiceTurnRunner(
                 observation.failure = "audio_backlog"
                 call.state.audioRecoveryAttempts++
                 diagnosticRecorder.recordImportant("Audio buffer recovery attempt=${call.state.audioRecoveryAttempts} max=2; incomplete command discarded.")
-                runCatching { call.controller.interrupt() }
+                interruptOwnedCall()
                 lifetime.finalMessage = if (call.state.audioRecoveryAttempts <= 2)
                     com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " audio capture recovered; say Hey Jarvis again."
                 else "Voice Call turn failed: audio capture repeatedly fell behind. Restart the session."
@@ -118,6 +132,9 @@ internal class VoiceTurnRunner(
                     throw cancelled
                 }
             } catch (error: Throwable) {
+                // Stop may make a blocking preparer throw a non-cancellation exception.
+                // The stopped job still follows cancellation cleanup, without a new error.
+                kotlin.coroutines.coroutineContext.ensureActive()
                 terminalFailure = true
                 observation.outcome = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome.ERROR
                 observation.failure = error.javaClass.simpleName
@@ -128,19 +145,27 @@ internal class VoiceTurnRunner(
                     }
                 }
                 diagnosticRecorder.record("Voice turn failed: ${error.stackTraceToString().take(4000)}")
-                runCatching { call.controller.interrupt() }
+                interruptOwnedCall()
                 lifetime.finalMessage = "Voice Call turn failed: ${error.message ?: "unknown error"}"
             } finally {
                 val cancelled = kotlin.coroutines.coroutineContext[Job]?.isActive != true
                 finalizer.close(request, lifetime, cancelled)
                 observation.finish(lifetime, cancelled, actions.queue::hasUnfinished)
-                // Cleanup can be slow; its duration must not consume the visible error lease.
-                if (terminalFailure) runCatching { onTerminalFailure() }
                 if (call.state.armed && (lifetime.hadActiveCall || lifetime.wokeThisTurn) && call.controller.currentCallId() == null)
                     call.state.returnToWakeCuePending.set(true)
                 if (kotlin.coroutines.coroutineContext[Job]?.isActive == true || lifetime.microphoneYielded) {
                     kotlin.coroutines.coroutineContext[Job]?.invokeOnCompletion {
                         call.events.post {
+                            if (terminalFailure) {
+                                // A completed old turn cannot report an error or stop a replacement.
+                                val currentCallId = call.controller.currentCallId()
+                                val failedCallId = lifetime.expectedResourceCall ?: startingCallId
+                                if (!call.state.armed || call.state.turnJob !== exactTurnJob ||
+                                    currentCallId != null && currentCallId != failedCallId) return@post
+                                com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.reportFailure(conversationId, lifetime.finalMessage)
+                                // Cleanup must not consume the short-lived activity error indicator.
+                                runCatching { onTerminalFailure(conversationId) }
+                            }
                             call.events.report(lifetime.finalMessage)
                             call.events.finished(lifetime.finalMessage)
                             if (call.state.armed && !lifetime.finalMessage.contains("turn failed", true)) call.events.restartTurn()

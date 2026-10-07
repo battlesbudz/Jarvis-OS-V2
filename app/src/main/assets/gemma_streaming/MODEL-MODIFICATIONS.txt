@@ -15,7 +15,7 @@ an official Google model export or endorsed Google release:
 source-copy-recipe.bin
 SHA-256: f41105fecf5a86c0ab2486182d4256b98bf33c3a71f58c2b4f8e9a37b5cd86cc
 
-structural-literals.bin.gz
+structural-literals.bin.gzip
 SHA-256: c3093aa1f9bd5ff9cfe3c0a61df722d0bce806a5a4f2f1b747b0ffd91d15d2f1
 
 Locally reconstructed gemma4_e2b_audio_stream_stateful.tflite
@@ -34,3 +34,7 @@ This notice records changes and provenance; it is not license clearance or an
 assertion that all APK dependency notices have been satisfied. Preserve it with
 the structural assets and locally reconstructed artifact. Review the actual
 packaged form and downstream distribution before sharing it with other parties.
+
+Android asset filename uses .gzip to preserve the original audited gzip bytes
+through packaging; the host recipe retains its .gz filename. No learned weights
+or graph contents change in this packaging repair.

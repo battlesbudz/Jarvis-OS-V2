@@ -38,6 +38,7 @@ import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import com.battlesbudz.jarvis.v2.MainActivity
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
+import com.battlesbudz.jarvis.v2.ai.audio.GemmaStreamingArtifactStore
 import com.battlesbudz.jarvis.v2.chat.ConversationHistory
 import com.battlesbudz.jarvis.v2.ui.ConversationScreen
 import com.battlesbudz.jarvis.v2.ui.WispAppFrame
@@ -453,6 +454,7 @@ class ReleaseLayoutAccessibilityTest {
         assertEquals("Native entries must be unique", names.size, names.toSet().size)
         val priority = listOf("c++_shared", "onnxruntime", "ms_ort_1232", "moonshine", "moonshine-jni")
         val loaded = mutableListOf<String>()
+        var encoderAssets: Map<String, String>? = null
         try {
             for (name in names.sortedWith(compareBy<String> { priority.indexOf(it).let { position -> if (position < 0) priority.size else position } }.thenBy { it })) {
                 try { System.loadLibrary(name) } catch (error: UnsatisfiedLinkError) {
@@ -460,15 +462,24 @@ class ReleaseLayoutAccessibilityTest {
                 }
                 loaded += name
             }
+            // Use the production reader against the installed APK, including
+            // exact names, compressed bytes and bounded gzip decoding. Source
+            // files and a successful native load cannot establish this boundary.
+            encoderAssets = GemmaStreamingArtifactStore.verifyPackagedAssets { path ->
+                context.assets.open(path)
+            }
         } finally {
             val report = JSONObject().put("page_size", actualPageSize).put("expected_page_size", expectedPageSize)
                 .put("shipping_libraries", org.json.JSONArray(names)).put("loaded_libraries", org.json.JSONArray(loaded))
-                .put("passed", loaded.size == names.size)
-                .put("coverage", "Native library loading only; no speech/model inference")
+                .put("encoder_assets_verified", encoderAssets != null)
+                .put("encoder_assets", encoderAssets?.let { JSONObject(it) } ?: JSONObject.NULL)
+                .put("passed", loaded.size == names.size && encoderAssets != null)
+                .put("coverage", "Native library loading and installed-APK encoder AssetManager read/decode; no model reconstruction or speech/model inference")
             val file = File(context.cacheDir, "${testName.methodName}-native.json").apply { writeText(report.toString(2)) }
             export(file, "application/json")
         }
         assertEquals("Every shipped native library must actually load", names.toSet(), loaded.toSet())
+        assertNotNull("Installed encoder assets must pass the production reader", encoderAssets)
     }
 
     private fun requestPosture(posture: String) {

@@ -31,7 +31,7 @@ for the decision to keep package/collaborator boundaries before adding build mod
 | `presentation/AgentActivityMonitor` | Ephemeral turn/read leases and sequence-fenced public progress; safe tool metadata and terminal errors, never answer/reasoning tokens or operation authority |
 | `JarvisAppComposition` | Compatibility composition adapter supplying only benchmark-store and call-evidence dependencies to UI |
 | `JarvisRuntime.get(applicationContext)` | Process composition/lifecycle facade wiring typed owners/ports, shared history and compatibility entry adapters |
-| `runtime/turn/VoiceTurnRunner` | Admits and orders typed voice stages, with error/rearm policy; resource release belongs to finalizer |
+| `runtime/turn/VoiceTurnRunner` | Admits and orders typed voice stages, with fenced terminal errors/rearm policy; resource release belongs to finalizer |
 | `voice/VoiceCallService` | User-started foreground microphone/playback eligibility, notification controls and wake lock |
 | `voice/VoiceSessionController` | Call identity, transcript, delivered reply/action state and persisted call record |
 | `work/ProcessConversationAdmission` | One shared atomic admission owner for conversation and model-file operations; `ConversationWork` is its compatibility view |
@@ -210,3 +210,19 @@ Unknown journal content fails closed rather than being reset or downgraded.
 Submitted/unobserved app launches retain UNKNOWN_OUTCOME and cannot advance
 success-dependent steps. Wisp observation remains read-only and cannot authorize
 a phone action or extend an approval.
+
+
+The streaming artifact store uses packaging-safe literal asset names and one
+bounded transfer/hash verifier for installation and release asset admission.
+The installed-APK check additionally verifies the audited gzip payload decodes
+to the exact bounded structural stream. Final signed APK verification repeats
+these identities; source-file presence is insufficient.
+
+`VoiceSessionUi` retains a conversation-bound terminal failure independently of
+the transient voice overlay. `ConversationScreen` exposes dismissal after call
+teardown; a new explicit attempt clears the corresponding conversation's prior
+failure. This state is in memory, not persisted across process restart.
+`VoiceTurnPreparation.beginOwnedCall` registers the newly created call under the
+controller monitor even when its first checkpoint throws. The turn runner's
+existing lifetime/finalizer owns cleanup and fences late error publication by
+call and turn-job identity.

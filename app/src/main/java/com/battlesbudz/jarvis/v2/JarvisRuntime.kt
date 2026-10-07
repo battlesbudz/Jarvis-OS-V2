@@ -392,6 +392,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         sessionReport = {}; transcriptListener = { _, _, _ -> }; finishedListener = {}
     }
     fun arm() {
+        com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.clearFailure(conversationHistory.current.value.id)
         audioRecoveryAttempts = 0
         returnToWakeCuePending.set(false)
         com.battlesbudz.jarvis.v2.voice.VoiceSessionUi.paused.value = false
@@ -673,7 +674,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             preparation = VoiceTurnPreparation(applicationContext, call, nativeSessionState, conversation, modelStore,
                 ttsModels, runtimeVoiceResources, conversationHistory,
                 VoiceDialogueContext(shortTermContext, turnOrchestrator, sessionPreferences, diagnosticRecorder::recordImportant),
-                promptBuilder, memory, diagnosticRecorder),
+                promptBuilder, memory, diagnosticRecorder)::prepare,
             recognition = VoiceTurnRecognition(call, conversation, runtimeVoiceResources, conversationHistory, memory,
                 turnOrchestrator, diagnosticRecorder, asrComparisonStore),
             acceptedReplies = AcceptedVoiceFollowupStage(call, runtimeScope, acceptedActionCoordinator,
@@ -683,8 +684,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 runtimeVoiceResources, conversationHistory, memory, turnOrchestrator, diagnosticRecorder, asrComparisonStore),
             finalizer = VoiceTurnFinalizer(call, conversation, nativeSessionState, acceptedActionCoordinator,
                 runtimeVoiceResources, memory, turnOrchestrator, typedInputs, diagnosticRecorder), diagnosticRecorder = diagnosticRecorder,
+            currentConversationId = { conversationHistory.current.value.id },
             onTurnStarted = agentActivityMonitor::clearFailure,
-            onTerminalFailure = { showAgentFailure(conversationHistory.current.value.id) })
+            onTerminalFailure = ::showAgentFailure)
     }
 
     internal fun runConversationInternal(
