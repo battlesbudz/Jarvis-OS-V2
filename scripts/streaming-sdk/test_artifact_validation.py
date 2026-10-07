@@ -61,6 +61,18 @@ class ArtifactProvenanceContracts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'exact workflow'):
             validate(self.aar,self.prov,self.manifest,self.patch,identity=workflow_identity(consumer))
 
+    def test_source_receipt_is_bound_to_exact_bytes_and_embedded_source(self):
+        source=self.root/'source-receipt.json';source.write_text(json.dumps(self.provenance['source']))
+        result=self.validate(source_receipt=source,expected_source_receipt=sha256(source))
+        self.assertEqual(sha256(source),result['source_receipt_sha256'])
+        with self.assertRaisesRegex(ValueError,'source receipt SHA256'):
+            self.validate(source_receipt=source,expected_source_receipt='0'*64)
+        source.write_text(json.dumps(dict(self.provenance['source'],extra='tampered')))
+        with self.assertRaisesRegex(ValueError,'differs from AAR'):
+            self.validate(source_receipt=source,expected_source_receipt=sha256(source))
+        with self.assertRaisesRegex(ValueError,'requires its exact file'):
+            self.validate(expected_source_receipt=sha256(source))
+
     def test_wrong_producer_digest_rejected(self):
         for key in ['expected_aar','expected_provenance']:
             with self.subTest(key=key), self.assertRaisesRegex(ValueError,'Producer SHA256'):

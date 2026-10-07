@@ -1,7 +1,7 @@
-# Merge these sequential steps into build-streaming-sdk AFTER the exact reviewed
-# Android SDK build has successfully exited, before dependent APK quality gates.
-# Keep existing app tests, normal/compact builds, signing and packaging checks.
-# Copy this entire source-only recipe as scripts/streaming-quality/.
+# Reference fragment for the independent verify-streaming-quality job.
+# The complete workflow is authoritative: first select the exact successful SDK
+# artifact and validate its AAR/provenance/source receipt and original attempt.
+# APK assembly may run in parallel; release publication still requires quality.
 - uses: actions/setup-python@v5
   with:
     python-version: '3.12'
@@ -10,13 +10,21 @@
     python -m pip install --only-binary=:all: -r scripts/streaming-quality/requirements.txt
 - name: Test hosted quality orchestration contracts
   run: python -m unittest discover -s scripts/streaming-quality -p 'test_*.py' -v
-- name: Build hosted native quality probes after Android compilation
-  timeout-minutes: 48
+- name: Reconstruct authenticated SDK source
+  run: |
+    python scripts/streaming-quality/prepare_sdk_source.py \
+      --android-receipt "$GITHUB_WORKSPACE/streaming-sdk-input/source-receipt.json" \
+      --patch third_party/litert-lm-0.16.0/PATCH.diff \
+      --reviewed-source third_party/litert-lm-0.16.0/reviewed-source.json \
+      --sdk "$RUNNER_TEMP/streaming-sdk/sdk" \
+      --bazel "$RUNNER_TEMP/streaming-sdk/downloads/bazel-7.6.1-linux-x86_64"
+- name: Build bounded hosted native quality probes
+  timeout-minutes: 63
   run: |
     set -euo pipefail
     python scripts/streaming-quality/build_probes.py \
       --sdk "$RUNNER_TEMP/streaming-sdk/sdk" \
-      --android-receipt "$RUNNER_TEMP/streaming-sdk/source-receipt.json" \
+      --android-receipt "$GITHUB_WORKSPACE/streaming-sdk-input/source-receipt.json" \
       --patch third_party/litert-lm-0.16.0/PATCH.diff \
       --bazel "$RUNNER_TEMP/streaming-sdk/downloads/bazel-7.6.1-linux-x86_64" \
       --bazel-root "$RUNNER_TEMP/streaming-sdk/bazel" \
@@ -46,7 +54,7 @@
     if-no-files-found: error
     retention-days: 14
 # Do not use continue-on-error or turn resource refusal into a successful gate.
-# Increase the enclosing existing job timeout to 160 minutes for this bounded
-# serial build+probe route. No weights, audio, Mel, activations, requests, or raw
+# Keep SDK at45 minutes and quality at115 minutes, including all setup.
+# No weights, audio, Mel, activations, requests, or raw
 # run/build directory are an upload target. A resource failure needs a separate
 # owner decision, not larger limits or an automatic retry.

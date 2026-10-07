@@ -18,10 +18,10 @@ TARGETS = ['native_frontend_quality_probe', 'pinned_encoder_probe', 'native_conv
 BAZEL_SHA = 'ac6249d1192aea9feaf49dfee2ab50c38cee2454b00cf29bbec985a11795c025'
 
 
-# Compilation has a separate, unchanged 45-minute budget. These limits never
+# Compilation has a separate, reviewed 60-minute budget. These limits never
 # change bounded_exec.py or any model process's CPU/memory/wall-time limits.
-COMPILE_WALL_SECONDS = 2700
-COMPILE_JOBS = 2
+COMPILE_WALL_SECONDS = 3600
+COMPILE_JOBS = 4
 COMPILE_MIN_AVAILABLE = 8 * 1024**3
 COMPILE_TREE_RSS_LIMIT = 6 * 1024**3
 COMPILE_SYSTEM_RESERVE = 2 * 1024**3
@@ -138,8 +138,8 @@ def run_compile(command, sdk, out, *, wall_seconds=COMPILE_WALL_SECONDS,
         'memory_before': memory, 'cpu_affinity_count': len(os.sched_getaffinity(0)),
         'sampled_peak_tree_rss_bytes': 0, 'peak_process_count': 0, 'samples': [],
         'rss_sum_may_double_count_shared_pages': True, 'cleanup_verified': False}
-    if memory['effective_available_bytes'] < COMPILE_MIN_AVAILABLE or report['cpu_affinity_count'] < 2:
-        report.update(classification='build_resource_blocked', reason='Two compiler jobs require at least 8 GiB available and 2 schedulable CPUs')
+    if memory['effective_available_bytes'] < COMPILE_MIN_AVAILABLE or report['cpu_affinity_count'] < COMPILE_JOBS:
+        report.update(classification='build_resource_blocked', reason='Four compiler jobs require at least 8 GiB available and 4 schedulable CPUs')
         return report
     need(not any(p['ppid'] == os.getpid() for p in process_table().values()),
          'Compiler supervisor must exclusively own its child processes', 'build_supervision_failure')
@@ -186,7 +186,7 @@ def run_compile(command, sdk, out, *, wall_seconds=COMPILE_WALL_SECONDS,
         with os.fdopen(fd, 'wb') as log:
             child = subprocess.Popen(command, cwd=sdk, stdin=subprocess.DEVNULL,
                 stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-                preexec_fn=lambda: os.sched_setaffinity(0, set(sorted(os.sched_getaffinity(0))[:2])))
+                preexec_fn=lambda: os.sched_setaffinity(0, set(sorted(os.sched_getaffinity(0))[:COMPILE_JOBS])))
             report['started'] = True
             last_sample = -sample_seconds
             while True:
@@ -341,8 +341,9 @@ def build(a):
         need(bool(cc and cxx), 'Host clang/clang++ required')
         command = [str(a.bazel.resolve()), '--batch', f'--output_user_root={a.bazel_root.resolve()}',
             f'--server_javabase={java_home}', '--host_jvm_args=-Xmx2048m', 'build', '-c', 'opt',
-            '--config=linux', '--jobs=2', '--local_resources=cpu=2', '--local_resources=memory=6144',
+            '--config=linux', '--jobs=4', '--local_resources=cpu=4', '--local_resources=memory=6144',
             '--remote_executor=', '--remote_cache=', '--noremote_upload_local_results',
+            '--repo_env=ANDROID_NDK_HOME=',
             f'--repo_env=CC={cc}', f'--repo_env=CXX={cxx}', *[f'//{PACKAGE}:{t}' for t in TARGETS]]
         # Build has its own bounded job; no inference or model download runs
         # while this compiler subprocess is alive. Batch mode exits its JVM.

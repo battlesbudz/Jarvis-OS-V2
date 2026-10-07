@@ -18,7 +18,7 @@ ROOT = HERE.parents[1]
 
 
 def validate(aar, provenance_path, reviewed_path, patch_path, expected_aar=None,
-             expected_provenance=None, identity=None):
+             expected_provenance=None, identity=None, source_receipt=None, expected_source_receipt=None):
     for path in [aar, provenance_path, reviewed_path, patch_path]:
         if not path.is_file():
             raise ValueError(f'Missing reviewed SDK input: {path}')
@@ -33,6 +33,16 @@ def validate(aar, provenance_path, reviewed_path, patch_path, expected_aar=None,
     if provenance.get('aar_sha256') != sha256(aar):
         raise ValueError('AAR checksum mismatch')
     source = provenance['source']
+    if expected_source_receipt is not None and source_receipt is None:
+        raise ValueError('Expected source receipt digest requires its exact file')
+    if source_receipt is not None:
+        if not source_receipt.is_file():
+            raise ValueError('Missing SDK source receipt')
+        if expected_source_receipt is not None and (not re.fullmatch('[0-9a-f]{64}', expected_source_receipt)
+                or sha256(source_receipt) != expected_source_receipt):
+            raise ValueError('Producer source receipt SHA256 mismatch')
+        if json.loads(source_receipt.read_text()) != source:
+            raise ValueError('Source receipt differs from AAR embedded source provenance')
     if (source.get('sdk_commit') != SDK_PIN or source.get('litert_commit') != LITERT_PIN
             or source.get('reviewed_patch_sha256') != reviewed['patch_sha256']
             or source.get('reviewed_source_sha256') != sha256(reviewed_path)
@@ -76,10 +86,13 @@ def validate(aar, provenance_path, reviewed_path, patch_path, expected_aar=None,
             raise ValueError('Incomplete dependency evidence')
         if any(dep not in native and dep not in system for deps in dependencies.values() for dep in deps):
             raise ValueError('Unresolved packaged runtime dependency')
-    return {'aar': str(aar.resolve()), 'sha256': sha256(aar),
+    result = {'aar': str(aar.resolve()), 'sha256': sha256(aar),
             'provenance': str(provenance_path.resolve()),
             'provenance_sha256': sha256(provenance_path),
             'patch_sha256': reviewed['patch_sha256']}
+    if source_receipt is not None:
+        result['source_receipt_sha256'] = sha256(source_receipt)
+    return result
 
 
 def check_stl(aar, ndk):
@@ -105,6 +118,8 @@ def main():
     parser.add_argument('--patch', type=Path, default=ROOT / 'third_party/litert-lm-0.16.0/PATCH.diff')
     parser.add_argument('--expected-aar-sha256')
     parser.add_argument('--expected-provenance-sha256')
+    parser.add_argument('--source-receipt', type=Path)
+    parser.add_argument('--expected-source-receipt-sha256')
     parser.add_argument('--require-digests', action='store_true')
     parser.add_argument('--check-workflow', action='store_true')
     parser.add_argument('--producer-attempt', help='Original successful producer attempt, retained by needs outputs')
@@ -113,9 +128,12 @@ def main():
     args = parser.parse_args()
     if args.require_digests and (not args.expected_aar_sha256 or not args.expected_provenance_sha256):
         parser.error('Both exact producer digests are required before Gradle')
+    if args.require_digests and args.source_receipt and not args.expected_source_receipt_sha256:
+        parser.error('Exact producer source receipt digest is required')
     identity = workflow_identity(os.environ, args.producer_attempt) if args.check_workflow else {}
     result = validate(args.aar, args.provenance, args.reviewed_source, args.patch,
-                      args.expected_aar_sha256, args.expected_provenance_sha256, identity)
+                      args.expected_aar_sha256, args.expected_provenance_sha256, identity,
+                      args.source_receipt, args.expected_source_receipt_sha256)
     if args.app_ndk:
         check_stl(args.aar, args.app_ndk)
     if args.github_output:

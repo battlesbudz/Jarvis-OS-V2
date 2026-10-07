@@ -2,16 +2,16 @@
   "schema_version": 1,
   "files": {
     "README.md": {
-      "bytes": 8281,
-      "sha256": "36916397f5b692a415a8897057045e2a9054f3633ea7544f49391ab16133ed55"
+      "bytes": 9025,
+      "sha256": "70277ceb45acba16036b4bc9d6c06dbf2fd4dc09ec2f7c68708e05db24e26e79"
     },
     "bounded_exec.py": {
       "bytes": 3746,
       "sha256": "b0fdf259ec69b820c81a45ae1a62d1e2ce3cf7a676887e25e785dc8fd3475221"
     },
     "build_probes.py": {
-      "bytes": 22494,
-      "sha256": "7ed415b26bddfd9a10340042d6fa2f36718ae312ea11745ec4ce48bd71bfc3bb"
+      "bytes": 22560,
+      "sha256": "3d9d95eb373cb0b605ce842281cd2ed77cf5f7a719453808b5d99461483f6b07"
     },
     "common.py": {
       "bytes": 4816,
@@ -30,8 +30,8 @@
       "sha256": "97c312a507479aaa829f2356a36a8b4b002160111965f58ae95bebe218b356a0"
     },
     "hosted-steps.yml.example": {
-      "bytes": 2540,
-      "sha256": "f5c1803169db55c5354991b16759c92bf578bef93f8571b5db081d04ef9537cb"
+      "bytes": 2959,
+      "sha256": "119a2856c2e2156e622ba6d8aa0c42aa756a6df5d83bd80f84dec09007b17ee2"
     },
     "model-structure.json": {
       "bytes": 12506,
@@ -94,12 +94,20 @@
       "sha256": "ca546df5509cd7004fd8665e67385b67a286d852fb452ad2c924102bdc05ac21"
     },
     "test_build_supervisor.py": {
-      "bytes": 12774,
-      "sha256": "3a25316faac54f51676570546d794d0c3c3b4ce2a398eab2cb140362443b859c"
+      "bytes": 13295,
+      "sha256": "264e1d10d9aba38114a5a6afa3da4ecb3d1575a275bfa77d982cdf654136e3ed"
     },
     "test_quality.py": {
       "bytes": 16309,
       "sha256": "906f54282804d76cd8b8b64e62f28081a0486a001c5fb7f21cde1dd9fb91aa18"
+    },
+    "prepare_sdk_source.py": {
+      "bytes": 5289,
+      "sha256": "a748ca6d3ff4961c3965563bd087579d6b894c1f4ea001ddca35ac8fd5644108"
+    },
+    "test_prepare_sdk_source.py": {
+      "bytes": 6461,
+      "sha256": "63c3a18fd9275c04ba71e47007d0fddfdc721b188c825d01a62721edeb717abd"
     }
   },
   "scope": "Source, verified weightless structural recipe assets and metadata only; no model/audio/activation payload"

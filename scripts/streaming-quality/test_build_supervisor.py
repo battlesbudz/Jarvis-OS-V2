@@ -42,7 +42,7 @@ class SupervisorTests(unittest.TestCase):
     def test_success_live_action_counter_and_tail(self):
         report,out,console=self.run_small("import time;print('[1,250 / 2,000] Compiling public.cc',flush=True);time.sleep(.15)")
         self.assertTrue(report['passed'],report)
-        self.assertEqual(report['jobs'],2)
+        self.assertEqual(report['jobs'],4)
         self.assertEqual(report['diagnostic']['last_action_progress'],{'completed':1250,'total':2000})
         self.assertEqual(report['diagnostic']['sha256'],describe(out/'compile.log')['sha256'])
         self.assertIn('hosted_compile_progress',console)
@@ -54,6 +54,12 @@ class SupervisorTests(unittest.TestCase):
         report,out,_=self.run_small("print('ERROR: source compile failure',flush=True);raise SystemExit(7)")
         self.assertFalse(report['passed']);self.assertEqual(report['classification'],'build_compile_failure')
         self.assertEqual(report['exit_code'],7);self.assert_reaped(report,out)
+
+    def test_actual_child_cpu_affinity_is_bounded(self):
+        report,out,_=self.run_small("import os;print('observed_affinity='+str(len(os.sched_getaffinity(0))))")
+        self.assertTrue(report['passed'],report)
+        self.assertIn('observed_affinity=4',report['diagnostic']['tail'])
+        self.assert_reaped(report,out)
 
     def test_timeout_reaps_term_ignoring_separate_session_grandchild(self):
         code='''import os,signal,subprocess,sys,time
@@ -149,15 +155,18 @@ time.sleep(60)
         known={900001:101}
         self.assertEqual(b.owned_tree({900001:row},900001,known),{})
 
-    def test_one_cpu_blocks_launch(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.object(b,'compile_memory',return_value=dict(MEMORY)), patch.object(b.os,'sched_getaffinity',return_value={0}), patch.object(b.subprocess,'Popen') as launch:
+    def test_three_cpus_block_launch(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(b,'compile_memory',return_value=dict(MEMORY)), patch.object(b.os,'sched_getaffinity',return_value={0,1,2}), patch.object(b.subprocess,'Popen') as launch:
             report=b.run_compile(['never'],tmp,tmp)
         launch.assert_not_called();self.assertEqual(report['classification'],'build_resource_blocked')
 
-    def test_two_jobs_and_original_compiler_budget(self):
+    def test_four_jobs_and_reviewed_compiler_budget(self):
         text=Path(b.__file__).read_text()
-        self.assertIn("'--jobs=2'",text);self.assertIn("'--local_resources=cpu=2'",text)
-        self.assertEqual(b.COMPILE_WALL_SECONDS,2700)
+        self.assertIn("'--jobs=4'",text);self.assertIn("'--local_resources=cpu=4'",text)
+        self.assertIn("'--repo_env=ANDROID_NDK_HOME='",text)
+        self.assertEqual(b.COMPILE_WALL_SECONDS,3600)
+        self.assertEqual(b.COMPILE_TREE_RSS_LIMIT,6*1024**3)
+        self.assertEqual(b.COMPILE_SYSTEM_RESERVE,2*1024**3)
 
     def test_replacement_before_open_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -221,7 +230,7 @@ time.sleep(60)
         self.assert_reaped(report,out)
 
     def test_no_timeout_expansion(self):
-        with self.assertRaises(GateError):b.run_compile([],'.','.',wall_seconds=2701)
+        with self.assertRaises(GateError):b.run_compile([],'.','.',wall_seconds=3601)
 
     def test_no_model_budget_change(self):
         import bounded_exec

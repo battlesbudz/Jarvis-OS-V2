@@ -56,6 +56,34 @@ A local AAR loses Maven transitive metadata, so app Gradle explicitly retains
 Gson2.13.2, kotlin-reflect2.3.21 and coroutines-android1.9.0. App native compilation
 continues to use NDK27.2.12479018 for Sherpa/MicroWakeWord.
 
+## Parallel build and quality producers
+
+The ARM64 SDK producer has a45-minute job budget. It uploads only its verified
+AAR, provenance and exact source-receipt after packaging validation, then finishes.
+App assembly and the independent full-E2B quality job may start together using
+that exact successful SDK artifact. The quality job has115minutes total, including
+setup, a60-minute internal compiler limit/63-minute step and unchanged50-minute
+model orchestration. The SDK+quality outer budgets remain160minutes combined.
+
+The fresh quality runner verifies all three producer hashes, checks the source
+receipt equals the AAR's embedded source, reconstructs the pinned source+reviewed
+patch+both build overlays, and downloads the pinned host-only inputs. Its source
+snapshot deliberately ignores separately pinned prebuilt `.so` files; Android
+prebuilts and the Android Bazel cache are not transferred or rebuilt for that check.
+
+SDK and quality have distinct producer job names, IDs, artifact names and attempts.
+A retained SDK attempt1 may support a successful quality attempt2 and a later
+receipt retry. Latest failed producer attempts cannot fall back to older artifacts.
+The final binding requires the quality build's android_source_receipt_sha256 to
+match the exact SDK used in both APKs, so equal patch hashes alone cannot conceal
+a different SDK producer. Both original producer identities are retained.
+
+Early signed APK artifacts include an upload-time UNVERIFIED-CANDIDATE.txt notice
+with the exact workflow-run URL and authoritative receipt location. It is not a
+release approval; a later successful receipt supersedes it. All old verification
+and publication requirements remain, with quality now an explicit prerequisite
+on every publication path. GitHub Release assets remain verified APKs only.
+
 ## Shared C++ runtime boundary
 
 The pinned rules_android_ndk `BUILD.ndk_sysroot.tpl` selects `libc++_static.a` and

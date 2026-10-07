@@ -1,5 +1,33 @@
 # Feature and acceptance map
 
+## Parallel streaming build candidate — October 7, 2026
+
+[Build 1127](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37560739072)
+tested head `8ee1d21bfe4852c1c8b57acc86714b2404c0a637`, merge
+`1d840ad575fe420e1dc60852e3c6ca41238daa61`. Its ARM64 SDK, dependency closure
+and 16 KB audit passed. Linux probe compilation timed out at 2,700 seconds after
+6,416 of 6,477 actions, with continued progress, sampled peak tree RSS of
+1,904,570,368 bytes and verified cleanup with zero surviving processes. Full-model
+inference, signed APKs and device gates did not run. Separately, the unchanged
+recorded-speech job failed to resolve pinned NumPy before any speech inference;
+that dependency failure remains unresolved, not a speech-quality result.
+
+The scoped repair admits four compiler CPUs on the existing runner with measured
+headroom and a 60-minute compiler deadline. The 6 GiB RSS, 2 GiB reserve and all
+model subprocess limits remain unchanged. The successful Android SDK producer
+now uploads its authenticated source receipt and AAR before independent quality
+and signed APK jobs run in parallel. Their 45/115-minute producer/quality budgets
+retain the combined 160-minute ceiling. A fresh pinned SDK checkout must reproduce
+the producer's reviewed source and overlays; a local proof matched all 1,206
+source hashes against the retained producer snapshot.
+
+Early APK artifacts explicitly describe their upload-time unverified status.
+Final receipts and every release publisher still require successful full-E2B
+quality and all existing gates, with independently checked SDK/quality attempts,
+artifact IDs, source-receipt hashes and both APKs' embedded provenance. This
+candidate changes build orchestration only; ASR repairs and new timing metrics
+remain separate. No Android/model success is inferred from helper tests.
+
 ## Hosted streaming compiler checkpoint — October 6, 2026
 
 [Build 1117](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37538648794)

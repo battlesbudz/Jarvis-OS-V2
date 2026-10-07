@@ -24,7 +24,7 @@ def load(path):
     return json.loads(path.read_text())
 
 
-def quality_receipt(folder, identity, patch_sha):
+def quality_receipt(folder, identity, patch_sha, expected_source_receipt=None):
     index = load(folder/'EVIDENCE-INDEX.json')
     if index.get('ci') != {k:identity[k] for k in ('GITHUB_SHA','GITHUB_RUN_ID','GITHUB_RUN_ATTEMPT')}:
         raise ValueError('Quality receipts do not belong to this run/attempt/source')
@@ -45,6 +45,8 @@ def quality_receipt(folder, identity, patch_sha):
             'android_full_model_proven':False,'jni_full_model_proven':False}.items()):
         raise ValueError('Actual full-model quality prerequisite did not explicitly pass')
     build=load(folder/'build/build-status.json')
+    if expected_source_receipt is not None and build.get('android_source_receipt_sha256') != expected_source_receipt:
+        raise ValueError('Quality evidence used a different SDK source receipt')
     if (build.get('build_succeeded') is not True or build.get('compilation_exited_before_quality') is not True
             or build.get('reviewed_patch_sha256') != patch_sha
             or build.get('source_snapshot_sha256') != summary.get('source_snapshot_sha256')):
@@ -64,14 +66,20 @@ def quality_receipt(folder, identity, patch_sha):
             'summary':summary,'files':files}
 
 
-def bind(inputs, out, quality, expected_aar, expected_provenance, identity):
-    for value in (expected_aar,expected_provenance):
+def bind(inputs, out, quality, expected_aar, expected_provenance, identity,
+         quality_identity, expected_source_receipt):
+    for value in (expected_aar,expected_provenance,expected_source_receipt):
         if not re.fullmatch('[0-9a-f]{64}',value or ''):
             raise ValueError('Exact SDK producer digests required')
     candidates=list((inputs/'jarvis-streaming-sdk-consumer').rglob('*.provenance.json'))
     if len(candidates)!=1 or sha256(candidates[0])!=expected_provenance:
         raise ValueError('Missing, ambiguous or changed SDK consumer provenance')
     provenance=load(candidates[0]);source=provenance['source']
+    source_receipt=inputs/'jarvis-streaming-sdk-consumer/source-receipt.json'
+    if not source_receipt.is_file() or sha256(source_receipt)!=expected_source_receipt or load(source_receipt)!=source:
+        raise ValueError('SDK source receipt does not match exact producer/AAR provenance')
+    if any(identity.get(k)!=quality_identity.get(k) for k in ('GITHUB_RUN_ID','GITHUB_SHA','GITHUB_REPOSITORY')):
+        raise ValueError('SDK and quality producers do not share the same run/source/repository')
     reviewed=load(ROOT/'third_party/litert-lm-0.16.0/reviewed-source.json')
     if (provenance.get('aar_sha256')!=expected_aar or source.get('workflow_identity')!=identity
             or source.get('reviewed_patch_sha256')!=reviewed['patch_sha256']
@@ -82,12 +90,13 @@ def bind(inputs, out, quality, expected_aar, expected_provenance, identity):
             asset='assets/litert-lm-source-provenance.json'
             if archive.namelist().count(asset)!=1 or json.loads(archive.read(asset))!={k:v for k,v in provenance.items() if k!='aar_sha256'}:
                 raise ValueError('APK does not embed the reviewed SDK provenance: '+name)
-    quality_name=f"jarvis-streaming-quality-evidence-{identity['GITHUB_RUN_ID']}-{identity['GITHUB_RUN_ATTEMPT']}"
+    quality_name=f"jarvis-streaming-quality-evidence-{quality_identity['GITHUB_RUN_ID']}-{quality_identity['GITHUB_RUN_ATTEMPT']}"
     if quality.name!=quality_name:
         raise ValueError('Quality artifact directory differs from retained producer name')
-    quality_result=quality_receipt(quality,identity,reviewed['patch_sha256'])
+    quality_result=quality_receipt(quality,quality_identity,reviewed['patch_sha256'],expected_source_receipt)
     retained=out/'streaming-sdk';retained.mkdir()
     shutil.copyfile(candidates[0],retained/'sdk.provenance.json')
+    shutil.copyfile(source_receipt,retained/'source-receipt.json')
     shutil.copyfile(inputs/'jarvis-streaming-sdk-consumer/streaming-sdk-manifest.json',retained/'artifact-selection.json')
     destination=out/'streaming-quality';destination.mkdir()
     for relative in ['EVIDENCE-INDEX.json',*sorted(QUALITY_FILES)]:
@@ -95,6 +104,8 @@ def bind(inputs, out, quality, expected_aar, expected_provenance, identity):
     return {'passed':True,'aar_sha256':expected_aar,'provenance_sha256':expected_provenance,
             'reviewed_patch_sha256':reviewed['patch_sha256'],'workflow_identity':identity,
             'quality_artifact_name':quality_name, 'producer_attempt':identity['GITHUB_RUN_ATTEMPT'],
+            'quality_workflow_identity':quality_identity, 'quality_producer_attempt':quality_identity['GITHUB_RUN_ATTEMPT'],
+            'source_receipt_sha256':expected_source_receipt,
             'host_native_quality':quality_result,
             'scope':'Same-run SDK package and host native full-model prerequisite; Android/JNI full-model and physical audio remain unverified.'}
 
@@ -103,12 +114,16 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('inputs','out','quality-dir'):p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--producer-attempt',required=True)
+    p.add_argument('--quality-producer-attempt',required=True)
+    p.add_argument('--expected-source-receipt-sha256',required=True)
     p.add_argument('--expected-aar-sha256',required=True);p.add_argument('--expected-provenance-sha256',required=True)
     a=p.parse_args();receipt_path=a.out/'receipt.json';receipt=load(receipt_path)
     try:
         identity=workflow_identity(os.environ,a.producer_attempt)
+        quality_identity=workflow_identity(os.environ,a.quality_producer_attempt)
         if receipt.get('passed') is not True:raise ValueError('Existing release checks did not pass')
-        receipt['streaming_sdk']=bind(a.inputs,a.out,a.quality_dir,a.expected_aar_sha256,a.expected_provenance_sha256,identity)
+        receipt['streaming_sdk']=bind(a.inputs,a.out,a.quality_dir,a.expected_aar_sha256,a.expected_provenance_sha256,identity,
+            quality_identity,a.expected_source_receipt_sha256)
         note='\n\nReviewed SDK provenance and bounded host full-model quality prerequisite: PASS. Android/JNI full-model inference and physical audio remain unverified.\n'
     except (ValueError,OSError,KeyError,TypeError,zipfile.BadZipFile) as error:
         receipt['passed']=False;receipt.setdefault('errors',[]).append('Streaming SDK evidence: '+str(error))

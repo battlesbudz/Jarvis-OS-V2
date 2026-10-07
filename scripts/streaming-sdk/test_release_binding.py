@@ -13,6 +13,7 @@ class QualityEvidenceBinding(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name)/'jarvis-streaming-quality-evidence-123-1';self.root.mkdir()
         self.identity={'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'1','GITHUB_SHA':'a'*40,'GITHUB_REPOSITORY':'owner/repo'}
+        self.quality_identity=dict(self.identity)
         self.patch='b'*64
         snapshot={'files':{'source.cc':'c'*64}}
         digest=hashlib.sha256(json.dumps(snapshot,sort_keys=True,separators=(',',':')).encode()).hexdigest()
@@ -32,7 +33,7 @@ class QualityEvidenceBinding(unittest.TestCase):
             p=self.root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps(value))
             files[name]={'bytes':p.stat().st_size,'sha256':sha256(p)}
         self.index={'summary':self.data['run/summary.json'],'files':files,'audio_weights_activations_uploaded':False,
-            'ci':{k:self.identity[k] for k in ('GITHUB_RUN_ID','GITHUB_RUN_ATTEMPT','GITHUB_SHA')}}
+            'ci':{k:self.quality_identity[k] for k in ('GITHUB_RUN_ID','GITHUB_RUN_ATTEMPT','GITHUB_SHA')}}
         (self.root/'EVIDENCE-INDEX.json').write_text(json.dumps(self.index))
 
     def test_exact_successful_receipt_passes(self):
@@ -70,6 +71,8 @@ class QualityEvidenceBinding(unittest.TestCase):
 
 
     def test_both_apks_must_embed_exact_producer_provenance(self):
+        newer=self.root.with_name('jarvis-streaming-quality-evidence-123-2');self.root.rename(newer);self.root=newer
+        self.quality_identity['GITHUB_RUN_ATTEMPT']='2'
         inputs=self.root/'inputs';out=self.root/'out';out.mkdir()
         consumer=inputs/'jarvis-streaming-sdk-consumer';consumer.mkdir(parents=True)
         manifest=ROOT/'third_party/litert-lm-0.16.0/reviewed-source.json'
@@ -81,20 +84,30 @@ class QualityEvidenceBinding(unittest.TestCase):
             'reviewed_patch_sha256':self.patch,'reviewed_source_sha256':sha256(manifest)}}
         provenance=consumer/'sdk.provenance.json';provenance.write_text(json.dumps(p))
         (consumer/'streaming-sdk-manifest.json').write_text('{}')
+        source_receipt=consumer/'source-receipt.json';source_receipt.write_text(json.dumps(p['source']))
+        self.data['build/build-status.json']['android_source_receipt_sha256']=sha256(source_receipt)
+        self.write()
         apks=inputs/'jarvis-os-v2-release-apk';apks.mkdir()
         for name in ('app-release.apk','app-compact.apk'):
             with zipfile.ZipFile(apks/name,'w') as z:
                 z.writestr('assets/litert-lm-source-provenance.json',json.dumps({'source':p['source']}))
-        consumer=dict(self.identity,GITHUB_RUN_ATTEMPT='2')
-        result=bind(inputs,out,self.root,'d'*64,sha256(provenance),workflow_identity(consumer,'1'))
+        consumer=dict(self.identity,GITHUB_RUN_ATTEMPT='3')
+        result=bind(inputs,out,self.root,'d'*64,sha256(provenance),workflow_identity(consumer,'1'),
+            workflow_identity(consumer,'2'),sha256(source_receipt))
         self.assertTrue(result['passed'])
         self.assertEqual('1',result['producer_attempt'])
-        self.assertEqual('jarvis-streaming-quality-evidence-123-1',result['quality_artifact_name'])
+        self.assertEqual('jarvis-streaming-quality-evidence-123-2',result['quality_artifact_name'])
+        self.assertEqual('2',result['quality_producer_attempt'])
         self.assertTrue((out/'streaming-quality/EVIDENCE-INDEX.json').is_file())
+        # A successful retry may not report quality from a different SDK producer.
+        self.data['build/build-status.json']['android_source_receipt_sha256']='0'*64;self.write()
+        with self.assertRaisesRegex(ValueError,'different SDK source receipt'):
+            bind(inputs,out,self.root,'d'*64,sha256(provenance),self.identity,self.quality_identity,sha256(source_receipt))
+        self.data['build/build-status.json']['android_source_receipt_sha256']=sha256(source_receipt);self.write()
         with zipfile.ZipFile(apks/'app-compact.apk','w') as z:
             z.writestr('assets/litert-lm-source-provenance.json','{}')
         with self.assertRaisesRegex(ValueError,'APK does not embed'):
-            bind(inputs,out,self.root,'d'*64,sha256(provenance),self.identity)
+            bind(inputs,out,self.root,'d'*64,sha256(provenance),self.identity,self.quality_identity,sha256(source_receipt))
 
     def test_gradle_and_workflow_remain_fail_closed(self):
         gradle=(ROOT/'app/build.gradle.kts').read_text()
@@ -104,14 +117,31 @@ class QualityEvidenceBinding(unittest.TestCase):
         for dependency in ['gson:2.13.2','kotlin-reflect:2.3.21','kotlinx-coroutines-android:1.9.0']:
             self.assertIn(dependency,gradle)
         workflow=(ROOT/'.github/workflows/android.yml').read_text()
-        producer=workflow.split('  build-streaming-sdk:',1)[1].split('  build-release:',1)[0]
+        producer=workflow.split('  build-streaming-sdk:',1)[1].split('  verify-streaming-quality:',1)[0]
         self.assertNotIn('continue-on-error',producer)
         self.assertIn('< /dev/null',producer)
+        self.assertIn('timeout-minutes: 45',producer)
+        self.assertIn('streaming-sdk/source-receipt.json',producer)
+        self.assertNotIn('run_quality.py',producer)
+        quality=workflow.split('  verify-streaming-quality:',1)[1].split('  build-release:',1)[0]
+        self.assertIn('needs: build-streaming-sdk',quality)
+        self.assertIn('timeout-minutes: 115',quality)
+        self.assertIn('timeout-minutes: 63',quality)
+        self.assertNotIn('continue-on-error',quality)
         release=workflow.split('  build-release:',1)[1].split('  prepare-upgrade-baseline:',1)[0]
         self.assertEqual(2,release.count('--require-digests --check-workflow --producer-attempt'))
         self.assertEqual(2,release.count('-PlitertLmBridgeSha256="$STREAMING_AAR_SHA256"'))
         self.assertIn('PRODUCER_ARTIFACT_ID',release)
         self.assertIn('scripts/streaming-sdk/producer_identity.py',release)
+        self.assertIn('needs: build-streaming-sdk',release)
+        self.assertNotIn('needs: [build-streaming-sdk, verify-streaming-quality]',release)
+        self.assertIn('artifact/UNVERIFIED-CANDIDATE.txt',release)
+        self.assertIn('Authoritative run:',release)
+        for section in ('publish:', 'publish-memory-test:', 'publish-pr-test:'):
+            publishing=workflow.split('  '+section,1)[1].split('    steps:',1)[0]
+            self.assertIn('verify-streaming-quality',publishing)
+            self.assertIn('verification-receipt',publishing)
+        self.assertEqual(3,workflow.count('files: dist/*.apk'))
 
 
 if __name__=='__main__':unittest.main()

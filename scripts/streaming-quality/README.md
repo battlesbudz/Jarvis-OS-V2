@@ -1,22 +1,24 @@
 # Hosted full-Gemma E2B native quality prerequisite
 
-Status: source prepared and lightweight orchestration tests run. **This hosted
-recipe has not been compiled or executed. No full-model pass is claimed.**
-The earlier native Conversation source compiled locally, but no completed
-full-E2B paired run is borrowed from that work. Every input and receipt below is
-regenerated in a new hosted directory. Actual CI and first APK remain pending.
+Status: Builds 1117 and 1127 passed the Android SDK stage but reached the Linux
+probe compiler deadline before full-model execution. Build 1127 reached 6,416 of
+6,477 actions with continuing progress and no memory-pressure failure. **No
+full-model pass is claimed.** Every input and receipt below is regenerated in a
+new hosted directory; no earlier native fixture result substitutes for this gate.
 
 ## Minimal integration
 
-Copy this directory's SOURCE-MANIFEST.json allowlist, plus the manifest itself,
-as scripts/streaming-quality/. Do not copy __pycache__, transient test files, or
-research logs. Merge hosted-steps.yml.example into the existing
-build-streaming-sdk job after build_android_sdk.py succeeds. That helper must
-provide the recorded reviewed patch and its two source overlays. The fragment
-is only a proposal until integrated/reviewed; it does not trigger anything.
+The authoritative integration is `.github/workflows/android.yml`. The independent
+quality job first selects the successful SDK producer's exact artifact and checks
+the AAR, provenance and source-receipt hashes, including their run/source/attempt
+identity. `prepare_sdk_source.py` uses the sibling streaming-sdk helpers to
+reconstruct the exact official SDK commit, reviewed patch and both recorded
+overlays. No Android binary cache transfer or model download is needed for that
+source preparation. Copying this directory alone is insufficient: keep the
+reviewed SDK helpers and source inventory alongside it.
 
-The host probes build in the same exact SDK checkout after the Android compiler
-exits. Bazel batch mode exits before any model download, reconstruction or native
+The host probes build from that independently verified source checkout. Bazel
+batch mode exits before any model download, encoder reconstruction or native
 inference. The pipeline first verifies a fresh worktree recreated from the exact
 SDK commit + reviewed source PATCH + exactly the Android API30 and Android-only
 owner linkstatic overlays equals the actual Android source tree. Then it installs
@@ -25,12 +27,19 @@ checks official pinned Git-LFS host libraries, compiles three tiny probe targets
 and hashes the resulting binaries and resolved dynamic dependencies. Source and
 runtime identities are rechecked before both Conversation lanes.
 
-A passed quality step is a prerequisite for the dependent APK job. Build,
+A passed quality job remains mandatory for the consolidated verification receipt
+and every release publication. Signed APK assembly runs in parallel after the
+successful SDK producer; its early artifact is explicitly unverified. Build,
 download, source/hash, numerical, native-execution, evidence, semantic-reference,
 and resource failures all leave the job failing. There is no continue-on-error,
 retry, automatic budget expansion, skipped-pass, or legacy-model substitution.
-Retain the compiled Android AAR separately if desired; failure receipts do not
-make it a quality-approved APK. Keep all preexisting app checks.
+Failure receipts do not make an early APK quality-approved. Keep all preexisting
+app checks. The aggregate source-build/quality ceiling remains 160 minutes:
+45 for the SDK producer, then 115 for quality. Host compilation admits four CPUs
+only with at least 8 GiB available RAM and four schedulable CPUs, watches at most
+6 GiB process-tree RSS and a 2 GiB system reserve, and has a 60-minute deadline.
+The existing model subprocess limits remain unchanged. A bounded compiler-only
+tail and resource/action progress are retained even if compilation fails.
 
 ## Fresh input chain
 
@@ -116,7 +125,7 @@ export_evidence.py exports only the enumerated structured receipts: source/model
 hashes, compiler/binary identities, process limits/exit/peaks, frontend/oracle
 booleans, exact small textual Conversation responses and the comparison. It
 excludes all model files, PCM/WAV/Mel, activation arrays, request blobs, runfiles,
-binaries and raw stdout/stderr logs. A malformed/oversized/raw-data receipt makes
+binaries and raw model-inference stdout/stderr logs. A malformed/oversized/raw-data receipt makes
 export fail closed. Always upload only streaming-quality-evidence/, never the
 build/run/input trees. EVIDENCE-INDEX.json includes the exact CI commit/run/attempt.
 

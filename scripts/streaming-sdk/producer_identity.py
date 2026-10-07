@@ -11,7 +11,8 @@ if str(VERIFICATION) not in sys.path:
     sys.path.insert(0, str(VERIFICATION))
 from artifacts import select as select_artifacts
 
-PRODUCER = 'Build reviewed streaming SDK ARM64'
+PRODUCERS = {'sdk': 'Build reviewed streaming SDK ARM64',
+             'quality': 'Verify full-E2B native audio quality'}
 KINDS = {'sdk': 'jarvis-streaming-sdk-aar', 'quality': 'jarvis-streaming-quality-evidence'}
 
 
@@ -51,7 +52,7 @@ def select_producer(manifest, *, repository, run_id, head_sha, kind, artifact_na
     # its original timestamps. The existing resolver owns that retry contract;
     # do not compare its logical attempt to the original producer's attempt.
     result = select_artifacts(manifest, run_id=run_id, head_sha=head_sha,
-                             requirements=[(artifact_name, PRODUCER)], require_success=True)
+                             requirements=[(artifact_name, PRODUCERS[kind])], require_success=True)
     if str(result[0]['id']) != artifact_id:
         raise ValueError('Selected artifact differs from retained successful producer ID')
     return result[0]
