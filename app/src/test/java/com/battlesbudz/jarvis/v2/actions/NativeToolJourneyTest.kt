@@ -41,6 +41,7 @@ class NativeToolJourneyTest {
                     ExecutionResult(true, "Nothing is scheduled right now.")
                 is MobileAction.PostNotification ->
                     ExecutionResult(true, "Posted the reminder notification.")
+                else -> ExecutionResult(false, "Unsupported in test world.")
             }
         }
     }
