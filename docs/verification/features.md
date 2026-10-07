@@ -3638,3 +3638,19 @@ used a separate reviewed 256 MiB Java heap / 512 MiB whole-tree RSS / 2 GiB
 admission profile, with one CPU, 90 seconds, 1 GiB reserve and checked cleanup.
 No model inference, Android execution or physical call-start result is implied.
 The strict hosted numerical oracle and all existing release gates remain intact.
+
+### Reminder fixture clock repair (October 7, 2026)
+
+Build 1180 ([run 37643215975](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37643215975))
+failed `ReminderPlanTest.ledgerWriteSuccessProducesReceiptAndListsTheReminder`
+after the fixture's October 7, 16:00 reminder passed the ledger's real clock.
+This is a test-clock defect: the coordinator used fixed October 6, 10:00 while
+three test ledgers used the wall clock. All now share the fixed fixture clock;
+the requested date and every success, failure, scheduling and listing check remain.
+Unmodified production ledger code reproduced one occurrence just before the
+deadline and none at/after it with explicit clocks. The shared clock scheduled,
+listed and allowed exactly one due claim. That probe and the existing M2 workflow,
+task-ledger, persistence and approval suites passed 83 source-only JVM checks with
+Kotlin 2.3.21 and retained real dependencies, without stubs. The full repaired
+`ReminderPlanTest` and exact-revision release/Android gates still require hosted
+execution; these local checks do not verify an APK or actual Android alarms.
