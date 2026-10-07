@@ -127,7 +127,20 @@ class QualityEvidenceBinding(unittest.TestCase):
         self.assertIn('needs: build-streaming-sdk',quality)
         self.assertIn('timeout-minutes: 115',quality)
         self.assertIn('timeout-minutes: 63',quality)
-        self.assertNotIn('continue-on-error',quality)
+        optional_diagnostics = {
+            'Capture weight-free encoder runtime diagnostic',
+            'Retain verified weight-free encoder runtime diagnostic',
+        }
+        optional_seen = set()
+        for block in quality.split('\n      - '):
+            first = block.splitlines()[0] if block.splitlines() else ''
+            name = first.removeprefix('name: ')
+            if name in optional_diagnostics:
+                optional_seen.add(name)
+                self.assertEqual(1, block.count('continue-on-error: true'))
+            else:
+                self.assertNotIn('continue-on-error', block)
+        self.assertEqual(optional_diagnostics, optional_seen)
         release=workflow.split('  build-release:',1)[1].split('  prepare-upgrade-baseline:',1)[0]
         self.assertEqual(2,release.count('--require-digests --check-workflow --producer-attempt'))
         self.assertEqual(2,release.count('-PlitertLmBridgeSha256="$STREAMING_AAR_SHA256"'))

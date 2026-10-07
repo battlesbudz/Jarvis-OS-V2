@@ -108,3 +108,12 @@ and execution have separate 60-second/384 MiB heap and 20-second/128 MiB heap
 limits; those heap values are not total process RSS caps.
 The result is bound to the jar and test-source SHA in source-receipt.json and a
 standalone packaged-kotlin-contract.json; test classes never enter the AAR.
+# Sampler runtime dependency repair
+
+The producer now derives the two exact Android TopK sampler prebuilts with an
+explicit dependency on `liblitertlm_jni.so`, which owns the required runtime API
+table. Original and derived hashes, the pinned host tool and hardening evidence
+are recorded and validated by consumers. Twenty-four actual-binary mutation and
+reproducibility checks run before the source build. The existing five-profile
+native-loading and 16 KB gates still determine Android acceptance. See
+[the derivation and license notice](SAMPLER-DEPENDENCY-NOTICE.md).

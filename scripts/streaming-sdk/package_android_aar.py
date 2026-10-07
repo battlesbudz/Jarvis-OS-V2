@@ -16,6 +16,7 @@ import struct
 import subprocess
 import tempfile
 import zipfile
+from repair_sampler_dependencies import TARGETS as SAMPLERS, PROVIDER, repair
 
 HERE = Path(__file__).resolve().parent
 OWNER = json.loads((HERE / 'native-owner-production.json').read_text())
@@ -167,6 +168,7 @@ def main():
     parser.add_argument('--ndk', type=Path, required=True)
     parser.add_argument('--page-auditor', type=Path, required=True)
     parser.add_argument('--source-receipt', type=Path, required=True)
+    parser.add_argument('--patchelf', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
     if args.out.exists():
@@ -213,6 +215,26 @@ def main():
         if actual.stat().st_size != pin['bytes'] or sha256(actual) != pin['sha256']:
             raise ValueError(f'Pinned runtime prebuilt mismatch: {actual.name}')
 
+    # Preserve upstream pins above, then derive fresh metadata-only copies.
+    # Do not modify the checkout/LFS inputs or make JNI symbols process-global.
+    derived = args.out.parent / 'sampler-runtime-dependencies'
+    derived.mkdir(exist_ok=False)
+    derivations = {}
+    for name in SAMPLERS:
+        destination = derived / name
+        derivations[name] = repair(selected[name], destination, args.patchelf)
+        selected[name] = destination
+        dependencies[name] = read_needed(destination)
+        if PROVIDER not in dependencies[name]:
+            raise ValueError('Derived sampler lacks its explicit runtime provider')
+    provider_symbols = subprocess.check_output([str(toolchain / 'bin/llvm-readelf'), '--dyn-syms', '--wide',
+                                               str(selected[PROVIDER])], text=True)
+    if not any(line.split()[-1:] == ['kLiteRtRuntimeBuiltin'] and 'OBJECT' in line.split() and
+               'GLOBAL' in line.split() and 'DEFAULT' in line.split() and 'UND' not in line.split()
+               for line in provider_symbols.splitlines()):
+        raise ValueError('Declared sampler provider does not export the builtin runtime table')
+    args.out.with_suffix('.sampler-dependencies.json').write_text(json.dumps(derivations, indent=2) + '\n')
+
     spec = importlib.util.spec_from_file_location('jarvis_page_auditor', args.page_auditor)
     auditor = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(auditor)
@@ -232,11 +254,15 @@ def main():
         keep = ['AndroidManifest.xml', 'R.txt', 'LICENSE', 'THIRD_PARTY_NOTICE.txt']
         entries = {name: base.read(name) for name in keep}
     entries['classes.jar'] = classes
+    sampler_notice = (HERE / 'SAMPLER-DEPENDENCY-NOTICE.md').read_bytes()
+    entries['assets/litert-lm-sampler-modifications.md'] = sampler_notice
     entries.update({f'jni/arm64-v8a/{name}': path.read_bytes() for name, path in selected.items()})
     source_receipt = json.loads(args.source_receipt.read_text())
     provenance = {'scope': 'experimental reviewed source-built ARM64 SDK; no model weights',
                   'source': source_receipt, 'explicit_dlopen_roots': ROOTS,
                   'native_dependencies': dependencies, 'ndk_api30_system_libraries': sorted(system),
+                  'sampler_dependency_derivations': derivations,
+                  'sampler_modifications_notice_sha256': hashlib.sha256(sampler_notice).hexdigest(),
                   'owner_inventory_sha256': sha256(HERE / 'native-owner-production.json'),
                   'owner_jni_exports': sorted(owner_exports), 'owner_class_contract': class_contract,
                   'sdk_jni_exports': sorted(sdk_exports),

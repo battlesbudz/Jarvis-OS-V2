@@ -71,6 +71,8 @@ jobs:
             ${{ runner.temp }}/streaming-sdk/source-receipt.json
             ${{ runner.temp }}/streaming-sdk/packaged-kotlin-contract.json
             ${{ runner.temp }}/streaming-sdk/*.native-audit.json
+            ${{ runner.temp }}/streaming-sdk/*.sampler-dependencies.json
+            ${{ runner.temp }}/streaming-sdk/sampler-dependency-contract.json
             ${{ runner.temp }}/streaming-sdk/*.provenance.json
           if-no-files-found: warn
           retention-days: 14
@@ -178,6 +180,30 @@ jobs:
             --bazel "$RUNNER_TEMP/streaming-sdk/downloads/bazel-7.6.1-linux-x86_64" \
             --bazel-root "$RUNNER_TEMP/streaming-sdk/bazel" \
             --out "$RUNNER_TEMP/streaming-quality-build"
+      - name: Capture weight-free encoder runtime diagnostic
+        id: encoder-runtime-diagnostic
+        continue-on-error: true
+        timeout-minutes: 4
+        run: |
+          set -euo pipefail
+          python scripts/streaming-quality/encoder-replay/diagnostic_guard.py \
+            --build-dir "$RUNNER_TEMP/streaming-quality-build" \
+            --guard "$RUNNER_TEMP/streaming-quality-build/diagnostic-compile-guard.private.json" \
+            --policy scripts/streaming-quality/encoder-replay/reviewed-source-policy.json \
+            --expected-policy-sha256 49de50880fd804d9365a1e10d9f72b48b7deca0f2a249ada5c2beb3d7b9d53ae \
+            --repository-cache "$RUNNER_TEMP/streaming-sdk/bazel/cache/repos/v1" \
+            --out "$RUNNER_TEMP/streaming-encoder-runtime-diagnostic"
+      - name: Retain verified weight-free encoder runtime diagnostic
+        if: steps.encoder-runtime-diagnostic.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-streaming-encoder-runtime-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/streaming-encoder-runtime-diagnostic/encoder-runtime-${{ github.run_id }}-${{ github.run_attempt }}.tar.gz
+            ${{ runner.temp }}/streaming-encoder-runtime-diagnostic/encoder-runtime-${{ github.run_id }}-${{ github.run_attempt }}.tar.gz.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Run exact full-E2B native quality prerequisite
         timeout-minutes: 50
         env:

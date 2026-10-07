@@ -69,3 +69,23 @@ Those remain separately identified until measured on the actual device.
 Do not claim a release candidate verified until the exact-revision existing
 full release pipeline finishes. Do not merge or change any publication gate to
 hide a missing stage. Preserve failed compiler, audit, helper and quality receipts.
+
+
+### Pinned Android sampler dependency metadata
+
+Build 1135 showed that the separate OpenCL/WebGPU TopK plugins require the builtin
+runtime table exported by the source-built JNI library. Packaging now adds an
+explicit dependency in verified derived copies, with no process-global symbol
+promotion and no sampler code/model changes. The producer retains original LFS
+pins, exact derived hashes, an 24-check actual-binary contract receipt, full
+relocation/hardening evidence and the existing 16 KB audit. Consumers require
+those exact derivation and recipe identities. All original Android load tests
+remain active, including plugin-first loading. See
+`scripts/streaming-sdk/SAMPLER-DEPENDENCY-NOTICE.md` for source/license boundaries.
+
+The independent encoder replay capsule is optional diagnostic evidence. It
+requires a same-build precompile guard, complete compiler/source/output bindings,
+reviewed public notices and any required corresponding source. It excludes system
+runtime binaries, model weights, audio, activation values and credentials, and
+is uploaded separately under a 512 MiB bound. Its availability cannot approve a
+release or replace the existing full-E2B prerequisite.

@@ -143,20 +143,28 @@ def compiler_diagnostic(out, file_identity, *, include_hash=True):
 
 
 def run_compile(command, sdk, out, *, wall_seconds=COMPILE_WALL_SECONDS,
-                sample_seconds=15.0, poll_seconds=.25, cleanup_seconds=5.0):
+                sample_seconds=15.0, poll_seconds=.25, cleanup_seconds=5.0,
+                resource_profile='compiler'):
     """Bound and reap the complete Linux compiler tree, including new sessions."""
-    need(0 < wall_seconds <= COMPILE_WALL_SECONDS and 0 < cleanup_seconds <= 5,
+    # The optional diagnostic uses this same ownership/cleanup implementation,
+    # with a smaller fixed profile. Existing compiler callers keep every limit.
+    need(resource_profile in ('compiler', 'diagnostic'), 'Unknown supervisor profile')
+    jobs, minimum, rss_limit, reserve, maximum_wall = (
+        (COMPILE_JOBS, COMPILE_MIN_AVAILABLE, COMPILE_TREE_RSS_LIMIT,
+         COMPILE_SYSTEM_RESERVE, COMPILE_WALL_SECONDS) if resource_profile == 'compiler'
+        else (2, 5 * 1024**3, 2 * 1024**3, 1024**3, 180))
+    need(0 < wall_seconds <= maximum_wall and 0 < cleanup_seconds <= 5,
          'Compiler budget cannot be expanded')
     out = Path(out)
     memory = compile_memory()
-    report = {'started': False, 'passed': False, 'jobs': COMPILE_JOBS,
-        'wall_budget_seconds': wall_seconds, 'minimum_available_bytes': COMPILE_MIN_AVAILABLE,
-        'tree_rss_watchdog_bytes': COMPILE_TREE_RSS_LIMIT, 'system_reserve_bytes': COMPILE_SYSTEM_RESERVE,
+    report = {'started': False, 'passed': False, 'jobs': jobs, 'resource_profile': resource_profile,
+        'wall_budget_seconds': wall_seconds, 'minimum_available_bytes': minimum,
+        'tree_rss_watchdog_bytes': rss_limit, 'system_reserve_bytes': reserve,
         'memory_before': memory, 'cpu_affinity_count': len(os.sched_getaffinity(0)),
         'sampled_peak_tree_rss_bytes': 0, 'peak_process_count': 0, 'samples': [],
         'rss_sum_may_double_count_shared_pages': True, 'cleanup_verified': False}
-    if memory['effective_available_bytes'] < COMPILE_MIN_AVAILABLE or report['cpu_affinity_count'] < COMPILE_JOBS:
-        report.update(classification='build_resource_blocked', reason='Four compiler jobs require at least 8 GiB available and 4 schedulable CPUs')
+    if memory['effective_available_bytes'] < minimum or report['cpu_affinity_count'] < jobs:
+        report.update(classification='build_resource_blocked', reason=f'{resource_profile} requires at least {minimum // 1024**3} GiB available and {jobs} schedulable CPUs')
         return report
     need(not any(p['ppid'] == os.getpid() for p in process_table().values()),
          'Compiler supervisor must exclusively own its child processes', 'build_supervision_failure')
@@ -203,7 +211,7 @@ def run_compile(command, sdk, out, *, wall_seconds=COMPILE_WALL_SECONDS,
         with os.fdopen(fd, 'wb') as log:
             child = subprocess.Popen(command, cwd=sdk, stdin=subprocess.DEVNULL,
                 stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-                preexec_fn=lambda: os.sched_setaffinity(0, set(sorted(os.sched_getaffinity(0))[:COMPILE_JOBS])))
+                preexec_fn=lambda: os.sched_setaffinity(0, set(sorted(os.sched_getaffinity(0))[:jobs])))
             report['started'] = True
             last_sample = -sample_seconds
             while True:
@@ -224,8 +232,8 @@ def run_compile(command, sdk, out, *, wall_seconds=COMPILE_WALL_SECONDS,
                     last_sample = elapsed
                 if cancelled: report.update(classification='build_cancelled', stop_reason='signal', signal=cancelled[0]); break
                 if elapsed >= wall_seconds: report.update(classification='build_timeout', stop_reason='wall_timeout'); break
-                if rss > COMPILE_TREE_RSS_LIMIT: report.update(classification='build_resource_failure', stop_reason='process_tree_rss'); break
-                if memory['effective_available_bytes'] < COMPILE_SYSTEM_RESERVE:
+                if rss > rss_limit: report.update(classification='build_resource_failure', stop_reason='process_tree_rss'); break
+                if memory['effective_available_bytes'] < reserve:
                     report.update(classification='build_resource_failure', stop_reason='system_memory_reserve'); break
                 if path.stat().st_size > COMPILE_LOG_LIMIT:
                     report.update(classification='build_output_limit', stop_reason='compiler_log_size'); break
@@ -312,7 +320,8 @@ def build(a):
     sdk = a.sdk.resolve(); out = a.out.resolve()
     need(not out.exists(), 'Use a fresh hosted quality build directory')
     out.mkdir(parents=True)
-    status = {'classification': 'build_pending', 'build_succeeded': False, 'inference_run': False}
+    status = {'classification': 'build_pending', 'build_succeeded': False, 'inference_run': False,
+              'diagnostic_cleanup_required': True}
     write(out/'build-status.json', status)
     try:
         android = load(a.android_receipt)
@@ -362,6 +371,23 @@ def build(a):
             '--remote_executor=', '--remote_cache=', '--noremote_upload_local_results',
             '--repo_env=ANDROID_NDK_HOME=',
             f'--repo_env=CC={cc}', f'--repo_env=CXX={cxx}', *[f'//{PACKAGE}:{t}' for t in TARGETS]]
+        # Independent diagnostic provenance; a missing guard never changes
+        # the existing compiler/quality acceptance result.
+        status['build_command_sha256'] = digest(command)
+        try:
+            diagnostic_dir = HERE/'encoder-replay'
+            policy = load(diagnostic_dir/'reviewed-source-policy.json')
+            expected_policy = (diagnostic_dir/'reviewed-source-policy.sha256').read_text().strip()
+            need(digest(policy) == expected_policy, 'Encoder diagnostic policy changed')
+            sys.path.insert(0, str(diagnostic_dir))
+            from hosted_capture import begin_guard, github_context
+            guard = begin_guard(sdk, command, github_context(), policy,
+                                out/'diagnostic-compile-guard.private.json')
+            status['diagnostic_compile_guard_sha256'] = digest(guard)
+            status['diagnostic_guard_available'] = True
+        except Exception as diagnostic_error:
+            status['diagnostic_guard_available'] = False
+            status['diagnostic_guard_error'] = str(diagnostic_error)[:1000]
         # Build has its own bounded job; no inference or model download runs
         # while this compiler subprocess is alive. Batch mode exits its JVM.
         status['compile'] = run_compile(command, sdk, out)

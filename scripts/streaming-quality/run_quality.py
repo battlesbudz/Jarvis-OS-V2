@@ -22,14 +22,14 @@ REFERENCE = {'text': 'Roses are red, violets are blue.',
     'type': 'Official documentation example output for this exact linked audio; not a new human listening annotation.'}
 
 
-RESOURCE_PATTERN = r'\b(?:ENOMEM|std::bad_alloc|RESOURCE_EXHAUSTED)\b|(?:mmap|mapping|allocate|allocation).{0,100}(?:Cannot allocate memory|out of memory)'
+RESOURCE_PATTERN = r'\b(?:ENOMEM|std::bad_alloc|RESOURCE_EXHAUSTED)\b|(?:mmap|map|mapping|allocate|allocation).{0,100}(?:Cannot allocate memory|out of memory)'
 
 def classify_process(process, result=None, diagnostic=''):
     """Only explicit resource evidence earns the resource classification."""
     if process.get('status') == 'resource_blocked': return 'resource_constrained'
     if process.get('stop_reason') in {'wall_timeout','rss_watchdog_limit','system_memory_reserve'}:
         return 'resource_constrained'
-    if process.get('exit_code') == -signal.SIGXCPU: return 'resource_constrained'
+    if process.get('exit_code') in {-signal.SIGXCPU, -signal.SIGXFSZ}: return 'resource_constrained'
     error = str((result or {}).get('error', ''))+'\n'+diagnostic
     if re.search(RESOURCE_PATTERN, error, re.I):
         return 'resource_constrained'
@@ -65,6 +65,13 @@ def verify_build(build_dir):
     receipt = load(build_dir/'build-status.json')
     need(receipt.get('build_succeeded') is True and receipt.get('compilation_exited_before_quality') is True,
          'Host compilation has not completed successfully')
+    # Capture/export may fail, but uncertain process ownership must never
+    # overlap the model workload. SIGKILL leaves a pending same-run latch.
+    need(receipt.get('diagnostic_cleanup_required') is True, 'Diagnostic cleanup admission contract missing')
+    sys.path.insert(0, str(HERE/'encoder-replay'))
+    from diagnostic_guard import verify_cleanup
+    from hosted_capture import github_context
+    verify_cleanup(build_dir, github_context())
     need(receipt['recipe_manifest_sha256'] == verify_recipe_sources(), 'Hosted recipe changed after compile')
     sdk = Path(receipt['sdk'])
     need(digest(sdk_snapshot(sdk)) == receipt['source_snapshot_sha256'], 'SDK source changed after host compilation')

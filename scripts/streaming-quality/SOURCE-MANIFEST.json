@@ -10,8 +10,8 @@
       "sha256": "b0fdf259ec69b820c81a45ae1a62d1e2ce3cf7a676887e25e785dc8fd3475221"
     },
     "build_probes.py": {
-      "bytes": 23539,
-      "sha256": "ab368ba94679d402b52c6a270b7f85ae9325c958428af54a80c42c9538e573f7"
+      "bytes": 25190,
+      "sha256": "3f7a12fe577ec37b1eda87e47b76a9263c77f0cc663707e7b1cb3b9f48f2cd13"
     },
     "common.py": {
       "bytes": 4816,
@@ -20,6 +20,46 @@
     "compare_native_pair.py": {
       "bytes": 2803,
       "sha256": "2a03125976a40d2174266a5986176779215f3e86c3ef4c5507010921c34a12fe"
+    },
+    "encoder-replay/capsule_writer.py": {
+      "bytes": 12766,
+      "sha256": "a632511735962e02e6f6c1196cdb03c17fea18a038dca62cc896acfbaa64e583"
+    },
+    "encoder-replay/diagnostic_guard.py": {
+      "bytes": 5301,
+      "sha256": "f821c99b33cb2faff966d5fc80cd757e5dc6fbc7277ae7428ce7ac7987637c67"
+    },
+    "encoder-replay/hash_bazel_action_metadata.py": {
+      "bytes": 6496,
+      "sha256": "c7c7725568185bd603db2bbb09a369421055ec329c5f459868cc6ee893b17f1f"
+    },
+    "encoder-replay/hosted_capture.py": {
+      "bytes": 19970,
+      "sha256": "076508ee5de86048eeb3f034fbc26c8e406fdc3d537de667db1e280b8dc7b609"
+    },
+    "encoder-replay/replay_artifact_inventory.py": {
+      "bytes": 10702,
+      "sha256": "7206ddb74bde447df05ee3196b5eb168823a59be0054cf41a9aa4d853f485231"
+    },
+    "encoder-replay/reviewed-source-policy.json": {
+      "bytes": 25171,
+      "sha256": "9666c5052d19523932b7b7e8ef461ca2053616fe291e74e62c08353cb2c177ef"
+    },
+    "encoder-replay/reviewed-source-policy.sha256": {
+      "bytes": 65,
+      "sha256": "9cd6a37ff33b70793c3b40dfaeb6b32abe04fb803a9d02a2ae6569328d9cb7b0"
+    },
+    "encoder-replay/test_collector.py": {
+      "bytes": 15824,
+      "sha256": "5c69fdf55a10b9cb224231305615ea9a74fe74f9c54aa2311384a9ce759d7ae7"
+    },
+    "encoder-replay/test_diagnostic_guard.py": {
+      "bytes": 10012,
+      "sha256": "84a622b9ec2cdc39915bd6218a62dab7ea991be6c2030a9dda671c78fd55d662"
+    },
+    "encoder-replay/trace_compiler_inputs.py": {
+      "bytes": 5876,
+      "sha256": "3ccd43723c032cf6b34b34f7ac259fe28a31f85bb929f25f634fe5edf24df73d"
     },
     "export_evidence.py": {
       "bytes": 3497,
@@ -94,8 +134,8 @@
       "sha256": "1668a3152e33680d94637b13421c15e68bd97cd8701f7f555c691f5bc5c0b9f3"
     },
     "run_quality.py": {
-      "bytes": 12829,
-      "sha256": "8a8588cd73b4984b651cf6ebd27a95d28acc0e45bde628de922b2f9edccb0740"
+      "bytes": 13304,
+      "sha256": "a093ce8a2fc7fa87e3450d6b698a77292efbeff829b4aba65158ad5cfb0f4ed5"
     },
     "test_build_supervisor.py": {
       "bytes": 13295,
@@ -110,8 +150,8 @@
       "sha256": "63c3a18fd9275c04ba71e47007d0fddfdc721b188c825d01a62721edeb717abd"
     },
     "test_quality.py": {
-      "bytes": 16406,
-      "sha256": "335d5d26103f0382fc33241c7b2b6aa95f31ba762634b758726f61480840aa45"
+      "bytes": 17327,
+      "sha256": "904d6eb6e71e7ece5912f81af7704c22bd19cfdc18e9486f4dbaa4da0d9377f0"
     }
   },
   "scope": "Source, verified weightless structural recipe assets and metadata only; no model/audio/activation payload"

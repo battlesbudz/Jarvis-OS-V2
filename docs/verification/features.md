@@ -1,6 +1,31 @@
 # Feature and acceptance map
 
 
+## Streaming sampler dependency checkpoint — 7 October 2026
+
+Build 1135 produced signed normal and compact APKs and passed all 1,471 release
+JVM tests. All five Android profiles passed their 76 main journeys and the
+preserved-data upgrade from Build 1106. Each profile failed native library
+admission because the shipped TopK sampler could not resolve
+`kLiteRtRuntimeBuiltin`. No verified release was approved.
+
+The next candidate adds a pinned, metadata-only dependency derivation for both
+samplers, retaining their original code/data/relocations and RELRO while making
+new dynamic metadata read-only. Producer checks and consumer provenance require
+the exact tool/input/output hashes. Twenty-four actual-binary derivation/mutation
+checks and the unchanged 16 KB ELF audit pass locally; exact-candidate Android
+loading, model inference and full release gates remain pending.
+
+The hosted encoder oracle still reports same-run static/stateful projected-row
+and EOA bitwise equality, but its historical full-tensor hash differs. The
+numerical acceptance check remains unchanged. A separate, bounded weight-free
+runtime diagnostic artifact is added to establish the actual compiled runtime,
+source/tool flags and public license obligations; failure to capture it never
+substitutes for quality evidence. It contains no model weights, audio, activation
+values or private user data. Full native Conversation quality and Fold6 latency
+remain unverified.
+
+
 ## Packaged SDK test boundary and oracle diagnostics — October 7, 2026
 
 Build 1133 (head `bc7a6201`, tested merge `19b5e6b2`) passed the reviewed

@@ -98,10 +98,23 @@ class ClassificationTests(unittest.TestCase):
     def test_explicit_resource_cases(self):
         for p in [{'status':'resource_blocked'}, {'stop_reason':'rss_watchdog_limit'},
                   {'stop_reason':'system_memory_reserve'}, {'stop_reason':'wall_timeout'},
-                  {'exit_code':-signal.SIGXCPU}]:
+                  {'exit_code':-signal.SIGXCPU}, {'exit_code':-signal.SIGXFSZ}]:
             self.assertEqual(run_quality.classify_process(p), 'resource_constrained')
         for message in ['std::bad_alloc','RESOURCE_EXHAUSTED: allocation failed','mmap: Cannot allocate memory','ENOMEM']:
             self.assertEqual(run_quality.classify_process({'status':'failed'},diagnostic=message),'resource_constrained')
+
+    def test_actual_loader_mapping_failure_is_resource_evidence(self):
+        diagnostic = ('litert_lm_loader.cc:299] Failed to map section: INTERNAL: '
+                      '(data) != (((void *) -1)): Failed to map, error: Cannot allocate memory')
+        self.assertEqual(run_quality.classify_process({'status':'failed','exit_code':2},
+            {'error':'Missing per_layer_embedding_lookup_'}, diagnostic), 'resource_constrained')
+        self.assertIsNotNone(run_quality.re.search(run_quality.RESOURCE_PATTERN, diagnostic,
+                                                  run_quality.re.I))
+
+    def test_map_failure_without_resource_text_remains_native_failure(self):
+        self.assertEqual(run_quality.classify_process({'status':'failed'}, diagnostic=
+            'litert_lm_loader.cc:299] Failed to map section: invalid file offset'),
+            'native_execution_failure')
 
     def test_loader_assertion_not_assumed_memory(self):
         p={'status':'failed','exit_code':2}

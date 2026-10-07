@@ -12,6 +12,7 @@ import zipfile
 from build_android_sdk import SDK_PIN, LITERT_PIN
 from producer_identity import workflow_identity
 from package_android_aar import ROOTS, OWNER, inspect_classes, sha256
+from repair_sampler_dependencies import TARGETS as SAMPLER_INPUTS, OUTPUTS as SAMPLER_OUTPUTS, PROVIDER, TOOL_SHA256
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -52,6 +53,15 @@ def validate(aar, provenance_path, reviewed_path, patch_path, expected_aar=None,
         raise ValueError('Production class/JNI inventory changed')
     if provenance.get('page_auditor_sha256') != sha256(ROOT / 'scripts/check_page_sizes.py'):
         raise ValueError('Native page auditor identity changed')
+    expected_recipe = {name: sha256(HERE / name) for name in
+                       ['repair_sampler_dependencies.py', 'verify_sampler_derivation.py', 'patchelf-tool.json']}
+    if source.get('sampler_dependency_recipe_sha256') != expected_recipe:
+        raise ValueError('Sampler dependency recipe provenance changed')
+    if source.get('sampler_dependency_tool') != json.loads((HERE / 'patchelf-tool.json').read_text()):
+        raise ValueError('Sampler dependency tool provenance changed')
+    contract = source.get('sampler_dependency_contract', {})
+    if contract.get('passed') is not True or contract.get('check_count') != 24:
+        raise ValueError('Sampler dependency contracts missing')
     for key, value in (identity or {}).items():
         if not value or source.get('workflow_identity', {}).get(key) != value:
             raise ValueError(f'SDK artifact is not from this exact workflow identity: {key}')
@@ -69,6 +79,10 @@ def validate(aar, provenance_path, reviewed_path, patch_path, expected_aar=None,
         if embedded != {k: v for k, v in provenance.items() if k != 'aar_sha256'}:
             raise ValueError('Embedded and external provenance differ')
         classes = archive.read('classes.jar')
+        notice_sha = sha256(HERE / 'SAMPLER-DEPENDENCY-NOTICE.md')
+        if (provenance.get('sampler_modifications_notice_sha256') != notice_sha or
+                hashlib.sha256(archive.read('assets/litert-lm-sampler-modifications.md')).hexdigest() != notice_sha):
+            raise ValueError('Sampler modification/license notice missing or changed')
         if hashlib.sha256(classes).hexdigest() != provenance['classes_sha256']:
             raise ValueError('SDK class bytes do not match provenance')
         inspect_classes(classes)
@@ -86,6 +100,23 @@ def validate(aar, provenance_path, reviewed_path, patch_path, expected_aar=None,
             raise ValueError('Incomplete dependency evidence')
         if any(dep not in native and dep not in system for deps in dependencies.values() for dep in deps):
             raise ValueError('Unresolved packaged runtime dependency')
+        derivations = provenance.get('sampler_dependency_derivations', {})
+        if set(derivations) != set(SAMPLER_INPUTS):
+            raise ValueError('Sampler dependency derivation receipt missing')
+        for name, input_sha in SAMPLER_INPUTS.items():
+            value = derivations[name]
+            if (value.get('input_sha256') != input_sha or value.get('output_sha256') != SAMPLER_OUTPUTS[name]
+                    or provenance['native_sha256'][name] != SAMPLER_OUTPUTS[name]
+                    or value.get('provider') != PROVIDER or dependencies[name] != value.get('derived_needed')
+                    or dependencies[name] != [PROVIDER] + value.get('original_needed', [])
+                    or value.get('tool_sha256') != TOOL_SHA256
+                    or value.get('original_relro_unchanged') is not True
+                    or value.get('original_runtime_sections_unchanged') is not True
+                    or value.get('symbol_abi_unchanged') is not True
+                    or value.get('new_metadata_load_read_only') is not True
+                    or not isinstance(value.get('relocation_targets_verified'), int)
+                    or value['relocation_targets_verified'] <= 0):
+                raise ValueError('Sampler dependency or hardening evidence changed: ' + name)
     result = {'aar': str(aar.resolve()), 'sha256': sha256(aar),
             'provenance': str(provenance_path.resolve()),
             'provenance_sha256': sha256(provenance_path),

@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import urllib.request
 import zipfile
 
@@ -73,6 +74,24 @@ def download(pin, destination):
     if count != pin['bytes'] or digest.hexdigest() != pin[kind]:
         raise ValueError(f'Download checksum mismatch: {destination.name}')
     temp.replace(destination)
+
+
+def prepare_patchelf(downloads):
+    pin = json.loads((HERE / 'patchelf-tool.json').read_text())
+    archive = downloads / pin['filename']
+    download(pin, archive)
+    target = downloads / 'patchelf'
+    with tarfile.open(archive, 'r:gz') as source:
+        members = [member for member in source.getmembers()
+                   if member.name.removeprefix('./') == pin['binary_path']]
+        if len(members) != 1 or not members[0].isfile() or members[0].size != pin['binary_bytes']:
+            raise ValueError('Pinned PatchELF archive has unexpected binary member')
+        binary = source.extractfile(members[0]).read(pin['binary_bytes'] + 1)
+    if len(binary) != pin['binary_bytes'] or hashlib.sha256(binary).hexdigest() != pin['binary_sha256']:
+        raise ValueError('Pinned PatchELF binary mismatch')
+    target.write_bytes(binary)
+    target.chmod(0o755)
+    return target, pin
 
 
 def checked_overlay(text):
@@ -212,6 +231,13 @@ def main():
         if f'oid sha256:{pin["sha256"]}\nsize {pin["bytes"]}\n' not in pointer:
             raise ValueError('Pinned upstream runtime identity changed')
         download(pin, repo / pin['path'])
+    patchelf, patchelf_pin = prepare_patchelf(downloads)
+    sampler_contract = out / 'sampler-dependency-contract.json'
+    run([sys.executable, HERE / 'verify_sampler_derivation.py', '--input-dir', repo / 'prebuilt/android_arm64',
+         '--tool', patchelf, '--out', sampler_contract], timeout=60)
+    sampler_checks = json.loads(sampler_contract.read_text())
+    if sampler_checks.get('passed') is not True or sampler_checks.get('check_count') != 24:
+        raise ValueError('Sampler dependency derivation contracts did not pass completely')
     download(BAZEL, downloads / BAZEL['filename'])
     bazel = downloads / BAZEL['filename']
     bazel.chmod(0o755)
@@ -232,6 +258,10 @@ def main():
                'native_api': 30, 'ndk_revision': '28.1.13356709', 'bazel': BAZEL,
                'java': version.strip(), 'host_clang': subprocess.check_output([cc, '--version'], text=True).strip(),
                'kotlin_dependencies': kotlin_pins, 'runtime_prebuilts': prebuilts,
+               'sampler_dependency_tool': patchelf_pin,
+               'sampler_dependency_contract': sampler_checks,
+               'sampler_dependency_recipe_sha256': {name: hashlib.sha256((HERE / name).read_bytes()).hexdigest()
+                   for name in ['repair_sampler_dependencies.py', 'verify_sampler_derivation.py', 'patchelf-tool.json']},
                'owner_inventory_sha256': hashlib.sha256((HERE / 'native-owner-production.json').read_bytes()).hexdigest(),
                'native_owner_target': owner_inventory['normal_target'],
                'production_kotlin_source_sha256': {str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest() for p in production_sources}}
@@ -263,6 +293,7 @@ def main():
     solib = sorted((repo / 'bazel-bin').glob('_solib*'))
     command = [sys.executable, HERE / 'package_android_aar.py', '--base-aar', base, '--classes-jar', classes_jar,
                '--ndk', ndk, '--page-auditor', args.page_auditor.resolve(), '--source-receipt', source_receipt,
+               '--patchelf', patchelf,
                '--out', out / 'litertlm-android-0.16.0-sealed-audio-arm64.aar']
     owner_native = repo / 'bazel-bin/experimental/native_audio_owner_jni_20261006'
     for path in [native, owner_native, repo / 'prebuilt/android_arm64', *solib]:

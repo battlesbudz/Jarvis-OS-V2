@@ -4,6 +4,8 @@ from pathlib import Path
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
+from repair_sampler_dependencies import TARGETS as SAMPLER_INPUTS, PROVIDER, TOOL_SHA256
 
 from build_android_sdk import SDK_PIN, LITERT_PIN, checked_owner_overlay, verify_reviewed_sources
 from package_android_aar import OWNER, ROOTS, sha256, write_archive, validate_sdk_exports
@@ -25,6 +27,11 @@ class ArtifactProvenanceContracts(unittest.TestCase):
         self.identity = {'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'1','GITHUB_SHA':'a'*40,'GITHUB_REPOSITORY':'owner/repo'}
         self.classes = fixtures.AndroidPackagingContracts.classes()
         self.native = {name:name.encode() for name in ROOTS}
+        # Tiny archives exercise provenance transport separately from actual ELF
+        # derivation, which the producer runs on both pinned upstream binaries.
+        fake_outputs = {name: hashlib.sha256(self.native[name]).hexdigest() for name in SAMPLER_INPUTS}
+        override = patch('validate_artifact.SAMPLER_OUTPUTS', fake_outputs)
+        override.start(); self.addCleanup(override.stop)
         self.provenance = {
             'source':{'sdk_commit':SDK_PIN,'litert_commit':LITERT_PIN,
                       'reviewed_patch_sha256':sha256(self.patch), 'reviewed_source_sha256':sha256(self.manifest),
@@ -36,11 +43,26 @@ class ArtifactProvenanceContracts(unittest.TestCase):
             'native_sha256':{n:hashlib.sha256(v).hexdigest() for n,v in self.native.items()},
             'native_dependencies':{n:['libc.so'] for n in self.native},
             'ndk_api30_system_libraries':['libc.so']}
+        self.provenance['source'].update(
+            sampler_dependency_recipe_sha256={name:sha256(HERE/name) for name in
+                ['repair_sampler_dependencies.py','verify_sampler_derivation.py','patchelf-tool.json']},
+            sampler_dependency_tool=json.loads((HERE/'patchelf-tool.json').read_text()),
+            sampler_dependency_contract={'passed':True,'check_count':24})
+        self.provenance['sampler_dependency_derivations'] = {}
+        self.provenance['sampler_modifications_notice_sha256'] = sha256(HERE/'SAMPLER-DEPENDENCY-NOTICE.md')
+        for name, input_sha in SAMPLER_INPUTS.items():
+            self.provenance['native_dependencies'][name] = [PROVIDER,'libc.so']
+            self.provenance['sampler_dependency_derivations'][name] = dict(
+                input_sha256=input_sha, output_sha256=fake_outputs[name], provider=PROVIDER,
+                tool_sha256=TOOL_SHA256, original_needed=['libc.so'], derived_needed=[PROVIDER,'libc.so'],
+                original_relro_unchanged=True, original_runtime_sections_unchanged=True,
+                symbol_abi_unchanged=True, new_metadata_load_read_only=True, relocation_targets_verified=1)
         self.write()
 
     def write(self):
         self.aar.unlink(missing_ok=True)
         entries = {'classes.jar':self.classes,'assets/litert-lm-source-provenance.json':json.dumps(self.provenance).encode()}
+        entries['assets/litert-lm-sampler-modifications.md'] = (HERE/'SAMPLER-DEPENDENCY-NOTICE.md').read_bytes()
         entries.update({'jni/arm64-v8a/'+n:v for n,v in self.native.items()})
         write_archive(self.aar,entries)
         self.prov.write_text(json.dumps(dict(self.provenance,aar_sha256=sha256(self.aar))))
@@ -51,6 +73,22 @@ class ArtifactProvenanceContracts(unittest.TestCase):
     def test_exact_bytes_and_run_identity_pass(self):
         result = self.validate(expected_aar=sha256(self.aar),expected_provenance=sha256(self.prov))
         self.assertEqual(result['sha256'],sha256(self.aar))
+
+    def test_sampler_hardening_or_dependency_receipt_cannot_be_omitted(self):
+        name = next(iter(SAMPLER_INPUTS))
+        for field, bad in [('new_metadata_load_read_only',False),('provider','wrong.so'),
+                           ('input_sha256','0'*64),('relocation_targets_verified',0)]:
+            receipt = self.provenance['sampler_dependency_derivations'][name]
+            old = receipt[field]; receipt[field] = bad; self.write()
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError,'Sampler dependency or hardening'):
+                self.validate()
+            receipt[field] = old
+
+    def test_sampler_tool_and_recipe_must_match_consumer_source(self):
+        self.provenance['source']['sampler_dependency_recipe_sha256']['repair_sampler_dependencies.py'] = '0'*64
+        self.write()
+        with self.assertRaisesRegex(ValueError,'Sampler dependency recipe'):
+            self.validate()
 
     def test_partial_retry_validates_original_producer_provenance(self):
         consumer=dict(self.identity,GITHUB_RUN_ATTEMPT='2')
