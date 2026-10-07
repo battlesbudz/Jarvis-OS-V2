@@ -145,6 +145,22 @@ The encoder closes before Conversation prefill. Static comparison trials and
 previously recorded corrections keep their raw-audio path; Piper-overlap encoder
 capture and live LLM prefill are later, separate gates.
 
+The owner also records the first accepted nonempty PCM and each successful,
+validated encoder step under its existing candidate gate. A bounded immutable
+timing snapshot crosses JNI; it grants no request authority. After seal and
+checked close, `NativeAudioCaptureTiming` binds the final snapshot to the capture
+endpoint and retained pre-roll count. `VoiceTurnTelemetry` joins that observation
+to the first answer playback-head event. `NativeAudioTimingMetrics` persists only
+relative clock intervals and counts. Mapping uses a declared AOSP API30–36 source
+family assumption plus runtime brackets; it does not attest an installed OEM
+binary. Unknown clocks and discarded candidates cannot produce mapped timing.
+
+For ASR text prefill, `ConversationPromptBuilder` uses one exact voice prefix for
+both partial and final submission. Final-request memory, continuity and capture
+context follow the completed current message as quoted evidence. This preserves
+valid prefix KV while retaining the memory publication fence and rebuilding on
+actual policy, history or transcript mismatch.
+
 `ConversationCoordinator.start` accepts `ConversationInvocation` and
 `ConversationCallbacks`. It owns shared admission and the exact returned child job;
 call-owned model release must wait for that job to finish. Stages receive explicit

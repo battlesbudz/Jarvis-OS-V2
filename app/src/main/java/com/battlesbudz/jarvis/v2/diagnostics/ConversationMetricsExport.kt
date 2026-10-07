@@ -12,6 +12,8 @@ object ConversationMetricsExport {
         result.put("replyMetricsDefinitions", JSONObject()
             .put("ttftMs", "model submission to first raw text callback")
             .put("timeToFirstPlaybackMs", "last detected speech to playback-head proxy; acoustic onset unmeasured")
+            .put("nativeAudioTiming", "validated native PCM admission to first reply playback-head proxy, including remaining capture; bounded clock-alignment interval; historical pre-roll is not backdated; actual graph completion counts are separate")
+            .put("nativeAudioClockContract", "reviewed AOSP Android API30–36 implementation-family assumption plus bounded runtime calibration; installed/OEM binary not attested; acoustic onset unmeasured")
             .put("estimatedOutputTokens", "ceil(saved visible response UTF-16 characters / 4); not native generated tokens")
             .put("nativeOutputTokens", "see each native submission's exactOutputTokens; caption/repair/tool passes remain separate"))
         result.put("replyMetrics", JSONArray().apply {
@@ -23,7 +25,8 @@ object ConversationMetricsExport {
                     .put("ttftMs", duration(metrics.modelSubmittedAtMs, metrics.firstRawTokenAtMs) ?: JSONObject.NULL)
                     .put("timeToFirstPlaybackMs", duration(metrics.speechEndedAtMs, metrics.firstReplyPlaybackAtMs) ?: JSONObject.NULL)
                     .put("estimatedTokensPerSecond", metrics.estimatedTokensPerSecond ?: JSONObject.NULL)
-                    .put("estimatedOutputTokens", metrics.estimatedOutputTokens ?: JSONObject.NULL))
+                    .put("estimatedOutputTokens", metrics.estimatedOutputTokens ?: JSONObject.NULL)
+                    .put("nativeAudioTiming", metrics.nativeAudioTiming?.json() ?: JSONObject.NULL))
             }
         })
         return result

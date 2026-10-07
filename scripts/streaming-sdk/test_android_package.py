@@ -101,11 +101,24 @@ class AndroidPackagingContracts(unittest.TestCase):
             dependency_closure(['libjni.so'], {'libjni.so':'x'}, set(),
                                lambda _: ['libnative_audio_owner_jni_test.so'])
 
-    def test_owner_exports_require_exact_six_and_no_fake_export(self):
+    def test_owner_exports_require_exact_reviewed_methods_and_no_fake_export(self):
         good = set(OWNER['owner_jni_exports'])
         validate_owner_exports(good)
         with self.assertRaises(ValueError): validate_owner_exports(set(list(good)[1:]))
         with self.assertRaises(ValueError): validate_owner_exports(good | {'Java_com_google_ai_edge_litertlm_NativeAudioOwnerTestJni_nativeTestArm'})
+
+    def test_pre_timing_owner_abi_is_rejected(self):
+        methods = {name: descriptor for name, descriptor in OWNER['owner_jni_methods'].items()
+                   if name not in {'nativeTimingHandshake', 'nativeTimingSnapshot'}}
+        self.assertEqual(6, len(methods))
+        self.assertEqual('()[J', OWNER['owner_jni_methods']['nativeTimingHandshake'])
+        self.assertEqual('(J)[J', OWNER['owner_jni_methods']['nativeTimingSnapshot'])
+        with self.assertRaises(ValueError):
+            inspect_classes(self.classes({'com/google/ai/edge/litertlm/NativeAudioOwnerJni.class':
+                                          self.class_bytes(methods)}))
+        with self.assertRaises(ValueError):
+            validate_owner_exports({'Java_com_google_ai_edge_litertlm_NativeAudioOwnerJni_' + name
+                                    for name in methods})
 
     def test_test_method_hidden_in_allowed_owner_class_is_rejected(self):
         name = 'com/google/ai/edge/litertlm/NativeAudioOwner$Companion.class'
@@ -115,7 +128,7 @@ class AndroidPackagingContracts(unittest.TestCase):
     def test_native_descriptor_drift_is_rejected(self):
         name = 'com/google/ai/edge/litertlm/NativeAudioOwnerJni.class'
         methods = dict(OWNER['owner_jni_methods'], nativeAppend='(J)V')
-        with self.assertRaisesRegex(ValueError, 'six expected'):
+        with self.assertRaisesRegex(ValueError, 'reviewed static native methods'):
             inspect_classes(self.classes({name:self.class_bytes(methods)}))
 
     def test_unknown_owner_class_and_truncated_class_are_rejected(self):

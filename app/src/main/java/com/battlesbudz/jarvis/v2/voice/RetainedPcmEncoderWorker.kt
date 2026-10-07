@@ -27,6 +27,7 @@ internal class RetainedPcmEncoderWorker<T : Any>(
     private val maxQueuedBytes: Int = 64_000,
     private val maxEvents: Int = 64,
     private val nativeCloseTimeoutMs: Long = 10_000,
+    private val nowNs: () -> Long = System::nanoTime,
 ) : RetainedPcmObserver {
     interface Encoder<T> {
         fun append(pcm: FloatArray)
@@ -35,8 +36,8 @@ internal class RetainedPcmEncoderWorker<T : Any>(
         fun requestCancel()
         fun closeOnWorker(timeoutMs: Long): Boolean
     }
-    data class Sealed<T>(val pcmSampleCount: Int, val content: T)
-    data class Completed<T>(val candidate: Long, val pcmSampleCount: Int, val content: T)
+    data class Sealed<T>(val pcmSampleCount: Int, val content: T, val timing: NativeAudioCaptureTiming? = null)
+    data class Completed<T>(val candidate: Long, val pcmSampleCount: Int, val content: T, val timing: NativeAudioCaptureTiming? = null)
     private enum class Phase { ACCEPTING, SEAL_QUEUED, SEALED, INVALID, CLOSED }
     private sealed interface Event {
         data class Pcm(val candidate: Long, val bytes: ByteArray) : Event
@@ -227,11 +228,15 @@ internal class RetainedPcmEncoderWorker<T : Any>(
                         val result = requireNotNull(current?.encoder).seal()
                         check(result.pcmSampleCount == consumedBytes / 2) { "native_audio_native_pcm_count" }
                         // Release the separate encoder before admitting LLM prefill.
+                        val checkedCloseCalledAtNs = nowNs()
                         check(closeCurrent()) { "native_audio_sealed_owner_not_drained" }
+                        val checkedCloseAtNs = nowNs()
                         val answer = synchronized(gate) {
                             check(phase == Phase.SEAL_QUEUED && candidate == event.candidate && isGenerationCurrent()) { "native_audio_cancelled_before_publication" }
                             phase = Phase.SEALED
-                            Completed(event.candidate, result.pcmSampleCount, result.content)
+                            Completed(event.candidate, result.pcmSampleCount, result.content,
+                                result.timing?.takeIf { it.receipt.acceptedPcmSamples == result.pcmSampleCount }
+                                    ?.copy(checkedCloseCalledAtNs = checkedCloseCalledAtNs, checkedCloseAtNs = checkedCloseAtNs))
                         }
                         completed.complete(answer)
                         queue.close()

@@ -21,14 +21,14 @@ require an existing SDK-license file and read EOF rather than accepting new term
 
 `build_android_sdk.py` verifies the source pin/patch/manifest, applies two strict
 build-only overlays, downloads exact checksum-pinned tools and runtime roots,
-builds the regular SDK and normal owner JNI targets, and compiles the exact fifteen
+builds the regular SDK and normal owner JNI targets, and compiles the exact sixteen
 production Kotlin sources to Java17. No Kotlin/JNI test target is compiled into
 this AAR; no models are downloaded by this builder.
 
 `package_android_aar.py` packages all seven GPU/runtime dlopen roots plus recursive
 DT_NEEDED closure. API30 public NDK stubs alone are treated as platform libraries.
-It verifies the exact ninety production class names, thirty SDK native method
-descriptors, thirty-one SDK JNI exports and six normal-owner methods/exports. The
+It verifies the exact 104 production class names, thirty SDK native method
+descriptors, thirty-one SDK JNI exports and eight normal-owner methods/exports. The
 unchanged page auditor checks every selected native object for ARM64/16KB safety.
 It retains the upstream manifest/notices and embeds a complete source receipt.
 

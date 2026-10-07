@@ -41,6 +41,7 @@ internal class VoiceTurnTelemetry(
     val finalReadyAt = java.util.concurrent.atomic.AtomicLong(0)
     val speechEndedAt = java.util.concurrent.atomic.AtomicLong(0)
     private val firstPlayback = java.util.concurrent.atomic.AtomicBoolean(true)
+    private val nativeAudioTiming = java.util.concurrent.atomic.AtomicReference<com.battlesbudz.jarvis.v2.voice.NativeAudioCaptureTiming?>(null)
     private val liveMetrics = java.util.concurrent.atomic.AtomicReference(
         LiveReplyMetrics(asrTurnId, conversationId))
     private val liveMetricsActive = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -56,6 +57,19 @@ internal class VoiceTurnTelemetry(
         val value = liveMetrics.updateAndGet(update)
         if (liveMetricsActive.get())
             VoiceSessionUi.updateLiveMetrics(asrTurnId, value.conversationId) { value }
+    }
+
+    /** Called only for the final admitted candidate, after checked encoder close. */
+    fun acceptNativeAudioTiming(timing: com.battlesbudz.jarvis.v2.voice.NativeAudioCaptureTiming) {
+        if (!nativeAudioTiming.compareAndSet(null, timing)) return
+        timing.metrics()?.let { measured ->
+            publishLiveMetrics { it.copy(nativeAudioTiming = measured) }
+            measured.observations().forEach { (name, value) -> benchmark.metric(name, value) }
+            benchmark.configuration("native_audio_timing_scope", "final_candidate_native_admission_to_reply_playback_head")
+            benchmark.configuration("native_audio_clock_contract", if (timing.receipt.verifiedClockContract)
+                "reviewed_aosp_api30_36_source_assumption" else "unverified")
+            benchmark.configuration("native_audio_installed_runtime_binary_attested", "false")
+        }
     }
 
     fun recordAsr(metrics: AsrCaptureMetrics, text: String, capture: AudioTurnCapture?) {
@@ -125,15 +139,21 @@ internal class VoiceTurnTelemetry(
 
     fun recordFirstPlayback(expectedCallId: String, voiceSessionController: VoiceSessionController) {
         if (firstPlayback.compareAndSet(true, false) && finalReadyAt.get() != 0L) {
-            val playbackAt = System.nanoTime() / 1_000_000
+            val playbackAtNs = System.nanoTime()
+            val playbackAt = playbackAtNs / 1_000_000
+            val nativeTiming = nativeAudioTiming.get()?.metrics(playbackAtNs)
             publishLiveMetrics { metrics ->
                 var updated = metrics.firstActualPlayback(playbackAt)
                 speechEndedAt.get().takeIf { it != 0L }?.let { updated = updated.speechEnded(it) }
+                if (nativeTiming != null) updated = updated.copy(nativeAudioTiming = nativeTiming)
                 updated
             }
             voiceSessionController.updateReplyMetrics(expectedCallId, asrTurnId) {
-                it.firstActualPlayback(playbackAt)
+                it.firstActualPlayback(playbackAt).let { metrics ->
+                    if (nativeTiming == null) metrics else metrics.copy(nativeAudioTiming = nativeTiming)
+                }
             }
+            nativeTiming?.observations()?.forEach { (name, value) -> benchmark.metric(name, value) }
             comparison?.mark("answer_audio")
             turnTrace.mark(VoiceTurnTrace.Stage.FIRST_REPLY_AUDIO)
             benchmark.mark("first_reply_audio")

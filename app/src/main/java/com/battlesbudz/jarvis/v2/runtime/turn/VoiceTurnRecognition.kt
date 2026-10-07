@@ -196,10 +196,11 @@ internal class VoiceTurnRecognition(
             turnOrchestrator.plan(transcript, prepared.voiceHistory.map { it.role to it.text }).actionPlan
             else ActionTurnPlan.NotAction
         val sealedNativeAudio = if (prepared.directAudioTurn && recognitionIssue == null) {
-            lifetime.nativeAudioCapture?.sealAfterCaptureJoined(audioBytes)
+            lifetime.nativeAudioCapture?.sealAfterCaptureJoined(audioBytes,
+                prepared.activeCapture.endpointDecisionAtNs, prepared.activeCapture.retainedPreRollSampleCount)
         } else null
         kotlin.coroutines.coroutineContext.ensureActive()
         return VoiceStageResult.Ready(FinalizedVoiceTurn(transcript, asrTranscript, audioBytes, audioIsComplete,
-            recognitionIssue, preparedText, endpointAt, initialActionPlan, sealedNativeAudio))
+            recognitionIssue, preparedText, endpointAt, initialActionPlan, sealedNativeAudio?.content, sealedNativeAudio?.timing))
     }
 }

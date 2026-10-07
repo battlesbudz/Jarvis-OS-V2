@@ -86,6 +86,50 @@ execution. The new candidate still requires full APK assembly, unchanged 16 KB
 and device loading gates, numerical/model quality and final release binding.
 
 
+
+## Native audio timing and ASR prefix reuse candidate — 7 October 2026
+
+The isolated next candidate adds `First audio → speech` to completed native-audio
+reply metrics. Its start is actual validated native PCM admission, not microphone
+capture, enqueue or append return. Its end is the first nonsilent answer playback
+head event, excluding filler. The span includes remaining capture and does not
+backdate retained pre-roll. TTF-SW remains the last detected speech-to-playback
+observation. Nullable JSON/CSV fields carry clock interval bounds, native step/row
+counts and the retained pre-roll count; they contain no PCM, text or raw clocks.
+
+A final snapshot proves exact work before endpoint only when its first/last step
+bounds establish that count; otherwise it reports a lower bound or unavailable.
+Only the final candidate after successful seal and checked close may publish it.
+Clock mapping is qualified by the reviewed AOSP API30–36 implementation-family
+assumption and bounded runtime calibration, not installed/OEM binary attestation.
+Artifact preparation has separate start/finish stage offsets so cold encoder
+reconstruction is visible before first native admission.
+
+The trained C++ timing harness completed six encoder steps before its paced
+fixture endpoint, then sealed seven steps and 77 rows bitwise equal to the pinned
+reference. That is host encoder evidence, not Android JNI, microphone, LLM/Piper
+or phone latency evidence. After rebasing onto the Build1172 asset/startup repair,
+a fresh separate-module check compiles 16 production SDK Kotlin inputs, 93
+selected app/test Kotlin sources and the real Java recipe reader. All 161 focused
+JVM tests pass, including six asset-reader and five terminal voice UI regressions;
+the fresh SDK satisfies the exact 104-class allowlist. The 86 SDK/package helper
+checks and architecture guard also pass. The earlier real normal JNI timing
+harness passes 42 checks, but is not a fresh Android or rebased-candidate native
+build. Five changed runtime-stage files remain outside the focused compilation
+closure. Full runtime-stage compilation, APK assembly, Android loading and
+device/model gates remain pending.
+
+The reviewed ASR prefix fix shares the exact compact/full instruction prefix and
+appends final-request quoted memory/continuity/capture context afterward. Twenty-two
+focused JVM tests cover valid reuse, genuine mismatch rebuild, cancellation and
+success-only prefill completion observations. Persisted prefill completion fields
+use signed offsets from the observed input seal request; they are explicitly
+distinct from speech end and accepted endpoint, and absolute clocks stay private. Neither those tests nor native
+timing establishes which voice path is faster. The ordinary paired replay seam
+and its private-state lifecycle remain outside this candidate pending their
+complete runtime compilation and release ABI checks.
+
+
 ## Streaming sampler dependency checkpoint — 7 October 2026
 
 Build 1135 produced signed normal and compact APKs and passed all 1,471 release

@@ -7,6 +7,7 @@ import com.google.ai.edge.litertlm.NativeAudioArtifactLease
 import com.google.ai.edge.litertlm.NativeAudioIdentity
 import com.google.ai.edge.litertlm.NativeAudioOwner
 import com.google.ai.edge.litertlm.NativeAudioWorker
+import com.google.ai.edge.litertlm.NativeClockContract
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -38,7 +39,10 @@ internal class GemmaStreamingAudioCapture(
             // Allocate the app holder before publishing any native registry handle.
             val adapter = EncoderAdapter()
             adapter.native = NativeAudioOwner.createOnWorker(workerToken, nativeArtifact,
-                NativeAudioIdentity("${identityPrefix}_$candidate", generation))
+                NativeAudioIdentity("${identityPrefix}_$candidate", generation),
+                // Reviewed AOSP API30–36 source contract; the SDK still downgrades
+                // host/unknown runtimes and validates bounded live clock alignment.
+                clockContract = NativeClockContract.REVIEWED_AOSP_ANDROID_API30_36)
             adapter
         },
         isGenerationCurrent = { valid.get() && turnContext.get()?.invoke() == true },
@@ -49,13 +53,23 @@ internal class GemmaStreamingAudioCapture(
     override fun onCaptureInvalidated(reason: RetainedPcmObserver.Invalidation) = worker.onCaptureInvalidated(reason)
 
     /** WavEncoder's canonical mono16k PCM16 header is checked, never guessed. */
-    suspend fun sealAfterCaptureJoined(wav: ByteArray): Content.SealedAudioEmbeddings {
+    suspend fun sealAfterCaptureJoined(wav: ByteArray): Content.SealedAudioEmbeddings =
+        sealAfterCaptureJoined(wav, null, null).content
+
+    data class CompletedCapture(val content: Content.SealedAudioEmbeddings, val timing: NativeAudioCaptureTiming?)
+
+    suspend fun sealAfterCaptureJoined(wav: ByteArray, endpointDecisionAtNs: Long?,
+        retainedPreRollSampleCount: Int?): CompletedCapture {
         check(wav.size > 44 && wav.size % 2 == 0) { "native_audio_invalid_capture_wav" }
         val pcm = wav.copyOfRange(44, wav.size)
         try {
             check(WavEncoder.pcm16Mono(pcm, 16_000).contentEquals(wav)) { "native_audio_noncanonical_capture_wav" }
             check(valid.get() && turnContext.get()?.invoke() == true) { "native_audio_stale_capture" }
-            return worker.sealAfterCaptureJoined(pcm).content
+            val result = worker.sealAfterCaptureJoined(pcm)
+            check(valid.get() && turnContext.get()?.invoke() == true) { "native_audio_stale_capture" }
+            return CompletedCapture(result.content, result.timing?.copy(
+                endpointDecisionAtNs = endpointDecisionAtNs,
+                retainedPreRollSampleCount = retainedPreRollSampleCount))
         } finally { pcm.fill(0) }
     }
 
@@ -74,8 +88,13 @@ internal class GemmaStreamingAudioCapture(
         lateinit var native: NativeAudioOwner
         override fun append(pcm: FloatArray) = native.appendOnWorker(pcm)
         override fun seal(): RetainedPcmEncoderWorker.Sealed<Content.SealedAudioEmbeddings> {
+            val calledAt = System.nanoTime()
             val result = native.sealOnWorker()
-            return RetainedPcmEncoderWorker.Sealed(result.provenance.pcmSampleCount, result.content)
+            val returnedAt = System.nanoTime()
+            val timing = result.timing?.takeIf { it.isBoundTo(result.provenance) }?.let {
+                NativeAudioCaptureTiming(it, calledAt, returnedAt)
+            }
+            return RetainedPcmEncoderWorker.Sealed(result.provenance.pcmSampleCount, result.content, timing)
         }
         override fun requestCancel() { native.requestCancel() }
         override fun closeOnWorker(timeoutMs: Long) = native.closeOnWorker(timeoutMs)

@@ -106,7 +106,7 @@ def class_methods(data):
 def validate_owner_exports(exports):
     expected = set(OWNER['owner_jni_exports'])
     if set(exports) != expected:
-        raise ValueError('Owner JNI exports do not exactly match the six production methods')
+        raise ValueError('Owner JNI exports do not exactly match the reviewed production methods')
 
 
 def validate_sdk_exports(exports):
@@ -146,8 +146,8 @@ def inspect_classes(data):
                         raise ValueError(f'Test/fake method in production owner class: {name}')
                     if name.endswith('/NativeAudioOwnerJni.class'):
                         actual = {m['name']: m['descriptor'] for m in methods if m['native'] and m['static']}
-                        if actual != OWNER['owner_jni_methods'] or sum(m['native'] for m in methods) != 6:
-                            raise ValueError('Owner native class does not have exactly six expected static native methods')
+                        if actual != OWNER['owner_jni_methods'] or sum(m['native'] for m in methods) != len(OWNER['owner_jni_methods']):
+                            raise ValueError('Owner native class does not have exactly the reviewed static native methods')
     return {'required_owner_classes': sorted(owner_classes), 'owner_jni_methods': OWNER['owner_jni_methods']}
 
 

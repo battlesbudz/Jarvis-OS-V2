@@ -232,6 +232,7 @@ internal class VoiceTurnPreparation(
             val preparationContext = kotlin.coroutines.coroutineContext
             val exactModelLease = lifetime.modelLease
             val exactTurnJob = lifetime.scope.coroutineContext[kotlinx.coroutines.Job]
+            observation.benchmark.mark("native_audio_artifact_prepare_started")
             val artifact = kotlinx.coroutines.withContext(Dispatchers.IO) {
                 com.battlesbudz.jarvis.v2.ai.audio.GemmaStreamingArtifactStore.acquire(
                     modelStore.fileFor(selectedSpec), java.io.File(context.cacheDir, selectedSpec.id),
@@ -240,7 +241,10 @@ internal class VoiceTurnPreparation(
                         com.battlesbudz.jarvis.v2.ai.audio.WeightlessEncoderRecipe.SOURCE_SHA256) },
                     modelLeaseHeld = { exactModelLease.owned },
                     cancelled = { preparationContext[kotlinx.coroutines.Job]?.isActive != true })
-                    .also { lifetime.nativeAudioArtifact = it }
+                    .also {
+                        lifetime.nativeAudioArtifact = it
+                        observation.benchmark.mark("native_audio_artifact_prepare_finished")
+                    }
             }
             try {
                 lifetime.nativeAudioCapture = com.battlesbudz.jarvis.v2.voice.GemmaStreamingAudioCapture(

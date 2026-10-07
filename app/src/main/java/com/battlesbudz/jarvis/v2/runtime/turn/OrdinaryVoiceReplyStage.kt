@@ -43,6 +43,14 @@ internal class OrdinaryVoiceReplyStage(
                 val publicationGuard = com.battlesbudz.jarvis.v2.memory.MemoryPublicationGuard(memory.fence)
                 fun publishBound(block: () -> Unit): Boolean = publicationGuard.publish(block)
                 val response = coordinator.processTurn(if (prepared.directAudioTurn) com.battlesbudz.jarvis.v2.voice.GemmaAudioInputPolicy.PENDING_TRANSCRIPT else finalized.transcript, replyId = request.asrTurnId, publish = ::publishBound) { onToken ->
+                    finalized.nativeAudioTiming?.let { timing ->
+                        observation.telemetry.acceptNativeAudioTiming(timing)
+                        timing.metrics()?.let { measured ->
+                            call.controller.updateReplyMetrics(prepared.expectedCallId, request.asrTurnId) {
+                                it.copy(nativeAudioTiming = measured)
+                            }
+                        }
+                    }
                     observation.telemetry.speechEndedAt.get().takeIf { it != 0L }?.let { ended ->
                         call.controller.updateReplyMetrics(prepared.expectedCallId, request.asrTurnId) { it.speechEnded(ended) }
                     }

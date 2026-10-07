@@ -41,7 +41,8 @@ class AudioTurnCapture(
     /** Display-only recognition cannot veto acoustically confirmed native audio. */
     private val captionOnly: Boolean = false,
     private val onAcousticDecision: (ByteArray, SpeechDecision, SpeechDecision, Double) -> Unit = { _, _, _, _ -> },
-    private val retainedPcmObserver: RetainedPcmObserver? = null
+    private val retainedPcmObserver: RetainedPcmObserver? = null,
+    private val nowNs: () -> Long = System::nanoTime
 ) {
     private val pcm = RollingAudioBuffer(maxDurationMs = maxAudioDurationMs.toLong())
     private var capturedPcmBytes = 0L
@@ -68,6 +69,12 @@ class AudioTurnCapture(
     @Volatile var firstSpeechCaptureAtMs: Long? = null
         private set
     @Volatile var lastSpeechAtMs: Long? = null
+        private set
+    /** Final accepted endpoint proposal, before recognizer finalization. Never last speech. */
+    @Volatile var endpointDecisionAtNs: Long? = null
+        private set
+    /** Actual retained onset buffer, including the confirming frame, in PCM samples. */
+    @Volatile var retainedPreRollSampleCount: Int? = null
         private set
     @Volatile private var endRequested = false
     fun finishNow() { endRequested = true }
@@ -164,6 +171,7 @@ class AudioTurnCapture(
                                 firstSpeechCaptureAtMs = audioAt
                                 val acceptedPreRoll = preRoll.snapshot()
                                 pcm.append(acceptedPreRoll)
+                                retainedPreRollSampleCount = (pcm.sizeBytes() / 2).toInt()
                                 if (retainedPcmObserver != null) retainedAudio = pcm.snapshot()
                                 capturedPcmBytes = pcm.sizeBytes()
                                 preRoll.clear()
@@ -216,7 +224,9 @@ class AudioTurnCapture(
                         synchronized(pcm) {
                             firstSpeechAt = now
                                 firstSpeechCaptureAtMs = audioAt
-                            pcm.append(preRoll.snapshot())
+                            val onsetPcm = preRoll.snapshot()
+                            pcm.append(onsetPcm)
+                            retainedPreRollSampleCount = (pcm.sizeBytes() / 2).toInt()
                             if (retainedPcmObserver != null) acceptedPreRoll = pcm.snapshot()
                             capturedPcmBytes = pcm.sizeBytes()
                             preRoll.clear()
@@ -243,6 +253,9 @@ class AudioTurnCapture(
                         else -> null
                     }
                     if (reason != null && !turnCompleted.isCompleted) {
+                        // This proposal can still be invalidated by new speech or
+                        // final recognition. Publish it only with the accepted candidate.
+                        val proposedEndpointAtNs = nowNs()
                         val finalizeStartedAt = nowMs()
                         val acousticAccepted = !guardFollowupSpeech || !hasSpeech || followupEvidence.accepts()
                         if (guardFollowupSpeech && hasSpeech && !pendingEndpoint) {
@@ -257,6 +270,7 @@ class AudioTurnCapture(
                             finalTranscript = ""
                             synchronized(pcm) { pcm.clear(); capturedPcmBytes = 0; preRoll.clear() }
                             retainedPcmObserver?.onCandidateDiscarded()
+                            retainedPreRollSampleCount = null
                             followupEvidence.reset(); initialEvidenceAvailable = false; recoveryAudio.clear()
                             pendingEndpoint = false; pendingAudio.clear(); recognitionIssue = null
                             firstSpeechCaptureAtMs = null; firstSpeechAt = null; firstPartialAfterSpeechMs = null; lastPartial = ""
@@ -344,6 +358,7 @@ class AudioTurnCapture(
                                     retained
                                 }
                                 retainedPcmObserver?.onCandidateDiscarded()
+                                retainedPreRollSampleCount = null
                                 firstSpeechCaptureAtMs = null; firstSpeechAt = null
                                 firstPartialAfterSpeechMs = null
                                 lastPartial = ""
@@ -393,6 +408,7 @@ class AudioTurnCapture(
                             "finalDecodeMs=$finalDecodeMs deferredPartialChunks=$deferredPartialChunks " +
                             "maxRecognitionWorkMs=${recognitionBudget.largestWorkMs} maxRecognitionBacklogMs=$maxRecognitionBacklogMs " +
                             "recognitionBacklogMs=${speechQueue.bufferedAudioMs}")
+                        endpointDecisionAtNs = proposedEndpointAtNs.takeIf { hasSpeech }
                         acceptedTurn = hasSpeech
                         log("turn_endpoint reason=$reason elapsedMs=${now - startedAt} " +
                             "silenceMs=${audioAt - lastSpeechAt} endpointCue=${endpoint.cue} " +

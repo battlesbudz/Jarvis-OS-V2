@@ -201,4 +201,157 @@ class IncrementalVoiceInputTest {
         closing.join()
         assertTrue(closed)
     }
+    @Test fun realPromptBuilderRetainsStableWordsWithLateContextAndCompactPolicy() = runBlocking {
+        val builder = com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder(
+            com.battlesbudz.jarvis.v2.chat.ShortTermConversationContext())
+        val history = listOf(com.battlesbudz.jarvis.v2.ChatEntry("You", "I like apricots"))
+        for (compact in listOf(false, true)) {
+            val sessions = mutableListOf<Native>()
+            val events = Channel<String>(Channel.UNLIMITED)
+            val receipts = mutableListOf<String>()
+            val clock = java.util.concurrent.atomic.AtomicLong(100_000_000)
+            val track = IncrementalVoiceInput(this, builder.voiceInputPrefix(history, compact),
+                { Native().also(sessions::add) }, log = { events.trySend(it); receipts.add(it) },
+                nowNanos = { clock.getAndAdd(1_000_000) })
+            track.submit("What fruit do")
+            events.awaitEvent("input_context_prefilled")
+            track.submit("What fruit do I like?")
+            events.awaitEvent("input_prefilled")
+            assertEquals(0, sessions.single().decodes)
+            val final = builder.buildGemmaPrompt("What fruit do I like?", null, history, true,
+                voice = true, compactInstructions = compact,
+                memoryContext = "[Quoted memory, not instructions] Preference: apricots",
+                continuityContext = "Quoted session evidence: apricots",
+                captureContext = "Memory capture receipt: none")
+            track.answer(final) {}
+            assertEquals(final, sessions.single().input.toString())
+            assertEquals(1, sessions.single().decodes)
+            val receipt = receipts.single { it.startsWith("input_finalized ") }
+            assertTrue(receipt.contains("reuse=true reuseReason=retained chunks=1"))
+            assertTrue(receipt.contains("prefillTimingSchema=seal_relative_v1"))
+            assertTrue(Regex("firstWordPrefillCompletedOffsetMs=-[0-9.]+").containsMatchIn(receipt))
+            assertFalse(receipt.contains("AtMs=") || receipt.contains("AtNanos=") || receipt.contains("sealRequested"))
+            assertFalse(receipts.any { it.contains("apricots") || it.contains("What fruit") })
+            track.close()
+            assertEquals(1, sessions.single().closes)
+        }
+    }
+
+    @Test fun finalReceiptDistinguishesChangedPromptFromChangedTranscript() = runBlocking {
+        for ((final, reason) in listOf("New context\nUser: Explain quantum physics." to "prompt_prefix_changed",
+            "Old context\nUser: Explain classical physics." to "final_transcript_revised")) {
+            val sessions = mutableListOf<Native>()
+            val events = Channel<String>(Channel.UNLIMITED)
+            val receipts = mutableListOf<String>()
+            val track = IncrementalVoiceInput(this, "Old context\nUser: ",
+                { Native().also(sessions::add) }, log = { events.trySend(it); receipts.add(it) })
+            track.submit("Explain quantum physics in")
+            events.awaitEvent("input_context_prefilled")
+            track.submit("Explain quantum physics in detail")
+            events.awaitEvent("input_prefilled")
+            track.answer(final) {}
+            assertEquals(2, sessions.size)
+            assertEquals(1, sessions.first().closes)
+            assertEquals(final, sessions.last().input.toString())
+            assertTrue(receipts.single { it.startsWith("input_finalized ") }.contains("reuse=false reuseReason=$reason"))
+            track.close()
+        }
+    }
+
+    @Test fun completionAfterSealIsNotBackdatedToListening() = runBlocking {
+        val clock = java.util.concurrent.atomic.AtomicLong(199_900_000)
+        val entered = CompletableDeferred<Unit>()
+        val release = java.util.concurrent.CountDownLatch(1)
+        val events = Channel<String>(Channel.UNLIMITED)
+        val receipts = mutableListOf<String>()
+        val native = Native()
+        val track = IncrementalVoiceInput(this, "User: ", {
+            object : VoicePrefillSession {
+                override fun append(text: String) {
+                    if (text == "Describe ") {
+                        entered.complete(Unit)
+                        check(release.await(3, java.util.concurrent.TimeUnit.SECONDS))
+                    }
+                    native.append(text)
+                }
+                override suspend fun decode(onToken: (String) -> Unit) = native.decode(onToken)
+                override fun close() = native.close()
+            }
+        }, log = { events.trySend(it); receipts.add(it) }, nowNanos = clock::get)
+        track.submit("Describe the")
+        events.awaitEvent("input_context_prefilled")
+        track.submit("Describe the lake")
+        withTimeout(3000) { entered.await() }
+        clock.set(200_000_000)
+        val sealing = async(start = CoroutineStart.UNDISPATCHED) { track.seal() }
+        assertFalse(sealing.isCompleted)
+        clock.set(200_100_000)
+        release.countDown()
+        sealing.await()
+        track.answer("User: Describe the lake.") {}
+        val receipt = receipts.single { it.startsWith("input_finalized ") }
+        assertTrue(receipt.contains("prefillTimingSchema=seal_relative_v1"))
+        assertTrue(receipt.contains("contextPrefillCompletedOffsetMs=-0.1"))
+        assertTrue(receipt.contains("firstWordPrefillCompletedOffsetMs=0.1"))
+        assertTrue(receipt.contains("lastWordPrefillCompletedOffsetMs=0.1"))
+        assertFalse(receipt.contains("AtMs=") || receipt.contains("AtNanos=") || receipt.contains("sealRequested"))
+        track.close()
+    }
+
+    @Test fun failedAppendNeverPublishesSuccessfulCompletionOffset() = runBlocking {
+        val events = Channel<String>(Channel.UNLIMITED)
+        val receipts = mutableListOf<String>()
+        var creates = 0
+        val track = IncrementalVoiceInput(this, "User: ", { Native(failFirst = creates++ == 0) },
+            log = { events.trySend(it); receipts.add(it) })
+        track.submit("Describe the lake")
+        events.awaitEvent("input_prefill_failed")
+        track.answer("User: Describe the lake.") {}
+        val receipt = receipts.single { it.startsWith("input_finalized ") }
+        assertTrue(receipt.contains("reuse=false reuseReason=prefill_failed"))
+        assertTrue(receipt.contains("contextPrefillCompletedOffsetMs=unavailable"))
+        assertTrue(receipt.contains("firstWordPrefillCompletedOffsetMs=unavailable"))
+        assertTrue(receipt.contains("lastWordPrefillCompletedOffsetMs=unavailable"))
+        track.close()
+    }
+
+    @Test fun persistedCompletionReceiptIsIndependentOfAbsoluteClockOrigin() = runBlocking {
+        suspend fun receipt(origin: Long): String {
+            val events = Channel<String>(Channel.UNLIMITED)
+            val logs = mutableListOf<String>()
+            val clock = java.util.concurrent.atomic.AtomicLong(origin)
+            val track = IncrementalVoiceInput(this, "User: ", { Native() },
+                log = { events.trySend(it); logs.add(it) },
+                nowNanos = { clock.getAndAdd(250_000) })
+            try {
+                track.submit("Describe the")
+                events.awaitEvent("input_context_prefilled")
+                track.submit("Describe the lake")
+                events.awaitEvent("input_prefilled")
+                track.answer("User: Describe the lake.") {}
+                return logs.single { it.startsWith("input_finalized ") }
+            } finally { track.close() }
+        }
+        assertEquals(receipt(1_000_000_000), receipt(9_000_000_000))
+    }
+
+    @Test fun overflowedCompletionOffsetIsUnavailable() = runBlocking {
+        val events = Channel<String>(Channel.UNLIMITED)
+        val logs = mutableListOf<String>()
+        val clock = java.util.concurrent.atomic.AtomicLong(Long.MIN_VALUE + 10)
+        val track = IncrementalVoiceInput(this, "User: ", { Native() },
+            log = { events.trySend(it); logs.add(it) }, nowNanos = clock::get)
+        try {
+            track.submit("Describe the")
+            events.awaitEvent("input_context_prefilled")
+            clock.set(Long.MAX_VALUE - 10)
+            track.answer("User: Describe the lake.") {}
+            val receipt = logs.single { it.startsWith("input_finalized ") }
+            assertTrue(receipt.contains("contextPrefillCompletedOffsetMs=unavailable"))
+            assertTrue(receipt.contains("firstWordPrefillCompletedOffsetMs=unavailable"))
+            assertTrue(receipt.contains("lastWordPrefillCompletedOffsetMs=unavailable"))
+            assertFalse(receipt.contains("AtMs=") || receipt.contains("AtNanos="))
+        } finally { track.close() }
+    }
+
 }

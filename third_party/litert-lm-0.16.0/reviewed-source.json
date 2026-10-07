@@ -3,18 +3,18 @@
   "upstream_url": "https://github.com/google-ai-edge/LiteRT-LM.git",
   "sdk_commit": "924e79c91542761242244e4f1651851f822e4cbb",
   "litert_commit": "0ff28117f1cb5556d0e015bf80b773f74e2bee51",
-  "patch_sha256": "cf3a20f428abeebdfacf27632f70185137b17bd60dc19804700fe21f35b7e963",
+  "patch_sha256": "a1872985d7bd4eb23f6855090aec935bf752327a28ce867715c4f33204d15229",
   "files": {
     "experimental/native_audio_owner_20261006/BUILD": "8bd8c8cb0c2dff8b97eb9831c50a41ec82f43142e27fe1aa62186c3a3c891cc7",
     "experimental/native_audio_owner_20261006/lifecycle_tests.cc": "75c4aa2fba26ca4e5e1d0a7a3e0b9bdaef94e1179efcc0e063d24288f8b02a1b",
-    "experimental/native_audio_owner_20261006/native_audio_owner.cc": "5d868a250f767974775847e803bc1db197549e0ffea6a08e3f94f2261fcc2b11",
-    "experimental/native_audio_owner_20261006/native_audio_owner.h": "577e49a6897f12b5aaac7d22f715da7719d2910d42ec9f5c8036e69f212e16a0",
+    "experimental/native_audio_owner_20261006/native_audio_owner.cc": "d626080a000504632938b09ecf8e9dc222f830ccfbf18345347d2cdc7aa654b8",
+    "experimental/native_audio_owner_20261006/native_audio_owner.h": "54fe90939eb1d3266cc8b97dec4f4d286adc7b473d855d0e58ba805a489881d9",
     "experimental/native_audio_owner_20261006/pinned_native_backend.cc": "3729f673c3d4be7808fcd6164beb389f657b4aaf5bbfda86ccf0b62e2f0c18a9",
     "experimental/native_audio_owner_20261006/pinned_native_backend.h": "105e932459c099abd730f67e2fb1e12da185e88dcc0041b4e39360474ef24d4f",
     "experimental/native_audio_owner_20261006/real_native_tests.cc": "cb600e25fbc0eea54af3d691cc41a6986cedac60a23f95016e6340bc0be84b14",
     "experimental/native_audio_owner_jni_20261006/BUILD": "bba731936a74867e0e38b0d35438ab8b4465e15829634989c73e020b3695b495",
-    "experimental/native_audio_owner_jni_20261006/NativeAudioOwner.kt": "e29508a4f0360a0f1068324d533921366eba30ab54c25da7bac62fdaccb1fa21",
-    "experimental/native_audio_owner_jni_20261006/native_audio_owner_jni.cc": "8349eb9b47cd771bd2289976d4c5f17b6bad129684b9733eaacde8f58c23e001",
+    "experimental/native_audio_owner_jni_20261006/NativeAudioOwner.kt": "2c7c82fb16f35b4bd4d454e6e76c2414d1da23302dfd123840a381ec6c9e2215",
+    "experimental/native_audio_owner_jni_20261006/native_audio_owner_jni.cc": "f736fa9da2eee2cb962962b1d1c957625ef50bba9748b10cf2b955880ec4236a",
     "kotlin/java/com/google/ai/edge/litertlm/Conversation.kt": "c4da22296e96651d581b9871283aab90722058e3e218c3fc4ff445fd66ed5264",
     "kotlin/java/com/google/ai/edge/litertlm/Engine.kt": "09bc70edf899362d357500af479542d3fbf4ecc28eca716d2d25d1e210d46405",
     "kotlin/java/com/google/ai/edge/litertlm/LiteRtLmJni.kt": "c6fa4013fab04af3cc383f84e41b85532632901ee898671cee401863b5305489",
@@ -53,7 +53,8 @@
     "support/util/io_types_test.cc": "9a9d9bfde8ca73b97bc9b83304bec7a9f6ea7e80b0eed877b44f7fcac64435e6",
     "support/util/projected_audio_payload.cc": "7ac240b5ad29c1de927e8896380ca5baf0ed0d8fe253215f41b74eead0227fce",
     "support/util/projected_audio_payload.h": "488a9d769bb3e4845cb441a79576aa71cfa788849ef162fd1d8a2117beb69270",
-    "support/util/projected_audio_payload_contract_test.cc": "0d3ea35089afe29734f439c86cfb9fbb1114ddfbc2b79d9ac5fee0de38fb1116"
+    "support/util/projected_audio_payload_contract_test.cc": "0d3ea35089afe29734f439c86cfb9fbb1114ddfbc2b79d9ac5fee0de38fb1116",
+    "experimental/native_audio_owner_jni_20261006/NativeAudioTiming.kt": "8c63317a814410b6a26fc87a31f203b57b52c60112272674f1c01663c62afbdf"
   },
-  "scope": "Reviewed source-only streaming owner and checked Session/Conversation changes, plus focused source regression tests. No model weights, binaries, scratch logs or host harness outputs."
+  "scope": "Reviewed source-only streaming owner, observational timing, checked Session/Conversation changes and focused source regression tests. No model weights, compiled binaries or host harness outputs."
 }

@@ -6,19 +6,20 @@
     "libnative_audio_owner_jni_test.so"
   ],
   "owner_source_sha256": {
-    "experimental/native_audio_owner_20261006/native_audio_owner.h": "577e49a6897f12b5aaac7d22f715da7719d2910d42ec9f5c8036e69f212e16a0",
-    "experimental/native_audio_owner_20261006/native_audio_owner.cc": "5d868a250f767974775847e803bc1db197549e0ffea6a08e3f94f2261fcc2b11",
+    "experimental/native_audio_owner_20261006/native_audio_owner.h": "54fe90939eb1d3266cc8b97dec4f4d286adc7b473d855d0e58ba805a489881d9",
+    "experimental/native_audio_owner_20261006/native_audio_owner.cc": "d626080a000504632938b09ecf8e9dc222f830ccfbf18345347d2cdc7aa654b8",
     "experimental/native_audio_owner_20261006/pinned_native_backend.h": "105e932459c099abd730f67e2fb1e12da185e88dcc0041b4e39360474ef24d4f",
     "experimental/native_audio_owner_20261006/pinned_native_backend.cc": "3729f673c3d4be7808fcd6164beb389f657b4aaf5bbfda86ccf0b62e2f0c18a9",
     "experimental/native_audio_owner_20261006/BUILD": "8bd8c8cb0c2dff8b97eb9831c50a41ec82f43142e27fe1aa62186c3a3c891cc7",
-    "experimental/native_audio_owner_jni_20261006/native_audio_owner_jni.cc": "8349eb9b47cd771bd2289976d4c5f17b6bad129684b9733eaacde8f58c23e001",
-    "experimental/native_audio_owner_jni_20261006/NativeAudioOwner.kt": "e29508a4f0360a0f1068324d533921366eba30ab54c25da7bac62fdaccb1fa21",
+    "experimental/native_audio_owner_jni_20261006/native_audio_owner_jni.cc": "f736fa9da2eee2cb962962b1d1c957625ef50bba9748b10cf2b955880ec4236a",
+    "experimental/native_audio_owner_jni_20261006/NativeAudioOwner.kt": "2c7c82fb16f35b4bd4d454e6e76c2414d1da23302dfd123840a381ec6c9e2215",
     "experimental/native_audio_owner_jni_20261006/BUILD": "bba731936a74867e0e38b0d35438ab8b4465e15829634989c73e020b3695b495",
     "kotlin/java/com/google/ai/edge/litertlm/Session.kt": "984c0907e255f13541ef2ce58a298c1d37ecef26f7dcb5d252f2e93c52b5cb73",
     "kotlin/java/com/google/ai/edge/litertlm/Conversation.kt": "c4da22296e96651d581b9871283aab90722058e3e218c3fc4ff445fd66ed5264",
     "kotlin/java/com/google/ai/edge/litertlm/Engine.kt": "09bc70edf899362d357500af479542d3fbf4ecc28eca716d2d25d1e210d46405",
     "kotlin/java/com/google/ai/edge/litertlm/LiteRtLmJni.kt": "c6fa4013fab04af3cc383f84e41b85532632901ee898671cee401863b5305489",
-    "kotlin/java/com/google/ai/edge/litertlm/jni/litertlm.cc": "110f21791ebb2be0f349b6c0be2cbabe75e57d70cc70a76b4e1797510b2593ef"
+    "kotlin/java/com/google/ai/edge/litertlm/jni/litertlm.cc": "110f21791ebb2be0f349b6c0be2cbabe75e57d70cc70a76b4e1797510b2593ef",
+    "experimental/native_audio_owner_jni_20261006/NativeAudioTiming.kt": "8c63317a814410b6a26fc87a31f203b57b52c60112272674f1c01663c62afbdf"
   },
   "kotlin_sources": [
     "kotlin/java/com/google/ai/edge/litertlm/Benchmark.kt",
@@ -35,19 +36,34 @@
     "kotlin/java/com/google/ai/edge/litertlm/ResponseFormat.kt",
     "kotlin/java/com/google/ai/edge/litertlm/Session.kt",
     "kotlin/java/com/google/ai/edge/litertlm/Tool.kt",
-    "experimental/native_audio_owner_jni_20261006/NativeAudioOwner.kt"
+    "experimental/native_audio_owner_jni_20261006/NativeAudioOwner.kt",
+    "experimental/native_audio_owner_jni_20261006/NativeAudioTiming.kt"
   ],
   "owner_classes": [
     "com/google/ai/edge/litertlm/CompletedNativeAudio.class",
     "com/google/ai/edge/litertlm/NativeAudioArtifactLease.class",
     "com/google/ai/edge/litertlm/NativeAudioIdentity.class",
+    "com/google/ai/edge/litertlm/NativeAudioOwner$Companion$createOnWorker$alignment$1.class",
     "com/google/ai/edge/litertlm/NativeAudioOwner$Companion.class",
     "com/google/ai/edge/litertlm/NativeAudioOwner.class",
     "com/google/ai/edge/litertlm/NativeAudioOwnerJni.class",
     "com/google/ai/edge/litertlm/NativeAudioProvenance.class",
     "com/google/ai/edge/litertlm/NativeAudioSealWire.class",
+    "com/google/ai/edge/litertlm/NativeAudioTimingKt.class",
+    "com/google/ai/edge/litertlm/NativeAudioTimingPhase.class",
+    "com/google/ai/edge/litertlm/NativeAudioTimingReceipt.class",
     "com/google/ai/edge/litertlm/NativeAudioWorker$Companion.class",
-    "com/google/ai/edge/litertlm/NativeAudioWorker.class"
+    "com/google/ai/edge/litertlm/NativeAudioWorker.class",
+    "com/google/ai/edge/litertlm/NativeClockAlignment$Companion$preflight$1.class",
+    "com/google/ai/edge/litertlm/NativeClockAlignment$Companion.class",
+    "com/google/ai/edge/litertlm/NativeClockAlignment.class",
+    "com/google/ai/edge/litertlm/NativeClockContract.class",
+    "com/google/ai/edge/litertlm/NativeNanoInterval$Companion.class",
+    "com/google/ai/edge/litertlm/NativeNanoInterval.class",
+    "com/google/ai/edge/litertlm/NativeTimingWords$Companion.class",
+    "com/google/ai/edge/litertlm/NativeTimingWords.class",
+    "com/google/ai/edge/litertlm/NativeWorkBefore.class",
+    "com/google/ai/edge/litertlm/NativeWorkBeforeKind.class"
   ],
   "owner_jni_methods": {
     "nativeCreate": "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;JIII)J",
@@ -55,15 +71,19 @@
     "nativeSeal": "(JLjava/lang/String;J)Lcom/google/ai/edge/litertlm/NativeAudioSealWire;",
     "nativeRequestCancel": "(J)Z",
     "nativeDrain": "(JJ)Z",
-    "nativeClose": "(JJ)Z"
+    "nativeClose": "(JJ)Z",
+    "nativeTimingHandshake": "()[J",
+    "nativeTimingSnapshot": "(J)[J"
   },
   "owner_jni_exports": [
-    "Java_com_google_ai_edge_litertlm_NativeAudioOwnerJni_nativeCreate",
     "Java_com_google_ai_edge_litertlm_NativeAudioOwnerJni_nativeAppend",
-    "Java_com_google_ai_edge_litertlm_NativeAudioOwnerJni_nativeSeal",
-    "Java_com_google_ai_edge_litertlm_NativeAudioOwnerJni_nativeRequestCancel",
+    "Java_com_google_ai_edge_litertlm_NativeAudioOwnerJni_nativeClose",
+    "Java_com_google_ai_edge_litertlm_NativeAudioOwnerJni_nativeCreate",
     "Java_com_google_ai_edge_litertlm_NativeAudioOwnerJni_nativeDrain",
-    "Java_com_google_ai_edge_litertlm_NativeAudioOwnerJni_nativeClose"
+    "Java_com_google_ai_edge_litertlm_NativeAudioOwnerJni_nativeRequestCancel",
+    "Java_com_google_ai_edge_litertlm_NativeAudioOwnerJni_nativeSeal",
+    "Java_com_google_ai_edge_litertlm_NativeAudioOwnerJni_nativeTimingHandshake",
+    "Java_com_google_ai_edge_litertlm_NativeAudioOwnerJni_nativeTimingSnapshot"
   ],
   "forbidden_class_patterns": [
     "NativeAudioOwnerTestJni",
@@ -74,7 +94,7 @@
     "Smoke",
     "Test"
   ],
-  "scope": "Frozen production owner plus checked Session/Conversation source and class/JNI inventory. Compiler output bytes are built on the same runner, not copied from host fixtures.",
+  "scope": "Exact production owner with observational timing and checked Session/Conversation class/JNI inventory. No test harness, fake backend, host runtime or model data may enter the package.",
   "sdk_classes": [
     "com/google/ai/edge/litertlm/Backend$CPU.class",
     "com/google/ai/edge/litertlm/Backend$GOOGLE_TENSOR.class",

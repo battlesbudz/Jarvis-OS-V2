@@ -14,6 +14,26 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioTurnCaptureTest {
+    @Test fun endpointTimingStartsAtAcceptedProposalBeforeFinalization() = runBlocking<Unit> {
+        lateinit var fixture: CaptureFixture
+        val recognizer = object : StreamingTranscriber {
+            override fun accept(pcm: ByteArray) = "Hello"
+            override fun finish(): String { fixture.spend(400); return "Hello" }
+            override fun close() = Unit
+        }
+        fixture = CaptureFixture(this, recognizer)
+        fixture.capture.start()
+        try {
+            fixture.emit(100, 1800, speech = true, samples = 1600)
+            assertEquals(null, fixture.capture.endpointDecisionAtNs)
+            fixture.emit(1400, 0, samples = 1600)
+            assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
+            assertEquals(1_400_000_000L, fixture.capture.endpointDecisionAtNs)
+            assertEquals(100L, fixture.capture.lastSpeechAtMs)
+            assertEquals(1600, fixture.capture.retainedPreRollSampleCount)
+        } finally { fixture.capture.stop() }
+    }
+
     @Test fun nonverbalWhisperCaptionCannotDiscardConfirmedNativeAudio() = runBlocking<Unit> {
         val fixture = CaptureFixture(this, FakeTranscriber("[music]", "[music]"),
             allowAudioOnlyTurns = true, captionOnly = true)
@@ -853,11 +873,13 @@ class AudioTurnCaptureTest {
             fixture.bufferedMs = 0
             fixture.emit(1400, 1234, probability = 0.7f, samples = 512)
             assertFalse(completion.isCompleted)
+            assertEquals(null, fixture.capture.endpointDecisionAtNs)
             fixture.emit(1464, 2000, speech = true, samples = 1024)
             fixture.emit(2664, 0)
             assertTrue(withTimeout(1000) { completion.await() })
             assertEquals("Open Facebook actually YouTube", fixture.capture.finalTranscript)
             assertEquals(1234, next.receivedSamples.first())
+            assertEquals(2_664_000_000L, fixture.capture.endpointDecisionAtNs)
         } finally { fixture.capture.stop() }
     }
 
@@ -871,6 +893,7 @@ class AudioTurnCaptureTest {
             assertTrue(observer.packets.isEmpty())
             fixture.emit(1600, 1900, speech = true, samples = 1600)
             assertEquals(38_400, observer.packets.single().size)
+            assertEquals(19_200, fixture.capture.retainedPreRollSampleCount)
             fixture.emit(2900, 0, samples = 1600)
             assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
             val wav = fixture.capture.stop()
@@ -908,12 +931,16 @@ class AudioTurnCaptureTest {
             fixture.emit(1400, 0, samples = 1600)
             assertEquals(1, observer.discards)
             assertTrue(observer.packets.isEmpty())
+            assertEquals(null, fixture.capture.endpointDecisionAtNs)
+            assertEquals(null, fixture.capture.retainedPreRollSampleCount)
             fixture.emit(1600, 2000, speech = true, samples = 1600)
             fixture.emit(2900, 0, samples = 1600)
             assertTrue(withTimeout(1000) { fixture.capture.awaitTurnCompletion() })
             val wav = fixture.capture.stop()
             assertArrayEquals(wav.copyOfRange(44, wav.size), observer.bytes())
             assertEquals(2000.toByte(), observer.packets.first()[0])
+            assertEquals(1600, fixture.capture.retainedPreRollSampleCount)
+            assertEquals(2_900_000_000L, fixture.capture.endpointDecisionAtNs)
         } finally { fixture.capture.stop() }
     }
 
@@ -970,6 +997,7 @@ class AudioTurnCaptureTest {
         fixture.capture.stop()
         assertEquals(listOf(RetainedPcmObserver.Invalidation.CANCELLED), observer.invalidations)
         assertTrue(fixture.metrics.isEmpty())
+        assertEquals(null, fixture.capture.endpointDecisionAtNs)
     }
 
     @Test fun shortRetentionWindowPublishesItsExactAcceptedPreRoll() = runBlocking<Unit> {
@@ -981,6 +1009,7 @@ class AudioTurnCaptureTest {
         fixture.emit(500, 1800, speech = true, samples = 1600)
         val wav = fixture.capture.stop()
         assertEquals(6400, observer.packets.single().size)
+        assertEquals(3200, fixture.capture.retainedPreRollSampleCount)
         assertArrayEquals(wav.copyOfRange(44, wav.size), observer.bytes())
     }
 
@@ -1075,7 +1104,7 @@ class AudioTurnCaptureTest {
             onRecognitionRecovery = recoveryStates::add, allowAudioOnlyTurns = allowAudioOnlyTurns,
             maxAudioDurationMs = maxAudioDurationMs, rejectAtAudioLimit = rejectAtAudioLimit, captionOnly = captionOnly,
             guardFollowupSpeech = guardFollowupSpeech, initialConfirmedSpeech = initialConfirmedSpeech, onSpeechResumed = { resumed++ },
-            retainedPcmObserver = retainedPcmObserver)
+            retainedPcmObserver = retainedPcmObserver, nowNs = { clock * 1_000_000L })
 
         suspend fun emit(atMs: Long, sample: Int, speech: Boolean = false, samples: Int = 1, probability: Float = if (speech) 0.95f else 0.01f) {
             clock = atMs
