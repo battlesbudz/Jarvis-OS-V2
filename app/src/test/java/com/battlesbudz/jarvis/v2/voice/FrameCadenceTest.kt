@@ -76,13 +76,17 @@ class FrameCadenceTest {
         assertFalse(cadence.shouldCapture())
     }
 
-    @Test fun resetClearsCaptureHistory() {
+    @Test fun resetPausesCaptureForFullInterval() {
         val clock = Clock(0L)
         val cadence = FrameCadence(framesPerSecond = 1.0, clockMs = clock::get)
         assertTrue(cadence.shouldCapture())
         cadence.markCaptured()
         assertFalse(cadence.shouldCapture())
         cadence.reset()
+        // After reset (e.g. camera degrade), the next capture waits a full
+        // interval instead of firing immediately.
+        assertFalse(cadence.shouldCapture())
+        clock.now = 1000L
         assertTrue(cadence.shouldCapture())
     }
 }
