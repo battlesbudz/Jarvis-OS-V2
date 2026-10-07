@@ -312,9 +312,9 @@ internal fun redactExportValue(argKey: String, value: String): ValueRedaction? {
     val key = argKey.lowercase()
     if (SECRET_KEY_HINTS.any { it in key }) return ValueRedaction(bindingNameFor(argKey), sensitive = true)
     if (key in IDENTIFIER_KEYS) return ValueRedaction(bindingNameFor(argKey), sensitive = false)
-    if (EMAIL_LIKE.matches(value)) return ValueRedaction(bindingNameFor(argKey), sensitive = false)
     if (value.startsWith("http://") || value.startsWith("https://"))
         return ValueRedaction(bindingNameFor(argKey), sensitive = '@' in value)
+    if (EMAIL_LIKE.matches(value)) return ValueRedaction(bindingNameFor(argKey), sensitive = false)
     return null
 }
 
