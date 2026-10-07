@@ -97,3 +97,14 @@ its NDK28 shared runtime, consumer validation stops with both hashes before Grad
 It never removes a required runtime, silently uses `pickFirst`, or assumes the old
 and new runtime are compatible. A real collision requires symbol/ABI inspection
 and review of a deterministic single-runtime adapter before continuation.
+
+## Packaged Kotlin contract
+
+The producer compiles `PackagedSealedContentContract.kt` as a separate SDK-owned
+friend test module against the actual production classes.jar. Its 13 assertions
+check copied finite synthetic bytes, signed zero, wire metadata and independent
+JSON snapshots before packaging. App tests use only public SDK API. Compilation
+and execution have separate 60-second/384 MiB heap and 20-second/128 MiB heap
+limits; those heap values are not total process RSS caps.
+The result is bound to the jar and test-source SHA in source-receipt.json and a
+standalone packaged-kotlin-contract.json; test classes never enter the AAR.

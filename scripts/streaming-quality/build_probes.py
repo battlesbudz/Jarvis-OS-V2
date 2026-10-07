@@ -18,6 +18,23 @@ TARGETS = ['native_frontend_quality_probe', 'pinned_encoder_probe', 'native_conv
 BAZEL_SHA = 'ac6249d1192aea9feaf49dfee2ab50c38cee2454b00cf29bbec985a11795c025'
 
 
+def host_cpu_metadata():
+    """Bounded runner ISA identity for diagnosing cross-host numeric differences."""
+    try:
+        with open('/proc/cpuinfo', 'r') as source:
+            first = source.read(16384).split('\n\n', 1)[0]
+        fields = dict(line.split(':', 1) for line in first.splitlines() if ':' in line)
+        fields = {key.strip(): value.strip() for key, value in fields.items()}
+        flags = set(fields.get('flags', '').split())
+        selected = ('sse4_2', 'fma', 'f16c', 'avx2', 'avx512f', 'avx512_vnni', 'avx512_bf16', 'avx_vnni')
+        return {'scope': 'first advertised Linux runner processor; no installed-device claim',
+                'model_name': fields.get('model name', 'unavailable')[:256],
+                'architecture': os.uname().machine,
+                'selected_isa_flags': {flag: flag in flags for flag in selected}}
+    except (OSError, ValueError):
+        return {'scope': 'unavailable'}
+
+
 # Compilation has a separate, reviewed 60-minute budget. These limits never
 # change bounded_exec.py or any model process's CPU/memory/wall-time limits.
 COMPILE_WALL_SECONDS = 3600
@@ -368,6 +385,7 @@ def build(a):
             bazel_sha256=BAZEL_SHA, host_prebuilts={p['path']: {k:p[k] for k in ('bytes','sha256')} for p in pins},
             compile_log_sha256=sha(out/'compile.log'), java=version.strip(),
             host_compiler=subprocess.check_output([cc, '--version'], text=True).strip(),
+            host_cpu=host_cpu_metadata(),
             compilation_exited_before_quality=True)
     except Exception as e:
         status.update(classification=e.classification if isinstance(e, GateError) else 'build_failure', error=str(e))

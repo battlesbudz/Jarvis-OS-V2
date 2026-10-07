@@ -2,16 +2,16 @@
   "schema_version": 1,
   "files": {
     "README.md": {
-      "bytes": 9025,
-      "sha256": "70277ceb45acba16036b4bc9d6c06dbf2fd4dc09ec2f7c68708e05db24e26e79"
+      "bytes": 9694,
+      "sha256": "88a781eec09615412f996149f57e16638fa392f396237512538c6b5e92a026fc"
     },
     "bounded_exec.py": {
       "bytes": 3746,
       "sha256": "b0fdf259ec69b820c81a45ae1a62d1e2ce3cf7a676887e25e785dc8fd3475221"
     },
     "build_probes.py": {
-      "bytes": 22560,
-      "sha256": "3d9d95eb373cb0b605ce842281cd2ed77cf5f7a719453808b5d99461483f6b07"
+      "bytes": 23539,
+      "sha256": "ab368ba94679d402b52c6a270b7f85ae9325c958428af54a80c42c9538e573f7"
     },
     "common.py": {
       "bytes": 4816,
@@ -54,8 +54,12 @@
       "sha256": "426322998b662cf5a37cb30e2c5f3bd7e2f1b30b6b175e8bfc271055563e6abf"
     },
     "prepare_inputs.py": {
-      "bytes": 8583,
-      "sha256": "2d4db474be1b1712102815466d9f88f32eaa004cecf08bf82435bc78c529e106"
+      "bytes": 9707,
+      "sha256": "48e0e877c74e0ccac4bdc90718297737cef62349918e44bd3841527dace3b260"
+    },
+    "prepare_sdk_source.py": {
+      "bytes": 5289,
+      "sha256": "a748ca6d3ff4961c3965563bd087579d6b894c1f4ea001ddca35ac8fd5644108"
     },
     "recipe/Apache-2.0.txt": {
       "bytes": 11357,
@@ -90,24 +94,24 @@
       "sha256": "1668a3152e33680d94637b13421c15e68bd97cd8701f7f555c691f5bc5c0b9f3"
     },
     "run_quality.py": {
-      "bytes": 12801,
-      "sha256": "ca546df5509cd7004fd8665e67385b67a286d852fb452ad2c924102bdc05ac21"
+      "bytes": 12829,
+      "sha256": "8a8588cd73b4984b651cf6ebd27a95d28acc0e45bde628de922b2f9edccb0740"
     },
     "test_build_supervisor.py": {
       "bytes": 13295,
       "sha256": "264e1d10d9aba38114a5a6afa3da4ecb3d1575a275bfa77d982cdf654136e3ed"
     },
-    "test_quality.py": {
-      "bytes": 16309,
-      "sha256": "906f54282804d76cd8b8b64e62f28081a0486a001c5fb7f21cde1dd9fb91aa18"
-    },
-    "prepare_sdk_source.py": {
-      "bytes": 5289,
-      "sha256": "a748ca6d3ff4961c3965563bd087579d6b894c1f4ea001ddca35ac8fd5644108"
+    "test_encoder_receipts.py": {
+      "bytes": 4392,
+      "sha256": "87237b72109bc060b4170153188e0700ac754b3114c6f376a2018bec4b5858ef"
     },
     "test_prepare_sdk_source.py": {
       "bytes": 6461,
       "sha256": "63c3a18fd9275c04ba71e47007d0fddfdc721b188c825d01a62721edeb717abd"
+    },
+    "test_quality.py": {
+      "bytes": 16406,
+      "sha256": "335d5d26103f0382fc33241c7b2b6aa95f31ba762634b758726f61480840aa45"
     }
   },
   "scope": "Source, verified weightless structural recipe assets and metadata only; no model/audio/activation payload"

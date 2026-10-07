@@ -230,7 +230,8 @@ class OrchestrationTests(unittest.TestCase):
                     if failure_mode==directory.name:raise GateError('resource_constrained','explicit watchdog')
                     value=result(directory.name);write(directory/'result.json',value);return {},value
                 return {},None
-            def oracle(inputs,stages):
+            def oracle(inputs,stages,receipt_path):
+                self.assertEqual(inputs.parent/'encoder-oracle.json', receipt_path)
                 (inputs/'projected.f32le').write_bytes(b'rows');return {'passed':True}
             oldsha=run_quality.sha
             with patch.object(run_quality,'verify_build',return_value=(build,root/'sdk')), \

@@ -1,5 +1,31 @@
 # Feature and acceptance map
 
+
+## Packaged SDK test boundary and oracle diagnostics — October 7, 2026
+
+Build 1133 (head `bc7a6201`, tested merge `19b5e6b2`) passed the reviewed
+ARM64 SDK producer and production app Kotlin compilation, but release unit-test
+compilation rejected two calls to the SDK-internal `Content.toJson` method.
+No JVM release tests or APK upload completed. The app routing test now checks the
+public sealed value's identity and metadata. The full copied-byte/serialization
+assertions run in a separate SDK-owned friend test module against the actual
+production `classes.jar`, before AAR packaging. Its classes stay outside the
+explicit production allowlist, and its bounded receipt binds the source and jar.
+The exact Build 1133 jar passed 106 focused app tests with no SDK friend access,
+and 13 packaged SDK serialization/immutability checks. Whole hosted release
+verification is still required for the repaired revision.
+
+Build 1132's host probe compiler completed in 2444.904 seconds. Frontend PCM/Mel,
+stateful counts/masks, original-versus-streamed post-adapter byte equality, and
+learned end-of-audio equality passed. The later comparison to the earlier local
+complete projected-row SHA failed. Neither full Conversation lane ran. Local
+one-thread and two-thread encoder replays both reproduce the earlier hash, so
+thread count does not explain the hosted difference. Its cause and magnitude
+remain unresolved. The quality harness now preserves booleans and actual/expected
+output hashes before raising that same strict failure, plus bounded runner CPU
+metadata. It uploads no rows, weights, audio or activations and changes no numeric
+threshold, expected hash, process cap, or required release gate.
+
 ## Streaming Gradle configuration repair — October 7, 2026
 
 [Build 1132](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37572005554)

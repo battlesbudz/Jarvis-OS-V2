@@ -112,7 +112,25 @@ def encoder_cases(directory):
     return stages
 
 
-def compare_encoder(directory, stages):
+def compare_encoder(directory, stages, receipt_path=None):
+    """Retain bounded comparison facts even when a strict oracle check fails."""
+    receipt = {'passed': False, 'post_adapter_valid_rows_bitwise': None,
+               'eoa_bitwise': None, 'complete_reference_hash_match': None,
+               'cache_state_all_layers_checked': False,
+               'oracle': 'Same SDK-pinned CPU runtime original encoder+adapter vs explicit-state encoder; full complete public PCM'}
+    try:
+        _compare_encoder(directory, stages, receipt)
+        receipt['passed'] = True
+        return receipt
+    except Exception as error:
+        receipt['error'] = str(error)
+        receipt['classification'] = error.classification if isinstance(error, GateError) else 'orchestration_failure'
+        raise
+    finally:
+        if receipt_path is not None: write(receipt_path, receipt)
+
+
+def _compare_encoder(directory, stages, receipt):
     import numpy as np
     def output(stage, case, label):
         spec = next(s for c in stages[stage] if c['id'] == case for s in c['outputs'] if s['label'] == label)
@@ -123,21 +141,25 @@ def compare_encoder(directory, stages):
             need(np.isfinite(np.frombuffer(data, dtype='<f4')).all(), 'Nonfinite oracle output', 'numerical_failure')
         return data
     for stage in stages:
-        receipt = (directory/f'actual/{stage}/pinned-encoder-run.tsv').read_text()
-        need(f'PIN\t{LITERT_PIN}\n' in receipt and 'CPU_THREADS\t1\n' in receipt and receipt.endswith(f'COMPLETE\t{len(stages[stage])}\n'),
+        native_receipt = (directory/f'actual/{stage}/pinned-encoder-run.tsv').read_text()
+        need(f'PIN\t{LITERT_PIN}\n' in native_receipt and 'CPU_THREADS\t1\n' in native_receipt and native_receipt.endswith(f'COMPLETE\t{len(stages[stage])}\n'),
              'Missing fresh complete C++ oracle receipt', 'evidence_failure')
+    receipt['complete_pinned_native_receipts'] = True
     chunks = []
     for i, count in enumerate([12]*6+[5]):
         need(output('stateful', f'{i:03}', 'token_count') == struct.pack('<i', count), 'Stateful token count mismatch', 'numerical_failure')
         need(output('stateful', f'{i:03}', 'token_mask') == b'\1'*count+b'\0'*(12-count), 'Stateful mask mismatch', 'numerical_failure')
         chunks.append(output('stateful', f'{i:03}', 'soft_tokens')[:count*1536*4])
     rows = b''.join(chunks)
+    receipt['stateful_counts_and_masks_match'] = True
     need(output('static', '000', 'mask') == b'\1'*77+b'\0'*127, 'Static prefix mask mismatch', 'numerical_failure')
-    need(output('adapter', '000', 'soft_tokens')[:len(rows)] == rows, 'Streamed/static post-adapter rows differ', 'numerical_failure')
-    need(output('stateful', 'eoa', 'eoa_embedding') == output('eoa', '000', 'eoa_embedding'), 'Learned EOA differs', 'numerical_failure')
+    receipt['static_prefix_mask_match'] = True
+    receipt['post_adapter_valid_rows_bitwise'] = output('adapter', '000', 'soft_tokens')[:len(rows)] == rows
+    need(receipt['post_adapter_valid_rows_bitwise'], 'Streamed/static post-adapter rows differ', 'numerical_failure')
+    receipt['eoa_bitwise'] = output('stateful', 'eoa', 'eoa_embedding') == output('eoa', '000', 'eoa_embedding')
+    need(receipt['eoa_bitwise'], 'Learned EOA differs', 'numerical_failure')
     p = directory/'projected.f32le'; p.write_bytes(rows)
-    need(len(rows) == 473088 and sha(p) == ROWS_SHA, 'Complete pinned projected-row hash mismatch', 'numerical_failure')
-    return {'passed': True, 'post_adapter_valid_rows_bitwise': True, 'eoa_bitwise': True,
-            'pcm_samples': 49221, 'mel_frames': 307, 'audio_rows': 77, 'embedding_width': 1536,
-            'projected_rows': describe(p), 'oracle': 'Same SDK-pinned CPU runtime original encoder+adapter vs explicit-state encoder; full complete public PCM',
-            'cache_state_all_layers_checked': False}
+    receipt.update(pcm_samples=49221, mel_frames=307, audio_rows=77, embedding_width=1536,
+                   projected_rows=describe(p), expected_projected_rows={'bytes': 473088, 'sha256': ROWS_SHA})
+    receipt['complete_reference_hash_match'] = receipt['projected_rows'] == receipt['expected_projected_rows']
+    need(receipt['complete_reference_hash_match'], 'Complete pinned projected-row hash mismatch', 'numerical_failure')

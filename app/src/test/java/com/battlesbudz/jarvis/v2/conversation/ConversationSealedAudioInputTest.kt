@@ -53,10 +53,16 @@ class ConversationSealedAudioInputTest {
         Content.SealedAudioEmbeddings.fromSealedAudio(rows, 160, 1536,
             "synthetic-routing-test", "d5c50b140ace235717e6713d287e73ccfa4f32d0090e1cceb9d00714da850a1b")
 
+    private fun metadata(content: Content.SealedAudioEmbeddings) = listOf(
+        content.pcmSampleCount, content.audioTokenCount, content.embeddingWidth,
+        content.sealToken, content.producerSha256)
+
     @Test fun directAudioAndRetryUseTheSameImmutableSealedInputWithoutRawFallback() = runBlocking<Unit> {
         val rows = FloatArray(1536) { it / 1536f }
         val content = sealed(rows)
-        val before = content.toJson().toString()
+        // Wire-byte ownership is tested inside the packaged SDK's test module.
+        // App routing uses the same public API available to production callers.
+        val before = metadata(content)
         val retained = byteArrayOf(1, 0, 2, 0)
         val backend = Backend()
         val input = ConversationInput(retained, true, null, null, null, content)
@@ -73,7 +79,7 @@ class ConversationSealedAudioInputTest {
         assertTrue(backend.raw.isEmpty())
         assertSame(content, backend.sealed[0])
         assertSame(content, backend.sealed[1])
-        assertEquals(before, content.toJson().toString())
+        assertEquals(before, metadata(content))
         assertTrue(input.nativeConversationContainsTurn)
         assertFalse(input.incrementalFallbackUsed)
     }

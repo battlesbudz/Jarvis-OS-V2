@@ -139,3 +139,14 @@ instead of reading a historical Mel file; both native paths still compare bitwis
 and Python checks the pinned Mel hash. Recipe assets and Java are byte-for-byte
 copies of the reviewed weightless recipe. No SDK source or CI job was executed
 while preparing this package.
+
+## Retained numerical failures
+
+`encoder-oracle.json` is written on success and failure. It distinguishes actual
+within-run static/streamed row equality from the unchanged earlier-local-reference
+hash check, records only booleans/counts/hashes, and never exports tensor values.
+A failed fixed hash still fails the prerequisite and prevents Conversation lanes.
+Build 1132 passed within-run row and EOA equality but failed that fixed hash; both
+one-thread and two-thread local repeats preserve the old hash, leaving the hosted
+difference unresolved. Bounded runner CPU/ISA metadata supports the next diagnosis;
+it does not establish that hardware caused the difference.

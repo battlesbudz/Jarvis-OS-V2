@@ -69,6 +69,7 @@ jobs:
           path: |
             streaming-sdk-build.log
             ${{ runner.temp }}/streaming-sdk/source-receipt.json
+            ${{ runner.temp }}/streaming-sdk/packaged-kotlin-contract.json
             ${{ runner.temp }}/streaming-sdk/*.native-audit.json
             ${{ runner.temp }}/streaming-sdk/*.provenance.json
           if-no-files-found: warn

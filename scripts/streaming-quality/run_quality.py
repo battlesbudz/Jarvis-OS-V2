@@ -158,7 +158,7 @@ def run_gate(a):
             target = inputs/'actual'/stage; target.mkdir()
             checked_process([sdk/'bazel-bin'/PACKAGE/'pinned_encoder_probe', inputs/(stage+'.tflite'),
                              inputs/(stage+'.tsv'), inputs, target], work/('encoder-'+stage))
-        oracle = compare_encoder(inputs, stages)
+        oracle = compare_encoder(inputs, stages, work/'encoder-oracle.json')
         oracle['binary'] = build['binaries']['pinned_encoder_probe']
         write(work/'encoder-oracle.json', oracle)
         identity.update(pcm=describe(inputs/'pcm.f32le'), mel=describe(inputs/'mel.f32le'),

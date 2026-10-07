@@ -24,9 +24,37 @@ BAZEL = {'filename': 'bazel-7.6.1-linux-x86_64', 'bytes': 57509759,
          'url': 'https://github.com/bazelbuild/bazel/releases/download/7.6.1/bazel-7.6.1-linux-x86_64'}
 
 
-def run(argv, cwd=None, env=None):
+def run(argv, cwd=None, env=None, timeout=None):
     print('+ ' + ' '.join(map(str, argv)), flush=True)
-    subprocess.run(list(map(str, argv)), cwd=cwd, env=env, check=True)
+    subprocess.run(list(map(str, argv)), cwd=cwd, env=env, check=True, timeout=timeout)
+
+
+def verify_packaged_kotlin_contract(java, compiler_cp, runtime_cp, classes_jar, out):
+    """SDK tests may inspect internal serialization; app tests may not.
+
+    Compile a separate SDK-owned friend test module against the actual production
+    jar. Never add its output to the production class allowlist or packaged AAR.
+    """
+    source = HERE / 'PackagedSealedContentContract.kt'
+    test_classes = out / 'packaged-sdk-contract-classes'
+    test_classes.mkdir()
+    receipt_path = out / 'packaged-kotlin-contract.json'
+    run([java, '-Xmx384m', '-XX:ActiveProcessorCount=1', '-cp', compiler_cp,
+         'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler', '-no-stdlib', '-no-reflect',
+         '-jvm-target', '17', '-module-name', 'packaged_sdk_contract',
+         '-Xfriend-paths=' + str(classes_jar),
+         '-classpath', str(classes_jar) + ':' + runtime_cp,
+         '-d', test_classes, source], timeout=60)
+    run([java, '-Xmx128m', '-XX:ActiveProcessorCount=1', '-cp',
+         str(test_classes) + ':' + str(classes_jar) + ':' + runtime_cp,
+         'com.google.ai.edge.litertlm.PackagedSealedContentContractKt', receipt_path], timeout=20)
+    result = json.loads(receipt_path.read_text())
+    if result.get('passed') is not True or result.get('checks') != 13:
+        raise ValueError('Packaged SDK serialization contract did not pass completely')
+    result.update(classes_jar_sha256=hashlib.sha256(classes_jar.read_bytes()).hexdigest(),
+                  test_source_sha256=hashlib.sha256(source.read_bytes()).hexdigest())
+    receipt_path.write_text(json.dumps(result, indent=2) + '\n')
+    return result
 
 
 def download(pin, destination):
@@ -228,6 +256,9 @@ def main():
     from package_android_aar import write_archive
     classes_jar = out / 'classes.jar'
     write_archive(classes_jar, {str(p.relative_to(classes)): p.read_bytes() for p in classes.rglob('*') if p.is_file()})
+    receipt['packaged_kotlin_contract'] = verify_packaged_kotlin_contract(
+        java, compiler_cp, runtime_cp, classes_jar, out)
+    source_receipt.write_text(json.dumps(receipt, indent=2) + '\n')
     native = repo / 'bazel-bin/kotlin/java/com/google/ai/edge/litertlm/jni'
     solib = sorted((repo / 'bazel-bin').glob('_solib*'))
     command = [sys.executable, HERE / 'package_android_aar.py', '--base-aar', base, '--classes-jar', classes_jar,
