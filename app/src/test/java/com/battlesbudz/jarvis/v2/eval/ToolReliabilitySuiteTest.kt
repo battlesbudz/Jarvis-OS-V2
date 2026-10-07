@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -37,9 +38,17 @@ class ToolReliabilitySuiteTest {
 
     @Test fun everyCatalogToolHasFixtures() {
         val fixtures = ToolReliabilityFixtures.all()
-        val catalogNames = MobileToolCatalog.all().map { it.name }
+        // MobileToolCatalog.all() withholds browse tools while BrowserRuntimeGate
+        // is unwired (M4 hardening); fixtures may cover gated tools too.
+        val catalogNames = MobileToolCatalog.all().map { it.name }.toSet()
         val fixtureTools = fixtures.map { it.expectedTool }.toSet()
-        assertEquals(catalogNames.toSet(), fixtureTools)
+        assertTrue(
+            "missing fixtures for: ${catalogNames - fixtureTools}",
+            fixtureTools.containsAll(catalogNames)
+        )
+        fixtureTools.forEach { name ->
+            assertNotNull("$name is not a catalog tool", MobileToolCatalog.find(name))
+        }
         catalogNames.forEach { name ->
             assertTrue("$name has fixtures", fixtures.count { it.expectedTool == name } >= 2)
         }
