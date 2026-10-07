@@ -202,6 +202,13 @@ class AndroidMobileActionExecutor(
             else ExecutionResult(false,
                 "I couldn't post the reminder notification: notifications are disabled or permission was denied.")
         }
+        // Browse actions are owned by AndroidBrowserExecutor, which decorates this
+        // executor in the runtime composition root. Reaching here means the decorator
+        // is absent, so fail closed with an honest receipt instead of dropping the action.
+        else -> ExecutionResult(
+            false,
+            "The internal browser isn't wired into this action path, so I couldn't do that."
+        )
     }
 
     /**
