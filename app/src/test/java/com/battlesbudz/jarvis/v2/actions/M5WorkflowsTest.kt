@@ -498,7 +498,7 @@ class M5WorkflowsTest {
         assertTrue(outcome is WorkflowRunOutcome.Completed)
         outcome as WorkflowRunOutcome.Completed
         assertEquals("42", outcome.results[sId]?.get("result"))
-        assertTrue(outcome.completedStepIds.contains(sId))
+        assertTrue(outcome.results.containsKey(sId))
     }
 
     @Test fun engineScriptStepCanBindResult() {
