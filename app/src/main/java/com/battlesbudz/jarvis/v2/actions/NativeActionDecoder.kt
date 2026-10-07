@@ -50,6 +50,38 @@ object NativeActionDecoder {
                 name = call.name,
                 arguments = mapOf("destination" to args.optString("destination"))
             )
+            // M4: internal browser tasks.
+            "browse_open" -> ActionRequest(
+                name = call.name,
+                arguments = mapOf("url" to args.optString("url"))
+            )
+            "browse_read" -> ActionRequest(call.name)
+            "browse_click" -> ActionRequest(
+                name = call.name,
+                arguments = mapOf(
+                    "target" to args.optString("target"),
+                    "token" to args.optString("token")
+                )
+            )
+            "browse_back" -> ActionRequest(call.name)
+            "browse_forward" -> ActionRequest(call.name)
+            "browse_fill" -> ActionRequest(
+                name = call.name,
+                arguments = mapOf(
+                    "field" to args.optString("field"),
+                    "text" to args.optString("text"),
+                    "token" to args.optString("token")
+                )
+            )
+            "browse_submit" -> ActionRequest(
+                name = call.name,
+                arguments = mapOf("token" to args.optString("token"))
+            )
+            "browse_handoff" -> ActionRequest(call.name)
+            "browse_login" -> ActionRequest(
+                name = call.name,
+                arguments = mapOf("token" to args.optString("token"))
+            )
             "screen_observe" -> ActionRequest(call.name)
             "screen_tap" -> ActionRequest(
                 name = call.name,

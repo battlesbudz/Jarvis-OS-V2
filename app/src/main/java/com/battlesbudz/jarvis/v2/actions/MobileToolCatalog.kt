@@ -120,6 +120,102 @@ object MobileToolCatalog {
                 minLength = 1
             ))
         ),
+        // M4: internal browser tasks. Reads are open; mutations ride page tokens
+        // from browse_read; submission needs an approval bound to destination.
+        Tool(
+            name = "browse_open",
+            description = "Open a URL in Jarvis's internal browser. The page can then be read, clicked, and filled with the other browse tools.",
+            parameters = listOf(Parameter(
+                name = "url",
+                type = ParameterType.STRING,
+                description = "The website URL, e.g. https://example.com or example.com.",
+                minLength = 1
+            ))
+        ),
+        Tool(
+            name = "browse_read",
+            description = "Read the current internal-browser page: title, text, links, and form fields with IDs and a page token. Call this after browse_open and before browse_click, browse_fill, browse_submit, or browse_login; IDs and tokens expire when the page changes."
+        ),
+        Tool(
+            name = "browse_click",
+            description = "Click a link or button from the latest browse_read result. The link ID and page token must come from that read; stale targets are rejected and never followed.",
+            parameters = listOf(
+                Parameter(
+                    name = "target",
+                    type = ParameterType.STRING,
+                    description = "The link ID from browse_read, e.g. l3.",
+                    minLength = 1,
+                    pattern = "^l[0-9]{1,4}$"
+                ),
+                Parameter(
+                    name = "token",
+                    type = ParameterType.STRING,
+                    description = "The page token from browse_read.",
+                    minLength = 1,
+                    pattern = "^[0-9a-f]{16}$"
+                )
+            )
+        ),
+        Tool(
+            name = "browse_back",
+            description = "Go back one page in the internal browser history."
+        ),
+        Tool(
+            name = "browse_forward",
+            description = "Go forward one page in the internal browser history."
+        ),
+        Tool(
+            name = "browse_fill",
+            description = "Fill a form field from the latest browse_read result. The field ID and page token must come from that read; stale targets are rejected. Filling alone never submits the form.",
+            parameters = listOf(
+                Parameter(
+                    name = "field",
+                    type = ParameterType.STRING,
+                    description = "The field ID from browse_read, e.g. f2.",
+                    minLength = 1,
+                    pattern = "^f[0-9]{1,4}$"
+                ),
+                Parameter(
+                    name = "text",
+                    type = ParameterType.STRING,
+                    description = "The text to fill in, 1 to 500 characters.",
+                    minLength = 1
+                ),
+                Parameter(
+                    name = "token",
+                    type = ParameterType.STRING,
+                    description = "The page token from browse_read.",
+                    minLength = 1,
+                    pattern = "^[0-9a-f]{16}$"
+                )
+            )
+        ),
+        Tool(
+            name = "browse_submit",
+            description = "Submit the filled form on the current internal-browser page. The page token must come from the latest browse_read. Submissions need the user's approval bound to the final destination and form content; without it this reports what would be submitted and asks for approval instead of sending anything.",
+            parameters = listOf(Parameter(
+                name = "token",
+                type = ParameterType.STRING,
+                description = "The page token from browse_read.",
+                minLength = 1,
+                pattern = "^[0-9a-f]{16}$"
+            ))
+        ),
+        Tool(
+            name = "browse_handoff",
+            description = "Open the current internal-browser page in the phone's own browser app."
+        ),
+        Tool(
+            name = "browse_login",
+            description = "Fill the current page's login form with the password manager. Credentials are never shown to the model or written anywhere; only the outcome is reported. The page token must come from the latest browse_read.",
+            parameters = listOf(Parameter(
+                name = "token",
+                type = ParameterType.STRING,
+                description = "The page token from browse_read.",
+                minLength = 1,
+                pattern = "^[0-9a-f]{16}$"
+            ))
+        ),
         Tool(
             name = "screen_observe",
             description = "Look at the current phone screen and return a compact list of the visible interactive elements with IDs and an observation token. Call this before screen_tap, screen_scroll, or screen_type; element IDs and tokens expire when the screen changes."

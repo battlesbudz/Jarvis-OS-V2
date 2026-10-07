@@ -68,6 +68,10 @@
         </receiver>
         <service android:name=".assistant.JarvisInteractionSessionService" android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
+        <!-- M4: the internal browser's WebView host. Not exported: it is only
+             launched from inside the app for browse_* tool tasks. -->
+        <activity android:name=".actions.BrowserActivity" android:exported="false"
+            android:launchMode="singleTask" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

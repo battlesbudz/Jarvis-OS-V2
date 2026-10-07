@@ -79,6 +79,23 @@ internal object ActionRequestText {
             .matchEntire(text)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
     }
 
+    /**
+     * M4: "browse to example.com" / "look up example.com" — internal browser.
+     * Deliberately disjoint from websiteTarget's verbs so "open X" still
+     * hands off to the external browser app.
+     */
+    fun browseTarget(clause: String): String? {
+        val text = clause.trim()
+        return Regex("""(?i)^(?:browse\s+to|look\s+up)\s+(https?://\S+|\S*\.\S+.*)$""")
+            .matchEntire(text)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    /** M4: "read this page" / "what's on this page" / "summarize this page". */
+    fun browseReadRequest(clause: String): Boolean {
+        val text = clause.trim().lowercase()
+        return Regex("""^(?:read|what(?:'s| is) on|summari[sz]e)(?: this)? page$""").matches(text)
+    }
+
     /** Bounded natural-language forms for Android settings screens. Returns the screen key. */
     fun settingsScreen(clause: String): String? {
         val text = clause.lowercase().trim()

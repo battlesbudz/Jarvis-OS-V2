@@ -55,6 +55,8 @@ sealed interface ActionTurnPlan {
                 ActionRequestText.settingsScreen(clause) != null ||
                 ActionRequestText.websiteTarget(clause) != null ||
                 ActionRequestText.navigationTarget(clause) != null ||
+                ActionRequestText.browseTarget(clause) != null ||
+                ActionRequestText.browseReadRequest(clause) ||
                 ActionRequestText.screenObserveRequest(clause) ||
                 ActionRequestText.reminderRequest(clause, nowMs) != null ||
                 ActionRequestText.scheduleRequest(clause)
@@ -82,6 +84,10 @@ sealed interface ActionTurnPlan {
             // settings" and "open youtube.com" must not become open_app requests.
             ActionRequestText.settingsScreen(clause)?.let { return ActionRequest("open_settings", mapOf("screen" to it)) }
             ActionRequestText.websiteTarget(clause)?.let { return ActionRequest("open_website", mapOf("url" to it)) }
+            // M4: "browse to X" stays in the internal browser; "open X" hands
+            // off to the external browser app (checked just above).
+            ActionRequestText.browseTarget(clause)?.let { return ActionRequest("browse_open", mapOf("url" to it)) }
+            if (ActionRequestText.browseReadRequest(clause)) return ActionRequest("browse_read")
             ActionRequestText.appTarget(clause)?.let { return ActionRequest("open_app", mapOf("app" to it)) }
             val volume = Regex("""(?i)^(?:set|make|turn|adjust|change|raise|lower|increase|decrease)(?:\s+(?:the|my))?(?:\s+media)?\s+volume(?:\s+to)?\s+(.+)$""")
                 .matchEntire(clause)?.groupValues?.get(1)
