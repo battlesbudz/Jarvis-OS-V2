@@ -188,7 +188,15 @@ fun resolveSetupBindings(definition: WorkflowDefinition, values: Map<String, Str
             candidates = step.candidates.map { it.copy(arguments = it.arguments.mapValues { e -> resolve(e.value) }) })
         is WorkflowStep.Script -> step.copy(source = resolve(step.source))
     }
-    val resolved = definition.copy(steps = definition.steps.map(::resolveStep))
+    fun resolveTrigger(trigger: WorkflowTrigger): WorkflowTrigger = when (trigger) {
+        is WorkflowTrigger.Deadline -> trigger.copy(title = resolve(trigger.title))
+        else -> trigger
+    }
+    val resolved = definition.copy(
+        description = resolve(definition.description),
+        triggers = definition.triggers.map(::resolveTrigger),
+        steps = definition.steps.map(::resolveStep)
+    )
     require(missing.isEmpty()) { "Setup values still missing: ${missing.sorted().joinToString(", ")}" }
     return resolved
 }
@@ -209,11 +217,21 @@ data class WorkflowExport(val manifestJson: String, val preview: ExportPreview)
  *   auth, credential, …) → `{{setup:<key>}}`
  * - identifier keys (email, phone, account, username, …) → placeholder
  * - email-looking or URL-looking values → placeholder (private endpoints)
- * - string literals inside on-phone scripts that look like URLs or emails
- *   → placeholder
+ * - reminder message text and notification titles/bodies → placeholder
+ *   (personal content, regardless of value shape)
+ * - the workflow description and deadline-reminder titles → placeholder
+ * - location triggers: coordinates never survive — the trigger is removed
+ *   (the workflow keeps working; the importer adds their own trigger)
+ * - location waits: cannot be exported — coordinates must not survive and
+ *   a wait has no honest degraded form, so export refuses with guidance
+ * - string literals inside on-phone scripts that look like URLs, emails,
+ *   or secrets (secret-named variables, token-like strings) → placeholder
  *
+ * The same argument key with the same value reuses one binding; the same
+ * key with a different value gets a distinct binding (`api_key_2`, …).
  * Everything redacted becomes a [SetupBinding] the importer must fill in.
- * The preview lists exactly what is shared versus redacted.
+ * The preview exposes every retained value (post-redaction), not just
+ * categories and counts, so the exporter reviews exactly what is shared.
  */
 fun exportWorkflow(
     definition: WorkflowDefinition,
@@ -223,22 +241,43 @@ fun exportWorkflow(
 ): WorkflowExport {
     val redactions = mutableListOf<RedactionRecord>()
     val bindings = linkedMapOf<String, SetupBinding>()
+    val bindingValues = mutableMapOf<String, String>()
 
-    fun bind(name: String, description: String, sensitive: Boolean): String {
-        bindings.getOrPut(name) { SetupBinding(name, description, sensitive) }
-        return "{{setup:$name}}"
+    /**
+     * Register a setup binding for a redacted [value]. Same key + same
+     * value reuses the binding; same key + different value gets a distinct
+     * one, so the importer can fill each correctly.
+     */
+    fun bind(baseName: String, description: String, sensitive: Boolean, value: String): String {
+        var name = baseName
+        var n = 2
+        while (true) {
+            val seen = bindingValues[name]
+            if (seen == null) {
+                bindingValues[name] = value
+                bindings[name] = SetupBinding(name, description, sensitive)
+                return "{{setup:$name}}"
+            }
+            if (seen == value) return "{{setup:$name}}"
+            name = "${baseName}_$n"
+            n++
+        }
     }
 
     fun redactStep(step: WorkflowStep, path: String): WorkflowStep = when (step) {
         is WorkflowStep.Tool -> {
+            val personalKeys = PERSONAL_CONTENT_ARGS[step.request.name] ?: emptySet()
             val newArgs = step.request.arguments.mapValues { (k, v) ->
-                val r = redactExportValue(k, v)
+                val r = if (k in personalKeys && v.isNotBlank())
+                    ValueRedaction(bindingNameFor(k), sensitive = false)
+                else redactExportValue(k, v)
                 if (r != null) {
                     val field = "$path.arguments[$k]"
                     val placeholder = bind(
                         r.bindingName,
                         "Value for “$k” used by the “${step.request.name}” step — fill in after import.",
-                        r.sensitive
+                        r.sensitive,
+                        v
                     )
                     redactions += RedactionRecord(field, placeholder)
                     placeholder
@@ -250,7 +289,17 @@ fun exportWorkflow(
             thenSteps = step.thenSteps.mapIndexed { i, s -> redactStep(s, "$path.then[$i]") },
             elseSteps = step.elseSteps.mapIndexed { i, s -> redactStep(s, "$path.else[$i]") }
         )
-        is WorkflowStep.Wait -> step
+        is WorkflowStep.Wait -> {
+            val wait = step.wait
+            if (wait is WorkflowWait.Event && wait.kind == WorkflowEventKind.LOCATION) {
+                throw IllegalArgumentException(
+                    "Cannot export: $path waits for a saved location, and location " +
+                        "coordinates must not leave the device. A location wait has no " +
+                        "honest degraded form — remove it (or replace it) before exporting."
+                )
+            }
+            step
+        }
         is WorkflowStep.Adaptive -> step.copy(
             candidates = step.candidates.mapIndexed { i, c ->
                 c.copy(arguments = c.arguments.mapValues { (k, v) ->
@@ -260,7 +309,8 @@ fun exportWorkflow(
                         val placeholder = bind(
                             r.bindingName,
                             "Value for “$k” used by an adaptive candidate — fill in after import.",
-                            r.sensitive
+                            r.sensitive,
+                            v
                         )
                         redactions += RedactionRecord(field, placeholder)
                         placeholder
@@ -269,16 +319,64 @@ fun exportWorkflow(
             }
         )
         is WorkflowStep.Script -> {
-            val (newSource, scriptRecords) = redactScriptLiterals(step.source, "$path.script literal") { name, desc, sensitive ->
-                bind(name, desc, sensitive)
-            }
+            val (newSource, scriptRecords) = redactScriptLiterals(
+                step.source, "$path.script literal"
+            ) { name, desc, sensitive, value -> bind(name, desc, sensitive, value) }
             redactions += scriptRecords
             step.copy(source = newSource)
         }
     }
 
+    fun redactTrigger(trigger: WorkflowTrigger, path: String): WorkflowTrigger = when (trigger) {
+        is WorkflowTrigger.OnLocation -> {
+            // Coordinates never survive export. The trigger is removed (the
+            // workflow still runs); the importer adds their own location.
+            val placeholder = bind(
+                "location_trigger",
+                "This workflow fired when entering a saved location; the coordinates " +
+                    "were removed for privacy. Add your own location trigger after import.",
+                sensitive = false,
+                value = "${trigger.latitude},${trigger.longitude},${trigger.radiusMeters}"
+            )
+            redactions += RedactionRecord("$path (on_location)", placeholder)
+            WorkflowTrigger.Manual
+        }
+        is WorkflowTrigger.Deadline -> {
+            if (trigger.title.isBlank()) trigger
+            else {
+                val placeholder = bind(
+                    "deadline_title",
+                    "Title of an automatic deadline reminder — fill in after import.",
+                    sensitive = false,
+                    value = trigger.title
+                )
+                redactions += RedactionRecord("$path.title", placeholder)
+                trigger.copy(title = placeholder)
+            }
+        }
+        else -> trigger
+    }
+
     val redactedSteps = definition.steps.mapIndexed { i, s -> redactStep(s, "steps[$i]") }
-    val redactedDef = definition.copy(steps = redactedSteps, enabled = false)
+    val redactedTriggers = definition.triggers.mapIndexed { i, t -> redactTrigger(t, "triggers[$i]") }
+    // The description is personal content: it never survives export.
+    val descriptionPlaceholder = if (definition.description.isBlank()) definition.description
+    else {
+        val placeholder = bind(
+            "description",
+            "The workflow's description — fill in after import.",
+            sensitive = false,
+            value = definition.description
+        )
+        redactions += RedactionRecord("description", placeholder)
+        placeholder
+    }
+    val redactedDef = definition.copy(
+        steps = redactedSteps,
+        triggers = redactedTriggers,
+        description = descriptionPlaceholder,
+        enabled = false
+    )
 
     val toolNames = collectManifestToolNames(redactedSteps).distinct()
     val scopes = toolNames.flatMap { ToolSourcePolicy.requiredScopes(it) }.distinct().sorted()
@@ -298,15 +396,68 @@ fun exportWorkflow(
         provenance = ManifestProvenance(author, source, nowMs),
         documentation = ""
     )
+    // The preview exposes every retained value post-redaction — not just
+    // categories and counts — so the exporter reviews exactly what is shared.
     val shared = buildList {
         add("workflow “${definition.name}” (${redactedSteps.size} top-level step(s))")
-        add("triggers: ${definition.triggers.size}")
+        if (definition.description.isBlank()) add("description: (none)")
+        else add("description: [redacted — see setup bindings]")
+        add("triggers:")
+        redactedTriggers.forEach { add("  - ${describeExportTrigger(it)}") }
+        add("steps:")
+        redactedSteps.forEachIndexed { i, s -> addAll(describeExportStep(s, "steps[$i]", "  - ")) }
         add("tools: ${toolNames.joinToString(", ")}")
         if (scopes.isNotEmpty()) add("scopes: ${scopes.joinToString(", ")}")
         if (scriptSteps.isNotEmpty()) add("${scriptSteps.size} on-phone script(s)")
-        add("provenance.author as “$author”")
+        add("provenance: author “$author”, source “$source”")
+        if (bindings.isNotEmpty())
+            add("setup bindings needed: ${bindings.keys.joinToString(", ")}")
     }
     return WorkflowExport(manifest.toJson(), ExportPreview(shared, redactions.toList()))
+}
+
+/** Tool arguments whose values are always personal content, whatever their shape. */
+private val PERSONAL_CONTENT_ARGS = mapOf(
+    "create_reminder" to setOf("message"),
+    "post_notification" to setOf("title", "text")
+)
+
+private fun describeExportTrigger(trigger: WorkflowTrigger): String = when (trigger) {
+    is WorkflowTrigger.Manual -> "manual (when you ask in chat)"
+    is WorkflowTrigger.Reminder -> "reminder at ${trigger.atMs}"
+    is WorkflowTrigger.Daily -> "daily at %02d:%02d".format(trigger.hour, trigger.minute)
+    is WorkflowTrigger.Window -> "once in window ${trigger.earliestMs}..${trigger.latestMs}"
+    is WorkflowTrigger.OnNotification -> "when ${trigger.appKey} posts a notification"
+    is WorkflowTrigger.OnLocation -> "when arriving near the saved location"
+    is WorkflowTrigger.Deadline -> "automatic reminder: ${trigger.title}"
+}
+
+private fun describeExportStep(step: WorkflowStep, path: String, indent: String): List<String> =
+    when (step) {
+        is WorkflowStep.Tool -> {
+            val args = step.request.arguments.entries.joinToString(", ") { (k, v) -> "$k=\"$v\"" }
+            listOf("$indent$path: tool ${step.request.name}($args)")
+        }
+        is WorkflowStep.Branch -> listOf("$indent$path: branch") +
+            step.thenSteps.flatMapIndexed { i, s -> describeExportStep(s, "$path.then[$i]", "$indent  ") } +
+            step.elseSteps.flatMapIndexed { i, s -> describeExportStep(s, "$path.else[$i]", "$indent  ") }
+        is WorkflowStep.Wait -> listOf("$indent$path: wait ${describeExportWait(step.wait)}")
+        is WorkflowStep.Adaptive -> listOf("$indent$path: adaptive “${step.goal}”") +
+            step.candidates.flatMapIndexed { i, c ->
+                val args = c.arguments.entries.joinToString(", ") { (k, v) -> "$k=\"$v\"" }
+                listOf("$indent  $path.candidates[$i]: ${c.name}($args)")
+            }
+        is WorkflowStep.Script -> listOf("$indent$path: script") +
+            step.source.lines().map { "$indent    $it" }
+    }
+
+private fun describeExportWait(wait: WorkflowWait): String = when (wait) {
+    is WorkflowWait.Timer -> "timer ${wait.durationMs}ms"
+    is WorkflowWait.UntilTime -> "until ${wait.epochMs}"
+    is WorkflowWait.Event -> when (wait.kind) {
+        WorkflowEventKind.NOTIFICATION -> "notification from ${wait.appKey}"
+        WorkflowEventKind.LOCATION -> "arriving near the saved location"
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -343,14 +494,17 @@ internal fun redactExportValue(argKey: String, value: String): ValueRedaction? {
 }
 
 /**
- * Redact URL/email-looking string literals inside a script source, in one
- * pass. [bind] registers each binding and returns its `{{setup:name}}`
- * placeholder. Returns the rewritten source and the redaction records.
+ * Redact sensitive string literals inside a script source, in one pass:
+ * URL/email-looking literals, literals assigned to secret-named variables,
+ * and token-looking literals. [bind] registers each binding (getting the
+ * literal's value for distinct-value dedup) and returns its
+ * `{{setup:name}}` placeholder. Returns the rewritten source and the
+ * redaction records.
  */
 private fun redactScriptLiterals(
     source: String,
     fieldPrefix: String,
-    bind: (name: String, description: String, sensitive: Boolean) -> String
+    bind: (name: String, description: String, sensitive: Boolean, value: String) -> String
 ): Pair<String, List<RedactionRecord>> {
     val out = StringBuilder()
     val records = mutableListOf<RedactionRecord>()
@@ -360,14 +514,21 @@ private fun redactScriptLiterals(
         if (source[i] == '"') {
             val end = scanStringLiteral(source, i)
             val literal = unescapeLiteral(source.substring(i + 1, end - 1))
-            val needs = EMAIL_LIKE.matches(literal) ||
-                literal.startsWith("http://") || literal.startsWith("https://")
+            val varName = assignmentTargetBefore(source, i)
+            val secretByName = varName != null && SECRET_VAR_HINTS.any { it in varName.lowercase() }
+            val tokenLike = looksLikeSecretLiteral(literal)
+            val needs = literal.isNotEmpty() && (
+                EMAIL_LIKE.matches(literal) ||
+                    literal.startsWith("http://") || literal.startsWith("https://") ||
+                    secretByName || tokenLike
+                )
             if (needs) {
                 n++
                 val placeholder = bind(
                     "script_literal_$n",
                     "Redacted text inside an on-phone script — fill in after import.",
-                    '@' in literal
+                    secretByName || tokenLike || '@' in literal,
+                    literal
                 )
                 records += RedactionRecord("$fieldPrefix #$n", placeholder)
                 out.append("\"$placeholder\"")
@@ -376,6 +537,29 @@ private fun redactScriptLiterals(
         } else { out.append(source[i]); i++ }
     }
     return out.toString() to records
+}
+
+/**
+ * Heuristic for a secret-looking string literal: long, no spaces, mixed
+ * character classes — the shape of an API key or token. Short words and
+ * sentences are never flagged.
+ */
+private fun looksLikeSecretLiteral(literal: String): Boolean {
+    if (literal.length < 12 || literal.contains(' ')) return false
+    val classes = listOf(
+        literal.any { it.isLowerCase() },
+        literal.any { it.isUpperCase() },
+        literal.any { it.isDigit() },
+        literal.any { !it.isLetterOrDigit() }
+    ).count { it }
+    return classes >= 3 || (literal.length >= 24 && classes >= 2)
+}
+
+/** The variable name a string literal is assigned to (`let name = "..."`), if any. */
+private fun assignmentTargetBefore(source: String, literalStart: Int): String? {
+    val before = source.substring(0, literalStart)
+    return Regex("""(?:let\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*$""")
+        .find(before)?.groupValues?.get(1)
 }
 
 private fun scanStringLiteral(source: String, open: Int): Int {

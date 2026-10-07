@@ -164,29 +164,40 @@ class M5WorkflowsTest {
             volumeStep("20")
         ))
         val export = exportWorkflow(def, author = "tester", nowMs = nowMs)
-        // No secret survives in the shared JSON.
+        // No secret survives in the shared JSON — neither the email nor the
+        // workflow description.
         assertFalse(export.manifestJson.contains("user@example.com"))
+        assertFalse(export.manifestJson.contains("A test routine."))
         assertTrue(export.manifestJson.contains("{{setup:app}}"))
-        // The binding is listed for the importer to fill in.
+        assertTrue(export.manifestJson.contains("{{setup:description}}"))
+        // The bindings are listed for the importer to fill in.
         val binding = export.preview.redacted.single { it.binding == "{{setup:app}}" }
         assertTrue(binding.field.contains("arguments[app]"))
+        assertTrue(export.preview.redacted.any { it.binding == "{{setup:description}}" })
         // Preview shows shared vs redacted.
         assertTrue(export.preview.shared.any { it.contains("open_app") })
-        assertEquals(1, export.preview.redacted.size)
+        assertEquals(2, export.preview.redacted.size)
         // The exported manifest parses and still validates.
         val parsed = parseWorkflowManifest(export.manifestJson)
-        assertEquals(1, parsed.setupBindings.size)
-        assertEquals("app", parsed.setupBindings[0].name)
-        assertFalse(parsed.setupBindings[0].sensitive) // email: redacted, but not a secret
+        assertEquals(2, parsed.setupBindings.size)
+        assertEquals("app", parsed.setupBindings.single { it.name == "app" }.name)
+        assertFalse(parsed.setupBindings.single { it.name == "app" }.sensitive) // email: redacted, but not a secret
+        // Bindings round-trip through the resolver.
+        val resolved = resolveSetupBindings(parsed.workflow,
+            mapOf("app" to secretEmail, "description" to "A test routine."))
+        assertEquals("A test routine.", resolved.description)
+        assertEquals(secretEmail, (resolved.steps[0] as WorkflowStep.Tool).request.arguments["app"])
     }
 
     @Test fun exportLeavesOrdinaryValuesAlone() {
         val def = definition(steps = listOf(volumeStep("20")))
         val export = exportWorkflow(def, author = "tester", nowMs = nowMs)
-        assertTrue(export.preview.redacted.isEmpty())
+        // Only the personal description is redacted; ordinary arguments survive.
+        assertEquals(listOf("{{setup:description}}"), export.preview.redacted.map { it.binding })
         assertTrue(export.manifestJson.contains("\"level\":\"20\""))
+        assertTrue(export.preview.shared.any { it.contains("set_volume") && it.contains("level=\"20\"") })
         val parsed = parseWorkflowManifest(export.manifestJson)
-        assertTrue(parsed.setupBindings.isEmpty())
+        assertEquals(listOf("description"), parsed.setupBindings.map { it.name })
     }
 
     @Test fun exportRedactsSecretsInsideScriptSource() {
@@ -197,6 +208,157 @@ class M5WorkflowsTest {
         assertFalse(export.manifestJson.contains("hooks.example.com"))
         assertTrue(export.manifestJson.contains("{{setup:script_literal_1}}"))
         assertTrue(export.preview.redacted.any { it.field.contains("script literal") })
+    }
+
+    @Test fun exportRedactsReminderMessageText() {
+        val message = "Call mom about Sunday dinner"
+        val def = definition(steps = listOf(
+            WorkflowStep.Tool(uid(), ActionRequest("create_reminder",
+                mapOf("message" to message, "at_ms" to "1791230400000")))
+        ))
+        val export = exportWorkflow(def, author = "tester", nowMs = nowMs)
+        assertFalse("reminder text must not survive, got: ${export.manifestJson}",
+            export.manifestJson.contains(message))
+        assertTrue(export.manifestJson.contains("{{setup:message}}"))
+        // The trigger time is not personal content: it survives.
+        assertTrue(export.manifestJson.contains("1791230400000"))
+        assertTrue(export.preview.redacted.any { it.binding == "{{setup:message}}" })
+    }
+
+    @Test fun exportRedactsNotificationTitleAndBody() {
+        val title = "Dinner plans"
+        val body = "Pick up milk on the way home"
+        val def = definition(steps = listOf(
+            WorkflowStep.Tool(uid(), ActionRequest("post_notification",
+                mapOf("title" to title, "text" to body)))
+        ))
+        val export = exportWorkflow(def, author = "tester", nowMs = nowMs)
+        assertFalse(export.manifestJson.contains(title))
+        assertFalse(export.manifestJson.contains(body))
+        assertTrue(export.manifestJson.contains("{{setup:title}}"))
+        assertTrue(export.manifestJson.contains("{{setup:text}}"))
+    }
+
+    @Test fun exportRemovesLocationTriggerCoordinates() {
+        val def = definition(
+            steps = listOf(batteryStep()),
+            triggers = listOf(
+                WorkflowTrigger.Manual,
+                WorkflowTrigger.OnLocation(40.7128, -74.0060, 100.0)
+            )
+        )
+        val export = exportWorkflow(def, author = "tester", nowMs = nowMs)
+        assertFalse(export.manifestJson.contains("40.7128"))
+        assertFalse(export.manifestJson.contains("-74.006"))
+        assertTrue(export.preview.redacted.any { it.field.contains("on_location") })
+        assertTrue(export.preview.redacted.any { it.binding == "{{setup:location_trigger}}" })
+        // The exported manifest still parses and validates: the location
+        // trigger became a manual one.
+        val parsed = parseWorkflowManifest(export.manifestJson)
+        assertEquals(
+            listOf(WorkflowTrigger.Manual, WorkflowTrigger.Manual),
+            parsed.workflow.triggers
+        )
+    }
+
+    @Test fun exportRefusesLocationWait() {
+        val def = definition(steps = listOf(
+            WorkflowStep.Wait(uid(), WorkflowWait.Event(WorkflowEventKind.LOCATION,
+                latitude = 40.7128, longitude = -74.0060, radiusMeters = 100.0))
+        ))
+        try {
+            exportWorkflow(def, author = "tester", nowMs = nowMs)
+            fail("location waits must refuse export")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("location"))
+        }
+    }
+
+    @Test fun exportRedactsSecretScriptLiterals() {
+        val secretVar = "sk-live-abc123"
+        val tokenLike = "aB3xY9qW2eRt5uI8oP0lKjH7"
+        val source = "let api_key = \"$secretVar\";\n" +
+            "let t = \"$tokenLike\";\n" +
+            "let note = \"hello\";\n" +
+            "log(note);"
+        val def = definition(steps = listOf(WorkflowStep.Script(uid(), source, emptyList())))
+        val export = exportWorkflow(def, author = "tester", nowMs = nowMs)
+        assertFalse(export.manifestJson.contains(secretVar))
+        assertFalse(export.manifestJson.contains(tokenLike))
+        // Ordinary literals survive.
+        assertTrue(export.manifestJson.contains("hello"))
+        assertTrue(export.preview.redacted.count { it.field.contains("script literal") } == 2)
+        // Secret script bindings are marked sensitive.
+        val parsed = parseWorkflowManifest(export.manifestJson)
+        assertTrue(parsed.setupBindings.filter { it.name.startsWith("script_literal") }
+            .all { it.sensitive })
+    }
+
+    @Test fun exportDistinctBindingsForDistinctValuesSharingAKey() {
+        val def = definition(steps = listOf(
+            WorkflowStep.Tool(uid(), ActionRequest("open_website", mapOf("url" to "https://a.example/x"))),
+            WorkflowStep.Tool(uid(), ActionRequest("open_website", mapOf("url" to "https://b.example/y")))
+        ))
+        val export = exportWorkflow(def, author = "tester", nowMs = nowMs)
+        assertFalse(export.manifestJson.contains("a.example"))
+        assertFalse(export.manifestJson.contains("b.example"))
+        assertTrue(export.manifestJson.contains("{{setup:url}}"))
+        assertTrue(export.manifestJson.contains("{{setup:url_2}}"))
+        val parsed = parseWorkflowManifest(export.manifestJson)
+        val names = parsed.setupBindings.map { it.name }
+        assertTrue(names.contains("url"))
+        assertTrue(names.contains("url_2"))
+        // Same key + same value reuses one binding.
+        val def2 = definition(steps = listOf(
+            WorkflowStep.Tool(uid(), ActionRequest("open_website", mapOf("url" to "https://a.example/x"))),
+            WorkflowStep.Tool(uid(), ActionRequest("open_website", mapOf("url" to "https://a.example/x")))
+        ))
+        val export2 = exportWorkflow(def2, author = "tester", nowMs = nowMs)
+        val names2 = parseWorkflowManifest(export2.manifestJson).setupBindings.map { it.name }
+        assertEquals(listOf("url", "description").sorted(), names2.sorted())
+    }
+
+    @Test fun exportPreviewExposesAllRetainedContent() {
+        val scriptSource = "log(\"hi\");\nreturn 1;"
+        val def = definition(
+            steps = listOf(
+                WorkflowStep.Tool(uid(), ActionRequest("set_volume", mapOf("level" to "20"))),
+                WorkflowStep.Script(uid(), scriptSource, listOf("log"))
+            ),
+            triggers = listOf(WorkflowTrigger.Daily(8, 30), WorkflowTrigger.Manual)
+        )
+        val export = exportWorkflow(def, author = "tester", nowMs = nowMs)
+        val shared = export.preview.shared.joinToString("\n")
+        // Every retained value is exposed, not just categories and counts.
+        assertTrue(shared.contains("set_volume"))
+        assertTrue(shared.contains("level=\"20\""))
+        assertTrue(shared.contains("daily at 08:30"))
+        assertTrue(shared.contains("manual"))
+        assertTrue(shared.contains("log(\"hi\");"))
+        assertTrue(shared.contains("return 1;"))
+        assertTrue(shared.contains("description: [redacted"))
+        assertTrue(shared.contains("setup bindings needed:"))
+        // The redacted list names each field and its binding.
+        assertTrue(export.preview.redacted.any { it.field == "description" })
+    }
+
+    @Test fun resolveSetupBindingsFillsDescriptionAndDeadlineTitle() {
+        val def = definition(
+            steps = listOf(batteryStep()),
+            triggers = listOf(WorkflowTrigger.Deadline(1_800_000_000_000L, "Dentist appointment"))
+        )
+        val export = exportWorkflow(def, author = "tester", nowMs = nowMs)
+        assertTrue(export.manifestJson.contains("{{setup:deadline_title}}"))
+        val parsed = parseWorkflowManifest(export.manifestJson)
+        val resolved = resolveSetupBindings(parsed.workflow, mapOf(
+            "description" to "My routine",
+            "deadline_title" to "Dentist"
+        ))
+        assertEquals("My routine", resolved.description)
+        assertEquals(
+            WorkflowTrigger.Deadline(1_800_000_000_000L, "Dentist"),
+            resolved.triggers.single()
+        )
     }
 
     // -- Import --------

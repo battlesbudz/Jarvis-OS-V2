@@ -4810,6 +4810,50 @@ class ReleaseJourneyTest {
         assertTrue(denied is ScriptExecution.Failed)
     }
 
+    @Test fun test79_workflowExportSanitizesPersonalContent() {
+        // M5 acceptance on Android: export redacts reminder text, the
+        // description and location coordinates; the preview exposes every
+        // retained value; repeated keys with distinct values get distinct
+        // bindings.
+        val message = "Call mom about Sunday dinner"
+        val definition = WorkflowDefinition(
+            id = "wf-export",
+            name = "Export journey",
+            description = "My private routine",
+            steps = listOf(
+                WorkflowStep.Tool("t1", ActionRequest("create_reminder",
+                    mapOf("message" to message, "at_ms" to "1791230400000"))),
+                WorkflowStep.Tool("t2", ActionRequest("open_website",
+                    mapOf("url" to "https://a.example/x"))),
+                WorkflowStep.Tool("t3", ActionRequest("open_website",
+                    mapOf("url" to "https://b.example/y")))
+            ),
+            triggers = listOf(
+                WorkflowTrigger.Manual,
+                WorkflowTrigger.OnLocation(40.7128, -74.0060, 100.0)
+            ),
+            origin = WorkflowOrigin.CONVERSATION,
+            createdAtMs = 1_700_000_000_000L,
+            updatedAtMs = 1_700_000_000_000L
+        )
+        val export = exportWorkflow(definition, author = "tester", nowMs = 1_700_000_000_000L)
+        assertFalse(export.manifestJson.contains(message))
+        assertFalse(export.manifestJson.contains("My private routine"))
+        assertFalse(export.manifestJson.contains("40.7128"))
+        assertTrue(export.manifestJson.contains("{{setup:message}}"))
+        assertTrue(export.manifestJson.contains("{{setup:url}}"))
+        assertTrue(export.manifestJson.contains("{{setup:url_2}}"))
+        assertTrue(export.manifestJson.contains("{{setup:location_trigger}}"))
+        val shared = export.preview.shared.joinToString("\n")
+        assertTrue(shared.contains("create_reminder"))
+        assertTrue(shared.contains("message=\"{{setup:message}}\""))
+        assertTrue(shared.contains("manual (when you ask in chat)"))
+        // The exported manifest still parses and validates on device.
+        val parsed = parseWorkflowManifest(export.manifestJson)
+        assertTrue(parsed.setupBindings.map { it.name }.containsAll(
+            listOf("message", "url", "url_2", "description", "location_trigger")))
+    }
+
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()
         enterText(By.res("model_search"), "Gemma-4-E4B-it")
