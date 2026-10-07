@@ -177,7 +177,7 @@ class M5WorkflowsTest {
         val parsed = parseWorkflowManifest(export.manifestJson)
         assertEquals(1, parsed.setupBindings.size)
         assertEquals("app", parsed.setupBindings[0].name)
-        assertTrue(parsed.setupBindings[0].sensitive)
+        assertFalse(parsed.setupBindings[0].sensitive) // email: redacted, but not a secret
     }
 
     @Test fun exportLeavesOrdinaryValuesAlone() {
