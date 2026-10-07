@@ -2810,6 +2810,18 @@ class ReleaseJourneyTest {
             AtomicInteger(), requireSafeTapBounds = false, holdTextDiscovery = holdDiscovery)
     }
 
+    /** Whole-tree poll without scrolling: lets slow APIs propagate new nodes after a tap before any swipe. */
+    private fun benchmarkPollSettled(selector: BySelector, timeoutMs: Long): UiObject2? = observeBenchmarkNavigation {
+        val deadline = SystemClock.uptimeMillis() + timeoutMs
+        while (SystemClock.uptimeMillis() < deadline) {
+            val found = benchmarkFindNavigationObject(selector)
+            if (found != null) return@observeBenchmarkNavigation found
+            SystemClock.sleep(200)
+        }
+        android.util.Log.i("JarvisVerification", "benchmark_poll_settled_timeout selector=$selector")
+        null
+    }
+
     private fun benchmarkClickEnabled(selector: BySelector, towardTop: Boolean = false, inDialog: Boolean = false,
         holdDiscovery: Boolean = false, sparseHeldDiscovery: Boolean = false) {
         val deadline = SystemClock.uptimeMillis() + 15_000
@@ -2970,7 +2982,13 @@ class ReleaseJourneyTest {
             assertEquals(PipelineBenchmarkOutcome.CANCELLED, restored.samples.value.single { it.turnId == cancelledId }.outcome)
             render(restored)
             benchmarkClickEnabled(By.res("pipeline_benchmark_sample_$completedId"))
-            assertFalse(benchmarkScrollTo(By.res("pipeline_benchmark_reference")).isEnabled)
+            // The restored card expands asynchronously after the tap; on slow APIs its
+            // accessibility nodes propagate after the first lookup. Poll the whole tree
+            // without scrolling before the scroll search, so a too-early first lookup
+            // cannot send the scroller past the target. Falls back to the scroll search.
+            val restoredReference = benchmarkPollSettled(By.res("pipeline_benchmark_reference"), 10_000)
+                ?: benchmarkScrollTo(By.res("pipeline_benchmark_reference"))
+            assertFalse(restoredReference.isEnabled)
             captureEvidence("pipeline_benchmark_restored_redacted_scores")
             benchmarkClickEnabled(By.res("pipeline_benchmark_reset"), towardTop = true)
             benchmarkClickEnabled(By.res("pipeline_benchmark_reset_confirm"), inDialog = true)
