@@ -32,6 +32,8 @@ class VoiceCallService : Service() {
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "jarvis:voice-call")
             .apply { acquire() }
         monitor = MicrophoneInterruptionMonitor(applicationContext, runtime::onMicrophoneInterruption)
+        // Slice 1 video hook: start the camera companion service. Audio path untouched.
+        VideoCallService.start(this)
     }
 
     private fun notification(): Notification {
