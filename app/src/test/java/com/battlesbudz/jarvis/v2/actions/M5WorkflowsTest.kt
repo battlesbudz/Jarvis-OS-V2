@@ -295,27 +295,30 @@ class M5WorkflowsTest {
     }
 
     @Test fun exportDistinctBindingsForDistinctValuesSharingAKey() {
+        // Note: open_website is not routine-eligible (Jerry's hardening), so this
+        // test uses post_notification, a routine-eligible tool with personal-content
+        // args that are always redacted into setup bindings.
         val def = definition(steps = listOf(
-            WorkflowStep.Tool(uid(), ActionRequest("open_website", mapOf("url" to "https://a.example/x"))),
-            WorkflowStep.Tool(uid(), ActionRequest("open_website", mapOf("url" to "https://b.example/y")))
+            WorkflowStep.Tool(uid(), ActionRequest("post_notification", mapOf("title" to "Hello A", "text" to "Body A"))),
+            WorkflowStep.Tool(uid(), ActionRequest("post_notification", mapOf("title" to "Hello B", "text" to "Body B")))
         ))
         val export = exportWorkflow(def, author = "tester", nowMs = nowMs)
-        assertFalse(export.manifestJson.contains("a.example"))
-        assertFalse(export.manifestJson.contains("b.example"))
-        assertTrue(export.manifestJson.contains("{{setup:url}}"))
-        assertTrue(export.manifestJson.contains("{{setup:url_2}}"))
+        assertFalse(export.manifestJson.contains("Hello A"))
+        assertFalse(export.manifestJson.contains("Hello B"))
+        assertTrue(export.manifestJson.contains("{{setup:title}}"))
+        assertTrue(export.manifestJson.contains("{{setup:title_2}}"))
         val parsed = parseWorkflowManifest(export.manifestJson)
         val names = parsed.setupBindings.map { it.name }
-        assertTrue(names.contains("url"))
-        assertTrue(names.contains("url_2"))
+        assertTrue(names.contains("title"))
+        assertTrue(names.contains("title_2"))
         // Same key + same value reuses one binding.
         val def2 = definition(steps = listOf(
-            WorkflowStep.Tool(uid(), ActionRequest("open_website", mapOf("url" to "https://a.example/x"))),
-            WorkflowStep.Tool(uid(), ActionRequest("open_website", mapOf("url" to "https://a.example/x")))
+            WorkflowStep.Tool(uid(), ActionRequest("post_notification", mapOf("title" to "Hello A", "text" to "Body A"))),
+            WorkflowStep.Tool(uid(), ActionRequest("post_notification", mapOf("title" to "Hello A", "text" to "Body A")))
         ))
         val export2 = exportWorkflow(def2, author = "tester", nowMs = nowMs)
         val names2 = parseWorkflowManifest(export2.manifestJson).setupBindings.map { it.name }
-        assertEquals(listOf("url", "description").sorted(), names2.sorted())
+        assertEquals(listOf("title", "text", "description").sorted(), names2.sorted())
     }
 
     @Test fun exportPreviewExposesAllRetainedContent() {
