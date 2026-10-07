@@ -17,6 +17,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- M2 workflow scheduling: exact alarms are optional and checked honestly at schedule time. -->
@@ -52,7 +53,14 @@
             android:foregroundServiceType="microphone|mediaPlayback" />
         <!-- Slice 1: camera companion for video calls. Never touches audio. -->
         <service android:name=".voice.VideoCallService" android:exported="false"
-            android:foregroundServiceType="camera" />
+            android:foregroundServiceType="camera|specialUse">
+            <!-- Degraded path: when the camera permission is denied the service
+                 cannot use the camera FGS type (SecurityException on API 34+),
+                 so it runs as specialUse instead: Stop keeps working and the
+                 call continues audio-only. See VideoCallService.onCreate. -->
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Call video companion stays alive so Stop works when the camera permission is denied; the call continues audio-only." />
+        </service>
         <service android:name=".assistant.JarvisInteractionService" android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION">
             <intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter>

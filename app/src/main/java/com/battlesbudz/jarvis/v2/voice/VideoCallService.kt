@@ -47,9 +47,16 @@ class VideoCallService : LifecycleService() {
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL, "Video", NotificationManager.IMPORTANCE_LOW)
         )
+        // The camera FGS type requires the CAMERA runtime permission on API 34+
+        // (targetSdk 35): starting it without the grant throws SecurityException
+        // out of onCreate and kills the whole process. When denied, fall back to
+        // the specialUse type declared in the manifest, so the service still runs
+        // (Stop keeps working) and the call degrades to audio-only.
+        val cameraGranted = CameraPermission.isGranted(this)
         startForeground(
             NOTIFICATION_ID, notification(),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA,
+            if (cameraGranted) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+            else ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
         )
 
         // Fail-safe: a dead voice call must never leave the camera running.
@@ -59,9 +66,8 @@ class VideoCallService : LifecycleService() {
             }
         }
 
-        val granted = CameraPermission.isGranted(this)
-        controller.start(granted)
-        if (!granted) {
+        controller.start(cameraGranted)
+        if (!cameraGranted) {
             status = "Camera unavailable — grant permission to enable video"
             notifyChanged()
         }
