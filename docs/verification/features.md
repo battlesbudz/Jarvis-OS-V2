@@ -1,5 +1,25 @@
 # Feature and acceptance map
 
+## Hosted streaming compiler checkpoint — October 6, 2026
+
+[Build 1117](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37538648794)
+tested head `139b640fac74c9ec7c5735b3ae24eb33aa62acfa`, PR merge
+`e038cb829a930d270ac501b44245c4bd3c32498a`. The reviewed ARM64 SDK compiled
+and packaged successfully: all nine SDK libraries passed the 16 KB ELF audit,
+the normal owner JNI exposed the six required methods, and its recursive
+dependency closure had no unresolved non-system libraries. The resulting AAR's
+recorded SHA-256 is `0eb94821a6a666252531b74ceb53ef7c1ff0fee4f4e845c595f1484134e8bba6`.
+
+The later Linux quality-probe build exhausted its 2,700-second compiler budget
+with one compiler job. This was not a model-quality result: full-E2B execution,
+signed APK assembly and all Android device/release gates were skipped. The
+retained timeout receipt and source snapshot prove the timeout; the original
+exporter omitted compiler output, so they do not prove whether it was still
+making progress. The scoped retry retains the same compiler/model time limits,
+admits two compiler jobs only after observed CPU/RAM checks, and retains bounded
+compiler-only diagnostics with checked process cleanup. It is a candidate
+repair until the exact revised hosted build passes.
+
 ## Native incremental E2B audio candidate — October 6, 2026
 
 Implementation candidate, not yet an Android-verified feature. The ordinary

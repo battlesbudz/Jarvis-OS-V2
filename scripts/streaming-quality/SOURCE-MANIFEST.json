@@ -10,8 +10,8 @@
       "sha256": "b0fdf259ec69b820c81a45ae1a62d1e2ce3cf7a676887e25e785dc8fd3475221"
     },
     "build_probes.py": {
-      "bytes": 7698,
-      "sha256": "c9e0290c193eafac2c16b51f56fd9baf9b6a86c34b263d3f7aad90df14ae2bc2"
+      "bytes": 22494,
+      "sha256": "7ed415b26bddfd9a10340042d6fa2f36718ae312ea11745ec4ce48bd71bfc3bb"
     },
     "common.py": {
       "bytes": 4816,
@@ -92,6 +92,10 @@
     "run_quality.py": {
       "bytes": 12801,
       "sha256": "ca546df5509cd7004fd8665e67385b67a286d852fb452ad2c924102bdc05ac21"
+    },
+    "test_build_supervisor.py": {
+      "bytes": 12774,
+      "sha256": "3a25316faac54f51676570546d794d0c3c3b4ce2a398eab2cb140362443b859c"
     },
     "test_quality.py": {
       "bytes": 16309,
