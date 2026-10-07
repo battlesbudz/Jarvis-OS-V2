@@ -1,5 +1,67 @@
 # Feature and acceptance map
 
+## Hosted full-E2B context and resource control — 7 October 2026
+
+The selected CPU prefill128 graph has a fixed local-attention update width639,
+which cannot fit the old context512. Context640 is the smallest128-aligned
+control and adds1.125MiB to one int8 KV-input bank. Sparse pinned graph/source
+inspection and the retained context640 projected-only run establish that narrow
+cause; they do not prove long-context or Android/GPU behavior.
+
+The earlier local projected control consumed all77 reference rows exactly and
+completed the read-only transcription in19.764s, peaking near3.37GiB RSS and
+4.70GiB address space. Its matched raw control failed the3.5GiB RSS watchdog.
+The original4GiB mapping failure and both later resource-failure receipts remain
+retained. A matched4GiB-RSS local pair is prepared but has not run because its
+6GiB admission threshold was not met. No passing pair or hosted result is claimed.
+
+The hosted control gives only the hash-bound full-E2B Conversation probe a
+fixed6GiB address-space/4GiB aggregate-tree RSS/6GiB effective host+cgroup
+admission profile. Both fresh lanes use context640 and identical limits, keeping
+one CPU,240s wall/239s-soft240s-hard CPU,128MiB file cap,1GiB live reserve,
+max64 output and no persistent model cache. Existing prerequisite, compiler,
+diagnostic and workflow limits remain unchanged. PID-identity/subreaper cleanup
+covers escaped descendants; persistent uncertainty blocks all later model work.
+Model output is kept separate from compiler diagnostics.
+
+Acceptance remains fail closed: pinned encoder reference hash, original/streamed
+and EOA byte gates, exact raw/projected identity/response/count checks, the public
+semantic reference and checked drain/delete are unchanged. Tiny synthetic-process
+checks cover resource refusal, whole-tree RSS, escaped children, cancellation,
+CPU/file limits, cleanup exceptions and receipt failures. They are not a native
+probe rebuild, model inference, Android validation or verified release. The exact
+hosted candidate and full release gates remain pending exact-candidate execution.
+
+
+## Encoder diagnostic capture evidence — 7 October 2026
+
+Build 1158 completed the host probe compiler and repeated the same historical
+projected-tensor hash mismatch. Its optional runtime capsule collector failed
+after about four seconds with positive process cleanup, but the private child
+log was outside the evidence allowlist. The available receipt does not establish
+whether its tests, preflight or metadata collection failed. The strict encoder
+and full-model quality acceptance predicates remain unchanged.
+
+The diagnostic guard now writes a bounded public status before preflight and
+records fixed phase/error codes, reviewed source module/line, exact producer
+identity, child exit, resource outcome and checked cleanup. It never exports raw
+exception text, arguments, paths or private logs. The explicit evidence exporter
+retains that strict 8 KiB schema; final release binding requires the same quality
+producer and complete verified cleanup. Capture itself remains optional, and
+uncertain process ownership still blocks model admission through the existing
+hash-bound cleanup latch.
+
+A separate source defect was reproduced locally: the old normalizer rejected
+valid in-root parent segments in GCC and library headers. The repair chooses the
+original trusted namespace before canonical resolution and preserves confinement
+to the named repository/system root. Named Bazel virtual includes may resolve
+only into that repository's source or owned generated-output subtree. Sixteen
+regression tests cover valid forms and private/cross-repository escapes.
+Replaying the retained 3,934-header graph accepts 3,805 approved-root sources and
+continues rejecting 129 unapproved local compiler-root headers. This proves the
+source repair, not the cause of the lost hosted failure or successful capsule
+collection. Exact hosted capture and numerical diagnosis remain pending.
+
 ## Preserve repaired sampler bytes through APK packaging — 7 October 2026
 
 Build 1158 passed the SDK producer, its native audit and all 1,471 JVM tests, then

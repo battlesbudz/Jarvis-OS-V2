@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Copy an explicit receipt allowlist; never upload the run or build trees."""
 import argparse
+import json
 import os
 from pathlib import Path
 import sys
 from common import *
 
-BUILD_FILES = ('build-status.json', 'source-snapshot.json')
+BUILD_FILES = ('build-status.json', 'source-snapshot.json', 'diagnostic-status.json')
 RUN_FILES = ('summary.json', 'input-identity.json', 'frontend.json', 'encoder-oracle.json', 'comparison.json',
     'reassembly/process.json', 'frontend/process.json',
     *[f'encoder-{s}/process.json' for s in ('stateful','static','adapter','eoa')],
@@ -33,7 +34,15 @@ def select(build, run):
             if not path.exists(): continue
             need(path.resolve().is_relative_to(root.resolve()) and not path.is_symlink(), 'Receipt escapes evidence root', 'evidence_failure')
             need(path.stat().st_size <= 4*1024**2, 'Oversized evidence file', 'evidence_failure')
-            value = load(path); validate_json(value)
+            if prefix == 'build' and name == 'diagnostic-status.json':
+                # This public record has a fixed enum/scalar schema and an 8 KiB
+                # read cap. Private supervisor reports and child logs stay out.
+                sys.path.insert(0, str(HERE/'encoder-replay'))
+                from diagnostic_status import read as read_diagnostic_status
+                value = read_diagnostic_status(path)
+            else:
+                value = load(path)
+            validate_json(value)
             selected.append((prefix+'/'+name, value))
     return selected
 
@@ -56,10 +65,20 @@ def export(build, run, out):
             'selection': 'Explicit structured-receipt allowlist only; requests, logs, models, audio, Mel, tensors, binaries and source weights are excluded.'})
     except Exception as e:
         # Fail closed without leaking a partially selected payload.
-        for p in out.rglob('*.json'): p.unlink()
-        write(out/'EVIDENCE-INDEX.json', {'summary': {'passed': False, 'classification': 'evidence_export_failure'},
-                                        'error': str(e), 'audio_weights_activations_uploaded': False})
-        raise
+        # OSError and parser exception strings can contain paths or input values.
+        # Retain only a fixed class and phase, never their message or repr.
+        kind = ('filesystem' if isinstance(e, OSError) else 'invalid_unicode' if isinstance(e, UnicodeError)
+                else 'invalid_json' if isinstance(e, json.JSONDecodeError)
+                else 'validation' if isinstance(e, (ValueError, GateError, TypeError, KeyError)) else 'internal')
+        try:
+            for p in out.rglob('*.json'): p.unlink()
+            write(out/'EVIDENCE-INDEX.json', {'summary': {'passed': False, 'classification': 'evidence_export_failure'},
+                'stage': 'structured_receipt_export', 'error_class': kind,
+                'error': 'Structured receipt export failed; private detail is withheld.',
+                'audio_weights_activations_uploaded': False})
+        except Exception:
+            raise GateError('evidence_failure', 'Unable to preserve bounded export failure receipt') from None
+        raise GateError('evidence_failure', 'Structured receipt export failed; inspect bounded failure index') from None
 
 
 def main():

@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -24,6 +25,7 @@ def result(mode):
         bundle_sha256=common.BUNDLE['sha256'], producer_sha256=common.PRODUCER,
         manifest_sha256='a'*64, pcm_sha256=common.PCM_SHA, projected_tokens_sha256=common.ROWS_SHA,
         native_binary_sha256='b'*64, native_source_snapshot_sha256='c'*64,
+        context_tokens=640, max_output_tokens=64, resource_profile=bounded_exec.FULL_E2B_PROFILE,
         execution_passed=True, fresh_process=True, fresh_conversation=True, checked_drain_delete=True,
         tool_dispatch_count=0, automatic_tool_calling=False, full_bundle_hash_reverified_before_launch=True,
         initial_tokens=0, final_tokens=95, decode_tokens=10, prefill_tokens=85,
@@ -51,7 +53,11 @@ class IdentityTests(unittest.TestCase):
     def test_native_sources_pin_cpu_and_budgets(self):
         root = common.HERE/'native'
         cc = (root/'native_conversation_quality_probe.cc').read_text()
-        for value in ['cpu.number_of_threads = 1','SetNumThreads(1)','SetMaxNumTokens(512)',
+        for value in ['constexpr uint64_t kAddressLimit = 6ull * 1024 * 1024 * 1024;',
+                      'limit.rlim_cur == kAddressLimit && limit.rlim_max == kAddressLimit',
+                      'request.at("context_tokens") == 640',
+                      'request.at("resource_profile") == "hosted_full_e2b_context640_control"',
+                      'cpu.number_of_threads = 1','SetNumThreads(1)','SetMaxNumTokens(640)',
                       'SetMaxOutputTokens(64)','ThinkingConfig(false, 0)',
                       'enable_speculative_decoding = false','std::memcmp(locked->second, expected.data(), kAudioBytes)']:
             self.assertIn(value, cc)
@@ -127,12 +133,12 @@ class ClassificationTests(unittest.TestCase):
 
     def test_missing_result_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
-            with patch.object(run_quality,'run',return_value={'status':'completed'}):
+            with patch.object(run_quality,'run',return_value={'status':'completed','cleanup_verified':True}):
                 with self.assertRaises(GateError): run_quality.checked_process([],Path(tmp),results=True)
 
     def test_memory_gate_never_launches(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,GEMMA_QUALITY_COMPUTE_SLOT='confirmed_by_owner'):
-            with patch.object(bounded_exec,'available',return_value=4*1024**3), patch.object(bounded_exec.subprocess,'Popen') as launch:
+            with patch.object(bounded_exec,'compile_memory',return_value={'effective_available_bytes':4*1024**3}), patch.object(bounded_exec.subprocess,'Popen') as launch:
                 receipt=bounded_exec.run(['/not/executed'],Path(tmp)/'run')
                 launch.assert_not_called()
             self.assertFalse(receipt['execution_started']); self.assertEqual(receipt['status'],'resource_blocked')
@@ -165,7 +171,8 @@ class PairTests(unittest.TestCase):
     def test_mutated_identity_count_tap_or_lifecycle_fails(self):
         for key,value in [('pcm_sha256','other'),('manifest_sha256','other'),('native_binary_sha256','other'),
                           ('checked_drain_delete',False),('decode_at_budget',True),('final_tokens',94),
-                          ('automatic_tool_calling',True),('tool_dispatch_count',1)]:
+                          ('automatic_tool_calling',True),('tool_dispatch_count',1),
+                          ('context_tokens',512),('max_output_tokens',65),('resource_profile','other')]:
             a,b=result('raw'),result('projected_null');b[key]=value
             self.assertFalse(run_quality.final_comparison(a,b)['passed'], key)
         for key,value in [('calls',0),('bitwise_equal',False),('valid_tokens',76),('bytes_compared',1)]:
@@ -184,6 +191,56 @@ class PairTests(unittest.TestCase):
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_public_diagnostic_failure_survives_without_private_logs(self):
+        sys.path.insert(0,str(common.HERE/'encoder-replay'))
+        from diagnostic_status import Status
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);b=root/'build';r=root/'run';b.mkdir();r.mkdir()
+            context={'repository':'battlesbudz/Jarvis-OS-V2','run_id':123,'run_attempt':1,
+                'head_sha':'a'*40,'source_commit':'b'*40}
+            status=Status(b,context);status.phase('source_graph')
+            status.failed(FileNotFoundError('/private/never-export-this'))
+            (b/'diagnostic-supervisor').mkdir()
+            (b/'diagnostic-supervisor/compile.log').write_text('NEVER EXPORT PRIVATE LOG')
+            write(b/'diagnostic-supervisor/report.private.json',{'private':'NEVER EXPORT'})
+            export_evidence.export(b,r,root/'evidence')
+            names={str(p.relative_to(root/'evidence')) for p in (root/'evidence').rglob('*') if p.is_file()}
+            self.assertEqual(names,{'build/diagnostic-status.json','EVIDENCE-INDEX.json'})
+            public=(root/'evidence/build/diagnostic-status.json').read_text()
+            self.assertNotIn('never-export',public);self.assertNotIn('NEVER EXPORT',public)
+            value=json.loads(public);self.assertEqual(value['phase'],'source_graph')
+            self.assertEqual(value['error']['class'],'missing_file')
+            self.assertFalse(value['cleanup']['verified'])
+
+    def test_diagnostic_extra_fields_and_oversize_fail_before_export(self):
+        sys.path.insert(0,str(common.HERE/'encoder-replay'))
+        from diagnostic_status import Status
+        for mode in ('extra','oversize'):
+            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp);b=root/'build';r=root/'run';b.mkdir();r.mkdir()
+                status=Status(b,None)
+                value=json.loads(status.path.read_text())
+                value['unrelated_private_data']='DO NOT EXPORT' if mode=='extra' else 'x'*9000
+                write(status.path,value)
+                with self.assertRaises(GateError):export_evidence.export(b,r,root/'evidence')
+                self.assertFalse((root/'evidence/build/diagnostic-status.json').exists())
+                index=(root/'evidence/EVIDENCE-INDEX.json').read_text()
+                self.assertNotIn('DO NOT EXPORT',index)
+                self.assertEqual(json.loads(index)['summary']['classification'],'evidence_export_failure')
+
+    def test_export_failure_does_not_publish_filesystem_exception_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);b=root/'build';r=root/'run';b.mkdir();r.mkdir()
+            private = '/home/runner/private-token-and-user-file.json'
+            with patch.object(export_evidence,'select',side_effect=PermissionError(private)):
+                with self.assertRaises(GateError) as caught:
+                    export_evidence.export(b,r,root/'out')
+            self.assertNotIn(private,str(caught.exception))
+            text=(root/'out/EVIDENCE-INDEX.json').read_text()
+            self.assertNotIn(private,text)
+            self.assertEqual(json.loads(text)['error_class'],'filesystem')
+            self.assertEqual(json.loads(text)['stage'],'structured_receipt_export')
+
     def test_only_receipt_allowlist_exported(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);b=root/'build';r=root/'run';b.mkdir();r.mkdir()
@@ -224,7 +281,7 @@ class EvidenceTests(unittest.TestCase):
 
 
 class OrchestrationTests(unittest.TestCase):
-    def exercise(self, failure_mode=None):
+    def exercise(self, failure_mode=None, failure_kind='resource_constrained'):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, GEMMA_QUALITY_COMPUTE_SLOT='confirmed_by_owner'):
             root=Path(tmp); out=root/'run'; calls=[]
             build={'source_snapshot_sha256':'a'*64, 'reviewed_patch_sha256':'b'*64,
@@ -232,7 +289,8 @@ class OrchestrationTests(unittest.TestCase):
             def download(pin,path,**kwargs): path.write_bytes(b'public-source')
             def derive(path,inputs):
                 (inputs/'pcm.f32le').write_bytes(b'pcm'); (inputs/'matched.wav').write_bytes(b'wav');return {}
-            def checked(command,directory,results=False):
+            def checked(command,directory,results=False,*,cleanup_root=None):
+                self.assertEqual(cleanup_root,root/'build')
                 calls.append(directory.name); directory.mkdir()
                 write(directory/'process.json',{'status':'completed'})
                 if directory.name=='reassembly':(out/'inputs/stateful.tflite').write_bytes(b'model')
@@ -240,9 +298,16 @@ class OrchestrationTests(unittest.TestCase):
                     (out/'inputs/mel.f32le').write_bytes(b'mel')
                     (directory/'stdout.log').write_text(json.dumps({'passed':True,'decode_pcm_bitwise':True,'encoded_and_pcm_mel_bitwise':True}))
                 if results:
-                    if failure_mode==directory.name:raise GateError('resource_constrained','explicit watchdog')
+                    if failure_mode==directory.name:raise GateError(failure_kind,'injected failure')
                     value=result(directory.name);write(directory/'result.json',value);return {},value
                 return {},None
+            def control(binary,request,directory,*,binary_identity,cleanup_root):
+                self.assertEqual(binary.name,'native_conversation_quality_probe')
+                self.assertEqual(binary_identity,build['binaries'][binary.name])
+                value=common.load(request)
+                self.assertEqual((value['context_tokens'],value['max_output_tokens'],value['resource_profile']),
+                                 (640,64,bounded_exec.FULL_E2B_PROFILE))
+                return checked([],directory,True,cleanup_root=cleanup_root)
             def oracle(inputs,stages,receipt_path):
                 self.assertEqual(inputs.parent/'encoder-oracle.json', receipt_path)
                 (inputs/'projected.f32le').write_bytes(b'rows');return {'passed':True}
@@ -252,6 +317,7 @@ class OrchestrationTests(unittest.TestCase):
                  patch.object(run_quality,'extract_sections',return_value={}), \
                  patch.object(run_quality,'derive_pcm',side_effect=derive), \
                  patch.object(run_quality,'checked_process',side_effect=checked), \
+                 patch.object(run_quality,'checked_full_e2b',side_effect=control), \
                  patch.object(run_quality,'verify'), \
                  patch.object(run_quality,'encoder_cases',return_value={}), \
                  patch.object(run_quality,'compare_encoder',side_effect=oracle), \
@@ -267,10 +333,11 @@ class OrchestrationTests(unittest.TestCase):
                 self.assertIn('projected_audio',a['message']['content'][1]);self.assertNotIn('projected_audio',b['message']['content'][1])
                 self.assertFalse(summary['android_full_model_proven']);self.assertFalse(summary['jni_full_model_proven'])
             else:
-                self.assertFalse(summary['passed']);self.assertEqual(summary['classification'],'resource_constrained')
+                self.assertFalse(summary['passed']);self.assertEqual(summary['classification'],failure_kind)
                 self.assertNotIn('raw',calls)
     def test_order_and_same_complete_pcm(self):self.exercise()
     def test_resource_failure_stops_without_retry(self):self.exercise('projected_null')
+    def test_uncertain_cleanup_stops_before_raw(self):self.exercise('projected_null','model_cleanup_failure')
 
 
 if __name__=='__main__':unittest.main()

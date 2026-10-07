@@ -11,37 +11,78 @@ from replay_artifact_inventory import describe, parse_listing, SYSTEM_NAMES
 def source_record(name, execroot, sdk):
     """Normalize only verified source roots; physical locations stay private."""
     path = Path(name)
-    if '..' in path.parts or '\\' in str(path):
+    if '\\' in str(path) or (not path.is_absolute() and path.parts[:1] == ('..',)):
         raise ValueError('Source input escapes reviewed roots')
     execroot, sdk = Path(execroot).resolve(strict=True), Path(sdk).resolve(strict=True)
-    physical = (path if path.is_absolute() else execroot/path).resolve(strict=True)
     # Bazel's execroot/external is a directory of per-repository symlinks,
     # not necessarily a symlink itself. Use the same canonical repository root
     # that hosted_capture verifies against the reviewed declaration policy.
     external = (execroot.parent.parent/'external').resolve()
-    def external_source(origin):
+    # Compiler depfiles legitimately spell in-root parents (GCC's absolute
+    # include path and gemmlowp/public/../internal are common examples). Select
+    # the trusted namespace from the original spelling, then require the fully
+    # resolved file to remain in that namespace before reading its contents.
+    system_roots = (Path('/usr'), Path('/lib'))
+    lexical = path
+    system = False
+    if path.is_absolute():
+        if path.is_relative_to(execroot): lexical = path.relative_to(execroot)
+        elif path.is_relative_to(sdk): lexical = path.relative_to(sdk)
+        elif path.is_relative_to(external): lexical = Path('external')/path.relative_to(external)
+        elif any(path.is_relative_to(root) for root in system_roots): system = True
+        else: raise ValueError('Source input is outside reviewed source/system roots')
+    if lexical.parts[:1] == ('external',) and (len(lexical.parts) < 3 or lexical.parts[1] in ('.', '..')):
+        raise ValueError('External source repository path is incomplete')
+    # Bazel creates a symlink forest for a repository's public include prefix.
+    # Only this named form may resolve from generated outputs back into that
+    # same external repository. It may not impersonate a different repository.
+    virtual_origin = None
+    if (len(lexical.parts) >= 7 and lexical.parts[0] == 'bazel-out'
+            and lexical.parts[2:4] == ('bin', 'external')
+            and '_virtual_includes' in lexical.parts[5:-1]):
+        marker = lexical.parts.index('_virtual_includes', 5)
+        if '..' in lexical.parts[:marker] or len(lexical.parts) < marker + 3:
+            raise ValueError('Virtual source repository path is incomplete')
+        virtual_origin = lexical.parts[4]
+        if virtual_origin in ('.', '..'):
+            raise ValueError('Virtual source repository path is incomplete')
+    physical = (path if path.is_absolute() else execroot/path).resolve(strict=True)
+    def external_repository(origin):
         try:
             expected = (external/origin).resolve(strict=True)
             alias = (execroot/'external'/origin).resolve(strict=True)
         except OSError:
             raise ValueError('External source repository alias is unavailable') from None
-        if not expected.is_relative_to(external) or alias != expected or not physical.is_relative_to(expected):
+        if not expected.is_relative_to(external) or alias != expected:
+            raise ValueError('External source repository alias escaped its verified root')
+        return expected
+    def external_source(origin):
+        expected = external_repository(origin)
+        if not physical.is_relative_to(expected):
             raise ValueError('External source repository alias escaped its verified root')
         return 'external/'+origin+'/'+str(physical.relative_to(expected))
-    if not path.is_absolute() and path.parts[:1] == ('external',):
-        if len(path.parts) < 3:
-            raise ValueError('External source repository path is incomplete')
-        public = external_source(path.parts[1])
+    if system:
+        if not any(physical.is_relative_to(root.resolve()) for root in system_roots):
+            raise ValueError('System source escaped its verified root')
+        return dict(path=str(physical), resolved_path=str(physical), origin='system_headers',
+                    **describe(physical))
+    if virtual_origin is not None:
+        expected = external_repository(virtual_origin)
+        if physical.is_relative_to(expected):
+            public = 'external/'+virtual_origin+'/'+str(physical.relative_to(expected))
+        else:
+            relative = physical.relative_to(execroot) if physical.is_relative_to(execroot) else None
+            parts = relative.parts if relative is not None else ()
+            if (len(parts) < 6 or parts[0] != 'bazel-out' or parts[2:4] != ('bin', 'external')
+                    or parts[4] != virtual_origin):
+                raise ValueError('Virtual source repository alias escaped its verified root')
+            public = str(relative)
+    elif lexical.parts[:1] == ('external',):
+        public = external_source(lexical.parts[1])
     elif physical.is_relative_to(execroot):
         public = str(physical.relative_to(execroot))
     elif physical.is_relative_to(sdk):
         public = str(physical.relative_to(sdk))
-    elif physical.is_relative_to(external):
-        public = external_source(physical.relative_to(external).parts[0])
-    elif any(physical.is_relative_to(root.resolve()) for root in (Path('/usr'), Path('/lib'))):
-        # Only a basename and digest will enter public_graph for system files.
-        return dict(path=str(physical), resolved_path=str(physical), origin='system_headers',
-                    **describe(physical))
     else:
         # Do not put an unrecognized private pathname in a public failure log.
         raise ValueError('Source input is outside reviewed source/system roots')

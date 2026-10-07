@@ -40,7 +40,7 @@
 namespace {
 using Json = nlohmann::ordered_json;
 using namespace litert::lm;
-constexpr uint64_t kAddressLimit = 4ull * 1024 * 1024 * 1024;
+constexpr uint64_t kAddressLimit = 6ull * 1024 * 1024 * 1024;
 constexpr size_t kAudioBytes = 77 * 1536 * sizeof(float);
 std::string stage = "validate_request";
 
@@ -126,7 +126,9 @@ void Run(const Json& request, Json& result, std::unique_ptr<Engine>& engine,
   Need(request.at("case") == "transcribe", "Only bounded transcription is implemented in this minimal runner");
   const auto mode = request.at("mode").get<std::string>();
   Need(mode == "raw" || mode == "projected_null", "Invalid lane");
-  Need(request.at("context_tokens") == 512 && request.at("max_output_tokens") == 64, "Budget/config mismatch");
+  Need(request.at("context_tokens") == 640 && request.at("max_output_tokens") == 64, "Budget/config mismatch");
+  Need(request.at("resource_profile") == "hosted_full_e2b_context640_control", "Resource profile mismatch");
+  Need(request.at("audio_embedding_tap") == true, "Audio embedding tap required");
   const Json message = request.at("message");
   Need(message.at("role") == "user" && message.at("content").size() == 2,
        "One text and one audio item required");
@@ -152,7 +154,7 @@ void Run(const Json& request, Json& result, std::unique_ptr<Engine>& engine,
   auto settings = Take(EngineSettings::CreateDefault(std::move(assets), Backend::CPU, std::nullopt,
       mode == "raw" ? std::optional<Backend>(Backend::CPU) : std::nullopt), "EngineSettings");
   auto& main = settings.GetMutableMainExecutorSettings();
-  main.SetMaxNumTokens(512); main.SetCacheDir(":nocache");
+  main.SetMaxNumTokens(640); main.SetCacheDir(":nocache");
   auto cpu = Take(main.MutableBackendConfig<CpuConfig>(), "CPU settings");
   cpu.number_of_threads = 1; main.SetBackendConfig(cpu);
   auto advanced = main.GetAdvancedSettings().value_or(AdvancedSettings());
@@ -214,8 +216,8 @@ void Run(const Json& request, Json& result, std::unique_ptr<Engine>& engine,
 int main(int argc, char** argv) {
   Need(argc == 3, "REQUEST_JSON RESULT_JSON required");
   rlimit limit{};
-  Need(getrlimit(RLIMIT_AS, &limit) == 0 && limit.rlim_cur <= kAddressLimit,
-       "Must run under the fixed <=4 GiB address-space supervisor");
+  Need(getrlimit(RLIMIT_AS, &limit) == 0 && limit.rlim_cur == kAddressLimit && limit.rlim_max == kAddressLimit,
+       "Must run under the fixed 6 GiB address-space supervisor");
   Need(std::getenv("GEMMA_QUALITY_COMPUTE_SLOT") != nullptr &&
        std::string(std::getenv("GEMMA_QUALITY_COMPUTE_SLOT")) == "confirmed_by_owner", "No owner compute slot");
   absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfo);
@@ -230,7 +232,8 @@ int main(int argc, char** argv) {
     auto request = Json::parse(Read(argv[1], 2 * 1024 * 1024));
     for (const char* key : {"mode", "case", "sdk_commit", "litert_workspace_pin", "bundle_sha256", "producer_sha256",
                            "manifest_sha256", "pcm_sha256", "projected_tokens_sha256", "native_binary_sha256",
-                           "native_source_snapshot_sha256", "full_bundle_hash_reverified_before_launch"}) result[key] = request.at(key);
+                           "native_source_snapshot_sha256", "full_bundle_hash_reverified_before_launch",
+                           "context_tokens", "max_output_tokens", "resource_profile"}) result[key] = request.at(key);
     Run(request, result, engine, conversation);
     result["execution_passed"] = true;
     result["status"] = "executed_needs_native_paired_comparison";

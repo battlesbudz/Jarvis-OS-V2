@@ -12,6 +12,8 @@ def compare(raw,projected):
       'native_interfaces':all(x.get('interface')=='native_cpp_conversation' for x in [raw,projected]),
       'correct_lanes':raw.get('mode')=='raw' and projected.get('mode')=='projected_null',
       'same_identities':all(k in raw and k in projected and raw[k]==projected[k] for k in identities),
+      'fixed_control_config':all(x.get('context_tokens') == 640 and x.get('max_output_tokens') == 64 and
+          x.get('resource_profile') == 'hosted_full_e2b_context640_control' for x in [raw,projected]),
       'both_executed':all(x.get('execution_passed') is True for x in [raw,projected]),
       'fresh_checked_lifetimes':all(x.get('fresh_process') and x.get('fresh_conversation') and x.get('checked_drain_delete') for x in [raw,projected]),
       'no_dispatch':all(x.get('tool_dispatch_count')==0 and x.get('automatic_tool_calling') is False for x in [raw,projected]),

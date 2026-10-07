@@ -15,11 +15,14 @@ import signal
 import subprocess
 import tarfile
 import time
+import sys
+import traceback
 
 from capsule_writer import canonical, digest, file_identity, need, validate_bindings, write_capsule
 from replay_artifact_inventory import parse_listing, elf_metadata, artifact_origin, SYSTEM_NAMES, SYSTEM_ROOTS
 from trace_compiler_inputs import trace
 from hash_bazel_action_metadata import action_metadata
+from diagnostic_status import Status, Parser, build_dir_from_argv, validate_context, instance_from_argv
 
 GIB=1024**3
 SDK_PIN='924e79c91542761242244e4f1651851f822e4cbb'
@@ -197,8 +200,9 @@ def public_graph(graph):
             'compiler_depfiles':graph['dependency_file_sha256'],'required_action_outputs':graph['required_action_outputs']}
 
 
-def collect(sdk,execroot,build_dir,guard_path,context,policy,expected_policy_sha,out,repository_cache):
+def collect(sdk,execroot,build_dir,guard_path,context,policy,expected_policy_sha,out,repository_cache, *, phase=lambda value: None):
     """Fresh hosted collection and archive writing, with no inference."""
+    phase('guarded_metadata')
     sdk=Path(sdk).resolve(strict=True);execroot=Path(execroot).resolve(strict=True)
     build_dir=Path(build_dir);out=Path(out);need(not out.exists(),'Fresh diagnostic directory required');out.mkdir()
     need(digest(policy)==expected_policy_sha,'Reviewed source/license policy changed')
@@ -216,6 +220,7 @@ def collect(sdk,execroot,build_dir,guard_path,context,policy,expected_policy_sha
     # execroot/external consists of repository symlinks. Resolve policy paths
     # against Bazel's actual repository root so legitimate aliases stay inside
     # one checked root without accepting arbitrary symlink escapes.
+    phase('dependencies')
     roots={'sdk':sdk,'external':execroot.parent.parent/'external','repository_cache':Path(repository_cache)}
     env=dict(os.environ)
     for key in ('LD_PRELOAD','LD_AUDIT','LD_LIBRARY_PATH','LD_DEBUG','LD_DEBUG_OUTPUT'):env.pop(key,None)
@@ -235,12 +240,15 @@ def collect(sdk,execroot,build_dir,guard_path,context,policy,expected_policy_sha
         entries.append({'capsule_path':'lib/'+alias,'source_path':str(path),'identity':pin,'origin':origin,'kind':'runtime_elf'})
     for metadata in [elf_metadata(probe)]+[v['elf'] for v in aliases.values()]:
         for alias in metadata['needed']:need(alias in dependencies,'Incomplete per-probe dependency closure')
+    phase('source_graph')
     graph=trace(probe,execroot,listing,sdk);need(not graph['unresolved'],'Unresolved source/object/link graph')
     for origin in graph['origin_counts']:
         if origin in ('system_headers','compiler_headers'):continue
         origin='sdk' if origin=='sdk_or_generated' else origin
         need(origin in policy['origins'],'Unknown compiled/header origin: '+origin);used.add(origin)
+    phase('query')
     command=derive_query_command(guard['build_command']);query=query_metadata(command,sdk,out/'query-private')
+    phase('action_binding')
     raw_graph=json.loads((out/'query-private/aquery.json').read_text())
     actions=action_metadata(raw_graph,execroot,graph['required_action_outputs'],strict=True,
                             approved_tool_paths=set(guard['compiler_tools']))
@@ -255,6 +263,7 @@ def collect(sdk,execroot,build_dir,guard_path,context,policy,expected_policy_sha
         checked_identity(source,{k:item[k] for k in ('bytes','sha256')})
     entries.append({'capsule_path':'bin/pinned_encoder_probe','source_path':str(probe),
                     'identity':build['binaries']['pinned_encoder_probe'],'origin':'sdk','kind':'probe'})
+    phase('licenses')
     for origin in sorted(used):
         record=policy['origins'][origin]
         policy_path(record['declaration'],roots)
@@ -267,6 +276,7 @@ def collect(sdk,execroot,build_dir,guard_path,context,policy,expected_policy_sha
         count=verify_original_source(path,roots['external']/item['origin'])
         need(count==item['regular_files'],'Unexpected original-source file count')
         entries.append({'capsule_path':destination,'source_path':str(path),'identity':item['identity'],'origin':item['origin'],'kind':'source_archive'})
+    phase('packaging')
     bindings={**context,'build_receipt_sha256':file_identity(build_path)['sha256'],
               **{k:build[k] for k in ('source_snapshot_sha256','recipe_manifest_sha256','android_source_receipt_sha256','reviewed_patch_sha256')},
               'build_command_sha256':guard['build_command_sha256'],'bazel_sha256':BAZEL_SHA,'policy_sha256':expected_policy_sha}
@@ -288,23 +298,47 @@ def collect(sdk,execroot,build_dir,guard_path,context,policy,expected_policy_sha
     return write_capsule(capture,policy,expected_policy_sha,archive)
 
 
-def main():
-    p=argparse.ArgumentParser(description=__doc__)
-    for name in ('build-dir','policy','guard','out','repository-cache'):p.add_argument('--'+name,type=Path,required=True)
-    p.add_argument('--expected-policy-sha256',required=True)
-    a=p.parse_args();need(not a.out.exists(),'Fresh diagnostic output required')
-    build=json.loads((a.build_dir/'build-status.json').read_text());sdk=Path(build['sdk']).resolve(strict=True)
-    execroot=(sdk/'bazel-bin').resolve(strict=True).parents[2]
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    status = None
     try:
-        result=collect(sdk,execroot,a.build_dir,a.guard,github_context(),json.loads(a.policy.read_text()),
-                       a.expected_policy_sha256,a.out,a.repository_cache)
+        build_dir = build_dir_from_argv(argv)
+        try:
+            context = validate_context(github_context())
+        except Exception:
+            status = Status(build_dir, None)
+            raise
+        # Status starts before full argument parsing and every former preflight.
+        status = Status(build_dir, context, instance_from_argv(argv))
+        p = Parser(description=__doc__)
+        for name in ('build-dir','policy','guard','out','repository-cache'):
+            p.add_argument('--'+name,type=Path,required=True)
+        p.add_argument('--expected-policy-sha256',required=True)
+        p.add_argument('--status-instance',help=argparse.SUPPRESS)
+        a = p.parse_args(argv)
+        need(a.status_instance is None or a.status_instance == status.invocation_id,
+             'Matching diagnostic status instance required')
+        status.phase('preflight')
+        need(not a.out.exists(),'Fresh diagnostic output required')
+        status.phase('guarded_metadata')
+        build=json.loads((a.build_dir/'build-status.json').read_text())
+        sdk=Path(build['sdk']).resolve(strict=True)
+        execroot=(sdk/'bazel-bin').resolve(strict=True).parents[2]
+        result=collect(sdk,execroot,a.build_dir,a.guard,context,json.loads(a.policy.read_text()),
+                       a.expected_policy_sha256,a.out,a.repository_cache,phase=status.phase)
+        status.passed()
         print(json.dumps({'complete':True,'archive':result['archive'],'bindings':result['bindings']},indent=2))
         return 0
     except Exception as error:
-        a.out.mkdir(parents=True,exist_ok=True)
-        result={'complete':False,'classification':'diagnostic_capture_failed','error':str(error)[:2000],
-                'quality_acceptance_unchanged':True,'archive_uploaded':False,'replay_performed':False}
-        save(a.out/'capture-failure.json',result);print(json.dumps(result,indent=2));return 2
+        # Tracebacks are retained only in the guard's existing private log.
+        # Standalone callers also receive only the bounded public projection.
+        if status is not None:
+            if status.value['context'] is not None: status.failed(error)
+            if '--status-instance' in argv: traceback.print_exc()
+            print(json.dumps(status.value, sort_keys=True))
+        else:
+            print(json.dumps({'complete':False,'error_code':'invalid_receipt'}))
+        return 2
 
 
 if __name__=='__main__':raise SystemExit(main())

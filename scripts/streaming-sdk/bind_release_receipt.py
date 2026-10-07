@@ -14,7 +14,7 @@ from producer_identity import workflow_identity
 from verify_packaged_samplers import verify as verify_packaged_samplers
 
 ROOT = Path(__file__).resolve().parents[2]
-QUALITY_FILES = {'build/build-status.json', 'build/source-snapshot.json',
+QUALITY_FILES = {'build/build-status.json', 'build/source-snapshot.json', 'build/diagnostic-status.json',
     'run/summary.json', 'run/input-identity.json', 'run/frontend.json', 'run/encoder-oracle.json',
     'run/comparison.json', 'run/reassembly/process.json', 'run/frontend/process.json',
     *[f'run/encoder-{s}/process.json' for s in ('stateful','static','adapter','eoa')],
@@ -46,6 +46,16 @@ def quality_receipt(folder, identity, patch_sha, expected_source_receipt=None):
             'android_full_model_proven':False,'jni_full_model_proven':False}.items()):
         raise ValueError('Actual full-model quality prerequisite did not explicitly pass')
     build=load(folder/'build/build-status.json')
+    sys.path.insert(0, str(ROOT/'scripts/streaming-quality/encoder-replay'))
+    from diagnostic_status import read as read_diagnostic_status
+    diagnostic=read_diagnostic_status(folder/'build/diagnostic-status.json')
+    expected_diagnostic={'repository':identity['GITHUB_REPOSITORY'],
+        'run_id':int(identity['GITHUB_RUN_ID']), 'run_attempt':int(identity['GITHUB_RUN_ATTEMPT']),
+        'source_commit':identity['GITHUB_SHA']}
+    if (diagnostic.get('context') is None or any(diagnostic['context'].get(k)!=v
+            for k,v in expected_diagnostic.items()) or diagnostic['state']!='complete'
+            or diagnostic['cleanup']['verified'] is not True):
+        raise ValueError('Diagnostic cleanup status is not complete for this exact quality producer')
     if expected_source_receipt is not None and build.get('android_source_receipt_sha256') != expected_source_receipt:
         raise ValueError('Quality evidence used a different SDK source receipt')
     if (build.get('build_succeeded') is not True or build.get('compilation_exited_before_quality') is not True

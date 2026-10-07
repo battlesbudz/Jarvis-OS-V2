@@ -14,7 +14,7 @@ from producer_identity import workflow_identity
 class QualityEvidenceBinding(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name)/'jarvis-streaming-quality-evidence-123-1';self.root.mkdir()
-        self.identity={'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'1','GITHUB_SHA':'a'*40,'GITHUB_REPOSITORY':'owner/repo'}
+        self.identity={'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'1','GITHUB_SHA':'a'*40,'GITHUB_REPOSITORY':'battlesbudz/Jarvis-OS-V2'}
         self.quality_identity=dict(self.identity)
         self.patch='b'*64
         snapshot={'files':{'source.cc':'c'*64}}
@@ -23,6 +23,13 @@ class QualityEvidenceBinding(unittest.TestCase):
             'source_snapshot_sha256':digest,'android_full_model_proven':False,'jni_full_model_proven':False}
         self.data={name:{} for name in QUALITY_FILES}
         self.data.update({'build/source-snapshot.json':snapshot,'run/summary.json':summary,
+            'build/diagnostic-status.json':{'schema_version':1,'producer':'encoder_replay_diagnostic',
+                'invocation_id':'1'*32,'context':{'repository':'battlesbudz/Jarvis-OS-V2','run_id':123,'run_attempt':1,
+                    'head_sha':'f'*40,'source_commit':'a'*40},'state':'complete','phase':'packaging',
+                'outcome':'passed','error':None,'child':{'started':True,'exit_code':0},
+                'cleanup':{'verified':True,'surviving_process_count':0},
+                'resources':{'classification':'build_passed','stop_reason':None,'wall_milliseconds':1000,
+                    'peak_tree_rss_bytes':1024},'quality_acceptance_unchanged':True},
             'build/build-status.json':{'build_succeeded':True,'compilation_exited_before_quality':True,
                 'reviewed_patch_sha256':self.patch,'source_snapshot_sha256':digest},
             'run/comparison.json':{'passed':True,'native_pair_passed':True,'documentation_example_match':True}})
@@ -40,6 +47,21 @@ class QualityEvidenceBinding(unittest.TestCase):
 
     def test_exact_successful_receipt_passes(self):
         self.assertTrue(quality_receipt(self.root,self.identity,self.patch)['passed'])
+
+    def test_optional_capture_failure_with_checked_cleanup_preserves_quality_gate(self):
+        status=self.data['build/diagnostic-status.json'];status['outcome']='failed'
+        status['error']={'class':'missing_file','code':'missing_file',
+            'detail':'A required file in the current phase was absent.','location':None}
+        status['child']['exit_code']=2;status['resources']['classification']='build_compile_failure';self.write()
+        self.assertTrue(quality_receipt(self.root,self.identity,self.patch)['passed'])
+
+    def test_wrong_producer_or_uncertain_diagnostic_cleanup_rejected(self):
+        status=self.data['build/diagnostic-status.json'];status['context']['run_attempt']=99;self.write()
+        with self.assertRaisesRegex(ValueError,'exact quality producer'):
+            quality_receipt(self.root,self.identity,self.patch)
+        status['context']['run_attempt']=1;status['state']='uncertain';status['cleanup']['verified']=False;self.write()
+        with self.assertRaisesRegex(ValueError,'exact quality producer'):
+            quality_receipt(self.root,self.identity,self.patch)
 
     def test_missing_receipt_fails(self):
         del self.data['run/frontend.json'];self.write()
@@ -79,6 +101,7 @@ class QualityEvidenceBinding(unittest.TestCase):
         override.start(); self.addCleanup(override.stop)
         newer=self.root.with_name('jarvis-streaming-quality-evidence-123-2');self.root.rename(newer);self.root=newer
         self.quality_identity['GITHUB_RUN_ATTEMPT']='2'
+        self.data['build/diagnostic-status.json']['context']['run_attempt']=2
         inputs=self.root/'inputs';out=self.root/'out';out.mkdir()
         consumer=inputs/'jarvis-streaming-sdk-consumer';consumer.mkdir(parents=True)
         manifest=ROOT/'third_party/litert-lm-0.16.0/reviewed-source.json'

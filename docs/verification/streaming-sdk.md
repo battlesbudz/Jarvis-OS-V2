@@ -39,9 +39,15 @@ separately. New source cannot silently fall back to Maven0.16.0.
 The SDK producer has45minutes and the independent quality job115minutes,
 preserving the combined160-minute ceiling. Quality's internal compiler budget is
 60minutes, its step63minutes and its model orchestration50minutes; all consume
-the same115-minute quality ceiling, including setup and evidence export. Model
-subprocess CPU/wall/address-space/RSS/headroom limits are unchanged and fail
-closed. Four admitted compiler CPUs/jobs retain the6GiB tree-RSS watchdog and
+the same115-minute quality ceiling, including setup and evidence export.
+Reassembly/frontend/encoder retain4GiB address space,3.5GiB tree RSS and5GiB
+admission. The fixed full-E2B Conversation control alone uses context640,
+6GiB address space,4GiB aggregate tree RSS and6GiB effective host/cgroup
+admission. Both keep one CPU,240s wall/CPU,128MiB file cap and1GiB live reserve.
+Each raw/projected lane is fresh and hash-bound, with max64 output and no cache.
+Whole-tree cleanup, including escaped sessions, must be verified before later
+work; a persistent build-directory latch fails closed after interruption or
+uncertain cleanup. No Android/GPU/default-context setting changes. Four admitted compiler CPUs/jobs retain the6GiB tree-RSS watchdog and
 2GiB system reserve. Quality source is reconstructed exactly from the verified
 source receipt, pinned SDK, patch and recorded overlays; Android binaries/cache
 are not transferred to the fresh quality runner.

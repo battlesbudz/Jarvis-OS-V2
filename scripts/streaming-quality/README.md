@@ -1,5 +1,18 @@
 # Hosted full-Gemma E2B native quality prerequisite
 
+The optional encoder capsule has a separate bounded public diagnostic-status
+receipt. It retains only fixed phase/error codes, reviewed module/line and scalar
+producer/process observations; private logs and exception strings stay excluded.
+The exporter validates its strict 8 KiB schema, and final release binding requires
+complete checked cleanup for the exact quality producer. Failed capture remains
+optional after cleanup; it never changes numerical/model acceptance.
+
+Compiler depfiles may contain in-root parent components and Bazel virtual include
+aliases. Collection normalizes only after selecting the original trusted root,
+then verifies canonical repository/system confinement before reading bytes. A
+virtual include may use that same repository's source or generated output, never
+another repository or a private path. Unrecognized compiler roots remain blocked.
+
 Status: Builds 1117 and 1127 passed the Android SDK stage but reached the Linux
 probe compiler deadline before full-model execution. Build 1127 reached 6,416 of
 6,477 actions with continuing progress and no memory-pressure failure. **No
@@ -38,7 +51,8 @@ app checks. The aggregate source-build/quality ceiling remains 160 minutes:
 45 for the SDK producer, then 115 for quality. Host compilation admits four CPUs
 only with at least 8 GiB available RAM and four schedulable CPUs, watches at most
 6 GiB process-tree RSS and a 2 GiB system reserve, and has a 60-minute deadline.
-The existing model subprocess limits remain unchanged. A bounded compiler-only
+The compiler and diagnostic limits are separate from the fixed model profiles
+below. A bounded compiler-only
 tail and resource/action progress are retained even if compilation fails.
 
 ## Fresh input chain
@@ -85,7 +99,7 @@ actual signature names, tensor types, shapes and byte sizes.
 ## Pair and semantic scope
 
 Fresh native C++ processes run projected_null, then raw, each with a fresh engine
-and Conversation, same complete PCM, same prompt and context512, max64 output
+and Conversation, same complete PCM, same prompt and context640, max64 output
 tokens, CPU1, greedy sampling, thinking/speculation/tools disabled. The projected
 lane supplies only77 post-adapter rows, no learned EOA; the runtime owns its EOA.
 Both lanes must invoke the post-adapter callback exactly once with all77 rows
@@ -103,14 +117,33 @@ or a phone-performance result. No tools/actions are dispatched.
 
 ## Resource and evidence policy
 
-Each native/reassembly process uses a hard4GiB address-space limit, sampled
-3.5GiB RSS watchdog, minimum5GiB MemAvailable,1GiB ongoing system reserve,
-240s wall,239s CPU soft signal/240s hard CPU, CPU affinity1 and thread hints1.
-Reassembly adds Java128MiB heap and small JVM reservations. The regular-file
-output limit is128MiB so its103.7MB temporary model can be assembled; this does
-not relax any memory/time limit. Watchdog stops kill the process immediately.
-Probes never overlap.
-No claim that the complete model fits these caps is made.
+Reassembly, frontend and encoder prerequisites keep their hard4GiB address-space,
+3.5GiB sampled aggregate-tree RSS and minimum5GiB effective available-memory
+limits. Only the hash-bound full-E2B Conversation control has hard6GiB per-process
+address space, sampled4GiB aggregate whole-tree RSS and minimum6GiB effective
+available memory. Effective availability is the minimum of host MemAvailable and
+visible cgroup-v2 ancestor headroom. Both profiles retain CPU affinity1, thread
+hints1, 240s wall,239s CPU soft/240s hard,128MiB regular-file output and1GiB live
+reserve. Reassembly retains Java128MiB heap and small JVM reservations.
+
+The full-E2B profile is fixed and accepted only for the verified Conversation
+probe, two known lanes, context640, max64 output and required embedding tap.
+There is no generic caller-selectable budget override. Each lane uses a fresh
+process/engine/Conversation with no persistent model cache. Context640 is the
+smallest128-aligned capacity that fits the selected prefill128 local-attention
+update width639; it adds1.125MiB to one bank of int8 KV inputs. It is a host probe
+setting and changes no Android/GPU configuration. Resource fit remains unproven.
+
+The supervisor reuses the compiler's start-identity and subreaper ownership
+primitives, watches all descendants including escaped sessions, and uses pidfds
+for identity-bound cleanup signals. Releasing ownership additionally requires
+waitpid to prove ECHILD after reaping all adopted descendants. Wall, RSS, reserve and cancellation failures
+terminate/reap the owned tree. A zero-exit parent with live descendants fails.
+Pending cleanup is recorded in the build directory before launch; uncertain
+cleanup or receipt writing blocks later lanes, prerequisites and quality runs.
+A cleanup error remains a failure even if the best-effort retry removes every
+process. The original stop reason is retained separately. Model stdout/stderr
+stay separate and are never passed to compiler diagnostic collection.
 
 Only an explicit memory-headroom refusal, supervisor watchdog reason, SIGXCPU,
 ENOMEM, std::bad_alloc, RESOURCE_EXHAUSTED, or explicit allocation/mapping out-of-
@@ -118,7 +151,7 @@ memory diagnostic is called resource_constrained. An unadorned
 per_layer_embedding_lookup_ load failure, generic mmap failure, or SIGKILL is
 native_execution_failure, not evidence of memory exhaustion. Both are failures.
 Unknown/unrun/inconclusive status can never pass. Download/build bounds are
-separate from inference limits: one bounded600s bundle transfer,45min host build,
+separate from inference limits: one bounded600s bundle transfer,60min host build,
 and finite CI step/job windows; no automatic retries.
 
 export_evidence.py exports only the enumerated structured receipts: source/model
@@ -131,8 +164,10 @@ build/run/input trees. EVIDENCE-INDEX.json includes the exact CI commit/run/atte
 
 ## Source adaptations
 
-native_conversation_quality_probe.cc and compare_native_pair.py are unchanged
-from the previously compiled native-only fallback. pinned_encoder_probe.cc is the
+native_conversation_quality_probe.cc and compare_native_pair.py bind the fixed
+context640/full-E2B profile while preserving exact identities, output/tap checks,
+semantic reference and checked drain. The native entrypoint requires the same
+6GiB hard/soft address-space cap as the supervisor. pinned_encoder_probe.cc is the
 existing native probe with its CPU thread count reduced from2 to1. The frontend
 probe is the earlier full-SDK boundary check with a small fresh-Mel output branch
 instead of reading a historical Mel file; both native paths still compare bitwise

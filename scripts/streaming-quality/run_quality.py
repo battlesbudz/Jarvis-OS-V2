@@ -11,7 +11,7 @@ import sys
 import time
 import unicodedata
 from common import *
-from bounded_exec import BUDGET, run
+from bounded_exec import BUDGET, FULL_E2B_BUDGET, FULL_E2B_PROFILE, run, run_full_e2b, verify_cleanup
 from build_probes import PACKAGE, TARGETS
 from compare_native_pair import compare
 from prepare_inputs import derive_pcm, extract_sections, encoder_cases, compare_encoder
@@ -26,6 +26,8 @@ RESOURCE_PATTERN = r'\b(?:ENOMEM|std::bad_alloc|RESOURCE_EXHAUSTED)\b|(?:mmap|ma
 
 def classify_process(process, result=None, diagnostic=''):
     """Only explicit resource evidence earns the resource classification."""
+    if process.get('cleanup_verified') is False or process.get('stop_reason') == 'cleanup_failure':
+        return 'model_cleanup_failure'
     if process.get('status') == 'resource_blocked': return 'resource_constrained'
     if process.get('stop_reason') in {'wall_timeout','rss_watchdog_limit','system_memory_reserve'}:
         return 'resource_constrained'
@@ -39,11 +41,24 @@ def classify_process(process, result=None, diagnostic=''):
         return 'numerical_failure'
     if process.get('status') != 'completed': return 'native_execution_failure' 
     if result is not None and result.get('execution_passed') is not True: return 'native_execution_failure'
+    if process.get('cleanup_verified') is not True: return 'model_cleanup_failure'
     return 'passed'
 
 
-def checked_process(command, directory, results=False):
-    process = run(command, directory)
+def checked_process(command, directory, results=False, *, cleanup_root=None):
+    process = run(command, directory, cleanup_root=cleanup_root)
+    return checked_receipt(process, directory, results)
+
+
+def checked_full_e2b(binary, request, directory, *, binary_identity, cleanup_root):
+    process = run_full_e2b(binary, request, directory, binary_identity=binary_identity,
+                           cleanup_root=cleanup_root)
+    return checked_receipt(process, directory, results=True)
+
+
+def checked_receipt(process, directory, results=False):
+    need(process.get('cleanup_verified') is True,
+         'Model process tree cleanup is not verified', 'model_cleanup_failure')
     result = load(directory/'result.json') if results and (directory/'result.json').is_file() else None
     diagnostic = (directory/'stderr.log').read_text(errors='replace') if (directory/'stderr.log').exists() else ''
     kind = classify_process(process, result, diagnostic)
@@ -95,7 +110,7 @@ def lane_request(mode, work, build, identity):
         wav_path=str(work/'inputs/matched.wav'), manifest_sha256=digest(identity), pcm_sha256=PCM_SHA,
         projected_tokens_sha256=ROWS_SHA, native_binary_sha256=build['binaries']['native_conversation_quality_probe']['sha256'],
         native_source_snapshot_sha256=build['source_snapshot_sha256'], full_bundle_hash_reverified_before_launch=True,
-        context_tokens=512, max_output_tokens=64, audio_embedding_tap=True,
+        context_tokens=640, max_output_tokens=64, audio_embedding_tap=True, resource_profile=FULL_E2B_PROFILE,
         message={'role': 'user', 'content': [{'type': 'text', 'text': 'Transcribe the spoken words in this audio. Return only the transcription.'}, audio]})
 
 
@@ -122,11 +137,13 @@ def run_gate(a):
     work.mkdir(parents=True)
     summary = {'schema_version': 1, 'classification': 'pending', 'passed': False,
                'android_full_model_proven': False, 'jni_full_model_proven': False,
-               'budget': BUDGET, 'stage': 'verify_build', 'lanes': {},
+               'budget': FULL_E2B_BUDGET, 'resource_profile': FULL_E2B_PROFILE,
+               'prerequisite_budget': BUDGET, 'stage': 'verify_build', 'lanes': {},
                'scope': 'Hosted native C++ Conversation quality prerequisite only; no Android/JNI full-model quality or device latency claim.'}
     write(work/'summary.json', summary)
     start = time.monotonic()
     try:
+        verify_cleanup(a.build_dir)
         build, sdk = verify_build(a.build_dir)
         need(os.environ.get('GEMMA_QUALITY_COMPUTE_SLOT') == 'confirmed_by_owner', 'Post-compilation compute slot required')
         inputs = work/'inputs'; inputs.mkdir()
@@ -144,12 +161,12 @@ def run_gate(a):
         checked_process([java, '-Xms16m', '-Xmx128m', '-XX:+UseSerialGC', '-XX:ActiveProcessorCount=1',
             '-XX:CompressedClassSpaceSize=32m', '-XX:MaxMetaspaceSize=128m', '-XX:ReservedCodeCacheSize=64m',
             '-Xss512k', HERE/'recipe/WeightlessEncoderRecipe.java', inputs/'full.litertlm',
-            HERE/'recipe/source-copy-recipe.bin', HERE/'recipe/structural-literals.bin.gz', inputs/'stateful.tflite'], work/'reassembly')
+            HERE/'recipe/source-copy-recipe.bin', HERE/'recipe/structural-literals.bin.gz', inputs/'stateful.tflite'], work/'reassembly', cleanup_root=a.build_dir)
         verify(inputs/'stateful.tflite', load(HERE/'model-structure.json')['stateful'])
         identity['models']['stateful'] = describe(inputs/'stateful.tflite')
         summary['stage'] = 'native_frontend'; write(work/'summary.json', summary)
         checked_process([sdk/'bazel-bin'/PACKAGE/'native_frontend_quality_probe', inputs/'matched.wav',
-                         inputs/'pcm.f32le', inputs/'mel.f32le'], work/'frontend')
+                         inputs/'pcm.f32le', inputs/'mel.f32le'], work/'frontend', cleanup_root=a.build_dir)
         frontend = json.loads((work/'frontend/stdout.log').read_text().splitlines()[-1])
         need(frontend.get('passed') is True and frontend.get('decode_pcm_bitwise') is True and
              frontend.get('encoded_and_pcm_mel_bitwise') is True, 'Native frontend parity failed', 'numerical_failure')
@@ -164,7 +181,7 @@ def run_gate(a):
         for stage in ('stateful', 'static', 'adapter', 'eoa'):
             target = inputs/'actual'/stage; target.mkdir()
             checked_process([sdk/'bazel-bin'/PACKAGE/'pinned_encoder_probe', inputs/(stage+'.tflite'),
-                             inputs/(stage+'.tsv'), inputs, target], work/('encoder-'+stage))
+                             inputs/(stage+'.tsv'), inputs, target], work/('encoder-'+stage), cleanup_root=a.build_dir)
         oracle = compare_encoder(inputs, stages, work/'encoder-oracle.json')
         oracle['binary'] = build['binaries']['pinned_encoder_probe']
         write(work/'encoder-oracle.json', oracle)
@@ -182,8 +199,9 @@ def run_gate(a):
                 verify(inputs/file, identity[name])
             request = work/(mode+'-request.json')
             write(request, lane_request(mode, work, build, identity))
-            process, result = checked_process([sdk/'bazel-bin'/PACKAGE/'native_conversation_quality_probe',
-                                               request, work/mode/'result.json'], work/mode, results=True)
+            process, result = checked_full_e2b(sdk/'bazel-bin'/PACKAGE/'native_conversation_quality_probe',
+                request, work/mode, binary_identity=build['binaries']['native_conversation_quality_probe'],
+                cleanup_root=a.build_dir)
             summary['lanes'][mode] = {'classification': 'passed', 'result_sha256': sha(work/mode/'result.json'),
                                      'process_sha256': sha(work/mode/'process.json')}
             write(work/'summary.json', summary)
