@@ -40,7 +40,11 @@ class VideoCallService : LifecycleService() {
         super.onCreate()
         val hub = VisionFrameHub()
         val cadence = FrameCadence()
-        val binder = CameraXVideoBinder(this, this, hub, cadence)
+        val binder = CameraXVideoBinder(this, this, hub, cadence, onVideoError = { error ->
+            controller.degrade(error)
+            status = "Camera unavailable — continuing audio-only"
+            notifyChanged()
+        })
         controller = CallVisionController(binder, cadence, hub)
         CallVisionRegistry.hub = hub
         CallVisionRegistry.controller = controller
@@ -54,9 +58,12 @@ class VideoCallService : LifecycleService() {
         // out of onCreate and kills the whole process. When denied, fall back to
         // the specialUse type declared in the manifest, so the service still runs
         // (Stop keeps working) and the call degrades to audio-only.
+        //
+        // The grant check can also lie: Android documents that background
+        // camera-FGS creation may still throw SecurityException even when the
+        // check reports granted. Catch that too and degrade instead of dying.
         val cameraGranted = CameraPermission.isGranted(this)
-        startForeground(
-            NOTIFICATION_ID, notification(),
+        startForegroundSafely(
             if (cameraGranted) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
             else ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
         )
@@ -69,6 +76,26 @@ class VideoCallService : LifecycleService() {
         }
         // Capture is not started here: it begins per call via START_CAPTURE,
         // so a merely-armed wake session never holds the camera.
+    }
+
+    /**
+     * True once a camera-type foreground start was rejected (background
+     * start restriction): later capture starts degrade to audio-only
+     * instead of retrying a start the platform will refuse.
+     */
+    @Volatile
+    private var cameraForegroundRejected = false
+
+    private fun startForegroundSafely(type: Int) {
+        try {
+            startForeground(NOTIFICATION_ID, notification(), type)
+        } catch (_: SecurityException) {
+            cameraForegroundRejected = true
+            startForeground(
+                NOTIFICATION_ID, notification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+            )
+        }
     }
 
     private fun notification(): Notification {
@@ -104,9 +131,15 @@ class VideoCallService : LifecycleService() {
             START_CAPTURE -> {
                 val callId = intent.getStringExtra(EXTRA_CALL_ID)
                 if (!callId.isNullOrBlank()) {
-                    val granted = CameraPermission.isGranted(this)
+                    // A rejected camera foreground start degrades like a
+                    // denied permission: the call continues audio-only.
+                    val granted = CameraPermission.isGranted(this) && !cameraForegroundRejected
                     controller.start(granted, callId)
-                    status = if (granted) "Video on" else "Camera unavailable — grant permission to enable video"
+                    status = when (controller.state) {
+                        CallVisionController.State.ACTIVE -> "Video on"
+                        CallVisionController.State.DEGRADED -> "Camera unavailable — continuing audio-only"
+                        else -> "Camera unavailable — grant permission to enable video"
+                    }
                     notifyChanged()
                 }
             }

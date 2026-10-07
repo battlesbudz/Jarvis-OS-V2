@@ -168,4 +168,72 @@ class CallVisionControllerTest {
         }
         assertEquals(0, binder.binds)
     }
+
+    // -- Degradation: camera failure keeps the call audio-only. --------------
+
+    @Test fun degradeReleasesCameraKeepsCallIdentity() {
+        val binder = FakeBinder()
+        val hub = VisionFrameHub()
+        val controller = CallVisionController(binder, hub = hub)
+        controller.start(cameraPermissionGranted = true, callId = "call-1")
+        hub.register(object : VisionObserver {
+            override fun onFrame(jpegBytes: ByteArray, timestampMs: Long) {}
+        })
+        hub.dispatch(byteArrayOf(1), 100L)
+        assertNotNull(hub.latest())
+
+        assertEquals(CallVisionController.State.DEGRADED, controller.degrade(VideoError.PROVIDER_FAILED))
+        assertEquals("The failed camera must be released", 1, binder.unbinds)
+        assertNull("The frame cache must be cleared on degradation", hub.latest())
+        assertEquals("The owning call still ends its capture", "call-1", controller.captureCallId())
+        assertEquals(VideoError.PROVIDER_FAILED, controller.videoError())
+    }
+
+    @Test fun degradeWhenIdleIsNoOp() {
+        val binder = FakeBinder()
+        val controller = CallVisionController(binder)
+        assertEquals(CallVisionController.State.IDLE, controller.degrade(VideoError.NO_BACK_CAMERA))
+        assertEquals(0, binder.unbinds)
+        assertNull(controller.videoError())
+    }
+
+    @Test fun stopForCallEndsDegradedCapture() {
+        val binder = FakeBinder()
+        val controller = CallVisionController(binder)
+        controller.start(cameraPermissionGranted = true, callId = "call-1")
+        controller.degrade(VideoError.BIND_FAILED)
+        assertEquals(CallVisionController.State.IDLE, controller.stopForCall("call-1"))
+        assertNull(controller.videoError())
+        assertNull(controller.captureCallId())
+    }
+
+    @Test fun staleStopForCallLeavesDegradedCaptureAlone() {
+        val binder = FakeBinder()
+        val controller = CallVisionController(binder)
+        controller.start(cameraPermissionGranted = true, callId = "call-1")
+        controller.degrade(VideoError.PROVIDER_FAILED)
+        assertEquals(CallVisionController.State.DEGRADED, controller.stopForCall("call-0"))
+        assertEquals(VideoError.PROVIDER_FAILED, controller.videoError())
+    }
+
+    @Test fun startAfterDegradeRetriesBinding() {
+        val binder = FakeBinder()
+        val controller = CallVisionController(binder)
+        controller.start(cameraPermissionGranted = true, callId = "call-1")
+        controller.degrade(VideoError.PROVIDER_FAILED)
+        assertEquals(CallVisionController.State.ACTIVE,
+            controller.start(cameraPermissionGranted = true, callId = "call-1"))
+        assertEquals("A retry must bind again", 2, binder.binds)
+        assertNull(controller.videoError())
+    }
+
+    @Test fun burstDoesNothingWhileDegraded() {
+        val binder = FakeBinder()
+        val cadence = FrameCadence(framesPerSecond = 1.0, clockMs = { 0L })
+        val controller = CallVisionController(binder, cadence = cadence)
+        controller.start(cameraPermissionGranted = true, callId = "call-1")
+        controller.degrade(VideoError.PROVIDER_FAILED)
+        controller.requestBurst(5_000L, fps = 10.0)
+        assertFalse(cadence.shouldCapture(0L))
+    }
 }

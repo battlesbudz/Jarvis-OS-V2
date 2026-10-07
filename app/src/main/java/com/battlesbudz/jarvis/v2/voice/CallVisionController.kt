@@ -11,16 +11,21 @@ package com.battlesbudz.jarvis.v2.voice
  * newer call's capture, and capture never survives into passive wake
  * listening — the runtime ends it with the call that owned it.
  *
- * States: IDLE -> ACTIVE -> IDLE, or IDLE -> DENIED -> IDLE.
+ * States: IDLE -> ACTIVE -> IDLE, IDLE -> DENIED -> IDLE, or
+ * ACTIVE -> DEGRADED -> IDLE.
  * DENIED means the camera permission was refused: the binder is never
- * touched and the service degrades to audio-only.
+ * touched and the service degrades to audio-only. DEGRADED means the
+ * permission was granted but the camera itself failed (provider failure,
+ * no back camera, bind failure): the binder is released and the call
+ * continues audio-only. The owning call identity is retained through
+ * DEGRADED so ending the call still cleans up exactly once.
  */
 class CallVisionController(
     private val binder: VideoBinder,
     private val cadence: FrameCadence = FrameCadence(),
     private val hub: VisionFrameHub = VisionFrameHub(),
 ) {
-    enum class State { IDLE, DENIED, ACTIVE }
+    enum class State { IDLE, DENIED, ACTIVE, DEGRADED }
 
     interface VideoBinder {
         fun bind()
@@ -36,6 +41,12 @@ class CallVisionController(
     private var captureCallId: String? = null
 
     fun captureCallId(): String? = captureCallId
+
+    /** Why the controller degraded, when [state] is DEGRADED; null otherwise. */
+    @Volatile
+    private var videoError: VideoError? = null
+
+    fun videoError(): VideoError? = videoError
 
     /**
      * Start video capture for [callId]. Returns the resulting state.
@@ -56,7 +67,27 @@ class CallVisionController(
         }
         binder.bind()
         captureCallId = callId
+        videoError = null
         state = State.ACTIVE
+        return state
+    }
+
+    /**
+     * The camera failed while this call owned the capture (provider failure,
+     * no back camera, or bind failure). Release the camera, keep the call
+     * identity so [stopForCall] still ends the call exactly once, and report
+     * honest audio-only: the call continues, video does not. No-op unless
+     * the capture is ACTIVE.
+     */
+    @Synchronized
+    fun degrade(error: VideoError): State {
+        if (state == State.ACTIVE) {
+            binder.unbind()
+            state = State.DEGRADED
+            videoError = error
+            cadence.reset()
+            hub.clear()
+        }
         return state
     }
 
@@ -66,7 +97,7 @@ class CallVisionController(
      */
     @Synchronized
     fun stopForCall(callId: String): State {
-        if (state == State.ACTIVE && captureCallId == callId) stopLocked()
+        if ((state == State.ACTIVE || state == State.DEGRADED) && captureCallId == callId) stopLocked()
         return state
     }
 
@@ -78,9 +109,10 @@ class CallVisionController(
     }
 
     private fun stopLocked() {
-        if (state == State.ACTIVE) binder.unbind()
+        if (state == State.ACTIVE || state == State.DEGRADED) binder.unbind()
         state = State.IDLE
         captureCallId = null
+        videoError = null
         cadence.reset()
         hub.clear()
     }
