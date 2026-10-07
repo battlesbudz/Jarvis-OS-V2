@@ -25,6 +25,8 @@ package com.battlesbudz.jarvis.v2.actions
  * Portability: pure Kotlin, no engine dependency. The same interpreter
  * runs on the JVM (unit tests) and on Android (production), so the
  * security properties never depend on a WebView or a platform JS engine.
+ * It needs no resources, manifest entries, or native code, so it behaves
+ * identically in the release and compact APK variants.
  */
 
 const val SCRIPT_ENGINE_NAME = "jarvis-script/1"
