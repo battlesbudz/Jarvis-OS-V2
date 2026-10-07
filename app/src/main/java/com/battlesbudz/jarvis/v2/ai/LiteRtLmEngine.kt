@@ -82,7 +82,7 @@ class LiteRtLmEngine(
     private val nativeLifecycle = CheckedConversationLifecycle(
         createConversation = ::createConversation,
         cancelConversation = { it.cancelProcess() },
-        awaitIdle = { it.awaitIdle() },
+        awaitIdle = { /* Conversation has no awaitIdle(); lifecycle guards dormant on this branch */ },
         closeConversation = { it.close() },
         closeEngine = { if (engine.isInitialized()) engine.close() },
         checkWorkerThread = ::checkNativeWorkerThread,
