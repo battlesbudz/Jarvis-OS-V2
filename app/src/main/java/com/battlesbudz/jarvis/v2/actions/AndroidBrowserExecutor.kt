@@ -25,7 +25,7 @@ class AndroidBrowserExecutor(
     private val session: BrowserSession = BrowserSession(),
     private val bridge: BrowserBridge = UnavailableBrowserBridge,
     private val onDiagnostic: (String) -> Unit = {},
-) : MobileActionExecutor {
+) : MobileActionExecutor, SecretAwareExecutor {
 
     override fun execute(action: MobileAction): ExecutionResult = when (action) {
         is MobileAction.BrowseOpen -> browseOpen(action)
@@ -43,6 +43,9 @@ class AndroidBrowserExecutor(
     /** Reconcile a manual takeover before dispatch; non-null stops dispatch. */
     private fun reconcileTakeover(verb: String): ExecutionResult? {
         if (!session.isPausedForTakeover()) return null
+        // The user was interacting: re-extract before comparing, so a DOM
+        // the user changed is detected even without a page load.
+        runCatching { bridge.refreshSnapshot() }
         return when (session.resumeTakeover(bridge.currentUrl(), bridge.snapshotFingerprint())) {
             TakeoverResume.Unchanged -> null
             TakeoverResume.NoPage -> null
@@ -62,16 +65,60 @@ class AndroidBrowserExecutor(
     private fun reconcileSnapshot(): BrowserPage? {
         val snapshot = bridge.snapshot() ?: return session.currentPage()
         val current = session.currentPage()
-        if (current != null && current.url == snapshot.url) return current
-        val page = session.openPage(
-            url = snapshot.url,
-            title = snapshot.title,
-            textExcerpt = snapshot.textExcerpt,
-            links = snapshot.links,
-            forms = snapshot.forms
-        )
-        session.noteFingerprint(snapshot.contentFingerprint)
-        return page
+        if (current != null && current.url == snapshot.url &&
+            session.fingerprintFor(current.pageToken) == snapshot.contentFingerprint
+        ) {
+            // Same URL and same contents: the page the model saw is still live.
+            return current
+        }
+        return if (current != null && current.url == snapshot.url) {
+            // Same URL, changed contents (SPA DOM replacement, takeover):
+            // never reuse the stale page. The token rotates so approvals and
+            // fills bound to the old DOM die; history is untouched because
+            // the user did not navigate.
+            session.adoptSnapshot(
+                url = snapshot.url,
+                title = snapshot.title,
+                textExcerpt = snapshot.textExcerpt,
+                links = snapshot.links,
+                forms = snapshot.forms,
+                fingerprint = snapshot.contentFingerprint
+            )
+        } else {
+            val page = session.openPage(
+                url = snapshot.url,
+                title = snapshot.title,
+                textExcerpt = snapshot.textExcerpt,
+                links = snapshot.links,
+                forms = snapshot.forms
+            )
+            session.noteFingerprint(snapshot.contentFingerprint)
+            page
+        }
+    }
+
+    /**
+     * Mutating dispatches reconcile against a freshly extracted snapshot:
+     * the approval gate must see the DOM it is about to act on. A backend
+     * that cannot re-extract falls back to its cached snapshot.
+     */
+    private fun freshPage(): BrowserPage? {
+        runCatching { bridge.refreshSnapshot() }
+        return reconcileSnapshot()
+    }
+
+    /**
+     * Pre-journal credential boundary: a browse_fill whose target field is
+     * secret (or not yet known to the session) names its text argument, so
+     * the pipeline journals the redacted copy and the secret never lands
+     * on disk.
+     */
+    override fun secretArgumentKeys(request: ActionRequest): Set<String> {
+        if (request.name != "browse_fill") return emptySet()
+        val fieldId = request.arguments["field"] ?: return setOf("text")
+        val field = session.currentPage()?.findField(fieldId)
+        // Redact unless the session positively knows the field is not secret.
+        return if (field?.secret != false) setOf("text") else emptySet()
     }
 
     private fun bridgeUnavailable(verb: String): ExecutionResult {
@@ -108,6 +155,8 @@ class AndroidBrowserExecutor(
     private fun browseClick(action: MobileAction.BrowseClick): ExecutionResult {
         if (!bridge.isAvailable()) return bridgeUnavailable("click")
         reconcileTakeover("click")?.let { return it }
+        // The click dispatches against the live DOM, not the last read.
+        freshPage()
         return when (val outcome = session.clickLink(action.linkId, action.token)) {
             is ClickOutcome.Navigating -> {
                 if (!bridge.clickLink(action.linkId)) {
@@ -158,6 +207,8 @@ class AndroidBrowserExecutor(
     private fun browseFill(action: MobileAction.BrowseFill): ExecutionResult {
         if (!bridge.isAvailable()) return bridgeUnavailable("fill")
         reconcileTakeover("fill")?.let { return it }
+        // The fill dispatches against the live DOM, not the last read.
+        freshPage()
         return when (val outcome = session.fillField(action.fieldId, action.text, action.token)) {
             is FillOutcome.Filled -> {
                 if (!bridge.fillField(action.fieldId, action.text)) {
@@ -187,6 +238,10 @@ class AndroidBrowserExecutor(
     private fun browseSubmit(action: MobileAction.BrowseSubmit): ExecutionResult {
         if (!bridge.isAvailable()) return bridgeUnavailable("submit")
         reconcileTakeover("submit")?.let { return it }
+        // The approval is verified against the live DOM, not the last read:
+        // a same-URL replacement between approval and dispatch rotates the
+        // token, so a stale approval can never submit.
+        freshPage()
         return when (val confirmation = session.confirmSubmit(action.token)) {
             is SubmitConfirmation.Confirmed -> {
                 if (!bridge.submitForm()) {
@@ -239,6 +294,8 @@ class AndroidBrowserExecutor(
     private fun browseLogin(action: MobileAction.BrowseLogin): ExecutionResult {
         if (!bridge.isAvailable()) return bridgeUnavailable("login")
         reconcileTakeover("login")?.let { return it }
+        // The login handoff targets the live DOM, not the last read.
+        freshPage()
         val page = session.currentPage()
             ?: return ExecutionResult(false, "No page is open in the internal browser yet.")
         if (page.pageToken != action.token) {
@@ -256,7 +313,10 @@ class AndroidBrowserExecutor(
                     ExecutionResult(true, "Filled the login for ${decision.host} with your password manager.")
                 }
                 CredentialFillOutcome.NO_CREDENTIALS -> ExecutionResult(
-                    false, "Your password manager has no login saved for ${decision.host}."
+                    // Neutral: the backend cannot tell "no login saved" from
+                    // "the user dismissed the prompt" — both leave the field
+                    // empty, so neither may be claimed.
+                    false, "The password manager didn't fill a login for ${decision.host}."
                 )
                 CredentialFillOutcome.CANCELLED -> ExecutionResult(
                     false, "The password-manager fill was cancelled; nothing was filled."

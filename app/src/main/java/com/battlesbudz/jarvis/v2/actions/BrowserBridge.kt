@@ -26,6 +26,14 @@ interface BrowserBridge {
     fun open(url: String): Boolean
     /** Latest observed snapshot, or null when nothing is loaded yet. */
     fun snapshot(): BrowserPageSnapshot?
+    /**
+     * Re-extract the live page now and return the fresh snapshot. SPAs mutate
+     * the DOM without page loads, so mutating dispatches call this before
+     * reconciling: the approval gate must see the DOM it is about to act on,
+     * not the last navigation's snapshot. The default answers the cached
+     * snapshot; the WebView backend re-extracts on demand.
+     */
+    fun refreshSnapshot(): BrowserPageSnapshot? = snapshot()
     /** The content fingerprint for the latest snapshot, or null. */
     fun snapshotFingerprint(): String?
     fun clickLink(id: String): Boolean
@@ -36,7 +44,10 @@ interface BrowserBridge {
     /**
      * Ask the platform password manager to fill the current page's login
      * form for [host]. Only the outcome returns: credentials never leave
-     * the platform autofill path.
+     * the platform autofill path. The backend reports FILLED only after
+     * verifying a password field actually became non-empty (a boolean
+     * check — the secret value itself is never read back); a focused-but-
+     * empty field is NO_CREDENTIALS, never FILLED.
      */
     fun requestCredentialFill(host: String): CredentialFillOutcome
     fun currentUrl(): String?
@@ -61,6 +72,19 @@ class FakeBrowserBridge : BrowserBridge {
         return true
     }
     override fun snapshot(): BrowserPageSnapshot? = snapshotToReturn
+    /**
+     * Scripted live-DOM change: when set, refreshSnapshot() swaps this in as
+     * the current snapshot, simulating an SPA DOM replacement or a takeover
+     * the backend re-extracted. [refreshCalls] counts refresh attempts.
+     */
+    var refreshedSnapshot: BrowserPageSnapshot? = null
+    var refreshCalls: Int = 0
+        private set
+    override fun refreshSnapshot(): BrowserPageSnapshot? {
+        refreshCalls++
+        refreshedSnapshot?.let { snapshotToReturn = it }
+        return snapshotToReturn
+    }
     override fun snapshotFingerprint(): String? = snapshotToReturn?.contentFingerprint
     override fun clickLink(id: String): Boolean {
         if (!available) return false

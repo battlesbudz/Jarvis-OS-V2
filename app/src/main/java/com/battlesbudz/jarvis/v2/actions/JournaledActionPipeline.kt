@@ -23,14 +23,20 @@ class JournaledActionPipeline(
         val validation = MobileActionValidator().validate(frozenRequest)
         if (validation is ActionValidation.Rejected) return ExecutionResult(ExecutionResult.Outcome.REJECTED_VALIDATION, validation.reason)
         gateCheck(frozenRequest)?.let { return it }
+        // Pre-journal credential boundary: the journaled copy redacts secret
+        // arguments (a browse_fill into a password field) so the secret never
+        // lands on disk. The live dispatch below still uses the original.
+        val journaled = (executor as? SecretAwareExecutor)?.let { aware ->
+            CredentialBoundary.redactForJournal(frozenRequest, aware.secretArgumentKeys(frozenRequest))
+        } ?: frozenRequest
         val running = try {
-            val queued = ledger.create(frozenRequest)
+            val queued = ledger.create(journaled)
             ledger.transition(queued.id, queued.generation, ToolTaskState.RUNNING)
                 ?: return ExecutionResult(false, "The phone action changed before it could start.")
         } catch (_: ToolTaskStorageException) {
             return ExecutionResult(false, "I couldn't save this phone action, so I didn't start it.")
         }
-        return perform(running, durableGroup = false)
+        return perform(running.copy(request = frozenRequest), durableGroup = false)
     }
 
     fun executeAttempt(attempt: ToolTaskAttempt, approval: ActionApprovalRequest? = null): ExecutionResult {

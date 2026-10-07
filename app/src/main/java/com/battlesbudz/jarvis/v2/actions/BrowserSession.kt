@@ -426,6 +426,34 @@ class BrowserSession(
         current?.let { pageFingerprints[it.pageToken] = fingerprint }
     }
 
+    /** The noted content fingerprint for [token], or null when unknown. */
+    fun fingerprintFor(token: String): String? = pageFingerprints[token]
+
+    /**
+     * Adopt a fresh snapshot for the current navigation entry: same URL, new
+     * DOM (SPA replacement, takeover resume). The token rotates — approvals
+     * and fills bound to the old DOM die — but history is untouched, because
+     * the user did not navigate. Prefer this over [openPage] when the URL
+     * did not change.
+     */
+    fun adoptSnapshot(url: String, title: String, textExcerpt: String,
+                      links: List<BrowserLink>, forms: List<BrowserForm>,
+                      fingerprint: String?): BrowserPage {
+        fills.clear()
+        admission = null
+        pausedForTakeover = false
+        val page = BrowserPage(
+            url = url, title = title, textExcerpt = textExcerpt,
+            links = links, forms = forms,
+            provenance = BrowserProvenance(url, clock()),
+            pageToken = newToken()
+        )
+        current = page
+        if (fingerprint != null) pageFingerprints[page.pageToken] = fingerprint
+        else pageFingerprints.remove(page.pageToken)
+        return page
+    }
+
     private fun rotateAfterExternalChange() {
         val page = current ?: return
         pageFingerprints.remove(page.pageToken)

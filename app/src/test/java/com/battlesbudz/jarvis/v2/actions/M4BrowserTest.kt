@@ -313,10 +313,22 @@ class M4BrowserTest {
     // ---- Catalog ----
 
     @Test fun catalogDeclaresAllNineBrowserTools() {
-        val names = MobileToolCatalog.all().map { it.name }
-        for (tool in listOf("browse_open", "browse_read", "browse_click", "browse_back",
-            "browse_forward", "browse_fill", "browse_submit", "browse_handoff", "browse_login")) {
-            assertTrue("missing $tool", names.contains(tool))
+        // The nine browse tools are declared (find/decode keep resolving
+        // them for storage) but withheld from the model-visible catalog
+        // while the browser runtime is unwired.
+        val gate = MobileToolCatalog.BrowserRuntimeGate
+        gate.wired = false
+        try {
+            val tools = listOf("browse_open", "browse_read", "browse_click", "browse_back",
+                "browse_forward", "browse_fill", "browse_submit", "browse_handoff", "browse_login")
+            tools.forEach { assertNotNull("not declared: $it", MobileToolCatalog.find(it)) }
+            val names = MobileToolCatalog.all().map { it.name }
+            tools.forEach { assertFalse("withheld while unwired: $it", names.contains(it)) }
+            gate.wired = true
+            val wiredNames = MobileToolCatalog.all().map { it.name }
+            tools.forEach { assertTrue("missing $it", wiredNames.contains(it)) }
+        } finally {
+            gate.wired = false
         }
     }
 
@@ -445,19 +457,130 @@ class M4BrowserTest {
     }
 
     @Test fun turnPlanRoutesBrowsePhrasing() {
-        val open = ActionTurnPlan.parse("browse to example.com")
-        assertTrue(open is ActionTurnPlan.Ready)
-        val openStep = (open as ActionTurnPlan.Ready).steps.single()
-        assertEquals("browse_open", openStep.request.name)
-        assertEquals("example.com", openStep.request.arguments["url"])
+        // Browse routing follows the wiring gate: unwired requests are
+        // ordinary speech; wired requests plan browse steps.
+        val gate = MobileToolCatalog.BrowserRuntimeGate
+        gate.wired = false
+        assertTrue(ActionTurnPlan.parse("browse to example.com") is ActionTurnPlan.NotAction)
+        assertTrue(ActionTurnPlan.parse("read this page") is ActionTurnPlan.NotAction)
+        gate.wired = true
+        try {
+            val open = ActionTurnPlan.parse("browse to example.com")
+            assertTrue(open is ActionTurnPlan.Ready)
+            val openStep = (open as ActionTurnPlan.Ready).steps.single()
+            assertEquals("browse_open", openStep.request.name)
+            assertEquals("example.com", openStep.request.arguments["url"])
 
-        val read = ActionTurnPlan.parse("read this page")
-        assertTrue(read is ActionTurnPlan.Ready)
-        assertEquals("browse_read", (read as ActionTurnPlan.Ready).steps.single().request.name)
+            val read = ActionTurnPlan.parse("read this page")
+            assertTrue(read is ActionTurnPlan.Ready)
+            assertEquals("browse_read", (read as ActionTurnPlan.Ready).steps.single().request.name)
+        } finally {
+            gate.wired = false
+        }
 
         // "open example.com" still hands off to the external browser app.
         val external = ActionTurnPlan.parse("open example.com")
         assertTrue(external is ActionTurnPlan.Ready)
         assertEquals("open_website", (external as ActionTurnPlan.Ready).steps.single().request.name)
+    }
+
+    // ---- Approval binding: the token dies with the DOM it was issued for ----
+
+    @Test fun fingerprintForTracksNotedFingerprints() {
+        val session = testSession()
+        val page = openSnapshot(session, loginPage())
+        assertEquals("fp-login", session.fingerprintFor(page.pageToken))
+        assertNull(session.fingerprintFor("deadbeefdeadbeef"))
+    }
+
+    @Test fun adoptSnapshotRotatesTokenWithoutTouchingHistory() {
+        val session = testSession()
+        val page = openSnapshot(session, loginPage())
+        session.fillField("f0", "user@example.com", page.pageToken)
+        val proposal = session.proposeSubmit(page.pageToken)!!
+        session.admitSubmit(proposal)
+        // Same URL, replaced DOM (e.g. the login completed via SPA nav).
+        val fresh = session.adoptSnapshot(
+            url = page.url, title = "Example account", textExcerpt = "Welcome",
+            links = emptyList(), forms = emptyList(), fingerprint = "fp-after-login"
+        )
+        assertNotEquals(page.pageToken, fresh.pageToken)
+        assertEquals("fp-after-login", session.fingerprintFor(fresh.pageToken))
+        // The old token is dead: fills, approvals and submissions bound to
+        // the old DOM are all rejected.
+        assertEquals(FillOutcome.StaleToken, session.fillField("f0", "x", page.pageToken))
+        assertEquals(SubmitConfirmation.StaleToken, session.confirmSubmit(page.pageToken))
+        assertTrue(session.filledFieldIds().isEmpty())
+        // History is untouched: the user did not navigate.
+        assertFalse(session.canGoBack())
+        assertNull(session.goBack())
+    }
+
+    @Test fun changedActionDestinationInvalidatesApproval() {
+        val session = testSession()
+        val page = openSnapshot(session, loginPage())
+        session.fillField("f0", "user@example.com", page.pageToken)
+        session.fillField("f1", "s3cr3t", page.pageToken)
+        val proposal = session.proposeSubmit(page.pageToken)!!
+        assertEquals("https://example.com/session", proposal.destination)
+        session.admitSubmit(proposal)
+        // The form now posts somewhere else (same URL, new DOM).
+        val changed = loginPage().copy(
+            forms = listOf(
+                BrowserForm(
+                    id = "form0",
+                    actionUrl = "https://evil.example/collect",
+                    method = "POST",
+                    fields = listOf(
+                        BrowserField("f0", "Email", FieldKind.EMAIL),
+                        BrowserField("f1", "Password", FieldKind.PASSWORD, secret = true)
+                    ),
+                    submitLabel = "Sign in"
+                )
+            ),
+            contentFingerprint = "fp-hijacked"
+        )
+        session.adoptSnapshot(
+            url = changed.url, title = changed.title, textExcerpt = changed.textExcerpt,
+            links = changed.links, forms = changed.forms, fingerprint = changed.contentFingerprint
+        )
+        // The stale approval cannot submit anywhere.
+        assertEquals(SubmitConfirmation.StaleToken, session.confirmSubmit(page.pageToken))
+    }
+
+    @Test fun reorderedFormsInvalidateApproval() {
+        val session = testSession()
+        val page = openSnapshot(session, loginPage())
+        session.fillField("f0", "user@example.com", page.pageToken)
+        val proposal = session.proposeSubmit(page.pageToken)!!
+        session.admitSubmit(proposal)
+        // Same URL, same fields, forms in a different order (new DOM).
+        val reordered = loginPage().copy(
+            forms = listOf(
+                BrowserForm(id = "form9", actionUrl = null, method = "GET",
+                    fields = listOf(BrowserField("f9", "Search", FieldKind.TEXT)),
+                    submitLabel = "Go"),
+                loginPage().forms.single()
+            ),
+            contentFingerprint = "fp-reordered"
+        )
+        session.adoptSnapshot(
+            url = reordered.url, title = reordered.title, textExcerpt = reordered.textExcerpt,
+            links = reordered.links, forms = reordered.forms, fingerprint = reordered.contentFingerprint
+        )
+        assertEquals(SubmitConfirmation.StaleToken, session.confirmSubmit(page.pageToken))
+    }
+
+    @Test fun changedFieldValuesInvalidateAdmission() {
+        val session = testSession()
+        val page = openSnapshot(session, loginPage())
+        session.fillField("f0", "user@example.com", page.pageToken)
+        val proposal = session.proposeSubmit(page.pageToken)!!
+        session.admitSubmit(proposal)
+        // A fill changed after the approval: the admission dies with it.
+        session.fillField("f0", "someone-else@example.com", page.pageToken)
+        val confirmation = session.confirmSubmit(page.pageToken)
+        assertTrue("changed fills must need a fresh approval, got $confirmation",
+            confirmation is SubmitConfirmation.NeedsApproval)
     }
 }

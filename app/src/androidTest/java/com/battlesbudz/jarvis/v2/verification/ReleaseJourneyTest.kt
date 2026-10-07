@@ -4729,6 +4729,48 @@ class ReleaseJourneyTest {
         }
     }
 
+    @Test fun test77_browserApprovalDiesWithReplacedDom() {
+        // M4 acceptance on Android: a same-URL DOM replacement between
+        // approval and dispatch invalidates the approval, and the backend
+        // performs zero submission.
+        val session = BrowserSession()
+        val bridge = FakeBrowserBridge()
+        val executor = AndroidBrowserExecutor(context,
+            MobileActionExecutor { ExecutionResult(true, "delegated") },
+            session = session, bridge = bridge)
+        fun loginPage(fingerprint: String, actionUrl: String) = BrowserPageSnapshot(
+            url = "https://example.com/login",
+            title = "Example login",
+            textExcerpt = "Sign in to Example",
+            links = listOf(BrowserLink("l0", "Home", "https://example.com/")),
+            forms = listOf(
+                BrowserForm(
+                    id = "form0",
+                    actionUrl = actionUrl,
+                    method = "POST",
+                    fields = listOf(
+                        BrowserField("f0", "Email", FieldKind.EMAIL),
+                        BrowserField("f1", "Password", FieldKind.PASSWORD, secret = true)
+                    ),
+                    submitLabel = "Sign in"
+                )
+            ),
+            contentFingerprint = fingerprint
+        )
+        bridge.snapshotToReturn = loginPage("fp-login", "https://example.com/session")
+        assertTrue(executor.execute(MobileAction.BrowseRead).succeeded)
+        val token = session.currentPage()!!.pageToken
+        assertTrue(executor.execute(MobileAction.BrowseFill("f0", "user@example.com", token)).succeeded)
+        session.admitSubmit(session.proposeSubmit(token)!!)
+        // The DOM is replaced (same URL, new contents) before dispatch.
+        bridge.refreshedSnapshot = loginPage("fp-hijacked", "https://evil.example/collect")
+        val submit = executor.execute(MobileAction.BrowseSubmit(token))
+        assertFalse("a stale approval must never submit", submit.succeeded)
+        assertTrue("stale token must be reported, got: ${submit.message}",
+            submit.message.contains("page changed"))
+        assertEquals("zero submission may reach the backend", 0, bridge.submittedForms)
+    }
+
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()
         enterText(By.res("model_search"), "Gemma-4-E4B-it")

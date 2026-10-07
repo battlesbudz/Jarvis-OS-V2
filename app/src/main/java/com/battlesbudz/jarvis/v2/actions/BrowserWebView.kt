@@ -5,9 +5,13 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
 import android.webkit.ValueCallback
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -22,6 +26,11 @@ import org.json.JSONObject
  */
 object BrowserBackend {
     @Volatile var latestSnapshot: BrowserPageSnapshot? = null
+    /**
+     * Bumped on every successful snapshot extraction; lets the bridge wait
+     * for a fresh re-extract instead of trusting a cached snapshot.
+     */
+    @Volatile var snapshotVersion: Long = 0
     @Volatile var takeoverListener: (() -> Unit)? = null
     fun notifyUserTakeover() {
         takeoverListener?.invoke()
@@ -80,6 +89,15 @@ class BrowserActivity : Activity() {
     /** Automation seam for the bridge; the activity stays the WebView owner. */
     fun webViewForAutomation(): WebView = webView
 
+    /**
+     * Re-extract the snapshot on demand (automation refresh). Must run on
+     * the UI thread; bumps [BrowserBackend.snapshotVersion] on success.
+     * Never throws: a dying activity simply yields no fresh snapshot.
+     */
+    fun requestSnapshot() {
+        runCatching { extractSnapshot(webView) }
+    }
+
     private fun extractSnapshot(view: WebView) {
         view.evaluateJavascript(SNAPSHOT_JS, ValueCallback { json ->
             runCatching {
@@ -125,6 +143,7 @@ class BrowserActivity : Activity() {
                     forms = forms,
                     contentFingerprint = root.optString("fingerprint")
                 )
+                BrowserBackend.snapshotVersion++
             }
         })
     }
@@ -206,6 +225,19 @@ class WebViewBrowserBridge(
 
     private var lastRequestedUrl: String? = null
 
+    companion object {
+        /** Bounded wait for a fill's in-page verification to report back. */
+        private const val FILL_CONFIRM_TIMEOUT_MS = 5_000L
+        /** Bounded wait for the submit click's JS to report back. */
+        private const val SUBMIT_CLICK_TIMEOUT_MS = 5_000L
+        /** Bounded settle window for a submit's observable effect. */
+        private const val SUBMIT_CONFIRM_TIMEOUT_MS = 8_000L
+        /** Bounded wait for the user's password-manager fill to land. */
+        private const val CREDENTIAL_FILL_TIMEOUT_MS = 20_000L
+        /** Bounded wait for an on-demand snapshot re-extract. */
+        private const val REFRESH_TIMEOUT_MS = 2_500L
+    }
+
     override fun isAvailable(): Boolean = true
 
     override fun open(url: String): Boolean {
@@ -224,6 +256,21 @@ class WebViewBrowserBridge(
     override fun snapshot(): BrowserPageSnapshot? = BrowserBackend.latestSnapshot
 
     override fun snapshotFingerprint(): String? = BrowserBackend.latestSnapshot?.contentFingerprint
+
+    /**
+     * Re-extract the live DOM now (bounded wait): mutating dispatches must
+     * see the page as it is, not as it was at the last navigation.
+     */
+    override fun refreshSnapshot(): BrowserPageSnapshot? {
+        val activity = currentBrowserActivity() ?: return snapshot()
+        val before = BrowserBackend.snapshotVersion
+        activity.runOnUiThread { activity.requestSnapshot() }
+        val deadline = SystemClock.uptimeMillis() + REFRESH_TIMEOUT_MS
+        while (BrowserBackend.snapshotVersion == before && SystemClock.uptimeMillis() < deadline) {
+            Thread.sleep(50)
+        }
+        return BrowserBackend.latestSnapshot
+    }
 
     override fun currentUrl(): String? =
         BrowserBackend.latestSnapshot?.url ?: lastRequestedUrl
@@ -257,59 +304,134 @@ class WebViewBrowserBridge(
 
     override fun fillField(id: String, text: String): Boolean {
         val activity = currentBrowserActivity() ?: return false
+        // Defense in depth: ids are validated upstream, but never let one
+        // break out of the JS string.
+        val safeId = id.filter { it.isLetterOrDigit() || it == '-' || it == '_' }
+        if (safeId.isEmpty() || safeId != id) return false
         val quoted = JSONObject.quote(text)
-        activity.runOnUiThread {
-            activity.webViewRef()?.evaluateJavascript(
-                """(function(){
-  var el=document.querySelector('[data-jarvis-id="${id}"]');
-  if(!el) return;
+        // The equality check runs inside the page: only a boolean crosses
+        // back, so a secret value is confirmed set without ever being read
+        // out of the field.
+        return evalBoolean(
+            activity,
+            """(function(){
+  var el=document.querySelector('[data-jarvis-id="${safeId}"]');
+  if(!el) return false;
   var proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
-  var setter=Object.getOwnPropertyDescriptor(proto,'value').set;
-  setter.call(el,${quoted});
+  var desc=Object.getOwnPropertyDescriptor(proto,'value');
+  if(desc&&desc.set) desc.set.call(el,${quoted}); else el.value=${quoted};
   el.dispatchEvent(new Event('input',{bubbles:true}));
   el.dispatchEvent(new Event('change',{bubbles:true}));
+  return el.value===${quoted};
 })()""",
-                null
-            )
-        }
-        return true
+            FILL_CONFIRM_TIMEOUT_MS
+        ) == true
     }
 
     override fun submitForm(): Boolean {
         val activity = currentBrowserActivity() ?: return false
-        activity.runOnUiThread {
-            activity.webViewRef()?.evaluateJavascript(
-                """(function(){
+        val beforeUrl = AtomicReference<String?>(null)
+        val beforeFingerprint = BrowserBackend.latestSnapshot?.contentFingerprint
+        val clicked = evalBoolean(
+            activity,
+            """(function(){
   var f=document.querySelector('form');
-  if(!f) return;
+  if(!f) return false;
   var btn=f.querySelector('input[type="submit"],button[type="submit"],button');
   if(btn) btn.click(); else f.submit();
+  return true;
 })()""",
-                null
-            )
+            SUBMIT_CLICK_TIMEOUT_MS,
+            beforeEval = { view -> beforeUrl.set(view.url) }
+        )
+        if (clicked != true) return false
+        // The click landed. Confirm an actual effect — navigation or DOM
+        // change — within a bounded settle window. A queued click with no
+        // observable effect is reported as a failure, never a success.
+        val deadline = SystemClock.uptimeMillis() + SUBMIT_CONFIRM_TIMEOUT_MS
+        var lastRefresh = 0L
+        while (SystemClock.uptimeMillis() < deadline) {
+            val snap = BrowserBackend.latestSnapshot
+            if (snap != null &&
+                (snap.url != beforeUrl.get() || snap.contentFingerprint != beforeFingerprint)
+            ) return true
+            // Nudge a re-extract so XHR-driven DOM changes surface; page-load
+            // navigations surface on their own via onPageFinished.
+            val now = SystemClock.uptimeMillis()
+            if (now - lastRefresh > 1500) {
+                lastRefresh = now
+                activity.runOnUiThread { activity.requestSnapshot() }
+            }
+            Thread.sleep(250)
         }
-        return true
+        return false
     }
 
     override fun requestCredentialFill(host: String): CredentialFillOutcome {
-        // The platform autofill path: nudge the WebView to offer autofill on
-        // the focused field. Only the outcome returns; credentials never
-        // leave the platform. A null activity means the backend is gone.
+        // The platform autofill path: focus the password field so the
+        // password manager offers the fill, then verify a field actually
+        // became non-empty. Only booleans cross back — the secret value
+        // itself is never read out of the field. A null activity means the
+        // backend is gone.
         val activity = currentBrowserActivity() ?: return CredentialFillOutcome.UNAVAILABLE
-        activity.runOnUiThread {
-            activity.webViewRef()?.evaluateJavascript(
+        val focused = evalBoolean(
+            activity,
+            """(function(){
+  var el=document.querySelector('input[type="password"]');
+  if(!el) return false;
+  el.focus();
+  return true;
+})()""",
+            FILL_CONFIRM_TIMEOUT_MS
+        )
+        if (focused != true) return CredentialFillOutcome.NO_CREDENTIALS
+        // The user answers the password-manager prompt on their own time;
+        // wait bounded for the fill to land.
+        val deadline = SystemClock.uptimeMillis() + CREDENTIAL_FILL_TIMEOUT_MS
+        while (SystemClock.uptimeMillis() < deadline) {
+            val filled = evalBoolean(
+                activity,
                 """(function(){
   var el=document.querySelector('input[type="password"]');
-  if(el){ el.focus(); }
+  return !!(el&&el.value&&el.value.length>0);
 })()""",
-                null
+                FILL_CONFIRM_TIMEOUT_MS
             )
+            if (filled == true) return CredentialFillOutcome.FILLED
+            Thread.sleep(500)
         }
-        // Whether the user has saved credentials is known only to the
-        // password manager; report the handoff honestly as handed off.
-        // Callers treat this as "offered" — the page's next snapshot shows
-        // whether fields were filled.
-        return CredentialFillOutcome.FILLED
+        // The backend cannot tell "no login saved" from "the user dismissed
+        // the prompt" — both leave the field empty.
+        return CredentialFillOutcome.NO_CREDENTIALS
+    }
+
+    /**
+     * Evaluate [js] (expected to return a JS boolean) on the browser thread
+     * and synchronously return it, or null on timeout. [beforeEval] runs on
+     * the UI thread just before the evaluation — used to capture pre-state.
+     */
+    private fun evalBoolean(
+        activity: BrowserActivity,
+        js: String,
+        timeoutMs: Long,
+        beforeEval: (WebView) -> Unit = {}
+    ): Boolean? {
+        val latch = CountDownLatch(1)
+        val result = AtomicReference<Boolean?>(null)
+        activity.runOnUiThread {
+            val view = activity.webViewRef()
+            if (view == null) {
+                latch.countDown()
+                return@runOnUiThread
+            }
+            beforeEval(view)
+            view.evaluateJavascript(js, ValueCallback { value ->
+                result.set(value?.trim() == "true")
+                latch.countDown()
+            })
+        }
+        latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+        return result.get()
     }
 
     /**

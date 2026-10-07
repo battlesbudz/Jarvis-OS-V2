@@ -83,4 +83,45 @@ class JournaledActionPipelineTest {
             assertEquals(outcome, ToolTaskLedger(FileToolTaskStore(file)).snapshot().single().resultOutcome)
         }
     }
+
+    @Test fun secretFillTextRedactedPreJournalButDispatchedVerbatim() = withFile { file ->
+        // Pre-journal credential boundary: the journaled attempt redacts the
+        // secret argument, while the live dispatch uses the original.
+        val ledger = ToolTaskLedger(FileToolTaskStore(file))
+        var dispatched: MobileAction? = null
+        val executor = object : MobileActionExecutor, SecretAwareExecutor {
+            override fun execute(action: MobileAction): ExecutionResult {
+                dispatched = action
+                return ExecutionResult(true, "filled")
+            }
+            override fun secretArgumentKeys(request: ActionRequest): Set<String> =
+                if (request.name == "browse_fill") setOf("text") else emptySet()
+        }
+        val pipeline = JournaledActionPipeline(ledger, executor)
+        val request = ActionRequest(
+            "browse_fill",
+            mapOf("field" to "f1", "text" to "s3cr3t-pw", "token" to "0123456789abcdef")
+        )
+        assertTrue(pipeline.execute(request).succeeded)
+        val saved = ToolTaskLedger(FileToolTaskStore(file)).snapshot().single()
+        assertEquals(CredentialBoundary.REDACTED, saved.request.arguments["text"])
+        assertEquals("f1", saved.request.arguments["field"])
+        assertEquals("the live dispatch must use the original secret",
+            MobileAction.BrowseFill("f1", "s3cr3t-pw", "0123456789abcdef"), dispatched)
+        assertFalse("the secret must never reach the bytes on disk",
+            file.readText().contains("s3cr3t-pw"))
+    }
+
+    @Test fun nonSecretRequestsJournalVerbatim() = withFile { file ->
+        val ledger = ToolTaskLedger(FileToolTaskStore(file))
+        val executor = object : MobileActionExecutor, SecretAwareExecutor {
+            override fun execute(action: MobileAction) = ExecutionResult(true, "ok")
+            override fun secretArgumentKeys(request: ActionRequest): Set<String> = emptySet()
+        }
+        val pipeline = JournaledActionPipeline(ledger, executor)
+        val request = ActionRequest("set_volume", mapOf("level" to "20"))
+        assertTrue(pipeline.execute(request).succeeded)
+        val saved = ToolTaskLedger(FileToolTaskStore(file)).snapshot().single()
+        assertEquals(mapOf("level" to "20"), saved.request.arguments)
+    }
 }
