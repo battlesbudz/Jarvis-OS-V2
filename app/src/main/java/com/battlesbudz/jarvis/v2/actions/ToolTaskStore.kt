@@ -24,7 +24,31 @@ interface ToolTaskStore {
         return next
     }
 }
-class ToolTaskStorageException : IllegalStateException("The phone-action journal is unavailable.")
+/**
+ * Typed journal failures. The journal is the device's memory of what was
+ * authorized: every failure mode is explicit so callers can report
+ * honestly and never silently reset or rewrite the bytes on disk.
+ */
+enum class ToolTaskStorageFailure { UNAVAILABLE, INVALID_CONTENT, UNSUPPORTED_SCHEMA, UNSUPPORTED_CONTENT, WRITE_FAILED }
+
+class ToolTaskStorageException(
+    val failure: ToolTaskStorageFailure = ToolTaskStorageFailure.UNAVAILABLE,
+    val journalSchemaVersion: Int? = null
+) : IllegalStateException("The phone-action journal is unavailable.") {
+    /** Deliberately excludes paths, task payloads, parser messages and other private data. */
+    fun userMessage(): String = when (failure) {
+        ToolTaskStorageFailure.UNSUPPORTED_SCHEMA ->
+            "Saved phone tasks use journal format ${journalSchemaVersion ?: "unknown"}; this build supports formats 1–3. Use a compatible build to continue. Your saved data is preserved."
+        ToolTaskStorageFailure.UNSUPPORTED_CONTENT ->
+            "Some saved phone tasks need features this build doesn't support. Use a compatible build to continue them. Your saved data is preserved."
+        ToolTaskStorageFailure.INVALID_CONTENT ->
+            "Saved phone-task data couldn't be validated. Phone actions are paused to protect it; the data hasn't been reset."
+        ToolTaskStorageFailure.WRITE_FAILED ->
+            "The phone-task change couldn't be saved. Please try again; no further action will start from this request."
+        ToolTaskStorageFailure.UNAVAILABLE ->
+            "Saved phone tasks couldn't be read. Phone actions are paused; the data hasn't been reset."
+    }
+}
 
 class InMemoryToolTaskStore : ToolTaskStore {
     private var journal = ToolTaskJournal()
@@ -51,10 +75,12 @@ class FileToolTaskStore(
         val before = readLocked()
         val after = retain(retainWorkflows(change(before.frozen()).frozen()))
         if (after != before) {
-            validate(after)
-            val encoded = encode(after)
-            if (encoded.toByteArray(StandardCharsets.UTF_8).size > MAX_BYTES) throw ToolTaskStorageException()
-            try { commitWriter(file, encoded) } catch (_: Exception) { throw ToolTaskStorageException() }
+            val encoded = try {
+                validate(after)
+                encode(after).also { require(it.toByteArray(StandardCharsets.UTF_8).size <= MAX_BYTES) }
+            } catch (_: Exception) { throw ToolTaskStorageException(ToolTaskStorageFailure.WRITE_FAILED) }
+            try { commitWriter(file, encoded) }
+            catch (_: Exception) { throw ToolTaskStorageException(ToolTaskStorageFailure.WRITE_FAILED) }
         }
         after.frozen()
     }
@@ -71,7 +97,28 @@ class FileToolTaskStore(
             require(file.isFile && file.length() <= MAX_BYTES)
             val root = JSONObject(file.readText(StandardCharsets.UTF_8))
             val version = root.getInt("schemaVersion")
-            require(version in 1..3 && root.get("schemaVersion") is Int)
+            require(root.get("schemaVersion") is Int)
+            if (version !in 1..3) throw ToolTaskStorageException(ToolTaskStorageFailure.UNSUPPORTED_SCHEMA, version)
+            if (version >= 2) {
+                val authorityFields = setOf("authority", "provider", "toolSchemaVersion", "stepId", "groupId",
+                    "grantId", "approvalId", "actionRevision", "reconciled")
+                // The published prior-APK upgrade seed uses schema 2 but omits all later
+                // ownership fields, a shape older readers accepted. Terminal, unlinked receipts carry
+                // no dispatch authority. Never extend this migration to active or partially
+                // annotated records, where a missing field could erase an approval requirement.
+                val legacyReceipts = version == 2 && root.nullString("activeQuestionId") == null &&
+                    listOf("groups", "approvals", "grants", "events").all { root.getJSONArray(it).length() == 0 }
+                root.getJSONArray("attempts").objects { a ->
+                    val complete = authorityFields.all(a::has)
+                    val terminalLegacy = legacyReceipts && authorityFields.none(a::has) &&
+                        a.getString("state") in setOf("SUCCEEDED", "FAILED", "CANCELLED", "UNKNOWN_OUTCOME")
+                    require(complete || terminalLegacy)
+                }
+            }
+            if (version == 3) {
+                require(root.has("sourceAccess"))
+                root.getJSONArray("groups").objects { require(it.has("resumeAfterRestart")) }
+            }
             val journal = ToolTaskJournal(
                 attempts = root.getJSONArray("attempts").objects { a -> ToolTaskAttempt(
                     id = a.getString("id"), generation = a.strictLong("generation"),
@@ -126,9 +173,40 @@ class FileToolTaskStore(
                     r.getString("id"), r.getString("workflowId"), r.nullString("occurrenceId"),
                     WorkflowReceiptKind.valueOf(r.getString("kind")), r.getString("message"), r.strictLong("atMs")) })
             validate(journal)
+            // An older typed writer must never discard newer fields or coerce malformed values.
+            // Unknown semantics stay on disk untouched until a compatible build understands them.
+            // Schema stays 3 with the new Script step kind: Script steps are a step kind
+            // within schema 3, not a schema bump. Upgrade: older schema-3 journals (and
+            // schema 1/2 journals) read normally; the authority checks above still apply.
+            // Rollback: a build without the Script codec that opens a journal containing
+            // Script steps fails here with UNSUPPORTED_CONTENT — the bytes on disk are
+            // preserved and the user is told to use a compatible build.
+            verifyLosslessRead(root, JSONObject(encode(journal)), rootObject = true)
             journal
         }
-    } catch (_: Exception) { throw ToolTaskStorageException() }
+    } catch (failure: ToolTaskStorageException) { throw failure }
+      catch (_: java.io.IOException) { throw ToolTaskStorageException() }
+      catch (_: Exception) { throw ToolTaskStorageException(ToolTaskStorageFailure.INVALID_CONTENT) }
+
+    private fun verifyLosslessRead(original: Any, decoded: Any, rootObject: Boolean = false) {
+        when (original) {
+            is JSONObject -> {
+                require(decoded is JSONObject)
+                original.keys().forEach { key ->
+                    if (!(rootObject && key == "schemaVersion")) {
+                        if (!decoded.has(key)) throw ToolTaskStorageException(ToolTaskStorageFailure.UNSUPPORTED_CONTENT)
+                        verifyLosslessRead(original.get(key), decoded.get(key))
+                    }
+                }
+            }
+            is JSONArray -> {
+                require(decoded is JSONArray && original.length() == decoded.length())
+                for (index in 0 until original.length()) verifyLosslessRead(original.get(index), decoded.get(index))
+            }
+            is Number -> require(decoded is Number && original.toString().toBigDecimal().compareTo(decoded.toString().toBigDecimal()) == 0)
+            else -> require(original == decoded)
+        }
+    }
 
     /** Preserve unfinished groups and unresolved unknown effects; keep 256 recent completed attempts. */
     private fun retain(j: ToolTaskJournal): ToolTaskJournal {
@@ -234,7 +312,7 @@ class FileToolTaskStore(
             require(r.id.isUuid() && r.workflowId.isNotBlank() && r.message.length <= 512 && r.atMs >= 0)
         }
         Unit
-    } catch (_: Exception) { throw ToolTaskStorageException() }
+    } catch (_: Exception) { throw ToolTaskStorageException(ToolTaskStorageFailure.INVALID_CONTENT) }
 
     private fun encode(j: ToolTaskJournal) = JSONObject().put("schemaVersion", 3)
         .put("attempts", JSONArray(j.attempts.map { a -> JSONObject()
