@@ -4771,6 +4771,45 @@ class ReleaseJourneyTest {
         assertEquals("zero submission may reach the backend", 0, bridge.submittedForms)
     }
 
+    @Test fun test78_scriptStepRunsOnDeviceWithAllowlistedHost() {
+        // M5 acceptance on Android: a workflow Script step runs through the
+        // real isolated interpreter with the production allowlisted host,
+        // and its result binds into a later step.
+        val scriptId = "script-1"
+        val toolId = "tool-1"
+        val definition = WorkflowDefinition(
+            id = "wf-m5",
+            name = "M5 script journey",
+            description = "Script step with result binding.",
+            steps = listOf(
+                WorkflowStep.Script(scriptId, "log(\"hello\"); return 40 + 2;", listOf("log")),
+                WorkflowStep.Tool(toolId,
+                    ActionRequest("set_volume", mapOf("level" to "20")),
+                    bindings = mapOf("level" to WorkflowBinding(scriptId, "result")))
+            ),
+            triggers = listOf(WorkflowTrigger.Manual),
+            origin = WorkflowOrigin.CONVERSATION,
+            createdAtMs = 1_700_000_000_000L,
+            updatedAtMs = 1_700_000_000_000L
+        )
+        val seen = mutableListOf<ActionRequest>()
+        val outcome = WorkflowEngine().run(
+            definition,
+            dispatch = { req -> seen += req; ExecutionResult(true, "ok") },
+            runScript = { step -> step.runWithInterpreter(ScriptHost.withLog()) }
+        )
+        assertTrue("script workflow must complete, got $outcome",
+            outcome is WorkflowRunOutcome.Completed)
+        outcome as WorkflowRunOutcome.Completed
+        assertEquals("42", outcome.results[scriptId]?.get("result"))
+        // The script's result bound into the tool step's arguments.
+        assertEquals("42", seen.single().arguments["level"])
+        // And an undeclared host function stays denied on device too.
+        val denied = WorkflowStep.Script("s2", "read_file(\"/x\");", emptyList())
+            .runWithInterpreter(ScriptHost.withLog())
+        assertTrue(denied is ScriptExecution.Failed)
+    }
+
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()
         enterText(By.res("model_search"), "Gemma-4-E4B-it")

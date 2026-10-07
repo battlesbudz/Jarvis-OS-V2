@@ -33,6 +33,8 @@ const val SCRIPT_ENGINE_NAME = "jarvis-script/1"
 const val DEFAULT_SCRIPT_MAX_TIME_MS = 10_000L
 const val DEFAULT_SCRIPT_MAX_MEMORY_KB = 8192L
 const val DEFAULT_SCRIPT_MAX_OUTPUT_CHARS = 8192
+/** Deepest allowed nesting for recursive script expressions (parens, call args). */
+const val MAX_EXPR_DEPTH = 100
 
 /** Values in the scripting language: numbers, strings, booleans. No objects, no null pointers. */
 sealed interface ScriptValue {
@@ -107,16 +109,31 @@ fun ScriptResult.toExecution(): ScriptExecution = when (this) {
  * Convenience for the workflow engine: run this step's source with the
  * isolated interpreter and map the result to the engine's outcome shape.
  * The Android runtime wires this with its allowlisted host.
+ *
+ * Least privilege: the script may call only the host functions this step
+ * declares in [WorkflowStep.Script.requiredHostFunctions]. A function the
+ * host provides but the step did not declare is denied, never silently
+ * granted — the supplied host is intersected with the declaration.
  */
 fun WorkflowStep.Script.runWithInterpreter(
     host: ScriptHost,
     limits: ScriptLimits = ScriptLimits(),
     isCancelled: () -> Boolean = { false }
-): ScriptExecution = runScript(source, host, limits, isCancelled).toExecution()
+): ScriptExecution {
+    val declared = requiredHostFunctions.toSet()
+    val allowed = if (declared.isEmpty()) emptyMap()
+    else host.functions.filterKeys { it in declared }
+    return runScript(source, ScriptHost(allowed), limits, isCancelled).toExecution()
+}
 
 /**
  * Run [source] with [host]'s allowlist under [limits].
  * Deterministic: same source + same host behavior = same result.
+ *
+ * Cancellation and the empty-script check come before parsing: a
+ * pre-cancelled run reports [ScriptResult.Cancelled] without doing parse
+ * work, and a malformed or pathologically nested script reports a typed
+ * [ScriptResult.Failed] — never a stack overflow, never unbounded parsing.
  */
 fun runScript(
     source: String,
@@ -124,6 +141,7 @@ fun runScript(
     limits: ScriptLimits = ScriptLimits(),
     isCancelled: () -> Boolean = { false }
 ): ScriptResult {
+    if (isCancelled()) return ScriptResult.Cancelled
     if (source.isBlank()) return ScriptResult.Failed("empty script")
     val program = try {
         ScriptParser(source).parseProgram()
@@ -272,6 +290,12 @@ private class CancelSignal : ScriptSignal("cancelled")
 private class ScriptParser(source: String) {
     private val toks = lex(source)
     private var p = 0
+    /**
+     * Current recursive-expression nesting depth (parenthesized groups,
+     * call arguments). Bounded: without this, a few thousand nested
+     * parens exhaust the JVM stack during parsing.
+     */
+    private var exprDepth = 0
 
     private fun peek(): Tok = toks[p]
     private fun err(msg: String): Nothing = throw ParseSignal("$msg at offset ${peek().pos}")
@@ -371,7 +395,15 @@ private class ScriptParser(source: String) {
         return out
     }
 
-    private fun parseExpr(): Expr = parseOr()
+    private fun parseExpr(): Expr {
+        if (++exprDepth > MAX_EXPR_DEPTH)
+            err("expression is too deeply nested (over $MAX_EXPR_DEPTH levels)")
+        try {
+            return parseOr()
+        } finally {
+            exprDepth--
+        }
+    }
 
     private fun parseOr(): Expr {
         var e = parseAnd()
@@ -433,12 +465,18 @@ private class ScriptParser(source: String) {
     }
 
     private fun parseUnary(): Expr {
-        val t = peek()
-        if (t.kind == Tk.OP && (t.text == "!" || t.text == "-")) {
+        // Iterative: a long run of prefix operators ("!!!--...x") must not
+        // recurse.
+        val ops = mutableListOf<String>()
+        var t = peek()
+        while (t.kind == Tk.OP && (t.text == "!" || t.text == "-")) {
             p++
-            return Expr.Unary(t.text, parseUnary())
+            ops += t.text
+            t = peek()
         }
-        return parseCall()
+        var e = parseCall()
+        for (op in ops.asReversed()) e = Expr.Unary(op, e)
+        return e
     }
 
     private fun parseCall(): Expr {

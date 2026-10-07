@@ -554,4 +554,111 @@ class M5WorkflowsTest {
             assertTrue(e.message!!.contains("host function"))
         }
     }
+
+    // -- Script runtime: host-function least privilege --------
+
+    @Test fun runWithInterpreterDeniesAvailableButUndeclaredHostFunction() {
+        // The host provides log(), but the step declares nothing: the call
+        // must be denied, not silently granted.
+        val step = WorkflowStep.Script(uid(), "log(\"hi\");", emptyList())
+        val outcome = step.runWithInterpreter(ScriptHost.withLog())
+        assertTrue("undeclared host function must be denied, got $outcome",
+            outcome is ScriptExecution.Failed)
+        assertTrue((outcome as ScriptExecution.Failed).reason.contains("denied"))
+    }
+
+    @Test fun runWithInterpreterGrantsOnlyDeclaredFunctions() {
+        val host = ScriptHost(
+            mapOf(
+                "log" to ScriptHostFunction("log", 1..1) { args, emit ->
+                    emit(args[0].display() + "\n"); ScriptValue.Null
+                },
+                "extra" to ScriptHostFunction("extra", 0..0) { _, _ -> ScriptValue.Num(1.0) }
+            )
+        )
+        val ok = WorkflowStep.Script(uid(), "log(\"hi\");", listOf("log"))
+            .runWithInterpreter(host)
+        assertTrue("declared function must stay available, got $ok", ok is ScriptExecution.Succeeded)
+        val denied = WorkflowStep.Script(uid(), "extra();", listOf("log"))
+            .runWithInterpreter(host)
+        assertTrue("available-but-undeclared function must be denied, got $denied",
+            denied is ScriptExecution.Failed)
+        assertTrue((denied as ScriptExecution.Failed).reason.contains("denied"))
+    }
+
+    // -- Script runtime: parser hardening --------
+
+    @Test fun scriptDeeplyNestedParensIsTypedFailure() {
+        // Thousands of nested parens: a typed parse failure, never a stack
+        // overflow. (The 8,192-char workflow limit still permits this.)
+        val depth = 3000
+        val source = "return " + "(".repeat(depth) + "1" + ")".repeat(depth) + ";"
+        val r = runScript(source, ScriptHost.empty())
+        assertTrue("deep nesting must fail typed, got $r", r is ScriptResult.Failed)
+        assertTrue((r as ScriptResult.Failed).reason.contains("deeply nested"))
+    }
+
+    @Test fun scriptDeeplyNestedCallsIsTypedFailure() {
+        val depth = 1500
+        val source = "return " + "neg(".repeat(depth) + "1" + ")".repeat(depth) + ";"
+        val r = runScript(
+            source,
+            ScriptHost(mapOf("neg" to ScriptHostFunction("neg", 1..1) { args, _ ->
+                ScriptValue.Num(-(args[0] as ScriptValue.Num).v)
+            }))
+        )
+        assertTrue("deep call nesting must fail typed, got $r", r is ScriptResult.Failed)
+        assertTrue((r as ScriptResult.Failed).reason.contains("deeply nested"))
+    }
+
+    @Test fun scriptLongPrefixOperatorsDoNotRecurse() {
+        // Thousands of prefix operators are iterative, not recursive.
+        val source = "return " + "!".repeat(3000) + "true;"
+        val r = runScript(source, ScriptHost.empty())
+        assertTrue("long prefix runs must parse, got $r", r is ScriptResult.Success)
+        assertEquals(ScriptValue.Bool(true), (r as ScriptResult.Success).value)
+    }
+
+    @Test fun scriptPreCancelledSkipsParsing() {
+        // A pre-cancelled run reports Cancelled without doing parse work —
+        // even for a script that would otherwise fail parsing.
+        val r = runScript("this is not valid script (((;", ScriptHost.empty(), isCancelled = { true })
+        assertEquals(ScriptResult.Cancelled, r)
+    }
+
+    @Test fun scriptMalformedIsTypedFailure() {
+        val r = runScript("let x = ;", ScriptHost.empty())
+        assertTrue("malformed input must fail typed, got $r", r is ScriptResult.Failed)
+        assertTrue((r as ScriptResult.Failed).reason.contains("parse error"))
+    }
+
+    // -- Import review: script runtime requirements --------
+
+    @Test fun importReviewDerivesScriptRuntimeFromStepsWhenMetadataOmitted() {
+        // A manifest that omits top-level scriptRuntime metadata but
+        // contains Script steps still needs the runtime: the review must
+        // flag it on a device without one, and derive the host-function
+        // needs from the steps.
+        val def = definition(steps = listOf(scriptStep()))
+        val json = manifestOf(def).copy(scriptRuntime = null).toJson()
+        val noRuntime = reviewWorkflowManifest(json,
+            DeviceCapabilities(mapOf("read_battery" to 1L, "set_volume" to 1L),
+                setOf("battery.read", "audio.modify"), scriptRuntime = null))
+        assertFalse(noRuntime.ready)
+        assertTrue(noRuntime.runtimeProblems.any { it.contains("not installed") })
+
+        // A device whose host lacks the declared function is flagged too.
+        val poorCaps = fullCaps().copy(
+            scriptRuntime = fullCaps().scriptRuntime!!.copy(hostFunctions = emptySet()))
+        val review = reviewWorkflowManifest(json, poorCaps)
+        assertFalse(review.ready)
+        assertTrue(review.runtimeProblems.any { it.contains("log") })
+    }
+
+    @Test fun importReviewNoScriptRuntimeNeededWithoutScriptSteps() {
+        val def = definition(steps = listOf(batteryStep()))
+        val json = manifestOf(def).copy(scriptRuntime = null).toJson()
+        val review = reviewWorkflowManifest(json, fullCaps())
+        assertTrue(review.runtimeProblems.isEmpty())
+    }
 }

@@ -61,7 +61,10 @@ fun reviewWorkflowManifest(json: String, caps: DeviceCapabilities): ImportReview
         .map { (name, cs) -> ToolContract(name, cs.maxOf { it.minVersion }) }
     val missingTools = contracts.filter { (caps.availableTools[it.name] ?: 0L) < it.minVersion }
     val missingScopes = manifest.permittedScopes.filter { it !in caps.grantedScopes }
-    val runtimeProblems = checkScriptRuntime(manifest.scriptRuntime, caps.scriptRuntime)
+    // The top-level scriptRuntime metadata is advisory: a manifest that
+    // omits it but contains Script steps still needs the runtime, so the
+    // requirement is derived from the steps when the metadata is absent.
+    val runtimeProblems = checkScriptRuntime(effectiveScriptRuntime(manifest), caps.scriptRuntime)
     val preview = buildString {
         appendLine(manifest.workflow.previewText())
         appendLine()
@@ -81,6 +84,27 @@ fun reviewWorkflowManifest(json: String, caps: DeviceCapabilities): ImportReview
 
 private fun ready(missingTools: List<ToolContract>, missingScopes: List<String>, runtimeProblems: List<String>) =
     missingTools.isEmpty() && missingScopes.isEmpty() && runtimeProblems.isEmpty()
+
+/**
+ * The script runtime a manifest actually needs. The declared top-level
+ * metadata wins when present; when it is omitted but the workflow contains
+ * Script steps, the requirement is derived from the steps themselves —
+ * trusting the omission would admit a workflow whose scripts cannot run.
+ * The derived requirement uses the interpreter defaults and the union of
+ * the steps' declared host functions.
+ */
+private fun effectiveScriptRuntime(manifest: WorkflowManifest): ScriptRuntimeRequirements? {
+    manifest.scriptRuntime?.let { return it }
+    val scriptSteps = collectScriptSteps(manifest.workflow.steps)
+    if (scriptSteps.isEmpty()) return null
+    return ScriptRuntimeRequirements(
+        engine = SCRIPT_ENGINE_NAME,
+        maxTimeMs = DEFAULT_SCRIPT_MAX_TIME_MS,
+        maxMemoryKb = DEFAULT_SCRIPT_MAX_MEMORY_KB,
+        maxOutputChars = DEFAULT_SCRIPT_MAX_OUTPUT_CHARS,
+        requiredHostFunctions = scriptSteps.flatMap { it.requiredHostFunctions }.distinct()
+    )
+}
 
 private fun checkScriptRuntime(
     required: ScriptRuntimeRequirements?,
