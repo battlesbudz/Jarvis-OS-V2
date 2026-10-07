@@ -332,6 +332,10 @@ class FileToolTaskStore(
             .put("candidates", JSONArray(candidates.map { it.json() }))
             .put("budget", JSONObject().put("maxAttempts", budget.maxAttempts)
                 .put("maxWallMs", budget.maxWallMs).put("noProgressLimit", budget.noProgressLimit))
+        is WorkflowStep.Script -> JSONObject().put("kind", "script").put("id", id)
+            .put("source", source)
+            .put("requiredHostFunctions", JSONArray(requiredHostFunctions))
+            .put("outputs", JSONObject(outputs.mapValues { (_, t) -> t.name }))
     }
 
     private fun JSONObject.workflowStep(): WorkflowStep {
@@ -358,6 +362,14 @@ class FileToolTaskStore(
                     getJSONArray("candidates").objects { it.request() },
                     EffortBudget(budget.getInt("maxAttempts"), budget.strictLong("maxWallMs"),
                         budget.getInt("noProgressLimit")))
+            }
+            "script" -> {
+                val outputsObj = getJSONObject("outputs")
+                val outputs = outputsObj.keys().asSequence().associateWith { key ->
+                    WorkflowValueType.valueOf(outputsObj.getString(key))
+                }
+                WorkflowStep.Script(id, getString("source"),
+                    getJSONArray("requiredHostFunctions").strings(), outputs)
             }
             else -> throw IllegalArgumentException("Unknown step kind.")
         }
