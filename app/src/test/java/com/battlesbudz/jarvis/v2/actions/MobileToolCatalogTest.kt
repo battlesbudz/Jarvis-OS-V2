@@ -12,13 +12,18 @@ class MobileToolCatalogTest {
     @Test fun catalogDrivesEveryLiteRtSchema() {
         val entries = MobileToolCatalog.all()
         val schemas = MobileActionToolDefinitions.all().map { JSONObject(it.getToolDescriptionJsonString()) }
-        val voiceNames = listOf("read_battery", "open_app", "set_volume", "media_control", "open_website", "open_settings", "navigate", "screen_observe", "screen_tap", "screen_scroll", "screen_type", "create_reminder", "show_schedule", "post_notification")
-        val browseNames = listOf("browse_open", "browse_read", "browse_click", "browse_back", "browse_forward", "browse_fill", "browse_submit", "browse_handoff", "browse_login")
-        // Voice tools: catalog entry and LiteRT schema stay in lockstep.
-        val voiceEntries = entries.filter { it.name in voiceNames }
-        assertEquals(voiceNames, voiceEntries.map { it.name })
-        assertEquals(voiceEntries.map { it.name }, schemas.map { it.getString("name") })
-        voiceEntries.zip(schemas).forEach { (entry, schema) ->
+        // Every catalog tool is exposed to the model as an OpenApiTool JSON spec
+        // (M4 browse_* tools included); catalog entry and schema stay in lockstep.
+        val expectedNames = listOf(
+            "read_battery", "open_app", "set_volume", "media_control", "open_website",
+            "open_settings", "navigate",
+            "browse_open", "browse_read", "browse_click", "browse_back", "browse_forward",
+            "browse_fill", "browse_submit", "browse_handoff", "browse_login",
+            "screen_observe", "screen_tap", "screen_scroll", "screen_type",
+            "create_reminder", "show_schedule", "post_notification")
+        assertEquals(expectedNames, entries.map { it.name })
+        assertEquals(entries.map { it.name }, schemas.map { it.getString("name") })
+        entries.zip(schemas).forEach { (entry, schema) ->
             val parameters = schema.getJSONObject("parameters")
             assertEquals("object", parameters.getString("type"))
             assertFalse(parameters.getBoolean("additionalProperties"))
@@ -33,12 +38,6 @@ class MobileToolCatalogTest {
                 parameter.pattern?.let { assertEquals(it, property.getString("pattern")) }
             }
         }
-        // Browse tools are catalog-only by design: strict-decoded for the
-        // internal browser, never exposed as voice tool schemas.
-        val browseEntries = entries.filter { it.name in browseNames }
-        assertEquals(browseNames, browseEntries.map { it.name })
-        assertTrue(browseEntries.none { entry -> schemas.any { it.getString("name") == entry.name } })
-        assertEquals(voiceNames.size + browseNames.size, entries.size)
         assertTrue(entries.all { it.version == MobileToolCatalog.VERSION })
     }
 
