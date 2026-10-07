@@ -9,6 +9,28 @@ import org.json.JSONObject
 object MobileToolCatalog {
     const val VERSION = 1
 
+    /** The nine M4 internal-browser tools. */
+    val BROWSE_TOOL_NAMES = setOf(
+        "browse_open", "browse_read", "browse_click",
+        "browse_back", "browse_forward", "browse_fill",
+        "browse_submit", "browse_handoff", "browse_login"
+    )
+
+    /**
+     * M4 wiring gate. The browser runtime path — the browser decorator, the
+     * session owner, and the approval UI wired into the JarvisRuntime and
+     * WorkflowCoordinator executor factories — is not installed in the
+     * production factories yet, so the nine browse tools stay unavailable to
+     * the model until the real path and its admission controls pass an
+     * Android journey. Flipping this without that evidence would advertise
+     * tools whose dispatch fails closed.
+     */
+    object BrowserRuntimeGate {
+        @Volatile var wired: Boolean = false
+    }
+
+    fun isBrowseTool(name: String): Boolean = name in BROWSE_TOOL_NAMES
+
     enum class ParameterType(val schemaType: String) { STRING("string"), INTEGER("integer") }
 
     data class Parameter(
@@ -336,7 +358,16 @@ object MobileToolCatalog {
         )
     )
 
-    fun all(): List<Tool> = entries
+    /**
+     * The model-visible tools. Browse tools are withheld while
+     * [BrowserRuntimeGate] is closed (see its KDoc): the model must never
+     * see tools the runtime cannot execute.
+     */
+    fun all(): List<Tool> =
+        if (BrowserRuntimeGate.wired) entries
+        else entries.filter { it.name !in BROWSE_TOOL_NAMES }
+
+    /** Storage/decode lookup: still resolves every catalog tool, including gated browse tools. */
     fun find(name: String): Tool? = entries.firstOrNull { it.name == name }
 
     /** Strict decoder contract: exact keys and JSON types only, with no coercion. */

@@ -4701,6 +4701,34 @@ class ReleaseJourneyTest {
         }
     }
     // Leave this selection in durable preferences for the controller's separate-process check.
+    @Test fun test76_browseToolsUnavailableUntilRuntimeWired() {
+        // M4 acceptance: the browser runtime path (browser decorator, session
+        // owner, approval UI) is not installed in the production factories,
+        // so the nine browse tools must be unavailable on every model-facing
+        // surface, and a browse action that somehow reaches the base executor
+        // fails closed with an honest receipt.
+        MobileToolCatalog.BrowserRuntimeGate.wired = false
+        try {
+            val names = MobileToolCatalog.all().map { it.name }
+            assertTrue("No browse tool may be model-visible while unwired",
+                names.none { it in MobileToolCatalog.BROWSE_TOOL_NAMES })
+            val schemas = MobileActionToolDefinitions.all()
+                .map { it.getToolDescriptionJsonString() }
+            assertTrue("No browse schema may reach the model while unwired",
+                schemas.none { it.contains("\"browse_open\"") })
+            val plan = ActionTurnPlan.parse("browse to example.com")
+            assertTrue("Deterministic routing must not plan browse while unwired",
+                plan is ActionTurnPlan.NotAction)
+            val executor = AndroidMobileActionExecutor(context)
+            val result = executor.execute(MobileAction.BrowseOpen("https://example.com"))
+            assertFalse("A browse action must not succeed without the runtime path", result.succeeded)
+            assertTrue("The receipt must name the missing wiring, got: ${result.message}",
+                result.message.contains("isn't wired into this action path"))
+        } finally {
+            MobileToolCatalog.BrowserRuntimeGate.wired = false
+        }
+    }
+
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()
         enterText(By.res("model_search"), "Gemma-4-E4B-it")

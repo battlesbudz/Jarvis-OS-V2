@@ -10,15 +10,17 @@ import org.junit.Test
 
 class MobileToolCatalogTest {
     @Test fun catalogDrivesEveryLiteRtSchema() {
+        // The M4 browser runtime is not wired: the nine browse tools are
+        // withheld from the model-visible catalog by default.
+        MobileToolCatalog.BrowserRuntimeGate.wired = false
         val entries = MobileToolCatalog.all()
         val schemas = MobileActionToolDefinitions.all().map { JSONObject(it.getToolDescriptionJsonString()) }
-        // Every catalog tool is exposed to the model as an OpenApiTool JSON spec
-        // (M4 browse_* tools included); catalog entry and schema stay in lockstep.
+        // Every catalog tool is exposed to the model as an OpenApiTool JSON spec;
+        // catalog entry and schema stay in lockstep. (Browse tools rejoin this
+        // list only when BrowserRuntimeGate.wired flips after an Android journey.)
         val expectedNames = listOf(
             "read_battery", "open_app", "set_volume", "media_control", "open_website",
             "open_settings", "navigate",
-            "browse_open", "browse_read", "browse_click", "browse_back", "browse_forward",
-            "browse_fill", "browse_submit", "browse_handoff", "browse_login",
             "screen_observe", "screen_tap", "screen_scroll", "screen_type",
             "create_reminder", "show_schedule", "post_notification")
         assertEquals(expectedNames, entries.map { it.name })
@@ -70,5 +72,30 @@ class MobileToolCatalogTest {
         MobileActionToolDefinitions.all().forEach { tool ->
             assertTrue(JSONObject(tool.execute("{}")).has("error"))
         }
+    }
+
+    @Test fun browseToolsWithheldUntilBrowserRuntimeWired() {
+        val gate = MobileToolCatalog.BrowserRuntimeGate
+        gate.wired = false
+        try {
+            assertTrue("No browse tool may reach the model while the runtime is unwired",
+                MobileToolCatalog.all().none { it.name in MobileToolCatalog.BROWSE_TOOL_NAMES })
+            assertTrue(MobileActionToolDefinitions.all()
+                .none { it.getToolDescriptionJsonString().contains("\"browse_open\"") })
+            // The catalog still knows them: storage and the strict decoder
+            // keep resolving journaled attempts.
+            assertEquals(9, MobileToolCatalog.BROWSE_TOOL_NAMES.size)
+            MobileToolCatalog.BROWSE_TOOL_NAMES.forEach {
+                assertTrue("find must still resolve $it", MobileToolCatalog.find(it) != null)
+            }
+            gate.wired = true
+            assertEquals("All nine browse tools return when the runtime is wired", 9,
+                MobileToolCatalog.all().count { it.name in MobileToolCatalog.BROWSE_TOOL_NAMES })
+            assertTrue(MobileActionToolDefinitions.all()
+                .any { it.getToolDescriptionJsonString().contains("\"browse_open\"") })
+        } finally {
+            gate.wired = false
+        }
+        assertTrue(MobileToolCatalog.all().none { it.name in MobileToolCatalog.BROWSE_TOOL_NAMES })
     }
 }
