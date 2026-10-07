@@ -42,7 +42,10 @@ class FrameCadence(
     }
 
     fun reset() {
-        lastCaptureMs = Long.MIN_VALUE
+        // Do not revert to MIN_VALUE: that means "never captured", which makes
+        // shouldCapture() return true immediately. After a reset (degrade/stop)
+        // the next capture must wait a full interval.
+        lastCaptureMs = clockMs()
         stopBurst()
     }
 
