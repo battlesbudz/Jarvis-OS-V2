@@ -37,6 +37,8 @@ internal class ConversationModelSession(
         get() = state.hasContext
         set(value) { state.hasContext = value }
     val characters get() = state.characters
+    /** Native quarantine guard: a quarantined engine must never be reused until restart. */
+    val isNativeQuarantined: Boolean get() = state.engine?.isNativeQuarantined == true
     val residentBackend: ConversationBackend? get() = state.engine?.let(::LiteRtConversationBackend)
 
     fun verifyIntegrity(): Boolean = verifyModel(selectedModel())
@@ -48,6 +50,8 @@ internal class ConversationModelSession(
 
     suspend fun prepare(imageAttached: Boolean, audioAttached: Boolean, voiceAttached: Boolean,
                         reply: ConversationReply): ConversationBackend {
+        check(state.engine?.isNativeQuarantined != true) { "Native model is still quarantined; ownership cannot be reused" }
+        if (state.engine?.requiresConfirmedHistoryRebuild == true) reset()
         if (imageAttached) {
             check(selectedModel().supportsVision) {
                 "${selectedModel().id} is text-only. Select a model with image input."
@@ -76,6 +80,8 @@ internal class ConversationModelSession(
 
     suspend fun prepareHistory(history: List<ChatEntry>, memoryHistoryInvalidated: Boolean,
                                pendingRequestSize: Int, limit: Int): List<ChatEntry> {
+        check(state.engine?.isNativeQuarantined != true) { "Native model is still quarantined; ownership cannot be reused" }
+        if (state.engine?.requiresConfirmedHistoryRebuild == true) reset()
         var promptHistory = if (memoryHistoryInvalidated) emptyList() else history
         if (state.characters + pendingRequestSize + ConversationPolicy.GENERATION_HEADROOM > limit) {
             val compacted = shortTermContext.compactSnapshot(promptHistory.map { it.role to it.text })

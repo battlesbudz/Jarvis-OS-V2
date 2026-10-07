@@ -33,7 +33,10 @@ internal class ConversationCoordinator(
     private val createActions: (String, (String, String, Boolean) -> Unit) -> ConversationActions,
     private val createBenchmark: (String, String) -> PipelineBenchmarkCapture,
     private val finishOwnedBenchmark: (PipelineBenchmarkCapture, PipelineBenchmarkOutcome, String?, String?) -> Unit,
-    private val diagnostics: ConversationDiagnostics
+    private val diagnostics: ConversationDiagnostics,
+    private val onTurnStarted: () -> Unit = {},
+    private val onTurnFailure: (conversationId: String) -> Unit = {},
+    private val beginActivity: (conversationId: String) -> ConversationActivity? = { null }
 ) {
     fun start(input: ConversationInvocation, callbacks: ConversationCallbacks): Job? {
         val conversationId = input.conversationIdentity ?: currentConversationId()
@@ -95,12 +98,16 @@ internal class ConversationCoordinator(
             reply.finishBenchmark()
             return null
         }
+        runCatching { onTurnStarted() }
         val job = scope.launch(Dispatchers.Default) {
+            var failed = false
             var ownedBackend: ConversationBackend? = null
             var telemetry: ConversationInferenceTelemetry? = null
-            capture.mark("request_processing_started")
-            capture.metric("request_queue_ms", reply.elapsed())
+            val activity = runCatching { beginActivity(conversationId) }.getOrNull()
+            fun progress(message: String, sequence: Long) { runCatching { activity?.progress(message, sequence) } }
             try {
+                capture.mark("request_processing_started")
+                capture.metric("request_queue_ms", reply.elapsed())
                 if (input.prompt.length > ConversationPolicy.MAX_USER_PROMPT_CHARS) {
                     reply.recordOutcome(PipelineBenchmarkOutcome.REJECTED, "request_too_large")
                     diagnostics.record("Turn rejected before action routing\\nuserLength=${input.prompt.length}\\n" +
@@ -113,15 +120,23 @@ internal class ConversationCoordinator(
                     input.directVoiceAudio, input.comparison != null, input.incrementalVoice,
                     input.frozenActionPlan, input.frozenVoiceFinal)
                 val routed = routing.route(request, reply, actions, callbacks.onPhonePlanFinished) ?: return@launch
+                progress("Preparing context for your reply", 1)
                 val prepared = contexts.prepare(request, routed, reply, prompt, contextLimit, callbacks.onMemoryBound) ?: return@launch
                 val history = modelSession.prepareHistory(prepared.history, prepared.memoryHistoryInvalidated,
                     prompt.pendingSize(input.prompt, null, prepared.history, prepared.referenceContext), contextLimit)
+                progress("Preparing the local model", 2)
                 val backend = modelSession.prepare(input.imageUri != null, input.audioUri != null, input.voiceAudio != null, reply)
                 ownedBackend = backend
                 val timings = ConversationInferenceTelemetry(input, callbacks, reply, diagnostics)
                 telemetry = timings
+                progress(when {
+                    input.imageUri != null -> "Working with your attached image"
+                    input.audioUri != null || input.voiceAudio != null -> "Working with your audio request"
+                    else -> "Writing your reply"
+                }, 3)
                 val draft = generation.generate(input, contextLimit, routed, prepared, history, prompt,
                     backend, reply, actions, timings)
+                progress("Checking your reply", 4)
                 recovery.recover(draft)
                 finishDraft(draft)
             } catch (cancelled: CancellationException) {
@@ -130,22 +145,33 @@ internal class ConversationCoordinator(
                 telemetry?.finishProgress()
                 throw cancelled
             } catch (error: Throwable) {
+                failed = true
                 reply.recordOutcome(PipelineBenchmarkOutcome.ERROR, error.javaClass.simpleName)
                 actions.cancel()
                 telemetry?.finishProgress()
                 input.comparison?.put("generation_error", error.message ?: error.javaClass.simpleName)
-                input.incrementalVoice?.close()
-                modelSession.close()
+                runCatching { input.incrementalVoice?.close() }.exceptionOrNull()?.let {
+                    if (it !== error) error.addSuppressed(it)
+                }
+                runCatching { modelSession.close() }.exceptionOrNull()?.let {
+                    if (it !== error) error.addSuppressed(it)
+                }
                 diagnostics.record("Turn failed\nuser=${input.prompt.take(1_000)}\nimageAttached=${input.imageUri != null}\n" +
                     "error=${error.stackTraceToString().take(4_000)}")
-                reply.postFinish("I could not load the local model: ${error.message ?: "unknown error"}")
+                reply.postFinish(if (modelSession.isNativeQuarantined)
+                    "The local model did not stop safely. Restart Jarvis before starting another request."
+                else "I could not load the local model: ${error.message ?: "unknown error"}")
             } finally {
-                capture.mark("request_processing_finished")
-                reply.finishBenchmark()
-                if (ownsBenchmark) ownedBackend?.onBenchmarkSubmission = {}
-                modelSession.residentBackend?.onInferenceProgress = {}
-                if (input.voiceAudio == null && !input.callOwned) modelSession.residentBackend?.onPromptSubmitted = { _, _ -> }
-                input.incrementalVoice?.close()
+                try {
+                    capture.mark("request_processing_finished")
+                    reply.finishBenchmark()
+                    if (ownsBenchmark) ownedBackend?.onBenchmarkSubmission = {}
+                    modelSession.residentBackend?.onInferenceProgress = {}
+                    if (input.voiceAudio == null && !input.callOwned) modelSession.residentBackend?.onPromptSubmitted = { _, _ -> }
+                    input.incrementalVoice?.close()
+                } finally { runCatching { activity?.close() } }
+                // Start the bounded visible error after cleanup, before releasing admission.
+                if (failed) runCatching { onTurnFailure(conversationId) }
             }
         }
         job.invokeOnCompletion { ConversationWork.activeJobs.decrementAndGet() }

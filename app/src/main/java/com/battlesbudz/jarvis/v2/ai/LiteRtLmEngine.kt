@@ -4,6 +4,7 @@ import com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome
 import com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkPurpose
 import com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkSubmission
 import com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkWarmState
+import com.battlesbudz.jarvis.v2.work.ProcessConversationAdmission
 import com.google.ai.edge.litertlm.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
@@ -32,7 +33,21 @@ class LiteRtLmEngine(
     val audioEnabled: Boolean = false,
     private val speculativeDecoding: Boolean? = null
 ) : LocalModelEngine, Closeable, ToolCallEngine {
-    private companion object { val initializationLock = Any() }
+    private companion object {
+        val initializationLock = Any()
+        val callbackDepth = ThreadLocal.withInitial { 0 }
+        val quarantineLock = Any()
+        val retainedNativeEngines = mutableSetOf<LiteRtLmEngine>()
+        var quarantineAdmissionRetained = false
+        fun checkNativeWorkerThread() {
+            check(callbackDepth.get() == 0) { "Native lifecycle control is forbidden in model callbacks" }
+            check(android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) { "Native lifecycle control requires a worker thread" }
+        }
+        inline fun nativeCallback(block: () -> Unit) {
+            callbackDepth.set(callbackDepth.get() + 1)
+            try { block() } finally { callbackDepth.set(callbackDepth.get() - 1) }
+        }
+    }
     private val modelSpec = ModelCatalog.resolve(modelId)
     @OptIn(ExperimentalApi::class)
     private val engine = synchronized(initializationLock) {
@@ -54,6 +69,45 @@ class LiteRtLmEngine(
     }
     private var conversation: com.google.ai.edge.litertlm.Conversation? = null
     private val closed = AtomicBoolean(false)
+
+    /**
+     * Audio's native quarantine/history-rebuild lifecycle, ported verbatim
+     * (see CheckedConversationLifecycle.kt). Its turn-level transitions
+     * (beginTurn/finishTurn) are NOT wired into this engine's callback-channel
+     * generate path on this branch — that restructuring is unification work.
+     * Until then these properties always read false and the
+     * ConversationModelSession guards are dormant. Do not treat them as
+     * active protection on this branch.
+     */
+    private val nativeLifecycle = CheckedConversationLifecycle(
+        createConversation = ::createConversation,
+        cancelConversation = { it.cancelProcess() },
+        awaitIdle = { it.awaitIdle() },
+        closeConversation = { it.close() },
+        closeEngine = { if (engine.isInitialized()) engine.close() },
+        checkWorkerThread = ::checkNativeWorkerThread,
+        onQuarantined = { retainProcessQuarantine() }
+    )
+
+    /**
+     * Ordinary text jobs release their admission count in invokeOnCompletion too. Keep one
+     * additional process reservation and the actual Engine strongly retained before that can
+     * happen. This safety latch deliberately lasts until process exit, including after an
+     * explicit disposal retry; it never permits a new inference or model-file replacement.
+     */
+    private fun retainProcessQuarantine() = synchronized(quarantineLock) {
+        if (!quarantineAdmissionRetained) {
+            ProcessConversationAdmission.activeJobs.incrementAndGet()
+            quarantineAdmissionRetained = true
+        }
+        retainedNativeEngines.add(this)
+        Unit
+    }
+
+    /** A terminal callback is never proof that the model lease can be released. */
+    val nativeResourcesSafeToRelease: Boolean get() = nativeLifecycle.safeToRelease
+    val isNativeQuarantined: Boolean get() = nativeLifecycle.isQuarantined
+    val requiresConfirmedHistoryRebuild: Boolean get() = nativeLifecycle.requiresConfirmedHistoryRebuild
 
     /** Reports actual submissions, including incremental input, retries and recognition fallback. */
     var onPromptSubmitted: (String, Int) -> Unit = { _, _ -> }
