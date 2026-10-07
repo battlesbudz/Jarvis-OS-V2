@@ -21,10 +21,12 @@ import kotlinx.coroutines.launch
  * and runs the frame-capture pipeline while a call is active.
  *
  * Audio stays entirely in VoiceCallService — this service never touches the
- * microphone, TTS, or audio routing. Lifecycle: started when a call starts
- * (see the hook in VoiceCallService.onCreate), stopped by its own Stop
- * action, by [onTaskRemoved], or automatically when the voice call ends
- * (it observes VoiceCallService.stopRequested as a fail-safe).
+ * microphone, TTS, or audio routing. Lifecycle: capture starts per call via
+ * [startCapture] (the call's identity owns the capture) and ends when that
+ * call ends, by its own Stop action, by [onTaskRemoved], or automatically
+ * when the voice session ends (it observes VoiceCallService.stopRequested
+ * as a fail-safe). Capture never runs for a merely-armed wake session: a
+ * spoken farewell ends the call's capture while wake listening stays armed.
  *
  * If the camera permission is denied, the service still runs (so Stop works)
  * but never binds the camera: the call degrades to audio-only.
@@ -32,7 +34,7 @@ import kotlinx.coroutines.launch
 class VideoCallService : LifecycleService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var controller: CallVisionController
-    private var status = "Starting video"
+    private var status = "Video idle — starts with your next call"
 
     override fun onCreate() {
         super.onCreate()
@@ -65,12 +67,8 @@ class VideoCallService : LifecycleService() {
                 if (stop) stopSelf()
             }
         }
-
-        controller.start(cameraGranted)
-        if (!cameraGranted) {
-            status = "Camera unavailable — grant permission to enable video"
-            notifyChanged()
-        }
+        // Capture is not started here: it begins per call via START_CAPTURE,
+        // so a merely-armed wake session never holds the camera.
     }
 
     private fun notification(): Notification {
@@ -101,7 +99,30 @@ class VideoCallService : LifecycleService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == STOP) stopSelf()
+        when (intent?.action) {
+            STOP -> stopSelf()
+            START_CAPTURE -> {
+                val callId = intent.getStringExtra(EXTRA_CALL_ID)
+                if (!callId.isNullOrBlank()) {
+                    val granted = CameraPermission.isGranted(this)
+                    controller.start(granted, callId)
+                    status = if (granted) "Video on" else "Camera unavailable — grant permission to enable video"
+                    notifyChanged()
+                }
+            }
+            STOP_CAPTURE -> {
+                val callId = intent.getStringExtra(EXTRA_CALL_ID)
+                if (!callId.isNullOrBlank()) {
+                    // Only the owning call's identity stops the capture; a
+                    // stale stop for an older call is a no-op.
+                    controller.stopForCall(callId)
+                    if (controller.state == CallVisionController.State.IDLE) {
+                        status = "Video idle — starts with your next call"
+                        notifyChanged()
+                    }
+                }
+            }
+        }
         super.onStartCommand(intent, flags, startId)
         return START_NOT_STICKY
     }
@@ -126,12 +147,21 @@ class VideoCallService : LifecycleService() {
         private const val CHANNEL = "jarvis_video_calls"
         private const val NOTIFICATION_ID = 482
         private const val STOP = "com.battlesbudz.jarvis.v2.STOP_VIDEO"
+        private const val START_CAPTURE = "com.battlesbudz.jarvis.v2.START_VIDEO_CAPTURE"
+        private const val STOP_CAPTURE = "com.battlesbudz.jarvis.v2.STOP_VIDEO_CAPTURE"
+        private const val EXTRA_CALL_ID = "com.battlesbudz.jarvis.v2.EXTRA_CALL_ID"
 
-        /** Start the video companion for an active call. No-op if already running. */
-        fun start(context: Context) {
+        /**
+         * Begin call-scoped video capture for [callId]. Starts the service
+         * when needed; only [callId] owns the capture, so ending any other
+         * call cannot stop it.
+         */
+        fun startCapture(context: Context, callId: String) {
             ContextCompat.startForegroundService(
                 context,
-                Intent(context, VideoCallService::class.java),
+                Intent(context, VideoCallService::class.java)
+                    .setAction(START_CAPTURE)
+                    .putExtra(EXTRA_CALL_ID, callId),
             )
         }
     }

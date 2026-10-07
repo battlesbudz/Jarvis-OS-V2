@@ -3222,6 +3222,87 @@ class ReleaseJourneyTest {
         }
     }
 
+    @Test fun test49_cameraCaptureEndsWithSpokenFarewell() = runBlocking {
+        val runtime = JarvisRuntime.get(context)
+        val controller = runtime.voiceSessionController
+        val originalTurn = runtime.voiceTurnJob
+        val originalArmed = runtime.voiceSessionArmed
+        val originalServiceStop = VoiceCallService.stopRequested.value
+        val originalOnCallBegan = controller.onCallBegan
+        val originalVisionController = CallVisionRegistry.controller
+        val originalVisionHub = CallVisionRegistry.hub
+        val finishingTurn = Job()
+        val callIds = mutableListOf<String>()
+        // A fake vision pipeline stands in for the camera: the runtime's
+        // farewell path must end its capture while wake listening stays
+        // armed. The production onCallBegan hook (which would start the real
+        // VideoCallService) is parked so the fake stays registered.
+        val binder = object : CallVisionController.VideoBinder {
+            var binds = 0
+            var unbinds = 0
+            override fun bind() { binds++ }
+            override fun unbind() { unbinds++ }
+        }
+        val hub = VisionFrameHub()
+        val vision = CallVisionController(binder, hub = hub)
+        try {
+            controller.onCallBegan = null
+            CallVisionRegistry.controller = vision
+            CallVisionRegistry.hub = hub
+            runtime.voiceTurnJob = finishingTurn
+            runtime.arm()
+            assertTrue("The fixture must arm the wake session", runtime.voiceSessionArmed)
+
+            // Grant camera, start a call, capture is active with a cached frame.
+            val oldCall = controller.beginCall().also { callIds += it.id }
+            assertEquals(CallVisionController.State.ACTIVE,
+                vision.start(cameraPermissionGranted = true, callId = oldCall.id))
+            hub.register(object : VisionObserver {
+                override fun onFrame(jpegBytes: ByteArray, timestampMs: Long) {}
+            })
+            hub.dispatch(byteArrayOf(1, 2, 3), 100L)
+            assertNotNull("The fixture must hold a cached frame before the farewell", hub.latest())
+
+            // The spoken farewell ends the call: capture must end with it.
+            runtime.returnToWakeListening(oldCall.id)
+            assertEquals("A farewell must unbind the camera", 1, binder.unbinds)
+            assertEquals(CallVisionController.State.IDLE, vision.state)
+            assertNull("A farewell must clear the frame cache", hub.latest())
+            assertNull(vision.captureCallId())
+            assertTrue("A farewell must keep the user-armed wake session", runtime.voiceSessionArmed)
+            assertEquals(VoiceSessionState.PASSIVE_LISTENING, controller.state.value)
+            assertNull(controller.currentCallId())
+            assertFalse("A farewell must not request service termination",
+                VoiceCallService.stopRequested.value)
+
+            // A new call starts a fresh capture under its own identity; a
+            // stale farewell for the old call must not end it.
+            val newCall = controller.beginCall().also { callIds += it.id }
+            assertEquals(CallVisionController.State.ACTIVE,
+                vision.start(cameraPermissionGranted = true, callId = newCall.id))
+            assertEquals(2, binder.binds)
+            runtime.returnToWakeListening(oldCall.id)
+            assertEquals("A stale farewell must not end a newer call's capture",
+                CallVisionController.State.ACTIVE, vision.state)
+            assertEquals(newCall.id, vision.captureCallId())
+            assertEquals("A stale farewell must not unbind the camera", 1, binder.unbinds)
+            assertEquals(newCall.id, controller.currentCallId())
+        } finally {
+            try {
+                controller.currentCallId()?.takeIf { it in callIds }?.let { controller.end() }
+                callIds.forEach(runtime.voiceCallStore::delete)
+                finishingTurn.cancel()
+                runtime.voiceTurnJob = originalTurn
+                runtime.voiceSessionArmed = originalArmed
+                VoiceCallService.stopRequested.value = originalServiceStop
+            } finally {
+                controller.onCallBegan = originalOnCallBegan
+                CallVisionRegistry.controller = originalVisionController
+                CallVisionRegistry.hub = originalVisionHub
+            }
+        }
+    }
+
     @Test fun test50_mediaControlDispatchesViaAudioManager() {
         val audio = context.getSystemService(AudioManager::class.java)
         val before = audio.getStreamVolume(AudioManager.STREAM_MUSIC)

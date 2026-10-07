@@ -294,6 +294,13 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                 SharedPreferencesVoiceCallStore(getSharedPreferences("voice_calls", MODE_PRIVATE)), conversationHistory),
             onFailure = { diagnosticRecorder.recordImportant("Voice checkpoint failed: ${it.javaClass.simpleName}") })
         voiceSessionController = VoiceSessionController(voiceCallStore)
+        // Video capture is call-scoped: every new call segment starts it for
+        // its own identity, and finishVoiceCall ends it for the ended call.
+        // A spoken farewell therefore ends capture while wake listening stays
+        // armed; only the owning call's identity can stop its capture.
+        voiceSessionController.onCallBegan = { callId ->
+            com.battlesbudz.jarvis.v2.voice.VideoCallService.startCapture(this, callId)
+        }
         asrComparisonStore = com.battlesbudz.jarvis.v2.voice.AsrComparisonStore(getSharedPreferences("asr_comparison", MODE_PRIVATE))
         ttsComparisonStore = com.battlesbudz.jarvis.v2.voice.TtsComparisonStore(getSharedPreferences("tts_comparison", MODE_PRIVATE))
         ttsModels = com.battlesbudz.jarvis.v2.voice.TtsModelStore(applicationContext)
@@ -728,6 +735,15 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         returnToWakeCuePending.set(!stopSession)
         resumeCommandCue.set(false)
         val endedCallId = voiceSessionController.currentCallId()
+        // The ended call's video capture stops here — capture never survives
+        // into passive wake listening. Only the ended call's identity can
+        // stop its capture: a stale farewell for an older call is a no-op
+        // against a newer call's capture (see CallVisionController).
+        endedCallId?.let { callId ->
+            runCatching {
+                com.battlesbudz.jarvis.v2.voice.CallVisionRegistry.controller?.stopForCall(callId)
+            }
+        }
         // Close the shared queue gate before inspecting deferred handoffs. A promotion either
         // completed its transfer before this drain, or sees End and cannot create a new handoff.
         callInputQueue.end(endedCallId ?: "").forEach { input ->
