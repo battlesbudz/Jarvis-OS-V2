@@ -44,6 +44,13 @@ class VideoCallService : LifecycleService() {
             controller.degrade(error)
             status = "Camera unavailable — continuing audio-only"
             notifyChanged()
+        }, onDetachFailure = { cause ->
+            // A failed or timed-out camera detach must never be silently
+            // treated as successful cleanup: log it and say so on the
+            // service status so a wedged capture is visible.
+            android.util.Log.e("JarvisVideo", "Camera detach failed during teardown", cause)
+            status = "Camera cleanup failed — video may misbehave until the next call"
+            notifyChanged()
         })
         controller = CallVisionController(binder, cadence, hub)
         CallVisionRegistry.hub = hub

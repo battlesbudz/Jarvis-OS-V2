@@ -44,9 +44,12 @@ enum class VideoError { PROVIDER_FAILED, NO_BACK_CAMERA, BIND_FAILED }
  * continues audio-only.
  *
  * Teardown safety: the CameraX detach runs on the main thread
- * ([MainThreadCameraHandle]) and [unbind] waits — bounded — for its outcome,
- * so the old use case is actually unbound before teardown returns. A detach
- * failure is reported through [onDetachFailure], never silently swallowed.
+ * ([MainThreadCameraHandle]) and [unbind] retains ownership of the camera
+ * handle until the actual detach outcome is known — the handle stays
+ * installed while detach runs (bounded), so a failed or still-pending
+ * detach can never be mistaken for clean teardown. The outcome (detached,
+ * failed, or timed out) is reported through [onDetachOutcome], never
+ * silently swallowed as a success.
  */
 class CameraXVideoBinder(
     private val hub: VisionFrameHub,
@@ -54,7 +57,23 @@ class CameraXVideoBinder(
     private val onVideoError: (VideoError) -> Unit = {},
     private val platform: CameraPlatform,
     private val executorFactory: () -> ExecutorService = { Executors.newSingleThreadExecutor() },
+    /**
+     * Where the actual camera-teardown outcome is reported. Fires when a
+     * detach completes (successfully or not); a failed or timed-out detach
+     * is never silently treated as successful cleanup.
+     */
+    private val onDetachOutcome: (DetachOutcome) -> Unit = {},
 ) : CallVisionController.VideoBinder {
+
+    /** The actual outcome of a camera teardown detach. */
+    sealed interface DetachOutcome {
+        /** The old use case is actually unbound. */
+        data object Detached : DetachOutcome
+        /** The unbind threw or the executor rejected it: cleanup did NOT happen. */
+        data class Failed(val cause: Throwable) : DetachOutcome
+        /** The bounded wait expired: the detach may still complete late. */
+        data object TimedOut : DetachOutcome
+    }
 
     /** Production wiring: the real CameraX platform. Tests use the primary constructor with a fake. */
     constructor(
@@ -64,13 +83,23 @@ class CameraXVideoBinder(
         cadence: FrameCadence,
         onVideoError: (VideoError) -> Unit = {},
         /**
-         * Where a CameraX detach failure is reported. Detach never throws,
-         * but a cleanup that threw must not be silently treated as success —
-         * the failure is delivered here instead of being swallowed.
+         * Where a camera-detach failure or timeout is reported. Detach never
+         * throws, but a cleanup that failed or never completed must not be
+         * silently treated as success — the failure is delivered here instead
+         * of being swallowed.
          */
         onDetachFailure: (Throwable) -> Unit = {},
-    ) : this(hub, cadence, onVideoError,
-        CameraXPlatform(context, lifecycleOwner, onDetachFailure))
+    ) : this(
+        hub,
+        cadence,
+        onVideoError,
+        CameraXPlatform(
+            context,
+            lifecycleOwner,
+            onDetachOutcome = { outcome -> reportDetachOutcome(outcome, onDetachFailure) },
+        ),
+        onDetachOutcome = { outcome -> reportDetachOutcome(outcome, onDetachFailure) },
+    )
 
     /**
      * The camera-platform surface the binder drives. Production implements
@@ -98,8 +127,12 @@ class CameraXVideoBinder(
     }
 
     interface CameraHandle {
-        /** Best-effort detach; never throws. */
-        fun detach()
+        /**
+         * Detach; never throws. The returned outcome is the actual result —
+         * teardown retains ownership until it is known, and a failure or
+         * timeout is reported, never silently treated as success.
+         */
+        fun detach(): DetachOutcome
     }
 
     interface AttachHandle {
@@ -147,7 +180,13 @@ class CameraXVideoBinder(
                     }
                 }
             }
-            lateHandle?.detach()
+            lateHandle?.let {
+                // A superseded attempt's handle is still a teardown resource:
+                // its detach outcome is reported, not silently dropped.
+                val outcome = runCatching { it.detach() }
+                    .getOrElse { DetachOutcome.Failed(it) }
+                onDetachOutcome(outcome)
+            }
             error?.let { onVideoError(it) }
         }
         synchronized(lock) {
@@ -159,7 +198,6 @@ class CameraXVideoBinder(
 
     override fun unbind() {
         val toCancel: AttachHandle?
-        val toDetach: CameraHandle?
         val exec: ExecutorService?
         synchronized(lock) {
             // Invalidate any pending attempt first: its late callback can no
@@ -167,17 +205,30 @@ class CameraXVideoBinder(
             generation++
             toCancel = attachHandle
             attachHandle = null
-            toDetach = cameraHandle
-            cameraHandle = null
             exec = executor
             executor = null
             binding = false
         }
         // Cancel first: a pending provider callback can no longer bind after
-        // this teardown. Then detach, then always shut the executor down —
-        // even when the provider never arrived — so no thread leaks.
+        // this teardown.
         toCancel?.cancel()
-        toDetach?.detach()
+        // Teardown retains ownership of the camera handle until the actual
+        // detach outcome is known: the handle stays installed while detach
+        // runs (bounded inside the handle), so a failed or still-pending
+        // detach can never be mistaken for clean teardown. Only after the
+        // outcome is known is the handle released — and only if no newer
+        // generation installed its own handle meanwhile (generation fence).
+        val toDetach: CameraHandle? = synchronized(lock) { cameraHandle }
+        if (toDetach != null) {
+            val outcome = runCatching { toDetach.detach() }
+                .getOrElse { DetachOutcome.Failed(it) }
+            synchronized(lock) {
+                if (cameraHandle === toDetach) cameraHandle = null
+            }
+            onDetachOutcome(outcome)
+        }
+        // Always shut the executor down — even when the provider never
+        // arrived — so no thread leaks.
         exec?.shutdownNow()
     }
 
@@ -244,6 +295,24 @@ class CameraXVideoBinder(
     companion object {
         private const val JPEG_QUALITY = 70
         private const val MAX_JPEG_BYTES = 1024 * 1024
+
+        /**
+         * Single service-visible channel for teardown outcomes: a failed or
+         * timed-out detach reaches [onDetachFailure]; a clean detach needs
+         * no report. Detach never throws, so without this a cleanup failure
+         * would be silently treated as success.
+         */
+        private fun reportDetachOutcome(
+            outcome: DetachOutcome,
+            onDetachFailure: (Throwable) -> Unit,
+        ) {
+            when (outcome) {
+                is DetachOutcome.Failed -> onDetachFailure(outcome.cause)
+                DetachOutcome.TimedOut -> onDetachFailure(
+                    TimeoutException("CameraX detach timed out; the old use case may still be bound"))
+                DetachOutcome.Detached -> Unit
+            }
+        }
     }
 }
 
@@ -263,27 +332,24 @@ internal fun interface CameraXUnbinder {
  * Teardown retains ownership until the detach outcome is known: when the
  * caller is not already on the main thread, detach posts the unbind to the
  * main executor and waits (bounded by [detachTimeoutMs]) for it to complete,
- * so [CameraXVideoBinder.unbind] does not return "detached" while the old
- * use case is still bound. A caller already on the main thread unbinds
- * directly (posting would deadlock the bounded wait).
+ * so the caller does not observe "detached" while the old use case is still
+ * bound. A caller already on the main thread unbinds directly (posting
+ * would deadlock the bounded wait).
  *
- * Detach never throws, but a cleanup failure is reported through
- * [onDetachFailure] — never silently swallowed as a success.
+ * Detach never throws: the returned [CameraXVideoBinder.DetachOutcome] is
+ * the actual result — a cleanup failure or timeout is reported there, never
+ * silently swallowed as a success.
  */
 internal class MainThreadCameraHandle(
     private val unbinder: CameraXUnbinder,
     private val mainExecutor: Executor,
     private val isMainThread: () -> Boolean =
         { Looper.getMainLooper()?.thread == Thread.currentThread() },
-    private val onDetachFailure: (Throwable) -> Unit = {},
     private val detachTimeoutMs: Long = DETACH_TIMEOUT_MS,
 ) : CameraXVideoBinder.CameraHandle {
 
-    override fun detach() {
-        if (isMainThread()) {
-            runUnbind()
-            return
-        }
+    override fun detach(): CameraXVideoBinder.DetachOutcome {
+        if (isMainThread()) return runUnbind()
         val failure = AtomicReference<Throwable?>(null)
         val done = CountDownLatch(1)
         try {
@@ -299,23 +365,21 @@ internal class MainThreadCameraHandle(
         } catch (t: Throwable) {
             // The executor itself rejected the task: the unbind never ran.
             // Report it; do not treat it as detached.
-            failure.set(t)
-            done.countDown()
+            return CameraXVideoBinder.DetachOutcome.Failed(t)
         }
         val completed = done.await(detachTimeoutMs, TimeUnit.MILLISECONDS)
-        if (!completed) {
-            onDetachFailure(
-                TimeoutException("CameraX detach did not complete within ${detachTimeoutMs}ms"))
-        } else {
-            failure.get()?.let { onDetachFailure(it) }
-        }
+        if (!completed) return CameraXVideoBinder.DetachOutcome.TimedOut
+        val cause = failure.get()
+        return if (cause != null) CameraXVideoBinder.DetachOutcome.Failed(cause)
+        else CameraXVideoBinder.DetachOutcome.Detached
     }
 
-    private fun runUnbind() {
-        try {
+    private fun runUnbind(): CameraXVideoBinder.DetachOutcome {
+        return try {
             unbinder.unbind()
+            CameraXVideoBinder.DetachOutcome.Detached
         } catch (t: Throwable) {
-            onDetachFailure(t)
+            CameraXVideoBinder.DetachOutcome.Failed(t)
         }
     }
 
@@ -329,12 +393,14 @@ internal class MainThreadCameraHandle(
  * [CameraXVideoBinder.CameraPlatform] over the real CameraX provider.
  * Provider initialization, the back-camera check, and binding all run off
  * the caller's thread; the result posts on the main executor. Failures
- * become [VideoError] — never an escaped exception.
+ * become [VideoError] — never an escaped exception. A late detach (a
+ * superseded attempt released after cancellation) reports its outcome
+ * through [onDetachOutcome] instead of being silently dropped.
  */
 private class CameraXPlatform(
     private val context: Context,
     private val lifecycleOwner: LifecycleOwner,
-    private val onDetachFailure: (Throwable) -> Unit = {},
+    private val onDetachOutcome: (CameraXVideoBinder.DetachOutcome) -> Unit = {},
 ) : CameraXVideoBinder.CameraPlatform {
     override fun attach(
         analyzerExecutor: Executor,
@@ -372,7 +438,6 @@ private class CameraXPlatform(
                             MainThreadCameraHandle(
                                 unbinder = CameraXUnbinder { provider.unbind(analysis) },
                                 mainExecutor = ContextCompat.getMainExecutor(context),
-                                onDetachFailure = onDetachFailure,
                             )
                         )
                     }
@@ -394,8 +459,13 @@ private class CameraXPlatform(
     ) {
         if (cancelled.get()) {
             // A stop during initialization: release what we just built and
-            // never deliver — no late binding after teardown.
-            (result as? CameraXVideoBinder.AttachResult.Attached)?.handle?.detach()
+            // never deliver — no late binding after teardown. The release's
+            // outcome is reported, not silently dropped.
+            (result as? CameraXVideoBinder.AttachResult.Attached)?.handle?.let {
+                val outcome = runCatching { it.detach() }
+                    .getOrElse { CameraXVideoBinder.DetachOutcome.Failed(it) }
+                if (outcome != CameraXVideoBinder.DetachOutcome.Detached) onDetachOutcome(outcome)
+            }
             return
         }
         onResult(result)
