@@ -3260,6 +3260,11 @@ class ReleaseJourneyTest {
             .firstOrNull {
                 it.notification.extras.getString(Notification.EXTRA_TITLE) == "Jarvis video"
             }?.notification?.extras?.getString(Notification.EXTRA_TEXT)
+        // The first exception thrown by the test body is captured here
+        // BEFORE the finally cleanup runs, so the test report names the
+        // original failure even when cleanup or the service watchdog throws
+        // afterwards (see the catch/finally below).
+        var firstFailure: Throwable? = null
         try {
             controller.onCallBegan = null
             // The farewell refresh only reaches the service/notification
@@ -3345,20 +3350,42 @@ class ReleaseJourneyTest {
                 VideoCallService.instance)
             assertNull("A farewell refresh must never resurrect a stopped notification",
                 videoNotificationText())
+        } catch (t: Throwable) {
+            // Stash the FIRST fixture exception before the finally cleanup
+            // runs: a body crash (e.g. a NoClassDefFoundError from a
+            // removed companion) followed by the service watchdog's own
+            // failure would otherwise report only the watchdog's
+            // ForegroundServiceDidNotStartInTimeException and hide the real
+            // cause. The original exception is rethrown after cleanup below,
+            // with any cleanup failure attached as suppressed.
+            firstFailure = t
+            throw t
         } finally {
+            var cleanupFailure: Throwable? = null
             try {
-                controller.currentCallId()?.takeIf { it in callIds }?.let { controller.end() }
-                callIds.forEach(runtime.voiceCallStore::delete)
-                finishingTurn.cancel()
-                runtime.voiceTurnJob = originalTurn
-                runtime.voiceSessionArmed = originalArmed
-                VoiceCallService.stopRequested.value = originalServiceStop
-                context.stopService(Intent(context, VideoCallService::class.java))
-            } finally {
-                controller.onCallBegan = originalOnCallBegan
-                CallVisionRegistry.controller = originalVisionController
-                CallVisionRegistry.hub = originalVisionHub
+                try {
+                    controller.currentCallId()?.takeIf { it in callIds }?.let { controller.end() }
+                    callIds.forEach(runtime.voiceCallStore::delete)
+                    finishingTurn.cancel()
+                    runtime.voiceTurnJob = originalTurn
+                    runtime.voiceSessionArmed = originalArmed
+                    VoiceCallService.stopRequested.value = originalServiceStop
+                    context.stopService(Intent(context, VideoCallService::class.java))
+                } finally {
+                    controller.onCallBegan = originalOnCallBegan
+                    CallVisionRegistry.controller = originalVisionController
+                    CallVisionRegistry.hub = originalVisionHub
+                }
+            } catch (t: Throwable) {
+                cleanupFailure = t
             }
+            if (firstFailure != null) {
+                // The body's exception is the test result: report it even
+                // when cleanup or the later service watchdog threw too.
+                cleanupFailure?.let { firstFailure!!.addSuppressed(it) }
+                throw firstFailure!!
+            }
+            cleanupFailure?.let { throw it }
         }
     }
 

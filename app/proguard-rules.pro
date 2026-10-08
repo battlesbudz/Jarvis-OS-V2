@@ -389,6 +389,20 @@
 -keep,allowoptimization class com.battlesbudz.jarvis.v2.voice.VoiceCallService$Companion {
     public *** getStopRequested();
 }
+# test49 (video-call farewell): the release journey reads the service's live
+# instance and invokes the spoken-farewell refresh through the Companion
+# after startForegroundService. R8 removed the Companion class outright
+# (release mapping: VideoCallService$Companion -> R8$$REMOVED$$CLASS), so the
+# instrumentation DEX's Companion/getInstance/refreshVideoStatusAfterFarewell
+# linkage fails on device. Keep only that narrow test-facing companion
+# surface; the rest of the service stays eligible for release shrinking.
+-keepclassmembers class com.battlesbudz.jarvis.v2.voice.VideoCallService {
+    public static ** Companion;
+}
+-keep,allowoptimization class com.battlesbudz.jarvis.v2.voice.VideoCallService$Companion {
+    public com.battlesbudz.jarvis.v2.voice.VideoCallService getInstance();
+    public void refreshVideoStatusAfterFarewell(java.lang.String);
+}
 # test49 (video-call farewell): the journey swaps a fake vision pipeline into
 # the call registry; R8 otherwise removes these helpers as unreachable from
 # the production factories.
