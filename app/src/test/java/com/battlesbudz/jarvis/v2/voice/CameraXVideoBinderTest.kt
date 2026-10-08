@@ -16,14 +16,13 @@ import java.util.concurrent.TimeUnit
  * initialization, provider/camera failures, and executor ownership.
  * No camera hardware; the production [CameraXPlatform] is not exercised.
  */
-private typealias DetachOutcome = CameraXVideoBinder.DetachOutcome
 
 class CameraXVideoBinderTest {
     private class FakeHandle : CameraXVideoBinder.CameraHandle {
         var detaches = 0
-        override fun detach(): DetachOutcome {
+        override fun detach(): CameraXVideoBinder.DetachOutcome {
             detaches++
-            return DetachOutcome.Detached
+            return CameraXVideoBinder.DetachOutcome.Detached
         }
     }
 
@@ -72,7 +71,7 @@ class CameraXVideoBinderTest {
     private class Fixture {
         val platform = FakePlatform()
         val errors = mutableListOf<VideoError>()
-        val detachOutcomes = mutableListOf<DetachOutcome>()
+        val detachOutcomes = mutableListOf<CameraXVideoBinder.DetachOutcome>()
         val executors = mutableListOf<TrackingExecutorService>()
         val binder = CameraXVideoBinder(
             hub = VisionFrameHub(),
@@ -236,7 +235,7 @@ class CameraXVideoBinderTest {
             assertEquals("the unbind must run on the main thread",
                 main.mainThread, unbindThreads.single())
             assertEquals("a clean detach reports its completion",
-                listOf(DetachOutcome.Detached), f.detachOutcomes)
+                listOf(CameraXVideoBinder.DetachOutcome.Detached), f.detachOutcomes)
             // A new call starts a fresh capture under its own identity; the
             // old call's farewell is now stale and must be a no-op.
             assertEquals(CallVisionController.State.ACTIVE, controller.start(true, "call-2"))
@@ -261,11 +260,11 @@ class CameraXVideoBinderTest {
         val boom = RuntimeException("unbind blew up")
         f.platform.deliver(CameraXVideoBinder.AttachResult.Attached(
             object : CameraXVideoBinder.CameraHandle {
-                override fun detach(): DetachOutcome = DetachOutcome.Failed(boom)
+                override fun detach(): CameraXVideoBinder.DetachOutcome = CameraXVideoBinder.DetachOutcome.Failed(boom)
             }))
         f.binder.unbind()
         assertEquals("a failed detach must surface, not vanish",
-            listOf(DetachOutcome.Failed(boom)), f.detachOutcomes)
+            listOf(CameraXVideoBinder.DetachOutcome.Failed(boom)), f.detachOutcomes)
         // Restart: teardown released the failed handle; a fresh bind works.
         f.binder.bind()
         assertEquals(2, f.platform.attachCalls)
@@ -273,7 +272,7 @@ class CameraXVideoBinderTest {
         f.binder.unbind()
         assertEquals(2, f.detachOutcomes.size)
         assertEquals("the restart's detach reports its completion",
-            DetachOutcome.Detached, f.detachOutcomes[1])
+            CameraXVideoBinder.DetachOutcome.Detached, f.detachOutcomes[1])
     }
 
     @Test fun detachTimeoutSurfacesAndDoesNotWedgeTeardown() {
@@ -283,9 +282,9 @@ class CameraXVideoBinderTest {
         f.binder.bind()
         f.platform.deliver(CameraXVideoBinder.AttachResult.Attached(
             object : CameraXVideoBinder.CameraHandle {
-                override fun detach(): DetachOutcome {
+                override fun detach(): CameraXVideoBinder.DetachOutcome {
                     Thread.sleep(400) // a wedged platform detach; the handle bounds it
-                    return DetachOutcome.TimedOut
+                    return CameraXVideoBinder.DetachOutcome.TimedOut
                 }
             }))
         val start = System.currentTimeMillis()
@@ -293,7 +292,7 @@ class CameraXVideoBinderTest {
         val elapsed = System.currentTimeMillis() - start
         assertTrue("unbind must return promptly, took ${elapsed}ms", elapsed < 5_000L)
         assertEquals("a wedged detach must surface as a timeout, not silent success",
-            listOf(DetachOutcome.TimedOut), f.detachOutcomes)
+            listOf(CameraXVideoBinder.DetachOutcome.TimedOut), f.detachOutcomes)
     }
 
     @Test fun unbindRetainsOwnershipUntilDetachCompletes() {
@@ -306,10 +305,10 @@ class CameraXVideoBinderTest {
         val events = Collections.synchronizedList(mutableListOf<String>())
         f.platform.deliver(CameraXVideoBinder.AttachResult.Attached(
             object : CameraXVideoBinder.CameraHandle {
-                override fun detach(): DetachOutcome {
+                override fun detach(): CameraXVideoBinder.DetachOutcome {
                     assertTrue(release.await(5, TimeUnit.SECONDS))
                     events += "detached"
-                    return DetachOutcome.Detached
+                    return CameraXVideoBinder.DetachOutcome.Detached
                 }
             }))
         val t = Thread {
@@ -326,7 +325,7 @@ class CameraXVideoBinderTest {
         release.countDown()
         t.join(5_000L)
         assertEquals(listOf("detached", "unbind-returned"), events)
-        assertEquals(listOf(DetachOutcome.Detached), f.detachOutcomes)
+        assertEquals(listOf(CameraXVideoBinder.DetachOutcome.Detached), f.detachOutcomes)
     }
 }
 
@@ -360,7 +359,7 @@ private class FakeMainExecutor : Executor {
  * ([MainThreadCameraHandle]): the unbind must run on the main executor
  * (CameraX requires the main thread), detach must not return before the
  * outcome is known, and a cleanup failure or timeout is reported as the
- * returned [DetachOutcome] instead of being silently swallowed. No camera
+ * returned [CameraXVideoBinder.DetachOutcome] instead of being silently swallowed. No camera
  * hardware.
  */
 class MainThreadCameraHandleTest {
@@ -375,7 +374,7 @@ class MainThreadCameraHandleTest {
             )
             // Detach runs on a worker thread (not the main thread).
             val caller = Thread.currentThread()
-            assertEquals(DetachOutcome.Detached, handle.detach())
+            assertEquals(CameraXVideoBinder.DetachOutcome.Detached, handle.detach())
             assertEquals("the old use case must be unbound", 1, unbindThreads.size)
             assertEquals("the unbind must run on the main thread, not the caller",
                 main.mainThread, unbindThreads.single())
@@ -433,7 +432,7 @@ class MainThreadCameraHandleTest {
                 isMainThread = { true },
             )
             val caller = Thread.currentThread()
-            assertEquals(DetachOutcome.Detached, handle.detach())
+            assertEquals(CameraXVideoBinder.DetachOutcome.Detached, handle.detach())
             assertEquals(listOf(caller), unbindThreads)
             assertTrue("nothing may be posted when already on main", main.runThreads.isEmpty())
         } finally {
@@ -454,7 +453,7 @@ class MainThreadCameraHandleTest {
             val outcome = handle.detach()
             // ...but the cleanup failure must surface, not vanish.
             assertTrue("a cleanup failure must be reported, not silently swallowed, got $outcome",
-                outcome is DetachOutcome.Failed && outcome.cause === boom)
+                outcome is CameraXVideoBinder.DetachOutcome.Failed && outcome.cause === boom)
         } finally {
             main.shutdown()
         }
@@ -478,7 +477,7 @@ class MainThreadCameraHandleTest {
                 detachTimeoutMs = 300L,
             )
             assertEquals("a wedged detach must report a timeout, not silent success",
-                DetachOutcome.TimedOut, handle.detach()) // returns after the bounded wait
+                CameraXVideoBinder.DetachOutcome.TimedOut, handle.detach()) // returns after the bounded wait
             release.countDown()
         } finally {
             main.shutdown()
@@ -493,7 +492,7 @@ class MainThreadCameraHandleTest {
         )
         val outcome = handle.detach()
         assertTrue("a rejected detach must be reported, not silently swallowed, got $outcome",
-            outcome is DetachOutcome.Failed &&
+            outcome is CameraXVideoBinder.DetachOutcome.Failed &&
                 outcome.cause is java.util.concurrent.RejectedExecutionException)
     }
 }
