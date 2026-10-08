@@ -3242,6 +3242,9 @@ class ReleaseJourneyTest {
         val originalOnCallBegan = controller.onCallBegan
         val originalVisionController = CallVisionRegistry.controller
         val originalVisionHub = CallVisionRegistry.hub
+        val originalNotificationGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.POST_NOTIFICATIONS) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
         val finishingTurn = Job()
         val callIds = mutableListOf<String>()
         // A fake vision pipeline stands in for the camera: the runtime's
@@ -3270,6 +3273,22 @@ class ReleaseJourneyTest {
             .firstOrNull {
                 it.notification.extras.getString(Notification.EXTRA_TITLE) == "Jarvis video"
             }?.notification?.extras?.getString(Notification.EXTRA_TEXT)
+        // Failure diagnostics: permission status, the enabled state, every
+        // active notification id, and each relevant notification's
+        // title/text — so a repeat failure shows whether the notification
+        // is absent (prerequisite) or present-but-stale (refresh path).
+        fun videoNotificationDiagnostics(): String {
+            val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.POST_NOTIFICATIONS) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            val enabled = notificationManager.areNotificationsEnabled()
+            val actives = notificationManager.activeNotifications.joinToString("; ") {
+                val n = it.notification
+                "id=${it.id} title=${n.extras.getString(Notification.EXTRA_TITLE)} " +
+                    "text=${n.extras.getString(Notification.EXTRA_TEXT)}"
+            }
+            return "POST_NOTIFICATIONS granted=$granted, areNotificationsEnabled=$enabled, active=[$actives]"
+        }
         // The first exception thrown by the test body is captured here
         // BEFORE the finally cleanup runs, so the test report names the
         // original failure even when cleanup or the service watchdog throws
@@ -3297,6 +3316,21 @@ class ReleaseJourneyTest {
             context.stopService(Intent(context, VideoCallService::class.java))
             awaitVideo("A previous video service instance must fully release before a fresh start",
                 { VideoCallService.instance == null })
+            // API 33+: the video notification is only observable while the
+            // suite holds POST_NOTIFICATIONS (device setup installs without
+            // -g). Establish it as an explicit fixture prerequisite before
+            // the service starts, and restore the initial state afterwards.
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                runCatching {
+                    device.executeShellCommand("pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS")
+                }
+                assertTrue("test49 requires POST_NOTIFICATIONS on API 33+ before the video service starts",
+                    androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, android.Manifest.permission.POST_NOTIFICATIONS) ==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED)
+                assertTrue("test49 requires notifications enabled on API 33+ before the video service starts",
+                    notificationManager.areNotificationsEnabled())
+            }
             context.startForegroundService(Intent(context, VideoCallService::class.java))
             awaitVideo("The video service must register its live instance",
                 { VideoCallService.instance != null })
@@ -3329,6 +3363,10 @@ class ReleaseJourneyTest {
             awaitVideo(
                 "The service notification must reflect the IDLE controller after the farewell, never a stale \"Video on\"",
                 { videoNotificationText()?.contains("Video idle") == true })
+            assertTrue(
+                "The service notification must reflect the IDLE controller after the farewell, never a stale " +
+                    "\"Video on\". Diagnostics: ${videoNotificationDiagnostics()}",
+                videoNotificationText()?.contains("Video idle") == true)
             assertTrue("A farewell must keep the user-armed wake session", runtime.voiceSessionArmed)
             assertEquals(VoiceSessionState.PASSIVE_LISTENING, controller.state.value)
             assertNull(controller.currentCallId())
@@ -3385,6 +3423,11 @@ class ReleaseJourneyTest {
                     controller.onCallBegan = originalOnCallBegan
                     CallVisionRegistry.controller = originalVisionController
                     CallVisionRegistry.hub = originalVisionHub
+                    if (android.os.Build.VERSION.SDK_INT >= 33 && !originalNotificationGranted) {
+                        runCatching {
+                            device.executeShellCommand("pm revoke ${context.packageName} android.permission.POST_NOTIFICATIONS")
+                        }
+                    }
                 }
             } catch (t: Throwable) {
                 cleanupFailure = t
