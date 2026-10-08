@@ -1,5 +1,6 @@
 package com.battlesbudz.jarvis.v2.verification
 
+import android.app.Notification
 import android.app.NotificationManager
 import android.content.Intent
 import android.content.Context
@@ -3249,8 +3250,29 @@ class ReleaseJourneyTest {
         }
         val hub = VisionFrameHub()
         val vision = CallVisionController(binder, hub = hub)
+        val notificationManager = context.getSystemService(NotificationManager::class.java)
+        fun awaitVideo(message: String, condition: () -> Boolean) {
+            val until = SystemClock.uptimeMillis() + 15_000
+            while (SystemClock.uptimeMillis() < until && !condition()) SystemClock.sleep(100)
+            assertTrue(message, condition())
+        }
+        fun videoNotificationText(): String? = notificationManager.activeNotifications
+            .firstOrNull {
+                it.notification.extras.getString(Notification.EXTRA_TITLE) == "Jarvis video"
+            }?.notification?.extras?.getString(Notification.EXTRA_TEXT)
         try {
             controller.onCallBegan = null
+            // The farewell refresh only reaches the service/notification
+            // path through the live service instance — without one,
+            // refreshVideoStatusAfterFarewell is a no-op by design and the
+            // fixture would never exercise the production route. Start the
+            // real service so the farewell exercises that exact path; the
+            // fake pipeline is installed afterwards, so the service's own
+            // onCreate pipeline never sees the fixture's calls. The
+            // production live-instance guard is untouched.
+            context.startForegroundService(Intent(context, VideoCallService::class.java))
+            awaitVideo("The video service must register its live instance",
+                { VideoCallService.instance != null })
             CallVisionRegistry.controller = vision
             CallVisionRegistry.hub = hub
             runtime.voiceTurnJob = finishingTurn
@@ -3268,11 +3290,18 @@ class ReleaseJourneyTest {
             assertNotNull("The fixture must hold a cached frame before the farewell", hub.latest())
 
             // The spoken farewell ends the call: capture must end with it.
+            // The service handles the refresh asynchronously on its own
+            // scope, so the unbind and the notification update are awaited
+            // — never assumed synchronous.
             runtime.returnToWakeListening(oldCall.id)
-            assertEquals("A farewell must unbind the camera", 1, binder.unbinds)
+            awaitVideo("A farewell must unbind the camera through the live service refresh",
+                { binder.unbinds == 1 })
             assertEquals(CallVisionController.State.IDLE, vision.state)
             assertNull("A farewell must clear the frame cache", hub.latest())
             assertNull(vision.captureCallId())
+            awaitVideo(
+                "The service notification must reflect the IDLE controller after the farewell, never a stale \"Video on\"",
+                { videoNotificationText()?.contains("Video idle") == true })
             assertTrue("A farewell must keep the user-armed wake session", runtime.voiceSessionArmed)
             assertEquals(VoiceSessionState.PASSIVE_LISTENING, controller.state.value)
             assertNull(controller.currentCallId())
@@ -3291,6 +3320,19 @@ class ReleaseJourneyTest {
             assertEquals(newCall.id, vision.captureCallId())
             assertEquals("A stale farewell must not unbind the camera", 1, binder.unbinds)
             assertEquals(newCall.id, controller.currentCallId())
+
+            // No-resurrection: once the service is gone, a farewell refresh
+            // must not bring the service (or its notification) back — the
+            // live-instance guard drops the refresh instead.
+            context.stopService(Intent(context, VideoCallService::class.java))
+            awaitVideo("The video service must release its live instance",
+                { VideoCallService.instance == null })
+            VideoCallService.refreshVideoStatusAfterFarewell(newCall.id)
+            SystemClock.sleep(1_500)
+            assertNull("A farewell refresh must never resurrect a stopped service",
+                VideoCallService.instance)
+            assertNull("A farewell refresh must never resurrect a stopped notification",
+                videoNotificationText())
         } finally {
             try {
                 controller.currentCallId()?.takeIf { it in callIds }?.let { controller.end() }
@@ -3299,6 +3341,7 @@ class ReleaseJourneyTest {
                 runtime.voiceTurnJob = originalTurn
                 runtime.voiceSessionArmed = originalArmed
                 VoiceCallService.stopRequested.value = originalServiceStop
+                context.stopService(Intent(context, VideoCallService::class.java))
             } finally {
                 controller.onCallBegan = originalOnCallBegan
                 CallVisionRegistry.controller = originalVisionController
