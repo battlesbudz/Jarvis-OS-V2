@@ -3691,3 +3691,26 @@ app relaunch, then repeats selection. These Android cases are source-ready and
 still require the hosted run; physical microphone behavior remains separate. All exact-revision release JVM/native,
 normal/compact APK packaging, and five required Android profiles remain required;
 focused JVM checks alone do not verify an APK or physical voice capture.
+
+### 2026-10-08: retained SDK consumer receipt layout
+
+[Build 1186 attempt 2](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37741623563/attempts/2)
+retained passing evidence for all 1,535 JVM tests, five Android profiles and the
+host-quality prerequisite, but the final SDK receipt binder failed. The consumer
+ZIP keeps `streaming-sdk-manifest.json` at its root and the exact producer's
+provenance and `source-receipt.json` together under `streaming-sdk-input/`.
+The old binder found the nested provenance but assumed a root-level receipt.
+The historical failed release receipt remains failed; this is a harness-layout
+repair, not a new Android/model pass or approval of those APKs.
+
+The binder now accepts exactly that retained layout or the existing flat layout,
+requires one adjacent provenance/receipt pair, and rejects missing, duplicate,
+mixed or unrelated paths, file/ancestor symlinks and traversal. Exact producer
+digests, semantic source equality, reviewed source/patch, run/source/repository
+identity, both APK checks and strict quality/oracle gates remain unchanged.
+`test_release_binding.py` covers both ZIP layouts through the complete binder,
+byte-preserving retention, tampering/foreign identities and failed CLI receipts.
+The exact CI-layout regression fails against the prior binder; all 113 Python
+SDK helper tests pass with the repair. No workflow upload layout, app or native
+source changes are needed. Fresh exact-revision hosted release verification and
+final binding remain required; physical audio/device coverage stays separate.

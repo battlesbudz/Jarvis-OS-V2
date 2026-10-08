@@ -1,13 +1,15 @@
 import hashlib
 import json
+import os
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
 import zipfile
 import verify_packaged_samplers
 import verify_packaged_encoder_assets
-from bind_release_receipt import quality_receipt, QUALITY_FILES, bind, ROOT
+from bind_release_receipt import quality_receipt, QUALITY_FILES, bind, main, ROOT
 from package_android_aar import sha256
 from producer_identity import workflow_identity
 
@@ -109,6 +111,12 @@ class QualityEvidenceBinding(unittest.TestCase):
 
 
     def test_both_apks_must_embed_exact_producer_provenance(self):
+        self.check_both_apks_must_embed_exact_producer_provenance(nested=False)
+
+    def test_exact_ci_consumer_zip_binds_both_apks_and_retains_evidence(self):
+        self.check_both_apks_must_embed_exact_producer_provenance(nested=True)
+
+    def check_both_apks_must_embed_exact_producer_provenance(self, nested):
         payloads = {name: ('test-' + name).encode() for name in verify_packaged_samplers.OUTPUTS}
         pins = {name: hashlib.sha256(data).hexdigest() for name, data in payloads.items()}
         override = patch.object(verify_packaged_samplers, 'OUTPUTS', pins)
@@ -129,9 +137,18 @@ class QualityEvidenceBinding(unittest.TestCase):
         p.update(native_sha256=pins, sampler_dependency_derivations={
             name: {'output_sha256': digest} for name, digest in pins.items()},
             sampler_modifications_notice_sha256=hashlib.sha256(notice).hexdigest())
-        provenance=consumer/'sdk.provenance.json';provenance.write_text(json.dumps(p))
-        (consumer/'streaming-sdk-manifest.json').write_text('{}')
-        source_receipt=consumer/'source-receipt.json';source_receipt.write_text(json.dumps(p['source']))
+        prefix = 'streaming-sdk-input/' if nested else ''
+        provenance_name = prefix + 'litertlm-android-0.16.0-sealed-audio-arm64.provenance.json'
+        # Match upload-artifact's common-root archive, not a flattened mock.
+        archive = self.root/'consumer.zip'
+        with zipfile.ZipFile(archive, 'w') as z:
+            z.writestr('streaming-sdk-manifest.json', '{}')
+            z.writestr(provenance_name, json.dumps(p))
+            z.writestr(prefix + 'source-receipt.json', json.dumps(p['source']))
+        with zipfile.ZipFile(archive) as z:
+            z.extractall(consumer)
+        provenance = consumer/provenance_name
+        source_receipt = consumer/prefix/'source-receipt.json'
         self.data['build/build-status.json']['android_source_receipt_sha256']=sha256(source_receipt)
         self.write()
         apks=inputs/'jarvis-os-v2-release-apk';apks.mkdir()
@@ -197,6 +214,9 @@ class QualityEvidenceBinding(unittest.TestCase):
         for row in result['packaged_encoder_assets']['apks']:
             self.assertEqual(sha256(apks/row['apk']),row['apk_sha256'])
         self.assertTrue((out/'streaming-quality/EVIDENCE-INDEX.json').is_file())
+        self.assertEqual(provenance.read_bytes(), (out/'streaming-sdk/sdk.provenance.json').read_bytes())
+        self.assertEqual(source_receipt.read_bytes(), (out/'streaming-sdk/source-receipt.json').read_bytes())
+        self.assertEqual(b'{}', (out/'streaming-sdk/artifact-selection.json').read_bytes())
         # A successful retry may not report quality from a different SDK producer.
         self.data['build/build-status.json']['android_source_receipt_sha256']='0'*64;self.write()
         with self.assertRaisesRegex(ValueError,'different SDK source receipt'):
@@ -269,6 +289,188 @@ class QualityEvidenceBinding(unittest.TestCase):
             self.assertIn('verify-streaming-quality',publishing)
             self.assertIn('verification-receipt',publishing)
         self.assertEqual(3,workflow.count('files: dist/*.apk'))
+
+
+class ConsumerEvidenceLayout(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.inputs = self.root/'inputs'
+        self.consumer = self.inputs/'jarvis-streaming-sdk-consumer'
+        self.bundle = self.consumer/'streaming-sdk-input'
+        self.bundle.mkdir(parents=True)
+        self.identity = {'GITHUB_RUN_ID':'123', 'GITHUB_RUN_ATTEMPT':'1',
+                         'GITHUB_SHA':'a'*40, 'GITHUB_REPOSITORY':'battlesbudz/Jarvis-OS-V2'}
+        manifest = ROOT/'third_party/litert-lm-0.16.0/reviewed-source.json'
+        self.source = {'workflow_identity':self.identity.copy(),
+                       'reviewed_patch_sha256':json.loads(manifest.read_text())['patch_sha256'],
+                       'reviewed_source_sha256':sha256(manifest)}
+        self.provenance = self.bundle/'litertlm-android-0.16.0-sealed-audio-arm64.provenance.json'
+        self.receipt = self.bundle/'source-receipt.json'
+        self.manifest = self.consumer/'streaming-sdk-manifest.json'
+        self.manifest.write_text('{}')
+        self.write_source()
+
+    def write_source(self):
+        self.receipt.write_text(json.dumps(self.source))
+        self.provenance.write_text(json.dumps({'aar_sha256':'d'*64, 'source':self.source}))
+        self.source_sha = sha256(self.receipt)
+        self.provenance_sha = sha256(self.provenance)
+
+    def bind(self, **kwargs):
+        options = dict(inputs=self.inputs, out=self.root/'out', quality=self.root/'quality',
+                       expected_aar='d'*64, expected_provenance=self.provenance_sha,
+                       identity=self.identity, quality_identity=self.identity,
+                       expected_source_receipt=self.source_sha, current_identity=self.identity)
+        options.update(kwargs)
+        return bind(**options)
+
+    def reject(self, pattern, **kwargs):
+        with patch('bind_release_receipt.verify_packaged_samplers') as verifier:
+            with self.assertRaisesRegex(ValueError, pattern):
+                self.bind(**kwargs)
+            verifier.assert_not_called()
+
+    def test_missing_manifest_receipt_or_provenance_rejected(self):
+        for path in (self.manifest, self.receipt, self.provenance):
+            with self.subTest(name=path.name):
+                data = path.read_bytes(); path.unlink()
+                self.reject('Missing')
+                path.write_bytes(data)
+
+    def test_duplicate_provenance_rejected_even_with_identical_bytes(self):
+        shutil.copyfile(self.provenance, self.bundle/'extra.provenance.json')
+        self.reject('ambiguous')
+
+    def test_root_receipt_shadow_rejected_even_with_identical_bytes(self):
+        shutil.copyfile(self.receipt, self.consumer/self.receipt.name)
+        self.reject('Ambiguous')
+
+    def test_root_provenance_shadow_rejected_even_with_identical_bytes(self):
+        shutil.copyfile(self.provenance, self.consumer/self.provenance.name)
+        self.reject('Ambiguous')
+
+    def test_complete_duplicate_layout_rejected(self):
+        for path in (self.receipt, self.provenance):
+            shutil.copyfile(path, self.consumer/path.name)
+        self.reject('Ambiguous')
+
+    def test_receipt_and_provenance_must_be_adjacent(self):
+        for path in (self.receipt, self.provenance):
+            with self.subTest(name=path.name):
+                other = self.consumer/path.name; path.rename(other)
+                self.reject('Ambiguous')
+                other.rename(path)
+
+    def test_unrelated_nested_bundle_is_never_a_fallback(self):
+        self.bundle.rename(self.consumer/'unrelated')
+        self.reject('unsupported')
+
+    def test_extra_nested_receipt_is_rejected(self):
+        extra = self.bundle/'unrelated'; extra.mkdir()
+        shutil.copyfile(self.receipt, extra/self.receipt.name)
+        self.reject('unsupported')
+
+    def test_deep_provenance_is_never_a_fallback(self):
+        extra = self.bundle/'unrelated'; extra.mkdir()
+        self.provenance.rename(extra/self.provenance.name)
+        self.reject('unsupported')
+
+    def test_file_symlinks_rejected(self):
+        for path in (self.provenance, self.receipt, self.manifest):
+            with self.subTest(name=path.name):
+                target = self.root/path.name; path.rename(target)
+                path.symlink_to(target)
+                self.reject('unsafe')
+                path.unlink(); target.rename(path)
+
+    def test_internal_file_symlink_rejected(self):
+        self.receipt.unlink(); self.receipt.symlink_to(self.provenance.name)
+        self.reject('unsafe')
+
+    def test_directory_symlinks_rejected(self):
+        for path in (self.bundle, self.consumer, self.inputs):
+            with self.subTest(name=path.name):
+                target = self.root/'linked-directory'; path.rename(target)
+                path.symlink_to(target, target_is_directory=True)
+                self.reject('unsafe')
+                path.unlink(); target.rename(path)
+
+    def test_parent_traversal_path_rejected(self):
+        self.reject('unsafe', inputs=self.inputs/'..'/'inputs')
+
+    def test_ancestor_symlink_loop_rejected(self):
+        target = self.root/'saved-inputs'; self.inputs.rename(target)
+        self.inputs.symlink_to(self.inputs.name, target_is_directory=True)
+        self.reject('unsafe')
+
+    def test_nonregular_evidence_rejected(self):
+        for path in (self.provenance, self.receipt, self.manifest):
+            with self.subTest(name=path.name):
+                data = path.read_bytes(); path.unlink(); path.mkdir()
+                self.reject('unsafe')
+                path.rmdir(); path.write_bytes(data)
+
+    def test_backslash_provenance_name_rejected(self):
+        self.provenance.rename(self.bundle/'..\\foreign.provenance.json')
+        self.reject('unsupported')
+
+    def test_provenance_tamper_rejected(self):
+        self.provenance.write_text(self.provenance.read_text() + ' ')
+        self.reject('changed SDK consumer provenance')
+
+    def test_receipt_tamper_rejected(self):
+        self.receipt.write_text(self.receipt.read_text() + ' ')
+        self.reject('does not match exact producer')
+
+    def test_receipt_digest_match_does_not_replace_source_equality(self):
+        self.receipt.write_text(json.dumps(dict(self.source, foreign=True)))
+        self.reject('does not match exact producer', expected_source_receipt=sha256(self.receipt))
+
+    def test_foreign_producer_identity_rejected_even_with_matching_hashes(self):
+        for key, value in (('GITHUB_RUN_ID', '456'), ('GITHUB_RUN_ATTEMPT', '2'),
+                           ('GITHUB_SHA', 'e'*40), ('GITHUB_REPOSITORY', 'foreign/repo')):
+            with self.subTest(key=key):
+                self.source['workflow_identity'] = dict(self.identity, **{key:value})
+                self.write_source()
+                self.reject('not the exact reviewed producer')
+
+    def test_foreign_quality_identity_rejected(self):
+        for key, value in (('GITHUB_RUN_ID', '456'), ('GITHUB_SHA', 'e'*40),
+                           ('GITHUB_REPOSITORY', 'foreign/repo')):
+            with self.subTest(key=key):
+                self.reject('same run/source/repository', quality_identity=dict(self.identity, **{key:value}))
+
+    def test_wrong_expected_digests_rejected(self):
+        for key, pattern in (('expected_provenance', 'changed SDK consumer provenance'),
+                             ('expected_source_receipt', 'does not match exact producer'),
+                             ('expected_aar', 'not the exact reviewed producer')):
+            with self.subTest(key=key):
+                self.reject(pattern, **{key:'0'*64})
+
+    def test_changed_reviewed_source_or_patch_rejected(self):
+        for key in ('reviewed_patch_sha256', 'reviewed_source_sha256'):
+            with self.subTest(key=key):
+                original = self.source[key]; self.source[key] = '0'*64
+                self.write_source(); self.reject('not the exact reviewed producer')
+                self.source[key] = original
+
+    def test_layout_failure_marks_existing_release_receipt_failed(self):
+        self.receipt.unlink()
+        out = self.root/'out'; out.mkdir()
+        (out/'receipt.json').write_text(json.dumps({'passed':True, 'existing_gate':'retained'}))
+        (out/'summary.md').write_text('# Jarvis verification: PASS\n')
+        argv = ['bind_release_receipt.py', '--inputs', str(self.inputs), '--out', str(out),
+                '--quality-dir', str(self.root/'quality'), '--producer-attempt', '1',
+                '--quality-producer-attempt', '1', '--expected-source-receipt-sha256', self.source_sha,
+                '--expected-aar-sha256', 'd'*64, '--expected-provenance-sha256', self.provenance_sha]
+        with patch.dict(os.environ, self.identity, clear=True), patch('sys.argv', argv):
+            self.assertEqual(1, main())
+        receipt = json.loads((out/'receipt.json').read_text())
+        self.assertIs(False, receipt['passed'])
+        self.assertEqual('retained', receipt['existing_gate'])
+        self.assertIn('SDK consumer evidence layout', receipt['errors'][0])
+        self.assertIn('# Jarvis verification: FAIL', (out/'summary.md').read_text())
 
 
 if __name__=='__main__':unittest.main()

@@ -26,6 +26,34 @@ def load(path):
     return json.loads(path.read_text())
 
 
+def consumer_evidence(consumer):
+    """Accept only a flat bundle or the workflow's retained input subdirectory.
+
+    The manifest stays at the artifact root in both layouts. Never search for a
+    receipt independently of its provenance, or follow links outside the bundle.
+    """
+    def checked(path, directory=False):
+        if (any(part.is_symlink() for part in (path, *path.parents))
+                or path.absolute() != path.resolve()
+                or not (path.is_dir() if directory else path.is_file())):
+            raise ValueError('Missing or unsafe SDK consumer evidence path: ' + str(path))
+        return path
+
+    checked(consumer, directory=True)
+    manifest = checked(consumer/'streaming-sdk-manifest.json')
+    entries = {p.name: p for p in consumer.iterdir() if p != manifest}
+    if 'streaming-sdk-input' in entries:
+        if set(entries) != {'streaming-sdk-input'}:
+            raise ValueError('Ambiguous SDK consumer evidence layout')
+        folder = checked(entries['streaming-sdk-input'], directory=True)
+        entries = {p.name: p for p in folder.iterdir()}
+    provenance = [p for name, p in entries.items() if name.endswith('.provenance.json')]
+    if (len(provenance) != 1 or set(entries) != {provenance[0].name, 'source-receipt.json'}
+            or '\\' in provenance[0].name):
+        raise ValueError('Missing, ambiguous or unsupported SDK consumer evidence layout')
+    return checked(provenance[0]), checked(entries['source-receipt.json']), manifest
+
+
 def quality_receipt(folder, identity, patch_sha, expected_source_receipt=None):
     index = load(folder/'EVIDENCE-INDEX.json')
     if index.get('ci') != {k:identity[k] for k in ('GITHUB_SHA','GITHUB_RUN_ID','GITHUB_RUN_ATTEMPT')}:
@@ -83,14 +111,13 @@ def bind(inputs, out, quality, expected_aar, expected_provenance, identity,
     for value in (expected_aar,expected_provenance,expected_source_receipt):
         if not re.fullmatch('[0-9a-f]{64}',value or ''):
             raise ValueError('Exact SDK producer digests required')
-    candidates=list((inputs/'jarvis-streaming-sdk-consumer').rglob('*.provenance.json'))
-    if len(candidates)!=1 or sha256(candidates[0])!=expected_provenance:
+    provenance_path, source_receipt, consumer_manifest = consumer_evidence(inputs/'jarvis-streaming-sdk-consumer')
+    if sha256(provenance_path)!=expected_provenance:
         raise ValueError('Missing, ambiguous or changed SDK consumer provenance')
-    provenance=load(candidates[0])
+    provenance=load(provenance_path)
     if not isinstance(provenance,dict) or not isinstance(provenance.get('source'),dict):
         raise ValueError('SDK consumer provenance and source must be objects')
     source=provenance['source']
-    source_receipt=inputs/'jarvis-streaming-sdk-consumer/source-receipt.json'
     if not source_receipt.is_file() or sha256(source_receipt)!=expected_source_receipt or load(source_receipt)!=source:
         raise ValueError('SDK source receipt does not match exact producer/AAR provenance')
     if any(identity.get(k)!=quality_identity.get(k) for k in ('GITHUB_RUN_ID','GITHUB_SHA','GITHUB_REPOSITORY')):
@@ -103,7 +130,7 @@ def bind(inputs, out, quality, expected_aar, expected_provenance, identity,
     packaged_samplers = []
     for name in ('app-release.apk','app-compact.apk'):
         packaged_samplers.append(verify_packaged_samplers(
-            inputs/'jarvis-os-v2-release-apk'/name, candidates[0], expected_provenance))
+            inputs/'jarvis-os-v2-release-apk'/name, provenance_path, expected_provenance))
     # The retained report travelled with these exact APK bytes. Independently
     # reopen both packages and recheck source pins, bounded gzip and notices.
     if any(current_identity.get(k) != identity.get(k)
@@ -115,9 +142,9 @@ def bind(inputs, out, quality, expected_aar, expected_provenance, identity,
         raise ValueError('Quality artifact directory differs from retained producer name')
     quality_result=quality_receipt(quality,quality_identity,reviewed['patch_sha256'],expected_source_receipt)
     retained=out/'streaming-sdk';retained.mkdir()
-    shutil.copyfile(candidates[0],retained/'sdk.provenance.json')
+    shutil.copyfile(provenance_path,retained/'sdk.provenance.json')
     shutil.copyfile(source_receipt,retained/'source-receipt.json')
-    shutil.copyfile(inputs/'jarvis-streaming-sdk-consumer/streaming-sdk-manifest.json',retained/'artifact-selection.json')
+    shutil.copyfile(consumer_manifest,retained/'artifact-selection.json')
     destination=out/'streaming-quality';destination.mkdir()
     for relative in ['EVIDENCE-INDEX.json',*sorted(QUALITY_FILES)]:
         target=destination/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(quality/relative,target)
