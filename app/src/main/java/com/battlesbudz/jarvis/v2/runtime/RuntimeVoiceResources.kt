@@ -17,7 +17,7 @@ internal class RuntimeVoiceResources(
     private val recordDiagnostic: (String) -> Unit,
     private val onLevel: (Float) -> Unit
 ) {
-    @Volatile var appliedSpeechCaptureProfile = SpeechCaptureProfile.SPEECH_PRESERVING
+    @Volatile var appliedSpeechCaptureProfile = SpeechCaptureProfile.COMMUNICATION_NOISE_FILTERED
     val resources by lazy {
         VoiceCallResources(
             captureIdentity = { SpeechCaptureProfile.selected(context).id },

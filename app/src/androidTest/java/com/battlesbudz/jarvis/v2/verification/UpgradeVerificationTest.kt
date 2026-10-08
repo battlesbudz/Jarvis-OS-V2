@@ -9,6 +9,7 @@ import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
 import com.battlesbudz.jarvis.v2.chat.ConversationHistory
 import com.battlesbudz.jarvis.v2.memory.SQLiteMemoryStore
 import com.battlesbudz.jarvis.v2.memory.MemoryReviewStatus
+import com.battlesbudz.jarvis.v2.voice.SpeechCaptureProfile
 import com.battlesbudz.jarvis.v2.voice.VoiceInputMode
 import org.junit.Test
 import org.junit.Assert.*
@@ -23,6 +24,10 @@ class UpgradeVerificationTest {
         val fixture = context.getSharedPreferences("release_upgrade_fixture", Context.MODE_PRIVATE)
         assertTrue("A clear-data update would lose this marker", fixture.getLong("seeded_at", 0) > 0)
         assertEquals(fixture.getInt("installed_uid", -1), android.os.Process.myUid())
+        assertEquals(SpeechCaptureProfile.COMMUNICATION_NOISE_FILTERED, SpeechCaptureProfile.selected(context))
+        assertEquals("communication_noise_filtered", context.getSharedPreferences("voice_input", Context.MODE_PRIVATE)
+            .getString("capture_profile", null))
+        // Migration must not reset any of the previous APK's retained user data.
         val history = ConversationHistory(context.getSharedPreferences("conversations", Context.MODE_PRIVATE))
         assertEquals("upgrade-thread", history.current.value.id)
         assertEquals(listOf("Upgrade fixture: keep my conversation", "Upgrade fixture reply"), history.current.value.messages.map { it.text })

@@ -114,20 +114,28 @@ class VoiceInputSettingsTest {
         assertNull(VoiceInputMode.captionEngine(context))
     }
 
-    @Test fun microphoneChoiceRemainsIndependentAndSurvivesSettingsReopen() {
+    @Test fun legacyMicrophoneSettingMigratesWithoutChangingCaptionsAndStaysFixedAfterReopen() {
         preferences.edit().putString("capture_profile", "speech_preserving")
             .putBoolean("gemma_whisper_captions", false).commit()
         mount()
-        assertEquals(SpeechCaptureProfile.SPEECH_PRESERVING, SpeechCaptureProfile.selected(context))
-        compose.onNodeWithText("Use Call noise reduction").performScrollTo().performClick()
         assertEquals(SpeechCaptureProfile.COMMUNICATION_NOISE_FILTERED, SpeechCaptureProfile.selected(context))
         assertEquals("communication_noise_filtered", preferences.getString("capture_profile", null))
         assertNull(VoiceInputMode.captionEngine(context))
-        reopenSettings()
+        repeat(2) {
+            compose.onNodeWithText("Microphone: Call noise reduction").assertExists()
+            compose.onNodeWithText("Use Speech clarity").assertDoesNotExist()
+            compose.onNodeWithText("Use Call noise reduction").assertDoesNotExist()
+            reopenSettings()
+            assertNull(VoiceInputMode.captionEngine(context))
+        }
+    }
+
+    @Test fun freshSettingsShowFixedMicrophoneProcessingWithoutASelector() {
+        mount()
         compose.onNodeWithText("Microphone: Call noise reduction").assertExists()
-        compose.onNodeWithText("Use Speech clarity").performScrollTo().performClick()
-        assertEquals(SpeechCaptureProfile.SPEECH_PRESERVING, SpeechCaptureProfile.selected(context))
-        assertEquals("speech_preserving", preferences.getString("capture_profile", null))
-        assertNull(VoiceInputMode.captionEngine(context))
+        compose.onNodeWithText("Use Speech clarity").assertDoesNotExist()
+        compose.onNodeWithText("Use Call noise reduction").assertDoesNotExist()
+        assertEquals("communication_noise_filtered", preferences.getString("capture_profile", null))
+        assertEquals(AsrEngine.WHISPER, VoiceInputMode.captionEngine(context))
     }
 }

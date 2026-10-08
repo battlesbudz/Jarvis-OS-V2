@@ -4,22 +4,30 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SpeechCaptureProfileTest {
-    @Test fun newAndUnknownPreferencesPreserveSpeechRatherThanSelectingVoipProcessing() {
-        for (id in listOf(null, "", "missing_profile")) {
-            val profile = SpeechCaptureProfile.fromId(id)
-            assertEquals(SpeechCaptureProfile.SPEECH_PRESERVING, profile)
-            assertFalse(profile.communicationInput)
-            assertFalse(profile.noiseSuppression)
-        }
-    }
-    @Test fun explicitCommunicationFallbackRestoresPriorSourceAndNoiseRequest() {
-        val profile = SpeechCaptureProfile.fromId("communication_noise_filtered")
+    private fun assertCallProcessing(id: String?) {
+        val profile = SpeechCaptureProfile.fromId(id)
         assertEquals(SpeechCaptureProfile.COMMUNICATION_NOISE_FILTERED, profile)
+        assertEquals("communication_noise_filtered", profile.id)
         assertTrue(profile.communicationInput)
         assertTrue(profile.noiseSuppression)
     }
-    @Test fun eachProfileRoundTripsItsPersistedIdentity() {
-        assertEquals(SpeechCaptureProfile.entries.size, SpeechCaptureProfile.entries.map { it.id }.distinct().size)
-        SpeechCaptureProfile.entries.forEach { assertEquals(it, SpeechCaptureProfile.fromId(it.id)) }
+
+    @Test fun freshInstallUsesCallProcessing() = assertCallProcessing(null)
+    @Test fun legacySpeechClarityUsesCallProcessing() = assertCallProcessing("speech_preserving")
+    @Test fun existingCallProcessingRemainsSelected() = assertCallProcessing("communication_noise_filtered")
+    @Test fun emptyAndUnknownPreferencesUseCallProcessing() {
+        for (id in listOf("", "missing_profile", "SPEECH_PRESERVING")) assertCallProcessing(id)
+    }
+    @Test fun repeatedResolutionAndCanonicalRoundTripsKeepCallProcessing() {
+        for (original in listOf(null, "speech_preserving", "communication_noise_filtered", "unknown")) {
+            var id = original
+            repeat(5) {
+                assertCallProcessing(id)
+                id = SpeechCaptureProfile.fromId(id).id
+            }
+        }
+    }
+    @Test fun noRetiredProfileCanBeSelected() {
+        assertEquals(listOf(SpeechCaptureProfile.COMMUNICATION_NOISE_FILTERED), SpeechCaptureProfile.entries)
     }
 }

@@ -18,7 +18,7 @@ internal fun VoiceInputSettings(enabled: Boolean, onBusy: (Boolean) -> Unit) {
     var captionEngine by remember { mutableStateOf(VoiceInputMode.captionEngine(context)) }
     var captionMenuOpen by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(AsrEngine.selected(context)) }
-    var captureProfile by remember { mutableStateOf(SpeechCaptureProfile.selected(context)) }
+    val captureProfile = remember { SpeechCaptureProfile.selected(context) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     LaunchedEffect(busy) { onBusy(busy) }
@@ -85,14 +85,7 @@ internal fun VoiceInputSettings(enabled: Boolean, onBusy: (Boolean) -> Unit) {
         }
         Text("Both transcribe your voice on this phone. Moonshine transcribes as you speak; Whisper updates provisional captions and confirms them when you finish.", style = MaterialTheme.typography.bodySmall)
         Text("Microphone: ${captureProfile.label}")
-        SpeechCaptureProfile.entries.forEach { profile ->
-            TextButton(enabled = enabled && !busy && captureProfile != profile, onClick = {
-                SpeechCaptureProfile.select(context, profile)
-                captureProfile = profile
-                message = "${profile.label} will apply when the next voice call opens its microphone."
-            }) { Text("Use ${profile.label}") }
-        }
-        Text("Speech clarity and call noise reduction select different phone processing. Call noise reduction uses the phone's communication processing. Compare verified transcripts to find which works better on your phone.", style = MaterialTheme.typography.bodySmall)
+        Text("Requests communication processing and noise suppression where available.", style = MaterialTheme.typography.bodySmall)
         if (busy) TextButton(onClick = { task?.cancel(); message = "Stopped." }) { Text("Cancel") }
         if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
     }

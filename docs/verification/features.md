@@ -3654,3 +3654,40 @@ task-ledger, persistence and approval suites passed 83 source-only JVM checks wi
 Kotlin 2.3.21 and retained real dependencies, without stubs. The full repaired
 `ReminderPlanTest` and exact-revision release/Android gates still require hosted
 execution; these local checks do not verify an APK or actual Android alarms.
+
+
+### 2026-10-08: fixed microphone processing and in-place profile migration
+
+`SpeechCaptureProfile` now exposes only Call noise reduction. Fresh preferences,
+legacy `speech_preserving`, empty/unknown IDs and malformed stored types resolve
+to `communication_noise_filtered`; reads normalize only `voice_input.capture_profile`.
+Existing Call noise reduction selections are retained and repeated reads do not
+rewrite a canonical value. This is an in-place setting migration, without clearing
+voice preferences, conversations, memory, model selections or downloaded files.
+Settings shows the fixed profile and no microphone-profile selection buttons.
+This supersedes the historical two-profile settings descriptions above.
+
+The profile requests communication input and noise suppression. Existing source
+eligibility, duplex speaker/focus routing, recorder ownership and AEC requests are
+unchanged: in particular, the runtime's API 30/non-duplex path retains its existing
+VOICE_RECOGNITION fallback. Actual device effect availability remains diagnostic.
+The retained profile combines source and effects, so this change does not isolate
+noise suppression or input source as a cause or establish universal acoustic
+quality across phones. VAD, speech thresholds,
+endpoint timing and weak-onset policy are unchanged.
+
+Acceptance: `SpeechCaptureProfileTest` covers default, legacy, current, unknown and
+repeat resolution. `SpeechCaptureProfilePreferencesTest` covers actual Android
+preferences, malformed types, repeated reads/context reopening, and preservation
+of other preference values and retained fixture files. `VoiceInputSettingsTest`
+checks fresh/legacy settings, absent selector buttons and repeated screen reopening
+while retaining caption choices. Context reopening is not process-death evidence.
+The existing prior-APK replacement-install fixture now seeds `speech_preserving`;
+the candidate verifies canonical profile selection/persistence before all unchanged
+conversation/model/memory/journal assertions. A narrow release keep rule preserves
+that app/test ABI. The existing externally killed lifecycle seed flushes the
+normalized setting before termination; recovery checks the persisted ID before
+app relaunch, then repeats selection. These Android cases are source-ready and
+still require the hosted run; physical microphone behavior remains separate. All exact-revision release JVM/native,
+normal/compact APK packaging, and five required Android profiles remain required;
+focused JVM checks alone do not verify an APK or physical voice capture.

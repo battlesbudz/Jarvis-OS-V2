@@ -18,6 +18,7 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import com.battlesbudz.jarvis.v2.MainActivity
 import com.battlesbudz.jarvis.v2.actions.*
+import com.battlesbudz.jarvis.v2.voice.SpeechCaptureProfile
 import com.battlesbudz.jarvis.v2.voice.VoiceCallService
 import org.junit.Assert.*
 import org.junit.Test
@@ -72,6 +73,12 @@ class LifecycleJourneyTest {
     /** Host stops us while the *actual* volume effect has happened and its receipt has not. */
     @Test fun testProcessSeedAtUnrecordedEffect() {
         launch() // Keep the app UID foreground while the external controller arms its kill.
+        val voicePreferences = context.getSharedPreferences("voice_input", Context.MODE_PRIVATE)
+        assertTrue(voicePreferences.edit().putString("capture_profile", "speech_preserving").commit())
+        assertEquals(SpeechCaptureProfile.COMMUNICATION_NOISE_FILTERED, SpeechCaptureProfile.selected(context))
+        // Flush the migration's apply before the external kill; recovery must read disk state.
+        assertTrue(voicePreferences.edit().commit())
+        assertEquals("communication_noise_filtered", voicePreferences.getString("capture_profile", null))
         journalFile.delete()
         val ledger = ToolTaskLedger(FileToolTaskStore(journalFile))
         val native = AndroidMobileActionExecutor(context)
@@ -105,6 +112,12 @@ class LifecycleJourneyTest {
     }
 
     @Test fun testProcessRecoveryPreservesReceiptsAndDoesNotRepeatEffect() {
+        val voicePreferences = context.getSharedPreferences("voice_input", Context.MODE_PRIVATE)
+        assertEquals("Migrated profile must survive actual process death", "communication_noise_filtered",
+            voicePreferences.getString("capture_profile", null))
+        repeat(2) {
+            assertEquals(SpeechCaptureProfile.COMMUNICATION_NOISE_FILTERED, SpeechCaptureProfile.selected(context))
+        }
         launch().use {
             val ledger = ToolTaskLedger(FileToolTaskStore(journalFile))
             val runningId = checkNotNull(fixture.getString("running_id", null))

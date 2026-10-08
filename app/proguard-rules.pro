@@ -361,6 +361,8 @@
 # renders the shipping settings composable. Preserve these precise shared ABI
 # owners; all other voice/UI code remains eligible for release optimization.
 -keep class com.battlesbudz.jarvis.v2.voice.VoiceInputMode** { *; }
+# The real previous-APK upgrade verifies the profile migration through this ABI.
+-keep class com.battlesbudz.jarvis.v2.voice.SpeechCaptureProfile** { *; }
 -keep class com.battlesbudz.jarvis.v2.ui.VoiceInputSettingsKt { *; }
 
 # Build 880: test47's controlled settings fixture calls these lazy-layout

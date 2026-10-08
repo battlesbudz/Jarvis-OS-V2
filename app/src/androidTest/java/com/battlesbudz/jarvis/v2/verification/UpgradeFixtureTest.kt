@@ -34,7 +34,8 @@ class UpgradeFixtureTest {
         assertTrue(context.getSharedPreferences("model_setup", Context.MODE_PRIVATE).edit()
             .putString("selected_model", "Gemma-4-E2B-it").commit())
         assertTrue(context.getSharedPreferences("voice_input", Context.MODE_PRIVATE).edit()
-            .putString("input_mode", "gemma_audio").putBoolean("gemma_whisper_captions", false).commit())
+            .putString("input_mode", "gemma_audio").putBoolean("gemma_whisper_captions", false)
+            .putString("capture_profile", "speech_preserving").commit())
         // Synthetic inert model bytes: persistence coverage, never purported model inference.
         val model = File(context.filesDir, "models/upgrade-fixture.litertlm")
         check(model.parentFile!!.isDirectory || model.parentFile!!.mkdirs())
