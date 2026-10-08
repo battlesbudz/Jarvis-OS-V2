@@ -388,3 +388,32 @@
 -keep,allowoptimization class com.battlesbudz.jarvis.v2.voice.VoiceCallService$Companion {
     public *** getStopRequested();
 }
+# test49 (video-call farewell): the journey swaps a fake vision pipeline into
+# the call registry; R8 otherwise removes these helpers as unreachable from
+# the production factories.
+-keep class com.battlesbudz.jarvis.v2.voice.CallVisionController** { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.CallVisionRegistry** { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VisionFrameHub** { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VisionObserver** { *; }
+# test76/test77 (M4 browser runtime): the production factories do not install
+# the browser path, so R8 removes the whole subtree; the release journey
+# drives it directly across the shared class loader.
+-keep class com.battlesbudz.jarvis.v2.actions.BrowserPageSnapshot** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.BrowserLink** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.BrowserForm** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.BrowserField** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.FieldKind** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.BrowserBridge** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.FakeBrowserBridge** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.BrowserSession** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AndroidBrowserExecutor** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.MobileToolCatalog** { *; }
+# test78 (M5 script step): the allowlisted script host and its execution
+# outcome are only referenced by the release journey.
+-keep class com.battlesbudz.jarvis.v2.actions.ScriptHost** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScriptExecution** { *; }
+# test79 (M5 workflow export): top-level export/parse entry points and the
+# export model, referenced only by the release journey.
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowImportExportKt** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowManifestKt** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowExport** { *; }
