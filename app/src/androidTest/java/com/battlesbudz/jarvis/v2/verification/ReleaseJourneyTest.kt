@@ -4814,8 +4814,14 @@ class ReleaseJourneyTest {
         // M5 acceptance on Android: export redacts reminder text, the
         // description and location coordinates; the preview exposes every
         // retained value; repeated keys with distinct values get distinct
-        // bindings.
+        // bindings. open_website is not routine-eligible, so the repeated
+        // steps use post_notification: routine-eligible, with personal-content
+        // args (title, text) that are always redacted into setup bindings.
         val message = "Call mom about Sunday dinner"
+        val titleA = "Dentist appointment reminder"
+        val textA = "Call the dentist to confirm Tuesday"
+        val titleB = "Trash day reminder"
+        val textB = "Put the bins out tonight"
         val definition = WorkflowDefinition(
             id = "123e4567-e89b-42d3-a456-426614174020",
             name = "Export journey",
@@ -4823,10 +4829,10 @@ class ReleaseJourneyTest {
             steps = listOf(
                 WorkflowStep.Tool("123e4567-e89b-42d3-a456-426614174021", ActionRequest("create_reminder",
                     mapOf("message" to message, "at_ms" to "1791230400000"))),
-                WorkflowStep.Tool("123e4567-e89b-42d3-a456-426614174022", ActionRequest("open_website",
-                    mapOf("url" to "https://a.example/x"))),
-                WorkflowStep.Tool("123e4567-e89b-42d3-a456-426614174023", ActionRequest("open_website",
-                    mapOf("url" to "https://b.example/y")))
+                WorkflowStep.Tool("123e4567-e89b-42d3-a456-426614174022", ActionRequest("post_notification",
+                    mapOf("title" to titleA, "text" to textA))),
+                WorkflowStep.Tool("123e4567-e89b-42d3-a456-426614174023", ActionRequest("post_notification",
+                    mapOf("title" to titleB, "text" to textB)))
             ),
             triggers = listOf(
                 WorkflowTrigger.Manual,
@@ -4840,9 +4846,15 @@ class ReleaseJourneyTest {
         assertFalse(export.manifestJson.contains(message))
         assertFalse(export.manifestJson.contains("My private routine"))
         assertFalse(export.manifestJson.contains("40.7128"))
+        assertFalse(export.manifestJson.contains(titleA))
+        assertFalse(export.manifestJson.contains(textA))
+        assertFalse(export.manifestJson.contains(titleB))
+        assertFalse(export.manifestJson.contains(textB))
         assertTrue(export.manifestJson.contains("{{setup:message}}"))
-        assertTrue(export.manifestJson.contains("{{setup:url}}"))
-        assertTrue(export.manifestJson.contains("{{setup:url_2}}"))
+        assertTrue(export.manifestJson.contains("{{setup:title}}"))
+        assertTrue(export.manifestJson.contains("{{setup:title_2}}"))
+        assertTrue(export.manifestJson.contains("{{setup:text}}"))
+        assertTrue(export.manifestJson.contains("{{setup:text_2}}"))
         assertTrue(export.manifestJson.contains("{{setup:location_trigger}}"))
         val shared = export.preview.shared.joinToString("\n")
         assertTrue(shared.contains("create_reminder"))
@@ -4851,7 +4863,7 @@ class ReleaseJourneyTest {
         // The exported manifest still parses and validates on device.
         val parsed = parseWorkflowManifest(export.manifestJson)
         assertTrue(parsed.setupBindings.map { it.name }.containsAll(
-            listOf("message", "url", "url_2", "description", "location_trigger")))
+            listOf("message", "title", "title_2", "text", "text_2", "description", "location_trigger")))
     }
 
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
