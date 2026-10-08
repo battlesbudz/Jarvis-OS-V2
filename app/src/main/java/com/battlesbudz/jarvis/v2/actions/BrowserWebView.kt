@@ -262,6 +262,8 @@ class WebViewBrowserBridge(
         private const val SUBMIT_CONFIRM_TIMEOUT_MS = 8_000L
         /** Bounded wait for the user's password-manager fill to land. */
         private const val CREDENTIAL_FILL_TIMEOUT_MS = 20_000L
+        /** Bounded wait for a live in-page read (host, document fingerprint). */
+        private const val LIVE_READ_TIMEOUT_MS = 2_500L
         /** Bounded wait for an on-demand snapshot re-extract. */
         private const val REFRESH_TIMEOUT_MS = 2_500L
 
@@ -292,6 +294,34 @@ class WebViewBrowserBridge(
         internal fun credentialFilledJs(): String = """(function(){
   var el=document.querySelector('input[type="password"][${CREDENTIAL_TARGET_ATTR}="1"]');
   return !!(el&&el.value&&el.value.length>0);
+})()"""
+
+        /**
+         * True only when the LIVE page's host is the approved one, evaluated
+         * in the actual page ([location.hostname]) — never the cached
+         * snapshot. A navigation after the last extraction leaves the
+         * snapshot's URL stale, and a stale URL must not make an old host
+         * binding look valid. [requestedHost] is JSONObject-quoted, so the
+         * comparison cannot break out of the string literal.
+         */
+        internal fun liveHostMatchesJs(requestedHost: String): String {
+            val quoted = JSONObject.quote(requestedHost.lowercase())
+            return "(function(){ return ((location.hostname||'').toLowerCase()===$quoted); })()"
+        }
+
+        /**
+         * Recompute the snapshot fingerprint over the LIVE DOM, with the
+         * exact algorithm the snapshot extractor uses. Never the cached
+         * snapshot: a DOM replacement after the last extraction leaves the
+         * snapshot's fingerprint stale, and a stale fingerprint must not
+         * make an old document binding look valid. Returns a string, like
+         * the snapshot's fingerprint, so callers compare directly.
+         */
+        internal fun liveDocumentFingerprintJs(): String = """(function(){
+  var html=document.documentElement?document.documentElement.outerHTML:'';
+  var fp=0;
+  for(var k=0;k<html.length;k++){ fp=((fp*31)+html.charCodeAt(k))|0; }
+  return String(fp);
 })()"""
     }
 
@@ -442,12 +472,18 @@ class WebViewBrowserBridge(
     override fun requestCredentialFill(host: String): CredentialFillOutcome {
         // A null activity means the backend is gone.
         val activity = currentBrowserActivity() ?: return CredentialFillOutcome.UNAVAILABLE
+        // The host and document bindings are read LIVE in the actual page
+        // on every check — never the cached snapshot. A navigation or DOM
+        // replacement after the last extraction leaves the snapshot stale,
+        // and a stale binding must not look valid at focus or completion.
         return requestCredentialFill(
             host = host,
             liveHostMatches = { requested ->
-                currentUrl()?.let { BrowserNavigationPolicy.hostOf(it) } == requested
+                evalBoolean(activity, liveHostMatchesJs(requested), LIVE_READ_TIMEOUT_MS) == true
             },
-            documentFingerprintNow = { BrowserBackend.latestSnapshot?.contentFingerprint },
+            documentFingerprintNow = {
+                evalString(activity, liveDocumentFingerprintJs(), LIVE_READ_TIMEOUT_MS)
+            },
             evalBoolean = { js -> evalBoolean(activity, js, FILL_CONFIRM_TIMEOUT_MS) }
         )
     }
@@ -455,22 +491,33 @@ class WebViewBrowserBridge(
     /**
      * Password-manager fill with honest completion. The platform autofill
      * path: focus the password field so the password manager offers the
-     * fill, then verify a fill ACTUALLY happened. Only booleans cross back —
-     * the secret value itself is never read out of the field.
+     * fill, then verify a fill ACTUALLY happened. Only booleans and the
+     * fingerprint string cross back — the secret value itself is never read
+     * out of the field.
      *
-     * Host, document and field stay bound through the whole flow: the
-     * request is refused unless the live page's host is the approved one,
-     * the document fingerprint still matches the one seen at focus time,
-     * and the value landed in the exact element that was focused. A
-     * password field that was already non-empty before the request can
-     * never report FILLED — only a real empty-to-filled transition proves
-     * the password manager did the work. Anything else is NO_CREDENTIALS:
-     * the backend cannot tell "no login saved" from "the user dismissed
-     * the prompt" — both leave the field empty.
+     * Host, document and field stay bound through the whole flow, and every
+     * binding is read LIVE in the actual page at focus and on every
+     * completion check: [liveHostMatches] evaluates the page's real
+     * hostname in-page, [documentFingerprintNow] recomputes the fingerprint
+     * over the live DOM — never the cached snapshot, which a navigation or
+     * DOM replacement after the last extraction leaves stale. The value
+     * must land in the exact element that was focused (the focus stamp).
+     * A password field that was already non-empty before the request can
+     * never report FILLED. Anything else is NO_CREDENTIALS: the backend
+     * cannot tell "no login saved" from "the user dismissed the prompt" —
+     * both leave the field empty.
+     *
+     * FILLED is a neutral receipt, not a platform attestation: it reports
+     * that the bound field transitioned empty-to-nonempty while the request
+     * was live. That does not prove the platform password manager
+     * performed the fill — page scripts or the user could also set the
+     * field — and it is never claimed otherwise. No supported platform
+     * event establishes password-manager completion here, so the neutral
+     * receipt is the honest outcome.
      *
      * The live-page binding and JS evaluation are injected so JVM tests can
      * drive the flow (see BrowserCredentialFillJsTest); production wires
-     * the real activity, URL and snapshot.
+     * the real activity with live in-page reads.
      */
     internal fun requestCredentialFill(
         host: String,
@@ -532,6 +579,43 @@ class WebViewBrowserBridge(
         }
         latch.await(timeoutMs, TimeUnit.MILLISECONDS)
         return result.get()
+    }
+
+    /**
+     * Evaluate [js] (expected to return a string) on the browser thread and
+     * synchronously return it, or null on timeout. evaluateJavascript
+     * JSON-encodes string results, so one layer of quoting is stripped; a
+     * null activity or a dead WebView yields null — never a cached value.
+     */
+    private fun evalString(
+        activity: BrowserActivity,
+        js: String,
+        timeoutMs: Long
+    ): String? {
+        val latch = CountDownLatch(1)
+        val result = AtomicReference<String?>(null)
+        activity.runOnUiThread {
+            val view = activity.webViewRef()
+            if (view == null) {
+                latch.countDown()
+                return@runOnUiThread
+            }
+            view.evaluateJavascript(js, ValueCallback { value ->
+                result.set(value?.trim()?.let(::unquoteJsString))
+                latch.countDown()
+            })
+        }
+        latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+        return result.get()
+    }
+
+    /** Strip one layer of JSON string quoting from an evaluateJavascript result. */
+    private fun unquoteJsString(quoted: String): String {
+        if (quoted.length >= 2 && quoted.startsWith("\"") && quoted.endsWith("\"")) {
+            runCatching { org.json.JSONTokener(quoted).nextValue() as String }
+                .getOrNull()?.let { return it }
+        }
+        return quoted
     }
 
     /**

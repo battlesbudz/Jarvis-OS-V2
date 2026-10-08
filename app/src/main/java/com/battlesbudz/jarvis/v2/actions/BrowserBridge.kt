@@ -17,6 +17,13 @@ data class BrowserPageSnapshot(
     val contentFingerprint: String
 )
 
+/**
+ * The outcome of a credential-fill request. FILLED is a neutral receipt:
+ * the bound password field transitioned empty-to-nonempty while the
+ * request was live. It does NOT attest that the platform password manager
+ * performed the fill — no supported platform event establishes that here —
+ * so it is never claimed as platform completion.
+ */
 enum class CredentialFillOutcome { FILLED, NO_CREDENTIALS, CANCELLED, UNAVAILABLE }
 
 /**
@@ -70,8 +77,12 @@ interface BrowserBridge {
      * focused, with the approved host and the live document bound through
      * completion — a navigation, a document/field replacement mid-flow, or
      * a value already present before the request is NO_CREDENTIALS, never
-     * FILLED. Only booleans cross back: the secret value itself is never
-     * read out of the field.
+     * FILLED. The host and document bindings are read live in the actual
+     * page at focus and on every check, never from a cached snapshot.
+     * FILLED is a neutral receipt (the field became nonempty during the
+     * request), not proof the platform password manager did the filling.
+     * Only booleans and the fingerprint cross back: the secret value itself
+     * is never read out of the field.
      */
     fun requestCredentialFill(host: String): CredentialFillOutcome
     fun currentUrl(): String?

@@ -24,6 +24,9 @@ import org.robolectric.RobolectricTestRunner
  * Every test proves the same invariant: anything short of a real,
  * attributable platform fill is NO_CREDENTIALS — never FILLED. The browser
  * gate stays closed; this tests the completion contract, not the catalog.
+ *
+ * FILLED here is a neutral receipt — the bound field became nonempty during
+ * the request — not proof the platform password manager performed the fill.
  */
 @RunWith(RobolectricTestRunner::class)
 class BrowserCredentialFillJsTest {
@@ -203,6 +206,106 @@ class BrowserCredentialFillJsTest {
             CredentialFillOutcome.NO_CREDENTIALS, outcome)
     }
 
+    // -- Production live bindings (J3) --------
+
+    @Test fun liveHostJsReadsTheActualPageNotACache() {
+        // The production host binding evaluates location.hostname in the
+        // actual page — never a cached snapshot URL. Simulating a
+        // navigation (mutating only the live page, touching no cache) must
+        // flip the check.
+        val js = WebViewBrowserBridge.liveHostMatchesJs("example.com")
+        assertEquals(true, cx.evaluateString(scope, js, "host", 1, null))
+        cx.evaluateString(scope,
+            "location.hostname = 'evil.example'; location.host = 'evil.example';", "nav", 1, null)
+        assertEquals("a live navigation must fail the host binding",
+            false, cx.evaluateString(scope, js, "host", 1, null))
+    }
+
+    @Test fun liveHostJsMatchesCaseInsensitively() {
+        cx.evaluateString(scope, "location.hostname = 'Example.COM';", "case", 1, null)
+        assertEquals(true, cx.evaluateString(scope,
+            WebViewBrowserBridge.liveHostMatchesJs("example.com"), "host", 1, null))
+    }
+
+    @Test fun liveDocumentFingerprintRecomputesOverTheActualDom() {
+        // The production document binding recomputes the fingerprint over
+        // the live DOM with the extractor's exact algorithm — never the
+        // cached snapshot. Replacing the DOM (touching no cache) must
+        // rotate the fingerprint.
+        val js = WebViewBrowserBridge.liveDocumentFingerprintJs()
+        val before = cx.evaluateString(scope, js, "fp", 1, null) as String
+        assertTrue("fingerprint must be a hash string", before.isNotEmpty())
+        cx.evaluateString(scope,
+            "document.documentElement.outerHTML = '<html><body>totally replaced</body></html>';",
+            "dom", 1, null)
+        val after = cx.evaluateString(scope, js, "fp", 1, null) as String
+        assertNotEquals("a live DOM replacement must rotate the fingerprint", before, after)
+    }
+
+    @Test fun flowWithLiveBindingsAbortsOnActualNavigation() {
+        // End-to-end through the production live-binding JS: the flow's
+        // host lambda runs liveHostMatchesJs in the actual page, so a
+        // navigation after focus aborts — the stale "example.com" approval
+        // cannot leak onto the new page.
+        var navigated = false
+        val outcome = bridge.requestCredentialFill(
+            host = "example.com",
+            liveHostMatches = { requested ->
+                cx.evaluateString(scope, WebViewBrowserBridge.liveHostMatchesJs(requested),
+                    "h", 1, null) as Boolean
+            },
+            documentFingerprintNow = {
+                cx.evaluateString(scope, WebViewBrowserBridge.liveDocumentFingerprintJs(),
+                    "fp", 1, null) as String
+            },
+            evalBoolean = { js ->
+                val r = evalJsBoolean(js)
+                if (!navigated && js == WebViewBrowserBridge.credentialEmptyJs() && r == true) {
+                    navigated = true
+                    cx.evaluateString(scope,
+                        "location.hostname = 'evil.example'; location.host = 'evil.example';",
+                        "nav", 1, null)
+                }
+                r
+            },
+            waitTimeoutMs = 1_500L
+        )
+        assertEquals("a live navigation mid-flow must abort the fill",
+            CredentialFillOutcome.NO_CREDENTIALS, outcome)
+        assertTrue("the navigation must have happened after focus", navigated)
+    }
+
+    @Test fun flowWithLiveBindingsAbortsOnActualDomReplacement() {
+        // Same, for a DOM replacement: the live fingerprint rotates
+        // mid-flow and the document binding fails.
+        var replaced = false
+        val outcome = bridge.requestCredentialFill(
+            host = "example.com",
+            liveHostMatches = { requested ->
+                cx.evaluateString(scope, WebViewBrowserBridge.liveHostMatchesJs(requested),
+                    "h", 1, null) as Boolean
+            },
+            documentFingerprintNow = {
+                cx.evaluateString(scope, WebViewBrowserBridge.liveDocumentFingerprintJs(),
+                    "fp", 1, null) as String
+            },
+            evalBoolean = { js ->
+                val r = evalJsBoolean(js)
+                if (!replaced && js == WebViewBrowserBridge.credentialEmptyJs() && r == true) {
+                    replaced = true
+                    cx.evaluateString(scope,
+                        "document.documentElement.outerHTML = '<html><body>replaced</body></html>';",
+                        "dom", 1, null)
+                }
+                r
+            },
+            waitTimeoutMs = 1_500L
+        )
+        assertEquals("a live DOM replacement mid-flow must abort the fill",
+            CredentialFillOutcome.NO_CREDENTIALS, outcome)
+        assertTrue("the replacement must have happened after focus", replaced)
+    }
+
     companion object {
         /**
          * Minimal DOM: only what the credential JavaScript uses
@@ -242,8 +345,13 @@ var document = {
       if (__matches(__page[i], sel)) return __page[i];
     }
     return null;
-  }
+  },
+  // Live page identity for the production host/document bindings: tests
+  // mutate these to simulate a navigation or DOM replacement WITHOUT
+  // touching any cache, proving the production JS reads the actual page.
+  documentElement: { outerHTML: '<html><body><input type="password" name="password"></body></html>' }
 };
+var location = { host: 'example.com', hostname: 'example.com', href: 'https://example.com/login' };
 function __replaceFieldWithValuedLookalike() {
   // The DOM swaps the focused field for a lookalike that already carries
   // a value — the swap drops the focus stamp.
