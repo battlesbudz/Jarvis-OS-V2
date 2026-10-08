@@ -87,22 +87,31 @@ private fun ready(missingTools: List<ToolContract>, missingScopes: List<String>,
 
 /**
  * The script runtime a manifest actually needs. The declared top-level
- * metadata wins when present; when it is omitted but the workflow contains
- * Script steps, the requirement is derived from the steps themselves —
- * trusting the omission would admit a workflow whose scripts cannot run.
- * The derived requirement uses the interpreter defaults and the union of
- * the steps' declared host functions.
+ * metadata wins for engine and limits, but the required host functions are
+ * always the UNION of the metadata and the Script steps' own declarations:
+ * underdeclared metadata must never mark a script ready when a required
+ * host function is unavailable on the device. When the metadata is omitted
+ * but the workflow contains Script steps, the whole requirement is derived
+ * from the steps (interpreter defaults) — trusting the omission would admit
+ * a workflow whose scripts cannot run.
  */
 private fun effectiveScriptRuntime(manifest: WorkflowManifest): ScriptRuntimeRequirements? {
-    manifest.scriptRuntime?.let { return it }
-    val scriptSteps = collectScriptSteps(manifest.workflow.steps)
-    if (scriptSteps.isEmpty()) return null
-    return ScriptRuntimeRequirements(
-        engine = SCRIPT_ENGINE_NAME,
-        maxTimeMs = DEFAULT_SCRIPT_MAX_TIME_MS,
-        maxMemoryKb = DEFAULT_SCRIPT_MAX_MEMORY_KB,
-        maxOutputChars = DEFAULT_SCRIPT_MAX_OUTPUT_CHARS,
-        requiredHostFunctions = scriptSteps.flatMap { it.requiredHostFunctions }.distinct()
+    val stepFunctions = collectScriptSteps(manifest.workflow.steps)
+        .flatMap { it.requiredHostFunctions }.distinct()
+    val declared = manifest.scriptRuntime
+    if (declared == null) {
+        if (stepFunctions.isEmpty()) return null
+        return ScriptRuntimeRequirements(
+            engine = SCRIPT_ENGINE_NAME,
+            maxTimeMs = DEFAULT_SCRIPT_MAX_TIME_MS,
+            maxMemoryKb = DEFAULT_SCRIPT_MAX_MEMORY_KB,
+            maxOutputChars = DEFAULT_SCRIPT_MAX_OUTPUT_CHARS,
+            requiredHostFunctions = stepFunctions
+        )
+    }
+    if (stepFunctions.isEmpty()) return declared
+    return declared.copy(
+        requiredHostFunctions = (declared.requiredHostFunctions + stepFunctions).distinct()
     )
 }
 

@@ -891,4 +891,37 @@ class M5WorkflowsTest {
         val review = reviewWorkflowManifest(json, fullCaps())
         assertTrue(review.runtimeProblems.isEmpty())
     }
+
+    @Test fun importReviewUnionsStepHostFunctionsWithUnderdeclaredMetadata() {
+        // Jerry's review (build 1189): explicit scriptRuntime metadata used
+        // to win outright, so underdeclared metadata could mark a script
+        // ready when a required host function was unavailable. The required
+        // host functions are now the union of the metadata and the steps'
+        // own declarations.
+        val def = definition(steps = listOf(scriptStep())) // declares "log"
+        val underdeclared = manifestOf(def).copy(
+            scriptRuntime = ScriptRuntimeRequirements(
+                engine = SCRIPT_ENGINE_NAME, maxTimeMs = 10_000L, maxMemoryKb = 8192L,
+                maxOutputChars = 8192, requiredHostFunctions = emptyList()))
+        // A device whose host lacks the step-declared function is flagged,
+        // even though the metadata declares nothing.
+        val noLog = fullCaps().copy(
+            scriptRuntime = fullCaps().scriptRuntime!!.copy(hostFunctions = emptySet()))
+        val review = reviewWorkflowManifest(underdeclared.toJson(), noLog)
+        assertFalse("underdeclared metadata must not hide the step's host-function need",
+            review.ready)
+        assertTrue(review.runtimeProblems.any { it.contains("log") })
+        // A device with the function stays ready: the union adds nothing missing.
+        val ok = reviewWorkflowManifest(underdeclared.toJson(), fullCaps())
+        assertTrue(ok.runtimeProblems.isEmpty())
+        assertTrue(ok.ready)
+        // Metadata declaring a superset still enforces its own entries too.
+        val strictMeta = manifestOf(def).copy(
+            scriptRuntime = ScriptRuntimeRequirements(
+                engine = SCRIPT_ENGINE_NAME, maxTimeMs = 10_000L, maxMemoryKb = 8192L,
+                maxOutputChars = 8192, requiredHostFunctions = listOf("log", "notify")))
+        val missingNotify = reviewWorkflowManifest(strictMeta.toJson(), fullCaps())
+        assertFalse(missingNotify.ready)
+        assertTrue(missingNotify.runtimeProblems.any { it.contains("notify") })
+    }
 }
