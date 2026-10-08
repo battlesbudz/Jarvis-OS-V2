@@ -217,13 +217,6 @@ fun resolveSetupBindings(definition: WorkflowDefinition, values: Map<String, Str
         }
         return out
     }
-    /** Restore redacted branch condition values (Equals/NotEquals literal, Matches regex). */
-    fun resolveCondition(condition: WorkflowCondition): WorkflowCondition = when (condition) {
-        is WorkflowCondition.Equals -> condition.copy(literal = resolve(condition.literal))
-        is WorkflowCondition.NotEquals -> condition.copy(literal = resolve(condition.literal))
-        is WorkflowCondition.Matches -> condition.copy(regex = resolveRedactedRegex(condition.regex))
-        else -> condition
-    }
     /**
      * Restore a redacted Matches regex to its exact original value.
      * Redacted regexes are stored quoted ([REDACTED_REGEX_PREFIX]) so the
@@ -241,6 +234,13 @@ fun resolveSetupBindings(definition: WorkflowDefinition, values: Map<String, Str
             return regex
         }
         return replacement
+    }
+    /** Restore redacted branch condition values (Equals/NotEquals literal, Matches regex). */
+    fun resolveCondition(condition: WorkflowCondition): WorkflowCondition = when (condition) {
+        is WorkflowCondition.Equals -> condition.copy(literal = resolve(condition.literal))
+        is WorkflowCondition.NotEquals -> condition.copy(literal = resolve(condition.literal))
+        is WorkflowCondition.Matches -> condition.copy(regex = resolveRedactedRegex(condition.regex))
+        else -> condition
     }
     fun resolveStep(step: WorkflowStep): WorkflowStep = when (step) {
         is WorkflowStep.Tool -> step.copy(
