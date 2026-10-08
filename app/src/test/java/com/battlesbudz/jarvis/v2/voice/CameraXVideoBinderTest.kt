@@ -31,6 +31,18 @@ class CameraXVideoBinderTest {
         override fun cancel() { cancelled = true }
     }
 
+    /** A handle whose detach outcome is scripted per call, for retry scenarios. */
+    private class ScriptedHandle(
+        vararg outcomes: CameraXVideoBinder.DetachOutcome
+    ) : CameraXVideoBinder.CameraHandle {
+        var detaches = 0
+        private val queue = ArrayDeque(outcomes.toList())
+        override fun detach(): CameraXVideoBinder.DetachOutcome {
+            detaches++
+            return queue.removeFirstOrNull() ?: CameraXVideoBinder.DetachOutcome.Detached
+        }
+    }
+
     /** Captures the attach callback; the test fires it when the scenario demands. */
     private class FakePlatform : CameraXVideoBinder.CameraPlatform {
         var attachCalls = 0
@@ -251,28 +263,73 @@ class CameraXVideoBinderTest {
         }
     }
 
-    @Test fun detachFailureSurfacesAndBinderRestartsClean() {
-        // A failed detach must surface through the teardown outcome — never
-        // be silently treated as successful cleanup — and the binder must
-        // release the failed handle so the next call starts clean.
+    @Test fun detachFailureRetainsOwnershipAndBlocksCaptureUntilCleanupConfirmed() {
+        // Jerry's review (build 1196): a failed detach must surface through
+        // the teardown outcome — never be silently treated as successful
+        // cleanup — and ownership must be retained: the old use case may
+        // still be bound, so a fresh capture cannot start on top of it.
+        // Only a confirmed detach releases ownership and re-arms capture.
         val f = Fixture()
         f.binder.bind()
         val boom = RuntimeException("unbind blew up")
-        f.platform.deliver(CameraXVideoBinder.AttachResult.Attached(
-            object : CameraXVideoBinder.CameraHandle {
-                override fun detach(): CameraXVideoBinder.DetachOutcome = CameraXVideoBinder.DetachOutcome.Failed(boom)
-            }))
+        val handle = ScriptedHandle(
+            CameraXVideoBinder.DetachOutcome.Failed(boom),
+            CameraXVideoBinder.DetachOutcome.Detached, // the retry confirms cleanup
+        )
+        f.platform.deliver(CameraXVideoBinder.AttachResult.Attached(handle))
         f.binder.unbind()
         assertEquals("a failed detach must surface, not vanish",
             listOf(CameraXVideoBinder.DetachOutcome.Failed(boom)), f.detachOutcomes)
-        // Restart: teardown released the failed handle; a fresh bind works.
+        assertTrue("failed cleanup must be an explicit state, not silent",
+            f.binder.cleanupUnresolved)
+        // A fresh capture is blocked while cleanup is unresolved: no new
+        // attempt may install while the binder still owns the handle.
+        f.binder.bind()
+        assertEquals("no new capture while cleanup is unresolved", 1, f.platform.attachCalls)
+        assertTrue("still unresolved after the blocked bind", f.binder.cleanupUnresolved)
+        // The next unbind retries the retained handle's detach. Once the
+        // detach is confirmed, ownership releases and a fresh capture works.
+        f.binder.unbind()
+        assertEquals(2, handle.detaches)
+        assertFalse("confirmed cleanup must clear the unresolved state",
+            f.binder.cleanupUnresolved)
+        assertEquals(
+            listOf(
+                CameraXVideoBinder.DetachOutcome.Failed(boom),
+                CameraXVideoBinder.DetachOutcome.Detached,
+            ),
+            f.detachOutcomes,
+        )
         f.binder.bind()
         assertEquals(2, f.platform.attachCalls)
         f.platform.deliver(CameraXVideoBinder.AttachResult.Attached(FakeHandle()))
         f.binder.unbind()
-        assertEquals(2, f.detachOutcomes.size)
-        assertEquals("the restart's detach reports its completion",
-            CameraXVideoBinder.DetachOutcome.Detached, f.detachOutcomes[1])
+        assertFalse(f.binder.cleanupUnresolved)
+    }
+
+    @Test fun detachTimeoutRetainsOwnershipAndBlocksCaptureUntilCleanupConfirmed() {
+        // A timed-out detach reports TimedOut, retains ownership, and blocks
+        // a fresh capture; a later confirmed detach re-arms capture.
+        val f = Fixture()
+        f.binder.bind()
+        val handle = ScriptedHandle(
+            CameraXVideoBinder.DetachOutcome.TimedOut,
+            CameraXVideoBinder.DetachOutcome.Detached,
+        )
+        f.platform.deliver(CameraXVideoBinder.AttachResult.Attached(handle))
+        f.binder.unbind()
+        assertEquals("a timed-out detach must surface, not vanish",
+            listOf(CameraXVideoBinder.DetachOutcome.TimedOut), f.detachOutcomes)
+        assertTrue("timed-out cleanup must be an explicit state, not silent",
+            f.binder.cleanupUnresolved)
+        f.binder.bind()
+        assertEquals("no new capture while cleanup is unresolved", 1, f.platform.attachCalls)
+        // Retry confirms the detach; capture is allowed again.
+        f.binder.unbind()
+        assertEquals(2, handle.detaches)
+        assertFalse(f.binder.cleanupUnresolved)
+        f.binder.bind()
+        assertEquals(2, f.platform.attachCalls)
     }
 
     @Test fun detachTimeoutSurfacesAndDoesNotWedgeTeardown() {
