@@ -746,7 +746,7 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         endedCallId?.let { callId ->
             runCatching {
                 com.battlesbudz.jarvis.v2.voice.VideoCallService
-                    .refreshVideoStatusAfterFarewell(this, callId)
+                    .refreshVideoStatusAfterFarewell(callId)
             }
         }
         // Close the shared queue gate before inspecting deferred handoffs. A promotion either

@@ -75,4 +75,89 @@ class FarewellNotificationRefreshTest {
                 farewellVideoStatus("call-1"))
         }
     }
+
+    // -- J4: generation-fenced, live-instance-only refresh routing --------
+
+    @Test fun delayedOldRefreshAfterNewCallStartsIsDropped() {
+        // A farewell refresh queued for call-1 (generation 1) must be
+        // dropped when call-2's START_CAPTURE has since moved the
+        // generation on — a delayed "idle" can never overwrite the newer
+        // call's "Video on".
+        val binder = FakeBinder()
+        val controller = CallVisionController(binder)
+        withRegistry(controller) {
+            controller.start(cameraPermissionGranted = true, callId = "call-2")
+            val derived = resolveFarewellRefresh(
+                endedCallId = "call-1",
+                refreshGeneration = 1L,
+                currentGeneration = 2L,
+                isLive = true,
+            )
+            assertNull("an obsolete-generation refresh must be dropped", derived)
+            assertEquals(CallVisionController.State.ACTIVE, controller.state)
+            assertEquals("Video on", videoStatusText(controller.state))
+        }
+    }
+
+    @Test fun refreshForStoppedServiceIsDropped() {
+        // A refresh queued just as the service dies must be dropped — it
+        // must never resurrect the notification (or the service) on its
+        // own. The capture is untouched: teardown runs only on the live
+        // path.
+        val binder = FakeBinder()
+        val controller = CallVisionController(binder)
+        withRegistry(controller) {
+            controller.start(cameraPermissionGranted = true, callId = "call-1")
+            val derived = resolveFarewellRefresh(
+                endedCallId = "call-1",
+                refreshGeneration = 1L,
+                currentGeneration = 1L,
+                isLive = false,
+            )
+            assertNull("a refresh for a dead service must be dropped", derived)
+            assertEquals(CallVisionController.State.ACTIVE, controller.state)
+            assertEquals(0, binder.unbinds)
+        }
+    }
+
+    @Test fun refreshDerivesStatusFromLiveControllerAtHandleTime() {
+        // The status is derived when the refresh is handled, never from a
+        // precomputed string carried by the refresh. A farewell for call-1
+        // handled while call-2's capture is live derives "Video on" from
+        // the live controller and leaves call-2's capture alone.
+        val binder = FakeBinder()
+        val controller = CallVisionController(binder)
+        withRegistry(controller) {
+            controller.start(cameraPermissionGranted = true, callId = "call-2")
+            val derived = resolveFarewellRefresh(
+                endedCallId = "call-1",
+                refreshGeneration = 2L,
+                currentGeneration = 2L,
+                isLive = true,
+            )
+            assertEquals("Video on", derived)
+            assertEquals("a stale farewell must not stop the live call's capture",
+                0, binder.unbinds)
+            assertEquals(CallVisionController.State.ACTIVE, controller.state)
+        }
+    }
+
+    @Test fun currentGenerationRefreshStopsEndedCallAndReportsIdle() {
+        // The non-dropped path: a current-generation refresh for the ended
+        // call stops its capture and derives the idle status.
+        val binder = FakeBinder()
+        val controller = CallVisionController(binder)
+        withRegistry(controller) {
+            controller.start(cameraPermissionGranted = true, callId = "call-1")
+            val derived = resolveFarewellRefresh(
+                endedCallId = "call-1",
+                refreshGeneration = 3L,
+                currentGeneration = 3L,
+                isLive = true,
+            )
+            assertEquals("Video idle — starts with your next call", derived)
+            assertEquals(1, binder.unbinds)
+            assertEquals(CallVisionController.State.IDLE, controller.state)
+        }
+    }
 }

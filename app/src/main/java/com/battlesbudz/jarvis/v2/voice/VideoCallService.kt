@@ -83,7 +83,7 @@ class VideoCallService : LifecycleService() {
         }
         // Capture is not started here: it begins per call via START_CAPTURE,
         // so a merely-armed wake session never holds the camera.
-        running = true
+        instance = this
     }
 
     /**
@@ -93,6 +93,17 @@ class VideoCallService : LifecycleService() {
      */
     @Volatile
     private var cameraForegroundRejected = false
+
+    /**
+     * The capture generation: bumped on every START_CAPTURE. A spoken
+     * farewell's refresh carries the generation it was queued against; the
+     * live instance drops the refresh when a newer call has started since
+     * (generation moved on), so a delayed "idle" can never overwrite a
+     * newer call's "Video on".
+     */
+    @Volatile
+    internal var captureGeneration = 0L
+        private set
 
     private fun startForegroundSafely(type: Int) {
         try {
@@ -133,12 +144,41 @@ class VideoCallService : LifecycleService() {
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification())
     }
 
+    /**
+     * Handle a spoken-farewell refresh on the service's main thread. The
+     * refresh is fenced by the capture generation and by liveness: it is
+     * dropped when this instance is no longer the live one, or when a newer
+     * call's START_CAPTURE moved the generation on. The notification status
+     * is derived from the controller's CURRENT state at handle time — never
+     * a precomputed string — so a delayed refresh can never apply a stale
+     * "idle" over a newer call's "Video on".
+     */
+    internal fun enqueueFarewellRefresh(endedCallId: String, generation: Long) {
+        scope.launch {
+            val derived = resolveFarewellRefresh(
+                endedCallId = endedCallId,
+                refreshGeneration = generation,
+                currentGeneration = captureGeneration,
+                isLive = (instance === this@VideoCallService),
+            )
+            if (derived != null) {
+                status = derived
+                notifyChanged()
+            }
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             STOP -> stopSelf()
             START_CAPTURE -> {
                 val callId = intent.getStringExtra(EXTRA_CALL_ID)
                 if (!callId.isNullOrBlank()) {
+                    // A newer call obsoletes any farewell refresh still
+                    // queued for an older one: bump the generation first so
+                    // a delayed refresh can never overwrite this call's
+                    // status.
+                    captureGeneration++
                     // A rejected camera foreground start degrades like a
                     // denied permission: the call continues audio-only.
                     val granted = CameraPermission.isGranted(this) && !cameraForegroundRejected
@@ -161,16 +201,6 @@ class VideoCallService : LifecycleService() {
                     notifyChanged()
                 }
             }
-            REFRESH_STATUS -> {
-                // A spoken farewell ended the capture outside this service's
-                // command path (the runtime's farewell path): display the
-                // pushed status so the notification never reads "Video on"
-                // after the controller is IDLE.
-                intent.getStringExtra(EXTRA_VIDEO_STATUS)?.let { pushed ->
-                    status = pushed
-                    notifyChanged()
-                }
-            }
         }
         super.onStartCommand(intent, flags, startId)
         return START_NOT_STICKY
@@ -188,7 +218,7 @@ class VideoCallService : LifecycleService() {
         }
         CallVisionRegistry.clear()
         scope.cancel()
-        running = false
+        if (instance === this) instance = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
@@ -200,17 +230,16 @@ class VideoCallService : LifecycleService() {
         private const val START_CAPTURE = "com.battlesbudz.jarvis.v2.START_VIDEO_CAPTURE"
         private const val STOP_CAPTURE = "com.battlesbudz.jarvis.v2.STOP_VIDEO_CAPTURE"
         private const val EXTRA_CALL_ID = "com.battlesbudz.jarvis.v2.EXTRA_CALL_ID"
-        private const val REFRESH_STATUS = "com.battlesbudz.jarvis.v2.REFRESH_VIDEO_STATUS"
-        private const val EXTRA_VIDEO_STATUS = "com.battlesbudz.jarvis.v2.EXTRA_VIDEO_STATUS"
 
         /**
-         * True while the service instance exists. The runtime only routes a
-         * spoken farewell's notification refresh here while the service is
-         * running — a refresh must never resurrect a stopped service (and
-         * its notification) on its own.
+         * The live service instance, or null when the service is not
+         * running. Farewell refreshes are delivered ONLY to this instance —
+         * never via startForegroundService, which could resurrect a stopped
+         * service (and its notification) on its own. A refresh posted just
+         * as the service dies is dropped by the liveness fence instead.
          */
         @Volatile
-        var running = false
+        var instance: VideoCallService? = null
             private set
 
         /**
@@ -229,22 +258,18 @@ class VideoCallService : LifecycleService() {
 
         /**
          * A spoken farewell ends the call's capture outside this service's
-         * start/stop command path. End [endedCallId]'s capture through the
-         * registry controller and push the resulting status into the
-         * notification, so it never reads "Video on" after the controller
-         * is IDLE. The capture teardown always runs; the notification push
-         * is skipped unless the service is running, so a refresh never
-         * resurrects a stopped service (and its notification) on its own.
+         * start/stop command path. Route the refresh to the live service
+         * instance only: it ends [endedCallId]'s capture through the registry
+         * controller and derives the notification status from the
+         * controller's current state, fenced by the capture generation — a
+         * delayed refresh can never overwrite a newer call's status, and a
+         * refresh for a dead service is dropped. Does nothing when the
+         * service is not running, so a refresh never resurrects a stopped
+         * service (and its notification) on its own.
          */
-        fun refreshVideoStatusAfterFarewell(context: Context, endedCallId: String) {
-            val status = farewellVideoStatus(endedCallId)
-            if (!running) return
-            ContextCompat.startForegroundService(
-                context,
-                Intent(context, VideoCallService::class.java)
-                    .setAction(REFRESH_STATUS)
-                    .putExtra(EXTRA_VIDEO_STATUS, status),
-            )
+        fun refreshVideoStatusAfterFarewell(endedCallId: String) {
+            val svc = instance ?: return
+            svc.enqueueFarewellRefresh(endedCallId, svc.captureGeneration)
         }
     }
 }
@@ -266,6 +291,33 @@ object CallVisionRegistry {
         hub = null
         controller = null
     }
+}
+
+/**
+ * Decide a spoken-farewell video refresh at handle time. [isLive] is true
+ * only when the refresh reached the still-live service instance it was
+ * queued for. Returns the notification status derived from the CURRENT
+ * controller state, or null when the refresh must be dropped: the service
+ * is gone, or a newer call's START_CAPTURE moved the generation on since
+ * the refresh was queued — a delayed "idle" must never overwrite a newer
+ * call's "Video on".
+ *
+ * The status is derived here, at handle time, never from a precomputed
+ * string carried by the refresh: only the live controller knows the
+ * current state. The capture teardown ([farewellVideoStatus]) also runs
+ * here, so a dropped refresh cannot stop a newer call's capture either —
+ * and every drop path is safe: a dead service has no capture left to stop,
+ * and a newer START_CAPTURE already stopped the older call's capture.
+ */
+internal fun resolveFarewellRefresh(
+    endedCallId: String,
+    refreshGeneration: Long,
+    currentGeneration: Long,
+    isLive: Boolean,
+): String? {
+    if (!isLive) return null
+    if (refreshGeneration != currentGeneration) return null
+    return farewellVideoStatus(endedCallId)
 }
 
 /**
