@@ -4775,10 +4775,10 @@ class ReleaseJourneyTest {
         // M5 acceptance on Android: a workflow Script step runs through the
         // real isolated interpreter with the production allowlisted host,
         // and its result binds into a later step.
-        val scriptId = "script-1"
-        val toolId = "tool-1"
+        val scriptId = "123e4567-e89b-42d3-a456-426614174011"
+        val toolId = "123e4567-e89b-42d3-a456-426614174012"
         val definition = WorkflowDefinition(
-            id = "wf-m5",
+            id = "123e4567-e89b-42d3-a456-426614174010",
             name = "M5 script journey",
             description = "Script step with result binding.",
             steps = listOf(
@@ -4805,7 +4805,7 @@ class ReleaseJourneyTest {
         // The script's result bound into the tool step's arguments.
         assertEquals("42", seen.single().arguments["level"])
         // And an undeclared host function stays denied on device too.
-        val denied = WorkflowStep.Script("s2", "read_file(\"/x\");", emptyList())
+        val denied = WorkflowStep.Script("123e4567-e89b-42d3-a456-426614174013", "read_file(\"/x\");", emptyList())
             .runWithInterpreter(ScriptHost.withLog())
         assertTrue(denied is ScriptExecution.Failed)
     }
@@ -4817,15 +4817,15 @@ class ReleaseJourneyTest {
         // bindings.
         val message = "Call mom about Sunday dinner"
         val definition = WorkflowDefinition(
-            id = "wf-export",
+            id = "123e4567-e89b-42d3-a456-426614174020",
             name = "Export journey",
             description = "My private routine",
             steps = listOf(
-                WorkflowStep.Tool("t1", ActionRequest("create_reminder",
+                WorkflowStep.Tool("123e4567-e89b-42d3-a456-426614174021", ActionRequest("create_reminder",
                     mapOf("message" to message, "at_ms" to "1791230400000"))),
-                WorkflowStep.Tool("t2", ActionRequest("open_website",
+                WorkflowStep.Tool("123e4567-e89b-42d3-a456-426614174022", ActionRequest("open_website",
                     mapOf("url" to "https://a.example/x"))),
-                WorkflowStep.Tool("t3", ActionRequest("open_website",
+                WorkflowStep.Tool("123e4567-e89b-42d3-a456-426614174023", ActionRequest("open_website",
                     mapOf("url" to "https://b.example/y")))
             ),
             triggers = listOf(
