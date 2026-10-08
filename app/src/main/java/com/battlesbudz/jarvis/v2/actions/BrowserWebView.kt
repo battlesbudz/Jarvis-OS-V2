@@ -167,6 +167,12 @@ class BrowserActivity : Activity() {
   var forms=[];
   var fieldIndex=0;
   document.querySelectorAll('form').forEach(function(f,fi){
+    // Jerry's review (build 1196): stamp the exact form id on the actual
+    // FORM element before the snapshot fingerprint is computed. The submit
+    // dispatch finds the approved form by this stamped id; without it the
+    // real submission JavaScript could never locate the approved form.
+    var formId='form'+fi;
+    f.setAttribute('data-jarvis-id',formId);
     var fields=[];
     f.querySelectorAll('input,textarea,select').forEach(function(el){
       var t=(el.type||'text').toLowerCase();
@@ -181,7 +187,7 @@ class BrowserActivity : Activity() {
         kind:kind, secret:(t==='password')});
     });
     var submitEl=f.querySelector('input[type="submit"],button[type="submit"],button');
-    forms.push({id:'form'+fi, action:f.action||'', method:(f.method||'get').toUpperCase(),
+    forms.push({id:formId, action:f.action||'', method:(f.method||'get').toUpperCase(),
       fields:fields, submit:submitEl?clean(submitEl.innerText||submitEl.value||'Submit'):''});
   });
   var html=document.documentElement?document.documentElement.outerHTML:'';
@@ -226,6 +232,28 @@ class WebViewBrowserBridge(
     private var lastRequestedUrl: String? = null
 
     companion object {
+        /**
+         * The in-page submit dispatch, shared with the JVM regression test
+         * ([BrowserSubmitJsTest]): finds the approved form by the id the
+         * snapshot extractor stamped on the FORM element, recomputes the
+         * document fingerprint with the same algorithm as the extractor, and
+         * clicks the submit control — all atomically in one evaluation. A
+         * form or document replaced since the approval refuses with zero
+         * submission. [safeFormId] must already be sanitized (letters,
+         * digits, '-' and '_' only); [quotedFingerprint] must be a
+         * [JSONObject]-quoted string literal.
+         */
+        internal fun submitDispatchJs(safeFormId: String, quotedFingerprint: String): String =
+            """(function(){
+  function fpOf(){var html=document.documentElement?document.documentElement.outerHTML:'';var fp=0;for(var k=0;k<html.length;k++){fp=((fp*31)+html.charCodeAt(k))|0;}return String(fp);}
+  var f=document.querySelector('[data-jarvis-id="${safeFormId}"]');
+  if(!f||f.tagName!=='FORM') return false;
+  if(fpOf()!==${quotedFingerprint}) return false;
+  var btn=f.querySelector('input[type="submit"],button[type="submit"],button');
+  if(btn) btn.click(); else f.submit();
+  return true;
+})()"""
+
         /** Bounded wait for a fill's in-page verification to report back. */
         private const val FILL_CONFIRM_TIMEOUT_MS = 5_000L
         /** Bounded wait for the submit click's JS to report back. */
@@ -355,15 +383,7 @@ class WebViewBrowserBridge(
         // the approval did not see.
         val clicked = evalBoolean(
             activity,
-            """(function(){
-  function fpOf(){var html=document.documentElement?document.documentElement.outerHTML:'';var fp=0;for(var k=0;k<html.length;k++){fp=((fp*31)+html.charCodeAt(k))|0;}return String(fp);}
-  var f=document.querySelector('[data-jarvis-id="${safeFormId}"]');
-  if(!f||f.tagName!=='FORM') return false;
-  if(fpOf()!==${quotedFp}) return false;
-  var btn=f.querySelector('input[type="submit"],button[type="submit"],button');
-  if(btn) btn.click(); else f.submit();
-  return true;
-})()""",
+            submitDispatchJs(safeFormId, quotedFp),
             SUBMIT_CLICK_TIMEOUT_MS,
             beforeEval = { view -> beforeUrl.set(view.url) }
         )
