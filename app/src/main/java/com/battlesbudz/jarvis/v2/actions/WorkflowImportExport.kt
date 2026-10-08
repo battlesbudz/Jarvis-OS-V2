@@ -366,7 +366,18 @@ fun exportWorkflow(
                 // resolvable to the exact original on setup. A blank regex
                 // is left alone (redactValue returns it unchanged).
                 condition.copy(regex = if (placeholder == condition.regex) placeholder
-                    else "$REDACTED_REGEX_PREFIX$placeholder$REDACTED_REGEX_SUFFIX")
+                    else {
+                        // bind() returns the FULL {{setup:name}} placeholder;
+                        // the prefix/suffix wrapper already adds the setup
+                        // braces, so pass only the bare binding name —
+                        // wrapping the full placeholder nests the braces
+                        // (\Q{{setup:{{setup:name}}}}\E) and the setup
+                        // parser rejects it on restoration.
+                        val bindingName = placeholder
+                            .removePrefix("{{setup:")
+                            .removeSuffix("}}")
+                        "$REDACTED_REGEX_PREFIX$bindingName$REDACTED_REGEX_SUFFIX"
+                    })
             }
             else -> condition
         }
