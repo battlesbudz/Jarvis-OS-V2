@@ -30,8 +30,13 @@ interface BrowserBridge {
      * Re-extract the live page now and return the fresh snapshot. SPAs mutate
      * the DOM without page loads, so mutating dispatches call this before
      * reconciling: the approval gate must see the DOM it is about to act on,
-     * not the last navigation's snapshot. The default answers the cached
-     * snapshot; the WebView backend re-extracts on demand.
+     * not the last navigation's snapshot.
+     *
+     * Fail-closed contract: return null when the live page cannot be
+     * re-extracted (no live activity, backend timeout, backend gone) — never
+     * a stale snapshot dressed as fresh. Callers refuse the dispatch on
+     * null; a stale approval must not reach a replaced document. The default
+     * answers the cached snapshot; the WebView backend re-extracts on demand.
      */
     fun refreshSnapshot(): BrowserPageSnapshot? = snapshot()
     /** The content fingerprint for the latest snapshot, or null. */
@@ -76,12 +81,18 @@ class FakeBrowserBridge : BrowserBridge {
      * Scripted live-DOM change: when set, refreshSnapshot() swaps this in as
      * the current snapshot, simulating an SPA DOM replacement or a takeover
      * the backend re-extracted. [refreshCalls] counts refresh attempts.
+     *
+     * Fail-closed seam: when [refreshFails] is true, refreshSnapshot()
+     * returns null — the production equivalent of a missing activity or a
+     * re-extract timeout — and the executor must refuse the dispatch.
      */
     var refreshedSnapshot: BrowserPageSnapshot? = null
+    var refreshFails: Boolean = false
     var refreshCalls: Int = 0
         private set
     override fun refreshSnapshot(): BrowserPageSnapshot? {
         refreshCalls++
+        if (refreshFails) return null
         refreshedSnapshot?.let { snapshotToReturn = it }
         return snapshotToReturn
     }

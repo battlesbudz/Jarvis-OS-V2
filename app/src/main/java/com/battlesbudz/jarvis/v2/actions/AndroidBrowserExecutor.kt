@@ -62,8 +62,14 @@ class AndroidBrowserExecutor(
     }
 
     /** Pull the bridge's latest snapshot into the session when it is new. */
-    private fun reconcileSnapshot(): BrowserPage? {
-        val snapshot = bridge.snapshot() ?: return session.currentPage()
+    private fun reconcileSnapshot(): BrowserPage? = reconcileSnapshot(bridge.snapshot())
+
+    /**
+     * Pull [snapshot] into the session when it is new. The mutating path
+     * passes the freshly extracted snapshot; reads reconcile the cached one.
+     */
+    private fun reconcileSnapshot(snapshot: BrowserPageSnapshot?): BrowserPage? {
+        snapshot ?: return session.currentPage()
         val current = session.currentPage()
         if (current != null && current.url == snapshot.url &&
             session.fingerprintFor(current.pageToken) == snapshot.contentFingerprint
@@ -99,12 +105,28 @@ class AndroidBrowserExecutor(
 
     /**
      * Mutating dispatches reconcile against a freshly extracted snapshot:
-     * the approval gate must see the DOM it is about to act on. A backend
-     * that cannot re-extract falls back to its cached snapshot.
+     * the approval gate must see the DOM it is about to act on.
+     *
+     * Fails closed: when the backend cannot re-extract (missing activity,
+     * timeout), this returns null and the dispatch refuses — acting on the
+     * cached snapshot would let a stale approval hit a replaced document.
+     * The dispatch-time token check then validates the approved target
+     * identity against the freshly reconciled page, atomically with the
+     * dispatch decision: a document that no longer matches refuses.
      */
     private fun freshPage(): BrowserPage? {
-        runCatching { bridge.refreshSnapshot() }
-        return reconcileSnapshot()
+        val fresh = runCatching { bridge.refreshSnapshot() }.getOrNull() ?: return null
+        return reconcileSnapshot(fresh)
+    }
+
+    /** The backend could not re-read the live page: refuse the dispatch. */
+    private fun refreshFailed(verb: String): ExecutionResult {
+        onDiagnostic("browse_$verb result=refresh_failed")
+        return ExecutionResult(
+            false,
+            "The browser couldn't re-read the live page, so nothing was done. " +
+                "Call browse_read for the fresh page before continuing."
+        )
     }
 
     /**
@@ -156,7 +178,8 @@ class AndroidBrowserExecutor(
         if (!bridge.isAvailable()) return bridgeUnavailable("click")
         reconcileTakeover("click")?.let { return it }
         // The click dispatches against the live DOM, not the last read.
-        freshPage()
+        // A refresh that cannot re-extract refuses: never click on stale data.
+        freshPage() ?: return refreshFailed("click")
         return when (val outcome = session.clickLink(action.linkId, action.token)) {
             is ClickOutcome.Navigating -> {
                 if (!bridge.clickLink(action.linkId)) {
@@ -208,7 +231,8 @@ class AndroidBrowserExecutor(
         if (!bridge.isAvailable()) return bridgeUnavailable("fill")
         reconcileTakeover("fill")?.let { return it }
         // The fill dispatches against the live DOM, not the last read.
-        freshPage()
+        // A refresh that cannot re-extract refuses: never fill on stale data.
+        freshPage() ?: return refreshFailed("fill")
         return when (val outcome = session.fillField(action.fieldId, action.text, action.token)) {
             is FillOutcome.Filled -> {
                 if (!bridge.fillField(action.fieldId, action.text)) {
@@ -240,8 +264,9 @@ class AndroidBrowserExecutor(
         reconcileTakeover("submit")?.let { return it }
         // The approval is verified against the live DOM, not the last read:
         // a same-URL replacement between approval and dispatch rotates the
-        // token, so a stale approval can never submit.
-        freshPage()
+        // token, so a stale approval can never submit. A refresh that cannot
+        // re-extract refuses outright.
+        freshPage() ?: return refreshFailed("submit")
         return when (val confirmation = session.confirmSubmit(action.token)) {
             is SubmitConfirmation.Confirmed -> {
                 if (!bridge.submitForm()) {
@@ -295,7 +320,8 @@ class AndroidBrowserExecutor(
         if (!bridge.isAvailable()) return bridgeUnavailable("login")
         reconcileTakeover("login")?.let { return it }
         // The login handoff targets the live DOM, not the last read.
-        freshPage()
+        // A refresh that cannot re-extract refuses: never hand off stale data.
+        freshPage() ?: return refreshFailed("login")
         val page = session.currentPage()
             ?: return ExecutionResult(false, "No page is open in the internal browser yet.")
         if (page.pageToken != action.token) {

@@ -179,4 +179,100 @@ class AndroidBrowserExecutorTest {
         val other = h.executor.secretArgumentKeys(ActionRequest("read_battery"))
         assertTrue(other.isEmpty())
     }
+
+    // -- Fail-closed refresh (Jerry's review, build 1189) --------
+
+    @Test fun failedRefreshRefusesClickWithZeroNavigation() {
+        val h = Harness()
+        val token = h.readLogin()
+        // Missing activity / re-extract timeout: the backend reports failure.
+        h.bridge.refreshFails = true
+        val result = h.executor.execute(MobileAction.BrowseClick("l0", token))
+        assertFalse("a click without a fresh snapshot must fail closed", result.succeeded)
+        assertTrue("must report the failed re-read, got: ${result.message}",
+            result.message.contains("couldn't re-read"))
+        assertTrue("zero navigation may reach the backend", h.bridge.clickedLinks.isEmpty())
+    }
+
+    @Test fun failedRefreshRefusesFillWithZeroFill() {
+        val h = Harness()
+        val token = h.readLogin()
+        h.bridge.refreshFails = true
+        val result = h.executor.execute(MobileAction.BrowseFill("f0", "user@example.com", token))
+        assertFalse("a fill without a fresh snapshot must fail closed", result.succeeded)
+        assertTrue("must report the failed re-read, got: ${result.message}",
+            result.message.contains("couldn't re-read"))
+        assertTrue("zero fill may reach the backend", h.bridge.filledFields.isEmpty())
+    }
+
+    @Test fun failedRefreshRefusesLiveApprovalWithZeroSubmission() {
+        // The dangerous case: the approval is live and matches the cached
+        // document, but the refresh cannot re-extract — the approval must
+        // NOT dispatch against a document that can no longer be verified.
+        val h = Harness()
+        val token = h.readLogin()
+        assertTrue(h.executor.execute(
+            MobileAction.BrowseFill("f0", "user@example.com", token)).succeeded)
+        h.session.admitSubmit(h.session.proposeSubmit(token)!!)
+        h.bridge.refreshFails = true
+        val result = h.executor.execute(MobileAction.BrowseSubmit(token))
+        assertFalse("a live approval must not submit without a fresh snapshot",
+            result.succeeded)
+        assertTrue("must report the failed re-read, got: ${result.message}",
+            result.message.contains("couldn't re-read"))
+        assertEquals("zero submission may reach the backend", 0, h.bridge.submittedForms)
+    }
+
+    @Test fun failedRefreshRefusesLoginHandoff() {
+        val h = Harness()
+        val token = h.readLogin()
+        h.bridge.refreshFails = true
+        val result = h.executor.execute(MobileAction.BrowseLogin(token))
+        assertFalse("a login handoff without a fresh snapshot must fail closed",
+            result.succeeded)
+        assertTrue("must report the failed re-read, got: ${result.message}",
+            result.message.contains("couldn't re-read"))
+    }
+
+    @Test fun successfulRefreshStillDispatches() {
+        // Sanity: fail-closed must not break the happy path.
+        val h = Harness()
+        val token = h.readLogin()
+        val result = h.executor.execute(MobileAction.BrowseClick("l0", token))
+        assertTrue("happy path must still dispatch, got: ${result.message}", result.succeeded)
+        assertEquals(listOf("l0"), h.bridge.clickedLinks)
+    }
+
+    @Test fun formFieldsReplacedBetweenApprovalAndDispatchPerformsZeroSubmission() {
+        // The document is replaced between approval and dispatch: the form
+        // keeps its shape but gains an extra field, so the approved target
+        // no longer matches. The refresh sees the new DOM, the token
+        // rotates, and the stale approval dies with zero submission.
+        val h = Harness()
+        val token = h.readLogin()
+        assertTrue(h.executor.execute(
+            MobileAction.BrowseFill("f0", "user@example.com", token)).succeeded)
+        h.session.admitSubmit(h.session.proposeSubmit(token)!!)
+        h.bridge.refreshedSnapshot = loginSnapshot(
+            fingerprint = "fp-fields-changed",
+            forms = listOf(
+                BrowserForm(
+                    id = "form0",
+                    actionUrl = "https://example.com/session",
+                    method = "POST",
+                    fields = listOf(
+                        BrowserField("f0", "Email", FieldKind.EMAIL),
+                        BrowserField("f1", "Password", FieldKind.PASSWORD, secret = true),
+                        BrowserField("f2", "One-time code", FieldKind.TEXT)
+                    ),
+                    submitLabel = "Sign in"
+                )
+            )
+        )
+        val result = h.executor.execute(MobileAction.BrowseSubmit(token))
+        assertFalse("a replaced form must invalidate the approval", result.succeeded)
+        assertTrue("stale token must be reported, got: ${result.message}",
+            result.message.contains("page changed"))
+        assertEquals("zero submission may reach the backend", 0, h.bridge.submittedForms)
+    }
 }

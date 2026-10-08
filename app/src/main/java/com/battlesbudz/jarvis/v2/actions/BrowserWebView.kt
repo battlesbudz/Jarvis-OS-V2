@@ -260,15 +260,24 @@ class WebViewBrowserBridge(
     /**
      * Re-extract the live DOM now (bounded wait): mutating dispatches must
      * see the page as it is, not as it was at the last navigation.
+     *
+     * Fail-closed: a missing activity or a re-extract that never lands
+     * within the bounded wait returns null — never the cached snapshot.
+     * Returning the cache as "fresh" would let a stale approval dispatch
+     * against a replaced document, so callers must refuse the dispatch
+     * when this returns null.
      */
     override fun refreshSnapshot(): BrowserPageSnapshot? {
-        val activity = currentBrowserActivity() ?: return snapshot()
+        val activity = currentBrowserActivity() ?: return null
         val before = BrowserBackend.snapshotVersion
         activity.runOnUiThread { activity.requestSnapshot() }
         val deadline = SystemClock.uptimeMillis() + REFRESH_TIMEOUT_MS
         while (BrowserBackend.snapshotVersion == before && SystemClock.uptimeMillis() < deadline) {
             Thread.sleep(50)
         }
+        // Only a version bump proves the DOM was actually re-extracted; on
+        // timeout the cache may describe a page that no longer exists.
+        if (BrowserBackend.snapshotVersion == before) return null
         return BrowserBackend.latestSnapshot
     }
 
