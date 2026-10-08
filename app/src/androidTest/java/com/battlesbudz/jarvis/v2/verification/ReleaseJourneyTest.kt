@@ -3242,8 +3242,8 @@ class ReleaseJourneyTest {
         val originalOnCallBegan = controller.onCallBegan
         val originalVisionController = CallVisionRegistry.controller
         val originalVisionHub = CallVisionRegistry.hub
-        val originalNotificationGranted = androidx.core.content.ContextCompat.checkSelfPermission(
-            context, android.Manifest.permission.POST_NOTIFICATIONS) ==
+        val originalNotificationGranted = context.checkSelfPermission(
+            android.Manifest.permission.POST_NOTIFICATIONS) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
         val finishingTurn = Job()
         val callIds = mutableListOf<String>()
@@ -3278,8 +3278,8 @@ class ReleaseJourneyTest {
         // title/text — so a repeat failure shows whether the notification
         // is absent (prerequisite) or present-but-stale (refresh path).
         fun videoNotificationDiagnostics(): String {
-            val granted = androidx.core.content.ContextCompat.checkSelfPermission(
-                context, android.Manifest.permission.POST_NOTIFICATIONS) ==
+            val granted = context.checkSelfPermission(
+                android.Manifest.permission.POST_NOTIFICATIONS) ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED
             val enabled = notificationManager.areNotificationsEnabled()
             val actives = notificationManager.activeNotifications.joinToString("; ") {
@@ -3325,8 +3325,8 @@ class ReleaseJourneyTest {
                     device.executeShellCommand("pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS")
                 }
                 assertTrue("test49 requires POST_NOTIFICATIONS on API 33+ before the video service starts",
-                    androidx.core.content.ContextCompat.checkSelfPermission(
-                        context, android.Manifest.permission.POST_NOTIFICATIONS) ==
+                    context.checkSelfPermission(
+                        android.Manifest.permission.POST_NOTIFICATIONS) ==
                         android.content.pm.PackageManager.PERMISSION_GRANTED)
                 assertTrue("test49 requires notifications enabled on API 33+ before the video service starts",
                     notificationManager.areNotificationsEnabled())
