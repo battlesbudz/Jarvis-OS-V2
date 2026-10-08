@@ -7,8 +7,23 @@ class CallVisionControllerTest {
     private class FakeBinder : CallVisionController.VideoBinder {
         var binds = 0
         var unbinds = 0
-        override fun bind() { binds++ }
-        override fun unbind() { unbinds++ }
+        override var cleanupUnresolved = false
+        /**
+         * Scripted per-unbind outcomes for the retained-cleanup retry: each
+         * unbind() consumes one entry (true = the retry confirms the detach
+         * and clears the unresolved flag). Empty = unbind() leaves the
+         * cleanup state untouched.
+         */
+        val unbindConfirmations = ArrayDeque<Boolean>()
+        override fun bind(): CallVisionController.BindResult {
+            binds++
+            return if (cleanupUnresolved) CallVisionController.BindResult.CleanupBlocked
+            else CallVisionController.BindResult.Started
+        }
+        override fun unbind() {
+            unbinds++
+            if (unbindConfirmations.removeFirstOrNull() == true) cleanupUnresolved = false
+        }
     }
 
     @Test fun deniedPermissionNeverTouchesBinder() {
@@ -235,5 +250,79 @@ class CallVisionControllerTest {
         controller.degrade(VideoError.PROVIDER_FAILED)
         controller.requestBurst(5_000L, fps = 10.0)
         assertFalse(cadence.shouldCapture(0L))
+    }
+
+    // -- Cleanup-pending propagation: a refused bind stays visible. --------
+
+    @Test fun stopReportsCleanupPendingWhenDetachFails() {
+        // Jerry's camera-integration finding: stopLocked must not report
+        // IDLE when the teardown's detach failed — the unresolved cleanup
+        // stays visible and the owning call identity is retained.
+        val binder = FakeBinder()
+        val controller = CallVisionController(binder)
+        controller.start(cameraPermissionGranted = true, callId = "call-1")
+        binder.cleanupUnresolved = true // the detach failed; the handle is retained
+        assertEquals(CallVisionController.State.CLEANUP_PENDING, controller.stopForCall("call-1"))
+        assertEquals("call-1", controller.captureCallId())
+        assertEquals(1, binder.unbinds)
+    }
+
+    @Test fun startWhileCleanupPendingRetriesDetachThenBinds() {
+        // A fresh capture first retries the retained detach; a confirmed
+        // cleanup re-arms capture under the new call's identity.
+        val binder = FakeBinder()
+        val controller = CallVisionController(binder)
+        controller.start(cameraPermissionGranted = true, callId = "call-1")
+        binder.cleanupUnresolved = true // the detach failed; the handle is retained
+        binder.unbindConfirmations.addAll(listOf(false, true)) // stop retry fails, start retry confirms
+        controller.stopForCall("call-1")
+        assertEquals(CallVisionController.State.CLEANUP_PENDING, controller.state)
+        assertEquals(CallVisionController.State.ACTIVE,
+            controller.start(cameraPermissionGranted = true, callId = "call-2"))
+        assertEquals("call-2", controller.captureCallId())
+        assertEquals(2, binder.unbinds) // the pending start retried the retained detach
+        assertFalse(binder.cleanupUnresolved)
+    }
+
+    @Test fun startWhileCleanupUnresolvedStaysPendingAndNeverReportsActive() {
+        // The retry also fails: the binder refuses, the controller stays
+        // pending, and the waiting call owns the pending state.
+        val binder = FakeBinder()
+        val controller = CallVisionController(binder)
+        controller.start(cameraPermissionGranted = true, callId = "call-1")
+        binder.cleanupUnresolved = true
+        binder.unbindConfirmations.addAll(listOf(false, false)) // neither retry confirms
+        controller.stopForCall("call-1")
+        assertEquals(CallVisionController.State.CLEANUP_PENDING,
+            controller.start(cameraPermissionGranted = true, callId = "call-2"))
+        assertEquals("call-2", controller.captureCallId())
+        assertEquals(2, binder.binds) // the pending start attempted the bind and was refused
+        // The waiting call's farewell retries the cleanup; a confirmed
+        // detach returns to IDLE.
+        binder.unbindConfirmations.add(true)
+        assertEquals(CallVisionController.State.IDLE, controller.stopForCall("call-2"))
+        assertNull(controller.captureCallId())
+        assertFalse(binder.cleanupUnresolved)
+    }
+
+    @Test fun staleFarewellDuringPendingIsNoOp() {
+        val binder = FakeBinder()
+        val controller = CallVisionController(binder)
+        controller.start(cameraPermissionGranted = true, callId = "call-1")
+        binder.cleanupUnresolved = true
+        controller.stopForCall("call-1")
+        assertEquals(CallVisionController.State.CLEANUP_PENDING, controller.stopForCall("call-0"))
+        assertEquals("call-1", controller.captureCallId())
+        assertEquals(1, binder.unbinds)
+    }
+
+    @Test fun statusTextNeverAdvertisesVideoOnForPendingCleanup() {
+        assertEquals("Video on", videoStatusText(CallVisionController.State.ACTIVE))
+        val pending = videoStatusText(CallVisionController.State.CLEANUP_PENDING)
+        assertNotEquals("Video on", pending)
+        assertTrue("the pending status must name the cleanup, got: $pending",
+            pending.contains("cleanup", ignoreCase = true))
+        assertEquals("Video idle — starts with your next call",
+            videoStatusText(CallVisionController.State.IDLE))
     }
 }

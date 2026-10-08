@@ -158,14 +158,19 @@ class CameraXVideoBinder(
      * retries the retained handle's detach.
      */
     @Volatile
-    var cleanupUnresolved = false
+    override var cleanupUnresolved = false
         private set
 
-    override fun bind() {
+    override fun bind(): CallVisionController.BindResult {
         val attempt: Long
         val exec: ExecutorService
         synchronized(lock) {
-            if (binding || cameraHandle != null || cleanupUnresolved) return
+            // A refused bind is explicit, not a silent no-op: the old use
+            // case may still be bound, so no fresh capture may start on top
+            // of it. The controller keeps this refusal visible instead of
+            // reporting ACTIVE for video that was never started.
+            if (cleanupUnresolved) return CallVisionController.BindResult.CleanupBlocked
+            if (binding || cameraHandle != null) return CallVisionController.BindResult.Started
             binding = true
             generation++
             attempt = generation
@@ -208,6 +213,7 @@ class CameraXVideoBinder(
             // while this attempt is still the live one.
             if (attempt == generation) attachHandle = handle else handle.cancel()
         }
+        return CallVisionController.BindResult.Started
     }
 
     override fun unbind() {

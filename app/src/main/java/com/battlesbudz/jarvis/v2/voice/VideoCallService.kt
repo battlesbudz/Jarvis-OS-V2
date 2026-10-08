@@ -142,11 +142,9 @@ class VideoCallService : LifecycleService() {
                     // denied permission: the call continues audio-only.
                     val granted = CameraPermission.isGranted(this) && !cameraForegroundRejected
                     controller.start(granted, callId)
-                    status = when (controller.state) {
-                        CallVisionController.State.ACTIVE -> "Video on"
-                        CallVisionController.State.DEGRADED -> "Camera unavailable — continuing audio-only"
-                        else -> "Camera unavailable — grant permission to enable video"
-                    }
+                    // The status is derived from the controller state, so a
+                    // refused bind (cleanup pending) can never read "Video on".
+                    status = videoStatusText(controller.state)
                     notifyChanged()
                 }
             }
@@ -154,12 +152,12 @@ class VideoCallService : LifecycleService() {
                 val callId = intent.getStringExtra(EXTRA_CALL_ID)
                 if (!callId.isNullOrBlank()) {
                     // Only the owning call's identity stops the capture; a
-                    // stale stop for an older call is a no-op.
+                    // stale stop for an older call is a no-op. The status is
+                    // derived from the controller state, so an unresolved
+                    // cleanup stays visible instead of reading idle.
                     controller.stopForCall(callId)
-                    if (controller.state == CallVisionController.State.IDLE) {
-                        status = "Video idle — starts with your next call"
-                        notifyChanged()
-                    }
+                    status = videoStatusText(controller.state)
+                    notifyChanged()
                 }
             }
         }

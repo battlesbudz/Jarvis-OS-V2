@@ -384,6 +384,59 @@ class CameraXVideoBinderTest {
         assertEquals(listOf("detached", "unbind-returned"), events)
         assertEquals(listOf(CameraXVideoBinder.DetachOutcome.Detached), f.detachOutcomes)
     }
+
+    @Test fun failedCleanupToNextCallRefusesBindKeepsPendingVisible() {
+        // Jerry's camera-integration finding, end to end across all three
+        // layers: a failed detach followed by the next call must refuse the
+        // bind, keep the pending cleanup visible in the controller state,
+        // and never let the service status advertise video that the binder
+        // deliberately did not start. The retained handle and the
+        // call-identity fences are preserved throughout.
+        val f = Fixture()
+        val controller = CallVisionController(f.binder)
+        assertEquals(CallVisionController.State.ACTIVE, controller.start(true, "call-1"))
+        val boom = RuntimeException("unbind blew up")
+        f.platform.deliver(CameraXVideoBinder.AttachResult.Attached(ScriptedHandle(
+            CameraXVideoBinder.DetachOutcome.Failed(boom), // call-1's teardown
+            CameraXVideoBinder.DetachOutcome.Failed(boom), // call-2's cleanup retry
+            CameraXVideoBinder.DetachOutcome.Detached,     // call-2's farewell confirms
+        )))
+        // Call 1 ends: the detach fails, so the controller must NOT report
+        // IDLE — the unresolved cleanup stays visible.
+        assertEquals(CallVisionController.State.CLEANUP_PENDING, controller.stopForCall("call-1"))
+        assertEquals("the owning call identity is retained through the pending cleanup",
+            "call-1", controller.captureCallId())
+        assertTrue(f.binder.cleanupUnresolved)
+        // Binder layer: the next bind is refused explicitly, not silently.
+        assertEquals(CallVisionController.BindResult.CleanupBlocked, f.binder.bind())
+        assertEquals("no fresh capture may install while cleanup is unresolved",
+            1, f.platform.attachCalls)
+        // Controller layer: the next call retries the retained detach, the
+        // retry fails, and the controller stays pending under the new call's
+        // identity — never ACTIVE.
+        assertEquals(CallVisionController.State.CLEANUP_PENDING, controller.start(true, "call-2"))
+        assertEquals("call-2", controller.captureCallId())
+        assertEquals(1, f.platform.attachCalls)
+        assertTrue(f.binder.cleanupUnresolved)
+        // Service layer: the displayed status never advertises video for a
+        // refused bind.
+        val status = videoStatusText(controller.state)
+        assertNotEquals("Video on", status)
+        assertTrue("the pending status must name the cleanup, got: $status",
+            status.contains("cleanup", ignoreCase = true))
+        // The waiting call's farewell retries the retained detach; the
+        // confirmed cleanup releases the block and returns to IDLE.
+        assertEquals(CallVisionController.State.IDLE, controller.stopForCall("call-2"))
+        assertFalse(f.binder.cleanupUnresolved)
+        assertNull(controller.captureCallId())
+        // A later call starts a genuinely fresh capture.
+        assertEquals(CallVisionController.State.ACTIVE, controller.start(true, "call-3"))
+        assertEquals(2, f.platform.attachCalls)
+        assertEquals("call-3", controller.captureCallId())
+        controller.stop()
+        assertEquals(CallVisionController.State.IDLE, controller.state)
+        assertFalse(f.binder.cleanupUnresolved)
+    }
 }
 
 /** A "main executor" with its own real thread, like Android's main looper thread. */
