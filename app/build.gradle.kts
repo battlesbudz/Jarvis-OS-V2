@@ -136,6 +136,9 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     testImplementation("junit:junit:4.13.2")
+    // BrowserSubmitJsTest runs the real extraction/submission JavaScript
+    // (Jerry's review, build 1196) inside a minimal DOM shim.
+    testImplementation("org.mozilla:rhino:1.8.0")
     testImplementation("org.json:json:20240303")
     // End-call visibility regression (round-two review): mounts the shipping
     // ConversationScreen/VoiceCallScreen composables on the JVM.
