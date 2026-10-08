@@ -3360,9 +3360,21 @@ class ReleaseJourneyTest {
             assertEquals(CallVisionController.State.IDLE, vision.state)
             assertNull("A farewell must clear the frame cache", hub.latest())
             assertNull(vision.captureCallId())
-            awaitVideo(
-                "The service notification must reflect the IDLE controller after the farewell, never a stale \"Video on\"",
-                { videoNotificationText()?.contains("Video idle") == true })
+            try {
+                awaitVideo(
+                    "The service notification must reflect the IDLE controller after the farewell, never a stale \"Video on\"",
+                    { videoNotificationText()?.contains("Video idle") == true })
+            } catch (timeout: AssertionError) {
+                // The wait timed out: attach failure-time diagnostics here,
+                // since the follow-up assertTrue with diagnostics below is
+                // unreachable on this path. Evaluated lazily at failure
+                // time so a repeat failure records the actual permission /
+                // notification state; a diagnostic fault can never mask the
+                // original timeout, which is preserved as the cause.
+                val diag = runCatching { videoNotificationDiagnostics() }
+                    .getOrElse { "diagnostics unavailable: ${it.javaClass.simpleName}" }
+                throw AssertionError("${timeout.message}. Timeout diagnostics: $diag", timeout)
+            }
             assertTrue(
                 "The service notification must reflect the IDLE controller after the farewell, never a stale " +
                     "\"Video on\". Diagnostics: ${videoNotificationDiagnostics()}",
