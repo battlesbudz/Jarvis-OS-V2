@@ -502,6 +502,9 @@ class WebViewBrowserBridge(
      * over the live DOM — never the cached snapshot, which a navigation or
      * DOM replacement after the last extraction leaves stale. The value
      * must land in the exact element that was focused (the focus stamp).
+     * The document baseline is captured after the stamp lands, so the
+     * flow's own stamping is never mistaken for a document change; the
+     * approved host and the exact stamped target stay bound regardless.
      * A password field that was already non-empty before the request can
      * never report FILLED. Anything else is NO_CREDENTIALS: the backend
      * cannot tell "no login saved" from "the user dismissed the prompt" —
@@ -530,9 +533,16 @@ class WebViewBrowserBridge(
         // Bind the request to the approved host before touching the page:
         // a fill can only ever be attributed to the host that was approved.
         if (!liveHostMatches(host)) return CredentialFillOutcome.NO_CREDENTIALS
+        if (evalBoolean(credentialFocusJs()) != true) return CredentialFillOutcome.NO_CREDENTIALS
+        // Bind the document AFTER the focus stamp lands: focusing stamps
+        // data-jarvis-cred-target on the exact target element, which changes
+        // the live DOM. A fingerprint taken before the stamp would reject
+        // the flow's own stamping as a document change on the first
+        // re-check. The post-stamp baseline still binds the approved
+        // document — a later navigation or DOM replacement rotates it and
+        // aborts, exactly as before.
         val startFingerprint = documentFingerprintNow()?.takeIf { it.isNotEmpty() }
             ?: return CredentialFillOutcome.NO_CREDENTIALS
-        if (evalBoolean(credentialFocusJs()) != true) return CredentialFillOutcome.NO_CREDENTIALS
         // The user answers the password-manager prompt on their own time,
         // so the fill lands asynchronously — but a value that predates the
         // request proves nothing. Read the pre-state right after focusing;

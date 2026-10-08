@@ -306,11 +306,45 @@ class BrowserCredentialFillJsTest {
         assertTrue("the replacement must have happened after focus", replaced)
     }
 
+    @Test fun flowSurvivesItsOwnFocusStamp() {
+        // The focus stamp (setAttribute data-jarvis-cred-target) changes the
+        // live outerHTML — the DOM shim renders the actual elements, so the
+        // fingerprint rotates on stamping exactly like a real page. The
+        // document baseline must therefore be captured AFTER the stamp
+        // lands: the pre-fix order captured it before focusing and rejected
+        // the flow's own stamping as a document change (NO_CREDENTIALS on
+        // the first re-check), breaking the happy path in production.
+        val outcome = bridge.requestCredentialFill(
+            host = "example.com",
+            liveHostMatches = { requested ->
+                cx.evaluateString(scope, WebViewBrowserBridge.liveHostMatchesJs(requested),
+                    "h", 1, null) as Boolean
+            },
+            documentFingerprintNow = {
+                cx.evaluateString(scope, WebViewBrowserBridge.liveDocumentFingerprintJs(),
+                    "fp", 1, null) as String
+            },
+            evalBoolean = { js ->
+                val r = evalJsBoolean(js)
+                if (js == WebViewBrowserBridge.credentialEmptyJs() && r == true) {
+                    cx.evaluateString(scope, "__pass.value = 'manager-filled';", "fill", 1, null)
+                }
+                r
+            },
+            waitTimeoutMs = 2_000L
+        )
+        assertEquals("the flow's own focus stamp must not invalidate the document binding",
+            CredentialFillOutcome.FILLED, outcome)
+    }
+
     companion object {
         /**
          * Minimal DOM: only what the credential JavaScript uses
          * (querySelector with tag + [attr="value"] selectors, focus,
-         * set/getAttribute, value).
+         * set/getAttribute, value). documentElement.outerHTML renders the
+         * live elements, so setAttribute (the focus stamp) rotates the
+         * fingerprint exactly like a real page; assigning outerHTML
+         * installs a static override for DOM-replacement simulations.
          */
         private val DOM_SHIM = """
 function __matches(el, sel) {
@@ -339,6 +373,22 @@ function __mkInput(attrs) {
 }
 var __pass = __mkInput({type: 'password', name: 'password'});
 var __page = [__pass];
+// The live DOM rendered from the actual elements: setAttribute (the
+// focus stamp) changes the rendered markup, exactly like a real page's
+// outerHTML. Assigning documentElement.outerHTML still installs a static
+// override, so DOM-replacement tests keep working.
+var __outerHtmlOverride = null;
+function __renderOuterHTML() {
+  if (__outerHtmlOverride !== null) return __outerHtmlOverride;
+  var html = '<html><body>';
+  for (var i = 0; i < __page.length; i++) {
+    var el = __page[i];
+    var attrs = '';
+    for (var k in el._attrs) { attrs += ' ' + k + '="' + el._attrs[k] + '"'; }
+    html += '<' + el.tagName.toLowerCase() + attrs + '>';
+  }
+  return html + '</body></html>';
+}
 var document = {
   querySelector: function(sel) {
     for (var i = 0; i < __page.length; i++) {
@@ -349,8 +399,13 @@ var document = {
   // Live page identity for the production host/document bindings: tests
   // mutate these to simulate a navigation or DOM replacement WITHOUT
   // touching any cache, proving the production JS reads the actual page.
-  documentElement: { outerHTML: '<html><body><input type="password" name="password"></body></html>' }
+  documentElement: {}
 };
+Object.defineProperty(document.documentElement, 'outerHTML', {
+  get: function() { return __renderOuterHTML(); },
+  set: function(v) { __outerHtmlOverride = String(v); },
+  configurable: true
+});
 var location = { host: 'example.com', hostname: 'example.com', href: 'https://example.com/login' };
 function __replaceFieldWithValuedLookalike() {
   // The DOM swaps the focused field for a lookalike that already carries
