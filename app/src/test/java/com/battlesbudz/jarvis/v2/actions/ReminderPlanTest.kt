@@ -27,8 +27,10 @@ class ReminderPlanTest {
         ZonedDateTime.of(LocalDate.of(2026, month, day), LocalTime.of(hour, minute), zone)
             .toInstant().toEpochMilli()
 
-    /** Monday 2026-10-06 10:00 local. */
+    /** Tuesday 2026-10-06 10:00 local. */
     private val now = epoch(10, 6, 10, 0)
+    // The ledger and coordinator must agree on whether this fixture's reminder is in the future.
+    private val clock: () -> Long = { now }
 
     private fun spec(text: String): ReminderSpec {
         val parsed = ActionRequestText.reminderRequest(text, now)
@@ -167,17 +169,17 @@ class ReminderPlanTest {
     private val scheduledOccurrences = mutableListOf<WorkflowOccurrence>()
 
     private fun coordinator(store: ToolTaskStore = InMemoryToolTaskStore()): ReminderCoordinator =
-        ReminderCoordinator(WorkflowLedger(store), { occurrence ->
+        ReminderCoordinator(WorkflowLedger(store, now = clock), { occurrence ->
             scheduledOccurrences += occurrence
             WorkflowAlarmScheduler.Scheduled(WorkflowScheduling.AlarmMode.INEXACT_FALLBACK, null)
-        }, now = { now })
+        }, now = clock)
 
     @Test fun ledgerWriteSuccessProducesReceiptAndListsTheReminder() {
-        val ledger = WorkflowLedger(InMemoryToolTaskStore())
+        val ledger = WorkflowLedger(InMemoryToolTaskStore(), now = clock)
         val coordinator = ReminderCoordinator(ledger, { occurrence ->
             scheduledOccurrences += occurrence
             WorkflowAlarmScheduler.Scheduled(WorkflowScheduling.AlarmMode.INEXACT_FALLBACK, null)
-        }, now = { now })
+        }, now = clock)
         val created = coordinator.createReminder("go door dashing", epoch(10, 7, 16, 0))
         assertTrue("ledger write must succeed: ${created.message}", created.succeeded)
         assertTrue("receipt must claim the set honestly: ${created.message}",
@@ -227,6 +229,6 @@ class ReminderPlanTest {
         assertTrue("past time must be reported plainly: ${created.message}",
             created.message.contains("already passed"))
         assertTrue("no workflow may be written for a rejected reminder",
-            WorkflowLedger(store).list().isEmpty())
+            WorkflowLedger(store, now = clock).list().isEmpty())
     }
 }
