@@ -321,6 +321,71 @@ class M5WorkflowsTest {
         assertEquals(listOf("title", "text", "description").sorted(), names2.sorted())
     }
 
+    @Test fun exportRedactsPersonalContentInAdaptiveCandidates() {
+        // Jerry's review (build 1189): the Adaptive candidate path applied
+        // only redactExportValue, so plain message/title/text values survived
+        // export. Adaptive candidates now share the tool-aware redaction used
+        // for Tool steps, while binding deduplication is preserved.
+        val def = definition(steps = listOf(
+            WorkflowStep.Adaptive(uid(), "stay on top of things",
+                listOf(
+                    ActionRequest("create_reminder",
+                        mapOf("message" to "Call the dentist Tuesday", "at_ms" to "1791230400000")),
+                    ActionRequest("post_notification",
+                        mapOf("title" to "Medication reminder", "text" to "Take your pills"))
+                ),
+                EffortBudget(3, 60_000L, 2))
+        ))
+        val export = exportWorkflow(def, author = "tester", nowMs = nowMs)
+        assertFalse(export.manifestJson.contains("Call the dentist Tuesday"))
+        assertFalse(export.manifestJson.contains("Medication reminder"))
+        assertFalse(export.manifestJson.contains("Take your pills"))
+        assertTrue(export.manifestJson.contains("{{setup:message}}"))
+        assertTrue(export.manifestJson.contains("{{setup:title}}"))
+        assertTrue(export.manifestJson.contains("{{setup:text}}"))
+        val parsed = parseWorkflowManifest(export.manifestJson)
+        val names = parsed.setupBindings.map { it.name }
+        assertTrue(names.containsAll(listOf("message", "title", "text", "description")))
+        // The preview still exposes the bindings so the exporter reviews
+        // exactly what is shared.
+        val shared = export.preview.shared.joinToString("\n")
+        assertTrue(shared.contains("message=\"{{setup:message}}\""))
+        assertTrue(shared.contains("title=\"{{setup:title}}\""))
+    }
+
+    @Test fun exportRedactsAdaptiveCandidatesInNestedBranches() {
+        // The same tool-aware redaction reaches Adaptive steps nested in
+        // branch then/else steps, and binding deduplication is preserved:
+        // same key + same value reuses one binding, distinct values stay
+        // distinct.
+        val def = definition(steps = listOf(
+            WorkflowStep.Branch(uid(),
+                WorkflowCondition.GreaterThan(WorkflowBinding(uid(), "battery_percent"), 20.0),
+                thenSteps = listOf(
+                    WorkflowStep.Adaptive(uid(), "morning briefing",
+                        listOf(ActionRequest("post_notification",
+                            mapOf("title" to "Good morning", "text" to "Your day at a glance"))),
+                        EffortBudget(2, 30_000L, 2))
+                ),
+                elseSteps = listOf(
+                    WorkflowStep.Adaptive(uid(), "evening wind-down",
+                        listOf(ActionRequest("post_notification",
+                            mapOf("title" to "Good morning", "text" to "Time to rest"))),
+                        EffortBudget(2, 30_000L, 2))
+                ))
+        ))
+        val export = exportWorkflow(def, author = "tester", nowMs = nowMs)
+        assertFalse(export.manifestJson.contains("Your day at a glance"))
+        assertFalse(export.manifestJson.contains("Time to rest"))
+        // "Good morning" is the same title value in both candidates → one binding.
+        val names = parseWorkflowManifest(export.manifestJson).setupBindings.map { it.name }
+        assertTrue(names.contains("title"))
+        assertFalse(names.contains("title_2"))
+        // Distinct text values → distinct bindings.
+        assertTrue(names.contains("text"))
+        assertTrue(names.contains("text_2"))
+    }
+
     @Test fun exportPreviewExposesAllRetainedContent() {
         val scriptSource = "log(\"hi\");\nreturn 1;"
         val def = definition(
