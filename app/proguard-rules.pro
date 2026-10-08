@@ -430,9 +430,14 @@
 -keep class com.battlesbudz.jarvis.v2.actions.WorkflowImportExportKt** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.WorkflowManifestKt** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.WorkflowExport** { *; }
-# test79 also reads the parsed manifest's workflow and setup bindings
-# through the shared class loader; without these, R8 renames
-# WorkflowManifest (observed as actions/g5) and strips getWorkflow(),
+# test79 (M5 workflow export): the parsed manifest DTO and its nested model
+# types are only touched by the release journey; without this keep R8 renames
+# the WorkflowManifest class (observed as actions/g5) and strips getWorkflow(),
 # crashing the release journey with NoSuchMethodError.
--keep class com.battlesbudz.jarvis.v2.actions.WorkflowManifest { *; }
--keep class com.battlesbudz.jarvis.v2.actions.SetupBinding { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowManifest** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ExportPreview** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.RedactionRecord** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.SetupBinding** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ManifestProvenance** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ToolContract** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScriptRuntimeRequirements** { *; }
