@@ -47,9 +47,11 @@ enum class VideoError { PROVIDER_FAILED, NO_BACK_CAMERA, BIND_FAILED }
  * ([MainThreadCameraHandle]) and [unbind] retains ownership of the camera
  * handle until the actual detach outcome is known — the handle stays
  * installed while detach runs (bounded), so a failed or still-pending
- * detach can never be mistaken for clean teardown. The outcome (detached,
- * failed, or timed out) is reported through [onDetachOutcome], never
- * silently swallowed as a success.
+ * detach can never be mistaken for clean teardown. On a failed or timed-out
+ * detach the handle is retained and [cleanupUnresolved] is set, blocking a
+ * fresh capture until a later detach confirms cleanup. The outcome
+ * (detached, failed, or timed out) is reported through [onDetachOutcome],
+ * never silently swallowed as a success.
  */
 class CameraXVideoBinder(
     private val hub: VisionFrameHub,
@@ -146,12 +148,24 @@ class CameraXVideoBinder(
     private var attachHandle: AttachHandle? = null
     private var cameraHandle: CameraHandle? = null
     private var executor: ExecutorService? = null
+    /**
+     * Explicit unresolved-cleanup state (Jerry's review, build 1196): set
+     * when a detach failed or timed out and the camera handle was retained
+     * because the old CameraX use case may still be bound. While set,
+     * [bind] refuses a fresh capture — reporting the failure alone does not
+     * establish that the use case was actually released. Cleared only when
+     * a detach is confirmed ([DetachOutcome.Detached]); a later [unbind]
+     * retries the retained handle's detach.
+     */
+    @Volatile
+    var cleanupUnresolved = false
+        private set
 
     override fun bind() {
         val attempt: Long
         val exec: ExecutorService
         synchronized(lock) {
-            if (binding || cameraHandle != null) return
+            if (binding || cameraHandle != null || cleanupUnresolved) return
             binding = true
             generation++
             attempt = generation
@@ -215,15 +229,28 @@ class CameraXVideoBinder(
         // Teardown retains ownership of the camera handle until the actual
         // detach outcome is known: the handle stays installed while detach
         // runs (bounded inside the handle), so a failed or still-pending
-        // detach can never be mistaken for clean teardown. Only after the
-        // outcome is known is the handle released — and only if no newer
-        // generation installed its own handle meanwhile (generation fence).
+        // detach can never be mistaken for clean teardown. Only a confirmed
+        // detach releases the handle — and only if no newer generation
+        // installed its own handle meanwhile (generation fence). A failed or
+        // timed-out detach retains the handle and sets cleanupUnresolved, so
+        // a fresh capture is blocked until a later unbind confirms cleanup.
         val toDetach: CameraHandle? = synchronized(lock) { cameraHandle }
         if (toDetach != null) {
             val outcome = runCatching { toDetach.detach() }
                 .getOrElse { DetachOutcome.Failed(it) }
             synchronized(lock) {
-                if (cameraHandle === toDetach) cameraHandle = null
+                if (outcome == DetachOutcome.Detached) {
+                    // Confirmed: the old use case is actually unbound —
+                    // release ownership and allow a fresh capture.
+                    if (cameraHandle === toDetach) cameraHandle = null
+                    cleanupUnresolved = false
+                } else if (cameraHandle === toDetach) {
+                    // Failed or timed out: the use case may still be bound.
+                    // Retain ownership and mark cleanup unresolved so a
+                    // fresh capture cannot start on top of it; a later
+                    // unbind retries the retained handle's detach.
+                    cleanupUnresolved = true
+                }
             }
             onDetachOutcome(outcome)
         }
