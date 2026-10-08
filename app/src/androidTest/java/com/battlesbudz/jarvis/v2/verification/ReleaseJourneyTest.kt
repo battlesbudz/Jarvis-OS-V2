@@ -4855,13 +4855,17 @@ class ReleaseJourneyTest {
         assertTrue(export.manifestJson.contains("{{setup:title_2}}"))
         assertTrue(export.manifestJson.contains("{{setup:text}}"))
         assertTrue(export.manifestJson.contains("{{setup:text_2}}"))
-        assertTrue(export.manifestJson.contains("{{setup:location_trigger}}"))
+        // The exported manifest still parses and validates on device.
+        val parsed = parseWorkflowManifest(export.manifestJson)
+        // The location trigger is removed (replaced by Manual): coordinates
+        // never survive, so there is no placeholder slot in the JSON — the
+        // importer adds their own location via the location_trigger binding.
+        assertTrue(parsed.workflow.triggers.none { it is WorkflowTrigger.OnLocation })
+        assertTrue(parsed.workflow.triggers.any { it is WorkflowTrigger.Manual })
         val shared = export.preview.shared.joinToString("\n")
         assertTrue(shared.contains("create_reminder"))
         assertTrue(shared.contains("message=\"{{setup:message}}\""))
         assertTrue(shared.contains("manual (when you ask in chat)"))
-        // The exported manifest still parses and validates on device.
-        val parsed = parseWorkflowManifest(export.manifestJson)
         assertTrue(parsed.setupBindings.map { it.name }.containsAll(
             listOf("message", "title", "title_2", "text", "text_2", "description", "location_trigger")))
     }
