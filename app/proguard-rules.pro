@@ -418,6 +418,13 @@
 # outcome are only referenced by the release journey.
 -keep class com.battlesbudz.jarvis.v2.actions.ScriptHost** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ScriptExecution** { *; }
+# test78 (M5 script step): the journey calls runWithInterpreter with default
+# args through the ScriptRuntimeKt facade; R8 otherwise drops the $default
+# synthetic (observed as NoSuchMethodError on the obfuscated facade).
+-keep,includedescriptorclasses class com.battlesbudz.jarvis.v2.actions.ScriptRuntimeKt {
+    public static *** runWithInterpreter(...);
+    public static *** runWithInterpreter$default(...);
+}
 # test79 (M5 workflow export): top-level export/parse entry points and the
 # export model, referenced only by the release journey.
 -keep class com.battlesbudz.jarvis.v2.actions.WorkflowImportExportKt** { *; }
