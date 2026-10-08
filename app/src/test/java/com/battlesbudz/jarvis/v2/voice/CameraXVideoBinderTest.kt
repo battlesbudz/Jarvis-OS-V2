@@ -3,9 +3,14 @@ package com.battlesbudz.jarvis.v2.voice
 import androidx.camera.core.ImageProxy
 import org.junit.Assert.*
 import org.junit.Test
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /**
  * The bind lifecycle with a fake camera platform: cancellation during
@@ -194,5 +199,231 @@ class CameraXVideoBinderTest {
         f.binder.bind()
         assertEquals(listOf(VideoError.PROVIDER_FAILED), f.errors)
         assertEquals(1, f.executors.single().shutdownNowCalls)
+    }
+
+    @Test fun spokenFarewellUnbindsOldUseCaseOnMainThreadAndNextCallStartsClean() {
+        // The spoken-farewell path: STOP_CAPTURE -> stopForCall(callId) ->
+        // binder.unbind() -> CameraHandle.detach(). The detach must marshal
+        // the CameraX unbind to the main thread and retain ownership until
+        // it completes; the next call then starts a fresh capture under its
+        // own identity (the transition into passive wake listening leaves
+        // the controller IDLE with no capture owner).
+        val main = FakeMainExecutor()
+        try {
+            val unbindThreads = Collections.synchronizedList(mutableListOf<Thread>())
+            val failures = Collections.synchronizedList(mutableListOf<Throwable>())
+            val f = Fixture()
+            val handle = MainThreadCameraHandle(
+                unbinder = CameraXUnbinder { unbindThreads += Thread.currentThread() },
+                mainExecutor = main,
+                // The farewell is delivered off the main thread here;
+                // production may call from onStartCommand (main) or a
+                // service thread — both must land the unbind on main.
+                isMainThread = { false },
+                onDetachFailure = { failures += it },
+            )
+            f.platform.syncResult = CameraXVideoBinder.AttachResult.Attached(handle)
+            val controller = CallVisionController(f.binder)
+            assertEquals(CallVisionController.State.ACTIVE, controller.start(true, "call-1"))
+            // Spoken farewell for the owning call ends the capture.
+            assertEquals(CallVisionController.State.IDLE, controller.stopForCall("call-1"))
+            assertNull("farewell clears the capture owner", controller.captureCallId())
+            assertEquals("the old use case must be unbound", 1, unbindThreads.size)
+            assertEquals("the unbind must run on the main thread",
+                main.mainThread, unbindThreads.single())
+            assertTrue("no cleanup failure expected, got $failures", failures.isEmpty())
+            // A new call starts a fresh capture under its own identity; the
+            // old call's farewell is now stale and must be a no-op.
+            assertEquals(CallVisionController.State.ACTIVE, controller.start(true, "call-2"))
+            assertEquals("call-2", controller.captureCallId())
+            controller.stopForCall("call-1")
+            assertEquals("a stale farewell must not end the new call's capture",
+                CallVisionController.State.ACTIVE, controller.state)
+            assertEquals("a stale farewell must not unbind again",
+                1, unbindThreads.size)
+            controller.stop()
+        } finally {
+            main.shutdown()
+        }
+    }
+}
+
+/** A "main executor" with its own real thread, like Android's main looper thread. */
+private class FakeMainExecutor : Executor {
+    private val queue = LinkedBlockingQueue<Runnable>()
+    val mainThread: Thread = Thread({
+        try {
+            while (true) queue.take().run()
+        } catch (_: InterruptedException) {
+            // shut down
+        }
+    }, "fake-main-thread").also { it.start() }
+    val runThreads = Collections.synchronizedList(mutableListOf<Thread>())
+
+    override fun execute(command: Runnable) {
+        queue.put(Runnable {
+            runThreads += Thread.currentThread()
+            command.run()
+        })
+    }
+
+    fun shutdown() {
+        mainThread.interrupt()
+        mainThread.join(2_000L)
+    }
+}
+
+/**
+ * Real-thread teardown for the production CameraX detach path
+ * ([MainThreadCameraHandle]): the unbind must run on the main executor
+ * (CameraX requires the main thread), detach must not return before the
+ * outcome is known, and a cleanup failure must surface through
+ * onDetachFailure instead of being silently swallowed. No camera hardware.
+ */
+class MainThreadCameraHandleTest {
+    @Test fun detachFromWorkerThreadUnbindsOnMainExecutor() {
+        val main = FakeMainExecutor()
+        try {
+            val unbindThreads = Collections.synchronizedList(mutableListOf<Thread>())
+            val failures = Collections.synchronizedList(mutableListOf<Throwable>())
+            val handle = MainThreadCameraHandle(
+                unbinder = CameraXUnbinder { unbindThreads += Thread.currentThread() },
+                mainExecutor = main,
+                isMainThread = { false },
+                onDetachFailure = { failures += it },
+            )
+            // Detach runs on a worker thread (not the main thread).
+            val caller = Thread.currentThread()
+            handle.detach()
+            assertEquals("the old use case must be unbound", 1, unbindThreads.size)
+            assertEquals("the unbind must run on the main thread, not the caller",
+                main.mainThread, unbindThreads.single())
+            assertTrue("the caller thread must not perform the unbind",
+                unbindThreads.single() != caller)
+            assertTrue("no cleanup failure expected, got $failures", failures.isEmpty())
+            assertEquals(listOf(main.mainThread), main.runThreads)
+        } finally {
+            main.shutdown()
+        }
+    }
+
+    @Test fun detachDoesNotReturnBeforeUnbindCompletes() {
+        val main = FakeMainExecutor()
+        try {
+            val events = Collections.synchronizedList(mutableListOf<String>())
+            val release = CountDownLatch(1)
+            val handle = MainThreadCameraHandle(
+                unbinder = CameraXUnbinder {
+                    // A slow main-thread unbind: detach must wait for this.
+                    assertTrue(release.await(5, TimeUnit.SECONDS))
+                    events += "unbound"
+                },
+                mainExecutor = main,
+                isMainThread = { false },
+                detachTimeoutMs = 5_000L,
+            )
+            val t = Thread {
+                handle.detach()
+                events += "detach-returned"
+            }
+            t.start()
+            // Give detach() every chance to (incorrectly) return early: the
+            // unbind is still blocked, so a correct detach cannot have
+            // returned yet.
+            Thread.sleep(300)
+            assertTrue("detach must retain ownership until the unbind completes, got $events",
+                events.isEmpty())
+            release.countDown()
+            t.join(5_000L)
+            assertEquals(listOf("unbound", "detach-returned"), events)
+        } finally {
+            main.shutdown()
+        }
+    }
+
+    @Test fun detachOnMainThreadUnbindsDirectlyWithoutPosting() {
+        val main = FakeMainExecutor()
+        try {
+            val unbindThreads = Collections.synchronizedList(mutableListOf<Thread>())
+            val failures = Collections.synchronizedList(mutableListOf<Throwable>())
+            val handle = MainThreadCameraHandle(
+                unbinder = CameraXUnbinder { unbindThreads += Thread.currentThread() },
+                mainExecutor = main,
+                // Already on the main thread: unbind directly (posting would
+                // deadlock the bounded wait).
+                isMainThread = { true },
+                onDetachFailure = { failures += it },
+            )
+            val caller = Thread.currentThread()
+            handle.detach()
+            assertEquals(listOf(caller), unbindThreads)
+            assertTrue("nothing may be posted when already on main", main.runThreads.isEmpty())
+            assertTrue(failures.isEmpty())
+        } finally {
+            main.shutdown()
+        }
+    }
+
+    @Test fun detachFailureIsReportedNotSwallowed() {
+        val main = FakeMainExecutor()
+        try {
+            val boom = RuntimeException("unbind blew up")
+            val failures = Collections.synchronizedList(mutableListOf<Throwable>())
+            val handle = MainThreadCameraHandle(
+                unbinder = CameraXUnbinder { throw boom },
+                mainExecutor = main,
+                isMainThread = { false },
+                onDetachFailure = { failures += it },
+            )
+            // Detach never throws out of teardown...
+            handle.detach()
+            // ...but the cleanup failure must surface, not vanish.
+            assertEquals("a cleanup failure must be reported, not silently swallowed",
+                listOf(boom), failures)
+        } finally {
+            main.shutdown()
+        }
+    }
+
+    @Test fun detachTimeoutIsReportedNotSilent() {
+        val main = FakeMainExecutor()
+        try {
+            val failures = Collections.synchronizedList(mutableListOf<Throwable>())
+            val release = CountDownLatch(1)
+            val handle = MainThreadCameraHandle(
+                unbinder = CameraXUnbinder {
+                    try {
+                        // A wedged main thread: the unbind never completes.
+                        release.await()
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                    }
+                },
+                mainExecutor = main,
+                isMainThread = { false },
+                onDetachFailure = { failures += it },
+                detachTimeoutMs = 300L,
+            )
+            handle.detach() // returns after the bounded wait
+            assertEquals(1, failures.size)
+            assertTrue("a wedged detach must report a timeout, got ${failures.single()}",
+                failures.single() is TimeoutException)
+            release.countDown()
+        } finally {
+            main.shutdown()
+        }
+    }
+
+    @Test fun rejectedMainExecutorTaskIsReportedNotSilent() {
+        val failures = Collections.synchronizedList(mutableListOf<Throwable>())
+        val handle = MainThreadCameraHandle(
+            unbinder = CameraXUnbinder { fail("the unbind must never run") },
+            mainExecutor = Executor { throw java.util.concurrent.RejectedExecutionException("shut down") },
+            isMainThread = { false },
+            onDetachFailure = { failures += it },
+        )
+        handle.detach()
+        assertEquals(1, failures.size)
+        assertTrue(failures.single() is java.util.concurrent.RejectedExecutionException)
     }
 }
