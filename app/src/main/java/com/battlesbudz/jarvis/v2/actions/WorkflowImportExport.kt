@@ -266,11 +266,8 @@ fun exportWorkflow(
 
     fun redactStep(step: WorkflowStep, path: String): WorkflowStep = when (step) {
         is WorkflowStep.Tool -> {
-            val personalKeys = PERSONAL_CONTENT_ARGS[step.request.name] ?: emptySet()
             val newArgs = step.request.arguments.mapValues { (k, v) ->
-                val r = if (k in personalKeys && v.isNotBlank())
-                    ValueRedaction(bindingNameFor(k), sensitive = false)
-                else redactExportValue(k, v)
+                val r = redactToolArgument(step.request.name, k, v)
                 if (r != null) {
                     val field = "$path.arguments[$k]"
                     val placeholder = bind(
@@ -303,7 +300,7 @@ fun exportWorkflow(
         is WorkflowStep.Adaptive -> step.copy(
             candidates = step.candidates.mapIndexed { i, c ->
                 c.copy(arguments = c.arguments.mapValues { (k, v) ->
-                    val r = redactExportValue(k, v)
+                    val r = redactToolArgument(c.name, k, v)
                     if (r != null) {
                         val field = "$path.candidates[$i].arguments[$k]"
                         val placeholder = bind(
@@ -494,6 +491,23 @@ internal fun redactExportValue(argKey: String, value: String): ValueRedaction? {
         return ValueRedaction(bindingNameFor(argKey), sensitive = '@' in value)
     if (EMAIL_LIKE.matches(value)) return ValueRedaction(bindingNameFor(argKey), sensitive = false)
     return null
+}
+
+/**
+ * Tool-aware redaction for tool arguments, used for both [WorkflowStep.Tool]
+ * requests and [WorkflowStep.Adaptive] candidates.
+ *
+ * Argument keys that always carry personal content for the tool
+ * ([PERSONAL_CONTENT_ARGS]) are redacted whatever their shape; every other
+ * key falls back to [redactExportValue]. Returns non-null when [value] must
+ * be redacted. Binding deduplication is preserved by the caller through
+ * `bind`, which reuses one binding for the same key + same value.
+ */
+internal fun redactToolArgument(toolName: String, argKey: String, value: String): ValueRedaction? {
+    if (value.isBlank()) return null
+    if (argKey in (PERSONAL_CONTENT_ARGS[toolName] ?: emptySet()))
+        return ValueRedaction(bindingNameFor(argKey), sensitive = false)
+    return redactExportValue(argKey, value)
 }
 
 /**
