@@ -3119,6 +3119,7 @@ class ReleaseJourneyTest {
         val originalUiArmed = VoiceSessionUi.armed.value
         val originalPaused = VoiceSessionUi.paused.value
         val originalServiceStop = VoiceCallService.stopRequested.value
+        val originalOnCallBegan = controller.onCallBegan
         val callIds = mutableListOf<String>()
         val finishingTurn = Job()
         val passiveTurn = Job()
@@ -3135,6 +3136,14 @@ class ReleaseJourneyTest {
         assertNull("The controlled runtime journey must own its foreground service", callService())
         try {
             runtime.sessionReport = {}
+            // Park the production onCallBegan hook (which would start the real
+            // VideoCallService via START_VIDEO_CAPTURE): this journey never
+            // exercises video, and a leaked capture intent racing the next
+            // test's service quiesce lands on test49's fresh service AFTER its
+            // farewell refresh, leaving a stale "Video on" notification that
+            // fails test49's IDLE assertion (API 35 run 1224). Same parking
+            // as test49.
+            controller.onCallBegan = null
             // An owned, incomplete turn keeps sendChat at its real queue boundary without
             // loading ASR, wake-word, Gemma or Piper models in this lifecycle fixture.
             runtime.voiceTurnJob = finishingTurn
@@ -3219,6 +3228,7 @@ class ReleaseJourneyTest {
                 VoiceSessionUi.armed.value = originalUiArmed
                 VoiceSessionUi.paused.value = originalPaused
                 VoiceCallService.stopRequested.value = originalServiceStop
+                controller.onCallBegan = originalOnCallBegan
             }
         }
     }
