@@ -253,8 +253,7 @@ class AndroidBrowserExecutorTest {
         assertTrue(h.executor.execute(
             MobileAction.BrowseFill("f0", "user@example.com", token)).succeeded)
         h.session.admitSubmit(h.session.proposeSubmit(token)!!)
-        h.bridge.refreshedSnapshot = loginSnapshot(
-            fingerprint = "fp-fields-changed",
+        h.bridge.refreshedSnapshot = loginSnapshot(fingerprint = "fp-fields-changed").copy(
             forms = listOf(
                 BrowserForm(
                     id = "form0",
@@ -275,4 +274,5 @@ class AndroidBrowserExecutorTest {
             result.message.contains("page changed"))
         assertEquals("zero submission may reach the backend", 0, h.bridge.submittedForms)
     }
+
 }

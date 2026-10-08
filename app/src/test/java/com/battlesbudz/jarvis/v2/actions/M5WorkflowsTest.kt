@@ -357,10 +357,13 @@ class M5WorkflowsTest {
         // The same tool-aware redaction reaches Adaptive steps nested in
         // branch then/else steps, and binding deduplication is preserved:
         // same key + same value reuses one binding, distinct values stay
-        // distinct.
+        // distinct. The condition binds a step that actually produces the
+        // binding (the validator rejects dangling bindings).
+        val batteryId = uid()
         val def = definition(steps = listOf(
+            batteryStep(batteryId),
             WorkflowStep.Branch(uid(),
-                WorkflowCondition.GreaterThan(WorkflowBinding(uid(), "battery_percent"), 20.0),
+                WorkflowCondition.GreaterThan(WorkflowBinding(batteryId, "battery_percent"), 20.0),
                 thenSteps = listOf(
                     WorkflowStep.Adaptive(uid(), "morning briefing",
                         listOf(ActionRequest("post_notification",
@@ -441,6 +444,8 @@ class M5WorkflowsTest {
         assertTrue(review.runtimeProblems.any { it.contains("not installed") })
         assertTrue(review.previewText.contains("tester"))
     }
+
+
 
     @Test fun importAdmitsDisabledWithReasonWhenDepsMissing() {
         val json = manifestOf(richDefinition()).toJson()
