@@ -93,14 +93,17 @@ private fun ready(missingTools: List<ToolContract>, missingScopes: List<String>,
  * host function is unavailable on the device. When the metadata is omitted
  * but the workflow contains Script steps, the whole requirement is derived
  * from the steps (interpreter defaults) — trusting the omission would admit
- * a workflow whose scripts cannot run.
+ * a workflow whose scripts cannot run. And any Script step at all — even one
+ * with no host functions and no declared metadata — requires a runtime: a
+ * function-free script still cannot run without an interpreter.
  */
 private fun effectiveScriptRuntime(manifest: WorkflowManifest): ScriptRuntimeRequirements? {
-    val stepFunctions = collectScriptSteps(manifest.workflow.steps)
+    val scriptSteps = collectScriptSteps(manifest.workflow.steps)
+    val stepFunctions = scriptSteps
         .flatMap { it.requiredHostFunctions }.distinct()
     val declared = manifest.scriptRuntime
     if (declared == null) {
-        if (stepFunctions.isEmpty()) return null
+        if (scriptSteps.isEmpty()) return null
         return ScriptRuntimeRequirements(
             engine = SCRIPT_ENGINE_NAME,
             maxTimeMs = DEFAULT_SCRIPT_MAX_TIME_MS,
@@ -109,7 +112,7 @@ private fun effectiveScriptRuntime(manifest: WorkflowManifest): ScriptRuntimeReq
             requiredHostFunctions = stepFunctions
         )
     }
-    if (stepFunctions.isEmpty()) return declared
+    if (scriptSteps.isEmpty()) return declared
     return declared.copy(
         requiredHostFunctions = (declared.requiredHostFunctions + stepFunctions).distinct()
     )

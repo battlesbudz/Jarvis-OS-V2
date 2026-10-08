@@ -445,7 +445,19 @@ class M5WorkflowsTest {
         assertTrue(review.previewText.contains("tester"))
     }
 
-
+    @Test fun functionFreeScriptStillRequiresRuntime() {
+        // Jerry's review (build 1194): a Script step with no host functions
+        // and no declared runtime metadata still needs an interpreter — it
+        // must not review as ready when no runtime is installed.
+        val manifest = manifestOf(definition(steps = listOf(
+            WorkflowStep.Script(uid(), "return 1;", emptyList())
+        ))).copy(scriptRuntime = null)
+        val review = reviewWorkflowManifest(manifest.toJson(),
+            DeviceCapabilities(emptyMap(), emptySet(), scriptRuntime = null))
+        assertFalse("a function-free script with no runtime must not be ready", review.ready)
+        assertTrue("must report the missing runtime, got: ${review.runtimeProblems}",
+            review.runtimeProblems.any { it.contains("not installed") })
+    }
 
     @Test fun importAdmitsDisabledWithReasonWhenDepsMissing() {
         val json = manifestOf(richDefinition()).toJson()
