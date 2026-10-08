@@ -372,6 +372,7 @@
     public *** getVoiceTurnJob*();
     public void setVoiceTurnJob*(...);
     public boolean getVoiceSessionArmed*();
+    public void setVoiceSessionArmed*(boolean);
     public int getAudioRecoveryAttempts*();
     public void setAudioRecoveryAttempts*(int);
     public *** getReturnToWakeCuePending*();
@@ -399,6 +400,11 @@
 # the browser path, so R8 removes the whole subtree; the release journey
 # drives it directly across the shared class loader.
 -keep class com.battlesbudz.jarvis.v2.actions.BrowserPageSnapshot** { *; }
+# test77 (M4 browser runtime): currentPage() returns BrowserPage, not the
+# snapshot DTO; without this keep R8 renames it (observed as actions/w)
+# and strips getPageToken(), crashing the release journey.
+-keep class com.battlesbudz.jarvis.v2.actions.BrowserPage** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.BrowserProvenance** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.BrowserLink** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.BrowserForm** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.BrowserField** { *; }
