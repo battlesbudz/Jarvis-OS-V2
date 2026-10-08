@@ -78,6 +78,17 @@ class LiteRtLmEngine(
      * Until then these properties always read false and the
      * ConversationModelSession guards are dormant. Do not treat them as
      * active protection on this branch.
+     *
+     * Wired vs not on this branch, stated plainly — no preservation is
+     * claimed "by construction" from a shared interface; the
+     * ConversationModelSession guards here are copies, and copies stay
+     * dormant until they are wired. NOT wired: beginTurn/finishTurn
+     * transitions, and awaitIdle (a no-op: Conversation exposes no
+     * awaitIdle). Also absent on this branch: audio's DurableTaskRecovery
+     * startup/alarm barrier and any AgentActivityMonitor production wiring.
+     * Later unification must keep the protected audio engine and runtime
+     * intact and add Muse-side features narrowly — never rewire or
+     * reimplement the audio protections around the new code.
      */
     private val nativeLifecycle = CheckedConversationLifecycle(
         createConversation = ::createConversation,

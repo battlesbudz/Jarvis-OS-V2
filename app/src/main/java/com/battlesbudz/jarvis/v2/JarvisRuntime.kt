@@ -738,10 +738,15 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         // The ended call's video capture stops here — capture never survives
         // into passive wake listening. Only the ended call's identity can
         // stop its capture: a stale farewell for an older call is a no-op
-        // against a newer call's capture (see CallVisionController).
+        // against a newer call's capture (see CallVisionController). The
+        // farewell ends capture outside the video service's command path, so
+        // route the new state into its notification update path — otherwise
+        // the notification keeps reading "Video on" after the controller is
+        // IDLE.
         endedCallId?.let { callId ->
             runCatching {
-                com.battlesbudz.jarvis.v2.voice.CallVisionRegistry.controller?.stopForCall(callId)
+                com.battlesbudz.jarvis.v2.voice.VideoCallService
+                    .refreshVideoStatusAfterFarewell(this, callId)
             }
         }
         // Close the shared queue gate before inspecting deferred handoffs. A promotion either

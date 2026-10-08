@@ -65,10 +65,13 @@ interface BrowserBridge {
     /**
      * Ask the platform password manager to fill the current page's login
      * form for [host]. Only the outcome returns: credentials never leave
-     * the platform autofill path. The backend reports FILLED only after
-     * verifying a password field actually became non-empty (a boolean
-     * check — the secret value itself is never read back); a focused-but-
-     * empty field is NO_CREDENTIALS, never FILLED.
+     * the platform autofill path. The backend reports FILLED only when it
+     * verifies an actual empty-to-filled transition on the exact field it
+     * focused, with the approved host and the live document bound through
+     * completion — a navigation, a document/field replacement mid-flow, or
+     * a value already present before the request is NO_CREDENTIALS, never
+     * FILLED. Only booleans cross back: the secret value itself is never
+     * read out of the field.
      */
     fun requestCredentialFill(host: String): CredentialFillOutcome
     fun currentUrl(): String?

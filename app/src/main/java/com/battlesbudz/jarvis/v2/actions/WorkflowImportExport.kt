@@ -193,6 +193,7 @@ fun resolveSetupBindings(definition: WorkflowDefinition, values: Map<String, Str
         is WorkflowStep.Tool -> step.copy(
             request = step.request.copy(arguments = step.request.arguments.mapValues { resolve(it.value) }))
         is WorkflowStep.Branch -> step.copy(
+            condition = resolveCondition(step.condition),
             thenSteps = step.thenSteps.map(::resolveStep),
             elseSteps = step.elseSteps.map(::resolveStep))
         is WorkflowStep.Wait -> step
@@ -203,6 +204,13 @@ fun resolveSetupBindings(definition: WorkflowDefinition, values: Map<String, Str
     fun resolveTrigger(trigger: WorkflowTrigger): WorkflowTrigger = when (trigger) {
         is WorkflowTrigger.Deadline -> trigger.copy(title = resolve(trigger.title))
         else -> trigger
+    }
+    /** Restore redacted branch condition values (Equals/NotEquals literal, Matches regex). */
+    fun resolveCondition(condition: WorkflowCondition): WorkflowCondition = when (condition) {
+        is WorkflowCondition.Equals -> condition.copy(literal = resolve(condition.literal))
+        is WorkflowCondition.NotEquals -> condition.copy(literal = resolve(condition.literal))
+        is WorkflowCondition.Matches -> condition.copy(regex = resolve(condition.regex))
+        else -> condition
     }
     val resolved = definition.copy(
         description = resolve(definition.description),
@@ -232,6 +240,8 @@ data class WorkflowExport(val manifestJson: String, val preview: ExportPreview)
  * - reminder message text and notification titles/bodies → placeholder
  *   (personal content, regardless of value shape)
  * - the workflow description and deadline-reminder titles → placeholder
+ * - branch condition literals/regexes (personal text compared against TEXT
+ *   outputs) → placeholder; condition numbers stay as-is
  * - location triggers: coordinates never survive — the trigger is removed
  *   (the workflow keeps working; the importer adds their own trigger)
  * - location waits: cannot be exported — coordinates must not survive and
@@ -276,6 +286,38 @@ fun exportWorkflow(
         }
     }
 
+    /**
+     * Branch condition values are personal content, whatever their shape:
+     * an Equals/NotEquals literal or Matches regex is user-authored text
+     * compared against a TEXT output (names, phrases, patterns), so it is
+     * redacted into a resolvable setup binding like any other personal
+     * value — the same key + same value reuses one binding, distinct values
+     * get distinct bindings. Numbers (GreaterThan/LessThan) are not strings
+     * and stay as-is.
+     */
+    fun redactCondition(condition: WorkflowCondition, path: String): WorkflowCondition {
+        fun redactValue(value: String, field: String, baseName: String): String {
+            if (value.isBlank()) return value
+            val placeholder = bind(
+                baseName,
+                "Value compared in a branch condition — fill in after import.",
+                sensitive = false,
+                value = value
+            )
+            redactions += RedactionRecord(field, placeholder)
+            return placeholder
+        }
+        return when (condition) {
+            is WorkflowCondition.Equals -> condition.copy(
+                literal = redactValue(condition.literal, "$path.condition.literal", "condition_literal"))
+            is WorkflowCondition.NotEquals -> condition.copy(
+                literal = redactValue(condition.literal, "$path.condition.literal", "condition_literal"))
+            is WorkflowCondition.Matches -> condition.copy(
+                regex = redactValue(condition.regex, "$path.condition.regex", "condition_regex"))
+            else -> condition
+        }
+    }
+
     fun redactStep(step: WorkflowStep, path: String): WorkflowStep = when (step) {
         is WorkflowStep.Tool -> {
             val newArgs = step.request.arguments.mapValues { (k, v) ->
@@ -295,6 +337,7 @@ fun exportWorkflow(
             step.copy(request = step.request.copy(arguments = newArgs))
         }
         is WorkflowStep.Branch -> step.copy(
+            condition = redactCondition(step.condition, path),
             thenSteps = step.thenSteps.mapIndexed { i, s -> redactStep(s, "$path.then[$i]") },
             elseSteps = step.elseSteps.mapIndexed { i, s -> redactStep(s, "$path.else[$i]") }
         )
@@ -447,7 +490,7 @@ private fun describeExportStep(step: WorkflowStep, path: String, indent: String)
             val args = step.request.arguments.entries.joinToString(", ") { (k, v) -> "$k=\"$v\"" }
             listOf("$indent$path: tool ${step.request.name}($args)")
         }
-        is WorkflowStep.Branch -> listOf("$indent$path: branch") +
+        is WorkflowStep.Branch -> listOf("$indent$path: branch (${describeExportCondition(step.condition)})") +
             step.thenSteps.flatMapIndexed { i, s -> describeExportStep(s, "$path.then[$i]", "$indent  ") } +
             step.elseSteps.flatMapIndexed { i, s -> describeExportStep(s, "$path.else[$i]", "$indent  ") }
         is WorkflowStep.Wait -> listOf("$indent$path: wait ${describeExportWait(step.wait)}")
@@ -459,6 +502,22 @@ private fun describeExportStep(step: WorkflowStep, path: String, indent: String)
         is WorkflowStep.Script -> listOf("$indent$path: script") +
             step.source.lines().map { "$indent    $it" }
     }
+
+/**
+ * Renders a branch condition exactly as it will be shared: post-redaction
+ * values (placeholders where personal strings were), so the preview covers
+ * the complete condition content instead of just the word "branch".
+ */
+private fun describeExportCondition(condition: WorkflowCondition): String {
+    fun ref(binding: WorkflowBinding) = "“${binding.outputName}” from step ${binding.stepId.take(8)}"
+    return when (condition) {
+        is WorkflowCondition.Equals -> "if ${ref(condition.binding)} is “${condition.literal}”"
+        is WorkflowCondition.NotEquals -> "if ${ref(condition.binding)} is not “${condition.literal}”"
+        is WorkflowCondition.GreaterThan -> "if ${ref(condition.binding)} is more than ${condition.number}"
+        is WorkflowCondition.LessThan -> "if ${ref(condition.binding)} is less than ${condition.number}"
+        is WorkflowCondition.Matches -> "if ${ref(condition.binding)} matches “${condition.regex}”"
+    }
+}
 
 private fun describeExportWait(wait: WorkflowWait): String = when (wait) {
     is WorkflowWait.Timer -> "timer ${wait.durationMs}ms"

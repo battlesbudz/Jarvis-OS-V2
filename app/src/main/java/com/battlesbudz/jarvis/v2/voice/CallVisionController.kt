@@ -82,7 +82,10 @@ class CallVisionController(
      * (beginCall guarantees no overlap, but a late start must never inherit
      * a dead call's capture). When cleanup is pending, the retained detach
      * is retried first — only a confirmed cleanup re-arms capture — and a
-     * still-unresolved cleanup returns CLEANUP_PENDING, never ACTIVE.
+     * still-unresolved cleanup returns CLEANUP_PENDING, never ACTIVE. A
+     * denied permission while the cleanup is still unresolved keeps
+     * CLEANUP_PENDING visible instead of DENIED: the binder still owns the
+     * camera handle, and the next call must retry its release first.
      */
     @Synchronized
     fun start(cameraPermissionGranted: Boolean, callId: String): State {
@@ -99,7 +102,11 @@ class CallVisionController(
             binder.unbind()
         }
         if (!cameraPermissionGranted) {
-            state = State.DENIED
+            // Preserve cleanup ownership: when the retry above (or an
+            // earlier teardown) left the cleanup unresolved, the binder
+            // still owns the camera handle — keep CLEANUP_PENDING visible
+            // instead of clobbering it with DENIED.
+            state = if (binder.cleanupUnresolved) State.CLEANUP_PENDING else State.DENIED
             return state
         }
         return when (binder.bind()) {

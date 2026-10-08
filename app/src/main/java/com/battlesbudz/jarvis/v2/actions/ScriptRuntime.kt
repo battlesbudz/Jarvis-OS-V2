@@ -17,6 +17,11 @@ package com.battlesbudz.jarvis.v2.actions
  *   terminates the script ([ScriptResult.Killed]).
  * - [isCancelled] is consulted on every operation, so cancellation is
  *   prompt ([ScriptResult.Cancelled]).
+ * - Parsing is bounded too: cancellation is re-checked while statements
+ *   are parsed, block nesting is capped ([MAX_BLOCK_DEPTH]), and the total
+ *   statement count is capped ([MAX_PARSE_STMTS]). A pathological source
+ *   reports a typed [ScriptResult.Failed] — never a stack overflow, never
+ *   unbounded parsing.
  *
  * What this does NOT defend against: a malicious host (the host is part of
  * the app and trusted), or a host function that itself misbehaves (host
@@ -35,6 +40,15 @@ const val DEFAULT_SCRIPT_MAX_MEMORY_KB = 8192L
 const val DEFAULT_SCRIPT_MAX_OUTPUT_CHARS = 8192
 /** Deepest allowed nesting for recursive script expressions (parens, call args). */
 const val MAX_EXPR_DEPTH = 100
+/**
+ * Deepest allowed nesting for recursive statement blocks (if/while bodies).
+ * Bounded separately from [MAX_EXPR_DEPTH]: the expression limit does not
+ * cover statement blocks, and deeply nested blocks recurse through
+ * parseStmt/parseBlock the same way.
+ */
+const val MAX_BLOCK_DEPTH = 100
+/** Maximum statements parsed in one script; bounds pathologically long flat programs. */
+const val MAX_PARSE_STMTS = 20_000
 
 /** Values in the scripting language: numbers, strings, booleans. No objects, no null pointers. */
 sealed interface ScriptValue {
@@ -130,10 +144,13 @@ fun WorkflowStep.Script.runWithInterpreter(
  * Run [source] with [host]'s allowlist under [limits].
  * Deterministic: same source + same host behavior = same result.
  *
- * Cancellation and the empty-script check come before parsing: a
- * pre-cancelled run reports [ScriptResult.Cancelled] without doing parse
- * work, and a malformed or pathologically nested script reports a typed
- * [ScriptResult.Failed] — never a stack overflow, never unbounded parsing.
+ * Cancellation and the empty-script check come before parsing, and parsing
+ * itself is bounded: cancellation is re-checked while statements are
+ * parsed, statement blocks have a nesting limit, and the total statement
+ * count is capped. A pre-cancelled run reports [ScriptResult.Cancelled]
+ * without doing parse work, and a malformed or pathologically nested
+ * script reports a typed [ScriptResult.Failed] — never a stack overflow,
+ * never unbounded parsing.
  */
 fun runScript(
     source: String,
@@ -144,7 +161,9 @@ fun runScript(
     if (isCancelled()) return ScriptResult.Cancelled
     if (source.isBlank()) return ScriptResult.Failed("empty script")
     val program = try {
-        ScriptParser(source).parseProgram()
+        ScriptParser(source, isCancelled).parseProgram()
+    } catch (e: CancelSignal) {
+        return ScriptResult.Cancelled
     } catch (e: ParseSignal) {
         return ScriptResult.Failed("parse error: ${e.message}")
     }
@@ -200,11 +219,14 @@ private data class Tok(val kind: Tk, val text: String, val pos: Int)
 
 private val KEYWORDS = setOf("let", "if", "else", "while", "return", "true", "false")
 
-private fun lex(source: String): List<Tok> {
+private fun lex(source: String, isCancelled: () -> Boolean = { false }): List<Tok> {
     val toks = mutableListOf<Tok>()
     var i = 0
     fun err(msg: String): Nothing = throw ParseSignal("$msg at offset $i")
     while (i < source.length) {
+        // The token stream is built before any statement is parsed, so a
+        // pathological comment/whitespace-only source still answers cancel.
+        if ((i and 0xFFFF) == 0 && isCancelled()) throw CancelSignal()
         val c = source[i]
         when {
             c in " \t\n\r" -> i++
@@ -287,8 +309,12 @@ private class RuntimeSignal(msg: String) : ScriptSignal(msg)
 private class KillSignal(msg: String) : ScriptSignal(msg)
 private class CancelSignal : ScriptSignal("cancelled")
 
-private class ScriptParser(source: String) {
-    private val toks = lex(source)
+private class ScriptParser(
+    source: String,
+    private val isCancelled: () -> Boolean = { false },
+    private val maxParseStmts: Int = MAX_PARSE_STMTS
+) {
+    private val toks = lex(source, isCancelled)
     private var p = 0
     /**
      * Current recursive-expression nesting depth (parenthesized groups,
@@ -296,6 +322,15 @@ private class ScriptParser(source: String) {
      * parens exhaust the JVM stack during parsing.
      */
     private var exprDepth = 0
+    /**
+     * Current recursive block nesting depth (if/while bodies). Bounded
+     * separately from [exprDepth]: the expression limit does not cover
+     * statement blocks, and deeply nested blocks recurse through
+     * parseStmt/parseBlock the same way.
+     */
+    private var blockDepth = 0
+    /** Statements parsed so far; bounds pathologically long programs. */
+    private var stmtCount = 0
 
     private fun peek(): Tok = toks[p]
     private fun err(msg: String): Nothing = throw ParseSignal("$msg at offset ${peek().pos}")
@@ -332,7 +367,19 @@ private class ScriptParser(source: String) {
         return out
     }
 
+    /**
+     * Parse-time budget: every statement answers cancellation and counts
+     * against the parse statement cap, so parsing stays bounded even for
+     * programs that never reach the runtime's operation budget.
+     */
+    private fun checkParseBudget() {
+        if (isCancelled()) throw CancelSignal()
+        if (++stmtCount > maxParseStmts)
+            throw ParseSignal("script has too many statements (over $maxParseStmts)")
+    }
+
     private fun parseStmt(): Stmt {
+        checkParseBudget()
         val t = peek()
         if (t.kind == Tk.IDENT) when (t.text) {
             "let" -> {
@@ -386,13 +433,19 @@ private class ScriptParser(source: String) {
 
     private fun parseBlock(): List<Stmt> {
         expect(Tk.LBRACE, "'{'")
-        val out = mutableListOf<Stmt>()
-        while (peek().kind != Tk.RBRACE) {
-            if (peek().kind == Tk.EOF) err("unterminated block")
-            out += parseStmt()
+        if (++blockDepth > MAX_BLOCK_DEPTH)
+            err("blocks are too deeply nested (over $MAX_BLOCK_DEPTH levels)")
+        try {
+            val out = mutableListOf<Stmt>()
+            while (peek().kind != Tk.RBRACE) {
+                if (peek().kind == Tk.EOF) err("unterminated block")
+                out += parseStmt()
+            }
+            p++
+            return out
+        } finally {
+            blockDepth--
         }
-        p++
-        return out
     }
 
     private fun parseExpr(): Expr {
@@ -579,6 +632,10 @@ private class Runner(
                     if (c !is ScriptValue.Bool) throw RuntimeSignal("while condition must be true/false")
                     if (!c.v) break
                     execBlock(s.body)
+                    // A `return` inside the body sets [returned]; without
+                    // this the loop would keep running until the operation
+                    // budget is exhausted instead of returning.
+                    if (returned) break
                 }
             }
             is Stmt.ExprStmt -> eval(s.expr)

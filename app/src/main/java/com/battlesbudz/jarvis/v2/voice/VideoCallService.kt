@@ -83,6 +83,7 @@ class VideoCallService : LifecycleService() {
         }
         // Capture is not started here: it begins per call via START_CAPTURE,
         // so a merely-armed wake session never holds the camera.
+        running = true
     }
 
     /**
@@ -160,6 +161,16 @@ class VideoCallService : LifecycleService() {
                     notifyChanged()
                 }
             }
+            REFRESH_STATUS -> {
+                // A spoken farewell ended the capture outside this service's
+                // command path (the runtime's farewell path): display the
+                // pushed status so the notification never reads "Video on"
+                // after the controller is IDLE.
+                intent.getStringExtra(EXTRA_VIDEO_STATUS)?.let { pushed ->
+                    status = pushed
+                    notifyChanged()
+                }
+            }
         }
         super.onStartCommand(intent, flags, startId)
         return START_NOT_STICKY
@@ -177,6 +188,7 @@ class VideoCallService : LifecycleService() {
         }
         CallVisionRegistry.clear()
         scope.cancel()
+        running = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
@@ -188,6 +200,18 @@ class VideoCallService : LifecycleService() {
         private const val START_CAPTURE = "com.battlesbudz.jarvis.v2.START_VIDEO_CAPTURE"
         private const val STOP_CAPTURE = "com.battlesbudz.jarvis.v2.STOP_VIDEO_CAPTURE"
         private const val EXTRA_CALL_ID = "com.battlesbudz.jarvis.v2.EXTRA_CALL_ID"
+        private const val REFRESH_STATUS = "com.battlesbudz.jarvis.v2.REFRESH_VIDEO_STATUS"
+        private const val EXTRA_VIDEO_STATUS = "com.battlesbudz.jarvis.v2.EXTRA_VIDEO_STATUS"
+
+        /**
+         * True while the service instance exists. The runtime only routes a
+         * spoken farewell's notification refresh here while the service is
+         * running — a refresh must never resurrect a stopped service (and
+         * its notification) on its own.
+         */
+        @Volatile
+        var running = false
+            private set
 
         /**
          * Begin call-scoped video capture for [callId]. Starts the service
@@ -200,6 +224,26 @@ class VideoCallService : LifecycleService() {
                 Intent(context, VideoCallService::class.java)
                     .setAction(START_CAPTURE)
                     .putExtra(EXTRA_CALL_ID, callId),
+            )
+        }
+
+        /**
+         * A spoken farewell ends the call's capture outside this service's
+         * start/stop command path. End [endedCallId]'s capture through the
+         * registry controller and push the resulting status into the
+         * notification, so it never reads "Video on" after the controller
+         * is IDLE. The capture teardown always runs; the notification push
+         * is skipped unless the service is running, so a refresh never
+         * resurrects a stopped service (and its notification) on its own.
+         */
+        fun refreshVideoStatusAfterFarewell(context: Context, endedCallId: String) {
+            val status = farewellVideoStatus(endedCallId)
+            if (!running) return
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, VideoCallService::class.java)
+                    .setAction(REFRESH_STATUS)
+                    .putExtra(EXTRA_VIDEO_STATUS, status),
             )
         }
     }
@@ -222,4 +266,18 @@ object CallVisionRegistry {
         hub = null
         controller = null
     }
+}
+
+/**
+ * The video service's notification status after a spoken farewell: end the
+ * ended call's capture through the registry controller, then derive the
+ * status from the controller state. The runtime's farewell path runs this
+ * exact composition (via [VideoCallService.refreshVideoStatusAfterFarewell])
+ * before the resulting status is pushed into the service notification, so
+ * the notification can never read "Video on" after the controller is IDLE.
+ */
+fun farewellVideoStatus(endedCallId: String?): String {
+    val controller = CallVisionRegistry.controller
+    endedCallId?.let { callId -> runCatching { controller?.stopForCall(callId) } }
+    return videoStatusText(controller?.state ?: CallVisionController.State.IDLE)
 }

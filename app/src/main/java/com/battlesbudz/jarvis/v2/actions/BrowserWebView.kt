@@ -264,6 +264,35 @@ class WebViewBrowserBridge(
         private const val CREDENTIAL_FILL_TIMEOUT_MS = 20_000L
         /** Bounded wait for an on-demand snapshot re-extract. */
         private const val REFRESH_TIMEOUT_MS = 2_500L
+
+        /**
+         * Attribute stamped on the exact password element a credential-fill
+         * request focused. Completion is only ever attributed to the stamped
+         * element — a field swapped in mid-flow carries no stamp, so its
+         * value can never be claimed as this request's fill.
+         */
+        internal const val CREDENTIAL_TARGET_ATTR = "data-jarvis-cred-target"
+
+        /** Focus the login password field and stamp it as this request's target. */
+        internal fun credentialFocusJs(): String = """(function(){
+  var el=document.querySelector('input[type="password"]');
+  if(!el) return false;
+  el.focus();
+  el.setAttribute('${CREDENTIAL_TARGET_ATTR}','1');
+  return true;
+})()"""
+
+        /** True only when the stamped target field is still empty. */
+        internal fun credentialEmptyJs(): String = """(function(){
+  var el=document.querySelector('input[type="password"][${CREDENTIAL_TARGET_ATTR}="1"]');
+  return !!(el&&(!el.value||el.value.length===0));
+})()"""
+
+        /** True only when the stamped target field actually holds a value. */
+        internal fun credentialFilledJs(): String = """(function(){
+  var el=document.querySelector('input[type="password"][${CREDENTIAL_TARGET_ATTR}="1"]');
+  return !!(el&&el.value&&el.value.length>0);
+})()"""
     }
 
     override fun isAvailable(): Boolean = true
@@ -411,40 +440,68 @@ class WebViewBrowserBridge(
     }
 
     override fun requestCredentialFill(host: String): CredentialFillOutcome {
-        // The platform autofill path: focus the password field so the
-        // password manager offers the fill, then verify a field actually
-        // became non-empty. Only booleans cross back — the secret value
-        // itself is never read out of the field. A null activity means the
-        // backend is gone.
+        // A null activity means the backend is gone.
         val activity = currentBrowserActivity() ?: return CredentialFillOutcome.UNAVAILABLE
-        val focused = evalBoolean(
-            activity,
-            """(function(){
-  var el=document.querySelector('input[type="password"]');
-  if(!el) return false;
-  el.focus();
-  return true;
-})()""",
-            FILL_CONFIRM_TIMEOUT_MS
+        return requestCredentialFill(
+            host = host,
+            liveHostMatches = { requested ->
+                currentUrl()?.let { BrowserNavigationPolicy.hostOf(it) } == requested
+            },
+            documentFingerprintNow = { BrowserBackend.latestSnapshot?.contentFingerprint },
+            evalBoolean = { js -> evalBoolean(activity, js, FILL_CONFIRM_TIMEOUT_MS) }
         )
-        if (focused != true) return CredentialFillOutcome.NO_CREDENTIALS
-        // The user answers the password-manager prompt on their own time;
-        // wait bounded for the fill to land.
-        val deadline = SystemClock.uptimeMillis() + CREDENTIAL_FILL_TIMEOUT_MS
+    }
+
+    /**
+     * Password-manager fill with honest completion. The platform autofill
+     * path: focus the password field so the password manager offers the
+     * fill, then verify a fill ACTUALLY happened. Only booleans cross back —
+     * the secret value itself is never read out of the field.
+     *
+     * Host, document and field stay bound through the whole flow: the
+     * request is refused unless the live page's host is the approved one,
+     * the document fingerprint still matches the one seen at focus time,
+     * and the value landed in the exact element that was focused. A
+     * password field that was already non-empty before the request can
+     * never report FILLED — only a real empty-to-filled transition proves
+     * the password manager did the work. Anything else is NO_CREDENTIALS:
+     * the backend cannot tell "no login saved" from "the user dismissed
+     * the prompt" — both leave the field empty.
+     *
+     * The live-page binding and JS evaluation are injected so JVM tests can
+     * drive the flow (see BrowserCredentialFillJsTest); production wires
+     * the real activity, URL and snapshot.
+     */
+    internal fun requestCredentialFill(
+        host: String,
+        liveHostMatches: (requestedHost: String) -> Boolean,
+        documentFingerprintNow: () -> String?,
+        evalBoolean: (js: String) -> Boolean?,
+        waitTimeoutMs: Long = CREDENTIAL_FILL_TIMEOUT_MS
+    ): CredentialFillOutcome {
+        if (host.isBlank()) return CredentialFillOutcome.NO_CREDENTIALS
+        // Bind the request to the approved host before touching the page:
+        // a fill can only ever be attributed to the host that was approved.
+        if (!liveHostMatches(host)) return CredentialFillOutcome.NO_CREDENTIALS
+        val startFingerprint = documentFingerprintNow()?.takeIf { it.isNotEmpty() }
+            ?: return CredentialFillOutcome.NO_CREDENTIALS
+        if (evalBoolean(credentialFocusJs()) != true) return CredentialFillOutcome.NO_CREDENTIALS
+        // The user answers the password-manager prompt on their own time,
+        // so the fill lands asynchronously — but a value that predates the
+        // request proves nothing. Read the pre-state right after focusing;
+        // only an empty field may later report FILLED.
+        if (evalBoolean(credentialEmptyJs()) != true) return CredentialFillOutcome.NO_CREDENTIALS
+        // Wait bounded for the fill to land, rebinding every iteration: a
+        // navigation or document replacement mid-flow aborts — a foreign
+        // fill is never attributed to this request.
+        val deadline = SystemClock.uptimeMillis() + waitTimeoutMs
         while (SystemClock.uptimeMillis() < deadline) {
-            val filled = evalBoolean(
-                activity,
-                """(function(){
-  var el=document.querySelector('input[type="password"]');
-  return !!(el&&el.value&&el.value.length>0);
-})()""",
-                FILL_CONFIRM_TIMEOUT_MS
-            )
-            if (filled == true) return CredentialFillOutcome.FILLED
-            Thread.sleep(500)
+            if (!liveHostMatches(host)) return CredentialFillOutcome.NO_CREDENTIALS
+            if (documentFingerprintNow() != startFingerprint)
+                return CredentialFillOutcome.NO_CREDENTIALS
+            if (evalBoolean(credentialFilledJs()) == true) return CredentialFillOutcome.FILLED
+            Thread.sleep(250)
         }
-        // The backend cannot tell "no login saved" from "the user dismissed
-        // the prompt" — both leave the field empty.
         return CredentialFillOutcome.NO_CREDENTIALS
     }
 

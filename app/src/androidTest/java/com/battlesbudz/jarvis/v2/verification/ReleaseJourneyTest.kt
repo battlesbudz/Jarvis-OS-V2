@@ -3240,7 +3240,11 @@ class ReleaseJourneyTest {
         val binder = object : CallVisionController.VideoBinder {
             var binds = 0
             var unbinds = 0
-            override fun bind() { binds++ }
+            override val cleanupUnresolved = false
+            override fun bind(): CallVisionController.BindResult {
+                binds++
+                return CallVisionController.BindResult.Started
+            }
             override fun unbind() { unbinds++ }
         }
         val hub = VisionFrameHub()

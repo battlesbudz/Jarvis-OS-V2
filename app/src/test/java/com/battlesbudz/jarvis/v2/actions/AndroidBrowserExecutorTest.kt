@@ -310,4 +310,50 @@ class AndroidBrowserExecutorTest {
             result.message.contains("couldn't submit"))
         assertEquals("zero submission may reach the backend", 0, h.bridge.submittedForms)
     }
+
+    // -- Pre-journal stale-token secret-field classification (slice 2, item E) --------
+
+    @Test fun staleSecretFieldIdReuseRedactsPreJournal() {
+        // The secret-field-ID-reuse regression: the model saw f1 as a
+        // secret password field; the DOM was later replaced (same URL) and
+        // the NEW document's f1 is a non-secret field. The old request's
+        // token is stale, but classification runs pre-journal against the
+        // cached NEW page — it must still redact, never journal the secret
+        // in plaintext just because the new document reuses the field id.
+        // Dispatch would reject the stale token afterwards, but the journal
+        // write happens first, so the fail-closed choice belongs here.
+        val h = Harness()
+        val staleToken = h.readLogin()
+        // A later read reconciles the replaced document: f1 is now a
+        // non-secret field and the page token rotated.
+        h.bridge.snapshotToReturn = loginSnapshot(fingerprint = "fp-v2").copy(
+            forms = listOf(
+                BrowserForm(
+                    id = "form0",
+                    actionUrl = "https://example.com/session",
+                    method = "POST",
+                    fields = listOf(
+                        BrowserField("f0", "Email", FieldKind.EMAIL),
+                        BrowserField("f1", "One-time code", FieldKind.TEXT, secret = false)
+                    ),
+                    submitLabel = "Sign in"
+                )
+            )
+        )
+        assertTrue(h.executor.execute(MobileAction.BrowseRead).succeeded)
+        val liveToken = h.session.currentPage()!!.pageToken
+        assertNotEquals("the replaced document must rotate the token", staleToken, liveToken)
+
+        val staleKeys = h.executor.secretArgumentKeys(
+            ActionRequest("browse_fill", mapOf("field" to "f1", "text" to "s3cr3t", "token" to staleToken)))
+        assertEquals("a stale-token fill must redact even when the new f1 is non-secret",
+            setOf("text"), staleKeys)
+
+        // The live token against the new page classifies honestly: f1 is
+        // genuinely non-secret there, so no redaction is needed — the fix
+        // fails closed on the token, it does not over-redact.
+        val liveKeys = h.executor.secretArgumentKeys(
+            ActionRequest("browse_fill", mapOf("field" to "f1", "text" to "123456", "token" to liveToken)))
+        assertTrue("a live-token non-secret fill journals verbatim", liveKeys.isEmpty())
+    }
 }

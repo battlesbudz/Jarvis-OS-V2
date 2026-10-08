@@ -134,11 +134,20 @@ class AndroidBrowserExecutor(
      * secret (or not yet known to the session) names its text argument, so
      * the pipeline journals the redacted copy and the secret never lands
      * on disk.
+     *
+     * The classification binds to the request's page token — the snapshot
+     * the request was written against. Field ids are recycled across
+     * documents, so a stale request (its token no longer matches the cached
+     * page) must redact even when the NEW document's same-id field is
+     * non-secret. Dispatch rejects the stale token afterwards, but the
+     * journal write happens first — so fail closed here.
      */
     override fun secretArgumentKeys(request: ActionRequest): Set<String> {
         if (request.name != "browse_fill") return emptySet()
         val fieldId = request.arguments["field"] ?: return setOf("text")
-        val field = session.currentPage()?.findField(fieldId)
+        val page = session.currentPage() ?: return setOf("text")
+        if (request.arguments["token"] != page.pageToken) return setOf("text")
+        val field = page.findField(fieldId)
         // Redact unless the session positively knows the field is not secret.
         return if (field?.secret != false) setOf("text") else emptySet()
     }

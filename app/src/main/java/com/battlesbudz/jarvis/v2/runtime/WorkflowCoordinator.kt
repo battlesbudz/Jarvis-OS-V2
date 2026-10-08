@@ -66,11 +66,15 @@ internal class WorkflowCoordinator(
 ) : ReminderScheduling {
     /** M2: the workflow ledger shares the task ledger's durable store. */
     private val workflowLedger = WorkflowLedger(taskStore)
-    /** M2 alarm delivery: claim -> run -> terminal checkpoint, on the caller's thread. */
+    /**
+     * M2 alarm delivery: claim -> run -> terminal checkpoint, on the caller's thread.
+     * Cancellation follows the coordinator scope: cancelling the scope (teardown)
+     * cancels a running alarm occurrence instead of leaving it uninterruptible.
+     */
     private val alarmRunner = WorkflowAlarmRunner(
         claimDue = { id -> try { workflowLedger.claimDueOccurrence(id) } catch (_: ToolTaskStorageException) { null } },
         claimResume = { id -> try { workflowLedger.claimResumeOccurrence(id) } catch (_: ToolTaskStorageException) { null } },
-        runOccurrence = { occurrence, resume -> runOrResume(occurrence, resume, isCancelled = { false }) }
+        runOccurrence = { occurrence, resume -> runOrResume(occurrence, resume, isCancelled = { !scope.isActive }) }
     )
     private val phoneActionLedger = ToolTaskLedger(taskStore)
 

@@ -316,6 +316,28 @@ class CallVisionControllerTest {
         assertEquals(1, binder.unbinds)
     }
 
+    @Test fun deniedPermissionAfterFailedCleanupKeepsCleanupPending() {
+        // A failed detach followed by a denied-permission next call must
+        // keep the pending cleanup visible — never DENIED for cleanup the
+        // binder still owns. The retained detach is retried first, before
+        // the permission check.
+        val binder = FakeBinder()
+        val controller = CallVisionController(binder)
+        controller.start(cameraPermissionGranted = true, callId = "call-1")
+        binder.cleanupUnresolved = true // the detach failed; the handle is retained
+        binder.unbindConfirmations.add(false) // the farewell's cleanup retry also fails
+        controller.stopForCall("call-1")
+        assertEquals(CallVisionController.State.CLEANUP_PENDING, controller.state)
+        assertEquals(CallVisionController.State.CLEANUP_PENDING,
+            controller.start(cameraPermissionGranted = false, callId = "call-2"))
+        assertEquals("The retained detach must be retried before the permission check",
+            2, binder.unbinds)
+        assertEquals("The binder must never be asked to bind while cleanup is pending",
+            1, binder.binds)
+        assertEquals("The denied call takes no ownership; the failed teardown's owner is retained",
+            "call-1", controller.captureCallId())
+    }
+
     @Test fun statusTextNeverAdvertisesVideoOnForPendingCleanup() {
         assertEquals("Video on", videoStatusText(CallVisionController.State.ACTIVE))
         val pending = videoStatusText(CallVisionController.State.CLEANUP_PENDING)
