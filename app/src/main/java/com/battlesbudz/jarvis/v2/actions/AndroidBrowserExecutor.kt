@@ -360,7 +360,7 @@ class AndroidBrowserExecutor(
             is CredentialHandoffDecision.Allowed -> when (bridge.requestCredentialFill(decision.host)) {
                 CredentialFillOutcome.FILLED -> {
                     onDiagnostic("browse_login result=filled host=${decision.host}")
-                    ExecutionResult(true, "Filled the login for ${decision.host} with your password manager.")
+                    ExecutionResult(true, "Filled the login for ${decision.host}.")
                 }
                 CredentialFillOutcome.NO_CREDENTIALS -> ExecutionResult(
                     // Neutral: the backend cannot tell "no login saved" from

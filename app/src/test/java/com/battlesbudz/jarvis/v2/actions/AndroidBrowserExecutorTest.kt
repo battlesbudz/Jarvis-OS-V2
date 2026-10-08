@@ -148,7 +148,12 @@ class AndroidBrowserExecutorTest {
         h.bridge.credentialOutcome = CredentialFillOutcome.FILLED
         val filled = h.executor.execute(MobileAction.BrowseLogin(token))
         assertTrue("a verified fill succeeds, got: ${filled.message}", filled.succeeded)
-        assertTrue(filled.message.contains("password manager"))
+        // Neutral receipt: FILLED reports only that the bound field became
+        // nonempty during the request — it never claims the platform
+        // password manager performed the fill, because no supported platform
+        // event establishes that.
+        assertTrue("got: ${filled.message}", filled.message.contains("Filled the login for"))
+        assertFalse("got: ${filled.message}", filled.message.contains("password manager"))
 
         h.bridge.credentialOutcome = CredentialFillOutcome.NO_CREDENTIALS
         val none = h.executor.execute(MobileAction.BrowseLogin(token))
