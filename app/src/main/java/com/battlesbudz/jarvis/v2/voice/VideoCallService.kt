@@ -38,24 +38,13 @@ class VideoCallService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
-        val hub = VisionFrameHub()
-        val cadence = FrameCadence()
-        val binder = CameraXVideoBinder(this, this, hub, cadence, onVideoError = { error ->
-            controller.degrade(error)
-            status = "Camera unavailable — continuing audio-only"
-            notifyChanged()
-        }, onDetachFailure = { cause ->
-            // A failed or timed-out camera detach must never be silently
-            // treated as successful cleanup: log it and say so on the
-            // service status so a wedged capture is visible.
-            android.util.Log.e("JarvisVideo", "Camera detach failed during teardown", cause)
-            status = "Camera cleanup failed — video may misbehave until the next call"
-            notifyChanged()
-        })
-        controller = CallVisionController(binder, cadence, hub)
-        CallVisionRegistry.hub = hub
-        CallVisionRegistry.controller = controller
-
+        // startForeground() FIRST, before any pipeline construction: the
+        // system kills the whole process when a startForegroundService()
+        // start is not followed by startForeground() in time
+        // (ForegroundServiceDidNotStartInTimeException — the test49 CI
+        // crash). Camera-pipeline construction must never be able to delay
+        // it; VoiceCallService follows the same order. Only the cheap
+        // permission check runs first, to select the foreground type.
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL, "Video", NotificationManager.IMPORTANCE_LOW)
@@ -74,6 +63,24 @@ class VideoCallService : LifecycleService() {
             if (cameraGranted) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
             else ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
         )
+
+        val hub = VisionFrameHub()
+        val cadence = FrameCadence()
+        val binder = CameraXVideoBinder(this, this, hub, cadence, onVideoError = { error ->
+            controller.degrade(error)
+            status = "Camera unavailable — continuing audio-only"
+            notifyChanged()
+        }, onDetachFailure = { cause ->
+            // A failed or timed-out camera detach must never be silently
+            // treated as successful cleanup: log it and say so on the
+            // service status so a wedged capture is visible.
+            android.util.Log.e("JarvisVideo", "Camera detach failed during teardown", cause)
+            status = "Camera cleanup failed — video may misbehave until the next call"
+            notifyChanged()
+        })
+        controller = CallVisionController(binder, cadence, hub)
+        CallVisionRegistry.hub = hub
+        CallVisionRegistry.controller = controller
 
         // Fail-safe: a dead voice call must never leave the camera running.
         scope.launch {

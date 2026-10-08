@@ -3270,6 +3270,18 @@ class ReleaseJourneyTest {
             // fake pipeline is installed afterwards, so the service's own
             // onCreate pipeline never sees the fixture's calls. The
             // production live-instance guard is untouched.
+            //
+            // Quiesce first: the previous test's production onCallBegan also
+            // starts this real service, and its teardown (stopSelf via the
+            // stopRequested fail-safe) races this start. A start that lands
+            // mid-teardown trips the system's foreground-start timeout and
+            // kills the whole process (ForegroundServiceDidNotStartInTimeException
+            // — the deterministic CI crash at this test). Stopping and
+            // awaiting the release first makes this a clean, fresh start
+            // every time, with the camera released between tests.
+            context.stopService(Intent(context, VideoCallService::class.java))
+            awaitVideo("A previous video service instance must fully release before a fresh start",
+                { VideoCallService.instance == null })
             context.startForegroundService(Intent(context, VideoCallService::class.java))
             awaitVideo("The video service must register its live instance",
                 { VideoCallService.instance != null })
