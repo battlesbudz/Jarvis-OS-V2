@@ -3242,9 +3242,12 @@ class ReleaseJourneyTest {
         val originalOnCallBegan = controller.onCallBegan
         val originalVisionController = CallVisionRegistry.controller
         val originalVisionHub = CallVisionRegistry.hub
-        val originalNotificationGranted = context.checkSelfPermission(
-            android.Manifest.permission.POST_NOTIFICATIONS) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
+        // POST_NOTIFICATIONS is a suite-level fixture prerequisite on API
+        // 33+ (see the grant below): the disposable suite owns it for its
+        // entire lifetime. The initial grant state is intentionally NOT
+        // captured for restoration — restoring would mean revoking the
+        // live test process's own permission, which is what killed the
+        // instrumented process in CI (test49, run 1228 attempt 2).
         val finishingTurn = Job()
         val callIds = mutableListOf<String>()
         // A fake vision pipeline stands in for the camera: the runtime's
@@ -3319,7 +3322,14 @@ class ReleaseJourneyTest {
             // API 33+: the video notification is only observable while the
             // suite holds POST_NOTIFICATIONS (device setup installs without
             // -g). Establish it as an explicit fixture prerequisite before
-            // the service starts, and restore the initial state afterwards.
+            // the service starts. The disposable suite owns this permission
+            // for its entire lifetime: NEVER revoke the target app's
+            // permission from inside its live test process — ActivityManager
+            // kills the instrumented process when its permission is revoked
+            // (proven CI self-kill at test49, run 1228 attempt 2: the pm
+            // revoke in the finally block ran while Jarvis was still the
+            // live instrumented process). The CI emulator is discarded after
+            // the run, so no restoration is needed or safe to attempt here.
             if (android.os.Build.VERSION.SDK_INT >= 33) {
                 runCatching {
                     device.executeShellCommand("pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS")
@@ -3435,11 +3445,11 @@ class ReleaseJourneyTest {
                     controller.onCallBegan = originalOnCallBegan
                     CallVisionRegistry.controller = originalVisionController
                     CallVisionRegistry.hub = originalVisionHub
-                    if (android.os.Build.VERSION.SDK_INT >= 33 && !originalNotificationGranted) {
-                        runCatching {
-                            device.executeShellCommand("pm revoke ${context.packageName} android.permission.POST_NOTIFICATIONS")
-                        }
-                    }
+                    // No POST_NOTIFICATIONS revocation here: revoking the
+                    // live instrumented process's own permission makes
+                    // ActivityManager kill the process (test49 CI self-kill).
+                    // The disposable suite owns the permission; the emulator
+                    // is discarded after the run.
                 }
             } catch (t: Throwable) {
                 cleanupFailure = t
