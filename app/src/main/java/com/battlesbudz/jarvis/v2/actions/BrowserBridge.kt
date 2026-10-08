@@ -19,6 +19,15 @@ data class BrowserPageSnapshot(
 
 enum class CredentialFillOutcome { FILLED, NO_CREDENTIALS, CANCELLED, UNAVAILABLE }
 
+/**
+ * The exact form an approved submission targets: the form's stable id plus
+ * the content fingerprint of the document the approval saw. The mutation
+ * dispatch validates both before touching the DOM — a form or document
+ * replaced between the refresh and the dispatch refuses with zero
+ * submission.
+ */
+data class BrowserSubmitTarget(val formId: String, val contentFingerprint: String)
+
 interface BrowserBridge {
     /** False until the backend is ready; dispatches answer honestly meanwhile. */
     fun isAvailable(): Boolean
@@ -45,7 +54,14 @@ interface BrowserBridge {
     fun goBack(): Boolean
     fun goForward(): Boolean
     fun fillField(id: String, text: String): Boolean
-    fun submitForm(): Boolean
+    /**
+     * Submit the approved form. [target] binds the approval to the dispatch:
+     * the backend must validate the form's identity and the document
+     * fingerprint in-page before mutating, and refuse when the live document
+     * no longer matches what the approval saw. Never submits "the first
+     * form" — only the approved target.
+     */
+    fun submitForm(target: BrowserSubmitTarget): Boolean
     /**
      * Ask the platform password manager to fill the current page's login
      * form for [host]. Only the outcome returns: credentials never leave
@@ -117,8 +133,25 @@ class FakeBrowserBridge : BrowserBridge {
         filledFields[id] = text
         return true
     }
-    override fun submitForm(): Boolean {
+    /**
+     * Scripted post-refresh replacement: when set, submitForm() swaps this
+     * in as the live snapshot first, simulating a DOM replacement between
+     * the refresh and the mutation dispatch. [lastSubmitTarget] records the
+     * approved target the executor passed, so tests can verify the binding.
+     */
+    var replaceBeforeSubmit: BrowserPageSnapshot? = null
+    var lastSubmitTarget: BrowserSubmitTarget? = null
+        private set
+    override fun submitForm(target: BrowserSubmitTarget): Boolean {
         if (!available) return false
+        lastSubmitTarget = target
+        replaceBeforeSubmit?.let { snapshotToReturn = it }
+        // Mirror the production backend: the approved target is validated
+        // against the live document before the mutation. A replaced form or
+        // document refuses with zero submission.
+        val live = snapshotToReturn ?: return false
+        if (live.contentFingerprint != target.contentFingerprint) return false
+        if (live.forms.none { it.id == target.formId }) return false
         submittedForms++
         return true
     }

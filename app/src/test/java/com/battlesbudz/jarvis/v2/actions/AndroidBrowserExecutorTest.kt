@@ -275,4 +275,39 @@ class AndroidBrowserExecutorTest {
         assertEquals("zero submission may reach the backend", 0, h.bridge.submittedForms)
     }
 
+    // -- Dispatch-time target binding (Jerry's review, build 1194) --------
+
+    @Test fun approvedSubmitDispatchesBoundTarget() {
+        // Happy path: the approval's form id and document fingerprint reach
+        // the mutation dispatch, and the backend submits exactly that target.
+        val h = Harness()
+        val token = h.readLogin()
+        assertTrue(h.executor.execute(
+            MobileAction.BrowseFill("f0", "user@example.com", token)).succeeded)
+        h.session.admitSubmit(h.session.proposeSubmit(token)!!)
+        val result = h.executor.execute(MobileAction.BrowseSubmit(token))
+        assertTrue("an approved submit must dispatch, got: ${result.message}", result.succeeded)
+        assertEquals(1, h.bridge.submittedForms)
+        val target = h.bridge.lastSubmitTarget
+        assertNotNull("the dispatch must carry the approved target", target)
+        assertEquals("form0", target!!.formId)
+        assertEquals("fp-login", target.contentFingerprint)
+    }
+
+    @Test fun submitTargetReplacedAfterRefreshRefusesWithZeroSubmission() {
+        // The DOM is replaced AFTER the refresh but before the mutation
+        // dispatch: the approval's fingerprint no longer matches the live
+        // document, so the dispatch refuses with zero submission.
+        val h = Harness()
+        val token = h.readLogin()
+        assertTrue(h.executor.execute(
+            MobileAction.BrowseFill("f0", "user@example.com", token)).succeeded)
+        h.session.admitSubmit(h.session.proposeSubmit(token)!!)
+        h.bridge.replaceBeforeSubmit = loginSnapshot(fingerprint = "fp-replaced-after-refresh")
+        val result = h.executor.execute(MobileAction.BrowseSubmit(token))
+        assertFalse("a target replaced after refresh must refuse", result.succeeded)
+        assertTrue("must report the refused dispatch, got: ${result.message}",
+            result.message.contains("couldn't submit"))
+        assertEquals("zero submission may reach the backend", 0, h.bridge.submittedForms)
+    }
 }

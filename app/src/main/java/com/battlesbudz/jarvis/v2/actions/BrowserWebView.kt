@@ -337,15 +337,29 @@ class WebViewBrowserBridge(
         ) == true
     }
 
-    override fun submitForm(): Boolean {
+    override fun submitForm(target: BrowserSubmitTarget): Boolean {
         val activity = currentBrowserActivity() ?: return false
+        // Defense in depth: the form id is validated upstream, but never let
+        // one break out of the JS string.
+        val safeFormId = target.formId.filter { it.isLetterOrDigit() || it == '-' || it == '_' }
+        if (safeFormId.isEmpty() || safeFormId != target.formId) return false
+        val quotedFp = JSONObject.quote(target.contentFingerprint)
         val beforeUrl = AtomicReference<String?>(null)
         val beforeFingerprint = BrowserBackend.latestSnapshot?.contentFingerprint
+        // The approved target is validated inside the same page evaluation
+        // that dispatches the click: the form is found by its stable id
+        // (never "the first form"), and the document fingerprint is
+        // recomputed in-page with the same algorithm as the snapshot
+        // extractor. A form or document replaced between the refresh and
+        // this dispatch refuses — the click can never land on a document
+        // the approval did not see.
         val clicked = evalBoolean(
             activity,
             """(function(){
-  var f=document.querySelector('form');
-  if(!f) return false;
+  function fpOf(){var html=document.documentElement?document.documentElement.outerHTML:'';var fp=0;for(var k=0;k<html.length;k++){fp=((fp*31)+html.charCodeAt(k))|0;}return String(fp);}
+  var f=document.querySelector('[data-jarvis-id="${safeFormId}"]');
+  if(!f||f.tagName!=='FORM') return false;
+  if(fpOf()!==${quotedFp}) return false;
   var btn=f.querySelector('input[type="submit"],button[type="submit"],button');
   if(btn) btn.click(); else f.submit();
   return true;

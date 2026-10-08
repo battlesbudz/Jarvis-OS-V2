@@ -269,7 +269,22 @@ class AndroidBrowserExecutor(
         freshPage() ?: return refreshFailed("submit")
         return when (val confirmation = session.confirmSubmit(action.token)) {
             is SubmitConfirmation.Confirmed -> {
-                if (!bridge.submitForm()) {
+                // Bind the approved target to the mutation dispatch: the
+                // approved form's id and the document fingerprint the
+                // approval saw. The backend validates both in-page before
+                // touching the DOM; a replacement between the refresh and
+                // the dispatch refuses with zero submission.
+                val page = session.currentPage()
+                val formId = page?.forms?.firstOrNull()?.id
+                val fingerprint = page?.let { session.fingerprintFor(it.pageToken) }
+                if (formId == null || fingerprint == null) {
+                    onDiagnostic("browse_submit result=unverifiable_target")
+                    return ExecutionResult(
+                        false,
+                        "The browser couldn't verify the approved form, so nothing was submitted."
+                    )
+                }
+                if (!bridge.submitForm(BrowserSubmitTarget(formId, fingerprint))) {
                     onDiagnostic("browse_submit result=bridge_rejected")
                     ExecutionResult(false, "The browser couldn't submit the form.")
                 } else {
@@ -365,7 +380,7 @@ class AndroidBrowserExecutor(
             override fun goBack(): Boolean = false
             override fun goForward(): Boolean = false
             override fun fillField(id: String, text: String): Boolean = false
-            override fun submitForm(): Boolean = false
+            override fun submitForm(target: BrowserSubmitTarget): Boolean = false
             override fun requestCredentialFill(host: String): CredentialFillOutcome =
                 CredentialFillOutcome.UNAVAILABLE
             override fun currentUrl(): String? = null
