@@ -166,6 +166,34 @@ fun admitWorkflowManifest(review: ImportReview, userApproved: Boolean): ImportDe
 }
 
 /**
+ * A redacted branch-condition regex is stored as a quoted setup placeholder:
+ * `\Q{{setup:name}}\E`. A bare `{{setup:name}}` is not a valid regex — Java's
+ * Pattern rejects the braces ("Illegal repetition") — which would make an
+ * exported manifest fail [WorkflowDefinition]'s regex validation at import
+ * review. The `\Q…\E` quoting keeps the stored value a valid regex (it
+ * matches the literal placeholder text) while leaving the `{{setup:name}}`
+ * substring intact and greppable; [resolveSetupBindings] restores the exact
+ * original regex via typed whole-string replacement, never by leaving the
+ * quotes in place.
+ */
+internal const val REDACTED_REGEX_PREFIX = "\\Q{{setup:"
+internal const val REDACTED_REGEX_SUFFIX = "}}\\E"
+
+/**
+ * The setup binding name when [regex] is a redacted-regex placeholder
+ * ([REDACTED_REGEX_PREFIX]…[REDACTED_REGEX_SUFFIX]), or null for an ordinary
+ * regex. The name is restricted to the binding-name alphabet so a
+ * user-authored regex that merely resembles the shape cannot be mistaken
+ * for a placeholder.
+ */
+internal fun redactedRegexBindingName(regex: String): String? {
+    if (!regex.startsWith(REDACTED_REGEX_PREFIX) || !regex.endsWith(REDACTED_REGEX_SUFFIX)) return null
+    val name = regex.removePrefix(REDACTED_REGEX_PREFIX).removeSuffix(REDACTED_REGEX_SUFFIX)
+    if (name.isEmpty() || !name.all { it.isLetterOrDigit() || it == '_' }) return null
+    return name
+}
+
+/**
  * Fill the `{{setup:name}}` placeholders left by export redaction.
  * Throws IllegalArgumentException if any placeholder has no value.
  */
@@ -189,6 +217,31 @@ fun resolveSetupBindings(definition: WorkflowDefinition, values: Map<String, Str
         }
         return out
     }
+    /** Restore redacted branch condition values (Equals/NotEquals literal, Matches regex). */
+    fun resolveCondition(condition: WorkflowCondition): WorkflowCondition = when (condition) {
+        is WorkflowCondition.Equals -> condition.copy(literal = resolve(condition.literal))
+        is WorkflowCondition.NotEquals -> condition.copy(literal = resolve(condition.literal))
+        is WorkflowCondition.Matches -> condition.copy(regex = resolveRedactedRegex(condition.regex))
+        else -> condition
+    }
+    /**
+     * Restore a redacted Matches regex to its exact original value.
+     * Redacted regexes are stored quoted ([REDACTED_REGEX_PREFIX]) so the
+     * manifest passes regex validation at import review; generic substring
+     * replacement would leave the quoting wrapper behind and change what
+     * the regex matches, so a quoted placeholder is detected and replaced
+     * whole-string here instead. An ordinary (non-placeholder) regex still
+     * goes through the generic placeholder pass.
+     */
+    fun resolveRedactedRegex(regex: String): String {
+        val name = redactedRegexBindingName(regex) ?: return resolve(regex)
+        val replacement = values[name]
+        if (replacement == null) {
+            missing += name
+            return regex
+        }
+        return replacement
+    }
     fun resolveStep(step: WorkflowStep): WorkflowStep = when (step) {
         is WorkflowStep.Tool -> step.copy(
             request = step.request.copy(arguments = step.request.arguments.mapValues { resolve(it.value) }))
@@ -200,13 +253,6 @@ fun resolveSetupBindings(definition: WorkflowDefinition, values: Map<String, Str
         is WorkflowStep.Adaptive -> step.copy(
             candidates = step.candidates.map { it.copy(arguments = it.arguments.mapValues { e -> resolve(e.value) }) })
         is WorkflowStep.Script -> step.copy(source = resolve(step.source))
-    }
-    /** Restore redacted branch condition values (Equals/NotEquals literal, Matches regex). */
-    fun resolveCondition(condition: WorkflowCondition): WorkflowCondition = when (condition) {
-        is WorkflowCondition.Equals -> condition.copy(literal = resolve(condition.literal))
-        is WorkflowCondition.NotEquals -> condition.copy(literal = resolve(condition.literal))
-        is WorkflowCondition.Matches -> condition.copy(regex = resolve(condition.regex))
-        else -> condition
     }
     fun resolveTrigger(trigger: WorkflowTrigger): WorkflowTrigger = when (trigger) {
         is WorkflowTrigger.Deadline -> trigger.copy(title = resolve(trigger.title))
@@ -312,8 +358,16 @@ fun exportWorkflow(
                 literal = redactValue(condition.literal, "$path.condition.literal", "condition_literal"))
             is WorkflowCondition.NotEquals -> condition.copy(
                 literal = redactValue(condition.literal, "$path.condition.literal", "condition_literal"))
-            is WorkflowCondition.Matches -> condition.copy(
-                regex = redactValue(condition.regex, "$path.condition.regex", "condition_regex"))
+            is WorkflowCondition.Matches -> {
+                val placeholder = redactValue(condition.regex, "$path.condition.regex", "condition_regex")
+                // A bare {{setup:name}} is not a valid regex, so the
+                // redacted value is stored quoted ([REDACTED_REGEX_PREFIX]):
+                // still a valid regex for import validation, still
+                // resolvable to the exact original on setup. A blank regex
+                // is left alone (redactValue returns it unchanged).
+                condition.copy(regex = if (placeholder == condition.regex) placeholder
+                    else "$REDACTED_REGEX_PREFIX$placeholder$REDACTED_REGEX_SUFFIX")
+            }
             else -> condition
         }
     }

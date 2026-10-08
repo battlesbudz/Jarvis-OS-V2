@@ -69,6 +69,30 @@ class BranchConditionExportPrivacyTest {
             export.preview.redacted.any { it.field == "steps[2].condition.regex" })
     }
 
+    @Test fun redactedRegexPlaceholderIsValidAndRestoresExactly() {
+        // A bare {{setup:condition_regex}} is not a valid regex (Java
+        // Pattern rejects the braces with "Illegal repetition"), so the
+        // redacted value must be stored in a form that passes the manifest's
+        // regex validation at import review — and setup must restore the
+        // EXACT original regex, not a quoted variant that would change what
+        // the condition matches.
+        val export = exportWorkflow(branchDefinition(), author = "tester", nowMs = nowMs)
+        val parsed = parseWorkflowManifest(export.manifestJson) // must not throw: validator intact
+        val stored = parsed.workflow.steps.filterIsInstance<WorkflowStep.Branch>()[1]
+            .condition as WorkflowCondition.Matches
+        assertEquals("condition_regex", redactedRegexBindingName(stored.regex))
+        Regex(stored.regex) // the stored placeholder is itself a valid regex
+        val resolved = resolveSetupBindings(parsed.workflow, mapOf(
+            "description" to "Restored",
+            "condition_literal" to secretLiteral,
+            "condition_regex" to secretRegex
+        ))
+        val restored = resolved.steps.filterIsInstance<WorkflowStep.Branch>()[1]
+            .condition as WorkflowCondition.Matches
+        assertEquals("the exact original regex must come back, not a quoted form",
+            secretRegex, restored.regex)
+    }
+
     @Test fun exportPreviewCoversFullConditionContent() {
         val export = exportWorkflow(branchDefinition(), author = "tester", nowMs = nowMs)
         val shared = export.preview.shared.joinToString("\n")
