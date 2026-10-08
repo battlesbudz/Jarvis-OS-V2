@@ -35,6 +35,11 @@ class BrowserSubmitJsTest {
     fun setUp() {
         cx = Context.enter()
         cx.languageVersion = Context.VERSION_ES6
+        // Interpreted mode: Rhino 1.8.0's optimizer hits a
+        // jdk.dynalink MissingResourceException under this JDK/Robolectric
+        // sandbox (ExceptionInInitializerError). Interpretation is plenty
+        // for a small DOM shim.
+        cx.optimizationLevel = -1
         scope = cx.initStandardObjects()
         cx.evaluateString(scope, DOM_SHIM, "dom-shim", 1, null)
         cx.evaluateString(scope, LOGIN_PAGE, "login-page", 1, null)
