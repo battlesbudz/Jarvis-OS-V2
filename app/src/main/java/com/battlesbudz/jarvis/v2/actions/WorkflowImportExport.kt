@@ -201,16 +201,16 @@ fun resolveSetupBindings(definition: WorkflowDefinition, values: Map<String, Str
             candidates = step.candidates.map { it.copy(arguments = it.arguments.mapValues { e -> resolve(e.value) }) })
         is WorkflowStep.Script -> step.copy(source = resolve(step.source))
     }
-    fun resolveTrigger(trigger: WorkflowTrigger): WorkflowTrigger = when (trigger) {
-        is WorkflowTrigger.Deadline -> trigger.copy(title = resolve(trigger.title))
-        else -> trigger
-    }
     /** Restore redacted branch condition values (Equals/NotEquals literal, Matches regex). */
     fun resolveCondition(condition: WorkflowCondition): WorkflowCondition = when (condition) {
         is WorkflowCondition.Equals -> condition.copy(literal = resolve(condition.literal))
         is WorkflowCondition.NotEquals -> condition.copy(literal = resolve(condition.literal))
         is WorkflowCondition.Matches -> condition.copy(regex = resolve(condition.regex))
         else -> condition
+    }
+    fun resolveTrigger(trigger: WorkflowTrigger): WorkflowTrigger = when (trigger) {
+        is WorkflowTrigger.Deadline -> trigger.copy(title = resolve(trigger.title))
+        else -> trigger
     }
     val resolved = definition.copy(
         description = resolve(definition.description),
