@@ -38,6 +38,15 @@ class BrowserCredentialFillJsTest {
     private var liveFingerprint: String? = "fp-1"
     private var evalCalls = 0
 
+    // Deterministic clock for the fill-wait loop: Robolectric's paused looper
+    // freezes SystemClock.uptimeMillis while Thread.sleep does not advance the
+    // simulated clock, so the production wait loop would poll forever on a
+    // timeout-only path (dismissed prompt, replaced field). Advancing a fake
+    // clock on every wait keeps the production timeout logic exact.
+    private var fakeClockMs = 0L
+    private val fakeClock: () -> Long = { fakeClockMs }
+    private val fakeSleeper: (Long) -> Unit = { fakeClockMs += it }
+
     @Before
     fun setUp() {
         cx = Context.enter()
@@ -71,7 +80,9 @@ class BrowserCredentialFillJsTest {
             liveHostMatches = { requested -> liveHost == requested },
             documentFingerprintNow = { liveFingerprint },
             evalBoolean = ::evalJsBoolean,
-            waitTimeoutMs = timeoutMs
+            waitTimeoutMs = timeoutMs,
+            clock = fakeClock,
+            sleeper = fakeSleeper
         )
 
     // -- JavaScript contract --------
@@ -141,7 +152,9 @@ class BrowserCredentialFillJsTest {
                 }
                 r
             },
-            waitTimeoutMs = 2_000L
+            waitTimeoutMs = 2_000L,
+            clock = fakeClock,
+            sleeper = fakeSleeper
         )
         assertEquals(CredentialFillOutcome.FILLED, outcome)
     }
@@ -159,7 +172,9 @@ class BrowserCredentialFillJsTest {
             },
             documentFingerprintNow = { liveFingerprint },
             evalBoolean = ::evalJsBoolean,
-            waitTimeoutMs = 1_500L
+            waitTimeoutMs = 1_500L,
+            clock = fakeClock,
+            sleeper = fakeSleeper
         )
         assertEquals(CredentialFillOutcome.NO_CREDENTIALS, outcome)
         assertTrue("the flow must re-check the host mid-flow", checks > 2)
@@ -178,7 +193,9 @@ class BrowserCredentialFillJsTest {
                 if (fpReads > 2) "fp-replaced" else liveFingerprint
             },
             evalBoolean = ::evalJsBoolean,
-            waitTimeoutMs = 1_500L
+            waitTimeoutMs = 1_500L,
+            clock = fakeClock,
+            sleeper = fakeSleeper
         )
         assertEquals(CredentialFillOutcome.NO_CREDENTIALS, outcome)
         assertTrue("the flow must re-check the document mid-flow", fpReads > 2)
@@ -200,7 +217,9 @@ class BrowserCredentialFillJsTest {
                 }
                 r
             },
-            waitTimeoutMs = 1_500L
+            waitTimeoutMs = 1_500L,
+            clock = fakeClock,
+            sleeper = fakeSleeper
         )
         assertEquals("a value on an unstamped replacement field is not this request's fill",
             CredentialFillOutcome.NO_CREDENTIALS, outcome)
@@ -268,7 +287,9 @@ class BrowserCredentialFillJsTest {
                 }
                 r
             },
-            waitTimeoutMs = 1_500L
+            waitTimeoutMs = 1_500L,
+            clock = fakeClock,
+            sleeper = fakeSleeper
         )
         assertEquals("a live navigation mid-flow must abort the fill",
             CredentialFillOutcome.NO_CREDENTIALS, outcome)
@@ -299,7 +320,9 @@ class BrowserCredentialFillJsTest {
                 }
                 r
             },
-            waitTimeoutMs = 1_500L
+            waitTimeoutMs = 1_500L,
+            clock = fakeClock,
+            sleeper = fakeSleeper
         )
         assertEquals("a live DOM replacement mid-flow must abort the fill",
             CredentialFillOutcome.NO_CREDENTIALS, outcome)
@@ -331,7 +354,9 @@ class BrowserCredentialFillJsTest {
                 }
                 r
             },
-            waitTimeoutMs = 2_000L
+            waitTimeoutMs = 2_000L,
+            clock = fakeClock,
+            sleeper = fakeSleeper
         )
         assertEquals("the flow's own focus stamp must not invalidate the document binding",
             CredentialFillOutcome.FILLED, outcome)

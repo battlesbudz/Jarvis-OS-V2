@@ -521,13 +521,22 @@ class WebViewBrowserBridge(
      * The live-page binding and JS evaluation are injected so JVM tests can
      * drive the flow (see BrowserCredentialFillJsTest); production wires
      * the real activity with live in-page reads.
+     *
+     * [clock] and [sleeper] are the wait loop's monotonic clock and wait
+     * primitive, injected so JVM tests can advance a fake clock
+     * deterministically: Robolectric's paused looper freezes
+     * SystemClock.uptimeMillis while Thread.sleep does not advance the
+     * simulated clock, which would make the timeout-only path poll forever.
+     * Production keeps the real SystemClock/Thread.sleep.
      */
     internal fun requestCredentialFill(
         host: String,
         liveHostMatches: (requestedHost: String) -> Boolean,
         documentFingerprintNow: () -> String?,
         evalBoolean: (js: String) -> Boolean?,
-        waitTimeoutMs: Long = CREDENTIAL_FILL_TIMEOUT_MS
+        waitTimeoutMs: Long = CREDENTIAL_FILL_TIMEOUT_MS,
+        clock: () -> Long = SystemClock::uptimeMillis,
+        sleeper: (Long) -> Unit = { Thread.sleep(it) }
     ): CredentialFillOutcome {
         if (host.isBlank()) return CredentialFillOutcome.NO_CREDENTIALS
         // Bind the request to the approved host before touching the page:
@@ -551,13 +560,13 @@ class WebViewBrowserBridge(
         // Wait bounded for the fill to land, rebinding every iteration: a
         // navigation or document replacement mid-flow aborts — a foreign
         // fill is never attributed to this request.
-        val deadline = SystemClock.uptimeMillis() + waitTimeoutMs
-        while (SystemClock.uptimeMillis() < deadline) {
+        val deadline = clock() + waitTimeoutMs
+        while (clock() < deadline) {
             if (!liveHostMatches(host)) return CredentialFillOutcome.NO_CREDENTIALS
             if (documentFingerprintNow() != startFingerprint)
                 return CredentialFillOutcome.NO_CREDENTIALS
             if (evalBoolean(credentialFilledJs()) == true) return CredentialFillOutcome.FILLED
-            Thread.sleep(250)
+            sleeper(250)
         }
         return CredentialFillOutcome.NO_CREDENTIALS
     }
