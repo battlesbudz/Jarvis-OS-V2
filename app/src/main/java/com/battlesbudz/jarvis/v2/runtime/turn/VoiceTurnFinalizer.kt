@@ -23,7 +23,7 @@ internal class VoiceTurnFinalizer(
     private val recorder: DiagnosticRecorder
 ) {
     suspend fun close(request: VoiceTurnRequest, lifetime: VoiceTurnLifetime, cancelled: Boolean) = withContext(NonCancellable) {
-        var encoderDrained = lifetime.nativeAudioCapture == null
+        var encoderDrained = lifetime.nativeAudioCapture == null && !lifetime.captionNativeReleaseFailed
         lifetime.nativeSpeculation?.revoke(com.battlesbudz.jarvis.v2.voice.SpeculativeResponseCoordinator.Invalidation.STOP)
         lifetime.nativeAudioCapture?.requestCancel()
         if (cancelled && !actions.queue.hasUnfinished()) { conversation.job?.cancel(); conversation.job?.join() }
@@ -35,7 +35,7 @@ internal class VoiceTurnFinalizer(
             runCatching { lifetime.microphone?.stop() }
             val speculationDrained = runCatching { lifetime.nativeSpeculation?.closeAndDrain() ?: true }.getOrDefault(false)
             val captureDrained = runCatching { lifetime.nativeAudioCapture?.closeAndDrain(releaseArtifact = speculationDrained) ?: true }.getOrDefault(false)
-            encoderDrained = speculationDrained && captureDrained
+            encoderDrained = speculationDrained && captureDrained && !lifetime.captionNativeReleaseFailed
             if (encoderDrained) lifetime.nativeAudioArtifact?.close()
             lifetime.preparation?.close()
             if (!actions.queue.hasUnfinished()) nativeState.engine?.onPromptSubmitted = { _, _ -> }
@@ -58,6 +58,9 @@ internal class VoiceTurnFinalizer(
             val callEnded = !call.state.armed || call.controller.currentCallId() == null ||
                 (lifetime.expectedResourceCall != null && call.controller.currentCallId() != lifetime.expectedResourceCall) ||
                 lifetime.finalMessage.contains("turn failed", true)
+            // Revoke immediately even when Gemma quarantine retains resident models.
+            // The exact shadow owner/budget stays retained until its worker actually exits.
+            if (callEnded) resources.smartTurn.closeCall(lifetime.expectedResourceCall)
             try {
                 if (callEnded || VoiceSessionUi.paused.value || cancelled && !lifetime.preserveCaptureOnCancellation)
                     resources.resources.closeMicrophone()

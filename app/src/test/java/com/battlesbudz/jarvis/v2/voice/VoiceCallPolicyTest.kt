@@ -31,4 +31,11 @@ class VoiceCallPolicyTest {
             assertFalse(text, VoiceCallPolicy.isGoodbye(text))
     }
 
+    @Test fun singleQuotedFarewellsAreNotDirectControlsButContractionsRemainValid() {
+        for (text in listOf("'goodbye'", "‘goodbye’", "'stop listening'", "Okay, 'goodbye'.", "Goodbye'"))
+            assertFalse(text, VoiceCallPolicy.isGoodbye(text))
+        for (text in listOf("That's all, goodbye.", "That’s all, goodbye.", "That is all, goodbye."))
+            assertTrue(text, VoiceCallPolicy.isGoodbye(text))
+    }
+
 }

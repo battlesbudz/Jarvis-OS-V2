@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import java.io.File
 import java.util.UUID
@@ -15,6 +16,13 @@ internal enum class BenchmarkExportFormat(val extension: String, val mime: Strin
 /** Android transport only. The caller owns the frozen payload and explicit user action. */
 internal object BenchmarkExportFiles {
     fun filename(format: BenchmarkExportFormat): String = "jarvis-pipeline-benchmarks-${UUID.randomUUID()}.${format.extension}"
+
+    fun createDocument(format: BenchmarkExportFormat): ActivityResultContracts.CreateDocument =
+        object : ActivityResultContracts.CreateDocument(format.mime) {
+            override fun createIntent(context: Context, input: String): Intent =
+                // Exports need a stream-backed destination for ContentResolver.openOutputStream.
+                super.createIntent(context, input).addCategory(Intent.CATEGORY_OPENABLE)
+        }
 
     fun save(context: Context, uri: Uri, payload: String) {
         checkNotNull(context.contentResolver.openOutputStream(uri, "wt")) { "Destination is not writable" }

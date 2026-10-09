@@ -17,6 +17,8 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                        /** The action pump can swap its report ledger/output without restarting ASR. */
                        outputProvider: () -> PiperVoiceOutput = { output },
                        onReady: () -> Unit = {},
+                       onCandidateRetained: (Long?, Int) -> Unit = { _, _ -> },
+                       onCandidateCleared: () -> Unit = {},
                        /** Original finalized ASR and its acoustic end, before echo resolution or control routing. */
                        onMetrics: (AsrCaptureMetrics, String, Long?) -> Unit = { _, _, _ -> }): CapturedVoiceTurn = recoverReplyListener(log) {
         supervisorScope {
@@ -69,6 +71,8 @@ class ReplyVoiceCapture(private val context: Context, private val log: (String) 
                     hasPlaybackBudget = { asrOnly || currentOutput().hasInterruptionBudget() },
                     canContinuePlayback = { asrOnly || currentOutput().canContinueInterruption() },
                     onNaturalTextConfirmed = { confirmedNaturalText = it },
+                    onCandidateRetained = onCandidateRetained,
+                    onCandidateCleared = onCandidateCleared,
                     onConfirmed = { natural, evidence ->
                         if (natural) naturalReference = evidence
                         else {

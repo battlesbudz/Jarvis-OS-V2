@@ -111,3 +111,13 @@ For a change, choose the smallest relevant checks first, retain their failure
 evidence, then run the required exact-revision release gates. Introductions to
 the code and dependency boundaries live in
 [docs/architecture/README.md](../docs/architecture/README.md).
+
+### Smart Turn shadow frontend
+
+`python3 scripts/smart-turn/verify_frontend.py --receipt <output.json>` compiles
+only the CPU feature extractor and compares all eight independent frozen feature
+fixtures. It does not download or execute model weights. The same checks run in
+`test_smart_turn_contract.py` with the existing helper gate. Explicit expectation
+regeneration is separate: `generate_goldens.py` needs NumPy 2.3.5 and must preserve
+all original decoded hashes unless an independently reviewed frontend change
+requires new fixtures. See the [recovery contract](../docs/verification/smart-turn-recovery-2026-10-09.md).

@@ -48,6 +48,7 @@ val extractSherpa by tasks.registering(Exec::class) {
 val buildSherpa by tasks.registering(Exec::class) {
     inputs.file(rootProject.file("scripts/build_sherpa.py"))
     inputs.file(rootProject.file("scripts/sherpa_jni_profile.py"))
+    inputs.dir(rootProject.file("app/src/main/cpp/smartturn"))
     outputs.dir(sherpaNativeDir.map { it.dir("jni") })
     doFirst {
         commandLine("python3", rootProject.file("scripts/build_sherpa.py"), "--output", sherpaNativeDir.get().asFile,

@@ -26,6 +26,7 @@ internal fun VoiceInputSettings(enabled: Boolean, onBusy: (Boolean) -> Unit) {
         if (!enabled || busy || inputMode != VoiceInputMode.GEMMA_AUDIO) captionMenuOpen = false
     }
     DisposableEffect(Unit) { onDispose { onBusy(false) } }
+    var smartTurnShadow by remember { mutableStateOf(com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings.enabled(context)) }
     var task by remember { mutableStateOf<Job?>(null) }
     Column {
         Text("Voice input: ${inputMode.label}")
@@ -84,6 +85,29 @@ internal fun VoiceInputSettings(enabled: Boolean, onBusy: (Boolean) -> Unit) {
             }) { Text("Use ${engine.label}") }
         }
         Text("Both transcribe your voice on this phone. Moonshine transcribes as you speak; Whisper updates provisional captions and confirms them when you finish.", style = MaterialTheme.typography.bodySmall)
+        Text("Smart Turn shadow: ${if (smartTurnShadow) "On" else "Off"}")
+        Text("Experimental local measurements only. Downloads an 8.7 MB pinned model and records probabilities/timings in Metrics; it never ends your turn. CPU work may overlap other voice models.", style = MaterialTheme.typography.bodySmall)
+        TextButton(enabled = enabled && !busy, modifier = Modifier.testTag("smart_turn_shadow_toggle"), onClick = {
+            if (smartTurnShadow) {
+                com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings.setEnabled(context, false)
+                smartTurnShadow = false
+                message = "Smart Turn shadow is off for the next captured turn."
+            } else {
+                busy = true
+                task = scope.launch {
+                    try {
+                        com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings.store(context).ensureReady { value ->
+                            scope.launch { message = value }
+                        }
+                        com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings.setEnabled(context, true)
+                        smartTurnShadow = true
+                        message = "Smart Turn shadow is ready for the next call. End-of-turn decisions are unchanged."
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { message = "Smart Turn setup failed. Ordinary voice remains available; try again when connected." }
+                    finally { busy = false }
+                }
+            }
+        }) { Text(if (smartTurnShadow) "Disable Smart Turn shadow" else "Enable Smart Turn shadow (8.7 MB)") }
         Text("Microphone: ${captureProfile.label}")
         Text("Requests communication processing and noise suppression where available.", style = MaterialTheme.typography.bodySmall)
         if (busy) TextButton(onClick = { task?.cancel(); message = "Stopped." }) { Text("Cancel") }

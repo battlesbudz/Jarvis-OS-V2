@@ -138,4 +138,24 @@ class VoiceInputSettingsTest {
         assertEquals("communication_noise_filtered", preferences.getString("capture_profile", null))
         assertEquals(AsrEngine.WHISPER, VoiceInputMode.captionEngine(context))
     }
+    @Test fun smartTurnShadowDefaultsOffAndCannotChangeDuringCall() {
+        mount()
+        compose.onNodeWithTag("smart_turn_shadow_toggle").performScrollTo().assertTextContains("Enable Smart Turn shadow (8.7 MB)")
+        assertFalse(preferences.getBoolean("smart_turn_shadow_enabled", false))
+        compose.runOnIdle { enabled.value = false }
+        compose.onNodeWithTag("smart_turn_shadow_toggle").assertIsNotEnabled()
+        assertFalse(preferences.getBoolean("smart_turn_shadow_enabled", false))
+        assertEquals(AsrEngine.WHISPER, VoiceInputMode.captionEngine(context))
+    }
+    @Test fun disablingSmartTurnPersistsWithoutAnyModelDownload() {
+        preferences.edit().putBoolean("smart_turn_shadow_enabled", true).commit()
+        mount()
+        compose.onNodeWithTag("smart_turn_shadow_toggle").performScrollTo().performClick()
+        assertFalse(preferences.getBoolean("smart_turn_shadow_enabled", true))
+        reopenSettings()
+        compose.onNodeWithTag("smart_turn_shadow_toggle").performScrollTo().assertTextContains("Enable Smart Turn shadow (8.7 MB)")
+        assertEquals(VoiceInputMode.GEMMA_AUDIO, VoiceInputMode.selected(context))
+        assertEquals(AsrEngine.WHISPER, VoiceInputMode.captionEngine(context))
+    }
+
 }

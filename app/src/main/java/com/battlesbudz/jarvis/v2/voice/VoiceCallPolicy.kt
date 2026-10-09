@@ -10,6 +10,12 @@ object VoiceCallPolicy {
     /** A direct final farewell, optionally preceded by a short polite acknowledgement. */
     fun isGoodbye(transcript: String): Boolean {
         if (transcript.any { it in "\"“”" }) return false
+        // Apostrophes inside words preserve "that's all". Quote marks around a
+        // farewell remain reported text even when punctuation normalization strips them.
+        if (transcript.indices.any { index ->
+            transcript[index] in "'‘’" && (index == 0 || index == transcript.lastIndex ||
+                !transcript[index - 1].isLetterOrDigit() || !transcript[index + 1].isLetterOrDigit())
+        }) return false
         val words = transcript.lowercase(Locale.ROOT)
             .replace(Regex("[^\\p{L}\\p{N} ]"), " ").trim().replace(Regex("\\s+"), " ")
         val farewell = "(?:goodbye(?: jarvis)?|jarvis goodbye|stop listening(?: jarvis)?|jarvis stop listening)"

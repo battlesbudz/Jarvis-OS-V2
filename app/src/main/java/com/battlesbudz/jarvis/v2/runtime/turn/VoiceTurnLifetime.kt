@@ -30,9 +30,14 @@ internal class VoiceTurnLifetime(
     @Volatile var nativeAudioArtifact: com.battlesbudz.jarvis.v2.ai.audio.GemmaStreamingArtifactStore.Lease? = null
     var microphone: AudioInput? = null
     var expectedResourceCall: String? = null
+    /** Frozen before microphone capture starts, so a later input cannot be adopted as this turn's revision. */
+    var capturedInputRevision: Long? = null
+    var capturedInputBoundary: com.battlesbudz.jarvis.v2.voice.CallInputQueue.CaptionBoundary? = null
     var preserveCaptureOnCancellation = false
+    var captionNativeReleaseFailed = false
     var output: PiperVoiceOutput? = null
     val finalSpeechDelivery = AtomicReference<SpeechDelivery?>(null)
+    val normalReplyPlayback = kotlinx.coroutines.CompletableDeferred<com.battlesbudz.jarvis.v2.voice.NormalReplyPlayback>()
     val speechChunks = Channel<String>(Channel.UNLIMITED)
     var speechJob: Job? = null
     /** Kept after global detachment so queued publication remains bound and fails closed. */

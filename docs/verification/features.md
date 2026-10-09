@@ -1,5 +1,30 @@
 # Feature and acceptance map
 
+## Smart Turn opt-in observations — 9 October 2026
+
+An explicit default-off setting verifies the pinned auxiliary model before local
+microphone probability/timing observations. Capture and endpoint authority are
+unchanged. One retained worker, bounded snapshots/candidate frequency, cancellation
+and exact call/generation fencing keep ordinary voice independent of model setup.
+
+The source recovered after interruption is distinguished from newly rebuilt
+build/test/license support. [Recovery scope and fresh checks](smart-turn-recovery-2026-10-09.md)
+are the current evidence. Named journey81 covers opt-in/disable/recreation without
+weights. Android/NDK/shrunk linkage, phone costs and premature-cutoff calibration
+remain pending; all existing five profiles and 900-second main deadlines remain.
+
+## Capture-first rearm candidate — 9 October 2026
+
+Successful playback transfers a byte-bounded retained recorder before optional
+caption/native cleanup; exact input tickets protect the caption backstop and an
+already-final Whisper snapshot can opportunistically recognize farewell without
+new ASR work. The first candidate failed independent raw-onset, ASR-disabled-tail
+and slow-storage race review. [The separate repair and callback ownership contract](capture-first-rearm-repair-2026-10-09.md)
+record the fixes and source-bound tests/API compilation. Independent re-review
+cleared the repair; [combined source checks](integrated-latency-candidate-2026-10-09.md)
+pass. Full signed Android/native release gates and phone latency validation remain.
+[Original candidate evidence](capture-first-rearm-2026-10-09.md) remains historical.
+
 ## Idle native-caption finalization — 9 October 2026
 
 Eligible clean ordinary Gemma audio capture skips a new endpoint-final Whisper
@@ -16,17 +41,18 @@ pending; host policy tests do not verify an APK or acoustic quality.
 
 ## Audio/Muse integration candidate — 9 October 2026
 
-Build 1233's signed combined APKs failed the native 16 KB audit on CameraX 1.3.4's
-image-processing library. The minimal repair selects CameraX 1.4.0 consistently;
-its exact official ARM64 ELF passes the unchanged local audit, while 1.3.4
-negative controls fail. Full repaired-head release verification is pending.
+Latest terminal Build 1244 passed signed assembly and the native 16 KB audit,
+but failed the strict encoder reference and the benchmark document OPENABLE
+contract. The latter is repaired in the current candidate; exact-head release
+verification remains required. The earlier CameraX 1.3.4 alignment failure and
+its consistent 1.4.0 repair remain documented as historical evidence.
 [Failure and artifact preflight](audio-muse-integration-2026-10-09.md#build-1233-camerax-native-compatibility-repair)
 retains the source/run, hashes, compatibility checks and verification limits.
 
 The integration combines verified audio source `a86c3cc439b550c8bbb52bf223d81458ae6066b4`
 (Build 1190) with verified Muse source `e413a89f9249e47484db62d18e4db8d11f190d54`
 (Build 1229). Those independent results do not verify this combined revision.
-The current named contract requires **81 main journeys**: tests 01–80 and 90.
+The current named contract requires **82 main journeys**: tests 01–81 and 90.
 Audio's Wisp journey remains test49; the camera-farewell journey is test80 so
 both have unique execution identities. The latter retains the notification
 grant and cleanup assertions without revoking its own live process permission.
@@ -4083,6 +4109,18 @@ Those host checks use an XML-backed node adapter, and the compile fixture uses
 signature-only navigation/activity helpers and generated BuildConfig constants.
 They do not establish device execution, runtime duration, R8 or APK verification;
 the exact repaired revision still requires the full release gate.
+
+Build 1244 passed the corrected selector and reached the existing repeated-save
+intent checks, which exposed that pinned AndroidX Activity 1.10.0 CreateDocument
+omits `CATEGORY_OPENABLE`. TXT/JSON/CSV now use one production transport factory
+that adds this category while preserving the superclass action, MIME, title and
+result semantics. The original test45 assertion and complete method remain intact.
+Its existing transport probe additionally checks repeated/recreated contracts for
+all three formats, cancellation and successful URI results. Fresh real-framework
+host checks pass 78 assertions; a category-removal negative control fails as
+expected, and exact test45/production UI API compilation passes. [Cause, dependency
+provenance and verification limits](benchmark-document-contract-2026-10-09.md)
+retain the evidence. Exact-revision full release verification is still required.
 
 ### Native frozen-pause capture (2026-10-09 source checkpoint)
 

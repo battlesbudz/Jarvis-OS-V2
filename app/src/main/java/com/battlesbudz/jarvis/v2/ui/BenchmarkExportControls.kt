@@ -4,7 +4,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -68,9 +67,9 @@ internal fun rememberBenchmarkExport(report: PipelineBenchmarkReport, replies: C
             finally { setBusy(false) }
         }
     }
-    val saveTxt = key(instanceId, "txt") { rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BenchmarkExportFormat.TXT.mime), save) }
-    val saveJson = key(instanceId, "json") { rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BenchmarkExportFormat.JSON.mime), save) }
-    val saveCsv = key(instanceId, "csv") { rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BenchmarkExportFormat.CSV.mime), save) }
+    val saveTxt = key(instanceId, "txt") { rememberLauncherForActivityResult(BenchmarkExportFiles.createDocument(BenchmarkExportFormat.TXT), save) }
+    val saveJson = key(instanceId, "json") { rememberLauncherForActivityResult(BenchmarkExportFiles.createDocument(BenchmarkExportFormat.JSON), save) }
+    val saveCsv = key(instanceId, "csv") { rememberLauncherForActivityResult(BenchmarkExportFiles.createDocument(BenchmarkExportFormat.CSV), save) }
     state.export = export@{ format, action ->
         if (!state.tryBegin()) return@export
         // Capture the exact report/scope once, including every retained attempt, before async generation.

@@ -42,6 +42,9 @@ class AudioTurnCapture(
     private val captionOnly: Boolean = false,
     private val onAcousticDecision: (ByteArray, SpeechDecision, SpeechDecision, Double) -> Unit = { _, _, _, _ -> },
     private val retainedPcmObserver: RetainedPcmObserver? = null,
+    private val shadowObserver: CaptureShadowObserver? = null,
+    /** Pure verdict over already-final evidence; rejection reuses this capture's existing reset path. */
+    private val rejectFinalCandidate: (String, Long?) -> Boolean = { _, _ -> false },
     private val nowNs: () -> Long = System::nanoTime,
     /** Ordinary native audio only; caller checks playback-tail risk using the actual onset. */
     private val canRetireIdleCaption: (Long?) -> Boolean = { false },
@@ -50,6 +53,10 @@ class AudioTurnCapture(
     private val nativePauseGeneration: Long = 0,
     private val canUseNativePause: (Long?) -> Boolean = { false }
 ) {
+    // Shadow callbacks can neither veto capture nor escape into the audio owner.
+    private inline fun shadow(action: (CaptureShadowObserver) -> Unit) {
+        shadowObserver?.let { runCatching { action(it) } }
+    }
     private val nativePause = nativePauseObserver?.let { NativePauseCapture(it, nativePauseTurnId, nativePauseGeneration) }
     /** Only published by stop(), after capture's collector and VAD producer have joined. */
     @Volatile var nativePauseCertificate: NativePauseCertificate? = null
@@ -92,8 +99,8 @@ class AudioTurnCapture(
     @Volatile var retainedPreRollSampleCount: Int? = null
         private set
     @Volatile private var endRequested = false
-    fun finishNow() { nativePause?.invalidate(NativePauseInvalidation.ENDPOINT_REJECTED); endRequested = true }
-    fun yieldMicrophone() { nativePause?.invalidate(NativePauseInvalidation.CANCELLED); turnCompleted.completeExceptionally(MicrophoneBusyException()) }
+    fun finishNow() { shadow { it.onPriority("explicit_stop") }; nativePause?.invalidate(NativePauseInvalidation.ENDPOINT_REJECTED); endRequested = true }
+    fun yieldMicrophone() { shadow { it.close() }; nativePause?.invalidate(NativePauseInvalidation.CANCELLED); turnCompleted.completeExceptionally(MicrophoneBusyException()) }
     @Volatile var hasSpeech: Boolean = false
         private set
 
@@ -185,7 +192,7 @@ class AudioTurnCapture(
                     synchronized(pcm) {
                         if (hasSpeech) {
                             pcm.append(chunk)
-                            if (retainedPcmObserver != null || nativePause != null) retainedAudio = chunk.copyOf()
+                            if (retainedPcmObserver != null || nativePause != null || shadowObserver != null) retainedAudio = chunk.copyOf()
                             val wasComplete = audioIsComplete
                             capturedPcmBytes += chunk.size
                             if (wasComplete && !audioIsComplete) {
@@ -204,7 +211,7 @@ class AudioTurnCapture(
                                 val acceptedPreRoll = preRoll.snapshot()
                                 pcm.append(acceptedPreRoll)
                                 retainedPreRollSampleCount = (pcm.sizeBytes() / 2).toInt()
-                                if (retainedPcmObserver != null || nativePause != null) retainedAudio = pcm.snapshot()
+                                if (retainedPcmObserver != null || nativePause != null || shadowObserver != null) retainedAudio = pcm.snapshot()
                                 capturedPcmBytes = pcm.sizeBytes()
                                 preRoll.clear()
                                 log("speech_started vad=silero elapsedMs=${now - startedAt}")
@@ -218,10 +225,12 @@ class AudioTurnCapture(
                     // Observe the retained request, not raw/VAD frames. The copied
                     // bytes leave the PCM lock before any external queue admission.
                     if (retainedWindowRolled) {
+                        shadow { it.onInvalidated("window_rolled") }
                         nativePause?.invalidate(NativePauseInvalidation.WINDOW_ROLLED)
                         retainedPcmObserver?.onCaptureInvalidated(RetainedPcmObserver.Invalidation.WINDOW_ROLLED)
                     }
                     if (audioIsComplete) retainedAudio?.let {
+                        shadow { observer -> observer.onPcm(it, audioBytes / 2) }
                         nativePause?.retain(it)
                         if (nativePause?.encoderFrozen != true) retainedPcmObserver?.onPcm(it)
                     }
@@ -269,7 +278,7 @@ class AudioTurnCapture(
                             val onsetPcm = preRoll.snapshot()
                             pcm.append(onsetPcm)
                             retainedPreRollSampleCount = (pcm.sizeBytes() / 2).toInt()
-                            if (retainedPcmObserver != null || nativePause != null) acceptedPreRoll = pcm.snapshot()
+                            if (retainedPcmObserver != null || nativePause != null || shadowObserver != null) acceptedPreRoll = pcm.snapshot()
                             capturedPcmBytes = pcm.sizeBytes()
                             preRoll.clear()
                             hasSpeech = true
@@ -278,11 +287,16 @@ class AudioTurnCapture(
                             lastSpeechSample = audioBytes / 2
                         }
                         acceptedPreRoll?.let {
+                            shadow { observer -> observer.onPcm(it, audioBytes / 2) }
                             nativePause?.retain(it)
                             if (nativePause?.encoderFrozen != true) retainedPcmObserver?.onPcm(it)
                         }
                         log("speech_started source=asr_and_vad probability=${decision.probability} preRollMs=1200")
                     }
+                    shadow { it.onFrame(CaptureShadowFrame(audioBytes / 2, audioAt * 1_000_000L,
+                        hasSpeech, decision.isSpeech || corroborated || frame.rawDecision.probability >= .15f ||
+                            frame.rawDecision.rawCoverage == null,
+                        (audioAt - lastSpeechAt).coerceAtLeast(0), maxOf(speechQueue.bufferedAudioMs, input.bufferedAudioMs))) }
                     val cue = if (captionOnly && nativePause != null) transcriber?.completedEndpointCue else null
                     if (hasSpeech && partial != null) publishPartial(partial)
                     if (captionOnly && nativePause != null && completedCues.update(cue,
@@ -322,6 +336,7 @@ class AudioTurnCapture(
                             "collectedSamples=${audioBytes / 2}")
                     }
                     if (nativePause?.canPropose == true && nativeEligibility.allowed && !pendingEndpoint && NativePauseEndpointPolicy.permitsProposal(baseEndpoint)) {
+                        shadow { it.onPriority("gemma_speculation") }
                         val snapshot = synchronized(pcm) { pcm.snapshot() }
                         if (nativePause.propose(snapshot, audioBytes / 2, nowNs())) {
                             nativeProposalCount++
@@ -339,6 +354,7 @@ class AudioTurnCapture(
                         else -> null
                     }
                     if (reason != null && !turnCompleted.isCompleted) {
+                        shadow { it.onPriority("endpoint_finalization") }
                         if (reason != "trailing_silence") nativePause?.invalidate(NativePauseInvalidation.ENDPOINT_REJECTED)
                         // This proposal can still be invalidated by new speech or
                         // final recognition. Publish it only with the accepted candidate.
@@ -356,6 +372,7 @@ class AudioTurnCapture(
                             hasSpeech = false
                             finalTranscript = ""
                             synchronized(pcm) { pcm.clear(); capturedPcmBytes = 0; preRoll.clear() }
+                            shadow { it.onInvalidated("candidate_discarded") }
                             nativePause?.invalidate(NativePauseInvalidation.CANDIDATE_DISCARDED)
                             if (nativePause?.encoderFrozen != true) retainedPcmObserver?.onCandidateDiscarded()
                             retainedPreRollSampleCount = null
@@ -487,9 +504,17 @@ class AudioTurnCapture(
                                     onRecognitionRecovery(false)
                                 }
                             }
-                            if (!captionOnly && transcriber != null && finalTranscript.isBlank() && (!allowAudioOnlyTurns || nonverbal) && recognitionIssue == null) {
+                            val finalCandidateRejected = recognitionIssue == null && rejectFinalCandidate(finalTranscript, firstSpeechCaptureAtMs)
+                            if (finalCandidateRejected || (!captionOnly && transcriber != null && finalTranscript.isBlank() && (!allowAudioOnlyTurns || nonverbal) && recognitionIssue == null)) {
                                 emptyCandidates++
                                 hasSpeech = false
+                                if (finalCandidateRejected) {
+                                    endRequested = false
+                                    finalTranscript = ""
+                                    finalAsrStatus = "pending"
+                                    captionFinalizationReason = "not_attempted"
+                                    log("final_candidate_rejected policy=existing_playback_echo microphone=kept_open")
+                                }
                                 // A new word may be starting in the final, not-yet-confirmed
                                 // VAD frame. Replay the tail into the replacement recognizer.
                                 val tail = synchronized(pcm) {
@@ -500,6 +525,7 @@ class AudioTurnCapture(
                                     preRoll.append(retained)
                                     retained
                                 }
+                                shadow { it.onInvalidated("candidate_discarded") }
                                 nativePause?.invalidate(NativePauseInvalidation.CANDIDATE_DISCARDED)
                             if (nativePause?.encoderFrozen != true) retainedPcmObserver?.onCandidateDiscarded()
                                 retainedPreRollSampleCount = null
@@ -578,15 +604,18 @@ class AudioTurnCapture(
                 if (acceptedTurn != null) turnCompleted.complete(acceptedTurn!!)
                 else if (!turnCompleted.isCompleted) {
                     nativePause?.invalidate(NativePauseInvalidation.CAPTURE_FAILED)
+                    shadow { it.onInvalidated("capture_failed"); it.close() }
                     retainedPcmObserver?.onCaptureInvalidated(RetainedPcmObserver.Invalidation.CAPTURE_FAILED)
                     turnCompleted.completeExceptionally(IllegalStateException("Microphone stream ended before the turn completed."))
                 }
             } catch (cancelled: CancellationException) {
+                shadow { it.onInvalidated("cancelled"); it.close() }
                 runCatching { nativePause?.invalidate(NativePauseInvalidation.CANCELLED) }
                 runCatching { retainedPcmObserver?.onCaptureInvalidated(RetainedPcmObserver.Invalidation.CANCELLED) }
                 turnCompleted.cancel()
                 throw cancelled
             } catch (error: Throwable) {
+                shadow { it.onInvalidated("capture_failed"); it.close() }
                 // Deliver model/stream failures to the owner, not the Activity's uncaught handler.
                 runCatching { nativePause?.invalidate(NativePauseInvalidation.CAPTURE_FAILED) }
                 runCatching { retainedPcmObserver?.onCaptureInvalidated(RetainedPcmObserver.Invalidation.CAPTURE_FAILED) }
@@ -602,6 +631,7 @@ class AudioTurnCapture(
         lifecycle.withLock {
             if (!stopped) {
                 stopped = true
+                shadow { it.close() }
                 val backlogBeforeStop = input.bufferedAudioMs
                 try {
                     input.stop()

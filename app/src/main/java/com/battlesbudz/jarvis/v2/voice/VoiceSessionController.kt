@@ -18,6 +18,70 @@ class VoiceSessionController(
 
     private var activeCall: VoiceCallRecord? = null
     private var resumedFromCallId: String? = null
+    private var captionInputVersion = 0L
+    private var farewellCommittedCall: String? = null
+
+    @Synchronized internal fun currentInputRevision(callId: String): Long? =
+        captionInputVersion.takeIf { activeCall?.id == callId && farewellCommittedCall != callId }
+
+    /** Acoustic admission linearizes before cancellation is scheduled. Never acquires the queue lock. */
+    @Synchronized internal fun revokeCaptionForInput(callId: String): Boolean {
+        if (activeCall?.id != callId || farewellCommittedCall == callId) return false
+        captionInputVersion++
+        return true
+    }
+
+    @Synchronized internal fun finishInputIfCurrent(callId: String, revision: Long, text: String): Boolean {
+        if (currentInputRevision(callId) != revision) return false
+        farewellCommittedCall = callId
+        appendTranscript("You", text)
+        return true
+    }
+
+    /** Authority for one still-pending paired input; never a general history edit token. */
+    internal class CaptionTicket internal constructor(val callId: String, val replyId: String,
+        internal val inputVersion: Long, internal val expectedText: String)
+
+    @Synchronized internal fun captionTicket(callId: String, replyId: String, expectedText: String): CaptionTicket? {
+        val call = activeCall?.takeIf { it.id == callId && farewellCommittedCall != callId } ?: return null
+        if (call.transcript.lastOrNull()?.replyId != replyId || call.transcript.lastOrNull()?.role != "Jarvis") return null
+        val user = call.transcript.getOrNull(call.transcript.lastIndex - 1) ?: return null
+        if (user.role != "You" || user.text != expectedText) return null
+        return CaptionTicket(callId, replyId, captionInputVersion, expectedText)
+    }
+
+    internal class CaptionCommit internal constructor(val callId: String, val replyId: String,
+        val text: String, val inputVersion: Long, val farewell: Boolean)
+
+    /** Bounded state mutation only. The final authorization CAS and mutation share this call lock. */
+    @Synchronized internal fun commitCaption(ticket: CaptionTicket, text: String,
+        isCurrent: () -> Boolean, farewell: Boolean = false, authorize: () -> Boolean = { true }): CaptionCommit? {
+        if (text.isBlank() || !isCurrent() || captionInputVersion != ticket.inputVersion ||
+            captionTicket(ticket.callId, ticket.replyId, ticket.expectedText) == null) return null
+        val call = requireActiveCall()
+        val entries = call.transcript.toMutableList()
+        val userIndex = entries.lastIndex - 1
+        if (!authorize()) return null
+        entries[userIndex] = entries[userIndex].copy(text = text, complete = true, generationComplete = true)
+        captionInputVersion++
+        activeCall = call.copy(transcript = entries)
+        if (farewell) farewellCommittedCall = ticket.callId
+        return CaptionCommit(ticket.callId, ticket.replyId, text, captionInputVersion, farewell)
+    }
+
+    /** Persist the latest record, never an old captured snapshot over a newer input/call. */
+    @Synchronized internal fun checkpointCaption(commit: CaptionCommit) {
+        if (activeCall?.id == commit.callId && captionInputVersion >= commit.inputVersion) checkpoint()
+        // End already persisted this committed entry if the call finished meanwhile.
+    }
+
+    internal fun publishCaption(ticket: CaptionTicket, text: String,
+        isCurrent: () -> Boolean, farewell: Boolean = false, onPublished: () -> Unit): Boolean {
+        val committed = commitCaption(ticket, text, isCurrent, farewell) ?: return false
+        checkpointCaption(committed)
+        onPublished()
+        return true
+    }
 
     /**
      * Fired after a new call segment begins, outside the session lock. The
@@ -48,6 +112,7 @@ class VoiceSessionController(
                          latency: com.battlesbudz.jarvis.v2.diagnostics.TurnLatency? = null,
                          origin: TranscriptOrigin = TranscriptOrigin.SPOKEN) {
         val call = requireActiveCall()
+        if (role == "You") captionInputVersion++
         val entries = call.transcript.toMutableList()
         val previous = entries.lastOrNull()
         if (previous?.role == role && !previous.complete) {
@@ -68,6 +133,7 @@ class VoiceSessionController(
         if (expectedText != null && call.transcript[replyIndex - 1].text != expectedText) return false
         val entries = call.transcript.toMutableList()
         entries[replyIndex - 1] = entries[replyIndex - 1].copy(text = text, complete = true, generationComplete = true)
+        captionInputVersion++
         activeCall = call.copy(transcript = entries)
         checkpoint()
         return true
@@ -78,6 +144,7 @@ class VoiceSessionController(
         if (activeCall?.id != callId) return
         val call = requireActiveCall()
         check(call.transcript.none { it.replyId == replyId })
+        captionInputVersion++
         activeCall = call.copy(transcript = call.transcript + TranscriptEntry("Jarvis", "", nowMs(),
             complete = false, replyId = replyId, delivery = SpeechDelivery(replyId), generationComplete = false))
         checkpoint()
@@ -216,6 +283,7 @@ class VoiceSessionController(
 
     /** The shared thread already holds the resumed call; start a fresh call segment. */
     @Synchronized fun linkConversation(conversationId: String) {
+        captionInputVersion++
         activeCall = requireActiveCall().copy(conversationId = conversationId, transcript = emptyList())
         checkpoint()
     }

@@ -777,6 +777,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
         returnToWakeCuePending.set(!stopSession)
         resumeCommandCue.set(false)
         val endedCallId = voiceSessionController.currentCallId()
+        // Typed-turn/farewell paths can bypass the voice-turn finalizer. Revoke
+        // only this exact ended call, without waiting for the shadow native worker.
+        runtimeVoiceResources.smartTurn.closeCall(endedCallId)
         // The ended call's video capture stops here — capture never survives
         // into passive wake listening. Only the ended call's identity can
         // stop its capture: a stale farewell for an older call is a no-op

@@ -487,3 +487,6 @@
 -keep class com.battlesbudz.jarvis.v2.actions.ManifestProvenance** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ToolContract** { *; }
 -keep class com.battlesbudz.jarvis.v2.actions.ScriptRuntimeRequirements** { *; }
+
+# Smart Turn JNI is compiled into the existing Sherpa library; retain exactly this bridge.
+-keep class com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnNative { *; }

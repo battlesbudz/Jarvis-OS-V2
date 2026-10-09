@@ -24,6 +24,8 @@ internal class VoiceTurnRecognition(
     private val asrComparisonStore: AsrComparisonStore
 ) {
     suspend fun recognize(request: VoiceTurnRequest, prepared: PreparedVoiceTurn, observation: VoiceTurnObservation, lifetime: VoiceTurnLifetime): VoiceStageResult<FinalizedVoiceTurn> {
+        val inputBoundary = lifetime.capturedInputBoundary ?: call.state.inputQueue.captionBoundary(prepared.expectedCallId)
+        val inputRevision = lifetime.capturedInputRevision
         if (prepared.correction == null) {
             // The ASR owner retains a begun utterance. A typed draft can hand off the
             // microphone only before speech starts; otherwise it stays FIFO behind that
@@ -74,6 +76,40 @@ internal class VoiceTurnRecognition(
             throw kotlinx.coroutines.CancellationException("voice_call_changed_during_recognition")
         }
         val asrTranscript = prepared.correction?.transcript ?: prepared.activeCapture.finalTranscript
+        // One observation of evidence that ALREADY exists after the existing capture join.
+        // Missing final evidence stays missing; this check cannot refresh or finalize ASR.
+        val rejectedByPlaybackEcho = asrTranscript.isNotBlank() && resources.resources.rejectsFollowupEcho(
+            asrTranscript, prepared.correction?.firstSpeechCaptureAtMs ?: prepared.activeCapture.firstSpeechCaptureAtMs)
+        val snapshotOwner = com.battlesbudz.jarvis.v2.voice.FinalWhisperFarewellSnapshot.Owner(
+            prepared.expectedCallId, request.asrTurnId, inputRevision ?: -1L)
+        fun currentSnapshotOwner() = call.controller.currentInputRevision(prepared.expectedCallId)?.let {
+            com.battlesbudz.jarvis.v2.voice.FinalWhisperFarewellSnapshot.Owner(prepared.expectedCallId, request.asrTurnId, it)
+        }
+        val finalWhisperSnapshot = com.battlesbudz.jarvis.v2.voice.FinalWhisperFarewellSnapshot.capture(
+            snapshotOwner, currentSnapshotOwner(),
+            isWhisper = request.asrEngine == com.battlesbudz.jarvis.v2.voice.AsrEngine.WHISPER &&
+                (prepared.correction == null || prepared.correction.handoff != null &&
+                    prepared.correction.finalAsrEngineId == request.asrEngine.id),
+            transcript = asrTranscript,
+            finalAsrStatus = prepared.correction?.finalAsrStatus ?: prepared.activeCapture.finalAsrStatus,
+            captionFinalizationReason = prepared.correction?.captionFinalizationReason ?: prepared.activeCapture.captionFinalizationReason,
+            recognitionIssue = prepared.correction?.recognitionIssue ?: prepared.activeCapture.recognitionIssue,
+            rejectedByPlaybackEcho = rejectedByPlaybackEcho)
+        if (prepared.directAudioTurn && request.comparison == null) {
+            val ended = call.state.inputQueue.publishWithoutNextInput(inputBoundary) {
+                synchronized(call.controller) {
+                    val goodbye = finalWhisperSnapshot.farewellIfCurrent(currentSnapshotOwner())
+                    goodbye != null && call.controller.finishInputIfCurrent(prepared.expectedCallId,
+                        snapshotOwner.inputRevision, goodbye)
+                }.also { if (it) call.state.inputQueue.end(prepared.expectedCallId) }
+            }
+            if (ended) {
+                observation.benchmark.configuration("request_scope", "already_final_whisper_goodbye")
+                call.events.returnToWake(prepared.expectedCallId)
+                lifetime.finalMessage = com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.ENDED_PREFIX + " goodbye."
+                return VoiceStageResult.Finished(lifetime.finalMessage)
+            }
+        }
         if (prepared.correction == null) observation.telemetry.hypothesis = asrTranscript
         val audioIsComplete = prepared.correction?.audioIsComplete ?: prepared.activeCapture.audioIsComplete
         var recognitionIssue = prepared.correction?.recognitionIssue ?: prepared.activeCapture.recognitionIssue
@@ -100,8 +136,7 @@ internal class VoiceTurnRecognition(
             lifetime.finalMessage = com.battlesbudz.jarvis.v2.voice.CallLifetimePolicy.waitingStatus()
             return VoiceStageResult.Finished(lifetime.finalMessage)
         }
-        if (prepared.correction == null && asrTranscript.isNotBlank() &&
-            resources.resources.rejectsFollowupEcho(asrTranscript, prepared.activeCapture.firstSpeechCaptureAtMs)) {
+        if (prepared.correction == null && rejectedByPlaybackEcho) {
             observation.outcome = com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome.REJECTED
             observation.failure = "own_playback_echo_followup"
             observation.benchmark.configuration("echo_rejection_scope", "playback_tail_onset_and_all_clauses_match")

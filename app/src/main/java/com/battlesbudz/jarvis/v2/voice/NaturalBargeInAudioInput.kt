@@ -18,7 +18,10 @@ class NaturalBargeInAudioInput(
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val canContinuePlayback: () -> Boolean = hasPlaybackBudget,
     private val minimumProbeAudioMs: Int = 250,
-    private val onNaturalTextConfirmed: (String) -> Unit = {}
+    private val onNaturalTextConfirmed: (String) -> Unit = {},
+    /** Raw handoff bookkeeping only; these callbacks grant no input/publication authority. */
+    private val onCandidateRetained: (Long?, Int) -> Unit = { _, _ -> },
+    private val onCandidateCleared: () -> Unit = {}
 ) : AudioInput {
     init { require(input.sampleRateHz == 16_000 && input.channelCount == 1) }
     override val sampleRateHz get() = input.sampleRateHz
@@ -85,6 +88,7 @@ class NaturalBargeInAudioInput(
             var evaluatedAudioAt: Long? = null
             var lastAcousticLogAt = Long.MIN_VALUE / 2
             fun reset() {
+                onCandidateCleared()
                 active = false; submitted = false; submittedBytes = 0; candidateProbes = 0; hypothesis = null
                 candidate.clear(); gate = BargeInGate(); retryAt = 0; lastGateDecision = ""; revision++
                 acousticEvidence.reset(); confirmation.reset(); hypothesisSupported = false; evaluatedAudioAt = null
@@ -126,6 +130,7 @@ class NaturalBargeInAudioInput(
                         reset() // Results for an earlier natural candidate cannot verify this hit.
                         stopHits++
                         pendingStop = StopCandidate(stopAudio.snapshot(), at, reference(), -stopHits, hit)
+                        onCandidateRetained(input.lastChunkSequence, stopAudio.sizeBytes().toInt())
                         log("barge_keyword_candidate keyword=$hit playback=true verification=required evidence=${keyword.lastHitEvidence}")
                     }
                     val polled = worker.poll()
@@ -135,6 +140,7 @@ class NaturalBargeInAudioInput(
                             val fresh = now - stop.at <= InterruptionTiming.RESULT_AGE_MS
                             val accepted = fresh && RecognizedInterruptionWords.confirmsKeyword(stop.keyword, polled.text, stop.reference + " " + reference())
                             pendingStop = null
+                            onCandidateCleared()
                             if (accepted) {
                                 finalReason = "keyword_${stop.keyword}"
                                 delivered = true
@@ -153,6 +159,7 @@ class NaturalBargeInAudioInput(
                             (stop.submitted && !worker.busy && worker.retryableFailure)) {
                             log("barge_stop_rejected reason=verification_unavailable playback_uninterrupted=true")
                             pendingStop = null
+                            onCandidateCleared()
                             cooldownUntil = now + 500
                             return@collect
                         }
@@ -160,6 +167,7 @@ class NaturalBargeInAudioInput(
                             if (!stopWorkBudget.available(now) || now - stop.at > InterruptionTiming.START_AGE_MS || !hasPlaybackBudget()) {
                                 log("barge_stop_rejected reason=verification_budget playback_uninterrupted=true fallback=Hey_Jarvis")
                                 pendingStop = null
+                                onCandidateCleared()
                             } else if (worker.submit(stop.id, stop.pcm, stop.at)) {
                                 stopProbes++
                                 stopWorkBudget.record(now)
@@ -216,6 +224,7 @@ class NaturalBargeInAudioInput(
                     if (speech) lastSpeechAt = at
                     if (!active && speech && now >= cooldownUntil && !worker.busy) {
                         active = true; candidateAt = at; candidate.append(onset.snapshot())
+                        onCandidateRetained(input.lastChunkSequence, candidate.sizeBytes().toInt())
                     } else if (active) candidate.append(pcm)
                     if (!active) return@collect
                     acousticEvidence.observe(pcm.size, acoustic)
@@ -300,6 +309,7 @@ class NaturalBargeInAudioInput(
                     }
                 }
             } finally {
+                onCandidateCleared()
                 worker.close()
                 try { vad?.close() } finally {
                     keyword.close(); onset.clear(); candidate.clear(); stopAudio.clear()

@@ -108,6 +108,7 @@ playback evidence; unplayed generated text must not become heard conversation co
 | `ai/storage/` | Download transport, hash/integrity and Android Downloads lookup | `ModelDownloader`, `ModelFileHash`, `DownloadedModelLookup` |
 | `chat/` | Persistent threads, shared context and display/speech text formatting | `ConversationHistory`, `ShortTermConversationContext`, `AssistantText` |
 | `voice/` | Capture/ASR, turn timing, wake/interruption, call resource leases, synthesis/playback and saved call evidence | `AudioTurnCapture`, `VoiceCallResources`, `VoiceSession`, `PiperVoiceOutput` |
+| `voice/smartturn/` / `CaptureShadowObserver` / `SmartTurnBenchmarkTelemetry` | Explicit default-off local Smart Turn observations; one retained worker, bounded immutable PCM, generation/deadline fencing, metadata-only timing; never endpoint authority | `SmartTurnCallOwner`, `SmartTurnCaptureObserver`, `NativeSmartTurnBackend` |
 | `ai/audio/` and native audio capture | Pinned local graph reconstruction, immutable artifact leases and bounded PCM-to-native worker; sealed inputs enter ordinary Conversation | `GemmaStreamingArtifactStore`, `WeightlessEncoderRecipe`, `RetainedPcmEncoderWorker`, `GemmaStreamingAudioCapture` |
 | `voice/comparison/` | Explicit live comparison trial data; does not replace normal turn ownership | `LiveComparison` |
 | `actions/` | Strict action contracts, complete plans, authority/approval, Android effects and durable journals | `ActionTurnPlan`, `ActionTurnRunner`, `JournaledActionPipeline`, `AndroidMobileActionExecutor` |
@@ -305,3 +306,23 @@ responses or alter speech/latency clocks. `CaptureSpeechQueue` forwards raw VAD
 before noise gating so weak continuation revokes speculation immediately. The
 [contract](../verification/native-frozen-pause-capture-2026-10-09.md) documents the
 full-WAV fallback, spent-encoder fence and conservative unresolved-frame fallback.
+
+
+## Capture-first reply handoff (review candidate)
+
+`CaptureFirstAudioInput` owns a single retained raw borrower and bounded,
+sequence-preserving transfer between reply and ordinary logical readers.
+`CaptureFirstReplyHandoff` orders explicit successful playback, raw transfer,
+old-listener join, new ordinary capture and sealed-input release. The optional
+`PostAnswerCaptionContinuation` retains the exact Gemma child and checked reset.
+`CaptionInputAdmission` and `CaptionPublicationFence` separate accepted-input
+revocation from pending playback-tail verdicts; `CallInputQueue` and
+`VoiceSessionController` hold exact publication authority. `VoiceCaptureHandoff`
+seals one immutable next-input identity/PCM digest. `FinalWhisperFarewellSnapshot`
+is a value-only, once-observed control check with no recognition work authority.
+Raw ingress holds are sequence/coverage-aware and independent of retained-candidate
+verdicts. Publication claims remain revocable until a short exact call-state commit;
+checkpoint and immutable-source memory effects run outside ingress locks. A pure
+optional final-candidate verdict hook reuses capture's existing reset path so echo
+rejection cannot strand an unclassified raw tail after stopping the reader.
+See the [repair ownership and review gates](../verification/capture-first-rearm-repair-2026-10-09.md).

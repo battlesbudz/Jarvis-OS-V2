@@ -150,6 +150,8 @@ internal class VoiceTurnPreparation(
         val expectedCallId = call.controller.currentCallId()
             ?: throw kotlinx.coroutines.CancellationException("voice_call_ended_during_preparation")
         lifetime.expectedResourceCall = expectedCallId
+        lifetime.capturedInputBoundary = call.state.inputQueue.captionBoundary(expectedCallId)
+        lifetime.capturedInputRevision = call.controller.currentInputRevision(expectedCallId)
         observation.benchmark.configuration("capture_profile", resources.appliedSpeechCaptureProfile.id)
         observation.benchmark.configuration("microphone_source_requested", if (resources.appliedSpeechCaptureProfile.communicationInput && android.os.Build.VERSION.SDK_INT >= 31) "VOICE_COMMUNICATION" else "VOICE_RECOGNITION")
         observation.benchmark.configuration("noise_suppression_requested", resources.appliedSpeechCaptureProfile.noiseSuppression.toString())
@@ -183,6 +185,9 @@ internal class VoiceTurnPreparation(
             onDelivery = { delivery ->
                 lifetime.finalSpeechDelivery.set(delivery)
                 call.controller.updateDelivery(expectedCallId, delivery)
+                com.battlesbudz.jarvis.v2.voice.NormalReplyPlayback.from(
+                    request.asrTurnId, delivery, System.nanoTime() / 1_000_000
+                )?.let { lifetime.normalReplyPlayback.complete(it) }
             }, onMetrics = observation.telemetry::recordTts)
         lifetime.output = output
         call.state.output = output
@@ -228,6 +233,11 @@ internal class VoiceTurnPreparation(
                 origin = com.battlesbudz.jarvis.v2.voice.TranscriptOrigin.TYPED
             )
         } ?: call.state.pendingVoiceCorrection.getAndSet(null)
+        correction?.handoff?.let { sealed ->
+            check(sealed.claim(expectedCallId, conversationHistory.current.value.id, correction)) {
+                "capture_first_handoff_stale_or_already_claimed"
+            }
+        }
         if (correction?.origin == com.battlesbudz.jarvis.v2.voice.TranscriptOrigin.TYPED) directAudioTurn = false
         if (directAudioTurn && selectedSpec == com.battlesbudz.jarvis.v2.ai.ModelCatalog.gemma4E2b &&
             request.comparison == null && correction == null) {
@@ -280,12 +290,40 @@ internal class VoiceTurnPreparation(
             observation.benchmark.configuration("native_speculation", "frozen_pause_exact_prompt_v1")
             observation.benchmark.configuration("native_speculation_budget", "attempts=1,draft_ms=1500,held_chars=4096,held_utf8_bytes=16384,estimated_tokens=1024,callbacks=64,tts_pcm_bytes=0")
         } else observation.benchmark.configuration("native_speculation", "ineligible_no_native_capture_or_current_context")
+        val exactShadowTurnJob = lifetime.scope.coroutineContext[kotlinx.coroutines.Job]
+        val shadowTelemetry = com.battlesbudz.jarvis.v2.diagnostics.SmartTurnBenchmarkTelemetry(observation.benchmark) { category, evidence ->
+            diagnosticRecorder.recordTurnEvidence(request.asrTurnId, category, evidence)
+        }
+        val shadowObserver = try { resources.smartTurn.beginCapture(
+            expectedCallId, request.asrTurnId, nativePauseGeneration,
+            enabled = correction == null && request.comparison == null &&
+                com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings.enabled(context),
+            model = com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings.store(context).availableFile(),
+            telemetry = shadowTelemetry,
+            ownerIsCurrent = { exactShadowTurnJob?.isActive == true && call.state.armed &&
+                call.controller.currentCallId() == expectedCallId },
+            admissionBlocker = {
+                when {
+                    lifetime.nativeSpeculation?.consumedEncoder == true -> "gemma_speculation"
+                    (context.getSystemService(android.os.PowerManager::class.java)?.currentThermalStatus ?: 0) >= 3 -> "thermal_severe"
+                    else -> null
+                }
+            }) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) {
+            resources.smartTurn.closeCall(expectedCallId)
+            runCatching { observation.benchmark.configuration("smart_turn_mode", "unavailable_optional_setup") }
+            null
+        }
+        // Preparation may fail before capture owns the observer. Completion revokes
+        // that exact observer without closing a newer call or waiting for native work.
+        exactShadowTurnJob?.invokeOnCompletion { shadowObserver?.close() }
         val capturePlan = VoiceCapturePlan(
             request.asrTurnId, request.asrEngine, asrDirectory, directAudioTurn, request.captionAsrEnabled, followupBoundary != null)
         val activeCapture = VoiceTurnCaptureFactory(
             context, diagnosticRecorder
         ).create(lifetime.scope, input, models, capturePlan, request.comparison, call::status,
             retainedPcmObserver = lifetime.nativeAudioCapture,
+            shadowObserver = shadowObserver,
             needsFollowupTranscript = resources.resources::needsFollowupTranscript,
             nativePauseObserver = lifetime.nativeSpeculation,
             nativePauseTurnId = request.asrTurnId,

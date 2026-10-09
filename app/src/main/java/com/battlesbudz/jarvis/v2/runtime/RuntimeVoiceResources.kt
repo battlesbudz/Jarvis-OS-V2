@@ -17,6 +17,14 @@ internal class RuntimeVoiceResources(
     private val recordDiagnostic: (String) -> Unit,
     private val onLevel: (Float) -> Unit
 ) {
+    val smartTurn = com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnCallOwner { model ->
+        com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnShadow(backendFactory = {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+            com.battlesbudz.jarvis.v2.voice.smartturn.NativeSmartTurnBackend(model)
+        }, enabled = true)
+    }
+    init { scope.coroutineContext[kotlinx.coroutines.Job]?.invokeOnCompletion { smartTurn.close() } }
+
     @Volatile var appliedSpeechCaptureProfile = SpeechCaptureProfile.COMMUNICATION_NOISE_FILTERED
     val resources by lazy {
         VoiceCallResources(

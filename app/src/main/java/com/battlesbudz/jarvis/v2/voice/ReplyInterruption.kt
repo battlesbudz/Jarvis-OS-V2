@@ -11,9 +11,13 @@ data class CapturedVoiceTurn(val transcript: String, val wav: ByteArray,
     val capturedAtMs: Long = System.currentTimeMillis(),
     val origin: TranscriptOrigin = TranscriptOrigin.SPOKEN,
     /** Monotonic end of the spoken floor; typed inputs intentionally leave it unknown. */
-    val speechEndedAtMs: Long? = null)
+    val speechEndedAtMs: Long? = null,
+    /** Only capture-finalized evidence; ordinary barge/provisional carriers leave these absent. */
+    val finalAsrStatus: String? = null, val captionFinalizationReason: String? = null,
+    val finalAsrEngineId: String? = null, val firstSpeechCaptureAtMs: Long? = null,
+    val handoff: VoiceCaptureHandoff? = null)
 sealed interface ReplyOutcome<out T> {
-    data class Finished<T>(val value: T) : ReplyOutcome<T>
+    data class Finished<T>(val value: T, val followup: CapturedVoiceTurn? = null) : ReplyOutcome<T>
     data class Interrupted(val correction: CapturedVoiceTurn) : ReplyOutcome<Nothing> {
         /** Verified farewell controls can intentionally carry no PCM. */
         val endsCallSegment: Boolean get() = CallLifetimePolicy.endsSession(

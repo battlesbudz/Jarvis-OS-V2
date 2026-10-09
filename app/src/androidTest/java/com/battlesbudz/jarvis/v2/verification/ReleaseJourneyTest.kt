@@ -5689,6 +5689,53 @@ class ReleaseJourneyTest {
             listOf("message", "title", "title_2", "text", "text_2", "description", "location_trigger")))
     }
 
+
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @Test fun test81_smartTurnShadowIsOptInAndDisablePersistsWithoutModels() {
+        val preferences = context.getSharedPreferences("voice_input", Context.MODE_PRIVATE)
+        val key = "smart_turn_shadow_enabled"
+        val hadValue = preferences.contains(key)
+        val original = preferences.getBoolean(key, false)
+        val mode = VoiceInputMode.selected(context)
+        val captions = VoiceInputMode.captionEngine(context)
+        fun render(enabled: Boolean) {
+            activity.onActivity { host -> host.setContent {
+                MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                    androidx.compose.foundation.lazy.LazyColumn {
+                        item { androidx.compose.runtime.key(enabled) {
+                            com.battlesbudz.jarvis.v2.ui.VoiceInputSettings(enabled = enabled, onBusy = {})
+                        } }
+                    }
+                } }
+            } }
+            device.waitForIdle()
+        }
+        try {
+            preferences.edit().remove(key).commit()
+            render(false)
+            val disabled = scrollTo(By.res("smart_turn_shadow_toggle"))
+            assertFalse("Live-call settings must not enable shadow/model setup", disabled.isEnabled)
+            assertFalse(preferences.getBoolean(key, false))
+            // Restore an already-enabled preference without downloading or loading weights.
+            preferences.edit().putBoolean(key, true).commit()
+            render(true)
+            val disable = scrollTo(By.text("Disable Smart Turn shadow"))
+            assertEquals("Disable Smart Turn shadow", disable.text)
+            disable.click()
+            assertFalse(preferences.getBoolean(key, true))
+            activity.recreate()
+            render(true)
+            assertNotNull(scrollTo(By.text("Enable Smart Turn shadow (8.7 MB)")))
+            assertFalse(preferences.getBoolean(key, true))
+            assertEquals(mode, VoiceInputMode.selected(context))
+            assertEquals(captions, VoiceInputMode.captionEngine(context))
+            captureEvidence("smart_turn_shadow_opt_in_settings")
+        } finally {
+            if (hadValue) preferences.edit().putBoolean(key, original).commit()
+            else preferences.edit().remove(key).commit()
+        }
+    }
+
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()
         enterText(By.res("model_search"), "Gemma-4-E4B-it")

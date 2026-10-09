@@ -34,11 +34,24 @@ def download(spec, directory):
     return dest
 
 
+def source_fingerprint(root=ROOT):
+    """Bind native source names and bytes as well as the profile, not just upstream revision."""
+    source_dir = root / 'app/src/main/cpp/smartturn'
+    sources = sorted(path for path in source_dir.iterdir() if path.is_file())
+    if not sources:
+        raise ValueError('Missing app Smart Turn native sources')
+    digest = hashlib.sha256()
+    for path in [root / 'scripts/sherpa_jni_profile.py', *sources]:
+        digest.update(path.relative_to(root).as_posix().encode() + b'\0')
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return 'app-jni-smartturn-v1-' + digest.hexdigest()
+
+
 def build(output, ndk=None):
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     source = output / 'source'
-    fingerprint = 'app-jni-v1-' + hashlib.sha256((ROOT / 'scripts/sherpa_jni_profile.py').read_bytes()).hexdigest()
+    fingerprint = source_fingerprint()
     stamp = output / 'source-version'
     if not stamp.exists() or stamp.read_text() != REV + fingerprint:
         shutil.rmtree(source, ignore_errors=True)

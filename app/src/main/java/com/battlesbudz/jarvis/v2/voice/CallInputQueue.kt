@@ -1,6 +1,8 @@
 package com.battlesbudz.jarvis.v2.voice
 
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 
 /** Bounded FIFO of immutable final typed inputs for the active call owner. */
 data class CallFinalInput(val id: String, val callId: String, val conversationId: String, val text: String, val capturedAtMs: Long)
@@ -11,6 +13,18 @@ class CallInputQueue(private val capacity: Int = 4) {
     /** End wins an in-flight UI admission even when it captured the former call ID first. */
     private val endedCallIds = linkedSetOf<String>()
     private val arrivals = Channel<String>(Channel.CONFLATED)
+    // Optional observers must never consume a dispatcher's Channel wakeup. This revision is
+    // broadcast, and retains arrival authority after claim/promotion removes an input.
+    private val inputChanges = MutableStateFlow(0L)
+    private val acceptedVersions = mutableMapOf<String, Long>()
+    internal class CaptionBoundary internal constructor(val callId: String, internal val version: Long)
+    @Synchronized internal fun captionBoundary(callId: String) = CaptionBoundary(callId, acceptedVersions[callId] ?: 0L)
+    @Synchronized internal fun hasInputAfter(boundary: CaptionBoundary): Boolean =
+        boundary.callId in endedCallIds || (acceptedVersions[boundary.callId] ?: 0L) != boundary.version ||
+            pending.any { it.callId == boundary.callId } || owned.values.any { it.callId == boundary.callId }
+    internal suspend fun awaitInputAfter(boundary: CaptionBoundary) {
+        inputChanges.first { hasInputAfter(boundary) }
+    }
 
     @Synchronized fun offer(input: CallFinalInput, activeCallId: String?, priorityControl: Boolean = false): CallInputAdmission {
         if (activeCallId == null || input.callId != activeCallId || input.callId in endedCallIds) return CallInputAdmission.Ended
@@ -19,6 +33,8 @@ class CallInputQueue(private val capacity: Int = 4) {
         // full ordinary FIFO cannot make cancellation impossible.
         if (pending.size >= capacity + if (priorityControl) 1 else 0) return CallInputAdmission.Full
         pending += input
+        acceptedVersions[input.callId] = inputChanges.value + 1L
+        inputChanges.value += 1L
         arrivals.trySend(input.callId)
         return CallInputAdmission.Queued
     }
@@ -91,9 +107,17 @@ class CallInputQueue(private val capacity: Int = 4) {
         }
     }
 
+    /** Optional caption publication must not overtake an admitted final typed input. */
+    @Synchronized internal fun publishWithoutNextInput(boundary: CaptionBoundary, publish: () -> Boolean): Boolean {
+        if (hasInputAfter(boundary)) return false
+        return publish()
+    }
+
     @Synchronized fun hasPending(activeCallId: String): Boolean = pending.any { it.callId == activeCallId }
     @Synchronized fun end(callId: String): List<CallFinalInput> {
         endedCallIds += callId
+        acceptedVersions.remove(callId)
+        inputChanges.value += 1L
         val drained = (pending.filter { it.callId == callId } + owned.values.filter { it.callId == callId })
             .distinctBy { it.id }
         pending.removeAll { it.callId == callId }

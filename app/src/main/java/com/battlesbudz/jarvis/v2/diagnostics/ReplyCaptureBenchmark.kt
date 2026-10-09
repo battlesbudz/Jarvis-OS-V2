@@ -44,6 +44,88 @@ internal class ReplyCaptureBenchmark(
     private val currentCallId: () -> String?,
     private val onFailure: (String) -> Unit,
 ) {
+    /** Ordinary follow-up capture, owned by the old exact turn until native cleanup joins. */
+    suspend fun captureFirstFollowup(
+        input: AudioInput,
+        plan: com.battlesbudz.jarvis.v2.runtime.VoiceCapturePlan,
+        models: VoiceModelSession,
+        recorder: DiagnosticRecorder,
+        playbackEndedAtMs: Long,
+        playbackReference: String,
+        capturedAtMs: Long,
+        prefixThroughSequence: Long?,
+        onAcousticDecision: (Long?, SpeechDecision, SpeechDecision) -> Unit,
+        onConsumed: (Long) -> Unit,
+        onCandidatePending: () -> Unit,
+        onCandidateRejected: () -> Unit,
+        onCapture: (AudioTurnCapture?) -> Unit,
+        onAcceptedSpeech: () -> Unit,
+        onReady: () -> Unit,
+        needsFollowupTranscript: (Long?) -> Boolean,
+        rejectsFollowupEcho: (String, Long?) -> Boolean,
+        onPartialTranscript: (String) -> Unit,
+    ): CapturedVoiceTurn = kotlinx.coroutines.coroutineScope {
+        lateinit var capture: AudioTurnCapture
+        var prefixMayContainSpeech = false
+        val admission = CaptionInputAdmission(
+            needsFinalEchoCheck = { plan.captionAsrEnabled && needsFollowupTranscript(capture.firstSpeechCaptureAtMs) },
+            onAccepted = onAcceptedSpeech, onPending = onCandidatePending, onRejected = onCandidateRejected)
+        val observedInput = object : AudioInput by input {
+            override fun acknowledgeConsumed(sequence: Long) {
+                onConsumed(sequence)
+                input.acknowledgeConsumed(sequence)
+            }
+        }
+        capture = com.battlesbudz.jarvis.v2.runtime.VoiceTurnCaptureFactory(applicationContext, recorder).create(
+            this, observedInput, models, plan, null, {},
+            onMetrics = { _, _ -> }, onPartialTranscript = onPartialTranscript,
+            needsFollowupTranscript = needsFollowupTranscript,
+            rejectFinalCandidate = { finalText, onset ->
+                // Existing verdict, before stop: rejected echo keeps the same ordered reader
+                // alive to classify any raw tail that arrived during finalization.
+                if (onset != null && onset < playbackEndedAtMs) NaturalCorrectionText.resolve(finalText, playbackReference).isNullOrBlank()
+                else finalText.isNotBlank() && rejectsFollowupEcho(finalText, onset)
+            },
+            onAcousticDecision = { _, raw, admitted, _ ->
+                onAcousticDecision(input.lastChunkSequence, raw, admitted)
+                // Use the existing weak/unknown speech risk boundary. This only retains
+                // a publication hold; it never admits a request or changes the VAD gate.
+                prefixMayContainSpeech = prefixMayContainSpeech || raw.isSpeech || admitted.isSpeech || raw.probability >= 0.15f
+                val coverage = raw.rawCoverage
+                val classifiedPrefix = coverage != null && coverage.classifiedThroughSample * 2 == coverage.receivedPcmBytes
+                if (input.lastChunkSequence == prefixThroughSequence && !prefixMayContainSpeech && classifiedPrefix) onCandidateRejected()
+            },
+            retainedPcmObserver = admission)
+        onCapture(capture)
+        try {
+            capture.start(CallLifetimePolicy.initialSilenceTimeoutMs())
+            onReady()
+            capture.awaitTurnCompletion()
+            val wav = capture.stop()
+            val rawText = capture.finalTranscript
+            // Pre-playback replay uses the already-existing active-barge final-text
+            // guard. The ordinary tail matcher intentionally only covers onset >= end.
+            val overlapped = capture.firstSpeechCaptureAtMs?.let { it < playbackEndedAtMs } == true
+            val text = if (overlapped) NaturalCorrectionText.resolve(rawText, playbackReference).orEmpty() else rawText
+            val rejectedOverlap = overlapped && text.isBlank()
+            val rejectedEcho = text.isNotBlank() && rejectsFollowupEcho(text, capture.firstSpeechCaptureAtMs)
+            admission.onFinalCandidate(capture.hasSpeech, text,
+                capture.finalAsrStatus == "finalized" && capture.recognitionIssue == null, rejectedEcho || rejectedOverlap,
+                nativeAudioAccepted = !overlapped && plan.directAudioTurn &&
+                    GemmaAudioInputPolicy.retainedAudioIssue(capture.recognitionIssue, true, capture.audioIsComplete, wav.size) == null)
+            if (!capture.hasSpeech || rejectedEcho || rejectedOverlap) {
+                return@coroutineScope CapturedVoiceTurn("", byteArrayOf())
+            }
+            CapturedVoiceTurn(text, wav, capture.audioIsComplete, capture.recognitionIssue,
+                utteranceId = plan.turnId, capturedAtMs = capturedAtMs, speechEndedAtMs = capture.lastSpeechAtMs,
+                finalAsrStatus = capture.finalAsrStatus, captionFinalizationReason = capture.captionFinalizationReason,
+                finalAsrEngineId = plan.asrEngine.id, firstSpeechCaptureAtMs = capture.firstSpeechCaptureAtMs)
+        } finally {
+            capture.stop()
+            onCapture(null)
+        }
+    }
+
     suspend fun listenBenchmarkedReply(
         output: PiperVoiceOutput,
         asrDirectory: File?,
@@ -56,6 +138,8 @@ internal class ReplyCaptureBenchmark(
         asrOnly: Boolean = false,
         recognitionEnabled: Boolean = true,
         outputProvider: () -> PiperVoiceOutput = { output },
+        onCandidateRetained: (Long?, Int) -> Unit = { _, _ -> },
+        onCandidateCleared: () -> Unit = {},
         log: (String) -> Unit = {}
     ): CapturedVoiceTurn {
         val id = UUID.randomUUID().toString()
@@ -105,6 +189,8 @@ internal class ReplyCaptureBenchmark(
                 onPartialTranscript(text)
             }, trace = trace, inputFactory = inputFactory, modelSession = modelSession, asrOnly = asrOnly, recognitionEnabled = recognitionEnabled,
                 outputProvider = outputProvider,
+                onCandidateRetained = onCandidateRetained,
+                onCandidateCleared = onCandidateCleared,
                 onReady = {
                     readinessCount.incrementAndGet()
                     lastReadyAt.set(System.nanoTime() / 1_000_000)

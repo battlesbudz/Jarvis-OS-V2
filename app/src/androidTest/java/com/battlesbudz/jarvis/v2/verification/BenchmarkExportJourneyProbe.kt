@@ -63,7 +63,31 @@ internal class BenchmarkExportJourneyProbe(context: Context) : ActivityResultReg
 
     fun read(uri: Uri): String = exportContext.contentResolver.openInputStream(uri)!!.bufferedReader(Charsets.UTF_8).use { it.readText() }
 
+    fun verifyCreateDocumentContracts() {
+        BenchmarkExportFormat.entries.forEach { format ->
+            val contract = BenchmarkExportFiles.createDocument(format)
+            val names = List(3) { BenchmarkExportFiles.filename(format) }
+            val intents = names.map { contract.createIntent(exportContext, it) }
+            val recreated = BenchmarkExportFiles.createDocument(format).createIntent(exportContext, names.last())
+            (intents + recreated).forEachIndexed { index, intent ->
+                assertEquals(Intent.ACTION_CREATE_DOCUMENT, intent.action)
+                assertEquals(format.mime, intent.type)
+                assertEquals(names[index.coerceAtMost(names.lastIndex)], intent.getStringExtra(Intent.EXTRA_TITLE))
+                assertTrue(intent.getStringExtra(Intent.EXTRA_TITLE)!!.endsWith(".${format.extension}"))
+                assertTrue(intent.hasCategory(Intent.CATEGORY_OPENABLE))
+            }
+            assertNotSame(intents[0], intents[1])
+            assertNotSame(intents.last(), recreated)
+            val result = Intent().setData(Uri.parse("content://benchmark-test/result.${format.extension}"))
+            assertNull(contract.getSynchronousResult(exportContext, names.first()))
+            assertNull(contract.parseResult(Activity.RESULT_CANCELED, result))
+            assertNull(contract.parseResult(Activity.RESULT_OK, null))
+            assertEquals(result.data, contract.parseResult(Activity.RESULT_OK, result))
+        }
+    }
+
     fun verifyRepeatedTransports() {
+        verifyCreateDocumentContracts()
         val payload = "Whole call 日本語 🙂\n".repeat(500)
         val uri = destination()
         BenchmarkExportFiles.save(exportContext, uri, payload)
