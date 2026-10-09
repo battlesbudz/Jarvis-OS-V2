@@ -341,6 +341,177 @@ class ReleaseJourneyTest {
         device.waitForIdle()
     }
 
+    private data class FixedMemoryControl(
+        val control: UiObject2,
+        val bounds: android.graphics.Rect,
+        val started: Long,
+        val deadline: Long,
+        val diagnostic: String,
+    )
+
+    private fun recordMemoryNavigation(message: String) {
+        android.util.Log.i("JarvisVerification", message)
+        instrumentation.sendStatus(1, android.os.Bundle().apply { putString("jarvisMemoryNavigation", message) })
+    }
+
+    /**
+     * Memory's header/search/bottom bar and its list tabs do not scroll with content.
+     * One 15s deadline bounds preparation/dispatch admission, not synchronous input injection.
+     */
+    private fun stableFixedMemoryControl(
+        selector: BySelector,
+        started: Long = SystemClock.uptimeMillis(),
+        forTap: Boolean = false,
+    ): FixedMemoryControl {
+        val deadline = started + 15_000L
+        val configuration = Configurator.getInstance()
+        var attempts = 0
+        var before = "unobserved"
+        var fresh = "unobserved"
+        var display = "unobserved"
+        var state = "starting"
+        fun diagnostic() = "fixedMemory selector=$selector elapsedMs=${SystemClock.uptimeMillis() - started} " +
+            "attempts=$attempts state=$state before=$before fresh=$fresh display=$display swipes=0"
+        fun fail(reason: String): Nothing {
+            state = reason
+            val message = diagnostic()
+            recordMemoryNavigation(message)
+            throw AssertionError("Fixed Memory control did not become stably enabled: $message")
+        }
+        fun remaining(stage: String): Long {
+            val left = deadline - SystemClock.uptimeMillis()
+            if (left <= 0L) fail("deadline after $stage ($state)")
+            return left
+        }
+        // Preserve the configured ordinary idle wait, capped only by the shared deadline.
+        // UiObject2 getters also wait for idle; cap each one, and check after it returns.
+        fun <T> observe(stage: String, block: () -> T): T {
+            val left = remaining("before $stage")
+            val saved = configuration.waitForIdleTimeout
+            configuration.setWaitForIdleTimeout(minOf(saved, left))
+            return try {
+                val result = block()
+                remaining(stage)
+                result
+            } finally { configuration.setWaitForIdleTimeout(saved) }
+        }
+        fun lookup(): UiObject2? {
+            observe("cache refresh") { clearNavigationCache() }
+            return observe("lookup") { device.findObject(selector) }
+        }
+        fun safe(bounds: android.graphics.Rect): Boolean {
+            val width = observe("display width") { device.displayWidth }
+            val height = observe("display height") { device.displayHeight }
+            display = "${width}x$height"
+            return bounds.width() > 0 && bounds.height() > 0 &&
+                bounds.left >= 24 && bounds.right <= width - 24 &&
+                bounds.top >= 24 && bounds.bottom <= height - 24
+        }
+        while (SystemClock.uptimeMillis() < deadline) {
+            attempts++
+            before = "missing"
+            fresh = "unobserved"
+            state = "missing"
+            try {
+                val control = lookup()
+                if (control != null) {
+                    val initialEnabled = observe("initial enabled") { control.isEnabled }
+                    val bounds = observe("initial bounds") { android.graphics.Rect(control.visibleBounds) }
+                    before = bounds.toString()
+                    state = "disabled, unsafe or non-default display"
+                    if (initialEnabled &&
+                        observe("initial display") { control.displayId } == android.view.Display.DEFAULT_DISPLAY && safe(bounds)) {
+                        state = "settling"
+                        observe("settling idle") { device.waitForIdle() }
+                        if (remaining("before stability interval") <= 300L) fail("insufficient full 300ms stability interval")
+                        SystemClock.sleep(300)
+                        remaining("stability interval")
+                        val current = lookup()
+                        fresh = "missing"
+                        state = "fresh missing, disabled, unsafe or moving"
+                        if (current != null) {
+                            val currentEnabled = observe("fresh enabled") { current.isEnabled }
+                            val currentBounds = observe("fresh bounds") { android.graphics.Rect(current.visibleBounds) }
+                            fresh = currentBounds.toString()
+                            if (currentEnabled &&
+                                observe("fresh display") { current.displayId } == android.view.Display.DEFAULT_DISPLAY &&
+                                safe(currentBounds) && currentBounds == bounds) {
+                                state = "stable candidate"
+                                val message = diagnostic()
+                                recordMemoryNavigation(message)
+                                if (forTap) recordMemoryNavigation("$message dispatch=before finalFreshCheck=pending")
+                                remaining("candidate diagnostics")
+                                // Status reporting can block. Reacquire after it and reject a
+                                // different accessibility node/window, even at identical bounds.
+                                val final = lookup()
+                                state = "final missing, replaced, disabled, unsafe or moving"
+                                if (final != null && observe("final identity") { final == current }) {
+                                    val finalEnabled = observe("final enabled") { final.isEnabled }
+                                    val finalBounds = observe("final bounds") { android.graphics.Rect(final.visibleBounds) }
+                                    fresh = finalBounds.toString()
+                                    if (finalEnabled &&
+                                        observe("final display") { final.displayId } == android.view.Display.DEFAULT_DISPLAY &&
+                                        safe(finalBounds) && finalBounds == currentBounds) {
+                                        state = "ready"
+                                        remaining("final observation")
+                                        return FixedMemoryControl(final, finalBounds, started, deadline, diagnostic())
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (_: StaleObjectException) {
+                // No action has been dispatched. Start again with fresh discovery only.
+                state = "stale"
+            }
+            val left = remaining("observation")
+            SystemClock.sleep(minOf(100L, left))
+        }
+        fail("deadline ($state)")
+    }
+
+    private fun clickFixedMemoryControl(selector: BySelector) {
+        val ready = stableFixedMemoryControl(selector, forTap = true)
+        // UiObject2.click() does another implicit idle/refresh before injecting. Tap the
+        // freshly checked geometry directly, so no hidden idle wait follows this guard.
+        assertTrue("Fixed Memory tap expired: ${ready.diagnostic} elapsedMs=${SystemClock.uptimeMillis() - ready.started}",
+            SystemClock.uptimeMillis() < ready.deadline)
+        val dispatchedAt = SystemClock.uptimeMillis()
+        val injected = device.click(ready.bounds.centerX(), ready.bounds.centerY())
+        recordMemoryNavigation("${ready.diagnostic} dispatch=after dispatchStartedMs=${dispatchedAt - ready.started} " +
+            "dispatchElapsedMs=${SystemClock.uptimeMillis() - ready.started} injected=$injected")
+        assertTrue("Fixed Memory physical tap failed: ${ready.diagnostic}", injected)
+        // Outside observation/retry: never replay a physical action, even on failure.
+        device.waitForIdle()
+    }
+
+    private fun enterFixedMemorySearchText(value: String) {
+        val started = SystemClock.uptimeMillis()
+        fun assign() {
+            val ready = stableFixedMemoryControl(By.res("memory_search_input"), started)
+            val configuration = Configurator.getInstance()
+            val saved = configuration.waitForIdleTimeout
+            val left = ready.deadline - SystemClock.uptimeMillis()
+            assertTrue("Fixed Memory text preparation expired: ${ready.diagnostic}", left > 0L)
+            configuration.setWaitForIdleTimeout(minOf(saved, left))
+            try {
+                // setText refreshes internally. Cap its idle wait, but synchronous Android
+                // action completion cannot be interrupted at our API-admission deadline.
+                ready.control.text = value
+                assertTrue("Fixed Memory text operation exceeded deadline: ${ready.diagnostic}",
+                    SystemClock.uptimeMillis() < ready.deadline)
+            } finally { configuration.setWaitForIdleTimeout(saved) }
+        }
+        try { assign() } catch (_: StaleObjectException) {
+            // Preserve enterText's one idempotent replacement retry, within the same deadline.
+            assign()
+        }
+        device.waitForIdle()
+        if (device.hasObject(By.pkg(java.util.regex.Pattern.compile(".*inputmethod.*")))) device.pressBack()
+        device.waitForIdle()
+    }
+
     private fun recordModelGeometry(message: String) {
         android.util.Log.i("JarvisVerification", message)
         // Keep diagnostics in instrumentation.txt even if later platform logs
@@ -484,10 +655,10 @@ class ReleaseJourneyTest {
     }
 
     private fun searchMemory(query: String, expected: BySelector) {
-        enterText(By.res("memory_search_input"), query)
+        enterFixedMemorySearchText(query)
         // Search is live in the wiki.  The adjacent action clears a search; it must not be
         // tapped here or the assertion would inspect the unfiltered page.
-        enabled(By.res("memory_search_input"))
+        stableFixedMemoryControl(By.res("memory_search_input"))
         assertNotNull(scrollTo(expected))
     }
 
@@ -1119,7 +1290,7 @@ class ReleaseJourneyTest {
             assertNotNull(find(By.text("Memory")))
         }
         fun addManual(content: String, category: String, topic: String) {
-            clickEnabled(By.res("memory_new"))
+            clickFixedMemoryControl(By.res("memory_new"))
             assertNotNull(find(By.text("Add a memory")))
             enterText(By.res("memory_new_content"), content)
             clickHorizontalChip(By.res("memory_category_picker"), By.res("memory_category_$category"))
@@ -1130,7 +1301,7 @@ class ReleaseJourneyTest {
             ))
         }
         fun approveOnlyPending() {
-            clickEnabled(By.res("memory_review_tab"))
+            clickFixedMemoryControl(By.res("memory_review_tab"))
             assertNotNull(find(By.text("Review (1)")))
             clickEnabled(By.res("memory_approve"))
             assertNotNull(find(By.text("Review (0)")))
@@ -1146,7 +1317,7 @@ class ReleaseJourneyTest {
             mountMemoryWiki()
 
             // Add remains a modal. Restricted content must stay visibly rejected in that modal.
-            clickEnabled(By.res("memory_new"))
+            clickFixedMemoryControl(By.res("memory_new"))
             assertNotNull(find(By.text("Add a memory")))
             enterText(By.res("memory_new_content"), "Bank account number 1234 5678 9012 3456")
             clickEnabled(By.res("memory_propose"))
@@ -1166,8 +1337,8 @@ class ReleaseJourneyTest {
             // Pending capture is reviewable but never part of Wiki search until a real Approve tap.
             assertNotNull(find(By.text("Review (2)")))
             searchMemory("sapphire notebooks", By.text("No approved memories match that search."))
-            enterText(By.res("memory_search_input"), "")
-            clickEnabled(By.res("memory_review_tab"))
+            enterFixedMemorySearchText("")
+            clickFixedMemoryControl(By.res("memory_review_tab"))
             assertNotNull(scrollTo(By.text(sapphire)))
             captureEvidence("memory_wiki_review_pending")
             clickEnabled(By.res("memory_approve"))
@@ -1187,7 +1358,7 @@ class ReleaseJourneyTest {
             // Explicit category/topic placement can be changed later and survives the store reload.
             addManual(atlas, "projects", "Atlas")
             addManual(cobaltNotes, "knowledge", "Cobalt")
-            clickEnabled(By.res("memory_review_tab"))
+            clickFixedMemoryControl(By.res("memory_review_tab"))
             assertNotNull(find(By.text("Review (2)")))
             clickEnabled(By.res("memory_approve"))
             assertNotNull(find(By.text("Review (1)")))
@@ -1264,20 +1435,20 @@ class ReleaseJourneyTest {
             ))
             // A deletion can remove the page that was open. Return only when the page remains.
             device.findObject(By.res("memory_article_back"))?.click()
-            enabled(By.res("memory_search_input"))
+            stableFixedMemoryControl(By.res("memory_search_input"))
             searchMemory("indigo notebooks", By.text("No approved memories match that search."))
             searchMemory("sapphire notebooks", By.text("No approved memories match that search."))
-            enterText(By.res("memory_search_input"), "")
+            enterFixedMemorySearchText("")
 
             // Rejected pending records are retained only in History, never in the wiki index.
             addManual("Rejected private note for verification.", "knowledge", "Rejected")
-            clickEnabled(By.res("memory_review_tab"))
+            clickFixedMemoryControl(By.res("memory_review_tab"))
             clickEnabled(By.res("memory_reject"))
             assertNotNull(find(By.text("Review (0)")))
             clickEnabled(By.res("memory_wiki_tab"))
             searchMemory("rejected private note", By.text("No approved memories match that search."))
-            enterText(By.res("memory_search_input"), "")
-            clickEnabled(By.res("memory_history_tab"))
+            enterFixedMemorySearchText("")
+            clickFixedMemoryControl(By.res("memory_history_tab"))
             assertNotNull(scrollTo(By.text("Rejected private note for verification.")))
             assertNotNull(scrollTo(By.textStartsWith("Rejected ·")))
 
@@ -1294,7 +1465,7 @@ class ReleaseJourneyTest {
             clickEnabled(By.res("memory_wiki_tab"))
             searchMemory("persistent amber tea", By.text(persistent))
             captureEvidence("memory_wiki_reloaded_search")
-            enterText(By.res("memory_search_input"), "")
+            enterFixedMemorySearchText("")
             clickEnabled(By.res("memory_erase_all"))
             assertNotNull(find(By.text("Erase all memories?")))
             clickModalAction(By.text("Cancel"))
@@ -1302,26 +1473,26 @@ class ReleaseJourneyTest {
                 Until.gone(By.text("Erase all memories?")), 15_000
             ))
             searchMemory("persistent amber tea", By.text(persistent))
-            enterText(By.res("memory_search_input"), "")
+            enterFixedMemorySearchText("")
             clickEnabled(By.res("memory_erase_all"))
             assertNotNull(find(By.text("Erase all memories?")))
             clickModalAction(By.res("memory_delete_all_confirm"))
             assertTrue("Erase-all confirmation must finish before checking the ledger", device.wait(
                 Until.gone(By.text("Erase all memories?")), 15_000
             ))
-            clickEnabled(By.res("memory_history_tab"))
+            clickFixedMemoryControl(By.res("memory_history_tab"))
             assertNotNull(find(By.text("No memory history yet.")))
             clickEnabled(By.res("memory_wiki_tab"))
             searchMemory("persistent amber tea", By.text("No approved memories match that search."))
 
             // History keeps the bulk action even when no approved page exists.
             // Remounting preserves rememberSaveable state; leave the search explicitly first.
-            enterText(By.res("memory_search_input"), "")
+            enterFixedMemorySearchText("")
             val pendingOnly = checkNotNull(memoryOs.propose(MemoryProposal("Pending ledger-only note", MemorySource("release-pending-only", "manual", System.currentTimeMillis()))).memory)
             val rejectedOnly = checkNotNull(memoryOs.propose(MemoryProposal("Rejected ledger-only note", MemorySource("release-rejected-only", "manual", System.currentTimeMillis() + 1))).memory)
             assertEquals(MemoryOutcome.REJECTED, memoryOs.reject(rejectedOnly.id, rejectedOnly.revision).outcome)
             mountMemoryWiki()
-            clickEnabled(By.res("memory_history_tab"))
+            clickFixedMemoryControl(By.res("memory_history_tab"))
             assertNotNull(scrollTo(By.text(pendingOnly.content)))
             assertNotNull(scrollTo(By.text(rejectedOnly.content)))
             clickEnabled(By.res("memory_erase_all"))
@@ -1572,7 +1743,7 @@ class ReleaseJourneyTest {
             clickEnabled(By.res("memory_open"))
             assertNotNull("Wisp stays present while reviewing memory", find(By.res("jarvis_wisp")))
             assertNotNull(find(By.text("Memory")))
-            clickEnabled(By.res("memory_nav_chat"))
+            clickFixedMemoryControl(By.res("memory_nav_chat"))
             assertNotNull(find(By.res("chat_composer")))
             assertEquals("The parent Memory-to-Chat route must preserve an active call", callsBeforeRoute, ends.get())
             clickEnabled(By.res("phone_tasks_open"))
@@ -1585,7 +1756,7 @@ class ReleaseJourneyTest {
             assertEquals("Task approval UI must not end the active call", callsBeforeRoute, ends.get())
             assertNotNull(find(By.res("voice_call_overlay")))
             clickEnabled(By.res("memory_open"))
-            clickEnabled(By.res("memory_nav_voice"))
+            clickFixedMemoryControl(By.res("memory_nav_voice"))
             assertNotNull(find(By.res("voice_call_overlay")))
             assertNotNull("Voice and Chat now share the same transcript", find(By.res("chat_composer")))
             assertEquals("Memory-to-Voice must preserve the same call", callsBeforeRoute, ends.get())
@@ -1609,7 +1780,7 @@ class ReleaseJourneyTest {
                 }
             } }
             assertNotNull(find(By.text("Memory")))
-            enabled(By.res("memory_back"))
+            stableFixedMemoryControl(By.res("memory_back"))
             val memoryEndBounds = find(By.res("voice_call_end")).visibleBounds
             assertTrue("Memory must keep End call visible beside a long status", memoryEndBounds.width() > 0 && memoryEndBounds.right <= device.displayWidth)
             device.pressBack()

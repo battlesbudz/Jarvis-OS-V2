@@ -32,6 +32,20 @@ records the reconciliations and remaining gates. No combined APK is verified
 until the exact candidate finishes the complete hosted release workflow.
 
 
+## Fixed Memory navigation correction — 9 October 2026
+
+Release tests 24/27 now observe only the source-proven fixed Memory controls
+without body swipes. Their full 300 ms stability check, safe/enabled fresh-node
+checks and one 15-second preparation/admission deadline remain; post-diagnostic
+node/window/geometry revalidation precedes one physical tap, with no action
+retry. Search retains text assignment/conditional keyboard dismissal, and test27's
+final header-Back preparation remains observation-only before system Back.
+All content scrolling, generic helpers, existing assertions/evidence and release
+budgets are unchanged. [Scope, proof and limits](fixed-memory-navigation-2026-10-09.md)
+records 61 exact-helper controlled-boundary checks and real-API focused
+compilation; neither verifies an APK or promises the full Fold budget repair.
+The exact-revision hosted Android gate remains pending.
+
 ## Video notification shutdown repair — 9 October 2026
 
 [Build 1236](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37887424893),
