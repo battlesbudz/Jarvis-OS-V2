@@ -42,7 +42,7 @@ class CaptureFirstReplyHandoffTest {
             normalPlayback = noPlayback, reply = { "silent answer" }, listen = { awaitCancellation() },
             stopReply = { fail("No interruption") },
             beginCapture = { error("Job completion is not successful playback") },
-            capture = { error("No audio delivered") }, awaitTypedInput = { awaitCancellation() }, hasTypedInput = { false })
+            capture = { _, _ -> error("No audio delivered") }, awaitTypedInput = { awaitCancellation() }, hasTypedInput = { false })
         assertEquals(CaptureFirstReplyHandoff.Result.Finished("silent answer"), result)
         assertFalse(noPlayback.isCompleted)
     }
@@ -89,7 +89,7 @@ class CaptureFirstReplyHandoffTest {
                         } }
                     }, stopReply = { fail("Normal playback must not stop the reply") },
                     beginCapture = { rig.bridge.beginFollowup().also { rawReady.complete(Unit) } },
-                    capture = { input ->
+                    capture = { input, _ ->
                         captureReady.complete(Unit); input.start()
                         val frames = input.chunks().take(2).toList()
                         assertArrayEquals(expected.wav, frames.flatMap { it.asIterable() }.toByteArray())
@@ -137,7 +137,7 @@ class CaptureFirstReplyHandoffTest {
                     normalPlayback = CompletableDeferred(playback()),
                     reply = { typed.await(); replyReleased = true; "done" }, listen = { awaitCancellation() },
                     stopReply = { fail("Typed followup is not interruption") }, beginCapture = { unusedInput() },
-                    capture = {
+                    capture = { _, _ ->
                         capturing.complete(Unit)
                         try { awaitCancellation() }
                         finally { withContext(NonCancellable) { closeStarted.complete(Unit); releaseClose.await() } }
@@ -161,7 +161,7 @@ class CaptureFirstReplyHandoffTest {
             normalPlayback = normal, reply = { confirmed.await(); awaitCancellation() },
             listen = { callback -> callback(); confirmed.complete(Unit); normal.complete(playback()); expected },
             stopReply = { stopCount++ }, beginCapture = { error("Confirmed interruption must win") },
-            capture = { error("No ordinary handoff") }, awaitTypedInput = { awaitCancellation() }, hasTypedInput = { false })
+            capture = { _, _ -> error("No ordinary handoff") }, awaitTypedInput = { awaitCancellation() }, hasTypedInput = { false })
         assertEquals(CaptureFirstReplyHandoff.Result.Interrupted(expected), result)
         assertEquals(1, stopCount)
     }
@@ -173,7 +173,7 @@ class CaptureFirstReplyHandoffTest {
                 CaptureFirstReplyHandoff.run(
                     normalPlayback = CompletableDeferred(), reply = { throw failure }, listen = { awaitCancellation() },
                     stopReply = {}, beginCapture = { error("Failed output must not arm") },
-                    capture = { error("Failed output must not capture") }, awaitTypedInput = { awaitCancellation() }, hasTypedInput = { false })
+                    capture = { _, _ -> error("Failed output must not capture") }, awaitTypedInput = { awaitCancellation() }, hasTypedInput = { false })
             }
             try { result.await(); fail("Failure became Finished") }
             catch (actual: IllegalStateException) { assertEquals(failure.message, actual.message) }
@@ -183,16 +183,18 @@ class CaptureFirstReplyHandoffTest {
     @Test fun nativeResetFailurePropagatesInsteadOfReleasingNextTurn() = runBlocking {
         supervisorScope {
             val captured = CompletableDeferred<Unit>()
+            var nativeReady: (() -> Boolean)? = null
             val result = async {
                 CaptureFirstReplyHandoff.run(
                     normalPlayback = CompletableDeferred(playback()),
                     reply = { captured.await(); error("old native owner quarantined") }, listen = { awaitCancellation() },
                     stopReply = {}, beginCapture = { unusedInput() },
-                    capture = { captured.complete(Unit); turn("must not run") },
+                    capture = { _, ready -> nativeReady = ready; assertFalse(ready()); captured.complete(Unit); turn("must not run") },
                     awaitTypedInput = { awaitCancellation() }, hasTypedInput = { false })
             }
             try { withTimeout(2000) { result.await() }; fail("Quarantined owner released a next turn") }
             catch (actual: IllegalStateException) { assertEquals("old native owner quarantined", actual.message) }
+            assertFalse(requireNotNull(nativeReady).invoke())
         }
     }
 
@@ -213,7 +215,7 @@ class CaptureFirstReplyHandoffTest {
                             listenerClosing.complete(Unit); releaseListener.await(); listenerClosed = true
                         } }
                     }, stopReply = {}, beginCapture = { unusedInput().also { rawReady.complete(Unit) } },
-                    capture = { captureCalls++; awaitCancellation() },
+                    capture = { _, _ -> captureCalls++; awaitCancellation() },
                     awaitTypedInput = { awaitCancellation() }, hasTypedInput = { false })
             }
             withTimeout(2000) { listenerStarted.await() }; normal.complete(playback())
@@ -230,7 +232,7 @@ class CaptureFirstReplyHandoffTest {
         val result = CaptureFirstReplyHandoff.run(
             normalPlayback = CompletableDeferred(playback()), reply = { "done" }, listen = { awaitCancellation() },
             stopReply = { fail("Not an interruption") }, beginCapture = { begins++; unusedInput() },
-            capture = { captures++; error("Typed input already owns next turn") },
+            capture = { _, _ -> captures++; error("Typed input already owns next turn") },
             awaitTypedInput = {}, hasTypedInput = { true })
         assertEquals(CaptureFirstReplyHandoff.Result.Finished("done"), result)
         assertEquals(1, begins)
@@ -244,7 +246,7 @@ class CaptureFirstReplyHandoffTest {
             CaptureFirstReplyHandoff.run(
                 normalPlayback = normal, reply = { awaitCancellation() }, listen = { awaitCancellation() },
                 stopReply = {}, beginCapture = { error("Cancelled output must not arm") },
-                capture = { error("Cancelled output must not capture") },
+                capture = { _, _ -> error("Cancelled output must not capture") },
                 awaitTypedInput = { awaitCancellation() }, hasTypedInput = { false })
             fail("Cancelled playback returned success")
         } catch (error: CancellationException) { assertEquals("output cancelled", error.message) }
@@ -300,7 +302,7 @@ class CaptureFirstReplyHandoffTest {
                         assertEquals(playback(), delivered)
                         rig.bridge.beginFollowup(playbackEndedAtMs = delivered.completedAtMs)
                     },
-                    capture = { input ->
+                    capture = { input, _ ->
                         val capture = AudioTurnCapture(input, this,
                             createDetector = {
                                 // Real 512-sample framing and three-frame confirmation; only model probabilities are synthetic.

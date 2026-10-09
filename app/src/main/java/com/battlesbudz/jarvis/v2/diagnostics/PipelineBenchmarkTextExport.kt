@@ -15,7 +15,7 @@ object PipelineBenchmarkTextExport {
     })
 
     private val correlationKeys = setOf("conversation_id", "parent_task_ids", "reply_id", "utterance_id", "returned_utterance_id",
-        "result_utterance_id", "result_captured_at_epoch_ms", "linked_reply_turn_id")
+        "result_utterance_id", "result_captured_at_epoch_ms", "linked_reply_turn_id", "followup_smart_turn_utterance_id", "capture_first_raw_transfer")
     private fun stableProvenance(p: PipelineBenchmarkProvenance) = p.copy(thermalStatus = null, batteryPercent = null,
         configuration = p.configuration.filterKeys { it !in correlationKeys })
 

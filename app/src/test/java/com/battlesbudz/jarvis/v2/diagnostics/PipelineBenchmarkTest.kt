@@ -200,4 +200,38 @@ class PipelineBenchmarkTest {
         assertTrue(csv.contains("turn,")); assertTrue(csv.contains("submission,"))
         assertTrue(PipelineBenchmarkReport(listOf(turn("  =formula")), 1).toCsv().contains("'  =formula"))
     }
+
+    @Test fun followupCorrelationAndTransferEvidenceShareGroupWithoutDroppingRawValues() {
+        val key = "followup_smart_turn_utterance_id"
+        val transferKey = "capture_first_raw_transfer"
+        val transfers = listOf(
+            "capture_first_raw_ready prefixBytes=3200 firstSequence=17 lastSequence=18",
+            "capture_first_raw_ready prefixBytes=6400 firstSequence=41 lastSequence=44")
+        val first = turn("first").let { it.copy(provenance = it.provenance.copy(configuration =
+            it.provenance.configuration + mapOf(key to "followup-first", transferKey to transfers[0],
+                "followup_smart_turn_mode" to "disabled", "capture_profile_requested" to "communication_noise_filtered"))) }
+        val second = first.copy(turnId = "second", provenance = first.provenance.copy(configuration =
+            first.provenance.configuration + mapOf(key to "followup-second", transferKey to transfers[1])))
+        val report = PipelineBenchmarkReport(listOf(first, second), 1)
+        val json = report.toJson()
+        val groups = json.getJSONArray("comparableGroups")
+        assertEquals(1, groups.length())
+        assertEquals(2, groups.getJSONObject(0).getJSONObject("allAttempts").getInt("turnCount"))
+        val groupConfig = groups.getJSONObject(0).getJSONObject("group").getJSONObject("provenance").getJSONObject("configuration")
+        assertFalse(groupConfig.has(key)); assertFalse(groupConfig.has(transferKey))
+        assertEquals("disabled", groupConfig.getString("followup_smart_turn_mode"))
+        assertEquals("communication_noise_filtered", groupConfig.getString("capture_profile_requested"))
+        for ((index, id) in listOf("followup-first", "followup-second").withIndex()) {
+            val raw = json.getJSONArray("turns").getJSONObject(index).getJSONObject("provenance").getJSONObject("configuration")
+            assertEquals(id, raw.getString(key)); assertEquals(transfers[index], raw.getString(transferKey))
+            assertTrue(report.toCsv().contains(id)); assertTrue(report.toCsv().contains(transfers[index]))
+        }
+        for (setting in listOf("followup_smart_turn_mode" to "shadow_only_v1", "capture_profile_requested" to "different-profile")) {
+            val changed = second.copy(turnId = "third", provenance = second.provenance.copy(configuration =
+                second.provenance.configuration + setting))
+            assertEquals(2, PipelineBenchmarkReport(listOf(first, second, changed), 1).toJson()
+                .getJSONArray("comparableGroups").length())
+        }
+    }
+
 }

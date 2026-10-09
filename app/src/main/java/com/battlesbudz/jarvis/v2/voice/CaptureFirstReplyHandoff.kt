@@ -22,7 +22,7 @@ internal object CaptureFirstReplyHandoff {
     class Config(
         val normalPlayback: Deferred<NormalReplyPlayback>,
         val beginCapture: (NormalReplyPlayback) -> AudioInput,
-        val capture: suspend (AudioInput) -> CapturedVoiceTurn,
+        val capture: suspend (AudioInput, previousReplyCompleted: () -> Boolean) -> CapturedVoiceTurn,
         val awaitTypedInput: suspend () -> Unit,
         val hasTypedInput: () -> Boolean,
         val observe: (String) -> Unit,
@@ -35,7 +35,7 @@ internal object CaptureFirstReplyHandoff {
         listen: suspend (() -> Unit) -> CapturedVoiceTurn,
         stopReply: () -> Unit,
         beginCapture: (NormalReplyPlayback) -> AudioInput,
-        capture: suspend (AudioInput) -> CapturedVoiceTurn,
+        capture: suspend (AudioInput, previousReplyCompleted: () -> Boolean) -> CapturedVoiceTurn,
         awaitTypedInput: suspend () -> Unit,
         hasTypedInput: () -> Boolean,
         observe: (String) -> Unit = {},
@@ -68,7 +68,9 @@ internal object CaptureFirstReplyHandoff {
             nextCapture = async {
                 listener.join() // Same resident ASR slot; never construct a second recognizer.
                 observe("capture_first_previous_listener_joined")
-                capture(input)
+                // Successful completion includes the exact reply's native/caption cleanup.
+                // This is observation eligibility only; capture never waits on it.
+                capture(input) { replyJob.isCompleted && !replyJob.isCancelled }
             }
             typed = async(start = CoroutineStart.UNDISPATCHED) { awaitTypedInput() }
             val spoken = if (hasTypedInput()) null else select<CapturedVoiceTurn?> {

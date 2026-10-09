@@ -60,4 +60,22 @@ class SmartTurnLateTelemetryTest {
         assertTrue(records.getValue("smart_turn_shadow_0_work").contains("initializationMs=null"))
         assertThrows(IllegalArgumentException::class.java) { telemetry.completion(3, completion, null) }
     }
+    @Test fun followupMeasurementsCannotOverwriteInitialCaptureAndDiagnosticsKeepNextIdentity() {
+        val capture = PipelineBenchmarkCapture("old", "voice", 1, PipelineBenchmarkProvenance("test", 1))
+        val records = mutableMapOf<String, String>()
+        val first = SmartTurnBenchmarkTelemetry(capture) { _, _ -> }
+        val next = SmartTurnBenchmarkTelemetry(capture, prefix = "followup_") { key, data -> records[key] = data }
+        first.metric("smart_turn_accepted_observations", 2)
+        first.configuration("smart_turn_mode", "shadow_only_v1")
+        next.metric("smart_turn_accepted_observations", 1)
+        next.configuration("smart_turn_mode", "shadow_only_v1")
+        next.completion(0, SmartTurnWorkCompletion(SmartTurnGeneration("next", 0, 0), 1600,
+            10, 20, false, SmartTurnTiming(0, null, 1, 2, 10)), null)
+        val row = capture.finish(PipelineBenchmarkOutcome.COMPLETE, "call")!!
+        assertEquals(2.0, row.observedMetrics["smart_turn_accepted_observations"])
+        assertEquals(1.0, row.observedMetrics["followup_smart_turn_accepted_observations"])
+        assertEquals("shadow_only_v1", row.provenance.configuration["followup_smart_turn_mode"])
+        assertTrue(records.getValue("smart_turn_shadow_0_work").contains("turn=next "))
+    }
+
 }

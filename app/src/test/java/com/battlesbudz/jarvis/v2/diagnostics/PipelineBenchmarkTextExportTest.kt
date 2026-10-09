@@ -111,4 +111,38 @@ class PipelineBenchmarkTextExportTest {
         }
         assertThrows(IllegalArgumentException::class.java) { PipelineBenchmarkTextExport.chunks("x", 255) }
     }
+
+    @Test fun followupCorrelationAndTransferEvidenceShareProvenanceButRealSettingsSeparate() {
+        val key = "followup_smart_turn_utterance_id"
+        val transferKey = "capture_first_raw_transfer"
+        val transfers = listOf(
+            "capture_first_raw_ready prefixBytes=3200 firstSequence=17 lastSequence=18",
+            "capture_first_raw_ready prefixBytes=6400 firstSequence=41 lastSequence=44")
+        fun followup(id: String, duration: Long, transfer: String) = turn(id, duration = duration).copy(
+            provenance = provenance.copy(configuration = provenance.configuration + mapOf(
+                key to "next-$id", transferKey to transfer, "followup_smart_turn_mode" to "disabled",
+                "capture_profile_requested" to "communication_noise_filtered")))
+        val first = followup("first", 100, transfers[0])
+        val second = followup("second", 300, transfers[1])
+        val text = render(first, second)
+        assertEquals(1, Regex("(?m)^GROUP G").findAll(text).count())
+        assertEquals(1, Regex("(?m)^P[0-9]+:").findAll(text).count())
+        assertTrue(text.contains("turn_total_ms: n=2 missing=0 p50=100.0 p95=300.0"))
+        val provenanceLine = text.lineSequence().single { it.startsWith("P1:") }
+        assertFalse(provenanceLine.contains(key)); assertFalse(provenanceLine.contains(transferKey))
+        val correlation = text.lineSequence().filter { it.startsWith("thermalStatus=") }
+            .map { org.json.JSONObject(it.substringAfter("correlation=")) }.toList()
+        assertEquals(listOf("next-first", "next-second"), correlation.map { it.getString(key) })
+        assertEquals(transfers, correlation.map { it.getString(transferKey) })
+        for (setting in listOf("followup_smart_turn_mode" to "shadow_only_v1", "capture_profile_requested" to "different-profile")) {
+            val third = followup("third", 9000, transfers[1]).let { it.copy(provenance = it.provenance.copy(
+                configuration = it.provenance.configuration + setting)) }
+            val changed = render(first, second, third)
+            assertEquals(2, Regex("(?m)^GROUP G").findAll(changed).count())
+            assertEquals(2, Regex("(?m)^P[0-9]+:").findAll(changed).count())
+            assertTrue(changed.contains("turn_total_ms: n=2 missing=0 p50=100.0 p95=300.0"))
+            assertTrue(changed.contains("turn_total_ms: n=1 missing=0 p50=9000.0"))
+        }
+    }
+
 }

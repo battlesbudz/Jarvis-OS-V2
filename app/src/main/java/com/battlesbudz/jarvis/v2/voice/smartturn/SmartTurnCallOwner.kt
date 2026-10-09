@@ -5,6 +5,7 @@ import java.io.File
 
 /** Process-retained budget for one call worker. Closing never means that native work drained. */
 internal class SmartTurnCallOwner(
+    private val clock: () -> Long = System::nanoTime,
     private val createShadow: (File) -> SmartTurnShadow,
 ) : AutoCloseable {
     private var callId: String? = null
@@ -17,6 +18,7 @@ internal class SmartTurnCallOwner(
         expectedCallId: String, turnId: String, captureGeneration: Long,
         enabled: Boolean, model: File?, telemetry: SmartTurnTelemetry,
         ownerIsCurrent: () -> Boolean, admissionBlocker: () -> String?,
+        observeCapture: Boolean = true,
     ): CaptureShadowObserver? {
         val evidence = SafeSmartTurnTelemetry(telemetry)
         // A stale setup attempt has no authority to revoke/reap a newer call owner.
@@ -38,13 +40,19 @@ internal class SmartTurnCallOwner(
         }
         observer?.close()
         observer = null
+        // Already sealed follow-ups need no observer. Still apply disable, unavailable
+        // model and changed-call revocation above, while retaining a valid call worker.
+        if (!observeCapture) {
+            evidence.configuration("smart_turn_mode", "ineligible_sealed_capture")
+            return null
+        }
         return try {
             if (shadow == null) {
                 shadow = createShadow(model)
                 callId = expectedCallId
             }
             SmartTurnCaptureObserver(requireNotNull(shadow), turnId, captureGeneration,
-                evidence, ownerIsCurrent, admissionBlocker).also { observer = it }
+                evidence, ownerIsCurrent, admissionBlocker, clock).also { observer = it }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             revoke()
             throw cancelled

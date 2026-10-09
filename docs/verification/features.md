@@ -13,6 +13,15 @@ are the current evidence. Named journey81 covers opt-in/disable/recreation witho
 weights. Android/NDK/shrunk linkage, phone costs and premature-cutoff calibration
 remain pending; all existing five profiles and 900-second main deadlines remain.
 
+Capture-first follow-ups now attach the same retained call observer after the old
+interruption listener joins. Observation admission additionally requires the exact
+old reply child to complete successfully, with safe native resources and current
+call/capture ownership. Raw retention never waits for that eligibility. Already
+sealed inputs keep the valid call worker while still applying disable, missing
+model and changed-call revocation. [Follow-up contract and checks](smart-turn-followup-2026-10-09.md)
+cover delayed cleanup, no-observation endpoints, echo reset, worker reuse and
+separate follow-up telemetry; this remains a host/API candidate pending release.
+
 ## Capture-first rearm candidate — 9 October 2026
 
 Successful playback transfers a byte-bounded retained recorder before optional
@@ -4157,3 +4166,14 @@ latency measurement. Required remaining gates: release JVM/native checks and all
 Android sandbox profiles on the integrated revision, then matched multi-turn
 real-model/Piper/physical-audio measurements. The target remains final spoken
 chunk to first actual answer playback below one second; no such result is claimed.
+
+## Smart Turn production-session host check (9 October 2026)
+
+The unchanged C++ Session matches the pinned official frontend/model probability
+bit-for-bit on eight existing public/synthetic fixtures. The original frontend
+tolerance and all probability expectations remain unchanged. Negative/recovery
+controls and owned-child cleanup passed; downloaded weights/runtime and generated
+arrays were removed after independent review. See the [source-bound results and
+limits](smart-turn-host-validation-2026-10-09.md). This adds host model execution
+evidence, not Android/JNI, physical-device latency, endpoint calibration or
+default-on admission.

@@ -64,7 +64,35 @@ internal class ReplyCaptureBenchmark(
         needsFollowupTranscript: (Long?) -> Boolean,
         rejectsFollowupEcho: (String, Long?) -> Boolean,
         onPartialTranscript: (String) -> Unit,
+        shadowOwner: com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnCallOwner,
+        shadowTelemetry: com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnTelemetry,
+        expectedCallId: String,
+        shadowOwnerIsCurrent: () -> Boolean,
+        previousReplyCompleted: () -> Boolean,
+        nativeResourcesSafe: () -> Boolean,
     ): CapturedVoiceTurn = kotlinx.coroutines.coroutineScope {
+        val exactCaptureJob = coroutineContext[kotlinx.coroutines.Job]
+        val shadowObserver = try { shadowOwner.beginCapture(
+            expectedCallId, plan.turnId, captureGeneration = 0,
+            enabled = com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings.enabled(applicationContext),
+            model = com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnSettings.store(applicationContext).availableFile(),
+            telemetry = shadowTelemetry,
+            ownerIsCurrent = { exactCaptureJob?.isActive == true && shadowOwnerIsCurrent() },
+            admissionBlocker = {
+                when {
+                    !previousReplyCompleted() -> "previous_reply_native_cleanup"
+                    !nativeResourcesSafe() -> "native_resources_unavailable"
+                    (applicationContext.getSystemService(android.os.PowerManager::class.java)?.currentThermalStatus ?: 0) >= 3 -> "thermal_severe"
+                    else -> null
+                }
+            }) } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) {
+            shadowOwner.closeCall(expectedCallId)
+            runCatching { shadowTelemetry.configuration("smart_turn_mode", "unavailable_optional_setup") }
+            null
+        }
+        // Includes factory/onCapture failures before AudioTurnCapture owns cleanup.
+        exactCaptureJob?.invokeOnCompletion { shadowObserver?.close() }
         lateinit var capture: AudioTurnCapture
         var prefixMayContainSpeech = false
         val admission = CaptionInputAdmission(
@@ -95,7 +123,7 @@ internal class ReplyCaptureBenchmark(
                 val classifiedPrefix = coverage != null && coverage.classifiedThroughSample * 2 == coverage.receivedPcmBytes
                 if (input.lastChunkSequence == prefixThroughSequence && !prefixMayContainSpeech && classifiedPrefix) onCandidateRejected()
             },
-            retainedPcmObserver = admission)
+            retainedPcmObserver = admission, shadowObserver = shadowObserver)
         onCapture(capture)
         try {
             capture.start(CallLifetimePolicy.initialSilenceTimeoutMs())

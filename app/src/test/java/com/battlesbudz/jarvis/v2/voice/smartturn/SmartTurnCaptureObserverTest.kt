@@ -204,4 +204,34 @@ class SmartTurnCaptureObserverTest {
         owner.close()
     }
 
+    @Test fun sealedFollowupRetainsBackendButDisableMissingModelAndChangedCallStillRevoke() {
+        for (reason in listOf("disabled", "model_missing", "new_call")) {
+            val backend = Backend(); val created = AtomicInteger(); val telemetry = Telemetry()
+            val owner = SmartTurnCallOwner {
+                created.incrementAndGet()
+                SmartTurnShadow({ backend }, true)
+            }
+            try {
+                val first = owner.beginCapture("call", "first", 1, true, File("fixture"), telemetry, { true }, { null })!!
+                first.onPcm(ByteArray(3200), 1600); first.onFrame(frame(System.nanoTime()))
+                assertTrue(backend.entered.await(1, TimeUnit.SECONDS))
+                waitFor { telemetry.numbers["smart_turn_0_actual_worker_wall_ms"] != null }
+                assertNull(owner.beginCapture("call", "sealed", 0, true, File("fixture"), telemetry,
+                    { true }, { null }, observeCapture = false))
+                assertEquals("ineligible_sealed_capture", telemetry.strings["smart_turn_mode"])
+                assertEquals(1L, backend.closed.count)
+                val next = owner.beginCapture("call", "followup", 0, true, File("fixture"), telemetry, { true }, { null })!!
+                waitFor { backend.calls.get() == 1 }
+                next.onPcm(ByteArray(3200), 1600); next.onFrame(frame(System.nanoTime()))
+                waitFor { backend.calls.get() == 2 }
+                assertEquals(1, created.get())
+                owner.beginCapture(if (reason == "new_call") "other" else "call", "sealed-2", 0,
+                    reason != "disabled", if (reason == "model_missing") null else File("fixture"), telemetry,
+                    { true }, { null }, observeCapture = false)
+                assertTrue("$reason must close the retained worker", backend.closed.await(1, TimeUnit.SECONDS))
+                assertEquals(1, created.get())
+            } finally { owner.close() }
+        }
+    }
+
 }

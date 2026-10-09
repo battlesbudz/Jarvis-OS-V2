@@ -378,13 +378,28 @@ internal class OrdinaryVoiceReplyStage(
                             (System.nanoTime() / 1_000_000 - delivery.completedAtMs).coerceAtLeast(0))
                     }
                 },
-                capture = { input ->
+                capture = { input, previousReplyCompleted ->
                     val nextId = java.util.UUID.randomUUID().toString()
                     var ownedCapture: com.battlesbudz.jarvis.v2.voice.AudioTurnCapture? = null
+                    val shadowTelemetry = com.battlesbudz.jarvis.v2.diagnostics.SmartTurnBenchmarkTelemetry(
+                        observation.benchmark, prefix = "followup_") { category, evidence ->
+                        diagnosticRecorder.recordTurnEvidence(nextId, category, evidence)
+                    }
+                    observation.benchmark.configuration("followup_smart_turn_utterance_id", nextId)
+                    observation.benchmark.configuration("followup_smart_turn_scope", "next_capture_in_previous_reply_row;correlation_id_only;shadow_not_answer_endpoint;no_wait")
                     replyCapture.captureFirstFollowup(input,
                         com.battlesbudz.jarvis.v2.runtime.VoiceCapturePlan(nextId, request.asrEngine, prepared.asrDirectory,
                             prepared.directAudioTurn, request.captionAsrEnabled, guardFollowupSpeech = true),
                         prepared.models, diagnosticRecorder,
+                        shadowOwner = resources.smartTurn,
+                        shadowTelemetry = shadowTelemetry,
+                        expectedCallId = prepared.expectedCallId,
+                        shadowOwnerIsCurrent = { exactTurnJob?.isActive == true && call.state.turnJob === exactTurnJob &&
+                            call.state.armed && call.controller.currentCallId() == prepared.expectedCallId &&
+                            !call.state.inputQueue.hasInputAfter(captionInputBoundary) },
+                        previousReplyCompleted = previousReplyCompleted,
+                        nativeResourcesSafe = { !lifetime.captionNativeReleaseFailed &&
+                            prepared.engine.nativeResourcesSafeToRelease && !prepared.engine.isNativeQuarantined },
                         playbackEndedAtMs = followupPlaybackBoundary.get(),
                         playbackReference = followupPlaybackReference.get(),
                         capturedAtMs = followupCapturedAt.get(),

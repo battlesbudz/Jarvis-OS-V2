@@ -6,10 +6,11 @@ import com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnWorkCompletion
 /** Fixed, bounded metadata only; the existing benchmark export contains no PCM from this lane. */
 internal class SmartTurnBenchmarkTelemetry(
     private val capture: PipelineBenchmarkCapture,
+    private val prefix: String = "",
     private val record: (String, String) -> Unit,
 ) : SmartTurnTelemetry {
-    override fun metric(name: String, value: Number?) { capture.metric(name, value) }
-    override fun configuration(name: String, value: String) { capture.configuration(name, value) }
+    override fun metric(name: String, value: Number?) { capture.metric(prefix + name, value) }
+    override fun configuration(name: String, value: String) { capture.configuration(prefix + name, value) }
     override fun event(message: String) { record("smart_turn_shadow_status", message) }
     override fun completion(index: Int, completion: SmartTurnWorkCompletion, postPriorityWorkerMs: Double?) {
         require(index in 0..2)

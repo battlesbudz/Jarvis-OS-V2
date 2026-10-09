@@ -15,7 +15,8 @@ class CaptureFinalVerdictTest {
         val sample = 2000 + seed * 23 + (i / 2) % 37
         if (i % 2 == 0) sample.toByte() else (sample shr 8).toByte()
     }
-    private class Fixture(scope: CoroutineScope, val useAsr: Boolean = true, val finalText: String = "old answer echo") {
+    private class Fixture(scope: CoroutineScope, val useAsr: Boolean = true, val finalText: String = "old answer echo",
+        val shadowObserver: CaptureShadowObserver? = null) {
         val fence = CaptionPublicationFence()
         val rig = CaptureFirstTestRig(scope, fence::rawOffered, fence::transferToCapture)
         val captureScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -84,6 +85,7 @@ class CaptureFinalVerdictTest {
                     override fun onCandidateDiscarded() { admission.onCandidateDiscarded() }
                     override fun onCaptureInvalidated(reason: RetainedPcmObserver.Invalidation) { admission.onCaptureInvalidated(reason) }
                 },
+                shadowObserver = shadowObserver,
                 rejectFinalCandidate = { text, _ ->
                     (text == "old answer echo").also { if (it) rejections.incrementAndGet() }
                 })
@@ -227,6 +229,42 @@ class CaptureFinalVerdictTest {
             assertEquals(1, f.generations.get()); assertEquals(1, f.closes.get())
             assertEquals(0, f.rejections.get())
         } finally { f.close() }
+    }
+
+    @Test fun echoResetKeepsRealShadowRevokedWhileSameReaderAcceptsLaterNativeAudio() = runBlocking {
+        val calls = AtomicInteger()
+        val config = java.util.Collections.synchronizedMap(mutableMapOf<String, String>())
+        val shadow = com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnCallOwner {
+            com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnShadow({
+                object : com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnBackend {
+                    override fun infer(samples: FloatArray, requestId: Long, cancelled: java.util.concurrent.atomic.AtomicBoolean): com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnInference {
+                        calls.incrementAndGet(); return com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnInference(.5f, 1, 2)
+                    }
+                    override fun cancel(requestId: Long) {}
+                    override fun close() {}
+                }
+            }, true)
+        }
+        val observer = shadow.beginCapture("call", "next", 0, true, java.io.File("fake"),
+            object : com.battlesbudz.jarvis.v2.voice.smartturn.SmartTurnTelemetry {
+                override fun metric(name: String, value: Number?) {}
+                override fun configuration(name: String, value: String) { config[name] = value }
+                override fun event(message: String) {}
+            }, { true }, { null })!!
+        val f = Fixture(this, shadowObserver = observer)
+        try {
+            f.start(); repeat(3) { f.push(speech(2)) }; f.push(ByteArray(3072)); f.consumed(4)
+            withTimeout(2000) { while (f.rejections.get() == 0 || f.generations.get() < 2) yield() }
+            assertEquals("endpoint_finalization", config["smart_turn_revoked_for_priority"])
+            assertEquals("candidate_discarded", config["smart_turn_capture_invalidation"])
+            repeat(6) { f.push(speech(9)) }; f.push(ByteArray(3072))
+            assertTrue(withTimeout(2000) { f.capture.awaitTurnCompletion() })
+            val wav = f.capture.stop()
+            assertTrue(wav.size > 44); assertTrue(f.capture.audioIsComplete)
+            assertEquals("new request", f.capture.finalTranscript)
+            assertEquals(0, calls.get())
+            assertEquals(1, f.rig.hardware.starts); assertEquals(1, f.maxActiveStreams.get())
+        } finally { f.close(); shadow.close() }
     }
 
 }

@@ -134,10 +134,10 @@ data class PipelineBenchmarkReport(val turns: List<PipelineBenchmarkTurn>, val e
     companion object {
         const val SCHEMA = "jarvis.pipeline.benchmark"
         const val SCHEMA_VERSION = 2
-        /** Correlation-only metadata is retained on raw rows but must not split comparable measurements. */
+        /** Per-turn correlation/observation metadata stays on raw rows without splitting comparable measurements. */
         private val identityConfigurationKeys = setOf(
             "conversation_id", "parent_task_ids", "reply_id", "utterance_id", "returned_utterance_id",
-            "result_utterance_id", "result_captured_at_epoch_ms", "linked_reply_turn_id"
+            "result_utterance_id", "result_captured_at_epoch_ms", "linked_reply_turn_id", "followup_smart_turn_utterance_id", "capture_first_raw_transfer"
         )
         private fun comparisonConfiguration(configuration: Map<String, String>): Map<String, String> =
             configuration.filterKeys { it !in identityConfigurationKeys }
