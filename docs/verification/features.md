@@ -32,6 +32,45 @@ records the reconciliations and remaining gates. No combined APK is verified
 until the exact candidate finishes the complete hosted release workflow.
 
 
+## Video notification shutdown repair — 9 October 2026
+
+[Build 1236](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37887424893),
+source `a797ec1499b307cdeb9a53d490031a770df9ae0f`, failed release test80 on the
+actual API 36 16 KB profile: the service was gone but its idle notification
+remained. All 81 main tests ran; the signed 1190→1236 upgrade retained data.
+The captured logs show foreground stop, a later posted-notification event and
+an ID 482 enqueue-record warning; they do not identify the exact historical
+callback ordering or establish a cause in the answer-only speech change.
+
+`VideoNotificationLifecycle` now serializes notification posts with terminal
+shutdown. It revokes publication before camera cleanup, then removes foreground
+state and explicitly cancels the exact ID, even if cleanup or foreground removal
+throws. Late detach/farewell callbacks cannot republish. Replacement-service
+identity and Android main-thread lifecycle ordering protect a newer notification.
+Capture generation, failed-detach ownership and the active audio engine are
+unchanged. This addresses the platform interval in which foreground state is
+already removed before app `onDestroy`; a racing ordinary notification would
+otherwise survive a later foreground-only removal (see Android 16
+[`ActiveServices`](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/android16-release/services/core/java/com/android/server/am/ActiveServices.java),
+`bringDownServiceLocked` and `setServiceForegroundInnerLocked`).
+
+Local regression evidence:
+- Eight tests run the exact Android-free production notification owner, covering
+  retained ordinary notifications, in-flight posts, synchronous/asynchronous
+  cleanup callbacks, shared-ID replacement and cleanup/removal failures.
+- Negative controls fail when explicit cancellation is omitted (7 failures),
+  closure moves after camera cleanup (2), or post/revocation serialization is
+  removed (1). These are controlled mutations, not claimed historical reruns.
+- The focused camera/controller/admission/farewell/frame suite passes 102 tests,
+  including a real-controller failed-detach regression that retains
+  `CLEANUP_PENDING` and its call ID, blocks notification reposting and permits
+  the existing cleanup retry. The host-only CameraX extraction excludes Android
+  constructors, YUV conversion and platform binding; it is not Android compilation.
+- Architecture plus 102 general Python and 82 verification-helper tests pass.
+  Release test80, its no-resurrection assertion and its existing timing/permission
+  setup are unchanged. Exact-head release compilation and the full Android
+  matrix remain required; no repaired APK is verified by these local results.
+
 ## Answer-only spoken turns — 9 October 2026
 
 Normal turns and accepted-action follow-up speech no longer request, load,

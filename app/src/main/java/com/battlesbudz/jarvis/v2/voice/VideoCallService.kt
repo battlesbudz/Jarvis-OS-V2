@@ -35,6 +35,25 @@ class VideoCallService : LifecycleService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var controller: CallVisionController
     private var status = "Video idle — starts with your next call"
+    private val notificationLifecycle = VideoNotificationLifecycle(
+        post = { nextStatus ->
+            status = nextStatus
+            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification())
+        },
+        removeForeground = { stopForeground(STOP_FOREGROUND_REMOVE) },
+        cancelNotification = {
+            // Android can clear the foreground association before onDestroy.
+            // A notify racing that removal becomes an ordinary notification;
+            // stopForeground alone can no longer remove it. Cancel this ID
+            // explicitly after all publication rights have been revoked.
+            // Service creation/destruction and this removal are serialized
+            // on Android's main thread. A retired instance must never cancel
+            // the same ID after ownership has passed to a replacement.
+            if (instance == null || instance === this) {
+                getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+            }
+        },
+    )
 
     override fun onCreate() {
         super.onCreate()
@@ -68,15 +87,13 @@ class VideoCallService : LifecycleService() {
         val cadence = FrameCadence()
         val binder = CameraXVideoBinder(this, this, hub, cadence, onVideoError = { error ->
             controller.degrade(error)
-            status = "Camera unavailable — continuing audio-only"
-            notifyChanged()
+            notifyChanged("Camera unavailable — continuing audio-only")
         }, onDetachFailure = { cause ->
             // A failed or timed-out camera detach must never be silently
             // treated as successful cleanup: log it and say so on the
             // service status so a wedged capture is visible.
             android.util.Log.e("JarvisVideo", "Camera detach failed during teardown", cause)
-            status = "Camera cleanup failed — video may misbehave until the next call"
-            notifyChanged()
+            notifyChanged("Camera cleanup failed — video may misbehave until the next call")
         })
         controller = CallVisionController(binder, cadence, hub)
         CallVisionRegistry.hub = hub
@@ -147,8 +164,8 @@ class VideoCallService : LifecycleService() {
             .build()
     }
 
-    private fun notifyChanged() {
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification())
+    private fun notifyChanged(nextStatus: String) {
+        notificationLifecycle.publish(nextStatus)
     }
 
     /**
@@ -169,8 +186,7 @@ class VideoCallService : LifecycleService() {
                 isLive = (instance === this@VideoCallService),
             )
             if (derived != null) {
-                status = derived
-                notifyChanged()
+                notifyChanged(derived)
             }
         }
     }
@@ -194,8 +210,7 @@ class VideoCallService : LifecycleService() {
                     controller.start(granted, callId)
                     // The status is derived from the controller state, so a
                     // refused bind (cleanup pending) can never read "Video on".
-                    status = videoStatusText(controller.state)
-                    notifyChanged()
+                    notifyChanged(videoStatusText(controller.state))
                 }
             }
             STOP_CAPTURE -> {
@@ -207,8 +222,7 @@ class VideoCallService : LifecycleService() {
                     // derived from the controller state, so an unresolved
                     // cleanup stays visible instead of reading idle.
                     controller.stopForCall(callId)
-                    status = videoStatusText(controller.state)
-                    notifyChanged()
+                    notifyChanged(videoStatusText(controller.state))
                 }
             }
         }
@@ -222,15 +236,22 @@ class VideoCallService : LifecycleService() {
 
     override fun onDestroy() {
         try {
-            controller.stop()
-        } catch (_: Exception) {
-            // Teardown must never throw.
+            notificationLifecycle.close {
+                scope.cancel()
+                try {
+                    controller.stop()
+                } catch (_: Exception) {
+                    // Teardown must never throw. Binder cleanup ownership is
+                    // retained by its existing unresolved-detach contract.
+                }
+                CallVisionRegistry.clear()
+            }
+        } finally {
+            // Observers seeing null know notification removal was requested,
+            // not just that camera teardown has started.
+            if (instance === this) instance = null
+            super.onDestroy()
         }
-        CallVisionRegistry.clear()
-        scope.cancel()
-        if (instance === this) instance = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        super.onDestroy()
     }
 
     companion object {

@@ -16,12 +16,13 @@ class FarewellNotificationRefreshTest {
     private class FakeBinder : CallVisionController.VideoBinder {
         var binds = 0
         var unbinds = 0
+        var onUnbind: () -> Unit = {}
         override var cleanupUnresolved = false
         override fun bind(): CallVisionController.BindResult {
             binds++
             return CallVisionController.BindResult.Started
         }
-        override fun unbind() { unbinds++ }
+        override fun unbind() { unbinds++; onUnbind() }
     }
 
     private fun withRegistry(controller: CallVisionController?, block: () -> Unit) {
@@ -74,6 +75,39 @@ class FarewellNotificationRefreshTest {
             assertEquals("Video idle — starts with your next call",
                 farewellVideoStatus("call-1"))
         }
+    }
+
+    @Test fun teardownCallbackCannotRepostButFailedCameraCleanupStaysOwned() {
+        val binder = FakeBinder()
+        val controller = CallVisionController(binder)
+        val statuses = mutableListOf<String>()
+        var removed = false
+        val notifications = VideoNotificationLifecycle(
+            post = { statuses += it },
+            removeForeground = {},
+            cancelNotification = { removed = true },
+        )
+        controller.start(cameraPermissionGranted = true, callId = "call-1")
+        notifications.publish(videoStatusText(controller.state))
+        binder.onUnbind = {
+            binder.cleanupUnresolved = true
+            assertFalse(notifications.publish("Camera cleanup failed"))
+        }
+
+        notifications.close { controller.stop() }
+
+        assertEquals("Notification teardown cannot claim the camera detached",
+            CallVisionController.State.CLEANUP_PENDING, controller.state)
+        assertEquals("call-1", controller.captureCallId())
+        assertEquals(1, binder.unbinds)
+        assertEquals(listOf("Video on"), statuses)
+        assertTrue(removed)
+        // The binder/controller still own the retry; notification shutdown
+        // neither discards their resource nor permits a fresh capture over it.
+        binder.onUnbind = { binder.cleanupUnresolved = false }
+        assertEquals(CallVisionController.State.IDLE, controller.stop())
+        assertNull(controller.captureCallId())
+        assertEquals(2, binder.unbinds)
     }
 
     // -- J4: generation-fenced, live-instance-only refresh routing --------

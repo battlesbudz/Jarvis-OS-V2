@@ -33,7 +33,7 @@ for the decision to keep package/collaborator boundaries before adding build mod
 | `JarvisRuntime.get(applicationContext)` | Process composition/lifecycle facade wiring typed owners/ports, shared history and compatibility entry adapters |
 | `runtime/turn/VoiceTurnRunner` | Admits and orders typed voice stages, with fenced terminal errors/rearm policy; resource release belongs to finalizer |
 | `voice/VoiceCallService` | User-started foreground microphone/playback eligibility, notification controls and wake lock |
-| `voice/VideoCallService` / `CallVisionController` / `CameraXVideoBinder` | Call-scoped camera foreground eligibility, capture generation, bounded cleanup and in-memory frames; independent of audio ownership |
+| `voice/VideoCallService` / `VideoNotificationLifecycle` / `CallVisionController` / `CameraXVideoBinder` | Call-scoped camera foreground eligibility, terminal notification publication/removal, capture generation, bounded cleanup and in-memory frames; independent of audio ownership |
 | `voice/VoiceSessionController` | Call identity, transcript, delivered reply/action state and persisted call record |
 | `work/ProcessConversationAdmission` | One shared atomic admission owner for conversation and model-file operations; `ConversationWork` is its compatibility view |
 | `conversation/ConversationCoordinator` | Typed invocation admission, ordered stages and exact returned child-job cleanup; native resource release waits for this job |
@@ -44,6 +44,14 @@ The foreground service starts runtime voice work; an activity recreation must no
 create a second call or native engine. Accepted phone work has a process owner
 separate from its speech delivery attempt. Downloads have a WorkManager owner
 separate from model inference. These are distinct lifetimes, not separate assistants.
+
+Video notification shutdown revokes publication before camera cleanup, without
+holding its publication lock during detach. The service then removes foreground
+state and explicitly cancels its notification ID: Android may have already
+removed the foreground association before delivering `onDestroy`. Failed camera
+detach still retains its existing controller/binder cleanup ownership. Android
+service creation/destruction and final cancellation remain main-thread serialized;
+late callbacks from the retired notification owner cannot publish again.
 
 ## Main flow
 
