@@ -22,7 +22,11 @@ import com.battlesbudz.jarvis.v2.chat.*
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionState
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionUi
+import com.battlesbudz.jarvis.v2.vision.PhoneVisionClient
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,6 +92,9 @@ internal fun ConversationScreen(
     val inputBusy = preparingAttachment || dictating
     val pendingAttachment = pendingUri?.let { ChatAttachment(it, pendingKind) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    val visionClient = remember { PhoneVisionClient() }
+    var visionBusy by remember { mutableStateOf(false) }
     DisposableEffect(thread.id) {
         onDispose { if ((context as? android.app.Activity)?.isChangingConfigurations != true)
             pendingUri?.let { ChatMediaStore.discard(context, ChatAttachment(it, pendingKind)) } }
@@ -273,6 +280,43 @@ internal fun ConversationScreen(
                                             pendingKind = attached.kind; pendingUri = attached.uri; error = null
                                         })
                                 } } else null)
+                            if (pendingAttachment != null) IconButton(
+                                enabled = !sending && !inputBusy && !visionBusy,
+                                onClick = {
+                                    val uriString = pendingUri ?: return@IconButton
+                                    visionBusy = true
+                                    scope.launch {
+                                        try {
+                                            val bytes = withContext(Dispatchers.IO) {
+                                                context.contentResolver.openInputStream(android.net.Uri.parse(uriString))
+                                                    ?.use { it.readBytes() }
+                                                    ?: throw IllegalStateException("Could not read the attached image.")
+                                            }
+                                            if (bytes.size > 12 * 1024 * 1024) {
+                                                throw IllegalStateException("Image is over the 12 MB limit.")
+                                            }
+                                            val (objects, elapsedMs) = visionClient.detectObjects(bytes)
+                                            val summary = if (objects.isEmpty()) {
+                                                "I didn't spot anything recognizable in that image " +
+                                                    "(${elapsedMs} ms on the phone vision server)."
+                                            } else {
+                                                "I see: " + objects.joinToString(", ") {
+                                                    "${it.label} (${"%.2f".format(it.confidence)})"
+                                                } + " \u2014 ${elapsedMs} ms on the phone vision server."
+                                            }
+                                            history.updateReply(thread.id, java.util.UUID.randomUUID().toString(), summary, complete = true)
+                                        } catch (error: Exception) {
+                                            history.updateReply(thread.id, java.util.UUID.randomUUID().toString(),
+                                                "Vision lookup failed: ${error.message ?: "unknown error"}. " +
+                                                    "Is the inference server running in Termux on port 9001?",
+                                                complete = true)
+                                        } finally {
+                                            visionBusy = false
+                                        }
+                                    }
+                                }) {
+                                Text(if (visionBusy) "\u2026" else "\U0001F50D")
+                            }
                             IconButton(enabled = !sending && !inputBusy, onClick = { showVoice() },
                                 modifier = Modifier.testTag("voice_call_open")) {
                                 ComposerIcon(com.battlesbudz.jarvis.v2.R.drawable.ic_composer_call,
