@@ -4131,6 +4131,20 @@ expected, and exact test45/production UI API compilation passes. [Cause, depende
 provenance and verification limits](benchmark-document-contract-2026-10-09.md)
 retain the evidence. Exact-revision full release verification is still required.
 
+Build 1247 reached all 82 main journeys on API 30; test45 failed at the independent
+release-test ABI after 81 other passes. Exact app/test DEX inspection found both
+the typed `CreateDocument.getSynchronousResult(Context,String)` and Uri-returning
+`parseResult` absent after R8 folded their bodies into erased bridges. The probe
+now types its initial and recreated production contracts as
+`ActivityResultContract<String, Uri?>`, matching the already-kept registry ABI
+for all three contract methods. Every existing assertion and transport operation
+remains intact; production code and keep rules are unchanged. Separate host
+production/test compilation, 78 exact probe assertions, missing-method and
+OPENABLE negative controls, and the helper suites pass. [DEX evidence, source
+binding and limits](benchmark-export-erased-abi-2026-10-09.md) retain the diagnosis.
+The exact integrated revision still requires the complete signed/R8/five-profile
+Android gate; these host checks do not verify picker or ContentResolver I/O.
+
 ### Native frozen-pause capture (2026-10-09 source checkpoint)
 
 - Native-only immutable prefix proposal, separate full-WAV fallback, raw completed

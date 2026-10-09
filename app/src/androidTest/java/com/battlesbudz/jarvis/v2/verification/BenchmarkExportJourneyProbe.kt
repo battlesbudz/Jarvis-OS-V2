@@ -65,10 +65,13 @@ internal class BenchmarkExportJourneyProbe(context: Context) : ActivityResultReg
 
     fun verifyCreateDocumentContracts() {
         BenchmarkExportFormat.entries.forEach { format ->
-            val contract = BenchmarkExportFiles.createDocument(format)
+            // Match ActivityResultRegistry's erased ABI across the independent test DEX.
+            // R8 may fold CreateDocument's typed overloads into the kept base methods.
+            val contract: ActivityResultContract<String, Uri?> = BenchmarkExportFiles.createDocument(format)
             val names = List(3) { BenchmarkExportFiles.filename(format) }
             val intents = names.map { contract.createIntent(exportContext, it) }
-            val recreated = BenchmarkExportFiles.createDocument(format).createIntent(exportContext, names.last())
+            val recreatedContract: ActivityResultContract<String, Uri?> = BenchmarkExportFiles.createDocument(format)
+            val recreated = recreatedContract.createIntent(exportContext, names.last())
             (intents + recreated).forEachIndexed { index, intent ->
                 assertEquals(Intent.ACTION_CREATE_DOCUMENT, intent.action)
                 assertEquals(format.mime, intent.type)
