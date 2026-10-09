@@ -60,6 +60,7 @@ internal fun WispCharacter(
     motionEnabled: Boolean = true,
     audioActivity: WispActivity? = state.activity.takeIf { it == WispActivity.SPEAKING || it == WispActivity.LISTENING },
     receivedKey: Long? = null,
+    onMotionFrame: ((Boolean) -> Unit)? = null,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var started by remember(lifecycle) {
@@ -72,15 +73,17 @@ internal fun WispCharacter(
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    val durationScale by rememberWispDurationScale()
-    val moving = motionEnabled && started && durationScale > 0f &&
+    // Capture one plain Float per composition/effect. A delegated state getter inside
+    // withFrameNanos could observe scale zero before cancellation of the old effect.
+    val frameDurationScale = rememberWispDurationScale().value
+    val moving = motionEnabled && started && frameDurationScale > 0f &&
         (state.activity != WispActivity.PAUSED || state.gesture == WispGesture.WAITING || audioActivity != null)
     val clock = remember { mutableFloatStateOf(0f) }
     val eventAge = remember(state.activity, state.taskKey) { WispOneShotAge(moving) }
     val receivedAge = remember(receivedKey) { WispOneShotAge(moving) }
     val currentEventAge by rememberUpdatedState(eventAge)
     val currentReceivedAge by rememberUpdatedState(receivedAge)
-    LaunchedEffect(moving, durationScale) {
+    LaunchedEffect(moving, frameDurationScale) {
         if (!moving) {
             // Never replay a transient receipt or nod when motion/lifecycle resumes.
             currentEventAge.consume()
@@ -92,10 +95,11 @@ internal fun WispCharacter(
                     if (previousFrame != 0L) {
                         // Bound the first frame after a stall. Wrap well beyond a
                         // blink cycle to retain Float precision during long calls.
-                        val elapsed = ((frame - previousFrame) / 1_000_000_000f).coerceAtMost(.1f)
-                        clock.floatValue = (clock.floatValue + elapsed / durationScale) % 120f
-                        currentEventAge.advance(elapsed / durationScale)
-                        currentReceivedAge.advance(elapsed / durationScale)
+                        val elapsed = (frame - previousFrame) / 1_000_000_000f
+                        val step = WispMotion.frameStep(elapsed, frameDurationScale)
+                        clock.floatValue = WispMotion.advanceClock(clock.floatValue, step)
+                        currentEventAge.advance(step)
+                        currentReceivedAge.advance(step)
                     }
                     previousFrame = frame
                 }
@@ -125,6 +129,8 @@ internal fun WispCharacter(
                     if (reactive) envelope.value else 0f, moving)
             }
         }
+        // Optional read-only render observation. Report only after the complete draw.
+        onMotionFrame?.invoke(moving)
     }
 }
 
@@ -218,7 +224,11 @@ private class WispPaths {
 }
 
 private fun DrawScope.drawWisp(paths: WispPaths, state: WispPresentation, audioActivity: WispActivity?,
-    time: Float, eventAge: Float, receivedAge: Float?, level: Float, moving: Boolean) {
+    rawTime: Float, eventAge: Float, receivedAge: Float?, rawLevel: Float, moving: Boolean) {
+    // Android's native gradient rejects NaN coordinates. Defend this boundary as
+    // well as the frame producer; reduced motion must remain static for any input.
+    val time = if (moving) WispMotion.clockTime(rawTime) else 0f
+    val level = if (moving && rawLevel.isFinite()) rawLevel.coerceIn(0f, 1f) else 0f
     val activity = state.bodyActivity ?: state.activity
     val gesture = state.gesture
     val hasCard = when (activity) {

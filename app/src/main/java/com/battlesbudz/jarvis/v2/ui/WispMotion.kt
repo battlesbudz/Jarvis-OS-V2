@@ -11,6 +11,20 @@ internal object WispMotion {
     const val mouthHeightScale = 1.65f
     const val smileHeightScale = 1.5f
 
+    /** The settings observer may disable motion before an old frame callback is cancelled.
+     * Keep every increment finite, even for zero, invalid or subnormal duration scales.
+     */
+    fun frameStep(elapsedSeconds: Float, durationScale: Float): Float {
+        if (!elapsedSeconds.isFinite() || elapsedSeconds <= 0f ||
+            !durationScale.isFinite() || durationScale <= 0f) return 0f
+        return (elapsedSeconds.coerceAtMost(.1f) / durationScale).coerceAtMost(120f)
+    }
+
+    fun clockTime(value: Float): Float = if (value.isFinite() && value >= 0f) value % 120f else 0f
+
+    fun advanceClock(current: Float, step: Float): Float =
+        (clockTime(current) + if (step.isFinite() && step >= 0f) step.coerceAtMost(120f) else 0f) % 120f
+
     fun pulse(age: Float?, duration: Float): Float =
         if (age != null && age.isFinite() && age > 0f && age < duration)
             sin(age / duration * PI).toFloat() else 0f

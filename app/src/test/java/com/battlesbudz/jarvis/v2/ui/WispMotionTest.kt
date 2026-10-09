@@ -126,4 +126,56 @@ class WispMotionTest {
         assertEquals(6L, tracker.update(work(6), "chat"))
     }
 
+    @Test fun inFlightFrameDuringScaleDisableCannotPoisonClockOnResume() {
+        // Reproduce the old live-getter callback arithmetic at Android's 1 -> 0 boundary.
+        var observedScale = 1f
+        val scaleCapturedByStartedEffect = observedScale
+        observedScale = 0f
+        val legacyClock = (7f + .016f / observedScale) % 120f
+        assertTrue("The old callback produces NaN, later used by a gradient", legacyClock.isNaN())
+        val oldInFlightFrame = WispMotion.advanceClock(7f,
+            WispMotion.frameStep(.016f, scaleCapturedByStartedEffect))
+        assertEquals(7.016f, oldInFlightFrame, .00001f)
+        val disabledFrame = WispMotion.advanceClock(oldInFlightFrame,
+            WispMotion.frameStep(.016f, observedScale))
+        assertEquals(oldInFlightFrame, disabledFrame, 0f)
+        observedScale = 1f
+        val resumed = WispMotion.advanceClock(disabledFrame, WispMotion.frameStep(.016f, observedScale))
+        assertTrue(resumed.isFinite())
+        assertEquals(7.032f, resumed, .00001f)
+        // A previously poisoned value self-recovers rather than surviving indefinitely.
+        assertEquals(.016f, WispMotion.advanceClock(legacyClock, .016f), .00001f)
+    }
+
+    @Test fun allScaleAndClockBoundariesKeepAnimatedGradientCoordinatesFinite() {
+        val scales = listOf(0f, -1f, Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY,
+            Float.MIN_VALUE, .01f, .5f, 1f, 10f, Float.MAX_VALUE)
+        val times = listOf(0f, -1f, 4.89f, 119.999f, Float.NaN, Float.POSITIVE_INFINITY, Float.MAX_VALUE)
+        val elapsedValues = listOf(0f, -.016f, .016f, 1f, Float.NaN, Float.POSITIVE_INFINITY, Float.MAX_VALUE)
+        for (scale in scales) for (time in times) for (elapsed in elapsedValues) {
+            val step = WispMotion.frameStep(elapsed, scale)
+            val clock = WispMotion.advanceClock(time, step)
+            assertTrue("step for scale=$scale elapsed=$elapsed", step.isFinite() && step in 0f..120f)
+            assertTrue("clock for scale=$scale time=$time", clock.isFinite() && clock >= 0f && clock < 120f)
+            val ribbonGradientStartY = 15f + kotlin.math.sin(clock * .8f) * 5f
+            assertTrue(ribbonGradientStartY.isFinite())
+            assertTrue(ribbonGradientStartY in 10f..20f)
+        }
+    }
+
+    @Test fun repeatedReducedMotionTransitionsPreserveFiniteTimeAndOneShotBounds() {
+        var clock = 119.99f
+        val receiptAge = WispOneShotAge(activeAtCreation = true)
+        repeat(10_000) { frame ->
+            val scale = listOf(1f, 0f, 1f, .5f, 10f)[frame % 5]
+            val step = WispMotion.frameStep(.016f, scale)
+            clock = WispMotion.advanceClock(clock, step)
+            receiptAge.advance(step)
+            assertTrue(clock.isFinite() && clock >= 0f && clock < 120f)
+            assertTrue(receiptAge.age.isFinite() && receiptAge.age in 0f..120f)
+            if (scale == 0f) assertEquals(0f, step, 0f)
+        }
+        assertEquals(0f, WispMotion.bounce(WispActivity.SUCCESS, receiptAge.age, true), 0f)
+    }
+
 }

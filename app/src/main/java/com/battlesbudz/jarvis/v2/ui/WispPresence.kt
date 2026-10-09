@@ -50,7 +50,8 @@ internal fun WispPresence(
     phoneTasks: StateFlow<ToolTaskJournal?>?,
     phoneTaskError: StateFlow<String?>?,
     agentActivity: StateFlow<AgentActivitySnapshot?>?,
-    setupActivity: WispPresentation? = null
+    setupActivity: WispPresentation? = null,
+    onMotionFrame: ((Boolean) -> Unit)? = null
 ) {
     val thread by history.current.collectAsStateWithLifecycle()
     val busy by chatBusy.collectAsStateWithLifecycle()
@@ -131,7 +132,7 @@ internal fun WispPresence(
     val status = WispPresenter.statusText(presentation, detailsAllowed)
     Column(Modifier.fillMaxWidth().testTag("jarvis_wisp"), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.size(width, height).testTag("jarvis_wisp_viewport")) {
-            WispAudioCharacter(presentation, voicePlayback, armed, phase, paused, call, receivedKey, Modifier.fillMaxSize())
+            WispAudioCharacter(presentation, voicePlayback, armed, phase, paused, call, receivedKey, Modifier.fillMaxSize(), onMotionFrame)
         }
         if (status != null) {
             // No marquee/typewriter/extra inference. Event updates replace one bounded public
@@ -152,10 +153,12 @@ internal fun WispPresence(
 @Composable
 private fun WispAudioCharacter(presentation: WispPresentation, playbackFlow: StateFlow<VoicePlaybackFrame>,
     armed: Boolean, phase: com.battlesbudz.jarvis.v2.voice.VoicePhase, paused: Boolean,
-    callState: VoiceSessionState, receivedKey: Long?, modifier: Modifier) {
+    callState: VoiceSessionState, receivedKey: Long?, modifier: Modifier,
+    onMotionFrame: ((Boolean) -> Unit)?) {
     val microphone by VoiceSessionUi.level.collectAsStateWithLifecycle()
     val playback by playbackFlow.collectAsStateWithLifecycle()
     val audio = WispPresenter.audioActivity(phase, armed, paused, callState)
     val level = WispPresenter.audioLevel(audio ?: WispActivity.READY, phase, armed, paused, microphone, playback.level)
-    WispCharacter(presentation, level, modifier, audioActivity = audio, receivedKey = receivedKey)
+    WispCharacter(presentation, level, modifier, audioActivity = audio, receivedKey = receivedKey,
+        onMotionFrame = onMotionFrame)
 }

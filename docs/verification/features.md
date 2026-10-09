@@ -527,6 +527,41 @@ Compose/Skia drawing-kernel renders are source-render evidence, not Android
 screenshots or physical-device/Piper synchronization validation. Real acoustics,
 TalkBack, OEM timing and device performance remain explicit device-signoff gaps.
 
+### Build 1238: in-flight animation-scale transition gradient crash
+
+Build 1238, source `4525bb4498b500cefc1a68fc41966c86be1d48b9`, passed
+all 1,877 release JVM tests and signed/minified assembly, but API 30 and API 36
+actual-16-KB test49 crashed after the first 48 journeys. The retained reduced-motion
+capture precedes scale restoration; the native `LinearGradient.nativeCreate`
+exception follows 31–34 ms afterward. Exact R8 mapping resolves the failing
+`drawPath` to Wisp's time-dependent ribbon gradient. API 36 normal completed the
+81 journeys on that same source; this does not invalidate the transition race.
+Run: https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37897391259.
+
+The duration-scale local was delegated Compose state, read again inside an
+in-flight `withFrameNanos` callback. The settings observer can publish zero before
+recomposition cancels the old effect: elapsed / zero becomes infinity, then the
+clock modulo becomes NaN. Reduced motion hides the clock with time zero; restoring
+motion exposes its poisoned value as a non-finite shader endpoint. A real Compose
+state/native-Skia reproducer independently reproduces this sequence against the
+pre-fix drawing kernel. Desktop finite-input renders and API-only compilation did
+not cover this runtime transition and are not sufficient Android verification.
+
+The repair snapshots a plain finite scale per effect, uses bounded finite frame
+increments/clock recovery, and normalizes time/audio at the drawing boundary.
+JVM regressions include the previous arithmetic failure, invalid/subnormal scale
+and clock inputs, and repeated 1→0→1 transitions. Test49 retains the failing
+transition and every existing assertion; a fresh, bounded after-draw observer
+waits for each requested motion state before capture, rather than accepting a
+shell setting readback as proof that Compose processed it. The observer is nullable
+and unused by production callers, has no UI semantics or action authority, and
+uses the existing preserved WispPresence test-DEX entry point. Setting restoration
+and original-error preservation remain unchanged. No scenario, acceptance gate,
+suite limit or deliberate delay is removed or relaxed.
+
+The complete revised signed/R8/Android gate is required again. A repaired native
+Skia stress run is supplemental finite-input evidence, not an Android pass.
+
 ## Truthful Wisp activity text — October 6, 2026
 
 The permanent character now has a bounded, two-line text box only while there is

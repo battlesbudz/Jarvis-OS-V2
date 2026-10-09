@@ -3341,6 +3341,7 @@ class ReleaseJourneyTest {
         val journalWarning = "The action journal is unavailable. Phone actions are paused."
         val taskError = MutableStateFlow<String?>(null)
         val observed = MutableStateFlow<AgentActivitySnapshot?>(null)
+        val motionFrameWait = AtomicReference<Pair<Boolean, java.util.concurrent.CountDownLatch>?>(null)
         val approvals = AtomicInteger()
         val stops = AtomicInteger()
         val ends = AtomicInteger()
@@ -3381,6 +3382,18 @@ class ReleaseJourneyTest {
             device.executeShellCommand("settings put global animator_duration_scale $value")
             assertEquals(value.toFloat(), device.executeShellCommand("settings get global animator_duration_scale").trim().toFloat(), 0f)
         }
+        fun renderedAnimationScale(value: String) {
+            // A fresh waiter, installed before changing scale, cannot reuse an old observation.
+            val wait = (value.toFloat() > 0f) to java.util.concurrent.CountDownLatch(1)
+            motionFrameWait.set(wait)
+            try {
+                animationScale(value)
+                assertTrue("Wisp must draw the requested motion state before capture",
+                    wait.second.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            } finally {
+                motionFrameWait.compareAndSet(wait, null)
+            }
+        }
         try {
             // The suite normally disables animation. Enable only this visual fixture, restoring
             // the original setting below; window and transition scales remain untouched.
@@ -3392,7 +3405,12 @@ class ReleaseJourneyTest {
                 MaterialTheme(colorScheme = androidx.compose.material3.darkColorScheme()) {
                     Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
                         WispAppFrame(presence = {
-                            WispPresence(history, busy, call, playback, journal, taskError, observed)
+                            WispPresence(history, busy, call, playback, journal, taskError, observed,
+                                onMotionFrame = { moving ->
+                                    motionFrameWait.get()?.let { (expected, latch) ->
+                                        if (moving == expected) latch.countDown()
+                                    }
+                                })
                         }) {
                                 ConversationScreen(history, busy, call, onSend = { _, _ -> null },
                                     selectedModel = LocalModelSpec("wisp-fixture", "fixture.bin", recommendedGpu = false),
@@ -3534,9 +3552,9 @@ class ReleaseJourneyTest {
                 assertEquals(.8f, playback.value.level, 0f)
                 if (it == 0) {
                     captureEvidence("test49_wispSpeakingWhileScrolling")
-                    animationScale("0")
+                    renderedAnimationScale("0")
                     captureEvidence("test49_wispReducedMotionWhileSpeaking")
-                    animationScale("1")
+                    renderedAnimationScale("1")
                 }
                 clickEnabled(By.res("voice_call_stop_reply"))
                 pose("Scrolling the screen")
@@ -3574,6 +3592,7 @@ class ReleaseJourneyTest {
                 assertEquals(if (animationScaleBefore.isBlank()) "null" else animationScaleBefore,
                     device.executeShellCommand("settings get global animator_duration_scale").trim())
             }.exceptionOrNull()
+            motionFrameWait.set(null)
             VoiceSessionUi.armed.value = false
             VoiceSessionUi.phase.value = VoicePhase.IDLE
             VoiceSessionUi.paused.value = false
