@@ -3341,6 +3341,24 @@ class ReleaseJourneyTest {
         val journalWarning = "The action journal is unavailable. Phone actions are paused."
         val taskError = MutableStateFlow<String?>(null)
         val observed = MutableStateFlow<AgentActivitySnapshot?>(null)
+        val windowTarget = AtomicReference<CommittedWispWindowCapture.Target?>()
+        fun captureWispEvidence(name: String) {
+            val target = checkNotNull(windowTarget.get()) { "Wisp fixture window is not mounted" }
+            val directory = File(context.cacheDir, "verification").apply { mkdirs() }
+            val screenshot = File(directory, "$name.png")
+            val hierarchy = File(directory, "$name.xml")
+            val bitmap = CommittedWispWindowCapture.capture(target)
+            try {
+                screenshot.outputStream().use { output ->
+                    assertTrue("Wisp window PNG encoding failed", bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output))
+                }
+            } finally { bitmap.recycle() }
+            // Keep each established PNG/XML name and export contract. The PNG contains
+            // committed app-window pixels; system bars/other windows are not claimed.
+            device.dumpWindowHierarchy(hierarchy)
+            exportEvidence(screenshot, "image/png")
+            exportEvidence(hierarchy, "application/xml")
+        }
         val motionFrameWait = AtomicReference<Pair<Boolean, java.util.concurrent.CountDownLatch>?>(null)
         val approvals = AtomicInteger()
         val stops = AtomicInteger()
@@ -3401,7 +3419,9 @@ class ReleaseJourneyTest {
             VoiceSessionUi.armed.value = false
             VoiceSessionUi.phase.value = VoicePhase.IDLE
             VoiceSessionUi.paused.value = false
-            activity.onActivity { host -> host.setContent {
+            activity.onActivity { host ->
+                windowTarget.set(CommittedWispWindowCapture.Target(host.window, host.window.decorView))
+                host.setContent {
                 MaterialTheme(colorScheme = androidx.compose.material3.darkColorScheme()) {
                     Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
                         WispAppFrame(presence = {
@@ -3453,18 +3473,18 @@ class ReleaseJourneyTest {
             assertTrue("Wisp stays above the transcript", wisp.bottom <= transcript.top)
             assertEquals("Wisp is centered", device.displayWidth / 2, wisp.centerX())
             assertFalse("There is no visual-mode setting", device.hasObject(By.text("Visual mode")))
-            captureEvidence("test49_wispReady")
+            captureWispEvidence("test49_wispReady")
             busy.value = true
             pose("Thinking")
             observed.value = AgentActivitySnapshot(1, "another-conversation", AgentActivityKind.CHECKING_REFERENCES, "Checking references")
             pose("Thinking")
             observed.value = AgentActivitySnapshot(2, history.current.value.id, AgentActivityKind.CHECKING_REFERENCES, "Checking references")
             pose("Checking references")
-            captureEvidence("test49_wispReferences")
+            captureWispEvidence("test49_wispReferences")
             observed.value = AgentActivitySnapshot(20, history.current.value.id, AgentActivityKind.WORKING,
                 "Comparing the three selected routes")
             pose("Comparing the three selected routes")
-            captureEvidence("test49_wispPublicProgress")
+            captureWispEvidence("test49_wispPublicProgress")
             observed.value = AgentActivitySnapshot(21, history.current.value.id, AgentActivityKind.WORKING,
                 "Reading https://example.org/private?token=secret")
             pose("Working on your request")
@@ -3481,22 +3501,22 @@ class ReleaseJourneyTest {
                 "screen_tap" to "Tapping the selected screen control", "screen_scroll" to "Scrolling the screen")) {
                 task(ToolTaskState.RUNNING, tool)
                 pose(label)
-                captureEvidence("test49_wisp_$tool")
+                captureWispEvidence("test49_wisp_$tool")
             }
             task(ToolTaskState.WAITING_RESOURCE, "screen_scroll", 1)
             pose("Waiting for a resource")
-            captureEvidence("test49_wispWaiting")
+            captureWispEvidence("test49_wispWaiting")
             task(ToolTaskState.WAITING_APPROVAL, "set_volume", 1)
             pose("Waiting for your approval")
             assertEquals("Animation must not approve work", 0, approvals.get())
-            captureEvidence("test49_wispApproval")
+            captureWispEvidence("test49_wispApproval")
             task(ToolTaskState.SUCCEEDED, "set_volume", 2, ExecutionResult.Outcome.SUCCEEDED)
             pose("Task complete")
-            captureEvidence("test49_wispSuccess")
+            captureWispEvidence("test49_wispSuccess")
             idle()
             task(ToolTaskState.UNKNOWN_OUTCOME, "open_app", 3, ExecutionResult.Outcome.UNKNOWN_COMPLETION)
             pose("Check the task outcome")
-            captureEvidence("test49_wispUnknownOutcome")
+            captureWispEvidence("test49_wispUnknownOutcome")
             assertEquals(0, approvals.get())
             journal.value = ToolTaskJournal()
             idle()
@@ -3506,6 +3526,7 @@ class ReleaseJourneyTest {
             idle()
             clickEnabled(By.res("phone_tasks_open"))
             assertNotNull(find(By.text(journalWarning)))
+            // This dialog may own a separate window; retain its established full-display capture.
             captureEvidence("test49_wispJournalWarning")
             clickEnabled(By.text("Done"))
             busy.value = true
@@ -3543,7 +3564,7 @@ class ReleaseJourneyTest {
                 call.value = VoiceSessionState.SPEAKING
                 playback.value = VoicePlaybackFrame("A controlled playback frame", .8f)
                 pose("Speaking")
-                captureEvidence("test49_wispSpeaking$it")
+                captureWispEvidence("test49_wispSpeaking$it")
                 // One body and one independent audio owner: work must not hide the speaking
                 // mouth, and stopping speech must not cancel or approve the observed tool.
                 task(ToolTaskState.RUNNING, "screen_scroll", 10L + it)
@@ -3551,9 +3572,9 @@ class ReleaseJourneyTest {
                 assertEquals(VoicePhase.SPEAKING, VoiceSessionUi.phase.value)
                 assertEquals(.8f, playback.value.level, 0f)
                 if (it == 0) {
-                    captureEvidence("test49_wispSpeakingWhileScrolling")
+                    captureWispEvidence("test49_wispSpeakingWhileScrolling")
                     renderedAnimationScale("0")
-                    captureEvidence("test49_wispReducedMotionWhileSpeaking")
+                    captureWispEvidence("test49_wispReducedMotionWhileSpeaking")
                     renderedAnimationScale("1")
                 }
                 clickEnabled(By.res("voice_call_stop_reply"))
@@ -3561,7 +3582,7 @@ class ReleaseJourneyTest {
                 assertEquals(VoicePhase.LISTENING, VoiceSessionUi.phase.value)
                 assertEquals(0f, playback.value.level, 0f)
                 assertEquals(ToolTaskState.RUNNING, journal.value!!.attempts.single().state)
-                if (it == 0) captureEvidence("test49_wispStoppedReplyWhileScrolling")
+                if (it == 0) captureWispEvidence("test49_wispStoppedReplyWhileScrolling")
                 journal.value = ToolTaskJournal()
                 pose("Listening")
                 awaitWispSize("Stopping a reply must not shrink an active call", ::isModestlyExpanded)
@@ -3593,6 +3614,7 @@ class ReleaseJourneyTest {
                     device.executeShellCommand("settings get global animator_duration_scale").trim())
             }.exceptionOrNull()
             motionFrameWait.set(null)
+            windowTarget.set(null)
             VoiceSessionUi.armed.value = false
             VoiceSessionUi.phase.value = VoicePhase.IDLE
             VoiceSessionUi.paused.value = false

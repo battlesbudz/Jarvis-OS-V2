@@ -562,6 +562,43 @@ suite limit or deliberate delay is removed or relaxed.
 The complete revised signed/R8/Android gate is required again. A repaired native
 Skia stress run is supplemental finite-input evidence, not an Android pass.
 
+### Build 1239: committed-window Wisp capture boundary
+
+Build 1239, source `fb4499cddaaf6b6172b0d232c8c144cbbc3c3fde`, passed the
+four phone-profile main suites, including the repaired scale transition. Actual
+API 36 16-KB evidence nevertheless exposed stale auxiliary PNGs: the
+SpeakingWhileScrolling XML already said “Scrolling the screen,” while its PNG
+still showed the preceding “Speaking” pose without a card. The reduced-motion
+PNG still showed an open mouth after the false after-draw acknowledgement.
+Thus a passing semantics predicate and a completed Compose draw are not proof
+that the system screenshot has reached the matching submitted buffer.
+
+Only test49's auxiliary Wisp pose captures now use a hardware frame-commit callback
+followed by native `PixelCopy` of the fixture app window. A fresh invalidation
+also produces a committed frame when reduced motion has stopped the clock. One
+5-second absolute deadline covers UI scheduling, commit and copy. Unsupported
+rendering, changed/detached targets, changed geometry or copy errors fail explicitly;
+there is no screenshot retry, sleep, old-image fallback or acceptance relaxation.
+The destination uses the decor's full logical dimensions and a matching source
+rectangle; Android's Window overload accounts for surface padding. These PNGs
+are app-window pixels, not a claim to capture system bars or other windows.
+
+The helper is in the release instrumentation source set, not production. Timeout
+cancels delivery, never an in-flight bitmap write; the late PixelCopy callback
+owns recycling if delivery was cancelled. A completed-but-unclaimed timeout race
+also releases its bitmap. Pending commit callbacks are removed on the UI thread.
+Successful PNG encoding retains caller-owned cleanup. The separate task-warning
+dialog keeps its original whole-display capture, as does the generic per-test
+capture. Existing PNG/XML names, exports, assertions, scale transitions, cleanup,
+81-scenario contract and 900-second suite limit remain intact.
+
+Android documents this boundary explicitly:
+[frame commit callback](https://developer.android.com/reference/android/view/ViewTreeObserver#registerFrameCommitCallback(java.lang.Runnable))
+and [PixelCopy](https://developer.android.com/reference/android/view/PixelCopy).
+API compilation and ownership-model tests do not establish a device pass. The
+next exact-head gate must inspect the actual PNGs and measure capture/total suite
+time, especially on the Fold profile; no timing improvement is assumed locally.
+
 ## Truthful Wisp activity text — October 6, 2026
 
 The permanent character now has a bounded, two-line text box only while there is
