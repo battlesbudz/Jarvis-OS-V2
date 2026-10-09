@@ -185,4 +185,82 @@ class VideoNotificationLifecycleTest {
         }
         assertFalse(owner.publish("late camera error"))
     }
+
+    @Test fun rejectedPostClosesImmediatelyButStillCleansUpOutsidePublicationLock() {
+        val cleanupFinished = CountDownLatch(1)
+        val failure = AtomicReference<Throwable>()
+        var cleanups = 0
+        var removals = 0
+        var cancellations = 0
+        lateinit var owner: VideoNotificationLifecycle
+        owner = VideoNotificationLifecycle(
+            post = { throw SecurityException("Foreground type no longer allowed") },
+            removeForeground = { removals++ },
+            cancelNotification = { cancellations++ },
+            onPostRejected = {
+                assertFalse(owner.isOpen)
+                assertFalse(owner.publish("reentrant error"))
+                val cleanup = thread {
+                    try {
+                        owner.close {
+                            cleanups++
+                            assertFalse(owner.publish("detach failure"))
+                        }
+                    } catch (t: Throwable) { failure.set(t) }
+                    finally { cleanupFinished.countDown() }
+                }
+                assertTrue("Rejection must release the publication lock", cleanupFinished.await(5, TimeUnit.SECONDS))
+                cleanup.join(5_000)
+            },
+        )
+        assertFalse(owner.publish("Video on"))
+        owner.close { fail("Teardown cannot repeat after a failed update") }
+        assertNull(failure.get())
+        assertEquals(1, cleanups)
+        assertEquals(1, removals)
+        assertEquals(1, cancellations)
+    }
+
+    @Test fun rejectedUpdatePreservesUnresolvedCameraOwnershipWithoutFalseVideoOn() {
+        val binder = object : CallVisionController.VideoBinder {
+            override var cleanupUnresolved = false
+            var unbinds = 0
+            override fun bind() = CallVisionController.BindResult.Started
+            override fun unbind() { unbinds++; cleanupUnresolved = true }
+        }
+        val controller = CallVisionController(binder)
+        controller.start(true, "call-1")
+        var removals = 0
+        var cancelled = false
+        lateinit var owner: VideoNotificationLifecycle
+        owner = VideoNotificationLifecycle(
+            post = { throw IllegalStateException("Foreground update refused") },
+            removeForeground = { removals++ },
+            cancelNotification = { cancelled = true },
+            onPostRejected = { owner.close { controller.stop() } },
+        )
+        assertFalse(owner.publish("Video on"))
+        assertEquals(CallVisionController.State.CLEANUP_PENDING, controller.state)
+        assertEquals("call-1", controller.captureCallId())
+        assertTrue(binder.cleanupUnresolved)
+        assertFalse(videoStatusText(controller.state).contains("Video on"))
+        assertFalse(owner.publish(videoStatusText(controller.state)))
+        owner.close { fail("onDestroy must not repeat the rejected update's teardown") }
+        assertEquals(1, binder.unbinds)
+        assertEquals(1, removals)
+        assertTrue(cancelled)
+    }
+
+
+    @Test fun fatalPublicationErrorsAreNotSwallowedAsForegroundAdmissionRejections() {
+        val fatal = AssertionError("programming failure")
+        val owner = VideoNotificationLifecycle(
+            post = { throw fatal },
+            removeForeground = {},
+            cancelNotification = {},
+            onPostRejected = { fail("Fatal errors are not recoverable platform rejections") },
+        )
+        assertSame(fatal, assertThrows(AssertionError::class.java) { owner.publish("Video on") })
+    }
+
 }

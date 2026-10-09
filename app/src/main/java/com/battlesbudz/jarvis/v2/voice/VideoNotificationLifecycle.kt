@@ -16,20 +16,37 @@ internal class VideoNotificationLifecycle(
     private val post: (String) -> Unit,
     private val removeForeground: () -> Unit,
     private val cancelNotification: () -> Unit,
+    private val onPostRejected: (RuntimeException) -> Unit = { throw it },
 ) {
     private val lock = Any()
     private var closed = false
+    private var cleanupStarted = false
 
-    fun publish(status: String): Boolean = synchronized(lock) {
-        if (closed) return false
-        post(status)
-        true
+    val isOpen: Boolean get() = synchronized(lock) { !closed }
+
+    fun publish(status: String): Boolean {
+        val rejected = synchronized(lock) {
+            if (closed) return false
+            try {
+                post(status)
+                return true
+            } catch (failure: RuntimeException) {
+                // A refused foreground update cannot leave capture advertising
+                // success. Revoke first, but let video teardown run outside this
+                // lock so it can join callbacks that also attempt publication.
+                closed = true
+                failure
+            }
+        }
+        onPostRejected(rejected)
+        return false
     }
 
     fun close(cleanup: () -> Unit) {
         synchronized(lock) {
-            if (closed) return
+            if (cleanupStarted) return
             closed = true
+            cleanupStarted = true
         }
         try {
             cleanup()

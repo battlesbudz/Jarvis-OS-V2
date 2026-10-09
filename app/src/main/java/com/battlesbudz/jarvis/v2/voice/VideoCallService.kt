@@ -35,23 +35,33 @@ class VideoCallService : LifecycleService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var controller: CallVisionController
     private var status = "Video idle — starts with your next call"
-    private val notificationLifecycle = VideoNotificationLifecycle(
-        post = { nextStatus ->
+    private val foregroundNotification = VideoForegroundNotification(
+        cameraType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA,
+        fallbackType = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+        startForeground = { nextStatus, acceptedType ->
+            startForeground(NOTIFICATION_ID, notification(nextStatus), acceptedType)
             status = nextStatus
-            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification())
         },
+    )
+    private val notificationLifecycle = VideoNotificationLifecycle(
+        post = foregroundNotification::update,
         removeForeground = { stopForeground(STOP_FOREGROUND_REMOVE) },
         cancelNotification = {
-            // Android can clear the foreground association before onDestroy.
-            // A notify racing that removal becomes an ordinary notification;
-            // stopForeground alone can no longer remove it. Cancel this ID
-            // explicitly after all publication rights have been revoked.
+            // Retain explicit final removal after revoking publication. Live
+            // updates use the foreground token route, never raw notify: app
+            // cancellation cannot remove an in-flight FGS-flagged notification.
             // Service creation/destruction and this removal are serialized
             // on Android's main thread. A retired instance must never cancel
             // the same ID after ownership has passed to a replacement.
             if (instance == null || instance === this) {
                 getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
             }
+        },
+        onPostRejected = { failure ->
+            android.util.Log.e("JarvisVideo", "Video foreground update rejected; stopping video", failure)
+            // Main (not Main.immediate) queues this outside camera callbacks and
+            // their controller locks. Only this video's scope/service is stopped.
+            scope.launch { stopVideo() }
         },
     )
 
@@ -78,10 +88,7 @@ class VideoCallService : LifecycleService() {
         // camera-FGS creation may still throw SecurityException even when the
         // check reports granted. Catch that too and degrade instead of dying.
         val cameraGranted = CameraPermission.isGranted(this)
-        startForegroundSafely(
-            if (cameraGranted) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-            else ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-        )
+        foregroundNotification.start(status, cameraGranted)
 
         val hub = VisionFrameHub()
         val cadence = FrameCadence()
@@ -102,21 +109,13 @@ class VideoCallService : LifecycleService() {
         // Fail-safe: a dead voice call must never leave the camera running.
         scope.launch {
             VoiceCallService.stopRequested.collect { stop ->
-                if (stop) stopSelf()
+                if (stop) stopVideo()
             }
         }
         // Capture is not started here: it begins per call via START_CAPTURE,
         // so a merely-armed wake session never holds the camera.
         instance = this
     }
-
-    /**
-     * True once a camera-type foreground start was rejected (background
-     * start restriction): later capture starts degrade to audio-only
-     * instead of retrying a start the platform will refuse.
-     */
-    @Volatile
-    private var cameraForegroundRejected = false
 
     /**
      * The capture generation: bumped on every START_CAPTURE. A spoken
@@ -129,19 +128,7 @@ class VideoCallService : LifecycleService() {
     internal var captureGeneration = 0L
         private set
 
-    private fun startForegroundSafely(type: Int) {
-        try {
-            startForeground(NOTIFICATION_ID, notification(), type)
-        } catch (_: SecurityException) {
-            cameraForegroundRejected = true
-            startForeground(
-                NOTIFICATION_ID, notification(),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-            )
-        }
-    }
-
-    private fun notification(): Notification {
+    private fun notification(nextStatus: String): Notification {
         val open = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
@@ -155,7 +142,7 @@ class VideoCallService : LifecycleService() {
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setContentTitle("Jarvis video")
-            .setContentText(status)
+            .setContentText(nextStatus)
             .setContentIntent(open)
             .addAction(Notification.Action.Builder(null, "Stop video", stop).build())
             .setCategory(Notification.CATEGORY_SERVICE)
@@ -193,10 +180,13 @@ class VideoCallService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            STOP -> stopSelf()
+            STOP -> stopVideo()
             START_CAPTURE -> {
                 val callId = intent.getStringExtra(EXTRA_CALL_ID)
-                if (!callId.isNullOrBlank() && captureStarts.admit(callId) {
+                // This is the main-thread admission point. An off-main update
+                // rejection after admission queues cleanup behind this command;
+                // it never holds the publication lock during controller work.
+                if (notificationLifecycle.isOpen && !callId.isNullOrBlank() && captureStarts.admit(callId) {
                     // A newer call obsoletes any farewell refresh still
                     // queued for an older one: bump the generation first so
                     // a delayed refresh can never overwrite this call's
@@ -204,9 +194,9 @@ class VideoCallService : LifecycleService() {
                     // revocation; camera/controller work runs outside that lock.
                     captureGeneration++
                 }) {
-                    // A rejected camera foreground start degrades like a
-                    // denied permission: the call continues audio-only.
-                    val granted = CameraPermission.isGranted(this) && !cameraForegroundRejected
+                    // Eligibility requires the type actually accepted at startup.
+                    // A later permission grant cannot silently promote specialUse.
+                    val granted = foregroundNotification.canCapture(CameraPermission.isGranted(this))
                     controller.start(granted, callId)
                     // The status is derived from the controller state, so a
                     // refused bind (cleanup pending) can never read "Video on".
@@ -231,26 +221,47 @@ class VideoCallService : LifecycleService() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        stopSelf()
+        stopVideo()
     }
 
     override fun onDestroy() {
         try {
-            notificationLifecycle.close {
-                scope.cancel()
-                try {
-                    controller.stop()
-                } catch (_: Exception) {
-                    // Teardown must never throw. Binder cleanup ownership is
-                    // retained by its existing unresolved-detach contract.
-                }
-                CallVisionRegistry.clear()
-            }
+            closeVideo()
         } finally {
             // Observers seeing null know notification removal was requested,
             // not just that camera teardown has started.
             if (instance === this) instance = null
             super.onDestroy()
+        }
+    }
+
+    /** Main-thread terminal decision: revoke before any queued start can run. */
+    private fun stopVideo() {
+        closeVideo()
+        try { stopSelf() } catch (failure: RuntimeException) {
+            android.util.Log.e("JarvisVideo", "Unable to stop closed video service", failure)
+        }
+    }
+
+    private fun closeVideo() {
+        try {
+            notificationLifecycle.close {
+                scope.cancel()
+                if (::controller.isInitialized) {
+                    try {
+                        controller.stop()
+                    } catch (_: Exception) {
+                        // Retain the binder's unresolved-detach ownership; never
+                        // turn a failed camera cleanup into a successful bind.
+                    }
+                    if (CallVisionRegistry.controller === controller) CallVisionRegistry.clear()
+                }
+            }
+        } catch (failure: RuntimeException) {
+            // The owner has already closed and attempted both removals. A
+            // platform teardown rejection must not kill the independent audio
+            // call through an uncaught main-coroutine/lifecycle exception.
+            android.util.Log.e("JarvisVideo", "Video notification removal failed", failure)
         }
     }
 

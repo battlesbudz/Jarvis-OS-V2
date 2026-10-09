@@ -46,7 +46,35 @@ records 61 exact-helper controlled-boundary checks and real-API focused
 compilation; neither verifies an APK or promises the full Fold budget repair.
 The exact-revision hosted Android gate remains pending.
 
-## Video notification shutdown repair — 9 October 2026
+## Video notification queue serialization — 9 October 2026
+
+Build 1240, source `18ef4d118c2e5ce44a795871a2bb430d3c7c4a29`, again failed
+unchanged test80 on the API 36 normal phone: the stopped service's idle
+notification remained. Pinned AOSP reveals a source-supported direct-notify race:
+foreground flag admission can precede system stop while NMS enqueue follows its
+cancellation, and app cancel cannot remove that foreground-flagged record. The
+exact historical callback/interleaving is not established by the retained logs.
+
+Live refresh now uses the existing service token's three-argument foreground
+route with its exact accepted startup type. A specialUse fallback cannot imply
+camera eligibility after a later grant. Closed/generation/call-owner guards and
+explicit final cancellation remain; update rejection revokes first, then queues
+idempotent video-only cleanup outside the publication lock. App-owned terminal
+stops close before stopping; platform teardown exceptions cannot escape to kill
+audio. Replacement registry removal is also owner-checked.
+
+[Detailed source evidence and local checks](video-notification-serialization-2026-10-09.md)
+cover 116 focused host tests, the asynchronous AMS/NMS two-queue negative control,
+256 deterministic queue schedules, six mutation controls, accepted types,
+rejection and unresolved-cleanup ownership, shipping-route binding and limited
+Android API-signature/bytecode validation. Test80 and all release gates remain
+unchanged. Exact-head Android release verification is still required.
+
+## Initial video notification shutdown repair — 9 October 2026
+
+The following records the earlier repair; the queue-serialization update above
+extends it after the build 1240 recurrence.
+
 
 [Build 1236](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37887424893),
 source `a797ec1499b307cdeb9a53d490031a770df9ae0f`, failed release test80 on the
