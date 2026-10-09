@@ -315,7 +315,7 @@ internal fun ConversationScreen(
                                         }
                                     }
                                 }) {
-                                Text(if (visionBusy) "\u2026" else "\U0001F50D")
+                                Text(if (visionBusy) "\u2026" else "\uD83D\uDD0D")
                             }
                             IconButton(enabled = !sending && !inputBusy, onClick = { showVoice() },
                                 modifier = Modifier.testTag("voice_call_open")) {
