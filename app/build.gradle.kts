@@ -151,9 +151,11 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     // Slice 1 video calls: CameraX frame capture + LifecycleService.
-    implementation("androidx.camera:camera-core:1.3.4")
-    implementation("androidx.camera:camera-camera2:1.3.4")
-    implementation("androidx.camera:camera-lifecycle:1.3.4")
+    // 1.4.0 supplies a 16 KB-compatible image_processing_util_jni native library.
+    val cameraXVersion = "1.4.0"
+    implementation("androidx.camera:camera-core:$cameraXVersion")
+    implementation("androidx.camera:camera-camera2:$cameraXVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
     implementation("androidx.lifecycle:lifecycle-service:2.8.7")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")

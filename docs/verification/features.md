@@ -2,6 +2,13 @@
 
 ## Audio/Muse integration candidate — 9 October 2026
 
+Build 1233's signed combined APKs failed the native 16 KB audit on CameraX 1.3.4's
+image-processing library. The minimal repair selects CameraX 1.4.0 consistently;
+its exact official ARM64 ELF passes the unchanged local audit, while 1.3.4
+negative controls fail. Full repaired-head release verification is pending.
+[Failure and artifact preflight](audio-muse-integration-2026-10-09.md#build-1233-camerax-native-compatibility-repair)
+retains the source/run, hashes, compatibility checks and verification limits.
+
 The integration combines verified audio source `a86c3cc439b550c8bbb52bf223d81458ae6066b4`
 (Build 1190) with verified Muse source `e413a89f9249e47484db62d18e4db8d11f190d54`
 (Build 1229). Those independent results do not verify this combined revision.
