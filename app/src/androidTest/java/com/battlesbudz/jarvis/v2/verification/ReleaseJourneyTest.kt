@@ -3139,7 +3139,8 @@ class ReleaseJourneyTest {
             assertTrue(reportPart.get().contains("Retained attempts=2"))
             assertTrue(reportPart.get().toByteArray(Charsets.UTF_8).size <= PipelineBenchmarkTextExport.COPY_BYTES)
             find(By.res("pipeline_benchmark_part_next")).click()
-            find(By.res("pipeline_benchmark_part_copy").text("Copy part 2")).click()
+            // Compose exposes the tagged button and its exact text on separate nodes.
+            find(By.res("pipeline_benchmark_part_copy").hasDescendant(By.text("Copy part 2"))).click()
             activity.onActivity { host -> reportPart.set(host.getSystemService(android.content.ClipboardManager::class.java)
                 .primaryClip?.getItemAt(0)?.coerceToText(host)?.toString().orEmpty()) }
             assertTrue(reportPart.get().contains("part 2/"))

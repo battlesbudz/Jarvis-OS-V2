@@ -4069,6 +4069,21 @@ matrix duration is not known until hosted execution. No Samsung Files/ChatGPT
 picker compatibility, physical Fold 6 behavior, real-model or acoustic success is
 claimed. Receiving-app selection/delivery is outside the controlled fixture.
 
+Build 1243 (`48f99336b5784ea36a143fc9817d217138dba085`) exposed a
+separate test45 selector defect on all five profiles: the tagged clickable
+`pipeline_benchmark_part_copy` parent has empty text, while its child TextView
+contains `Copy part 2`. The test now requires that exact text as a descendant of
+the exact tagged control before clicking it. The part-2 clipboard assertion and
+all existing waits/deadlines remain unchanged. The export status selector still
+combines ID and text on one node because its production `Text` owns both.
+Fresh local exact-method Android/Compose/UiAutomator API compilation passes;
+18 host checks using actual UiAutomator 2.3.0 matcher bytecode cover the five
+retained hierarchies and reject wrong, missing, hidden or unrelated labels.
+Those host checks use an XML-backed node adapter, and the compile fixture uses
+signature-only navigation/activity helpers and generated BuildConfig constants.
+They do not establish device execution, runtime duration, R8 or APK verification;
+the exact repaired revision still requires the full release gate.
+
 ### Native frozen-pause capture (2026-10-09 source checkpoint)
 
 - Native-only immutable prefix proposal, separate full-WAV fallback, raw completed
