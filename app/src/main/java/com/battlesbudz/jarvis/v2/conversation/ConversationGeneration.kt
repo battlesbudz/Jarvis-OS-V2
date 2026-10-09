@@ -13,6 +13,8 @@ import com.battlesbudz.jarvis.v2.chat.AnswerQualityPolicy
 import com.battlesbudz.jarvis.v2.chat.AssistantStreamFilter
 import com.battlesbudz.jarvis.v2.chat.AssistantText
 import com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkPurpose
+import com.battlesbudz.jarvis.v2.vision.NativeVision
+import com.battlesbudz.jarvis.v2.vision.VisionContextFormatter
 import com.battlesbudz.jarvis.v2.voice.FinalVoiceToolGuard
 import com.battlesbudz.jarvis.v2.voice.VoiceRepetitionGuard
 import com.battlesbudz.jarvis.v2.voice.comparison.LiveComparison
@@ -30,7 +32,12 @@ internal class ConversationGeneration(
      * M1d: model-proposed screen mutations never auto-dispatch (D23); the
      * runtime parks them for the user's explicit approval instead.
      */
-    private val onNeedsApproval: (suspend (ActionRequest) -> ExecutionResult)? = null
+    private val onNeedsApproval: (suspend (ActionRequest) -> ExecutionResult)? = null,
+    /**
+     * App assets for the native on-device vision models. Null disables the
+     * vision context injection (existing behavior, e.g. unit tests).
+     */
+    private val appAssets: android.content.res.AssetManager? = null,
 ) {
     suspend fun generate(invocation: ConversationInvocation, contextLimit: Int,
                          routed: RoutedConversation, prepared: PreparedConversation,
@@ -52,10 +59,24 @@ internal class ConversationGeneration(
                 if (guard != null) guard.accept(safe) else reply.postToken(safe)
             }
         }
-        val submission = turnPrompt.assemble(invocation.prompt, null, promptHistory, !modelSession.hasContext,
+        val attachments = readConversationAttachments(invocation.imageUri, invocation.audioUri, reply.benchmark, openAttachment)
+        // Native on-device vision: when the turn carries an image, run all
+        // four models in-process and fuse the structured detections into
+        // Gemma's prompt as authoritative context (replaces the old Termux
+        // HTTP path). One message combines detection + Gemma's understanding.
+        val visionContext = if (appAssets != null && attachments.image != null) {
+            runCatching {
+                val snapshot = NativeVision.analyze(attachments.image, appAssets)
+                reply.benchmark.metric("native_vision_ms", snapshot.totalMs.toLong())
+                VisionContextFormatter.format(snapshot)
+            }.getOrElse { error ->
+                diagnostics.summary("Native vision failed: ${error.message?.take(200)}")
+                null
+            }
+        } else null
+        val submission = turnPrompt.assemble(invocation.prompt, visionContext, promptHistory, !modelSession.hasContext,
             routed.plan.activeSubject, routed.plan.resolvedQuestion, prepared.referenceContext, contextLimit)
         validatePrompt(invocation, routed, prepared, promptHistory, turnPrompt, submission, contextLimit)
-        val attachments = readConversationAttachments(invocation.imageUri, invocation.audioUri, reply.benchmark, openAttachment)
         val directAudio = invocation.directVoiceAudio || invocation.comparison?.request?.path == LiveComparison.Path.GEMMA_DIRECT
         check(invocation.sealedVoiceAudio == null || invocation.voiceAudioIsComplete) { "Incomplete native audio cannot be submitted" }
         val input = ConversationInput(invocation.voiceAudio, directAudio, prepared.textInput, attachments.image, attachments.audio, invocation.sealedVoiceAudio)

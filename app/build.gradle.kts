@@ -141,6 +141,7 @@ android {
     buildFeatures { compose = true; buildConfig = true }
 }
 dependencies {
+    implementation(project(":phoneinference"))
     moonshineSdk("ai.moonshine:moonshine-voice:0.1.5@aar")
     implementation(files(moonshineDir.map { it.file("classes.jar") }).builtBy(extractMoonshine))
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))

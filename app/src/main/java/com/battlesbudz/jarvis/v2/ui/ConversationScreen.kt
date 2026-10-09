@@ -22,7 +22,8 @@ import com.battlesbudz.jarvis.v2.chat.*
 import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionState
 import com.battlesbudz.jarvis.v2.voice.VoiceSessionUi
-import com.battlesbudz.jarvis.v2.vision.PhoneVisionClient
+import com.battlesbudz.jarvis.v2.vision.NativeVision
+import com.battlesbudz.jarvis.v2.vision.VisionContextFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -93,7 +94,6 @@ internal fun ConversationScreen(
     val pendingAttachment = pendingUri?.let { ChatAttachment(it, pendingKind) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
-    val visionClient = remember { PhoneVisionClient() }
     var visionBusy by remember { mutableStateOf(false) }
     DisposableEffect(thread.id) {
         onDispose { if ((context as? android.app.Activity)?.isChangingConfigurations != true)
@@ -295,20 +295,13 @@ internal fun ConversationScreen(
                                             if (bytes.size > 12 * 1024 * 1024) {
                                                 throw IllegalStateException("Image is over the 12 MB limit.")
                                             }
-                                            val (objects, elapsedMs) = visionClient.detectObjects(bytes)
-                                            val summary = if (objects.isEmpty()) {
-                                                "I didn't spot anything recognizable in that image " +
-                                                    "(${elapsedMs} ms on the phone vision server)."
-                                            } else {
-                                                "I see: " + objects.joinToString(", ") {
-                                                    "${it.label} (${"%.2f".format(it.confidence)})"
-                                                } + " \u2014 ${elapsedMs} ms on the phone vision server."
-                                            }
+                                            val snapshot = NativeVision.analyze(bytes, context.assets)
+                                            val summary = VisionContextFormatter.summaryLine(snapshot)
                                             history.updateReply(thread.id, java.util.UUID.randomUUID().toString(), summary, complete = true)
                                         } catch (error: Exception) {
                                             history.updateReply(thread.id, java.util.UUID.randomUUID().toString(),
                                                 "Vision lookup failed: ${error.message ?: "unknown error"}. " +
-                                                    "Is the inference server running in Termux on port 9001?",
+                                                    "The on-device vision models could not run.",
                                                 complete = true)
                                         } finally {
                                             visionBusy = false

@@ -405,3 +405,5 @@
 -keep,includedescriptorclasses class com.battlesbudz.jarvis.v2.ui.WispPresenceKt { *; }
 -keep class com.battlesbudz.jarvis.v2.presentation.AgentActivitySnapshot { *; }
 -keep class com.battlesbudz.jarvis.v2.presentation.AgentActivityKind { *; }
+# Native on-device vision (phoneinference module): keep the ONNX Runtime Java API.
+-keep class ai.onnxruntime.** { *; }

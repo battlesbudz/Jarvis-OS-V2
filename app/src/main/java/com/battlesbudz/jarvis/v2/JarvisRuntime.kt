@@ -607,6 +607,9 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
                     primary = { contentResolver.openInputStream(uri) },
                     fallback = { contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream() })
             }, diagnostics,
+                // Native on-device vision models need app assets; the
+                // :phoneinference module bundles them at build time.
+                appAssets = assets,
                 // M1d: model-proposed screen mutations never auto-dispatch
                 // (D23); park them for the user's explicit approval.
                 onNeedsApproval = { request ->
