@@ -48,7 +48,7 @@ class ConversationContextPreparationTest {
         }
         val model = LocalModelSpec("test", "test.litertlm", recommendedGpu = false)
         val context = ShortTermConversationContext()
-        val models = ConversationModelSession(state, { model }, { false }, { true }, { "unused" },
+        val models = ConversationModelSession(state, { model }, { true }, { }, { true }, { "unused" },
             "unused", context, {})
         val references = object : ConversationReferences {
             override suspend fun fetch(query: String): String? { queries.add(query); return "reference evidence" }

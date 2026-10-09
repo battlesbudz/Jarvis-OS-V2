@@ -11,6 +11,11 @@ package com.battlesbudz.jarvis.v2.eval
  * Fixtures cover every tool in MobileToolCatalog. They are model-input
  * prompts for measurement only: nothing here dispatches, approves, gates,
  * or executes anything.
+ *
+ * Scores measure exact agreement with these fixtures and the tool schema;
+ * they do not prove a requested phone action would succeed. Some fixtures
+ * are not ordinary-chat-admissible (observation tokens are stated, not
+ * observed) and fixed dates can go stale.
  */
 data class ReliabilityFixture(
     val id: String,
@@ -20,6 +25,13 @@ data class ReliabilityFixture(
 )
 
 object ToolReliabilityFixtures {
+    /**
+     * Bump whenever fixtures, the catalog's strict-decode boundary, or
+     * scoring semantics change. Saved scores pin this version; scores from an
+     * older version are never presented as current.
+     */
+    const val SUITE_VERSION = 2
+
     fun all(): List<ReliabilityFixture> = listOf(
         // read_battery (no parameters)
         ReliabilityFixture(
@@ -251,6 +263,124 @@ object ToolReliabilityFixtures {
             utterance = "Send me a notification titled Lunch with the text Time for your lunch break",
             expectedTool = "post_notification",
             expectedArguments = mapOf("title" to "Lunch", "text" to "Time for your lunch break")
+        ),
+
+        // browse_open
+        ReliabilityFixture(
+            id = "browse_open_1",
+            utterance = "Open example.com in the internal browser",
+            expectedTool = "browse_open",
+            expectedArguments = mapOf("url" to "example.com")
+        ),
+        ReliabilityFixture(
+            id = "browse_open_2",
+            utterance = "Browse to https://roboflow.com",
+            expectedTool = "browse_open",
+            expectedArguments = mapOf("url" to "https://roboflow.com")
+        ),
+
+        // browse_read (no parameters)
+        ReliabilityFixture(
+            id = "browse_read_1",
+            utterance = "Read this page",
+            expectedTool = "browse_read"
+        ),
+        ReliabilityFixture(
+            id = "browse_read_2",
+            utterance = "What is on this page?",
+            expectedTool = "browse_read"
+        ),
+
+        // browse_click
+        ReliabilityFixture(
+            id = "browse_click_1",
+            utterance = "Click link l3",
+            expectedTool = "browse_click",
+            expectedArguments = mapOf("target" to "l3", "token" to "abcdef1234567890")
+        ),
+        ReliabilityFixture(
+            id = "browse_click_2",
+            utterance = "Follow the first link on the page",
+            expectedTool = "browse_click",
+            expectedArguments = mapOf("target" to "l0", "token" to "1234567890abcdef")
+        ),
+
+        // browse_back (no parameters)
+        ReliabilityFixture(
+            id = "browse_back_1",
+            utterance = "Go back one page",
+            expectedTool = "browse_back"
+        ),
+        ReliabilityFixture(
+            id = "browse_back_2",
+            utterance = "Back in the browser history",
+            expectedTool = "browse_back"
+        ),
+
+        // browse_forward (no parameters)
+        ReliabilityFixture(
+            id = "browse_forward_1",
+            utterance = "Go forward one page",
+            expectedTool = "browse_forward"
+        ),
+        ReliabilityFixture(
+            id = "browse_forward_2",
+            utterance = "Forward in the browser history",
+            expectedTool = "browse_forward"
+        ),
+
+        // browse_fill
+        ReliabilityFixture(
+            id = "browse_fill_1",
+            utterance = "Fill field f2 with hello",
+            expectedTool = "browse_fill",
+            expectedArguments = mapOf("field" to "f2", "text" to "hello", "token" to "abcdef1234567890")
+        ),
+        ReliabilityFixture(
+            id = "browse_fill_2",
+            utterance = "Type test query into field f0",
+            expectedTool = "browse_fill",
+            expectedArguments = mapOf("field" to "f0", "text" to "test query", "token" to "1234567890abcdef")
+        ),
+
+        // browse_submit
+        ReliabilityFixture(
+            id = "browse_submit_1",
+            utterance = "Submit the form",
+            expectedTool = "browse_submit",
+            expectedArguments = mapOf("token" to "abcdef1234567890")
+        ),
+        ReliabilityFixture(
+            id = "browse_submit_2",
+            utterance = "Send this form",
+            expectedTool = "browse_submit",
+            expectedArguments = mapOf("token" to "1234567890abcdef")
+        ),
+
+        // browse_handoff (no parameters)
+        ReliabilityFixture(
+            id = "browse_handoff_1",
+            utterance = "Open this page in my browser app",
+            expectedTool = "browse_handoff"
+        ),
+        ReliabilityFixture(
+            id = "browse_handoff_2",
+            utterance = "Hand this off to the phone browser",
+            expectedTool = "browse_handoff"
+        ),
+
+        // browse_login
+        ReliabilityFixture(
+            id = "browse_login_1",
+            utterance = "Fill the login with my password manager",
+            expectedTool = "browse_login",
+            expectedArguments = mapOf("token" to "abcdef1234567890")
+        ),
+        ReliabilityFixture(
+            id = "browse_login_2",
+            utterance = "Log in using the password manager",
+            expectedTool = "browse_login",
+            expectedArguments = mapOf("token" to "1234567890abcdef")
         )
     )
 }

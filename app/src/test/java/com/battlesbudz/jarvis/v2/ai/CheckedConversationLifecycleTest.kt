@@ -19,6 +19,7 @@ class CheckedConversationLifecycleTest {
         var disposeEngine: () -> Unit = {}
         var workerAllowed = true
         var quarantineNotifications = 0
+        val quarantineFailures = mutableListOf<Throwable>()
         val owner = CheckedConversationLifecycle(
             createConversation = { Child(++created).also { events += "create:${it.number}" } },
             cancelConversation = { events += "cancel:${it.number}"; cancel() },
@@ -26,7 +27,7 @@ class CheckedConversationLifecycleTest {
             closeConversation = { events += "close:${it.number}"; dispose() },
             closeEngine = { events += "engine.close"; disposeEngine() },
             checkWorkerThread = { check(workerAllowed) { "UI or native callback" } },
-            onQuarantined = { quarantineNotifications++ }
+            onQuarantined = { quarantineNotifications++; quarantineFailures += it }
         ).also { it.initialize { events += "initialize" } }
     }
     private fun failure(block: () -> Unit): Throwable {
@@ -98,6 +99,60 @@ class CheckedConversationLifecycleTest {
         assertTrue(native.owner.safeToRelease)
         assertFalse(native.owner.isQuarantined)
         failure { native.owner.beginTurn() }
+    }
+
+    @Test fun quarantineObserverReceivesTheExactDrainFailure() {
+        val native = Native()
+        val drainFailure = IllegalStateException("native drain failed")
+        native.drain = { throw drainFailure }
+        val turn = native.owner.beginTurn()
+        assertSame(drainFailure, failure { native.owner.finishTurn(turn, { true }) })
+        assertSame(drainFailure, native.quarantineFailures.single())
+        assertTrue(native.owner.isQuarantined)
+        assertTrue(native.owner.requiresConfirmedHistoryRebuild)
+        assertFalse(native.owner.safeToRelease)
+    }
+
+    @Test fun fixtureResetCannotReplaceABorrowedConversation() {
+        // The reliability runner resets before every fixture through ToolCallEngine.
+        // Its reset must respect the same active native owner as ordinary generation.
+        val native = Native()
+        val turn = native.owner.beginTurn()
+        val beforeReset = native.events.toList()
+        failure { native.owner.resetForConfirmedHistory() }
+        assertEquals(beforeReset, native.events)
+        assertFalse(native.owner.safeToRelease)
+        assertTrue(native.owner.finishTurn(turn, { true }))
+
+        native.owner.resetForConfirmedHistory()
+        assertEquals(listOf("initialize", "create:1", "drain:1", "drain:1", "close:1"), native.events)
+        val next = native.owner.beginTurn()
+        assertNotSame(turn.conversation, next.conversation)
+        assertTrue(native.owner.finishTurn(next, { true }))
+        native.owner.close()
+    }
+
+    @Test fun fixtureResetDrainFailureQuarantinesBeforeAnotherConversationCanStart() {
+        val native = Native()
+        val turn = native.owner.beginTurn()
+        assertTrue(native.owner.finishTurn(turn, { true }))
+        val resetFailure = IllegalStateException("reset drain failed")
+        native.drain = { throw resetFailure }
+
+        assertSame(resetFailure, failure { native.owner.resetForConfirmedHistory() })
+        assertSame(resetFailure, native.quarantineFailures.single())
+        assertTrue(native.owner.requiresConfirmedHistoryRebuild)
+        assertFalse(native.owner.safeToRelease)
+        failure { native.owner.beginTurn() }
+        failure { native.owner.resetForConfirmedHistory() }
+        failure { native.owner.close() }
+        assertEquals(listOf("initialize", "create:1", "drain:1", "drain:1"), native.events)
+
+        native.drain = {}
+        native.owner.retryQuarantinedClose()
+        assertEquals(1, native.events.count { it == "create:1" })
+        assertEquals(1, native.events.count { it == "close:1" })
+        assertEquals(1, native.events.count { it == "engine.close" })
     }
 
     @Test fun checkedChildCloseFailureNeverFallsThroughToParentEngineClose() {

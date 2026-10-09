@@ -9,6 +9,28 @@ import org.json.JSONObject
 object MobileToolCatalog {
     const val VERSION = 1
 
+    /** The nine M4 internal-browser tools. */
+    val BROWSE_TOOL_NAMES = setOf(
+        "browse_open", "browse_read", "browse_click",
+        "browse_back", "browse_forward", "browse_fill",
+        "browse_submit", "browse_handoff", "browse_login"
+    )
+
+    /**
+     * M4 wiring gate. The browser runtime path — the browser decorator, the
+     * session owner, and the approval UI wired into the JarvisRuntime and
+     * WorkflowCoordinator executor factories — is not installed in the
+     * production factories yet, so the nine browse tools stay unavailable to
+     * the model until the real path and its admission controls pass an
+     * Android journey. Flipping this without that evidence would advertise
+     * tools whose dispatch fails closed.
+     */
+    object BrowserRuntimeGate {
+        @Volatile var wired: Boolean = false
+    }
+
+    fun isBrowseTool(name: String): Boolean = name in BROWSE_TOOL_NAMES
+
     enum class ParameterType(val schemaType: String) { STRING("string"), INTEGER("integer") }
 
     data class Parameter(
@@ -118,6 +140,102 @@ object MobileToolCatalog {
                 type = ParameterType.STRING,
                 description = "The destination address or place name.",
                 minLength = 1
+            ))
+        ),
+        // M4: internal browser tasks. Reads are open; mutations ride page tokens
+        // from browse_read; submission needs an approval bound to destination.
+        Tool(
+            name = "browse_open",
+            description = "Open a URL in Jarvis's internal browser. The page can then be read, clicked, and filled with the other browse tools.",
+            parameters = listOf(Parameter(
+                name = "url",
+                type = ParameterType.STRING,
+                description = "The website URL, e.g. https://example.com or example.com.",
+                minLength = 1
+            ))
+        ),
+        Tool(
+            name = "browse_read",
+            description = "Read the current internal-browser page: title, text, links, and form fields with IDs and a page token. Call this after browse_open and before browse_click, browse_fill, browse_submit, or browse_login; IDs and tokens expire when the page changes."
+        ),
+        Tool(
+            name = "browse_click",
+            description = "Click a link or button from the latest browse_read result. The link ID and page token must come from that read; stale targets are rejected and never followed.",
+            parameters = listOf(
+                Parameter(
+                    name = "target",
+                    type = ParameterType.STRING,
+                    description = "The link ID from browse_read, e.g. l3.",
+                    minLength = 1,
+                    pattern = "^l[0-9]{1,4}$"
+                ),
+                Parameter(
+                    name = "token",
+                    type = ParameterType.STRING,
+                    description = "The page token from browse_read.",
+                    minLength = 1,
+                    pattern = "^[0-9a-f]{16}$"
+                )
+            )
+        ),
+        Tool(
+            name = "browse_back",
+            description = "Go back one page in the internal browser history."
+        ),
+        Tool(
+            name = "browse_forward",
+            description = "Go forward one page in the internal browser history."
+        ),
+        Tool(
+            name = "browse_fill",
+            description = "Fill a form field from the latest browse_read result. The field ID and page token must come from that read; stale targets are rejected. Filling alone never submits the form.",
+            parameters = listOf(
+                Parameter(
+                    name = "field",
+                    type = ParameterType.STRING,
+                    description = "The field ID from browse_read, e.g. f2.",
+                    minLength = 1,
+                    pattern = "^f[0-9]{1,4}$"
+                ),
+                Parameter(
+                    name = "text",
+                    type = ParameterType.STRING,
+                    description = "The text to fill in, 1 to 500 characters.",
+                    minLength = 1
+                ),
+                Parameter(
+                    name = "token",
+                    type = ParameterType.STRING,
+                    description = "The page token from browse_read.",
+                    minLength = 1,
+                    pattern = "^[0-9a-f]{16}$"
+                )
+            )
+        ),
+        Tool(
+            name = "browse_submit",
+            description = "Submit the filled form on the current internal-browser page. The page token must come from the latest browse_read. Submissions need the user's approval bound to the final destination and form content; without it this reports what would be submitted and asks for approval instead of sending anything.",
+            parameters = listOf(Parameter(
+                name = "token",
+                type = ParameterType.STRING,
+                description = "The page token from browse_read.",
+                minLength = 1,
+                pattern = "^[0-9a-f]{16}$"
+            ))
+        ),
+        Tool(
+            name = "browse_handoff",
+            description = "Open the current internal-browser page in the phone's own browser app."
+        ),
+        Tool(
+            name = "browse_login",
+            description = "Fill the current page's login form with the password manager. Credentials are never shown to the model or written anywhere; only the outcome is reported. The page token must come from the latest browse_read.",
+            parameters = listOf(Parameter(
+                name = "token",
+                type = ParameterType.STRING,
+                description = "The page token from browse_read.",
+                minLength = 1,
+                pattern = "^[0-9a-f]{16}$"
             ))
         ),
         Tool(
@@ -240,7 +358,16 @@ object MobileToolCatalog {
         )
     )
 
-    fun all(): List<Tool> = entries
+    /**
+     * The model-visible tools. Browse tools are withheld while
+     * [BrowserRuntimeGate] is closed (see its KDoc): the model must never
+     * see tools the runtime cannot execute.
+     */
+    fun all(): List<Tool> =
+        if (BrowserRuntimeGate.wired) entries
+        else entries.filter { it.name !in BROWSE_TOOL_NAMES }
+
+    /** Storage/decode lookup: still resolves every catalog tool, including gated browse tools. */
     fun find(name: String): Tool? = entries.firstOrNull { it.name == name }
 
     /** Strict decoder contract: exact keys and JSON types only, with no coercion. */

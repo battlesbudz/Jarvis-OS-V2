@@ -37,14 +37,19 @@ class JournaledActionPipeline(
         if (validation is ActionValidation.Rejected) return ExecutionResult(ExecutionResult.Outcome.REJECTED_VALIDATION, validation.reason)
         val running = try {
             gateCheck(frozenRequest)?.let { return it }
-            val queued = ledger.create(frozenRequest)
+            // Redact only the persisted copy, before the first durable write.
+            // Admission reads remain inside this storage-failure boundary.
+            val journaled = (executor as? SecretAwareExecutor)?.let { aware ->
+                CredentialBoundary.redactForJournal(frozenRequest, aware.secretArgumentKeys(frozenRequest))
+            } ?: frozenRequest
+            val queued = ledger.create(journaled)
             ledger.transition(queued.id, queued.generation, ToolTaskState.RUNNING)
                 ?: return ExecutionResult(false, "The phone action changed before it could start.")
         } catch (failure: ToolTaskStorageException) {
             observeFailure(failure)
             return ExecutionResult(false, failure.userMessage() + " I didn't start this action.")
         }
-        return perform(running, durableGroup = false)
+        return perform(running.copy(request = frozenRequest), durableGroup = false)
     }
 
     fun executeAttempt(attempt: ToolTaskAttempt, approval: ActionApprovalRequest? = null): ExecutionResult {

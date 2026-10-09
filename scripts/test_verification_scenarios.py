@@ -29,7 +29,7 @@ class VerificationScenariosTest(unittest.TestCase):
         self.assert_named_contract(contract["class"], contract["tests"])
         numbers = [int(re.fullmatch(r"test(\d+)_\w+", name)[1]) for name in contract["tests"]]
         self.assertEqual(len(numbers), len(set(numbers)), "Journey numbers must remain distinct")
-        self.assertTrue(set(range(1, 76)) | {90} <= set(numbers),
+        self.assertTrue(set(range(1, 81)) | {90} <= set(numbers),
                         "The combined audio/Wisp/Muse journeys must all remain required")
         self.assertEqual(sorted(contract["tests"]), contract["tests"],
                          "The contract must match NAME_ASCENDING execution order")

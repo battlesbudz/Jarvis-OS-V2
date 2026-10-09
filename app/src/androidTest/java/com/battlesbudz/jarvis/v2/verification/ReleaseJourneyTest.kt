@@ -1,5 +1,6 @@
 package com.battlesbudz.jarvis.v2.verification
 
+import android.app.Notification
 import android.app.NotificationManager
 import android.content.Intent
 import android.content.Context
@@ -1551,6 +1552,9 @@ class ReleaseJourneyTest {
                             combinedJournal.value = combinedLedger.journal()
                         },
                         initialVoiceCalls = emptyList(), onRunModelSmokeTest = { done -> done("Ready-state fixture") },
+                        onRunReliabilityCheck = { _, _, _, done ->
+                            done(kotlin.Result.failure(IllegalStateException("Reliability checks are disabled in this route fixture.")))
+                        },
                         onVoiceTurn = { _, _, _, done -> done("Voice is disabled in this route fixture.") },
                         onEndVoiceCall = { done -> ends.incrementAndGet(); done("") },
                         onResumeVoiceCall = { _, done -> done(null) }, onDeleteVoiceCall = {}, onRefreshVoiceCalls = { emptyList() },
@@ -3124,6 +3128,7 @@ class ReleaseJourneyTest {
         val originalUiArmed = VoiceSessionUi.armed.value
         val originalPaused = VoiceSessionUi.paused.value
         val originalServiceStop = VoiceCallService.stopRequested.value
+        val originalOnCallBegan = controller.onCallBegan
         val callIds = mutableListOf<String>()
         val finishingTurn = Job()
         val passiveTurn = Job()
@@ -3140,6 +3145,14 @@ class ReleaseJourneyTest {
         assertNull("The controlled runtime journey must own its foreground service", callService())
         try {
             runtime.sessionReport = {}
+            // Park the production onCallBegan hook (which would start the real
+            // VideoCallService via START_VIDEO_CAPTURE): this journey never
+            // exercises video, and a leaked capture intent racing the next
+            // test's service quiesce lands on test49's fresh service AFTER its
+            // farewell refresh, leaving a stale "Video on" notification that
+            // fails test49's IDLE assertion (API 35 run 1224). Same parking
+            // as test49.
+            controller.onCallBegan = null
             // An owned, incomplete turn keeps sendChat at its real queue boundary without
             // loading ASR, wake-word, Gemma or Piper models in this lifecycle fixture.
             runtime.voiceTurnJob = finishingTurn
@@ -3224,6 +3237,7 @@ class ReleaseJourneyTest {
                 VoiceSessionUi.armed.value = originalUiArmed
                 VoiceSessionUi.paused.value = originalPaused
                 VoiceCallService.stopRequested.value = originalServiceStop
+                controller.onCallBegan = originalOnCallBegan
             }
         }
     }
@@ -3518,6 +3532,240 @@ class ReleaseJourneyTest {
             VoiceSessionUi.paused.value = false
             VoiceSessionUi.level.value = 0f
             VoiceSessionUi.liveTranscript.value = ""
+        }
+    }
+
+    @Test fun test80_cameraCaptureEndsWithSpokenFarewell() = runBlocking {
+        val runtime = JarvisRuntime.get(context)
+        val controller = runtime.voiceSessionController
+        val originalTurn = runtime.voiceTurnJob
+        val originalArmed = runtime.voiceSessionArmed
+        val originalServiceStop = VoiceCallService.stopRequested.value
+        val originalOnCallBegan = controller.onCallBegan
+        val originalVisionController = CallVisionRegistry.controller
+        val originalVisionHub = CallVisionRegistry.hub
+        // POST_NOTIFICATIONS is a suite-level fixture prerequisite on API
+        // 33+ (see the grant below): the disposable suite owns it for its
+        // entire lifetime. The initial grant state is intentionally NOT
+        // captured for restoration — restoring would mean revoking the
+        // live test process's own permission, which is what killed the
+        // instrumented process in CI (test49, run 1228 attempt 2).
+        val finishingTurn = Job()
+        val callIds = mutableListOf<String>()
+        // A fake vision pipeline stands in for the camera: the runtime's
+        // farewell path must end its capture while wake listening stays
+        // armed. The production onCallBegan hook (which would start the real
+        // VideoCallService) is parked so the fake stays registered.
+        val binder = object : CallVisionController.VideoBinder {
+            var binds = 0
+            var unbinds = 0
+            override val cleanupUnresolved = false
+            override fun bind(): CallVisionController.BindResult {
+                binds++
+                return CallVisionController.BindResult.Started
+            }
+            override fun unbind() { unbinds++ }
+        }
+        val hub = VisionFrameHub()
+        val vision = CallVisionController(binder, hub = hub)
+        val notificationManager = context.getSystemService(NotificationManager::class.java)
+        fun awaitVideo(message: String, condition: () -> Boolean) {
+            val until = SystemClock.uptimeMillis() + 15_000
+            while (SystemClock.uptimeMillis() < until && !condition()) SystemClock.sleep(100)
+            assertTrue(message, condition())
+        }
+        fun videoNotificationText(): String? = notificationManager.activeNotifications
+            .firstOrNull {
+                it.notification.extras.getString(Notification.EXTRA_TITLE) == "Jarvis video"
+            }?.notification?.extras?.getString(Notification.EXTRA_TEXT)
+        // Failure diagnostics: permission status, the enabled state, every
+        // active notification id, and each relevant notification's
+        // title/text — so a repeat failure shows whether the notification
+        // is absent (prerequisite) or present-but-stale (refresh path).
+        fun videoNotificationDiagnostics(): String {
+            val granted = context.checkSelfPermission(
+                android.Manifest.permission.POST_NOTIFICATIONS) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            val enabled = notificationManager.areNotificationsEnabled()
+            val actives = notificationManager.activeNotifications.joinToString("; ") {
+                val n = it.notification
+                "id=${it.id} title=${n.extras.getString(Notification.EXTRA_TITLE)} " +
+                    "text=${n.extras.getString(Notification.EXTRA_TEXT)}"
+            }
+            return "POST_NOTIFICATIONS granted=$granted, areNotificationsEnabled=$enabled, active=[$actives]"
+        }
+        // The first exception thrown by the test body is captured here
+        // BEFORE the finally cleanup runs, so the test report names the
+        // original failure even when cleanup or the service watchdog throws
+        // afterwards (see the catch/finally below).
+        var firstFailure: Throwable? = null
+        try {
+            controller.onCallBegan = null
+            // The farewell refresh only reaches the service/notification
+            // path through the live service instance — without one,
+            // refreshVideoStatusAfterFarewell is a no-op by design and the
+            // fixture would never exercise the production route. Start the
+            // real service so the farewell exercises that exact path; the
+            // fake pipeline is installed afterwards, so the service's own
+            // onCreate pipeline never sees the fixture's calls. The
+            // production live-instance guard is untouched.
+            //
+            // Quiesce first: the previous test's production onCallBegan also
+            // starts this real service, and its teardown (stopSelf via the
+            // stopRequested fail-safe) races this start. A start that lands
+            // mid-teardown trips the system's foreground-start timeout and
+            // kills the whole process (ForegroundServiceDidNotStartInTimeException
+            // — the deterministic CI crash at this test). Stopping and
+            // awaiting the release first makes this a clean, fresh start
+            // every time, with the camera released between tests.
+            context.stopService(Intent(context, VideoCallService::class.java))
+            awaitVideo("A previous video service instance must fully release before a fresh start",
+                { VideoCallService.instance == null })
+            // API 33+: the video notification is only observable while the
+            // suite holds POST_NOTIFICATIONS (device setup installs without
+            // -g). Establish it as an explicit fixture prerequisite before
+            // the service starts. The disposable suite owns this permission
+            // for its entire lifetime: NEVER revoke the target app's
+            // permission from inside its live test process — ActivityManager
+            // kills the instrumented process when its permission is revoked
+            // (proven CI self-kill at test49, run 1228 attempt 2: the pm
+            // revoke in the finally block ran while Jarvis was still the
+            // live instrumented process). The CI emulator is discarded after
+            // the run, so no restoration is needed or safe to attempt here.
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                runCatching {
+                    device.executeShellCommand("pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS")
+                }
+                assertTrue("test80 requires POST_NOTIFICATIONS on API 33+ before the video service starts",
+                    context.checkSelfPermission(
+                        android.Manifest.permission.POST_NOTIFICATIONS) ==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED)
+                assertTrue("test80 requires notifications enabled on API 33+ before the video service starts",
+                    notificationManager.areNotificationsEnabled())
+            }
+            // Own the live-call prerequisite before the service observes its fail-safe.
+            // The original flag is restored by the existing finally block.
+            VoiceCallService.stopRequested.value = false
+            context.startForegroundService(Intent(context, VideoCallService::class.java))
+            awaitVideo("The video service must register its live instance",
+                { VideoCallService.instance != null })
+            CallVisionRegistry.controller = vision
+            CallVisionRegistry.hub = hub
+            runtime.voiceTurnJob = finishingTurn
+            runtime.arm()
+            assertTrue("The fixture must arm the wake session", runtime.voiceSessionArmed)
+
+            // Grant camera, start a call, capture is active with a cached frame.
+            val oldCall = controller.beginCall().also { callIds += it.id }
+            assertEquals(CallVisionController.State.ACTIVE,
+                vision.start(cameraPermissionGranted = true, callId = oldCall.id))
+            hub.register(object : VisionObserver {
+                override fun onFrame(jpegBytes: ByteArray, timestampMs: Long) {}
+            })
+            hub.dispatch(byteArrayOf(1, 2, 3), 100L)
+            assertNotNull("The fixture must hold a cached frame before the farewell", hub.latest())
+
+            // The spoken farewell ends the call: capture must end with it.
+            // The service handles the refresh asynchronously on its own
+            // scope, so the unbind and the notification update are awaited
+            // — never assumed synchronous.
+            runtime.returnToWakeListening(oldCall.id)
+            awaitVideo("A farewell must unbind the camera through the live service refresh",
+                { binder.unbinds == 1 })
+            assertEquals(CallVisionController.State.IDLE, vision.state)
+            assertNull("A farewell must clear the frame cache", hub.latest())
+            assertNull(vision.captureCallId())
+            try {
+                awaitVideo(
+                    "The service notification must reflect the IDLE controller after the farewell, never a stale \"Video on\"",
+                    { videoNotificationText()?.contains("Video idle") == true })
+            } catch (timeout: AssertionError) {
+                // The wait timed out: attach failure-time diagnostics here,
+                // since the follow-up assertTrue with diagnostics below is
+                // unreachable on this path. Evaluated lazily at failure
+                // time so a repeat failure records the actual permission /
+                // notification state; a diagnostic fault can never mask the
+                // original timeout, which is preserved as the cause.
+                val diag = runCatching { videoNotificationDiagnostics() }
+                    .getOrElse { "diagnostics unavailable: ${it.javaClass.simpleName}" }
+                throw AssertionError("${timeout.message}. Timeout diagnostics: $diag", timeout)
+            }
+            assertTrue(
+                "The service notification must reflect the IDLE controller after the farewell, never a stale " +
+                    "\"Video on\". Diagnostics: ${videoNotificationDiagnostics()}",
+                videoNotificationText()?.contains("Video idle") == true)
+            assertTrue("A farewell must keep the user-armed wake session", runtime.voiceSessionArmed)
+            assertEquals(VoiceSessionState.PASSIVE_LISTENING, controller.state.value)
+            assertNull(controller.currentCallId())
+            assertFalse("A farewell must not request service termination",
+                VoiceCallService.stopRequested.value)
+
+            // A new call starts a fresh capture under its own identity; a
+            // stale farewell for the old call must not end it.
+            val newCall = controller.beginCall().also { callIds += it.id }
+            assertEquals(CallVisionController.State.ACTIVE,
+                vision.start(cameraPermissionGranted = true, callId = newCall.id))
+            assertEquals(2, binder.binds)
+            runtime.returnToWakeListening(oldCall.id)
+            assertEquals("A stale farewell must not end a newer call's capture",
+                CallVisionController.State.ACTIVE, vision.state)
+            assertEquals(newCall.id, vision.captureCallId())
+            assertEquals("A stale farewell must not unbind the camera", 1, binder.unbinds)
+            assertEquals(newCall.id, controller.currentCallId())
+
+            // No-resurrection: once the service is gone, a farewell refresh
+            // must not bring the service (or its notification) back — the
+            // live-instance guard drops the refresh instead.
+            context.stopService(Intent(context, VideoCallService::class.java))
+            awaitVideo("The video service must release its live instance",
+                { VideoCallService.instance == null })
+            VideoCallService.refreshVideoStatusAfterFarewell(newCall.id)
+            SystemClock.sleep(1_500)
+            assertNull("A farewell refresh must never resurrect a stopped service",
+                VideoCallService.instance)
+            assertNull("A farewell refresh must never resurrect a stopped notification",
+                videoNotificationText())
+        } catch (t: Throwable) {
+            // Stash the FIRST fixture exception before the finally cleanup
+            // runs: a body crash (e.g. a NoClassDefFoundError from a
+            // removed companion) followed by the service watchdog's own
+            // failure would otherwise report only the watchdog's
+            // ForegroundServiceDidNotStartInTimeException and hide the real
+            // cause. The original exception is rethrown after cleanup below,
+            // with any cleanup failure attached as suppressed.
+            firstFailure = t
+            throw t
+        } finally {
+            var cleanupFailure: Throwable? = null
+            try {
+                try {
+                    controller.currentCallId()?.takeIf { it in callIds }?.let { controller.end() }
+                    callIds.forEach(runtime.voiceCallStore::delete)
+                    finishingTurn.cancel()
+                    runtime.voiceTurnJob = originalTurn
+                    runtime.voiceSessionArmed = originalArmed
+                    VoiceCallService.stopRequested.value = originalServiceStop
+                    context.stopService(Intent(context, VideoCallService::class.java))
+                } finally {
+                    controller.onCallBegan = originalOnCallBegan
+                    CallVisionRegistry.controller = originalVisionController
+                    CallVisionRegistry.hub = originalVisionHub
+                    // No POST_NOTIFICATIONS revocation here: revoking the
+                    // live instrumented process's own permission makes
+                    // ActivityManager kill the process (test49 CI self-kill).
+                    // The disposable suite owns the permission; the emulator
+                    // is discarded after the run.
+                }
+            } catch (t: Throwable) {
+                cleanupFailure = t
+            }
+            if (firstFailure != null) {
+                // The body's exception is the test result: report it even
+                // when cleanup or the later service watchdog threw too.
+                cleanupFailure?.let { firstFailure!!.addSuppressed(it) }
+                throw firstFailure!!
+            }
+            cleanupFailure?.let { throw it }
         }
     }
 
@@ -4919,6 +5167,175 @@ class ReleaseJourneyTest {
         }
     }
     // Leave this selection in durable preferences for the controller's separate-process check.
+    @Test fun test76_browseToolsUnavailableUntilRuntimeWired() {
+        // M4 acceptance: the browser runtime path (browser decorator, session
+        // owner, approval UI) is not installed in the production factories,
+        // so the nine browse tools must be unavailable on every model-facing
+        // surface, and a browse action that somehow reaches the base executor
+        // fails closed with an honest receipt.
+        MobileToolCatalog.BrowserRuntimeGate.wired = false
+        try {
+            val names = MobileToolCatalog.all().map { it.name }
+            assertTrue("No browse tool may be model-visible while unwired",
+                names.none { it in MobileToolCatalog.BROWSE_TOOL_NAMES })
+            val schemas = MobileActionToolDefinitions.all()
+                .map { it.getToolDescriptionJsonString() }
+            assertTrue("No browse schema may reach the model while unwired",
+                schemas.none { it.contains("\"browse_open\"") })
+            val plan = ActionTurnPlan.parse("browse to example.com")
+            assertTrue("Deterministic routing must not plan browse while unwired",
+                plan is ActionTurnPlan.NotAction)
+            val executor = AndroidMobileActionExecutor(context)
+            val result = executor.execute(MobileAction.BrowseOpen("https://example.com"))
+            assertFalse("A browse action must not succeed without the runtime path", result.succeeded)
+            assertTrue("The receipt must name the missing wiring, got: ${result.message}",
+                result.message.contains("isn't wired into this action path"))
+        } finally {
+            MobileToolCatalog.BrowserRuntimeGate.wired = false
+        }
+    }
+
+    @Test fun test77_browserApprovalDiesWithReplacedDom() {
+        // M4 acceptance on Android: a same-URL DOM replacement between
+        // approval and dispatch invalidates the approval, and the backend
+        // performs zero submission.
+        val session = BrowserSession()
+        val bridge = FakeBrowserBridge()
+        val executor = AndroidBrowserExecutor(context,
+            MobileActionExecutor { ExecutionResult(true, "delegated") },
+            session = session, bridge = bridge)
+        fun loginPage(fingerprint: String, actionUrl: String) = BrowserPageSnapshot(
+            url = "https://example.com/login",
+            title = "Example login",
+            textExcerpt = "Sign in to Example",
+            links = listOf(BrowserLink("l0", "Home", "https://example.com/")),
+            forms = listOf(
+                BrowserForm(
+                    id = "form0",
+                    actionUrl = actionUrl,
+                    method = "POST",
+                    fields = listOf(
+                        BrowserField("f0", "Email", FieldKind.EMAIL),
+                        BrowserField("f1", "Password", FieldKind.PASSWORD, secret = true)
+                    ),
+                    submitLabel = "Sign in"
+                )
+            ),
+            contentFingerprint = fingerprint
+        )
+        bridge.snapshotToReturn = loginPage("fp-login", "https://example.com/session")
+        assertTrue(executor.execute(MobileAction.BrowseRead).succeeded)
+        val token = session.currentPage()!!.pageToken
+        assertTrue(executor.execute(MobileAction.BrowseFill("f0", "user@example.com", token)).succeeded)
+        session.admitSubmit(session.proposeSubmit(token)!!)
+        // The DOM is replaced (same URL, new contents) before dispatch.
+        bridge.refreshedSnapshot = loginPage("fp-hijacked", "https://evil.example/collect")
+        val submit = executor.execute(MobileAction.BrowseSubmit(token))
+        assertFalse("a stale approval must never submit", submit.succeeded)
+        assertTrue("stale token must be reported, got: ${submit.message}",
+            submit.message.contains("page changed"))
+        assertEquals("zero submission may reach the backend", 0, bridge.submittedForms)
+    }
+
+    @Test fun test78_scriptStepRunsOnDeviceWithAllowlistedHost() {
+        // M5 acceptance on Android: a workflow Script step runs through the
+        // real isolated interpreter with the production allowlisted host,
+        // and its result binds into a later step.
+        val scriptId = "123e4567-e89b-42d3-a456-426614174011"
+        val toolId = "123e4567-e89b-42d3-a456-426614174012"
+        val definition = WorkflowDefinition(
+            id = "123e4567-e89b-42d3-a456-426614174010",
+            name = "M5 script journey",
+            description = "Script step with result binding.",
+            steps = listOf(
+                WorkflowStep.Script(scriptId, "log(\"hello\"); return 40 + 2;", listOf("log")),
+                WorkflowStep.Tool(toolId,
+                    ActionRequest("set_volume", mapOf("level" to "20")),
+                    bindings = mapOf("level" to WorkflowBinding(scriptId, "result")))
+            ),
+            triggers = listOf(WorkflowTrigger.Manual),
+            origin = WorkflowOrigin.CONVERSATION,
+            createdAtMs = 1_700_000_000_000L,
+            updatedAtMs = 1_700_000_000_000L
+        )
+        val seen = mutableListOf<ActionRequest>()
+        val outcome = WorkflowEngine().run(
+            definition,
+            dispatch = { req -> seen += req; ExecutionResult(true, "ok") },
+            runScript = { step -> step.runWithInterpreter(ScriptHost.withLog()) }
+        )
+        assertTrue("script workflow must complete, got $outcome",
+            outcome is WorkflowRunOutcome.Completed)
+        outcome as WorkflowRunOutcome.Completed
+        assertEquals("42", outcome.results[scriptId]?.get("result"))
+        // The script's result bound into the tool step's arguments.
+        assertEquals("42", seen.single().arguments["level"])
+        // And an undeclared host function stays denied on device too.
+        val denied = WorkflowStep.Script("123e4567-e89b-42d3-a456-426614174013", "read_file(\"/x\");", emptyList())
+            .runWithInterpreter(ScriptHost.withLog())
+        assertTrue(denied is ScriptExecution.Failed)
+    }
+
+    @Test fun test79_workflowExportSanitizesPersonalContent() {
+        // M5 acceptance on Android: export redacts reminder text, the
+        // description and location coordinates; the preview exposes every
+        // retained value; repeated keys with distinct values get distinct
+        // bindings. open_website is not routine-eligible, so the repeated
+        // steps use post_notification: routine-eligible, with personal-content
+        // args (title, text) that are always redacted into setup bindings.
+        val message = "Call mom about Sunday dinner"
+        val titleA = "Dentist appointment reminder"
+        val textA = "Call the dentist to confirm Tuesday"
+        val titleB = "Trash day reminder"
+        val textB = "Put the bins out tonight"
+        val definition = WorkflowDefinition(
+            id = "123e4567-e89b-42d3-a456-426614174020",
+            name = "Export journey",
+            description = "My private routine",
+            steps = listOf(
+                WorkflowStep.Tool("123e4567-e89b-42d3-a456-426614174021", ActionRequest("create_reminder",
+                    mapOf("message" to message, "at_ms" to "1791230400000"))),
+                WorkflowStep.Tool("123e4567-e89b-42d3-a456-426614174022", ActionRequest("post_notification",
+                    mapOf("title" to titleA, "text" to textA))),
+                WorkflowStep.Tool("123e4567-e89b-42d3-a456-426614174023", ActionRequest("post_notification",
+                    mapOf("title" to titleB, "text" to textB)))
+            ),
+            triggers = listOf(
+                WorkflowTrigger.Manual,
+                WorkflowTrigger.OnLocation(40.7128, -74.0060, 100.0)
+            ),
+            origin = WorkflowOrigin.CONVERSATION,
+            createdAtMs = 1_700_000_000_000L,
+            updatedAtMs = 1_700_000_000_000L
+        )
+        val export = exportWorkflow(definition, author = "tester", nowMs = 1_700_000_000_000L)
+        assertFalse(export.manifestJson.contains(message))
+        assertFalse(export.manifestJson.contains("My private routine"))
+        assertFalse(export.manifestJson.contains("40.7128"))
+        assertFalse(export.manifestJson.contains(titleA))
+        assertFalse(export.manifestJson.contains(textA))
+        assertFalse(export.manifestJson.contains(titleB))
+        assertFalse(export.manifestJson.contains(textB))
+        assertTrue(export.manifestJson.contains("{{setup:message}}"))
+        assertTrue(export.manifestJson.contains("{{setup:title}}"))
+        assertTrue(export.manifestJson.contains("{{setup:title_2}}"))
+        assertTrue(export.manifestJson.contains("{{setup:text}}"))
+        assertTrue(export.manifestJson.contains("{{setup:text_2}}"))
+        // The exported manifest still parses and validates on device.
+        val parsed = parseWorkflowManifest(export.manifestJson)
+        // The location trigger is removed (replaced by Manual): coordinates
+        // never survive, so there is no placeholder slot in the JSON — the
+        // importer adds their own location via the location_trigger binding.
+        assertTrue(parsed.workflow.triggers.none { it is WorkflowTrigger.OnLocation })
+        assertTrue(parsed.workflow.triggers.any { it is WorkflowTrigger.Manual })
+        val shared = export.preview.shared.joinToString("\n")
+        assertTrue(shared.contains("create_reminder"))
+        assertTrue(shared.contains("message=\"{{setup:message}}\""))
+        assertTrue(shared.contains("manual (when you ask in chat)"))
+        assertTrue(parsed.setupBindings.map { it.name }.containsAll(
+            listOf("message", "title", "title_2", "text", "text_2", "description", "location_trigger")))
+    }
+
     @Test fun test90_modelSelectionPersistsAcrossRecreation() {
         openBrowser()
         enterText(By.res("model_search"), "Gemma-4-E4B-it")

@@ -33,6 +33,7 @@ for the decision to keep package/collaborator boundaries before adding build mod
 | `JarvisRuntime.get(applicationContext)` | Process composition/lifecycle facade wiring typed owners/ports, shared history and compatibility entry adapters |
 | `runtime/turn/VoiceTurnRunner` | Admits and orders typed voice stages, with fenced terminal errors/rearm policy; resource release belongs to finalizer |
 | `voice/VoiceCallService` | User-started foreground microphone/playback eligibility, notification controls and wake lock |
+| `voice/VideoCallService` / `CallVisionController` / `CameraXVideoBinder` | Call-scoped camera foreground eligibility, capture generation, bounded cleanup and in-memory frames; independent of audio ownership |
 | `voice/VoiceSessionController` | Call identity, transcript, delivered reply/action state and persisted call record |
 | `work/ProcessConversationAdmission` | One shared atomic admission owner for conversation and model-file operations; `ConversationWork` is its compatibility view |
 | `conversation/ConversationCoordinator` | Typed invocation admission, ordered stages and exact returned child-job cleanup; native resource release waits for this job |
@@ -87,7 +88,7 @@ playback evidence; unplayed generated text must not become heard conversation co
 | `ai/audio/` and native audio capture | Pinned local graph reconstruction, immutable artifact leases and bounded PCM-to-native worker; sealed inputs enter ordinary Conversation | `GemmaStreamingArtifactStore`, `WeightlessEncoderRecipe`, `RetainedPcmEncoderWorker`, `GemmaStreamingAudioCapture` |
 | `voice/comparison/` | Explicit live comparison trial data; does not replace normal turn ownership | `LiveComparison` |
 | `actions/` | Strict action contracts, complete plans, authority/approval, Android effects and durable journals | `ActionTurnPlan`, `ActionTurnRunner`, `JournaledActionPipeline`, `AndroidMobileActionExecutor` |
-| `eval/` | Offline tool-emission fixtures and strict-decoder scoring; no runtime registration, admission, permission or effect dispatch | `ToolReliabilityFixtures`, `ToolReliabilityScorer`, `ToolCallRunner` (currently a fake-backed test seam) |
+| `eval/` | Explicit local-model fixture checks through exclusive model admission and checked engine teardown; exact file/suite-bound reports; never Android side-effect dispatch | `ToolReliabilityBenchmark`, `LiteRtLmToolCallRunner`, `ToolReliabilityFixtures`, `ToolReliabilityScorer`, `ReliabilityReportStore` |
 | `memory/` | Memory policy, reviewed facts, source archives, SQLite/migration, retrieval and delivery validity | `ConversationMemory`, `MemoryOs`, `SQLiteMemoryStore`, `MemoryDeliveryFence` |
 | `diagnostics/` | Per-reply latency, production benchmark capture/journals/exports and bounded diagnostic evidence | `PipelineBenchmarks`, `ReplyCaptureBenchmark`, `PipelineBenchmarkCapture`, `AndroidPipelineBenchmarkStore`, `DiagnosticRecorder`, `ConversationMetricsExport` |
 | `presentation/` | Model setup operations through a narrow session port; durable download work identity | `ModelSetupOperations`, `ModelSetupContract` |

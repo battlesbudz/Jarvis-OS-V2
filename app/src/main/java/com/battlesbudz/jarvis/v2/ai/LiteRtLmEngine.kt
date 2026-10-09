@@ -34,7 +34,7 @@ class LiteRtLmEngine(
     val visionEnabled: Boolean = false,
     val audioEnabled: Boolean = false,
     private val speculativeDecoding: Boolean? = null
-) : LocalModelEngine, Closeable {
+) : LocalModelEngine, Closeable, ToolCallEngine {
     private companion object {
         val initializationLock = Any()
         val callbackDepth = ThreadLocal.withInitial { 0 }
@@ -154,7 +154,7 @@ class LiteRtLmEngine(
     }
 
     private var toolsEnabled = false
-    suspend fun setToolsEnabled(enabled: Boolean): Boolean {
+    override suspend fun setToolsEnabled(enabled: Boolean): Boolean {
         if (toolsEnabled == enabled) return false
         resetConversation()
         toolsEnabled = enabled
@@ -166,7 +166,7 @@ class LiteRtLmEngine(
     )
 
     @OptIn(ExperimentalApi::class)
-    suspend fun initialize() {
+    override suspend fun initialize() {
         currentCoroutineContext().ensureActive()
         val initializationBeganAt = System.nanoTime()
         lifecycle.initialize {
@@ -183,7 +183,7 @@ class LiteRtLmEngine(
     }
 
     /** The next prompt must be rebuilt from confirmed history and actual tool receipts. */
-    suspend fun resetConversation() = withContext(NonCancellable) {
+    override suspend fun resetConversation() = withContext(NonCancellable) {
         lifecycle.resetForConfirmedHistory()
         nativeSession++
         nativeSubmissions = 0

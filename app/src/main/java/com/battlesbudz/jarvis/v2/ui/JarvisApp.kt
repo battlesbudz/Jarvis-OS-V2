@@ -41,6 +41,12 @@ fun JarvisApp(
     voiceModelStore: com.battlesbudz.jarvis.v2.voice.TtsModelStore,
     initialVoiceCalls: List<VoiceCallRecord>,
     onRunModelSmokeTest: ((String) -> Unit) -> Unit,
+    onRunReliabilityCheck: (
+        List<com.battlesbudz.jarvis.v2.ai.LocalModelSpec>,
+        com.battlesbudz.jarvis.v2.eval.ReliabilityReportStore,
+        suspend (com.battlesbudz.jarvis.v2.eval.ToolReliabilityBenchmark.Progress) -> Unit,
+        (kotlin.Result<com.battlesbudz.jarvis.v2.eval.ToolReliabilityBenchmark.Result>) -> Unit
+    ) -> Unit,
     onVoiceTurn: (Boolean, (String) -> Unit, (String, String, Boolean) -> Unit, (String) -> Unit) -> Unit,
     onEndVoiceCall: ((String) -> Unit) -> Unit,
     onResumeVoiceCall: (VoiceCallRecord, (String?) -> Unit) -> Unit,
@@ -64,6 +70,7 @@ fun JarvisApp(
         val setup = rememberModelSetupState(store, ModelSetupActions(
             select = onSelectModel, delete = onDeleteModel, test = onRunModelSmokeTest,
             download = onDownloadGemma, cancelDownload = onCancelModelDownload, importModel = onImportModel,
+            runReliabilityCheck = onRunReliabilityCheck,
         ))
         var pickerModelId by rememberSaveable { mutableStateOf<String?>(null) }
         var showingVoiceCalls by rememberSaveable { mutableStateOf(false) }

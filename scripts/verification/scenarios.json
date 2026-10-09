@@ -77,6 +77,11 @@
     "test73_providerGrantDisciplineAndExposureGate",
     "test74_reminderTextRequestCreatesRealScheduleAndListsIt",
     "test75_emptyScheduleRendersHonestEmptyState",
+    "test76_browseToolsUnavailableUntilRuntimeWired",
+    "test77_browserApprovalDiesWithReplacedDom",
+    "test78_scriptStepRunsOnDeviceWithAllowlistedHost",
+    "test79_workflowExportSanitizesPersonalContent",
+    "test80_cameraCaptureEndsWithSpokenFarewell",
     "test90_modelSelectionPersistsAcrossRecreation"
   ],
   "restart_model": "Gemma-4-E4B-it",

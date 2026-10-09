@@ -29,6 +29,23 @@ sealed interface MobileAction {
     data object ShowSchedule : MobileAction
     /** Post a user-visible notification; the step a reminder occurrence runs at fire time. */
     data class PostNotification(val title: String, val text: String) : MobileAction
+    /** M4: open a URL in the internal browser (not the external browser app). */
+    data class BrowseOpen(val url: String) : MobileAction
+    /** M4: read-only page snapshot; needs no grant, carries the page token. */
+    data object BrowseRead : MobileAction
+    /** M4: follow a link from the latest browse_read; the token must be fresh. */
+    data class BrowseClick(val linkId: String, val token: String) : MobileAction
+    /** M4: history navigation; read-only. */
+    data object BrowseBack : MobileAction
+    data object BrowseForward : MobileAction
+    /** M4: fill a form field; filling alone never submits the form. */
+    data class BrowseFill(val fieldId: String, val text: String, val token: String) : MobileAction
+    /** M4: submit the filled form; needs a D11 admission bound to destination+fields. */
+    data class BrowseSubmit(val token: String) : MobileAction
+    /** M4: hand the current page to the native browser app. */
+    data object BrowseHandoff : MobileAction
+    /** M4: password-manager fill; credentials never touch the model. */
+    data class BrowseLogin(val token: String) : MobileAction
 }
 
 /** Verbs accepted by the media_control tool; skip maps to next/previous track. */
@@ -91,7 +108,11 @@ class MobileActionValidator {
     private val packageNamePattern = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+")
     private val screenTargetPattern = Regex("^n[0-9]{1,4}$")
     private val screenTokenPattern = Regex("^[0-9a-f]{16}$")
+    private val browserLinkPattern = Regex("^l[0-9]{1,4}$")
+    private val browserFieldPattern = Regex("^f[0-9]{1,4}$")
+    private val browserTokenPattern = Regex("^[0-9a-f]{16}$")
     private val maxScreenTypeText = 200
+    private val maxBrowseFillText = 500
 
     fun validate(request: ActionRequest): ActionValidation = when (request.name) {
         "read_battery" -> ActionValidation.Valid(MobileAction.ReadBattery)
@@ -127,6 +148,50 @@ class MobileActionValidator {
             val destination = request.arguments["destination"]?.trim().orEmpty()
             if (destination.isNotBlank()) ActionValidation.Valid(MobileAction.Navigate(destination))
             else ActionValidation.Rejected("A destination is required.")
+        }
+        "browse_open" -> BrowserNavigationPolicy.normalizeUrl(request.arguments["url"].orEmpty())
+            ?.let { ActionValidation.Valid(MobileAction.BrowseOpen(it)) }
+            ?: ActionValidation.Rejected("A valid http or https website URL is required.")
+        "browse_read" -> ActionValidation.Valid(MobileAction.BrowseRead)
+        "browse_click" -> {
+            val targetId = request.arguments["target"]?.trim().orEmpty()
+            val token = request.arguments["token"]?.trim().orEmpty()
+            when {
+                !targetId.matches(browserLinkPattern) ->
+                    ActionValidation.Rejected("A browse click target must be a link ID from browse_read (e.g. l3).")
+                !token.matches(browserTokenPattern) ->
+                    ActionValidation.Rejected("A browse click needs the page token from browse_read.")
+                else -> ActionValidation.Valid(MobileAction.BrowseClick(targetId, token))
+            }
+        }
+        "browse_back" -> ActionValidation.Valid(MobileAction.BrowseBack)
+        "browse_forward" -> ActionValidation.Valid(MobileAction.BrowseForward)
+        "browse_fill" -> {
+            val fieldId = request.arguments["field"]?.trim().orEmpty()
+            val text = request.arguments["text"]?.trim().orEmpty()
+            val token = request.arguments["token"]?.trim().orEmpty()
+            when {
+                !fieldId.matches(browserFieldPattern) ->
+                    ActionValidation.Rejected("A browse fill target must be a field ID from browse_read (e.g. f2).")
+                text.isEmpty() || text.length > maxBrowseFillText ->
+                    ActionValidation.Rejected("Fill text must be 1 to $maxBrowseFillText characters.")
+                !token.matches(browserTokenPattern) ->
+                    ActionValidation.Rejected("A browse fill needs the page token from browse_read.")
+                else -> ActionValidation.Valid(MobileAction.BrowseFill(fieldId, text, token))
+            }
+        }
+        "browse_submit" -> {
+            val token = request.arguments["token"]?.trim().orEmpty()
+            if (!token.matches(browserTokenPattern))
+                ActionValidation.Rejected("A browse submit needs the page token from browse_read.")
+            else ActionValidation.Valid(MobileAction.BrowseSubmit(token))
+        }
+        "browse_handoff" -> ActionValidation.Valid(MobileAction.BrowseHandoff)
+        "browse_login" -> {
+            val token = request.arguments["token"]?.trim().orEmpty()
+            if (!token.matches(browserTokenPattern))
+                ActionValidation.Rejected("A browse login needs the page token from browse_read.")
+            else ActionValidation.Valid(MobileAction.BrowseLogin(token))
         }
         "screen_observe" -> ActionValidation.Valid(MobileAction.ScreenObserve)
         "screen_tap" -> screenTarget(request, "tap") { targetId, token ->

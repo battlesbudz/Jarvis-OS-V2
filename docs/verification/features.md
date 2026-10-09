@@ -1,5 +1,30 @@
 # Feature and acceptance map
 
+## Audio/Muse integration candidate — 9 October 2026
+
+The integration combines verified audio source `a86c3cc439b550c8bbb52bf223d81458ae6066b4`
+(Build 1190) with verified Muse source `e413a89f9249e47484db62d18e4db8d11f190d54`
+(Build 1229). Those independent results do not verify this combined revision.
+The current named contract requires **81 main journeys**: tests 01–80 and 90.
+Audio's Wisp journey remains test49; the camera-farewell journey is test80 so
+both have unique execution identities. The latter retains the notification
+grant and cleanup assertions without revoking its own live process permission.
+
+Required preserved behavior includes checked native turn/drain/quarantine and
+confirmed-history ownership; atomic conversation/model-test admission; durable
+startup and workflow occurrence barriers; Wisp journal observation; private
+credential/task/export handling; call-scoped camera cleanup; and the closed
+browser runtime gate. Model details combine observed speed with model-file- and
+suite-bound tool fixture agreement, retaining both sets of caveats and expanded
+evidence. The full existing audio native pins, strict numerical oracle,
+five-profile matrix, actual 16 KB/Fold checks, receipt binding and signed
+previous-APK upgrade without clearing user data remain authoritative.
+
+[Integration acceptance and verification status](audio-muse-integration-2026-10-09.md)
+records the reconciliations and remaining gates. No combined APK is verified
+until the exact candidate finishes the complete hosted release workflow.
+
+
 ## Android model-free timing handshake proposal — 7 October 2026
 
 The existing five-profile layout `test04_nativeLibrariesLoadAtExpectedPageSize`

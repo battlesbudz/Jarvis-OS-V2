@@ -93,6 +93,21 @@ sealed interface WorkflowStep {
         val candidates: List<ActionRequest>,
         val budget: EffortBudget
     ) : WorkflowStep
+
+    /**
+     * M5: run an on-phone script in the isolated script runtime (D44, T20).
+     * The language has no I/O of its own: the script can only call the
+     * [requiredHostFunctions], and the engine executes it through an
+     * injected runner that fails closed when no runtime is installed.
+     * The script's text result is exposed as the "result" output for later
+     * steps to bind.
+     */
+    data class Script(
+        override val id: String,
+        val source: String,
+        val requiredHostFunctions: List<String> = emptyList(),
+        val outputs: Map<String, WorkflowValueType> = emptyMap()
+    ) : WorkflowStep
 }
 
 /** What starts a workflow occurrence. */
@@ -292,6 +307,24 @@ fun validateWorkflowDefinition(definition: WorkflowDefinition) {
                 require(step.budget.noProgressLimit in 1..10) { "noProgressLimit must be 1-10." }
                 seenOutputs[step.id] = mapOf("message" to WorkflowValueType.TEXT, "succeeded" to WorkflowValueType.BOOLEAN)
             }
+            is WorkflowStep.Script -> {
+                require(step.source.isNotBlank() && step.source.length <= 8192) {
+                    "Script source must be 1-8192 characters."
+                }
+                require(step.requiredHostFunctions.size <= 16) {
+                    "A script step declares at most 16 required host functions."
+                }
+                step.requiredHostFunctions.forEach { fn ->
+                    require(fn.isNotBlank() && fn.length <= 64 &&
+                        fn.all { c -> c.isLetterOrDigit() || c == '_' || c == '.' }) {
+                        "Bad host function name “$fn”."
+                    }
+                }
+                require(step.outputs.all { (name, type) -> name == "result" && type == WorkflowValueType.TEXT }) {
+                    "Script outputs may only declare “result” as TEXT."
+                }
+                seenOutputs[step.id] = mapOf("result" to WorkflowValueType.TEXT)
+            }
         }
     }
     val seenOutputs = mutableMapOf<String, Map<String, WorkflowValueType>>()
@@ -438,6 +471,7 @@ fun WorkflowDefinition.previewText(): String {
             }
             is WorkflowStep.Adaptive -> lines += prefix +
                 "Try to: ${step.goal} (up to ${step.budget.maxAttempts} tries, then asks you)"
+            is WorkflowStep.Script -> lines += prefix + "Run an on-phone script"
         }
     }
     val number = intArrayOf(1)
@@ -457,6 +491,7 @@ private fun collectToolSteps(step: WorkflowStep): List<WorkflowStep.Tool> = when
         WorkflowStep.Tool(UUID.randomUUID().toString(), it)
     }
     is WorkflowStep.Wait -> emptyList()
+    is WorkflowStep.Script -> emptyList()
 }
 
 private fun describeCondition(condition: WorkflowCondition): String {

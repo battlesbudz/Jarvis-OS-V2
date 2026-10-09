@@ -24,7 +24,13 @@ interface ToolTaskStore {
         return next
     }
 }
+/**
+ * Typed journal failures. The journal is the device's memory of what was
+ * authorized: every failure mode is explicit so callers can report
+ * honestly and never silently reset or rewrite the bytes on disk.
+ */
 enum class ToolTaskStorageFailure { UNAVAILABLE, INVALID_CONTENT, UNSUPPORTED_SCHEMA, UNSUPPORTED_CONTENT, WRITE_FAILED }
+
 class ToolTaskStorageException(
     val failure: ToolTaskStorageFailure = ToolTaskStorageFailure.UNAVAILABLE,
     val journalSchemaVersion: Int? = null
@@ -43,7 +49,6 @@ class ToolTaskStorageException(
             "Saved phone tasks couldn't be read. Phone actions are paused; the data hasn't been reset."
     }
 }
-
 
 class InMemoryToolTaskStore : ToolTaskStore {
     private var journal = ToolTaskJournal()
@@ -170,6 +175,12 @@ class FileToolTaskStore(
             validate(journal)
             // An older typed writer must never discard newer fields or coerce malformed values.
             // Unknown semantics stay on disk untouched until a compatible build understands them.
+            // Schema stays 3 with the new Script step kind: Script steps are a step kind
+            // within schema 3, not a schema bump. Upgrade: older schema-3 journals (and
+            // schema 1/2 journals) read normally; the authority checks above still apply.
+            // Rollback: a build without the Script codec that opens a journal containing
+            // Script steps fails closed during decoding; the bytes on disk are
+            // preserved. Unknown fields on supported steps are UNSUPPORTED_CONTENT.
             verifyLosslessRead(root, JSONObject(encode(journal)), rootObject = true)
             journal
         }
@@ -399,6 +410,10 @@ class FileToolTaskStore(
             .put("candidates", JSONArray(candidates.map { it.json() }))
             .put("budget", JSONObject().put("maxAttempts", budget.maxAttempts)
                 .put("maxWallMs", budget.maxWallMs).put("noProgressLimit", budget.noProgressLimit))
+        is WorkflowStep.Script -> JSONObject().put("kind", "script").put("id", id)
+            .put("source", source)
+            .put("requiredHostFunctions", JSONArray(requiredHostFunctions))
+            .put("outputs", JSONObject(outputs.mapValues { (_, t) -> t.name }))
     }
 
     private fun JSONObject.workflowStep(): WorkflowStep {
@@ -425,6 +440,14 @@ class FileToolTaskStore(
                     getJSONArray("candidates").objects { it.request() },
                     EffortBudget(budget.getInt("maxAttempts"), budget.strictLong("maxWallMs"),
                         budget.getInt("noProgressLimit")))
+            }
+            "script" -> {
+                val outputsObj = getJSONObject("outputs")
+                val outputs = outputsObj.keys().asSequence().associateWith { key ->
+                    WorkflowValueType.valueOf(outputsObj.getString(key))
+                }
+                WorkflowStep.Script(id, getString("source"),
+                    getJSONArray("requiredHostFunctions").strings(), outputs)
             }
             else -> throw IllegalArgumentException("Unknown step kind.")
         }

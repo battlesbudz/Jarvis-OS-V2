@@ -181,4 +181,129 @@ class JournaledActionPipelineTest {
         assertEquals(listOf(ToolTaskState.RUNNING, ToolTaskState.RUNNING), observed)
         assertEquals(1, calls)
     }
+
+    @Test fun secretFillTextRedactedPreJournalButDispatchedVerbatim() = withFile { file ->
+        // Pre-journal credential boundary: the journaled attempt redacts the
+        // secret argument, while the live dispatch uses the original.
+        val ledger = ToolTaskLedger(FileToolTaskStore(file))
+        var dispatched: MobileAction? = null
+        val observed = mutableListOf<ToolTaskState>()
+        val executor = object : MobileActionExecutor, SecretAwareExecutor {
+            override fun execute(action: MobileAction): ExecutionResult {
+                dispatched = action
+                assertEquals(listOf(ToolTaskState.RUNNING), observed)
+                assertFalse(file.readText().contains("s3cr3t-pw"))
+                return ExecutionResult(true, "filled")
+            }
+            override fun secretArgumentKeys(request: ActionRequest): Set<String> =
+                if (request.name == "browse_fill") setOf("text") else emptySet()
+        }
+        val pipeline = JournaledActionPipeline(ledger, executor, onJournalChanged = {
+            val saved = ToolTaskLedger(FileToolTaskStore(file)).snapshot().single()
+            assertEquals(CredentialBoundary.REDACTED, saved.request.arguments["text"])
+            assertFalse("observation must only see redacted durable bytes", file.readText().contains("s3cr3t-pw"))
+            observed += saved.state
+        })
+        val request = ActionRequest(
+            "browse_fill",
+            mapOf("field" to "f1", "text" to "s3cr3t-pw", "token" to "0123456789abcdef")
+        )
+        assertTrue(pipeline.execute(request).succeeded)
+        assertEquals(listOf(ToolTaskState.RUNNING, ToolTaskState.SUCCEEDED), observed)
+        val saved = ToolTaskLedger(FileToolTaskStore(file)).snapshot().single()
+        assertEquals(CredentialBoundary.REDACTED, saved.request.arguments["text"])
+        assertEquals("f1", saved.request.arguments["field"])
+        assertEquals("the live dispatch must use the original secret",
+            MobileAction.BrowseFill("f1", "s3cr3t-pw", "0123456789abcdef"), dispatched)
+        assertFalse("the secret must never reach the bytes on disk",
+            file.readText().contains("s3cr3t-pw"))
+    }
+
+    @Test fun nonSecretRequestsJournalVerbatim() = withFile { file ->
+        val ledger = ToolTaskLedger(FileToolTaskStore(file))
+        val executor = object : MobileActionExecutor, SecretAwareExecutor {
+            override fun execute(action: MobileAction) = ExecutionResult(true, "ok")
+            override fun secretArgumentKeys(request: ActionRequest): Set<String> = emptySet()
+        }
+        val pipeline = JournaledActionPipeline(ledger, executor)
+        val request = ActionRequest("set_volume", mapOf("level" to "20"))
+        assertTrue(pipeline.execute(request).succeeded)
+        val saved = ToolTaskLedger(FileToolTaskStore(file)).snapshot().single()
+        assertEquals(mapOf("level" to "20"), saved.request.arguments)
+    }
+
+    @Test fun sourceAdmissionStorageFailureIsReportedBeforeSecretInspectionOrDispatch() = withFile { file ->
+        val raw = "corrupt journal with private contents"
+        file.writeText(raw)
+        val ledger = ToolTaskLedger(FileToolTaskStore(file))
+        var calls = 0
+        var inspections = 0
+        var observations = 0
+        val failures = mutableListOf<ToolTaskStorageFailure>()
+        val executor = object : MobileActionExecutor, SecretAwareExecutor {
+            override fun execute(action: MobileAction): ExecutionResult {
+                calls++
+                return ExecutionResult(true, "effect")
+            }
+            override fun secretArgumentKeys(request: ActionRequest): Set<String> {
+                inspections++
+                return setOf("text")
+            }
+        }
+        val result = JournaledActionPipeline(ledger, executor,
+            sourceAccess = ToolSourceAccess(ledger),
+            onJournalChanged = { observations++ },
+            onStorageFailure = { failure, _ ->
+                failures += failure.failure
+                throw IllegalStateException("presentation failure")
+            }).execute(ActionRequest("browse_fill",
+                mapOf("field" to "f1", "text" to "s3cr3t-pw", "token" to "0123456789abcdef")))
+
+        assertFalse(result.succeeded)
+        assertTrue(result.message.contains("I didn't start this action."))
+        assertFalse(result.message.contains(raw))
+        assertFalse(result.message.contains("s3cr3t-pw"))
+        assertEquals(listOf(ToolTaskStorageFailure.INVALID_CONTENT), failures)
+        assertEquals(0, calls)
+        assertEquals(0, inspections)
+        assertEquals(0, observations)
+        assertEquals(raw, file.readText())
+    }
+
+    @Test fun redactedIntentSurvivesReceiptFailureAndRecoveryWithoutRepeatingTheSecretEffect() = withFile { file ->
+        val goodStore = FileToolTaskStore(file)
+        var writes = 0
+        val store = object : ToolTaskStore {
+            override fun read() = goodStore.read()
+            override fun update(change: (List<ToolTaskAttempt>) -> List<ToolTaskAttempt>): List<ToolTaskAttempt> {
+                if (++writes == 3) throw ToolTaskStorageException(ToolTaskStorageFailure.WRITE_FAILED)
+                return goodStore.update(change)
+            }
+        }
+        val ledger = ToolTaskLedger(store)
+        val observed = mutableListOf<ToolTaskState>()
+        var calls = 0
+        val executor = object : MobileActionExecutor, SecretAwareExecutor {
+            override fun execute(action: MobileAction): ExecutionResult {
+                calls++
+                assertEquals("s3cr3t-pw", (action as MobileAction.BrowseFill).text)
+                return ExecutionResult(true, "filled")
+            }
+            override fun secretArgumentKeys(request: ActionRequest): Set<String> = setOf("text")
+        }
+        val result = JournaledActionPipeline(ledger, executor,
+            onJournalChanged = { observed += ledger.snapshot().single().state })
+            .execute(ActionRequest("browse_fill",
+                mapOf("field" to "f1", "text" to "s3cr3t-pw", "token" to "0123456789abcdef")))
+
+        assertEquals(ExecutionResult.Outcome.UNKNOWN_COMPLETION, result.outcome)
+        assertEquals(listOf(ToolTaskState.RUNNING, ToolTaskState.RUNNING), observed)
+        assertFalse(file.readText().contains("s3cr3t-pw"))
+        val recovered = ToolTaskLedger(goodStore).recoverAfterRestart().single()
+        assertEquals(ToolTaskState.UNKNOWN_OUTCOME, recovered.state)
+        assertEquals(CredentialBoundary.REDACTED, recovered.request.arguments["text"])
+        assertFalse(file.readText().contains("s3cr3t-pw"))
+        assertEquals(1, calls)
+    }
+
 }

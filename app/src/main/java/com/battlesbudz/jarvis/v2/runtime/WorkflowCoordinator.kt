@@ -17,6 +17,10 @@ import com.battlesbudz.jarvis.v2.actions.ProviderSettings
 import com.battlesbudz.jarvis.v2.actions.ProviderWireNames
 import com.battlesbudz.jarvis.v2.actions.ReminderCoordinator
 import com.battlesbudz.jarvis.v2.actions.ReminderScheduling
+import com.battlesbudz.jarvis.v2.actions.ScriptHost
+import com.battlesbudz.jarvis.v2.actions.ScriptExecution
+import com.battlesbudz.jarvis.v2.actions.WorkflowStep
+import com.battlesbudz.jarvis.v2.actions.runWithInterpreter
 import com.battlesbudz.jarvis.v2.actions.ToolSourceAccess
 import com.battlesbudz.jarvis.v2.actions.ToolTaskLedger
 import com.battlesbudz.jarvis.v2.actions.ToolTaskStorageException
@@ -40,6 +44,7 @@ import com.battlesbudz.jarvis.v2.actions.describeForOverlay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -71,11 +76,15 @@ internal class WorkflowCoordinator(
 
     /** M2: the workflow ledger shares the task ledger's durable store. */
     private val workflowLedger = WorkflowLedger(taskStore)
-    /** M2 alarm delivery: claim -> run -> terminal checkpoint, on the caller's thread. */
+    /**
+     * M2 alarm delivery: claim -> run -> terminal checkpoint, on the caller's thread.
+     * Cancellation follows the coordinator scope: cancelling the scope (teardown)
+     * cancels a running alarm occurrence instead of leaving it uninterruptible.
+     */
     private val alarmRunner = WorkflowAlarmRunner(
         claimDue = { id -> try { workflowLedger.claimDueOccurrence(id) } catch (_: ToolTaskStorageException) { null } },
         claimResume = { id -> try { workflowLedger.claimResumeOccurrence(id) } catch (_: ToolTaskStorageException) { null } },
-        runOccurrence = { occurrence, resume -> runOrResume(occurrence, resume) }
+        runOccurrence = { occurrence, resume -> runOrResume(occurrence, resume, isCancelled = { !scope.isActive }) }
     )
     private val phoneActionLedger = ToolTaskLedger(taskStore)
 
@@ -226,7 +235,7 @@ internal class WorkflowCoordinator(
 
     fun runWorkflowOccurrence(occurrence: WorkflowOccurrence) {
         scope.launch(Dispatchers.Default) {
-            runOrResume(occurrence, resume = false)
+            runOrResume(occurrence, resume = false, isCancelled = { !isActive })
         }
     }
 
@@ -237,11 +246,11 @@ internal class WorkflowCoordinator(
      */
     fun resumeWorkflowOccurrence(occurrence: WorkflowOccurrence) {
         scope.launch(Dispatchers.Default) {
-            runOrResume(occurrence, resume = true)
+            runOrResume(occurrence, resume = true, isCancelled = { !isActive })
         }
     }
 
-    private fun runOrResume(occurrence: WorkflowOccurrence, resume: Boolean) {
+    private fun runOrResume(occurrence: WorkflowOccurrence, resume: Boolean, isCancelled: () -> Boolean) {
         val definition = try { workflowLedger.definitionFor(occurrence) }
         catch (_: ToolTaskStorageException) { null }
         if (definition == null) {
@@ -250,16 +259,25 @@ internal class WorkflowCoordinator(
             return
         }
         val outcome = try {
+            // M5: script steps run through the real isolated interpreter
+            // with the production allowlisted host — never the "no runtime"
+            // fallback. Cancellation follows the run's coroutine.
+            val runScript: (WorkflowStep.Script) -> ScriptExecution = { step ->
+                step.runWithInterpreter(productionScriptHost(), isCancelled = isCancelled)
+            }
             if (resume) {
                 WorkflowEngine().run(definition,
                     startPath = occurrence.resumePath,
                     skipStepIds = occurrence.completedStepIds.toSet(),
                     initialResults = occurrence.stepResults,
                     initialCompleted = occurrence.completedStepIds.toSet(),
-                    dispatch = { request -> dispatchWorkflowStep(occurrence, request) })
+                    dispatch = { request -> dispatchWorkflowStep(occurrence, request) },
+                    runScript = runScript)
             } else {
                 WorkflowEngine()
-                    .run(definition, dispatch = { request -> dispatchWorkflowStep(occurrence, request) })
+                    .run(definition,
+                        dispatch = { request -> dispatchWorkflowStep(occurrence, request) },
+                        runScript = runScript)
             }
         } catch (e: Exception) {
             WorkflowRunOutcome.Failed(
@@ -328,6 +346,15 @@ internal class WorkflowCoordinator(
         occurrence: WorkflowOccurrence,
         request: ActionRequest
     ): ExecutionResult = routineStepDispatcher.dispatch(occurrence, request)
+
+    /**
+     * M5: the allowlisted script host installed in production. Scripts run
+     * through the isolated JarvisScript interpreter ([runWithInterpreter]);
+     * the only effect a script can produce today is appending to the run's
+     * output via log(). The allowlist grows only as new host functions are
+     * designed and reviewed — never implicitly.
+     */
+    private fun productionScriptHost(): ScriptHost = ScriptHost.withLog()
 
     private fun phoneActionPipeline(executor: MobileActionExecutor, occurrenceId: String) =
         JournaledActionPipeline(

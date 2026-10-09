@@ -25,6 +25,17 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             "assistant/JarvisInteractionSessionService.kt": "MainActivity::class.java",
         }))
 
+    def test_video_notification_entry_point_cannot_compose_runtime(self):
+        self.assertEqual([], self.violations({
+            "voice/VideoCallService.kt": "MainActivity::class.java",
+        }))
+        self.assertTrue(self.violations({
+            "voice/VideoCallService.kt": "JarvisRuntime.get(context)",
+        }))
+        self.assertTrue(self.violations({
+            "voice/CameraXVideoBinder.kt": "MainActivity::class.java",
+        }))
+
     def test_workflow_receiver_is_a_narrow_runtime_composition_entry_point(self):
         source = "import com.battlesbudz.jarvis.v2.JarvisRuntime\nJarvisRuntime.get(context)"
         self.assertEqual([], self.violations({"actions/WorkflowScheduleReceiver.kt": source}))

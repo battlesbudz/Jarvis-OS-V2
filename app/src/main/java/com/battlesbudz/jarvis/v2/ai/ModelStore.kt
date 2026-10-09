@@ -83,6 +83,23 @@ class ModelStore @JvmOverloads constructor(
     fun isReady(): Boolean =
         hasModel(selectedModel())
 
+    /**
+     * Pinned SHA-256 of the installed model file, or null when the file is
+     * missing, replaced, or failed integrity verification. Saved reliability
+     * scores bind to this, so only a score measured against the exact current
+     * valid bytes is ever presented as current — a stale cached digest is
+     * never returned for a file that no longer matches it.
+     */
+    fun modelFingerprint(spec: LocalModelSpec): String? {
+        val key = fingerprintKey(spec)
+        val file = fileFor(spec)
+        if (!file.isFile || file.length() == 0L) return null
+        if (preferences.getBoolean("${key}_invalid", false)) return null
+        if (preferences.getLong("${key}_length", -1L) != file.length()) return null
+        if (preferences.getLong("${key}_modified", -1L) != file.lastModified()) return null
+        return preferences.getString(key, null)
+    }
+
     fun isUsable(spec: LocalModelSpec = selectedModel()): Boolean {
         val file = fileFor(spec)
         val key = fingerprintKey(spec)

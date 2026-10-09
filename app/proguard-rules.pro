@@ -384,6 +384,7 @@
     public *** getVoiceTurnJob*();
     public void setVoiceTurnJob*(...);
     public boolean getVoiceSessionArmed*();
+    public void setVoiceSessionArmed*(boolean);
     public int getAudioRecoveryAttempts*();
     public void setAudioRecoveryAttempts*(int);
     public *** getReturnToWakeCuePending*();
@@ -405,3 +406,69 @@
 -keep,includedescriptorclasses class com.battlesbudz.jarvis.v2.ui.WispPresenceKt { *; }
 -keep class com.battlesbudz.jarvis.v2.presentation.AgentActivitySnapshot { *; }
 -keep class com.battlesbudz.jarvis.v2.presentation.AgentActivityKind { *; }
+# test80 (video-call farewell): the release journey reads the service's live
+# instance and invokes the spoken-farewell refresh through the Companion
+# after startForegroundService. R8 removed the Companion class outright
+# (release mapping: VideoCallService$Companion -> R8$$REMOVED$$CLASS), so the
+# instrumentation DEX's Companion/getInstance/refreshVideoStatusAfterFarewell
+# linkage fails on device. Keep only that narrow test-facing companion
+# surface; the rest of the service stays eligible for release shrinking.
+-keepclassmembers class com.battlesbudz.jarvis.v2.voice.VideoCallService {
+    public static ** Companion;
+}
+-keep,allowoptimization class com.battlesbudz.jarvis.v2.voice.VideoCallService$Companion {
+    public com.battlesbudz.jarvis.v2.voice.VideoCallService getInstance();
+    public void refreshVideoStatusAfterFarewell(java.lang.String);
+}
+# test80 (video-call farewell): the journey swaps a fake vision pipeline into
+# the call registry; R8 otherwise removes these helpers as unreachable from
+# the production factories.
+-keep class com.battlesbudz.jarvis.v2.voice.CallVisionController** { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.CallVisionRegistry** { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VisionFrameHub** { *; }
+-keep class com.battlesbudz.jarvis.v2.voice.VisionObserver** { *; }
+# test76/test77 (M4 browser runtime): the production factories do not install
+# the browser path, so R8 removes the whole subtree; the release journey
+# drives it directly across the shared class loader.
+-keep class com.battlesbudz.jarvis.v2.actions.BrowserPageSnapshot** { *; }
+# test77 (M4 browser runtime): currentPage() returns BrowserPage, not the
+# snapshot DTO; without this keep R8 renames it (observed as actions/w)
+# and strips getPageToken(), crashing the release journey.
+-keep class com.battlesbudz.jarvis.v2.actions.BrowserPage** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.BrowserProvenance** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.BrowserLink** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.BrowserForm** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.BrowserField** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.FieldKind** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.BrowserBridge** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.FakeBrowserBridge** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.BrowserSession** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.AndroidBrowserExecutor** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.MobileToolCatalog** { *; }
+# test78 (M5 script step): the allowlisted script host and its execution
+# outcome are only referenced by the release journey.
+-keep class com.battlesbudz.jarvis.v2.actions.ScriptHost** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScriptExecution** { *; }
+# test78 (M5 script step): the journey calls runWithInterpreter with default
+# args through the ScriptRuntimeKt facade; R8 otherwise drops the $default
+# synthetic (observed as NoSuchMethodError on the obfuscated facade).
+-keep,includedescriptorclasses class com.battlesbudz.jarvis.v2.actions.ScriptRuntimeKt {
+    public static *** runWithInterpreter(...);
+    public static *** runWithInterpreter$default(...);
+}
+# test79 (M5 workflow export): top-level export/parse entry points and the
+# export model, referenced only by the release journey.
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowImportExportKt** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowManifestKt** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowExport** { *; }
+# test79 (M5 workflow export): the parsed manifest DTO and its nested model
+# types are only touched by the release journey; without this keep R8 renames
+# the WorkflowManifest class (observed as actions/g5) and strips getWorkflow(),
+# crashing the release journey with NoSuchMethodError.
+-keep class com.battlesbudz.jarvis.v2.actions.WorkflowManifest** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ExportPreview** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.RedactionRecord** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.SetupBinding** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ManifestProvenance** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ToolContract** { *; }
+-keep class com.battlesbudz.jarvis.v2.actions.ScriptRuntimeRequirements** { *; }

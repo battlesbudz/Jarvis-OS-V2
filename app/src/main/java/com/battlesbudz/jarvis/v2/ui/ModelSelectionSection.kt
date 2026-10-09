@@ -15,7 +15,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import com.battlesbudz.jarvis.v2.ai.LocalModelSpec
+import com.battlesbudz.jarvis.v2.ai.ModelCatalog
 import com.battlesbudz.jarvis.v2.ai.PhoneCheck
+import com.battlesbudz.jarvis.v2.eval.AndroidReliabilityReportStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 /** Model browsing/storage UI reused by first-run setup and conversation settings. */
 @Composable
@@ -34,6 +40,12 @@ internal fun ModelSelectionSection(
         var confirmingDelete by remember { mutableStateOf(false) }
         var detailsOpen by remember(state.selectedModel.id) { mutableStateOf(false) }
         var storageRevision by remember { mutableStateOf(0) }
+        val reliabilityStore = remember(phoneContext) { AndroidReliabilityReportStore(phoneContext) }
+        var reliabilityRunning by remember { mutableStateOf(false) }
+        var reliabilityProgress by remember { mutableStateOf<String?>(null) }
+        var reliabilityRevision by remember { mutableStateOf(0) }
+        // reliabilityRevision is read to refresh scores after a run completes.
+        val toolCapableInstalled = rememberToolCapableInstalled(state, storageRevision, reliabilityRevision)
         val canBrowse = !state.modelImportRunning
         val canManage = enabled && !state.smokeTestRunning && !state.modelImportRunning
         val storedBytes = remember(state.selectedModel, storageRevision, state.modelImportRunning, state.modelDownloadRunning) {
@@ -58,7 +70,9 @@ internal fun ModelSelectionSection(
             downloadingId = state.downloadingModelId,
             onDownload = state::download,
             onDismiss = { expanded = false },
-            onSelect = state::select
+            onSelect = state::select,
+            reliabilityStore = reliabilityStore,
+            reliabilityFingerprint = { state.store.modelFingerprint(it) }
         )
         Text(if (state.store.hasModel(state.selectedModel)) "Installed" else "Not installed")
         if (state.downloadingModelId != null) {
@@ -88,8 +102,13 @@ internal fun ModelSelectionSection(
                 confirmButton = {
                     androidx.compose.material3.TextButton(onClick = {
                         confirmingDelete = false
+                        val deletedId = state.selectedModel.id
                         state.deleteSelectedModel()
-                        storageRevision++
+                        if (state.selectionError == null) {
+                            // Deleting the weights invalidates its bound score.
+                            reliabilityStore.clear(deletedId)
+                            storageRevision++
+                        }
                     }) { Text("Delete") }
                 },
                 dismissButton = {
@@ -120,7 +139,91 @@ internal fun ModelSelectionSection(
         androidx.compose.material3.TextButton(onClick = { detailsOpen = true }, modifier = Modifier.testTag("selected_model_details")) {
             Text("Model details")
         }
-        if (detailsOpen) ModelDetails(state.selectedModel, phone, benchmarkStore, state.store.hasModel(state.selectedModel)) { detailsOpen = false }
+        if (detailsOpen) ModelDetails(state.selectedModel, phone, benchmarkStore, state.store.hasModel(state.selectedModel), reliabilityStore,
+            reliabilityFingerprint = { state.store.modelFingerprint(it) }) { detailsOpen = false }
+        // Tool-call reliability check (M8 early enabler). User-triggered only:
+        // never runs on launch. Scores persist per model in the reliability
+        // store and surface in the model browser cards and details above.
+        // The check runs through the ModelSetupOperations ownership path:
+        // exclusive admission, the idle chat engine closed before the
+        // benchmark allocates its own native engine, model-file integrity
+        // verified, gate released afterwards.
+        OutlinedButton(
+            enabled = canManage && !state.modelDownloadRunning && !reliabilityRunning && toolCapableInstalled.isNotEmpty(),
+            onClick = {
+                reliabilityRunning = true
+                reliabilityProgress = "Starting reliability check…"
+                state.runReliabilityCheck(
+                    toolCapableInstalled,
+                    reliabilityStore,
+                    onProgress = { progress ->
+                        withContext(Dispatchers.Main) {
+                            reliabilityProgress =
+                                "Checking ${progress.modelId}… ${progress.finishedFixtures}/${progress.totalFixtures} prompts " +
+                                    "(model ${progress.finishedModels + 1} of ${progress.totalModels})"
+                        }
+                    },
+                    onFinished = { result ->
+                        result
+                            .onSuccess { benchmarkResult ->
+                                reliabilityProgress = buildString {
+                                    append("Done: ")
+                                    append(benchmarkResult.reports.entries.joinToString { (_, report) ->
+                                        "${report.modelId} ${report.percent.roundToInt()}%"
+                                    })
+                                    if (benchmarkResult.skipped.isNotEmpty()) {
+                                        append(" · skipped (busy): ${benchmarkResult.skipped.joinToString()}")
+                                    }
+                                }
+                                reliabilityRevision++
+                            }
+                            .onFailure { error ->
+                                reliabilityProgress =
+                                    "Reliability check failed: ${(error.message ?: "unknown error").take(120)}"
+                            }
+                        reliabilityRunning = false
+                    }
+                )
+            },
+            modifier = Modifier.fillMaxWidth().testTag("tool_reliability_run")
+        ) { Text(if (reliabilityRunning) "Running reliability check…" else "Run tool reliability check") }
+        reliabilityProgress?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall)
+        }
+        Text(
+            "Runs 32 prompts per installed tool-capable model and measures exact agreement with the fixture set " +
+                "and tool schema — not proof that a requested phone action would succeed. " +
+                "Takes several minutes; keep the app open.",
+            style = MaterialTheme.typography.bodySmall
+        )
         state.selectionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
+}
+
+/**
+ * Installed tool-capable models: a pure function of current installation
+ * state, so download/import completion events refresh the list.
+ */
+internal fun toolCapableInstalledSpecs(
+    specs: List<LocalModelSpec>,
+    isInstalled: (LocalModelSpec) -> Boolean
+): List<LocalModelSpec> = specs.filter { it.supportsTools && isInstalled(it) }
+
+/**
+ * Installed tool-capable models, recomputed whenever installation state may
+ * have changed. Download/import completion flips
+ * [ModelSetupState.downloadingModelId] and [ModelSetupState.modelImportRunning],
+ * so newly installed models appear in the check's target list without a
+ * manual refresh — they can no longer be silently skipped.
+ */
+@Composable
+internal fun rememberToolCapableInstalled(
+    state: ModelSetupState,
+    storageRevision: Int,
+    reliabilityRevision: Int
+): List<LocalModelSpec> = remember(
+    state.selectedModel, storageRevision, reliabilityRevision,
+    state.downloadingModelId, state.modelImportRunning
+) {
+    toolCapableInstalledSpecs(ModelCatalog.all, state.store::hasModel)
 }

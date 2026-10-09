@@ -5,6 +5,8 @@ import com.battlesbudz.jarvis.v2.ai.ConversationPromptBuilder
 import com.battlesbudz.jarvis.v2.ai.TurnPlan
 import com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkCapture
 import com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkOutcome
+import com.battlesbudz.jarvis.v2.eval.ConversationAdmission
+import com.battlesbudz.jarvis.v2.eval.admitConversationTurn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -57,13 +59,40 @@ internal class ConversationCoordinator(
             }, startedNanos = started)
         val prompt = ConversationPrompt(promptBuilder, input.voiceAudio != null,
             contextTokens = { modelSession.selectedModel().contextTokens }, memoryContext = { reply.memoryContext })
-        if (input.voiceAudio == null && input.frozenActionPlan == null && !input.callOwned && modelSession.operationActive()) {
-            reply.recordOutcome(PipelineBenchmarkOutcome.REJECTED, "model_operation_busy")
-            reply.finish("A voice or model operation is still active. Please finish it first.")
-            reply.finishBenchmark()
-            return null
-        }
-        if (!ConversationWork.activeJobs.compareAndSet(0, 1)) {
+        // One atomic admission mechanism shared with the reliability check:
+        // the model gate is acquired BEFORE the conversation marks itself
+        // active, and released once the activeJobs claim is taken. Reading
+        // the gate's state without acquiring it leaves a race on
+        // Dispatchers.Default where the check acquires the gate, observes
+        // idle, and closes the idle engine after this read but before the
+        // compareAndSet below — starting a conversation on a closed engine.
+        // Serializing both admissions on the gate closes it: either this turn
+        // wins the gate and the check later observes activeJobs != 0, or the
+        // check holds the gate and this acquire fails. A second independent
+        // busy check cannot fix this; the gate is the one serialization point.
+        // Voice and accepted-action turns skip the gate: their caller holds
+        // the model lease for the whole turn.
+        if (input.voiceAudio == null && input.frozenActionPlan == null && !input.callOwned) {
+            when (admitConversationTurn(
+                acquireGate = modelSession.tryBeginModelOperation,
+                releaseGate = modelSession.endModelOperation,
+                markActive = { ConversationWork.activeJobs.compareAndSet(0, 1) }
+            )) {
+                ConversationAdmission.ADMITTED -> Unit
+                ConversationAdmission.GATE_BUSY -> {
+                    reply.recordOutcome(PipelineBenchmarkOutcome.REJECTED, "model_operation_busy")
+                    reply.finish("A voice or model operation is still active. Please finish it first.")
+                    reply.finishBenchmark()
+                    return null
+                }
+                ConversationAdmission.SESSION_BUSY -> {
+                    reply.recordOutcome(PipelineBenchmarkOutcome.REJECTED, "conversation_busy")
+                    reply.finish("The previous response is still finishing. Please try again in a moment.")
+                    reply.finishBenchmark()
+                    return null
+                }
+            }
+        } else if (!ConversationWork.activeJobs.compareAndSet(0, 1)) {
             reply.recordOutcome(PipelineBenchmarkOutcome.REJECTED, "conversation_busy")
             reply.finish("The previous response is still finishing. Please try again in a moment.")
             reply.finishBenchmark()

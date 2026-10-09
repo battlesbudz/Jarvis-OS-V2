@@ -36,6 +36,17 @@ sealed interface WorkflowRunOutcome {
 /** Screen mutations always need an exact approval; D11 categories map here as those tools land. */
 internal fun ActionRequest.requiresExactApproval(): Boolean = name in SCREEN_MUTATION_TOOLS
 
+/**
+ * M5: the outcome of a script step, produced by the injected [WorkflowEngine.run]
+ * `runScript` runner. The Android runtime wires this to the isolated script
+ * interpreter ([runWithInterpreter]); the default fails closed.
+ */
+sealed interface ScriptExecution {
+    data class Succeeded(val resultText: String) : ScriptExecution
+    data class Failed(val reason: String) : ScriptExecution
+    data object Cancelled : ScriptExecution
+}
+
 class WorkflowEngine(private val now: () -> Long = System::currentTimeMillis) {
 
     /**
@@ -47,6 +58,11 @@ class WorkflowEngine(private val now: () -> Long = System::currentTimeMillis) {
      * Routine tool steps dispatch one at a time through [dispatch]: a
      * failed step stops the run before any later step is admitted, so a
      * failure never drags already-admitted siblings with it.
+     *
+     * M5: script steps run through [runScript], which the Android runtime
+     * wires to the isolated [ScriptRuntime]. The default fails closed —
+     * without a runtime installed, script steps fail instead of running
+     * anywhere unisolated.
      */
     fun run(
         definition: WorkflowDefinition,
@@ -54,9 +70,12 @@ class WorkflowEngine(private val now: () -> Long = System::currentTimeMillis) {
         skipStepIds: Set<String> = emptySet(),
         initialResults: Map<String, Map<String, String>> = emptyMap(),
         initialCompleted: Set<String> = emptySet(),
-        dispatch: (ActionRequest) -> ExecutionResult
+        dispatch: (ActionRequest) -> ExecutionResult,
+        runScript: (WorkflowStep.Script) -> ScriptExecution = {
+            ScriptExecution.Failed("No script runtime is installed on this device.")
+        }
     ): WorkflowRunOutcome {
-        val run = Run(definition, dispatch)
+        val run = Run(definition, dispatch, runScript)
         initialResults.forEach { (stepId, outputs) ->
             run.results.getOrPut(stepId) { mutableMapOf() }.putAll(outputs)
         }
@@ -84,7 +103,8 @@ class WorkflowEngine(private val now: () -> Long = System::currentTimeMillis) {
 
     private inner class Run(
         val definition: WorkflowDefinition,
-        val dispatch: (ActionRequest) -> ExecutionResult
+        val dispatch: (ActionRequest) -> ExecutionResult,
+        val runScript: (WorkflowStep.Script) -> ScriptExecution
     ) {
         val results = mutableMapOf<String, MutableMap<String, String>>()
         val completedStepIds = mutableListOf<String>()
@@ -136,6 +156,19 @@ class WorkflowEngine(private val now: () -> Long = System::currentTimeMillis) {
                         when (val adaptive = runAdaptive(step, prefix + i)) {
                             is Flow.Continue -> Unit
                             else -> return adaptive
+                        }
+                    }
+                    is WorkflowStep.Script -> {
+                        when (val script = runScript(step)) {
+                            is ScriptExecution.Succeeded -> {
+                                results.getOrPut(step.id) { mutableMapOf() }["result"] =
+                                    script.resultText.take(512)
+                                completedStepIds += step.id
+                            }
+                            is ScriptExecution.Failed ->
+                                return Flow.Fail("Script step failed: ${script.reason}")
+                            is ScriptExecution.Cancelled ->
+                                return Flow.Fail("Script step was cancelled.")
                         }
                     }
                 }

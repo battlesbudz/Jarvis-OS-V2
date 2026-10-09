@@ -39,7 +39,17 @@ data class ToolScore(
 data class ModelReport(
     val modelId: String,
     val caseResults: List<CaseResult>,
-    val toolScores: List<ToolScore>
+    val toolScores: List<ToolScore>,
+    /**
+     * Identity of the actual model file measured. Scores are only presented
+     * for this exact file; a replaced or deleted weight file invalidates them.
+     */
+    val modelFingerprint: String? = null,
+    /**
+     * Fixture/scorer version measured with. Scores are only presented for the
+     * current suite version; changed fixtures or scoring invalidate them.
+     */
+    val suiteVersion: Int = ToolReliabilityFixtures.SUITE_VERSION
 ) {
     val total: Int get() = caseResults.size
     val passed: Int get() = caseResults.count { it.passed }
@@ -88,10 +98,12 @@ object ToolReliabilityScorer {
         )
     }
 
-    fun scoreModel(
+    suspend fun scoreModel(
         modelId: String,
         fixtures: List<ReliabilityFixture>,
-        runner: ToolCallRunner
+        runner: ToolCallRunner,
+        modelFingerprint: String? = null,
+        suiteVersion: Int = ToolReliabilityFixtures.SUITE_VERSION
     ): ModelReport {
         val results = fixtures.map { fixture ->
             scoreCase(fixture, runner.runUtterance(modelId, fixture.utterance))
@@ -99,6 +111,6 @@ object ToolReliabilityScorer {
         val toolScores = results
             .groupBy { it.expectedTool }
             .map { (tool, toolResults) -> ToolScore(tool, toolResults.size, toolResults.count { it.passed }) }
-        return ModelReport(modelId, results, toolScores)
+        return ModelReport(modelId, results, toolScores, modelFingerprint, suiteVersion)
     }
 }

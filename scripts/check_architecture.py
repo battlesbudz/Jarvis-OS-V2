@@ -21,6 +21,8 @@ COMPOSITION = {
     "actions/WorkflowScheduleReceiver.kt",
 }
 ACTIVITY_ENTRY_POINTS = {
+    # Camera foreground service owns the notification PendingIntent entry point.
+    "voice/VideoCallService.kt",
     "MainActivity.kt",
     "voice/VoiceCallService.kt",
     "assistant/JarvisInteractionSessionService.kt",

@@ -19,7 +19,21 @@ class VoiceSessionController(
     private var activeCall: VoiceCallRecord? = null
     private var resumedFromCallId: String? = null
 
-    @Synchronized fun beginCall(conversationId: String? = null): VoiceCallRecord {
+    /**
+     * Fired after a new call segment begins, outside the session lock. The
+     * runtime uses it to start call-scoped video capture; unit tests leave
+     * it null. Never throws into the call lifecycle — a failing observer is
+     * reported, not propagated.
+     */
+    var onCallBegan: ((callId: String) -> Unit)? = null
+
+    fun beginCall(conversationId: String? = null): VoiceCallRecord {
+        val record = beginCallLocked(conversationId)
+        notifyCallBegan(record.id)
+        return record
+    }
+
+    @Synchronized private fun beginCallLocked(conversationId: String? = null): VoiceCallRecord {
         check(activeCall == null) { "A Voice Call is already active." }
         val now = nowMs()
         resumedFromCallId = null
@@ -165,7 +179,21 @@ class VoiceSessionController(
     }
 
     /** Starts a new linked session with the prior call's transcript as context. */
-    @Synchronized fun resumeCall(call: VoiceCallRecord): VoiceCallRecord {
+    fun resumeCall(call: VoiceCallRecord): VoiceCallRecord {
+        val record = resumeCallLocked(call)
+        notifyCallBegan(record.id)
+        return record
+    }
+
+    private fun notifyCallBegan(callId: String) {
+        try {
+            onCallBegan?.invoke(callId)
+        } catch (_: Exception) {
+            // Capture startup must never break the call itself.
+        }
+    }
+
+    @Synchronized private fun resumeCallLocked(call: VoiceCallRecord): VoiceCallRecord {
         check(activeCall == null) { "A Voice Call is already active." }
         resumedFromCallId = call.id
         val latest = store.list().firstOrNull { it.id == call.id } ?: call
