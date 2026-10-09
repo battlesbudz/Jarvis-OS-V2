@@ -604,12 +604,11 @@ internal class JarvisRuntime private constructor(context: android.content.Contex
             override suspend fun fetch(query: String) = referenceGrounding.fetchIfRequested(query)?.context
             override fun isInsufficientAnswer(answer: String) = referenceGrounding.isInsufficientAnswer(answer)
         }
-        val acknowledgeVoice = { activeVoiceOutput?.acknowledgeConfirmedTurn(); Unit }
         val history = { conversationHistory.contextAfterMemoryCutoff() }
         ConversationCoordinator(runtimeScope, { mainHandler.post(it) }, { conversationHistory.current.value.id }, models,
-            ConversationRouting(history, turnOrchestrator, models, acknowledgeVoice, { lastPhoneActionStatus },
+            ConversationRouting(history, turnOrchestrator, models, { lastPhoneActionStatus },
                 { lastPhoneActionStatus = it }, diagnostics),
-            ConversationContextPreparation(history, memory, turnOrchestrator, models, references, acknowledgeVoice, diagnostics),
+            ConversationContextPreparation(history, memory, turnOrchestrator, models, references, diagnostics),
             ConversationGeneration(models, references, promptBuilder, { uri ->
                 openConversationAttachment(
                     primary = { contentResolver.openInputStream(uri) },

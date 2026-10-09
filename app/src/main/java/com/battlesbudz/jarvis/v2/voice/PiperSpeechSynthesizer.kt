@@ -3,7 +3,6 @@ package com.battlesbudz.jarvis.v2.voice
 import com.k2fsa.sherpa.onnx.GenerationConfig
 import com.k2fsa.sherpa.onnx.OfflineTts
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.isActive
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -11,33 +10,19 @@ import kotlin.coroutines.CoroutineContext
  *
  * The caller exclusively owns [tts] and releases its lease only after generation returns.
  * This collaborator never acquires, releases, queues or plays the model's output. The
- * existing Java callback remains the JNI boundary; exceptions leave it only after JNI returns.
+ * native whole-passage call returns before cancellation checks or lease release.
  */
 internal class PiperSpeechSynthesizer(
     private val tts: OfflineTts,
     private val generation: GenerationConfig,
     private val owner: CoroutineContext,
-    private val stopped: () -> Boolean,
-    private val answerTextReady: () -> Boolean,
     private val log: (String) -> Unit
 ) {
-    class FillerSuperseded : RuntimeException()
-
-    fun synthesize(text: String, optionalFiller: Boolean = false): SpeechAudio {
+    fun synthesize(text: String): SpeechAudio {
         owner.ensureActive()
         val started = System.nanoTime()
         log("tts_generation_started chars=${text.length} preview=${text.take(80)} api=generateWithConfig")
-        val generated = if (optionalFiller) {
-            // No PCM is played or cached until optional preparation completes.
-            val callback = SherpaPcmCallback {
-                if (stopped() || !owner.isActive || answerTextReady()) 0 else 1
-            }
-            val result = tts.generateWithConfigAndCallback(text, generation, callback)
-            callback.failure?.let { throw it }
-            owner.ensureActive()
-            if (stopped() || answerTextReady()) throw FillerSuperseded()
-            result
-        } else tts.generateWithConfig(text, generation)
+        val generated = tts.generateWithConfig(text, generation)
         owner.ensureActive()
         val rate = generated.sampleRate
         val pcm = SynthesizedSpeechPcm.fromModel(generated.samples, rate)

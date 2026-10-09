@@ -31,7 +31,6 @@ internal class ConversationContextPreparation(
     private val turnOrchestrator: TurnOrchestrator,
     private val modelSession: ConversationModelSession,
     private val references: ConversationReferences,
-    private val acknowledgeVoice: () -> Unit,
     private val diagnostics: ConversationDiagnostics
 ) {
     suspend fun prepare(request: ConversationTurnRequest, routed: RoutedConversation,
@@ -119,7 +118,6 @@ internal class ConversationContextPreparation(
         val lookupStarted = System.nanoTime()
         if (turnPlan.lookupQuery != null) benchmark.mark("reference_lookup_started")
         val referenceContext = turnPlan.lookupQuery?.takeUnless { personalMemoryRecall }?.let {
-            if (request.voiceAttached) acknowledgeVoice()
             references.fetch(it)
         }
         if (turnPlan.lookupQuery != null) diagnostics.summary(

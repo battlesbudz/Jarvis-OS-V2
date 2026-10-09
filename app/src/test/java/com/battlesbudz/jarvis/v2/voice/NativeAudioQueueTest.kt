@@ -36,7 +36,7 @@ class NativeAudioQueueTest {
         withTimeout(2000) { producer.join() }
         assertTrue(exited.isCompleted)
     }
-    @Test fun cachedCueAllowsBoundedGenerationHeadroomWithoutReordering() = runBlocking {
+    @Test fun normalAnswerRetainsBoundedGenerationHeadroomWithoutReordering() = runBlocking {
         val queue = NativeAudioQueue<Int>(8) { 400 }
         val producer = launch(Dispatchers.Default) {
             repeat(12) { queue.sendFromNative(it) }; queue.close()

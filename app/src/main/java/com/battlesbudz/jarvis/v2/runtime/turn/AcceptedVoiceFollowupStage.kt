@@ -238,7 +238,7 @@ internal class AcceptedVoiceFollowupStage(
                             },
                             onEchoReference = resources.resources::rememberPlayback,
                             onPlaybackEnded = { resources.resources.playbackEnded(System.nanoTime() / 1_000_000) },
-                            acknowledgeDelays = false,
+                            maxQueuedPassages = 2,
                             onMetrics = { metrics ->
                                 reportBenchmark.tts(com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkTts(
                                     request.ttsEngine.id, loadMs = metrics.loadMs, firstTextToPcmMs = metrics.firstTextToPcmMs,

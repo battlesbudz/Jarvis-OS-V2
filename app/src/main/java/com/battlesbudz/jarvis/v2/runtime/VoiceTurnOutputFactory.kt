@@ -2,7 +2,6 @@ package com.battlesbudz.jarvis.v2.runtime
 
 import android.content.Context
 import com.battlesbudz.jarvis.v2.diagnostics.DiagnosticRecorder
-import com.battlesbudz.jarvis.v2.voice.CallAudioRouting
 import com.battlesbudz.jarvis.v2.voice.PiperVoiceOutput
 import com.battlesbudz.jarvis.v2.voice.SpeechAudioTrace
 import com.battlesbudz.jarvis.v2.voice.SpeechDelivery
@@ -35,12 +34,7 @@ internal class VoiceTurnOutputFactory(
             },
             onEchoReference = callResources::rememberPlayback,
             onPlaybackEnded = { callResources.playbackEnded(System.nanoTime() / 1_000_000) },
-            acknowledgeDelays = true,
-            playbackVolume = {
-                val manager = context.getSystemService(android.media.AudioManager::class.java)
-                val stream = CallAudioRouting.stream
-                "${manager.getStreamVolume(stream)}/${manager.getStreamMaxVolume(stream)} muted=${manager.isStreamMute(stream)}"
-            },
+            maxQueuedPassages = 8,
             audioTrace = SpeechAudioTrace(
                 java.io.File(context.cacheDir, "latest-jarvis-speech.wav"), asrTurnId,
                 log = { diagnosticRecorder.recordImportant(it) }),
@@ -50,8 +44,7 @@ internal class VoiceTurnOutputFactory(
                 comparison?.log("tts $it")
                 if (it.startsWith("tts_session_finished"))
                     diagnosticRecorder.recordTurnEvidence(asrTurnId, if (it.startsWith("tts_session")) "supply" else "pcm", it)
-                if (it.startsWith("acknowledgement_") ||
-                    it.startsWith("audio_underrun") ||
+                if (it.startsWith("audio_underrun") ||
                     it.startsWith("audio_supply_gap")) diagnosticRecorder.recordSummary("Voice TTS turn=$asrTurnId: $it")
                 if (it.startsWith("audio_underrun") || it.startsWith("audio_supply_gap") ||
                     it.startsWith("audio_startup_buffer")) diagnosticRecorder.recordImportant("Voice TTS: $it")

@@ -131,3 +131,57 @@ finish all required jobs before release handoff. Physical microphone/speaker,
 Bluetooth/OEM routing, real camera optics, on-device model accuracy and Fold 6
 thermal/performance behavior remain explicit device-signoff limits even after
 an emulator release gate succeeds.
+
+## Build 1234: CameraX repair verified; native quality still blocks release
+
+[Build 1234](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37874953313)
+finished on 2026-10-09 at 03:50 UTC for exact head
+`e91369a98530098b467ea8e6a1c49c147a4a0b46` (attempt 1).
+The reviewed SDK, signed/minified normal and compact build, release JVM checks,
+recorded speech, unchanged packaged-native audit and all five Android profiles
+passed. The API 36 16 KB report verifies actual page size 16384, ARM64 translation,
+all 18 shipping libraries loaded (including CameraX), all 81 named main tests,
+external recovery/layout phases, and replacement upgrade from signed build 1190
+without clearing data. This establishes the CameraX fix in the final APK, beyond
+its earlier native-only fixtures. Fold and ordinary-phone job success remains
+separate from physical-device acceptance.
+
+APK identities bound by the page audit and device report:
+- Normal: `0323dc0e60e7773f06a36426571c3f2913b8ca15285b5daf9f30c6664017116c`
+- Compact: `d3a9d88de0fda1863137b1dae75d3b545473d26ccfaf6e3f5a0eeaaba8720e3a`
+
+The [strict native quality job](https://github.com/battlesbudz/Jarvis-OS-V2/actions/runs/37874953313/job/113649764975)
+failed at `native_encoder_oracle`, exit 2 (`numerical_failure`). Complete projected
+rows were `33bf34b9953094d2b897b2422091cbae089beda0453709d1af16b18a98478e0e`,
+rather than the unchanged reference
+`e51d19c68f19e02ea3075720674932ddcc83948f8e4c8b507047e055b06f93e9`.
+Within-run original/stateful rows and learned EOA are bitwise equal; counts,
+masks, complete PCM/Mel and prerequisite process cleanup passed. The separately
+labelled diagnostic decoder pair passed its parity/documentation-example checks;
+it cannot qualify the strict prerequisite or prove reference cache-state equality.
+
+Read-only comparison with passing 1190 and failing 1233 found identical three
+probe binaries, 465 recorded dynamic-library identities, source snapshot, 2,003
+compiler actions and 324 rehashed weight-free capsule payloads. Passing 1190
+reported AVX-512 support; 1233 lacked it and 1234's EPYC 7763 also lacks it.
+This strengthens a CPU-dispatch hypothesis but does not establish the responsible
+kernel or controlled causation. Runner-image differences and unmeasured numerical
+error magnitude remain explicit. No reference hash, tolerance, model/source pin,
+resource budget or release prerequisite was changed. No rerun was used to select
+a favorable host.
+
+The final receipt remains failed and publication was skipped. Its missing-input
+messages follow the intentional refusal to download/consolidate unsuccessful
+upstream quality evidence; they do not negate the separately retained successful
+Android job reports. The two working branches have not yet been synchronized to
+this failed candidate.
+
+Retained artifact ZIP digests (downloaded bytes independently rehashed):
+
+| Artifact | ID | SHA-256 |
+| --- | --- | --- |
+| Native page audit | 11594115342 | `c3026bacf310f969f1354b0e407c6c43ae51974697efcacb1f56a2d3814bdd03` |
+| Actual 16 KB profile | 11594012870 | `0ec25d2b4679e97f13f29185ce21b47572c10b6016c3beb312d3b43e1a796065` |
+| Native quality evidence | 11594870504 | `4b79e7f63c2a16c02effde32c913ccd0c88d584da15b07452553e67de1da64ea` |
+| Weight-free native capsule | 11594455736 | `e3371ccde6ea0b2ca46a1102046fb755aac4e395a7eea2578bfb45804b26ab93` |
+| Failed final receipt | 11594252045 | `180bdb6515dbf1ce45f42b3e6317b6659f74ae032ef6ab93e0a751b24d60d90f` |

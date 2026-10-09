@@ -31,6 +31,24 @@ class SynthesizedSpeechPcmTest {
         assertEquals(320, silent.trailingSilenceFrames)
     }
 
+    @Test fun naturalSentencePauseAndPassageEdgesKeepEveryFrame() {
+        for (rate in listOf(16000, 22050, 24000)) {
+            val leading = rate * 40 / 1000
+            val speech = rate / 5
+            val sentencePause = rate * 278 / 1000
+            val trailing = rate * 80 / 1000
+            val model = FloatArray(leading) + FloatArray(speech) { .25f } +
+                FloatArray(sentencePause) + FloatArray(speech) { -.25f } + FloatArray(trailing)
+            val result = SynthesizedSpeechPcm.fromModel(model, rate)
+            val expected = ShortArray(leading) + ShortArray(speech) { 8191 } +
+                ShortArray(sentencePause) + ShortArray(speech) { -8191 } + ShortArray(trailing)
+            assertArrayEquals("No trim, inserted filler, or compressed sentence pause at $rate Hz", expected, result.samples)
+            assertEquals(model.size, result.samples.size)
+            assertEquals(leading, result.leadingSilenceFrames)
+            assertEquals(trailing, result.trailingSilenceFrames)
+        }
+    }
+
     @Test fun invalidModelOutputFailsBeforeAudioCanBeQueued() {
         for (rate in listOf(0, -16000)) {
             val failure = assertThrows(IllegalStateException::class.java) {

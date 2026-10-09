@@ -32,6 +32,45 @@ records the reconciliations and remaining gates. No combined APK is verified
 until the exact candidate finishes the complete hosted release workflow.
 
 
+## Answer-only spoken turns — 9 October 2026
+
+Normal turns and accepted-action follow-up speech no longer request, load,
+synthesize or play canned waiting acknowledgements. The output API has no cue
+opt-in. Recognition, reference lookup and answer generation no longer invoke
+spoken-wait callbacks. The removed sentence-gap cue branch never received a
+sentence-end marker from the existing whole-passage producer; removing it does
+not change active sentence buffering. Nonverbal wake/ready tones are unchanged.
+
+The normal output retains its eight-passage PCM queue and follow-up reports retain
+two. Piper text boundaries, model `silenceScale=1`, native-speed playback,
+startup-headroom policy, complete PCM including natural pauses, actual-playback
+captions/echo references, delivery ledger, cancellation and native/drain ordering
+remain unchanged. Ordinary answer text is not filtered for phrases formerly used
+as canned cues. Legacy cue helpers/cache files are dormant; no model, preference
+or stored user data is deleted.
+
+Acceptance and local evidence:
+- `scripts/test_voice_answer_only.py`: six source-contract checks prevent live
+  normal/follow-up/runtime/conversation dependencies on the retired cue paths,
+  preserve queue capacities and synthesis/pause/lifecycle wiring, and exercise
+  reintroduction failures. The original `e91369a` source fails the cue contract.
+  These are structural regressions, not a Kotlin compiler or acoustic test.
+- `SynthesizedSpeechPcmTest`: model PCM with a 278 ms interior sentence pause and
+  leading/trailing silence retains every sample at 16, 22.05 and 24 kHz.
+  `PiperTextStreamTest` preserves actual answer words and produces none while
+  waiting without text. Existing queue, startup, clock, drain, captions and
+  delivery-ledger checks remain required. The focused real-source JVM run passes
+  53 tests using Kotlin 2.3.21/coroutines 1.9.0, without Android/native stubs.
+- `python3 scripts/dev.py check` passes the architecture guard, 102 helper tests
+  and 82 verification-harness tests, including the new source contracts.
+
+Full release compilation/JVM/native checks, signed APKs and the exact-revision
+five-profile Android gate remain pending. Physical/model playback and measured
+latency improvement require a new real-call comparison; the previously observed
+acknowledgement wait is not a promised fixed saving on every turn. No APK is
+verified by these focused checks. See [answer-only voice acceptance](voice-audio-and-metrics.md#answer-only-speech).
+
+
 ## Android model-free timing handshake proposal — 7 October 2026
 
 The existing five-profile layout `test04_nativeLibrariesLoadAtExpectedPageSize`

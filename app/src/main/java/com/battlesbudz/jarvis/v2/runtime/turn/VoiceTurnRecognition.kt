@@ -107,13 +107,6 @@ internal class VoiceTurnRecognition(
         diagnosticRecorder.recordSummary("Voice recognition turn=${request.asrTurnId} path=${if (prepared.correction == null) "normal" else "after_keyword"} " +
             "engine=${request.asrEngine.id} asrChars=${asrTranscript.length} gemmaTranscriptionFallback=${asrTranscript.isBlank()} " +
             "speechGate=${if (request.asrEngine == com.battlesbudz.jarvis.v2.voice.AsrEngine.MOONSHINE) "jarvis_vad_native_gate_bypassed_v1" else "engine_default"}")
-        // The turn is confirmed. Cached acknowledgement can play while queued input
-        // prefill finishes; it needs neither Gemma nor tool execution permission.
-        if (asrTranscript.isNotBlank() &&
-            !com.battlesbudz.jarvis.v2.voice.VoiceStopRequest.matches(asrTranscript) &&
-            !com.battlesbudz.jarvis.v2.voice.VoiceCallPolicy.isGoodbye(asrTranscript)) {
-            prepared.output.acknowledgeConfirmedTurn()
-        }
         val sealStarted = System.nanoTime()
         prepared.incremental.seal()
         val preparedText = prepared.incremental.takeIf { !prepared.directAudioTurn && asrTranscript.isNotBlank() && recognitionIssue == null }
@@ -126,8 +119,7 @@ internal class VoiceTurnRecognition(
         val resolvedInput = FinalVoiceInputResolver(
             engine = prepared.engine, resetConversation = { conversation.reset() },
             benchmark = observation.benchmark, turnTrace = observation.turnTrace, comparison = request.comparison,
-            recordDiagnostic = diagnosticRecorder::recordImportant, reportStatus = call::status,
-            onWaitStage = prepared.output::updateWaitStage
+            recordDiagnostic = diagnosticRecorder::recordImportant, reportStatus = call::status
         ).resolve(asrTranscript, audioBytes, prepared.directAudioTurn, recognitionIssue, request.asrEngine.label)
         val resolvedTranscript = resolvedInput.text
         recognitionIssue = resolvedInput.recognitionIssue
@@ -187,7 +179,6 @@ internal class VoiceTurnRecognition(
         if (!prepared.directAudioTurn && transcript != asrTranscript) call.events.post {
             if (call.controller.currentCallId() == prepared.expectedCallId) call.events.transcript("You", transcript, true)
         }
-        prepared.output.acknowledgeConfirmedTurn()
         diagnosticRecorder.recordSummary("Voice pipeline turn=${request.asrTurnId} stage=reply_dispatch " +
             "sinceEndpointMs=${(System.nanoTime() - endpointAt) / 1_000_000}")
         // Action mode is entered only after final ASR and the shared strict plan. It keeps

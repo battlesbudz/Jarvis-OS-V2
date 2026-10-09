@@ -3,7 +3,6 @@ package com.battlesbudz.jarvis.v2.runtime
 import com.battlesbudz.jarvis.v2.ai.LiteRtLmEngine
 import com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkCapture
 import com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmarkPurpose
-import com.battlesbudz.jarvis.v2.voice.DelayedAcknowledgement
 import com.battlesbudz.jarvis.v2.voice.GemmaAudioInputPolicy
 import com.battlesbudz.jarvis.v2.voice.TranscriptContent
 import com.battlesbudz.jarvis.v2.voice.VoiceTranscriptResolver
@@ -25,8 +24,7 @@ internal class FinalVoiceInputResolver(
     private val turnTrace: VoiceTurnTrace,
     private val comparison: LiveComparison.Trial?,
     private val recordDiagnostic: (String) -> Unit,
-    private val reportStatus: (String) -> Unit,
-    private val onWaitStage: (DelayedAcknowledgement.Stage) -> Unit
+    private val reportStatus: (String) -> Unit
 ) {
     suspend fun resolve(asrTranscript: String, audioBytes: ByteArray,
                         directAudioTurn: Boolean, initialIssue: String?, asrLabel: String): ResolvedVoiceInput {
@@ -44,7 +42,6 @@ internal class FinalVoiceInputResolver(
             benchmark.mark("audio_fallback_started")
             benchmark.transcriptionFallback()
             engine.benchmarkPurpose = PipelineBenchmarkPurpose.TRANSCRIPTION_FALLBACK
-            onWaitStage(DelayedAcknowledgement.Stage.RECOGNIZING)
             reportStatus("Listening to your recorded speech with Gemma…")
             recordDiagnostic("Voice audio fallback: ${asrLabel} empty; Gemma receiving ${audio.size} bytes")
             try {

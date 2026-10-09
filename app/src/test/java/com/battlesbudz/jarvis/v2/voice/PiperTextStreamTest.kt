@@ -115,6 +115,22 @@ class PiperTextStreamTest {
         assertFalse(collect(text).any { it.endsWith("Dr.") })
     }
 
+    @Test fun realAnswerTextMayUseOldCueWordsWithoutFiltering() {
+        val text = "One moment, please, sir. Just a moment, sir. Those words belong to this actual answer."
+        assertEquals(text, collect(text).joinToString(" "))
+    }
+
+    @Test fun waitingWithoutAnswerTextNeverCreatesWords() {
+        var clock = 0L
+        val stream = PiperTextStream(nowMs = { clock })
+        repeat(10) {
+            clock += 5_000
+            assertNull(stream.take())
+            assertNull(stream.openingWaitMs())
+        }
+        assertNull(stream.take(final = true))
+    }
+
     private fun collect(text: String): List<String> {
         val stream = PiperTextStream()
         val parts = mutableListOf<String>()

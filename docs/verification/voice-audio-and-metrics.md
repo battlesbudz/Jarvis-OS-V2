@@ -53,6 +53,29 @@ The build 874 log contains a correct final vaping transcript followed by generat
 
 The speech guard now detects adjacent single-word and short-phrase loops before an unfinished passage becomes queued speech, cancels native generation, and permits one bounded repair even after a valid opening. A second loop stops rather than continuing queued nonsense. Natural long responses remain permitted. The capture-profile identity now controls recorder reuse, and the next ordinary listener retains a bounded playback-reference tail for conservative echo rejection. Speech clarity remains selectable; it is not claimed to improve recognition on every device.
 
+## Answer-only speech
+
+Voice turns speak the actual answer as it becomes ready. There is no injected
+opening acknowledgement or sentence-gap recovery phrase, including when an old
+filler cache is present or answer generation takes longer than expected.
+Nonverbal wake/ready tones remain available. Generated answer text is not edited
+merely because it contains words previously used as a cue.
+
+Normal output keeps eight queued PCM passages; accepted-action follow-up speech
+keeps two. Existing sentence boundaries, whole-passage native synthesis,
+`silenceScale=1`, 1× playback, startup-headroom policy and all natural PCM silence
+remain intact. This change does not shorten a normal 278 ms sentence pause.
+Answer playback still owns captions, echo-reference history, actual-head delivery
+confirmation, interruption and drain/cancellation cleanup.
+
+Source-contract checks reject a live reconnection of the old cached/synthesized
+cue paths. JVM regressions preserve an exact 278 ms PCM pause plus passage-edge
+silence and verify existing text, queue, startup and delivery policies. They do
+not simulate native Piper or Android AudioTrack. Release/Android checks and a
+physical call with slow generation, interruption, answer completion and follow-up
+speech are still required. Compare answer timing using the unchanged benchmark
+definitions; do not assume the old cue wait predicts a fixed latency saving.
+
 ## Settings and audio authority
 
 Open Voice Call settings → Voice input → **Use Gemma audio understanding**. Enable **Whisper live captions** for provisional display; disable it to remove ASR work from normal audio capture. Gemma receives the original recording with instructions and prior conversation. Provisional captions never substitute for the current spoken request or authorize phone actions. A final isolated Gemma transcription updates the paired saved user message after answer generation. This extra pass has its own benchmark purpose and timing. Piper remains the output voice.

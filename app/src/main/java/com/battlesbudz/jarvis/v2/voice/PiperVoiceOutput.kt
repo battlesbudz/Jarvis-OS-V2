@@ -20,10 +20,10 @@ class PiperVoiceOutput internal constructor(
     private val modelSession: VoiceModelSession? = null,
     private val deliveryLedger: SpeechDeliveryLedger? = null,
     private val onPlaybackEnded: () -> Unit = {},
-    /** Includes audible wait fillers as well as answers; survives into the next capture. */
+    /** Real answer playback reference; survives into the next capture. */
     private val onEchoReference: (String) -> Unit = {},
-    private val acknowledgeDelays: Boolean = false,
-    private val playbackVolume: () -> String = { "unavailable" },
+    // Preserve each caller's existing bounded PCM headroom independently of speech content.
+    private val maxQueuedPassages: Int = 2,
     private val audioTrace: SpeechAudioTrace? = null,
     private val onReady: () -> Unit = {},
     private val onPlayback: (VoicePlaybackFrame) -> Unit = {},
@@ -41,8 +41,6 @@ class PiperVoiceOutput internal constructor(
     private fun reportPlaybackEnded() {
         if (recentSpokenText().isNotBlank() && playbackBoundaryReported.compareAndSet(false, true)) onPlaybackEnded()
     }
-    private val sentenceRefilling = java.util.concurrent.atomic.AtomicBoolean(false)
-    private val gapCuePlaying = AtomicBoolean(false)
     private val playbackLock = Any()
     @Volatile private var interrupted = false
     private val deliveryFailed = AtomicBoolean(false)
@@ -53,34 +51,9 @@ class PiperVoiceOutput internal constructor(
         if (text.isNotBlank()) { spokenReference.append(" ").append(text); onEchoReference(text) }
         if (spokenReference.length > 1600) spokenReference.delete(0, spokenReference.length - 1600)
     }
-    private suspend fun playCachedCue(audio: SpeechAudio) {
-        synchronized(playbackLock) { gapCuePlaying.set(true); applyPause() }
-        try {
-            VoiceCues.playAcknowledgement(audio, { stopped }, { interrupted }, log, playbackVolume(),
-                onStarted = {
-                    rememberPlayback(audio.text)
-                }, speed = 1f)
-        } finally {
-            synchronized(playbackLock) { gapCuePlaying.set(false); applyPause() }
-            lastAudibleAt = System.nanoTime() / 1_000_000
-        }
-    }
     @Volatile private var writtenFrames = 0L
     @Volatile private var lastAudibleAt = Long.MIN_VALUE / 2
     private val stoppedPlaybackHead = AtomicLong()
-    private val acknowledgement = DelayedAcknowledgement(log)
-    private val neutralFiller = FillerPhrases.INITIAL
-    private val fillerDiskCache = FillerAudioCache(java.io.File(modelDirectory, "filler-cache-v3"))
-    private val acknowledgementRequests = Channel<String>(Channel.CONFLATED)
-    private fun fillerCacheKey(text: String) = "opening-v5:${engine.version}:$modelDirectory:$speakerId:$text:natural-pauses-v1"
-    internal fun updateWaitStage(stage: DelayedAcknowledgement.Stage) { acknowledgement.updateStage(stage) }
-    fun acknowledgeConfirmedTurn() {
-        if (!acknowledgeDelays) return
-        acknowledgement.request(neutralFiller)
-    }
-    private companion object {
-        val acknowledgementCache = java.util.concurrent.ConcurrentHashMap<String, SpeechAudio>()
-    }
 
     val isPlayingAudio: Boolean get() = synchronized(playbackLock) {
         val now = System.nanoTime() / 1_000_000
@@ -88,7 +61,7 @@ class PiperVoiceOutput internal constructor(
             it.playState == AudioTrack.PLAYSTATE_PLAYING && unsignedHead(it) < writtenFrames
         } == true
         if (audible) lastAudibleAt = now
-        gapCuePlaying.get() || audible || now - lastAudibleAt < 350 // Speaker/reverberation tail after drain.
+        audible || now - lastAudibleAt < 350 // Speaker/reverberation tail after drain.
     }
     fun queuedPlaybackMs(): Long? = synchronized(playbackLock) {
         audioTrack?.let { track ->
@@ -96,11 +69,11 @@ class PiperVoiceOutput internal constructor(
         }
     }
     fun hasInterruptionBudget(): Boolean = DuplexPlaybackBudget.allows(
-        queuedPlaybackMs(), continuing = false, unavailable = stopped || interrupted || gapCuePlaying.get() || sentenceRefilling.get())
+        queuedPlaybackMs(), continuing = false, unavailable = stopped || interrupted)
     fun canContinueInterruption(): Boolean = DuplexPlaybackBudget.allows(
-        queuedPlaybackMs(), continuing = true, unavailable = stopped || interrupted || gapCuePlaying.get() || sentenceRefilling.get())
+        queuedPlaybackMs(), continuing = true, unavailable = stopped || interrupted)
     private fun applyPause() {
-        val paused = interrupted || gapCuePlaying.get() || sentenceRefilling.get()
+        val paused = interrupted
         playbackClock.setPaused(paused)
         audioTrack?.let { if (paused) it.pause() else if (!stopped) it.play() }
     }
@@ -122,8 +95,7 @@ class PiperVoiceOutput internal constructor(
         val sampleRate: Int,
         val pcm: ShortArray,
         val startupWaitMs: Long,
-        val captionGroup: Int? = null,
-        val sentenceEnd: Boolean = false
+        val captionGroup: Int? = null
     )
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -133,22 +105,6 @@ class PiperVoiceOutput internal constructor(
         playbackBoundaryReported.set(false)
         stoppedPlaybackHead.set(0)
         val speechScope = this
-        if (acknowledgeDelays) {
-            // Cached PCM needs no native model reload before it can be played.
-            withContext(Dispatchers.IO) {
-                for (text in (listOf(neutralFiller, FillerPhrases.RECOVERY))) {
-                    val key = fillerCacheKey(text)
-                    (acknowledgementCache[key] ?: fillerDiskCache.read(key, text))?.let {
-                        acknowledgementCache[key] = it
-                        acknowledgement.prepare(it)
-                        log("acknowledgement_cache_hit beforeModelLoad=true text=$text source=generated_cache")
-                    }
-                }
-            }
-        }
-        if (acknowledgeDelays) acknowledgement.start(this, requestPreparation = { acknowledgementRequests.trySend(it) }) { audio ->
-            playCachedCue(audio)
-        }
         log("tts_session_started engine=${engine.id} modelDir=$modelDirectory speaker=$speakerId threads=$numThreads workers=1")
         var framesWritten = 0
         var outputSampleRate = 0
@@ -179,7 +135,7 @@ class PiperVoiceOutput internal constructor(
         val pcmDelivery = "piper_whole_passages_max640_v1"
         // One owner creates, invokes and releases the native engine. Playback never owns it.
         // Bounded PCM backpressure prevents long answers from accumulating unlimited audio.
-        val audio = NativeAudioQueue<SynthesizedPhrase>(if (acknowledgeDelays) 8 else 2) {
+        val audio = NativeAudioQueue<SynthesizedPhrase>(maxQueuedPassages) {
             it.pcm.size * 1000L / it.sampleRate
         }
         val piperOpening = PiperTextStream.TARGET_CHARS
@@ -219,34 +175,7 @@ class PiperVoiceOutput internal constructor(
                 log("tts_engine_preload_finished loadMs=$loadMs reused=${engineLease?.reused == true}")
                 val generation = GenerationConfig(silenceScale = 1f, sid = speakerId)
                 onReady()
-                val synthesizer = PiperSpeechSynthesizer(tts, generation, owner,
-                    stopped = { stopped }, answerTextReady = { firstTextAt.get() != 0L }, log = log)
-                fun prepareAcknowledgement(text: String) {
-                    try {
-                        val key = fillerCacheKey(text)
-                        val cached = acknowledgementCache[key] ?: run {
-                            log("acknowledgement_cache_preparing text=$text")
-                            FillerPcm.prepare(synthesizer.synthesize(text, optionalFiller = true))
-                        }.also {
-                            check(it.sampleRate > 0 && it.pcm.size in 1..it.sampleRate * 4) {
-                                "Generated filler exceeded its four-second duration budget."
-                            }
-                            if (acknowledgementCache.size >= 12) acknowledgementCache.clear()
-                            acknowledgementCache[key] = it
-                            log("acknowledgement_cache_ready text=$text synthesisMs=${it.synthesisMs}")
-                        }
-                        acknowledgement.prepare(cached)
-                        runCatching { fillerDiskCache.write(key, cached) }
-                            .onFailure { log("acknowledgement_cache_persist_failed reason=${it.message}") }
-                    } catch (_: PiperSpeechSynthesizer.FillerSuperseded) {
-                        log("acknowledgement_preparation_yielded reason=answer_text_ready partial_not_cached=true")
-                    } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (error: Exception) {
-                        acknowledgement.preparationFailed(text)
-                        log("acknowledgement_cache_unavailable reason=${error.message}")
-                    }
-                }
-                // Optional filler synthesis is queued only during a gap, after cached audio is loaded.
+                val synthesizer = PiperSpeechSynthesizer(tts, generation, owner, log)
                 fun generate(text: String) {
                     owner.ensureActive()
                     if (stopped) return
@@ -287,7 +216,6 @@ class PiperVoiceOutput internal constructor(
                 while (!ended && !stopped) {
                     owner.ensureActive()
                     select<Unit> {
-                        // Prefer confirmed speech if both queues are ready.
                         tokens.onReceiveCatching { received ->
                             received.exceptionOrNull()?.let { throw it }
                             val token = received.getOrNull()
@@ -314,11 +242,6 @@ class PiperVoiceOutput internal constructor(
                                 while (true) generate(nextPhrase() ?: break)
                             }
                         }
-                        acknowledgementRequests.onReceive { text ->
-                            // Native owns one stream, not a session map: never replace an active answer with filler.
-                            if (index == 0 && acknowledgeDelays && firstTextAt.get() == 0L) prepareAcknowledgement(text)
-                        }
-
                     }
                 }
                 while (true) generate(nextPhrase(final = true) ?: break)
@@ -330,8 +253,7 @@ class PiperVoiceOutput internal constructor(
             } finally {
                 // Release only after generate has returned, including when cancellation was requested.
                 startupReady.complete(Unit)
-                // No more PCM can arrive. Publish completion before potentially slow native
-                // cleanup, so cleanup is never mistaken for a gap needing another cue.
+                // No more PCM can arrive. Publish completion before potentially slow native cleanup.
                 audio.close(failure)
                 if (engineLease != null) engineLease?.finish(healthy = failure == null && !stopped)
                 else engine?.release()
@@ -342,45 +264,17 @@ class PiperVoiceOutput internal constructor(
                 var first = true
                 var lastWriteAt = 0L
                 var lastQueuedMs = 0L
-                var atSentenceBoundary = false
-                var interveningCueMs = 0L
-                var refillStartedAt = 0L
-                val gapWaiter = SentenceGapWaiter()
-                val gapAudio = acknowledgementCache[fillerCacheKey(FillerPhrases.RECOVERY)]
                 while (true) {
-                    val received = if (atSentenceBoundary && acknowledgeDelays) {
-                        gapWaiter.receive(audio.chunks, remainingMs = {
-                            audioTrack?.let { track ->
-                                val frames = (writtenFrames - unsignedHead(track)).coerceAtLeast(0)
-                                if (frames == 0L) 0L else maxOf(1L, (frames * 1000.0 / track.sampleRate / playbackSpeed).toLong())
-                            } ?: 0L
-                        }, bufferedMs = { audio.bufferedMs }, allowed = { !stopped && !interrupted },
-                            productionFinished = { audio.productionFinished }, onRefill = { active ->
-                                if (active) refillStartedAt = System.nanoTime()
-                                else interveningCueMs += elapsedMs(refillStartedAt)
-                                synchronized(playbackLock) { sentenceRefilling.set(active); applyPause() }
-                                log("sentence_rebuffer active=$active bufferedAnswerMs=${audio.bufferedMs}")
-                            }) {
-                            if (gapAudio == null) return@receive
-                            log("sentence_gap_filler text=${gapAudio.text} boundary=completed_sentence reason=prolonged_stall maxPerAnswer=1 excludes=answer_pcm")
-                            try { playCachedCue(gapAudio) }
-                            finally {
-                                log("sentence_gap_filler_finished bufferedAnswerMs=${audio.bufferedMs}")
-                            }
-                        }
-                    } else audio.chunks.receiveCatching()
+                    val received = audio.chunks.receiveCatching()
                     received.exceptionOrNull()?.let { throw it }
                     val phrase = received.getOrNull() ?: break
                     audio.consumed(phrase)
-                    if (phrase.sentenceEnd) { atSentenceBoundary = true; continue }
-                    atSentenceBoundary = false
                     ensureActive()
                     if (stopped || phrase.pcm.isEmpty()) continue
                     outputSampleRate = phrase.sampleRate
                     if (first) {
                         // Small startup headroom; never hold a short, completed answer for this delay.
                         val start = System.nanoTime()
-                        acknowledgement.answerReady()
                         // Retain the existing Piper startup policy.
                         val startupDeadline = phrase.startupWaitMs
                         val remainingHeadroom = (startupDeadline - elapsedMs(start)).coerceAtLeast(0)
@@ -405,12 +299,12 @@ class PiperVoiceOutput internal constructor(
                                 val head = unsignedHead(startedTrack)
                                 val underruns = startedTrack.underrunCount
                                 val poll = System.nanoTime() / 1_000_000
-                                val starved = !draining.get() && !interrupted && !gapCuePlaying.get() && !sentenceRefilling.get() && writtenFrames > 0 && head >= writtenFrames
+                                val starved = !draining.get() && !interrupted && writtenFrames > 0 && head >= writtenFrames
                                 if (wasStarved && starved) playbackStarvationMs.addAndGet((poll - previousPoll).coerceAtLeast(0))
                                 wasStarved = starved; previousPoll = poll
                                 if (underruns > previousUnderruns) {
                                     log("audio_underrun count=$underruns queuedFrames=${(writtenFrames - head).coerceAtLeast(0)}")
-                                    if (!draining.get() && !gapCuePlaying.get() && !sentenceRefilling.get()) streamingUnderruns.addAndGet((underruns - previousUnderruns).toLong())
+                                    if (!draining.get()) streamingUnderruns.addAndGet((underruns - previousUnderruns).toLong())
                                     previousUnderruns = underruns
                                 }
                                 val audibleFrame = firstAudibleFrame.get()
@@ -429,8 +323,7 @@ class PiperVoiceOutput internal constructor(
                         }
                     }
                     if (lastWriteAt != 0L) {
-                        val gap = (elapsedMs(lastWriteAt) - lastQueuedMs - interveningCueMs).coerceAtLeast(0)
-                        interveningCueMs = 0
+                        val gap = (elapsedMs(lastWriteAt) - lastQueuedMs).coerceAtLeast(0)
                         estimatedGapMs += gap
                         if (gap > 50) log("audio_supply_gap index=${phrase.index} estimatedMs=$gap")
                     }
@@ -507,7 +400,6 @@ class PiperVoiceOutput internal constructor(
             val wasStopped = stopped
             stopped = true
             // Unblock the native producer waiting on a full queue before joining its native owner.
-            withContext(NonCancellable) { acknowledgement.close() }
             reportPlaybackEnded()
             audio.cancel()
             tokens.cancel()
@@ -531,7 +423,6 @@ class PiperVoiceOutput internal constructor(
                 audioTrack = null
             }
             withContext(NonCancellable) { collectTokens.cancelAndJoin(); producer.cancelAndJoin() }
-            acknowledgementRequests.cancel()
             if (modelSession == null) nativeDispatcher.close()
             speaking.set(false)
             if (inputChars > 0 || failureMessage != null) runCatching {

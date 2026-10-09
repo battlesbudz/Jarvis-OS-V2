@@ -34,7 +34,6 @@ internal class OrdinaryVoiceReplyStage(
         val outcome = com.battlesbudz.jarvis.v2.voice.runInterruptibleReply(
             reply = {
                 observation.telemetry.activateLiveMetrics()
-                prepared.output.updateWaitStage(com.battlesbudz.jarvis.v2.voice.DelayedAcknowledgement.Stage.GENERATING)
                 observation.turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.REPLY_DISPATCHED)
                 observation.benchmark.mark("reply_dispatched")
                 val coordinator = VoiceTurnCoordinator(call.controller)
@@ -58,7 +57,6 @@ internal class OrdinaryVoiceReplyStage(
                     val streamed = StringBuilder()
                     fun recordFirstText(text: String) {
                         if (text.isNotBlank() && firstFinalToken.compareAndSet(true, false)) {
-                            prepared.output.updateWaitStage(com.battlesbudz.jarvis.v2.voice.DelayedAcknowledgement.Stage.SYNTHESIZING)
                             observation.turnTrace.mark(com.battlesbudz.jarvis.v2.voice.VoiceTurnTrace.Stage.FIRST_REPLY_TEXT)
                             observation.benchmark.mark("first_reply_text")
                             val elapsedMs = (System.nanoTime() - finalized.endpointAt) / 1_000_000

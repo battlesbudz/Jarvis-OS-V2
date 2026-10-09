@@ -41,7 +41,6 @@ internal class ConversationRouting(
     private val historyAfterCutoff: () -> List<ChatEntry>,
     private val turnOrchestrator: TurnOrchestrator,
     private val modelSession: ConversationModelSession,
-    private val acknowledgeVoice: () -> Unit,
     private val readPhoneStatus: () -> PhoneActionStatus?,
     private val savePhoneStatus: (PhoneActionStatus) -> Unit,
     private val diagnostics: ConversationDiagnostics
@@ -61,7 +60,6 @@ internal class ConversationRouting(
         }
         val turnPlan = if (request.directVoiceAudio || request.comparisonActive || request.imageAttached || request.audioAttached) TurnPlan(TurnKind.NORMAL_CHAT)
             else turnOrchestrator.plan(prompt, safeHistory.map { it.role to it.text })
-        if (request.voiceAttached && turnPlan.lookupQuery == null) acknowledgeVoice()
         // Parse the completed request before any direct shortcut, lookup, or model side effect.
         val requestedActionPlan = request.frozenActionPlan ?: turnPlan.actionPlan
         diagnostics.record("Action route plan=${requestedActionPlan.javaClass.simpleName} " +

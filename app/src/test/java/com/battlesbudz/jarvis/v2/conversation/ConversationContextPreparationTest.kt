@@ -59,7 +59,7 @@ class ConversationContextPreparationTest {
             { it() }, {}, terminal::add, {}, {}, { _, _, _ -> })
         val prompt = ConversationPrompt(ConversationPromptBuilder(context), false, { null }, { reply.memoryContext })
         val stage = ConversationContextPreparation({ currentHistory }, memory,
-            TurnOrchestrator(ReferenceGroundingClient()), models, references, {}, ConversationDiagnostics({}, {}, {}, {}))
+            TurnOrchestrator(ReferenceGroundingClient()), models, references, ConversationDiagnostics({}, {}, {}, {}))
         suspend fun prepare(text: String, plan: TurnPlan = TurnPlan(TurnKind.NORMAL_CHAT)) = stage.prepare(
             ConversationTurnRequest(text, emptyList(), "conversation", false, false, false,
                 false, false, null, null, false),
