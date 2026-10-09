@@ -14,12 +14,17 @@ internal enum class WispActivity {
     APPROVAL, SUCCESS, ERROR, PAUSED
 }
 
+/** Typed observed props; never inferred from free-form labels or private tool payloads. */
+internal enum class WispGesture { NONE, RESEARCH, READING, TAP, SCROLL, VOLUME, WAITING }
+
 internal data class WispPresentation(
     val activity: WispActivity,
     val label: String,
     val detail: String? = null,
     val taskKey: String? = null,
-    val otherTaskCount: Int = 0
+    val otherTaskCount: Int = 0,
+    val gesture: WispGesture = WispGesture.NONE,
+    val bodyActivity: WispActivity? = null
 )
 
 internal data class WispViewport(val widthDp: Int, val heightDp: Int)
@@ -53,6 +58,9 @@ internal object WispPresenter {
         observedActivity: WispPresentation? = null,
         receipt: WispPresentation? = null
     ): WispPresentation {
+        // Explicit end/interruption defeats a stale speaking phase until the real call owner rearms.
+        val observedPhase = if (callState == VoiceSessionState.ENDED || callState == VoiceSessionState.INTERRUPTED)
+            VoicePhase.IDLE else phase
         val attempts = relevantAttempts(journal, conversationId).sortedWith(compareBy({ it.updatedAtMs }, { it.id }))
         fun selected(attempt: ToolTaskAttempt): WispPresentation = task(attempt).copy(
             otherTaskCount = attempts.count { it.id != attempt.id && !it.reconciled && it.state in activeStates })
@@ -69,16 +77,16 @@ internal object WispPresenter {
             // owner and name both observations instead of making an active microphone invisible.
             val publicWork = ActivityText.publicBlurb(observedActivity.label)
             return when {
-                armed && phase == VoicePhase.SPEAKING -> observedActivity.copy(
-                    activity = WispActivity.SPEAKING, label = "Speaking · $publicWork")
-                armed && (microphonePaused || phase == VoicePhase.PAUSED) -> observedActivity.copy(
+                armed && observedPhase == VoicePhase.SPEAKING -> observedActivity.copy(
+                    activity = WispActivity.SPEAKING, bodyActivity = observedActivity.activity, label = "Speaking · $publicWork")
+                armed && (microphonePaused || observedPhase == VoicePhase.PAUSED) -> observedActivity.copy(
                     label = "Microphone paused · $publicWork")
-                armed && phase == VoicePhase.LISTENING -> observedActivity.copy(
-                    activity = WispActivity.LISTENING, label = "Listening · $publicWork")
+                armed && observedPhase == VoicePhase.LISTENING -> observedActivity.copy(
+                    activity = WispActivity.LISTENING, bodyActivity = observedActivity.activity, label = "Listening · $publicWork")
                 else -> observedActivity
             }
         }
-        if (armed && phase == VoicePhase.SPEAKING)
+        if (armed && observedPhase == VoicePhase.SPEAKING)
             return WispPresentation(WispActivity.SPEAKING, "Speaking")
         attempts.lastOrNull { it.state in pendingStates && !it.reconciled }?.let { return selected(it) }
         if (chatBusy) return WispPresentation(WispActivity.THINKING, "Thinking")
@@ -87,21 +95,30 @@ internal object WispPresenter {
         // fallback here, so unrelated live work and its real audio owner remain represented.
         val idle = if (taskError != null) WispPresentation(WispActivity.ERROR, "Task needs attention", taskError)
             else WispPresentation(WispActivity.READY, "Ready")
-        if (taskError == null && recentError != null && (!armed || phase == VoicePhase.IDLE)) return recentError
+        if (taskError == null && recentError != null && (!armed || observedPhase == VoicePhase.IDLE)) return recentError
         if (!armed) return idle
-        if (microphonePaused || phase == VoicePhase.PAUSED)
+        if (microphonePaused || observedPhase == VoicePhase.PAUSED)
             return WispPresentation(WispActivity.PAUSED, "Microphone paused")
-        return when (phase) {
+        return when (observedPhase) {
             VoicePhase.LISTENING -> WispPresentation(WispActivity.LISTENING, "Listening")
             VoicePhase.WAKE -> WispPresentation(WispActivity.LISTENING, "Say “Hey Jarvis”")
             VoicePhase.THINKING -> WispPresentation(WispActivity.THINKING, "Thinking")
-            VoicePhase.PREPARING, VoicePhase.WAKING -> WispPresentation(WispActivity.THINKING, phase.label)
+            VoicePhase.PREPARING, VoicePhase.WAKING -> WispPresentation(WispActivity.THINKING, observedPhase.label)
             else -> when (callState) {
                 VoiceSessionState.EXECUTING_ACTION -> WispPresentation(WispActivity.THINKING, "Working")
                 VoiceSessionState.INTERRUPTED -> WispPresentation(WispActivity.PAUSED, "Reply interrupted")
                 else -> idle
             }
         }
+    }
+
+    /** Face/audio ownership is independent of the task body and its approval/error priority. */
+    fun audioActivity(phase: VoicePhase, armed: Boolean, microphonePaused: Boolean,
+        callState: VoiceSessionState): WispActivity? = when {
+        !armed || callState == VoiceSessionState.ENDED || callState == VoiceSessionState.INTERRUPTED -> null
+        phase == VoicePhase.SPEAKING -> WispActivity.SPEAKING
+        !microphonePaused && phase in setOf(VoicePhase.LISTENING, VoicePhase.WAKE) -> WispActivity.LISTENING
+        else -> null
     }
 
     fun audioLevel(activity: WispActivity, phase: VoicePhase, armed: Boolean,
@@ -179,7 +196,19 @@ internal object WispPresenter {
         }
         // Executor receipt bodies can contain private request/result data. The header only uses the
         // authored operation summary; detailed receipts remain in the existing task panel.
-        return WispPresentation(activity, label, description, key)
+        val gesture = when {
+            attempt.state in setOf(ToolTaskState.QUEUED, ToolTaskState.READY, ToolTaskState.WAITING_RESOURCE,
+                ToolTaskState.PAUSED) -> WispGesture.WAITING
+            attempt.state != ToolTaskState.RUNNING -> WispGesture.NONE
+            else -> when (attempt.request.name) {
+                "screen_observe" -> WispGesture.READING
+                "screen_tap" -> WispGesture.TAP
+                "screen_scroll" -> WispGesture.SCROLL
+                "set_volume" -> WispGesture.VOLUME
+                else -> WispGesture.NONE
+            }
+        }
+        return WispPresentation(activity, label, description, key, gesture = gesture)
     }
 
     /** The character remains visible while idle; the under-character activity node does not. */

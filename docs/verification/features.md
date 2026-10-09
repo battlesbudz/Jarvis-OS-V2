@@ -465,6 +465,68 @@ third-party AppFunctions/MCP, model-selected tools or physical-device coverage.
 The notification journey checks posting; its conditional DND setup does not
 establish that DND was active, and it does not measure acoustic silence.
 
+## Approved Wisp expressions and independent speaking face — October 9, 2026
+
+The approved mouth is 2× the original width, with a 1.65× speaking opening and
+1.5× resting-smile curve height, matching the selected design preview. The cyan
+silhouette, eye size, anchored header, call-only viewport growth and 110 ms
+playback-envelope smoothing are retained. This is a presentation change, not a
+Piper timing, pause, synthesis, native inference or camera change.
+
+`WispPresenter.audioActivity` projects the real call/audio owner separately from
+`WispPresentation`'s task body. A running tool, approval or unknown-outcome card
+cannot suppress an actual speaking mouth. Reference cards remain visible while
+speech/listening overlaps them. Explicit interruption/end rejects a stale
+speaking phase; a real listening/restarted-speech phase restores its own envelope.
+Changing audio owners discards the previous interpolation rather than leaking
+playback amplitude into microphone ripples. Zero/invalid amplitude never creates
+syllables; silence uses the resting smile. Reduced motion disables mouth/body
+animation and restores static poses without affecting actual playback.
+
+The decorative set maps only existing observations:
+
+- Listening leans toward the user with actual microphone ripples.
+- A brief nod acknowledges a newly observed admitted conversation operation.
+  It is not a success checkmark. Initial/historical observation, recomposition,
+  foreign conversations, a returning reference lease and stale operation IDs
+  cannot replay it.
+- Thinking retains a slight tilt with softly gathering internal light.
+- Actual reference-read observations show layered cards and a scanning lens.
+  They do not claim a search has run. A RUNNING `screen_observe` displays a page;
+  there is no separate document-read producer, so document reading is not claimed.
+- RUNNING `screen_tap`, `screen_scroll` and `set_volume` have distinct target,
+  scrolling and slider illustrations. Other tools retain a neutral activity tile;
+  none gets a fictitious volume adjustment inferred from its public label.
+- Queued/ready/resource-waiting/paused tasks show a patient clock/float with their
+  existing authored status, never a countdown, percentage or invented ETA.
+- Approval retains amber/open-palm decoration. Only the existing explicit task
+  controls can grant approval; the character has no click or action authority.
+- Fresh verified success gets one small bounce; failed/unknown outcomes retain
+  the puzzled/coral pose and existing task controls. No retry is dispatched.
+- Interruption closes the mouth immediately and reflects listening only when the
+  actual call owner rearms. Idle keeps gentle blink/float with no status text.
+
+Status privacy filtering, lock/background hiding, conversation scoping, lifecycle
+suspension and system animation-scale handling remain in their existing owners.
+`WispMotion` holds pure geometry/one-shot policy; `WispReceptionTracker` tracks only
+transient admission identity. No storage format or action authority changes.
+
+Coverage added: `WispPresentationTest` exercises independent speaking/tool/error/
+approval ownership, exact request-kind props, waiting and stale audio precedence.
+`WispMotionTest` covers the selected dimensions, reduced-motion policy, bounded
+one-shots, silence/invalid levels, receipt nod fencing and conversation switches.
+Release test49 retains all previous assertions and adds actual screen-read/tap/
+scroll/waiting captures and repeated speech-stop while the tool remains RUNNING.
+It enables animator scale only for its fixture, captures a zero-scale transition,
+and restores the original setting in `finally`; no suite timeout or sleeps change.
+No new test-Dex app APIs are referenced, so the existing narrow WispPresence keep
+rule continues to own minified linkage. The 81 named scenario contract is unchanged.
+
+Exact revised signed/R8/Android gate and screenshots remain required. Any local
+Compose/Skia drawing-kernel renders are source-render evidence, not Android
+screenshots or physical-device/Piper synchronization validation. Real acoustics,
+TalkBack, OEM timing and device performance remain explicit device-signoff gaps.
+
 ## Truthful Wisp activity text — October 6, 2026
 
 The permanent character now has a bounded, two-line text box only while there is

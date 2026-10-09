@@ -3373,7 +3373,18 @@ class ReleaseJourneyTest {
                 "wisp-task", generation, state, ActionRequest(tool, if (tool == "set_volume") mapOf("level" to "25") else emptyMap()),
                 1, 2, resultOutcome = outcome)))
         }
+        val animationScaleBefore = device.executeShellCommand("settings get global animator_duration_scale").trim()
+        check(animationScaleBefore == "null" || animationScaleBefore.isBlank() ||
+            animationScaleBefore.toFloatOrNull()?.isFinite() == true) { "Unrecognized animator scale fixture value" }
+        var fixtureFailure: Throwable? = null
+        fun animationScale(value: String) {
+            device.executeShellCommand("settings put global animator_duration_scale $value")
+            assertEquals(value.toFloat(), device.executeShellCommand("settings get global animator_duration_scale").trim().toFloat(), 0f)
+        }
         try {
+            // The suite normally disables animation. Enable only this visual fixture, restoring
+            // the original setting below; window and transition scales remain untouched.
+            animationScale("1")
             VoiceSessionUi.armed.value = false
             VoiceSessionUi.phase.value = VoicePhase.IDLE
             VoiceSessionUi.paused.value = false
@@ -3447,11 +3458,16 @@ class ReleaseJourneyTest {
             pose("Thinking")
             observed.value = null
             busy.value = false
-            for ((tool, label) in listOf("open_app" to "Opening app", "read_battery" to "Checking battery", "set_volume" to "Adjusting media volume to 25%")) {
+            for ((tool, label) in listOf("open_app" to "Opening app", "read_battery" to "Checking battery",
+                "set_volume" to "Adjusting media volume to 25%", "screen_observe" to "Reading the current screen",
+                "screen_tap" to "Tapping the selected screen control", "screen_scroll" to "Scrolling the screen")) {
                 task(ToolTaskState.RUNNING, tool)
                 pose(label)
                 captureEvidence("test49_wisp_$tool")
             }
+            task(ToolTaskState.WAITING_RESOURCE, "screen_scroll", 1)
+            pose("Waiting for a resource")
+            captureEvidence("test49_wispWaiting")
             task(ToolTaskState.WAITING_APPROVAL, "set_volume", 1)
             pose("Waiting for your approval")
             assertEquals("Animation must not approve work", 0, approvals.get())
@@ -3510,7 +3526,25 @@ class ReleaseJourneyTest {
                 playback.value = VoicePlaybackFrame("A controlled playback frame", .8f)
                 pose("Speaking")
                 captureEvidence("test49_wispSpeaking$it")
+                // One body and one independent audio owner: work must not hide the speaking
+                // mouth, and stopping speech must not cancel or approve the observed tool.
+                task(ToolTaskState.RUNNING, "screen_scroll", 10L + it)
+                pose("Scrolling the screen")
+                assertEquals(VoicePhase.SPEAKING, VoiceSessionUi.phase.value)
+                assertEquals(.8f, playback.value.level, 0f)
+                if (it == 0) {
+                    captureEvidence("test49_wispSpeakingWhileScrolling")
+                    animationScale("0")
+                    captureEvidence("test49_wispReducedMotionWhileSpeaking")
+                    animationScale("1")
+                }
                 clickEnabled(By.res("voice_call_stop_reply"))
+                pose("Scrolling the screen")
+                assertEquals(VoicePhase.LISTENING, VoiceSessionUi.phase.value)
+                assertEquals(0f, playback.value.level, 0f)
+                assertEquals(ToolTaskState.RUNNING, journal.value!!.attempts.single().state)
+                if (it == 0) captureEvidence("test49_wispStoppedReplyWhileScrolling")
+                journal.value = ToolTaskJournal()
                 pose("Listening")
                 awaitWispSize("Stopping a reply must not shrink an active call", ::isModestlyExpanded)
                 clickEnabled(By.res("voice_call_end"))
@@ -3526,12 +3560,27 @@ class ReleaseJourneyTest {
             assertEquals("Poses cannot authorize paused phone actions", 0, approvals.get())
             assertNotNull("Ending a call never removes Wisp", find(By.res("jarvis_wisp")))
             assertFalse(device.hasObject(By.res("voice_call_orb")))
+        } catch (failure: Throwable) {
+            fixtureFailure = failure
+            throw failure
         } finally {
+            val restoreFailure = runCatching {
+                if (animationScaleBefore == "null" || animationScaleBefore.isBlank()) {
+                    device.executeShellCommand("settings delete global animator_duration_scale")
+                } else {
+                    // Validated as a finite numeric string before changing the setting.
+                    device.executeShellCommand("settings put global animator_duration_scale $animationScaleBefore")
+                }
+                assertEquals(if (animationScaleBefore.isBlank()) "null" else animationScaleBefore,
+                    device.executeShellCommand("settings get global animator_duration_scale").trim())
+            }.exceptionOrNull()
             VoiceSessionUi.armed.value = false
             VoiceSessionUi.phase.value = VoicePhase.IDLE
             VoiceSessionUi.paused.value = false
             VoiceSessionUi.level.value = 0f
             VoiceSessionUi.liveTranscript.value = ""
+            // Never mask the fixture's original assertion/capture error with cleanup failure.
+            if (restoreFailure != null) fixtureFailure?.addSuppressed(restoreFailure) ?: throw restoreFailure
         }
     }
 

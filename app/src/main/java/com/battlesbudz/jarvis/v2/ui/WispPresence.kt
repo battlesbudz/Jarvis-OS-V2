@@ -19,6 +19,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.battlesbudz.jarvis.v2.actions.ToolTaskJournal
 import com.battlesbudz.jarvis.v2.chat.ConversationHistory
 import com.battlesbudz.jarvis.v2.presentation.AgentActivitySnapshot
@@ -59,6 +62,37 @@ internal fun WispPresence(
     val error by (phoneTaskError?.collectAsStateWithLifecycle() ?: remember { mutableStateOf<String?>(null) })
     val observed by (agentActivity?.collectAsStateWithLifecycle() ?: remember { mutableStateOf<AgentActivitySnapshot?>(null) })
     val receipts = remember { WispReceiptTracker() }
+    val receptions = remember { WispReceptionTracker() }
+    var receivedKey by remember(thread.id) { mutableStateOf<Long?>(null) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle, agentActivity, history, thread.id) {
+        fun baseline() {
+            receptions.resume(agentActivity?.value, history.current.value.id)
+            receivedKey = null
+        }
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) baseline() else receptions.suspend()
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> baseline()
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> {
+                    receptions.suspend()
+                    receivedKey = null
+                }
+                else -> Unit
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer); receptions.suspend() }
+    }
+    LaunchedEffect(observed, thread.id) {
+        receptions.update(observed, thread.id)?.let { receivedKey = it }
+    }
+    LaunchedEffect(receivedKey) {
+        if (receivedKey != null) {
+            delay(700)
+            receivedKey = null
+        }
+    }
     var receipt by remember(thread.id) { mutableStateOf<WispPresentation?>(null) }
     LaunchedEffect(journal, thread.id) {
         receipts.update(journal, thread.id)?.let { receipt = it }
@@ -76,7 +110,9 @@ internal fun WispPresence(
                 com.battlesbudz.jarvis.v2.presentation.AgentActivityKind.CHECKING_REFERENCES -> WispActivity.CHECKING
                 com.battlesbudz.jarvis.v2.presentation.AgentActivityKind.WORKING -> WispActivity.THINKING
             },
-            it.label, taskKey = "activity:${it.operationId}")
+            it.label, taskKey = "activity:${it.operationId}", gesture =
+                if (it.kind == com.battlesbudz.jarvis.v2.presentation.AgentActivityKind.CHECKING_REFERENCES)
+                    WispGesture.RESEARCH else WispGesture.NONE)
     } ?: setupActivity
     val presentation = WispPresenter.present(thread.id, journal, error, busy, armed, phase, call, paused, activity, receipt)
     // Reserve a little more space for the whole drawing during a real call, including its card.
@@ -95,7 +131,7 @@ internal fun WispPresence(
     val status = WispPresenter.statusText(presentation, detailsAllowed)
     Column(Modifier.fillMaxWidth().testTag("jarvis_wisp"), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.size(width, height).testTag("jarvis_wisp_viewport")) {
-            WispAudioCharacter(presentation, voicePlayback, armed, phase, paused, Modifier.fillMaxSize())
+            WispAudioCharacter(presentation, voicePlayback, armed, phase, paused, call, receivedKey, Modifier.fillMaxSize())
         }
         if (status != null) {
             // No marquee/typewriter/extra inference. Event updates replace one bounded public
@@ -115,9 +151,11 @@ internal fun WispPresence(
 /** Isolate high-rate envelope collection from the app chrome and transcript composition. */
 @Composable
 private fun WispAudioCharacter(presentation: WispPresentation, playbackFlow: StateFlow<VoicePlaybackFrame>,
-    armed: Boolean, phase: com.battlesbudz.jarvis.v2.voice.VoicePhase, paused: Boolean, modifier: Modifier) {
+    armed: Boolean, phase: com.battlesbudz.jarvis.v2.voice.VoicePhase, paused: Boolean,
+    callState: VoiceSessionState, receivedKey: Long?, modifier: Modifier) {
     val microphone by VoiceSessionUi.level.collectAsStateWithLifecycle()
     val playback by playbackFlow.collectAsStateWithLifecycle()
-    val level = WispPresenter.audioLevel(presentation.activity, phase, armed, paused, microphone, playback.level)
-    WispCharacter(presentation, level, modifier)
+    val audio = WispPresenter.audioActivity(phase, armed, paused, callState)
+    val level = WispPresenter.audioLevel(audio ?: WispActivity.READY, phase, armed, paused, microphone, playback.level)
+    WispCharacter(presentation, level, modifier, audioActivity = audio, receivedKey = receivedKey)
 }

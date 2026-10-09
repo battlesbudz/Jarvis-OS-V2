@@ -313,4 +313,61 @@ class WispPresentationTest {
             assertEquals(expected, tracker.update(ToolTaskJournal(attempts = listOf(attempt(state))), "chat")?.activity)
         }
     }
+    @Test fun speakingFaceSurvivesEveryBodyWithoutChangingTaskPriorityOrAuthority() {
+        for (state in listOf(ToolTaskState.RUNNING, ToolTaskState.WAITING_APPROVAL,
+            ToolTaskState.UNKNOWN_OUTCOME, ToolTaskState.WAITING_RESOURCE)) {
+            val task = attempt(state, "screen_scroll")
+            val journal = ToolTaskJournal(attempts = listOf(task))
+            val body = present(journal, armed = true, phase = VoicePhase.SPEAKING)
+            val audio = WispPresenter.audioActivity(VoicePhase.SPEAKING, true, false, VoiceSessionState.SPEAKING)
+            assertEquals(WispActivity.SPEAKING, audio)
+            assertEquals(.8f, WispPresenter.audioLevel(audio!!, VoicePhase.SPEAKING, true, false, .2f, .8f), 0f)
+            if (state == ToolTaskState.RUNNING) assertEquals(WispGesture.SCROLL, body.gesture)
+            if (state == ToolTaskState.WAITING_APPROVAL) assertEquals(WispActivity.APPROVAL, body.activity)
+            if (state == ToolTaskState.UNKNOWN_OUTCOME) assertEquals(WispActivity.ERROR, body.activity)
+            assertEquals(task, journal.attempts.single())
+        }
+    }
+
+    @Test fun publicReferenceBodyAndListeningFaceStayIndependent() {
+        val reference = WispPresentation(WispActivity.CHECKING, "Checking references", gesture = WispGesture.RESEARCH)
+        for (phase in listOf(VoicePhase.SPEAKING, VoicePhase.LISTENING)) {
+            val result = present(armed = true, phase = phase, observed = reference)
+            assertEquals(WispActivity.CHECKING, result.bodyActivity)
+            assertEquals(WispGesture.RESEARCH, result.gesture)
+            assertEquals(if (phase == VoicePhase.SPEAKING) WispActivity.SPEAKING else WispActivity.LISTENING,
+                WispPresenter.audioActivity(phase, true, false, VoiceSessionState.ACTIVELY_LISTENING))
+        }
+    }
+
+    @Test fun toolGesturesComeOnlyFromActualRunningRequestKinds() {
+        val gestures = mapOf("screen_observe" to WispGesture.READING, "screen_tap" to WispGesture.TAP,
+            "screen_scroll" to WispGesture.SCROLL, "set_volume" to WispGesture.VOLUME)
+        for ((name, gesture) in gestures) {
+            assertEquals(gesture, WispPresenter.task(attempt(ToolTaskState.RUNNING, name)).gesture)
+            for (state in listOf(ToolTaskState.WAITING_APPROVAL, ToolTaskState.UNKNOWN_OUTCOME, ToolTaskState.FAILED))
+                assertEquals(WispGesture.NONE, WispPresenter.task(attempt(state, name)).gesture)
+        }
+        for (name in listOf("media_control", "screen_type", "future_tool", "create_reminder"))
+            assertEquals(WispGesture.NONE, WispPresenter.task(attempt(ToolTaskState.RUNNING, name)).gesture)
+        for (state in listOf(ToolTaskState.QUEUED, ToolTaskState.READY, ToolTaskState.WAITING_RESOURCE, ToolTaskState.PAUSED))
+            assertEquals(WispGesture.WAITING, WispPresenter.task(attempt(state, "screen_tap")).gesture)
+    }
+
+    @Test fun interruptionEndAndPauseRejectStaleAudioButRealRestartRearmsIt() {
+        repeat(2) {
+            assertEquals(WispActivity.SPEAKING, WispPresenter.audioActivity(VoicePhase.SPEAKING, true, false,
+                VoiceSessionState.SPEAKING))
+            for (state in listOf(VoiceSessionState.INTERRUPTED, VoiceSessionState.ENDED)) {
+                assertNull(WispPresenter.audioActivity(VoicePhase.SPEAKING, true, false, state))
+                assertNotEquals(WispActivity.SPEAKING, present(armed = true, phase = VoicePhase.SPEAKING,
+                    callState = state).activity)
+            }
+            assertNull(WispPresenter.audioActivity(VoicePhase.LISTENING, true, true, VoiceSessionState.ACTIVELY_LISTENING))
+            assertNull(WispPresenter.audioActivity(VoicePhase.SPEAKING, false, false, VoiceSessionState.SPEAKING))
+            assertEquals(WispActivity.LISTENING, WispPresenter.audioActivity(VoicePhase.LISTENING, true, false,
+                VoiceSessionState.ACTIVELY_LISTENING))
+        }
+    }
+
 }

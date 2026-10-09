@@ -13,6 +13,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +58,8 @@ internal fun WispCharacter(
     level: Float,
     modifier: Modifier = Modifier,
     motionEnabled: Boolean = true,
+    audioActivity: WispActivity? = state.activity.takeIf { it == WispActivity.SPEAKING || it == WispActivity.LISTENING },
+    receivedKey: Long? = null,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var started by remember(lifecycle) {
@@ -71,10 +74,18 @@ internal fun WispCharacter(
     }
     val durationScale by rememberWispDurationScale()
     val moving = motionEnabled && started && durationScale > 0f &&
-        state.activity != WispActivity.PAUSED
+        (state.activity != WispActivity.PAUSED || state.gesture == WispGesture.WAITING || audioActivity != null)
     val clock = remember { mutableFloatStateOf(0f) }
+    val eventAge = remember(state.activity, state.taskKey) { WispOneShotAge(moving) }
+    val receivedAge = remember(receivedKey) { WispOneShotAge(moving) }
+    val currentEventAge by rememberUpdatedState(eventAge)
+    val currentReceivedAge by rememberUpdatedState(receivedAge)
     LaunchedEffect(moving, durationScale) {
-        if (moving) {
+        if (!moving) {
+            // Never replay a transient receipt or nod when motion/lifecycle resumes.
+            currentEventAge.consume()
+            currentReceivedAge.consume()
+        } else {
             var previousFrame = 0L
             while (isActive) {
                 withFrameNanos { frame ->
@@ -83,6 +94,8 @@ internal fun WispCharacter(
                         // blink cycle to retain Float precision during long calls.
                         val elapsed = ((frame - previousFrame) / 1_000_000_000f).coerceAtMost(.1f)
                         clock.floatValue = (clock.floatValue + elapsed / durationScale) % 120f
+                        currentEventAge.advance(elapsed / durationScale)
+                        currentReceivedAge.advance(elapsed / durationScale)
                     }
                     previousFrame = frame
                 }
@@ -91,19 +104,25 @@ internal fun WispCharacter(
             }
         }
     }
-    val reactive = state.activity == WispActivity.LISTENING || state.activity == WispActivity.SPEAKING
+    val reactive = audioActivity != null
     val audioLevel = if (reactive && level.isFinite()) level.coerceIn(0f, 1f) else 0f
-    val envelope = if (moving) {
-        animateFloatAsState(audioLevel, tween(110), label = "Wisp audio envelope")
-    } else {
-        rememberUpdatedState(0f)
+    val envelope = key(audioActivity) {
+        if (moving) {
+            animateFloatAsState(audioLevel, tween(110), label = "Wisp audio envelope")
+        } else {
+            rememberUpdatedState(0f)
+        }
     }
     val paths = remember { WispPaths() }
     Canvas(modifier.size(168.dp, 108.dp).clearAndSetSemantics { }) {
         val factor = min(size.width / 168f, size.height / 108f)
         translate((size.width - 168f * factor) / 2f, (size.height - 108f * factor) / 2f) {
             scale(factor, factor, pivot = Offset.Zero) {
-                drawWisp(paths, state.activity, if (moving) clock.floatValue else 0f, if (reactive) envelope.value else 0f)
+                drawWisp(paths, state, audioActivity, if (moving) clock.floatValue else 0f,
+                    eventAge.age, receivedKey?.takeIf {
+                        state.taskKey == "activity:$it" && (state.bodyActivity ?: state.activity) == WispActivity.THINKING
+                    }?.let { receivedAge.age },
+                    if (reactive) envelope.value else 0f, moving)
             }
         }
     }
@@ -198,7 +217,10 @@ private class WispPaths {
     }
 }
 
-private fun DrawScope.drawWisp(paths: WispPaths, activity: WispActivity, time: Float, level: Float) {
+private fun DrawScope.drawWisp(paths: WispPaths, state: WispPresentation, audioActivity: WispActivity?,
+    time: Float, eventAge: Float, receivedAge: Float?, level: Float, moving: Boolean) {
+    val activity = state.bodyActivity ?: state.activity
+    val gesture = state.gesture
     val hasCard = when (activity) {
         WispActivity.CONNECTING, WispActivity.CHECKING, WispActivity.EDITING,
         WispActivity.APPROVAL, WispActivity.SUCCESS, WispActivity.ERROR -> true
@@ -206,13 +228,16 @@ private fun DrawScope.drawWisp(paths: WispPaths, activity: WispActivity, time: F
     }
     val working = activity == WispActivity.CONNECTING || activity == WispActivity.CHECKING ||
         activity == WispActivity.EDITING
-    val paused = activity == WispActivity.PAUSED
+    val paused = activity == WispActivity.PAUSED && gesture != WispGesture.WAITING
     val opacity = if (paused) .62f else 1f
-    val drift = if (paused) 0f else sin(time * 1.45f) * 1.35f
+    val drift = (if (paused) 0f else sin(time * if (gesture == WispGesture.WAITING) .75f else 1.45f) * 1.35f) +
+        WispMotion.bounce(activity, eventAge, moving)
     val breathe = sin(time * 1.7f) * .007f
     val xShift = if (hasCard) -17f else 9f
     val tilt = when {
+        gesture == WispGesture.WAITING -> 0f
         working -> 7f + sin(time * 1.9f) * 1.5f
+        activity == WispActivity.LISTENING -> 3f + sin(time * .9f) * .8f
         activity == WispActivity.THINKING -> -6f
         activity == WispActivity.ERROR -> -4f
         else -> sin(time * .9f) * 1.2f
@@ -223,11 +248,12 @@ private fun DrawScope.drawWisp(paths: WispPaths, activity: WispActivity, time: F
         drawOval(Brush.radialGradient(listOf(WispCyan.copy(alpha = .17f * opacity), Color.Transparent),
             center = Offset(75f, 100f), radius = 39f), Offset(34f, 95f), Size( 80f, 10f))
     }
-    if (hasCard) drawWispCard(activity, time)
-    if (working) drawWispTendril(activity, time, drift)
+    if (hasCard) drawWispCard(activity, gesture, time)
+    if (working) drawWispTendril(activity, gesture, time, drift)
+    if (gesture == WispGesture.WAITING) drawWispWaiting()
 
     translate(xShift, 4f + drift) {
-        rotate(tilt, Offset(74f,  60f)) {
+        rotate(tilt + WispMotion.nod(receivedAge, moving), Offset(74f,  60f)) {
             scale(1f + breathe + level * .025f, 1f - breathe + level * .045f, Offset(73f, 78f)) {
                 val tint = if (paused) Color(0xFF92BDC8) else WispCyan
                 drawPath(paths.body, tint, alpha = .023f * opacity, style = Stroke(13f))
@@ -241,6 +267,10 @@ private fun DrawScope.drawWisp(paths: WispPaths, activity: WispActivity, time: F
                     drawCircle(Brush.radialGradient(listOf(Color(0xFFFDF6DE).copy(alpha = .94f * opacity),
                         WispIce.copy(alpha = .66f * opacity), Color.Transparent),
                         center = Offset(65f, 64f), radius = 30f), 30f, Offset(65f, 64f))
+                    if (activity == WispActivity.THINKING && gesture != WispGesture.WAITING) {
+                        drawCircle(WispIce, 15f, Offset(66f, 64f),
+                            alpha = (.07f + .05f * (sin(time * 2f) + 1f)) * opacity)
+                    }
                     drawCircle(Brush.radialGradient(listOf(Color(0xFFFDE5BB).copy(alpha = .55f * opacity),
                         Color.Transparent), center = Offset(85f, 83f), radius = 18f), 18f, Offset(85f, 83f))
                     drawPath(paths.forelock, WispIce.copy(alpha = .4f * opacity))
@@ -261,7 +291,7 @@ private fun DrawScope.drawWisp(paths: WispPaths, activity: WispActivity, time: F
                     tint.copy(alpha = .4f), WispIce.copy(alpha = .85f)), Offset(42f, 25f), Offset(102f, 90f)),
                     alpha = opacity, style = Stroke(.85f))
                 drawPath(paths.rim, WispIce, alpha = .92f * opacity, style = Stroke(1.15f, cap = StrokeCap.Round))
-                drawWispFace(activity, time, level, opacity)
+                drawWispFace(activity, audioActivity, gesture, time, WispMotion.mouthLevel(audioActivity, level, moving), opacity)
             }
         }
         // Two detached droplets extend the silhouette and reinforce its fluidity.
@@ -270,10 +300,10 @@ private fun DrawScope.drawWisp(paths: WispPaths, activity: WispActivity, time: F
             drawOval(WispIce.copy(alpha = .75f * opacity), Offset(102.1f, 35.8f), Size(1.4f, 3.5f))
         }
         drawCircle(WispCyan.copy(alpha = .5f * opacity), 1.1f, Offset(107f, 27f + sin(time) * 1.5f))
-        if (activity == WispActivity.LISTENING || activity == WispActivity.SPEAKING) {
+        if (audioActivity != null) {
             drawWispVoiceRipples(level, opacity)
         }
-        if (activity == WispActivity.THINKING) {
+        if (activity == WispActivity.THINKING && gesture != WispGesture.WAITING) {
             repeat(3) { index ->
                 val alpha = .25f + .35f * ((sin(time * 2f - index * .9f) + 1f) / 2f)
                 drawCircle(WispCyan.copy(alpha = alpha), 1.5f - index * .25f,
@@ -287,12 +317,13 @@ private fun DrawScope.drawWisp(paths: WispPaths, activity: WispActivity, time: F
     }
 }
 
-private fun DrawScope.drawWispFace(activity: WispActivity, time: Float, level: Float, alpha: Float) {
+private fun DrawScope.drawWispFace(activity: WispActivity, audioActivity: WispActivity?, gesture: WispGesture,
+    time: Float, level: Float, alpha: Float) {
     val happy = activity == WispActivity.SUCCESS
     val thinking = activity == WispActivity.THINKING
     val worried = activity == WispActivity.ERROR
-    val sleepy = activity == WispActivity.PAUSED
-    val gaze = when (activity) {
+    val sleepy = activity == WispActivity.PAUSED && gesture != WispGesture.WAITING
+    val gaze = if (gesture == WispGesture.READING) 1.5f + sin(time * 1.1f) * .65f else when (activity) {
         WispActivity.CONNECTING, WispActivity.CHECKING, WispActivity.EDITING -> 2f
         WispActivity.THINKING -> -.8f
         else -> 0f
@@ -318,16 +349,26 @@ private fun DrawScope.drawWispFace(activity: WispActivity, time: Float, level: F
     // Low-opacity peach cheeks keep the expression warm without changing cyan identity.
     drawOval(Color(0xFFF4C5AE).copy(alpha = .34f * alpha), Offset(48f + gaze,  60f + 7f), Size(8f, 3.7f))
     drawOval(Color(0xFFF4C5AE).copy(alpha = .30f * alpha), Offset(78f + gaze, 69f), Size(7.8f, 3.6f))
-    if (activity == WispActivity.SPEAKING) {
-        val mouthHeight = 2.5f + level * 4f
-        drawOval(faceInk, Offset(65.2f + gaze, 69f), Size(4.4f, mouthHeight))
-        if (mouthHeight > 4f) drawOval(Color(0xFFFFD5CB), Offset(66f + gaze, 70.9f + level), Size(2.7f, 1.4f))
-    } else {
-        val mouth = Path().apply {
-            moveTo(64f + gaze, 70f)
-            quadraticTo(67f + gaze, if (worried) 68f else 74f, 70f + gaze, 70.6f)
+    // Match the selected 2× width / 1.65× opening preview. Only the mouth grows.
+    // Silence and interruption restore the resting smile; no invented syllable clock.
+    if (audioActivity == WispActivity.SPEAKING && level > .01f) {
+        val mouthWidth = 4.4f * WispMotion.mouthWidthScale
+        val mouthHeight = (2.5f + level * 4f) * WispMotion.mouthHeightScale
+        drawOval(faceInk, Offset(67.4f + gaze - mouthWidth / 2f, 69f), Size(mouthWidth, mouthHeight))
+        if (mouthHeight > 4f) {
+            val tongueWidth = 2.7f * WispMotion.mouthWidthScale
+            val tongueHeight = 1.4f * WispMotion.mouthHeightScale
+            drawOval(Color(0xFFFFD5CB), Offset(67.35f + gaze - tongueWidth / 2f,
+                69f + mouthHeight * .77f - tongueHeight / 2f), Size(tongueWidth, tongueHeight))
         }
-        drawPath(mouth, faceInk, style = Stroke(1.1f, cap = StrokeCap.Round))
+    } else {
+        scale(WispMotion.mouthWidthScale, WispMotion.smileHeightScale, Offset(67f + gaze, 71f)) {
+            val mouth = Path().apply {
+                moveTo(64f + gaze, 70f)
+                quadraticTo(67f + gaze, if (worried) 68f else 74f, 70f + gaze, 70.6f)
+            }
+            drawPath(mouth, faceInk, style = Stroke(1.1f, cap = StrokeCap.Round))
+        }
     }
     if (thinking || worried || activity == WispActivity.LISTENING) {
         drawLine(faceInk.copy(alpha = .62f * alpha), Offset(54f + gaze, if (worried) 53f else 52f),
@@ -351,10 +392,19 @@ private fun DrawScope.drawWispVoiceRipples(level: Float, opacity: Float) {
     }
 }
 
-private fun DrawScope.drawWispTendril(activity: WispActivity, time: Float, drift: Float) {
+private fun DrawScope.drawWispTendril(activity: WispActivity, gesture: WispGesture, time: Float, drift: Float) {
     val adjusting = activity == WispActivity.EDITING
-    val reachX = if (adjusting) 128f + sin(time * 2.4f) * 3f else 108f
-    val reachY = if (adjusting) 58f else 50f + sin(time * 1.4f) * 2f
+    val reachX = when (gesture) {
+        WispGesture.TAP -> 128f
+        WispGesture.SCROLL -> 134f
+        WispGesture.VOLUME -> 128f + sin(time * 2.4f) * 3f
+        else -> if (adjusting) 124f else 108f
+    }
+    val reachY = when (gesture) {
+        WispGesture.TAP -> 58f + sin(time * 2.4f) * 1.5f
+        WispGesture.SCROLL -> 58f + sin(time * 1.4f) * 7f
+        else -> if (adjusting) 58f else 50f + sin(time * 1.4f) * 2f
+    }
     val tendril = Path().apply {
         moveTo( 70f, 68f + drift)
         cubicTo(87f, 67f, 94f, reachY + 4f, reachX, reachY)
@@ -367,11 +417,16 @@ private fun DrawScope.drawWispTendril(activity: WispActivity, time: Float, drift
     drawCircle(WispIce.copy(alpha = .9f), 2f, Offset(reachX, reachY))
 }
 
-private fun DrawScope.drawWispCard(activity: WispActivity, time: Float) {
+private fun DrawScope.drawWispCard(activity: WispActivity, gesture: WispGesture, time: Float) {
     val accent = when (activity) {
         WispActivity.APPROVAL -> WispGold
         WispActivity.ERROR -> WispCoral
         else -> WispCyan
+    }
+    if (gesture == WispGesture.RESEARCH) {
+        drawRoundRect(accent.copy(alpha = .07f), Offset(110f, 25f), Size(43f, 55f), CornerRadius(7f))
+        drawRoundRect(accent.copy(alpha = .32f), Offset(110f, 25f), Size(43f, 55f),
+            CornerRadius(7f), style = Stroke(.7f))
     }
     val topLeft = Offset(105f, 29f)
     val cardSize = Size( 40f + 4f, 55f)
@@ -382,6 +437,10 @@ private fun DrawScope.drawWispCard(activity: WispActivity, time: Float) {
     drawRoundRect(accent.copy(alpha = .45f), topLeft, cardSize, corner, style = Stroke(.7f))
     repeat(3) { drawCircle(accent.copy(alpha = .42f), 1f, Offset(112f + it * 4f, 35f)) }
     drawLine(accent.copy(alpha = .14f), Offset(110f,  40f), Offset(144f, 40f), .7f)
+    if (gesture == WispGesture.READING) {
+        drawWispPage(accent)
+        return
+    }
     when (activity) {
         WispActivity.CONNECTING -> {
             // A generic app tile does not imply web navigation or a remote site.
@@ -404,24 +463,52 @@ private fun DrawScope.drawWispCard(activity: WispActivity, time: Float) {
             drawCircle(WispIce.copy(alpha = .9f), 6f, lens, style = Stroke(1.25f))
             drawLine(WispIce.copy(alpha = .9f), lens + Offset(4.5f, 4.5f), lens + Offset(8f, 8f), 1.8f, StrokeCap.Round)
         }
-        WispActivity.EDITING -> {
-            // The current write operation adjusts phone volume. Illustrate a
-            // setting, not a document edit the agent is not actually performing.
-            drawLine(accent.copy(alpha = .3f), Offset(114f, 48f), Offset(132f, 48f), 1.4f, StrokeCap.Round)
-            drawLine(accent.copy(alpha = .27f), Offset(114f, 58f), Offset(140f, 58f), 2.5f, StrokeCap.Round)
-            val handleX = 128f + sin(time * 2.4f) * 3f
-            drawLine(accent.copy(alpha = .75f), Offset(114f, 58f), Offset(handleX, 58f), 2.5f, StrokeCap.Round)
-            drawCircle(WispCyan.copy(alpha = .15f), 5.5f, Offset(handleX, 58f))
-            drawCircle(WispIce, 3f, Offset(handleX, 58f))
-            drawLine(accent.copy(alpha = .23f), Offset(114f, 71f), Offset(140f, 71f), 2f, StrokeCap.Round)
-            drawCircle(accent.copy(alpha = .55f), 2.5f, Offset(120f, 71f))
+        WispActivity.EDITING -> when (gesture) {
+            WispGesture.VOLUME -> {
+                // A slider is reserved for an observed volume operation.
+                drawLine(accent.copy(alpha = .27f), Offset(114f, 58f), Offset(140f, 58f), 2.5f, StrokeCap.Round)
+                val handleX = 128f + sin(time * 2.4f) * 3f
+                drawLine(accent.copy(alpha = .75f), Offset(114f, 58f), Offset(handleX, 58f), 2.5f, StrokeCap.Round)
+                drawCircle(WispIce, 3f, Offset(handleX, 58f))
+                val speaker = Path().apply {
+                    moveTo(116f, 46f); lineTo(120f, 46f); lineTo(124f, 43f)
+                    lineTo(124f, 53f); lineTo(120f, 50f); lineTo(116f, 50f); close()
+                }
+                drawPath(speaker, accent.copy(alpha = .7f))
+                drawArc(accent.copy(alpha = .6f), -55f, 110f, false,
+                    Offset(122f, 44f), Size(8f, 8f), style = Stroke(.9f))
+            }
+            WispGesture.TAP -> {
+                drawRoundRect(accent.copy(alpha = .13f), Offset(116f, 48f), Size(23f, 20f), CornerRadius(4f))
+                drawRoundRect(accent.copy(alpha = .65f), Offset(116f, 48f), Size(23f, 20f), CornerRadius(4f), style = Stroke(.9f))
+                drawCircle(accent.copy(alpha = .28f), 5f + sin(time * 2.4f) * 1.5f, Offset(128f, 58f), style = Stroke(.8f))
+            }
+            WispGesture.SCROLL -> {
+                repeat(4) { row -> drawLine(accent.copy(alpha = .35f), Offset(114f, 47f + row * 8f),
+                    Offset(123f, 47f + row * 8f), 1.2f, StrokeCap.Round) }
+                drawLine(accent.copy(alpha = .4f), Offset(134f, 47f), Offset(134f, 71f), 1f, StrokeCap.Round)
+                drawCircle(WispIce.copy(alpha = .8f), 2f, Offset(134f, 58f + sin(time * 1.4f) * 7f))
+            }
+            else -> {
+                // Other real tools get a neutral activity tile, not a fictitious slider.
+                repeat(3) { row -> drawLine(accent.copy(alpha = .4f), Offset(115f, 49f + row * 10f),
+                    Offset(138f, 49f + row * 10f), 1.4f, StrokeCap.Round) }
+            }
         }
         WispActivity.APPROVAL -> {
-            drawCircle(accent.copy(alpha = .12f), 11f, Offset(127f, 57f))
-            drawCircle(accent.copy(alpha = .8f), 10f, Offset(127f, 57f), style = Stroke(1f))
-            drawLine(accent, Offset(124f, 53f), Offset(124f, 61f), 2f, StrokeCap.Round)
-            drawLine(accent, Offset(130f, 53f), Offset(130f, 61f), 2f, StrokeCap.Round)
-            drawLine(accent.copy(alpha = .45f), Offset(117f, 74f), Offset(137f, 74f), 1.5f, StrokeCap.Round)
+            // Decorative open palm. Only the existing explicit approval controls can act.
+            val palm = Path().apply {
+                moveTo(120f, 65f); lineTo(117f, 61f); lineTo(117f, 55f)
+                quadraticTo(118f, 53f, 121f, 57f); lineTo(121f, 47f)
+                quadraticTo(123f, 44f, 124f, 47f); lineTo(124f, 54f)
+                lineTo(124f, 44f); quadraticTo(126f, 41f, 127f, 44f); lineTo(127f, 54f)
+                lineTo(127f, 46f); quadraticTo(129f, 43f, 130f, 46f); lineTo(130f, 55f)
+                lineTo(130f, 50f); quadraticTo(132f, 47f, 133f, 50f); lineTo(133f, 60f)
+                quadraticTo(133f, 71f, 120f, 65f); close()
+            }
+            drawPath(palm, accent.copy(alpha = .12f))
+            drawPath(palm, accent.copy(alpha = .9f), style = Stroke(1f, cap = StrokeCap.Round))
+            drawLine(accent.copy(alpha = .45f), Offset(117f, 75f), Offset(137f, 75f), 1.5f, StrokeCap.Round)
         }
         WispActivity.SUCCESS -> {
             drawCircle(accent.copy(alpha = .13f), 12f, Offset(127f, 58f))
@@ -444,4 +531,22 @@ private fun DrawScope.drawWispCard(activity: WispActivity, time: Float) {
 private fun DrawScope.drawWispSparkle(center: Offset, radius: Float, color: Color) {
     drawLine(color.copy(alpha = .7f), center - Offset(radius, 0f), center + Offset(radius, 0f), .8f, StrokeCap.Round)
     drawLine(color.copy(alpha = .7f), center - Offset(0f, radius), center + Offset(0f, radius), .8f, StrokeCap.Round)
+}
+
+private fun DrawScope.drawWispPage(accent: Color) {
+    val page = Path().apply {
+        moveTo(116f, 45f); lineTo(132f, 45f); lineTo(140f, 53f)
+        lineTo(140f, 76f); lineTo(116f, 76f); close()
+        moveTo(132f, 45f); lineTo(132f, 53f); lineTo(140f, 53f)
+    }
+    drawPath(page, accent.copy(alpha = .65f), style = Stroke(.9f))
+    repeat(4) { row -> drawLine(accent.copy(alpha = .35f), Offset(120f, 57f + row * 4f),
+        Offset(136f - row % 2 * 3f, 57f + row * 4f), .8f, StrokeCap.Round) }
+}
+
+private fun DrawScope.drawWispWaiting() {
+    // A static clock symbol means waiting, never a countdown or promised finish time.
+    drawCircle(WispCyan.copy(alpha = .4f), 7f, Offset(121f, 57f), style = Stroke(.9f))
+    drawLine(WispCyan.copy(alpha = .6f), Offset(121f, 57f), Offset(121f, 52f), .9f, StrokeCap.Round)
+    drawLine(WispCyan.copy(alpha = .6f), Offset(121f, 57f), Offset(125f, 59f), .9f, StrokeCap.Round)
 }

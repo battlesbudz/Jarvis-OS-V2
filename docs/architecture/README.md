@@ -251,3 +251,11 @@ failure. This state is in memory, not persisted across process restart.
 controller monitor even when its first checkpoint throws. The turn runner's
 existing lifetime/finalizer owns cleanup and fences late error publication by
 call and turn-job identity.
+
+
+Wisp presentation keeps task body/props separate from the real call audio owner.
+`WispPresenter` chooses only observed states; `WispMotion` contains pure bounded
+one-shot and mouth geometry policy, while `WispReceptionTracker` fences transient
+admission nods by conversation/operation identity. `WispPresence` owns their
+UI-local lifetimes and `WispCharacter` draws them. These collaborators cannot
+start/approve/retry work, synthesize audio, persist state or change playback timing.
