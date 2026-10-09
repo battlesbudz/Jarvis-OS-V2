@@ -64,9 +64,11 @@ internal class ConversationGeneration(
         // four models in-process and fuse the structured detections into
         // Gemma's prompt as authoritative context (replaces the old Termux
         // HTTP path). One message combines detection + Gemma's understanding.
-        val visionContext = if (appAssets != null && attachments.image != null) {
+        val visionAssets = appAssets
+        val visionImageBytes = attachments.image
+        val visionContext = if (visionAssets != null && visionImageBytes != null) {
             runCatching {
-                val snapshot = NativeVision.analyze(attachments.image, appAssets)
+                val snapshot = NativeVision.analyze(visionImageBytes, visionAssets)
                 reply.benchmark.metric("native_vision_ms", snapshot.totalMs.toLong())
                 VisionContextFormatter.format(snapshot)
             }.getOrElse { error ->
