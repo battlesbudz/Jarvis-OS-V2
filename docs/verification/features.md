@@ -4177,3 +4177,16 @@ arrays were removed after independent review. See the [source-bound results and
 limits](smart-turn-host-validation-2026-10-09.md). This adds host model execution
 evidence, not Android/JNI, physical-device latency, endpoint calibration or
 default-on admission.
+
+## Caption reset failure under coroutine recovery (9 October 2026)
+
+Build 1246 reached 2,152 release JVM tests and exposed one exception-chain-depth
+assumption in `PostAnswerCaptionContinuationTest`. The unchanged original suite
+reproduces the same failure with Gradle-style assertions or explicit coroutine
+debugging; disabling recovery removes it. The corrected test retains the required
+`NativeReleaseFailure`, requires the exact native root exception, and additionally
+checks completed caption work, closed listener, one reset and no success event.
+All 11 focused tests pass in five assertion/debug/recovery configurations.
+Production cleanup and the caller's quarantine/rethrow path are unchanged.
+[Reproduction, source hashes and coverage limits](caption-reset-recovery-2026-10-09.md)
+retain the failure evidence. Exact-revision full release gates remain required.

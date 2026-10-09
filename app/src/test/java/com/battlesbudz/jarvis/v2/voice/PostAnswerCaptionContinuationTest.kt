@@ -97,17 +97,33 @@ class PostAnswerCaptionContinuationTest {
     }
 
     @Test fun failedCheckedResetEscapesInsteadOfReportingSuccessfulHandoff() = runBlocking {
+        val nativeFailure = IllegalStateException("native owner quarantined")
+        val events = mutableListOf<String>()
+        var exactCaptionJob: Job? = null
+        var resets = 0
         supervisorScope {
             val task = async {
                 PostAnswerCaptionContinuation.run(
-                    isCurrent = { true }, hasNextInput = { false }, awaitNextInput = { awaitCancellation() },
-                    generate = { "caption" }, checkedReset = { error("native owner quarantined") })
+                    isCurrent = { true }, hasNextInput = { false },
+                    awaitNextInput = { try { awaitCancellation() } finally { events += "listener_closed" } },
+                    generate = { exactCaptionJob = currentCoroutineContext()[Job]; "caption" },
+                    checkedReset = {
+                        assertTrue(requireNotNull(exactCaptionJob).isCompleted)
+                        resets++
+                        events += "reset"
+                        throw nativeFailure
+                    }, observe = events::add)
             }
             try { task.await(); fail("Reset failure was swallowed") }
             catch (error: PostAnswerCaptionContinuation.NativeReleaseFailure) {
-                assertEquals("native owner quarantined", error.cause?.message)
+                assertEquals("Caption native release/reset failed", error.message)
+                // Coroutine stacktrace recovery may add a same-type wrapper at await.
+                assertSame("The exact native failure must remain the root cause for quarantine",
+                    nativeFailure, generateSequence<Throwable>(error) { it.cause }.last())
             }
         }
+        assertEquals(1, resets)
+        assertEquals(listOf("caption_child_joined", "listener_closed", "reset"), events)
     }
 
     @Test fun captionGenerationFailureStillResetsAndPropagates() = runBlocking {
