@@ -4000,3 +4000,57 @@ The exact CI-layout regression fails against the prior binder; all 113 Python
 SDK helper tests pass with the repair. No workflow upload layout, app or native
 source changes are needed. Fresh exact-revision hosted release verification and
 final binding remain required; physical audio/device coverage stays separate.
+
+
+## Whole-call portable benchmark export (October 9, 2026)
+
+Requested acceptance: share every retained call/conversation attempt for pipeline
+comparison, rather than one reply or an oversized full-prompt diagnostic paste.
+`Copy report` freezes a metrics-only text snapshot and offers numbered parts of
+at most 8,192 UTF-8 bytes including report identity/part headers. Concatenating
+part bodies recreates the exact text, with no silent truncation. `Save TXT` uses
+SAF CreateDocument with text/plain and a .txt filename; `Share TXT` supplies a
+FileProvider content URI, ClipData and read grant. Existing full JSON/CSV exports
+retain their schemas and data. Full exact-prompt diagnostics remain separate.
+
+The text report includes every retained attempt (beyond the UI's latest 50),
+per-attempt outcomes, explicit shared availability catalogs (unlisted raw keys are
+unavailable), stage offsets, deduplicated provenance/model/config
+references, and submission purposes/outcomes. Complete-turn median/p95/p99 and
+n/missing counts are computed only within existing comparable groups; failed or
+cancelled observations stay in raw rows and outcome counts, never zero-filled.
+Submission groups also separate model/purpose/warm-state/outcome. Small-sample
+tails are labelled exploratory. Defined speech-end/recognition/submission endpoints,
+filler exclusion and playback-head versus acoustic evidence stay explicit.
+
+`PipelineBenchmarkTextExportTest` covers 160 turns, frozen collection isolation,
+correlation-preserving provenance deduplication, empty/missing/nonfinite data,
+build/model/config group separation, cancelled/error attempts, privacy, token
+estimates, non-ASCII/surrogate boundaries, exact numbered-part reconstruction and
+unchanged JSON/CSV. `BenchmarkExportStateTest` covers the synchronous rapid-repeat
+gate and preserving a currently open clipboard report. Existing Android release journey test45 is extended, without
+removing any assertions, to cover copying adjacent parts, picker cancellation,
+repeated TXT saves/shares and full-scope text preservation across pending-picker
+scroll/recomposition/cancellation. Controlled screen replacement verifies that an
+old picker URI never receives a newer report and exporting can restart. A controlled registry
+returns picker outcomes while the production CreateDocument contract and real
+ContentResolver/FileProvider are used. Transport checks verify replacement writes,
+Unicode, MIME/filename, content URI/read grants and six still-readable successive
+shares. Unique files replace the old four-file eviction rule; shares older than
+24 hours may be cleaned up on subsequent export. No permissions/dependencies were
+added. Exact crossing APIs are retained for the independent release-test DEX.
+
+The export owner, coroutine scope, launchers and clipboard dialog live above the
+LazyColumn. Scrolling cannot dispose pending payloads. Configuration recreation
+intentionally aborts pending exports and displays an interruption notice; a fresh
+non-restored launcher namespace isolates late results. Large payloads never enter
+Activity saved state. A synchronous gate rejects rapid duplicate requests before
+button recomposition.
+
+Local evidence: focused production Kotlin/JVM tests and Android/Compose API
+compilation only. Full Gradle/JVM/native/R8/APK and the exact-revision Android
+matrix remain release gates, not replaced by these checks. The added Android
+interactions use bounded condition waits and no fixed extra delays; their actual
+matrix duration is not known until hosted execution. No Samsung Files/ChatGPT
+picker compatibility, physical Fold 6 behavior, real-model or acoustic success is
+claimed. Receiving-app selection/delivery is outside the controlled fixture.

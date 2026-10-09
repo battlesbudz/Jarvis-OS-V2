@@ -356,6 +356,21 @@
 -keep class com.battlesbudz.jarvis.v2.diagnostics.PipelineBenchmark** { *; }
 -keep class com.battlesbudz.jarvis.v2.diagnostics.AndroidPipelineBenchmarkStore { *; }
 -keep class com.battlesbudz.jarvis.v2.ui.PipelineBenchmarkScreenKt { *; }
+# Release export journey verifies real ContentResolver/FileProvider transports.
+-keep class com.battlesbudz.jarvis.v2.ui.BenchmarkExportFiles { *; }
+-keep class com.battlesbudz.jarvis.v2.ui.BenchmarkExportFormat { *; }
+# Controlled picker outcomes cross the separately shrunk instrumentation DEX.
+-keep class androidx.activity.compose.LocalActivityResultRegistryOwner { *; }
+-keep interface androidx.activity.result.ActivityResultRegistryOwner { *; }
+-keep class androidx.activity.result.ActivityResultRegistry { *; }
+-keep class androidx.activity.result.contract.ActivityResultContract { *; }
+-keep class androidx.core.content.FileProvider { *; }
+-keep class androidx.compose.ui.platform.AndroidCompositionLocals_androidKt { *; }
+-keep class androidx.compose.runtime.CompositionLocalKt { *; }
+-keep class androidx.compose.runtime.CompositionLocal { *; }
+-keep class androidx.compose.runtime.ProvidableCompositionLocal { *; }
+-keep class androidx.compose.runtime.ProvidedValue { *; }
+
 
 # Build 878: the separate release-test DEX reads the input-mode companion and
 # renders the shipping settings composable. Preserve these precise shared ABI

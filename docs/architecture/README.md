@@ -107,7 +107,7 @@ playback evidence; unplayed generated text must not become heard conversation co
 | `actions/` | Strict action contracts, complete plans, authority/approval, Android effects and durable journals | `ActionTurnPlan`, `ActionTurnRunner`, `JournaledActionPipeline`, `AndroidMobileActionExecutor` |
 | `eval/` | Explicit local-model fixture checks through exclusive model admission and checked engine teardown; exact file/suite-bound reports; never Android side-effect dispatch | `ToolReliabilityBenchmark`, `LiteRtLmToolCallRunner`, `ToolReliabilityFixtures`, `ToolReliabilityScorer`, `ReliabilityReportStore` |
 | `memory/` | Memory policy, reviewed facts, source archives, SQLite/migration, retrieval and delivery validity | `ConversationMemory`, `MemoryOs`, `SQLiteMemoryStore`, `MemoryDeliveryFence` |
-| `diagnostics/` | Per-reply latency, production benchmark capture/journals/exports and bounded diagnostic evidence | `PipelineBenchmarks`, `ReplyCaptureBenchmark`, `PipelineBenchmarkCapture`, `AndroidPipelineBenchmarkStore`, `DiagnosticRecorder`, `ConversationMetricsExport` |
+| `diagnostics/` | Per-reply latency, production benchmark capture/journals/exports and bounded diagnostic evidence | `PipelineBenchmarks`, `ReplyCaptureBenchmark`, `PipelineBenchmarkCapture`, `AndroidPipelineBenchmarkStore`, `DiagnosticRecorder`, `ConversationMetricsExport`, `PipelineBenchmarkTextExport` |
 | `presentation/` | Model setup operations through a narrow session port; durable download work identity | `ModelSetupOperations`, `ModelSetupContract` |
 | `ui/` | Compose screens, model presentation, call overlay, attachments, task/memory panels and evidence exports | `JarvisApp`, `ModelSetupState`, `ModelSelectionSection`, `ConversationScreen`, `VoiceCallScreen`, `MemoryScreen`, `ConversationMetricsControls` |
 | `assistant/` | Android default-assistant integration entry points | `JarvisInteractionService`, `JarvisRecognitionService` |
@@ -268,3 +268,13 @@ one-shot and mouth geometry policy, while `WispReceptionTracker` fences transien
 admission nods by conversation/operation identity. `WispPresence` owns their
 UI-local lifetimes and `WispCharacter` draws them. These collaborators cannot
 start/approve/retry work, synthesize audio, persist state or change playback timing.
+
+### Benchmark sharing boundary
+
+`PipelineBenchmarkTextExport` renders every retained attempt in the selected
+conversation/call scope, with provenance and completed-turn distributions only
+inside comparable groups. Its numbered UTF-8 clipboard parts are lossless and
+bounded; full JSON/CSV keep their existing schemas. `BenchmarkExportControls`
+owns a frozen export and picker/copy state; `BenchmarkExportFiles` owns only
+UTF-8 ContentResolver/FileProvider transport, MIME types and unique filenames.
+These components cannot start model work or change retained measurements.

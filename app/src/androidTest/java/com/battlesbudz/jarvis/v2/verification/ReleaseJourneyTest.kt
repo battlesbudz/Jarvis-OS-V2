@@ -3036,19 +3036,27 @@ class ReleaseJourneyTest {
             override fun getApplicationContext(): Context = this
             override fun getNoBackupFilesDir(): File = directory
         }
+        val exportProbe = BenchmarkExportJourneyProbe(context)
+        exportProbe.verifyRepeatedTransports()
         val store = AndroidPipelineBenchmarkStore(fixtureContext)
         val completedId = "completed-benchmark-fixture"
         val cancelledId = "cancelled-benchmark-fixture"
         val originalAsr = "alpha beta wrong delta"
         val reference = "alpha beta gamma delta"
+        var renderGeneration = 0
         fun render(value: AndroidPipelineBenchmarkStore) {
+            val generation = ++renderGeneration
             activity.onActivity { host -> host.setContent {
                 // A restored store represents a new process: do not reuse the prior
                 // screen's remembered selection, status or reference-dialog state.
-                androidx.compose.runtime.key(value) {
-                    MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
-                        PipelineBenchmarkScreen(value, onClose = {})
-                    } }
+                androidx.compose.runtime.key(value, generation) {
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        androidx.activity.compose.LocalActivityResultRegistryOwner provides exportProbe,
+                        androidx.compose.ui.platform.LocalContext provides exportProbe.exportContext) {
+                        MaterialTheme { Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                            PipelineBenchmarkScreen(value, onClose = {})
+                        } }
+                    }
                 }
             } }
             device.waitForIdle()
@@ -3121,6 +3129,89 @@ class ReleaseJourneyTest {
                 benchmarkRevealText("tts_load_ms: unavailable", holdDiscovery = true)
                 else benchmarkScrollTo(By.text("tts_load_ms: unavailable"), sparseHeldDiscovery = true))
             captureEvidence("pipeline_benchmark_verified_reference_and_review")
+
+            benchmarkClickEnabled(By.res("pipeline_benchmark_copy_text"), towardTop = true)
+            find(By.res("pipeline_benchmark_part_copy")).click()
+            val reportPart = AtomicReference<String>()
+            activity.onActivity { host -> reportPart.set(host.getSystemService(android.content.ClipboardManager::class.java)
+                .primaryClip?.getItemAt(0)?.coerceToText(host)?.toString().orEmpty()) }
+            assertTrue(reportPart.get().contains("part 1/"))
+            assertTrue(reportPart.get().contains("Retained attempts=2"))
+            assertTrue(reportPart.get().toByteArray(Charsets.UTF_8).size <= PipelineBenchmarkTextExport.COPY_BYTES)
+            find(By.res("pipeline_benchmark_part_next")).click()
+            find(By.res("pipeline_benchmark_part_copy").text("Copy part 2")).click()
+            activity.onActivity { host -> reportPart.set(host.getSystemService(android.content.ClipboardManager::class.java)
+                .primaryClip?.getItemAt(0)?.coerceToText(host)?.toString().orEmpty()) }
+            assertTrue(reportPart.get().contains("part 2/"))
+            find(By.res("pipeline_benchmark_parts_done")).click()
+            // Cancel then save twice: pending state clears, payload stays whole-scope and UTF-8.
+            exportProbe.holdResult = true
+            find(By.res("pipeline_benchmark_save_text")).click()
+            exportProbe.awaitObserved("Picker request observed") { exportProbe.creates.size == 1 }
+            // The picker is controlled so the underlying screen can scroll/recompose while pending.
+            benchmarkScrollTo(By.res("pipeline_benchmark_sample_$completedId"))
+            assertFalse(device.hasObject(By.res("pipeline_benchmark_save_text")))
+            exportProbe.completePending()
+            benchmarkScrollTo(By.res("pipeline_benchmark_save_text").enabled(true), towardTop = true)
+            repeat(2) { index ->
+                val destination = exportProbe.destination()
+                exportProbe.nextSave = destination
+                find(By.res("pipeline_benchmark_save_text")).click()
+                exportProbe.awaitObserved("Repeated picker request observed") { exportProbe.creates.size == index + 2 }
+                store.setEnvironment(completedId, PipelineBenchmarkEnvironment.QUIET)
+                exportProbe.completePending()
+                exportProbe.awaitObserved("Whole report written after save") {
+                    exportProbe.read(destination).contains("END REPORT: 2 retained attempts.")
+                }
+                assertTrue(device.wait(Until.hasObject(By.res("pipeline_benchmark_save_text").enabled(true)), 5_000))
+                val text = exportProbe.read(destination)
+                assertTrue(text.contains("id=\"$completedId\""))
+                assertTrue(text.contains("id=\"$cancelledId\""))
+                assertFalse(text.contains(originalAsr))
+                assertFalse(text.contains(reference))
+                assertTrue("Pending export keeps its original scope/settings despite recomposition", text.contains("environment=NOISY"))
+                store.setEnvironment(completedId, PipelineBenchmarkEnvironment.NOISY)
+                activity.onActivity { } // drain the state change before requesting the next snapshot
+            }
+            exportProbe.holdResult = false
+            assertEquals(3, exportProbe.creates.size)
+            exportProbe.creates.forEach { intent ->
+                assertEquals(Intent.ACTION_CREATE_DOCUMENT, intent.action)
+                assertEquals("text/plain", intent.type)
+                assertTrue(intent.getStringExtra(Intent.EXTRA_TITLE)!!.endsWith(".txt"))
+                assertTrue(intent.hasCategory(Intent.CATEGORY_OPENABLE))
+            }
+            repeat(2) { index ->
+                find(By.res("pipeline_benchmark_share_text")).click()
+                exportProbe.awaitObserved("Share chooser request observed") { exportProbe.shares.size == index + 1 }
+                assertTrue(device.wait(Until.hasObject(By.res("pipeline_benchmark_share_text").enabled(true)), 5_000))
+            }
+            assertEquals(2, exportProbe.shares.size)
+            exportProbe.shares.forEach { intent ->
+                assertEquals("text/plain", intent.type)
+                @Suppress("DEPRECATION") val uri = intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)!!
+                assertTrue(exportProbe.read(uri).contains("Retained attempts=2"))
+            }
+
+            // Replacing the screen owner aborts an old picker. Its late URI must never
+            // receive a new export's payload, even if the next screen has the same scope.
+            val staleDestination = exportProbe.destination()
+            exportProbe.holdResult = true
+            exportProbe.nextSave = staleDestination
+            find(By.res("pipeline_benchmark_save_text")).click()
+            exportProbe.awaitObserved("Old screen picker request observed") { exportProbe.creates.size == 4 }
+            render(store)
+            exportProbe.completePending()
+            activity.onActivity { }
+            assertEquals("old bytes must be replaced", exportProbe.read(staleDestination))
+            exportProbe.holdResult = false
+            val freshDestination = exportProbe.destination()
+            exportProbe.nextSave = freshDestination
+            benchmarkClickEnabled(By.res("pipeline_benchmark_save_text"), towardTop = true)
+            exportProbe.awaitObserved("Recreated screen can export again") {
+                exportProbe.read(freshDestination).contains("END REPORT: 2 retained attempts.")
+            }
+            assertEquals("old bytes must be replaced", exportProbe.read(staleDestination))
 
             benchmarkClickEnabled(By.res("pipeline_benchmark_copy_json"), towardTop = true)
             assertEquals("Redacted JSON report copied.", benchmarkScrollTo(By.res("pipeline_benchmark_status")

@@ -1,10 +1,5 @@
 package com.battlesbudz.jarvis.v2.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Intent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -14,20 +9,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.ExperimentalComposeUiApi
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.core.content.FileProvider
 import com.battlesbudz.jarvis.v2.diagnostics.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.util.Locale
 
 /** Metrics are redacted; entering a reference explicitly scores the original ASR output only. */
@@ -36,7 +28,6 @@ import java.util.Locale
 fun PipelineBenchmarkScreen(store: AndroidPipelineBenchmarkStore, onClose: () -> Unit, resetEnabled: Boolean = true,
     conversationId: String? = null, callId: String? = null, initialTurnId: String? = null,
     conversationReplies: com.battlesbudz.jarvis.v2.chat.ConversationThread? = null) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val allSamples by store.samples.collectAsState()
     var scoped by remember(conversationId, callId) { mutableStateOf(conversationId != null || callId != null) }
@@ -54,71 +45,12 @@ fun PipelineBenchmarkScreen(store: AndroidPipelineBenchmarkStore, onClose: () ->
     }
     var showReset by remember { mutableStateOf(false) }
     var referenceId by remember { mutableStateOf<String?>(null) }
-    var pendingExport by remember { mutableStateOf<String?>(null) }
-    var exporting by remember { mutableStateOf(false) }
     val report = remember(samples) { PipelineBenchmarkReport(samples, System.currentTimeMillis()) }
-    val save: (android.net.Uri?) -> Unit = { uri ->
-        val export = pendingExport; pendingExport = null
-        if (uri != null && export != null) scope.launch {
-            exporting = true
-            try {
-                withContext(Dispatchers.IO) {
-                    checkNotNull(context.contentResolver.openOutputStream(uri)).use { it.write(export.toByteArray(Charsets.UTF_8)) }
-                }
-                status = "Redacted benchmark report saved."
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { status = "Could not save the benchmark report. Try a different destination." }
-            finally { exporting = false }
-        }
-    }
-    val saveJson = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json"), save)
-    val saveCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv"), save)
-    val export: (Boolean, String) -> Unit = { csv, action ->
-        scope.launch {
-            exporting = true
-            try {
-                val payload = withContext(Dispatchers.Default) { if (csv) report.toCsv() else ConversationMetricsExport.json(report, conversationReplies.takeIf { scoped }).let {
-                    if (action == "copy") it.toString() else it.toString(2)
-                } }
-                val extension = if (csv) "csv" else "json"
-                when (action) {
-                    "save" -> {
-                        pendingExport = payload
-                        val name = "jarvis-pipeline-benchmarks-${System.currentTimeMillis()}.$extension"
-                        if (csv) saveCsv.launch(name) else saveJson.launch(name)
-                    }
-                    "copy" -> {
-                        if (payload.toByteArray(Charsets.UTF_8).size > 400_000) {
-                            status = "The full report is too large for the clipboard. Save or share it to include every retained sample."
-                        } else {
-                            context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Jarvis redacted benchmarks", payload))
-                            status = "Redacted ${extension.uppercase(Locale.ROOT)} report copied."
-                        }
-                    }
-                    "share" -> {
-                        val file = withContext(Dispatchers.IO) {
-                            val directory = File(context.cacheDir, "benchmark-exports")
-                            check(directory.isDirectory || directory.mkdirs())
-                            val artifact = File(directory, "jarvis-pipeline-${System.currentTimeMillis()}.$extension")
-                            artifact.writeText(payload, Charsets.UTF_8)
-                            directory.listFiles()?.sortedByDescending { it.lastModified() }?.drop(4)?.forEach { it.delete() }
-                            artifact
-                        }
-                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.benchmark-exports", file)
-                        val intent = Intent(Intent.ACTION_SEND).apply {
-                            type = if (csv) "text/csv" else "application/json"
-                            putExtra(Intent.EXTRA_STREAM, uri)
-                            clipData = ClipData.newRawUri("Jarvis redacted benchmarks", uri)
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        context.startActivity(Intent.createChooser(intent, "Share redacted benchmark report"))
-                    }
-                }
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { status = "Could not export the report. The retained samples remain available." }
-            finally { exporting = false }
-        }
-    }
+    val exportState = rememberBenchmarkExport(report, conversationReplies.takeIf { scoped },
+        scopeLabel = if (!scoped) "all retained benchmarks" else
+            "conversation=${conversationId ?: "unavailable"}; call=${callId ?: "unavailable"}",
+        onStatus = { status = it })
+    BenchmarkExportDialog(exportState, onStatus = { status = it })
     Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp).semantics { testTagsAsResourceId = true }.testTag("pipeline_benchmark_screen")) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Pipeline benchmarks", style = MaterialTheme.typography.titleLarge)
@@ -137,19 +69,8 @@ fun PipelineBenchmarkScreen(store: AndroidPipelineBenchmarkStore, onClose: () ->
             }
             item {
                 Column {
-                    Row {
-                        TextButton(onClick = { export(false, "copy") }, enabled = !exporting, modifier = Modifier.testTag("pipeline_benchmark_copy_json")) { Text("Copy JSON") }
-                        TextButton(onClick = { export(true, "copy") }, enabled = !exporting) { Text("Copy CSV") }
-                    }
-                    Row {
-                        TextButton(onClick = { export(false, "save") }, enabled = !exporting) { Text("Save JSON") }
-                        TextButton(onClick = { export(true, "save") }, enabled = !exporting) { Text("Save CSV") }
-                    }
-                    Row {
-                        TextButton(onClick = { export(false, "share") }, enabled = !exporting) { Text("Share JSON") }
-                        TextButton(onClick = { export(true, "share") }, enabled = !exporting) { Text("Share CSV") }
-                    }
-                    TextButton(onClick = { showReset = true }, enabled = resetEnabled && !exporting,
+                    BenchmarkExportControls(exportState)
+                    TextButton(onClick = { showReset = true }, enabled = resetEnabled && !exportState.busy,
                         modifier = Modifier.testTag("pipeline_benchmark_reset")) { Text("Reset retained benchmarks") }
                     if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("pipeline_benchmark_status"))
                     storageStatus?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
